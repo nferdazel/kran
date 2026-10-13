@@ -23,8 +23,8 @@ berkas rencana di `docs/tasks/T-xxx.md`.
 | T-011 | TODO | `tools/scaffold` (template modul) + modul contoh `hello` | §5.5, §27.B | T-002, T-004 | Scaffold menghasilkan modul yang langsung `./task ci` hijau; archcheck menerima, `MODULE.md` terisi |
 | T-012 | BLOCKED | End-to-end Fase 0: login → ubah parameter (maker-checker) → audit → event SSE di UI | §23 | T-005, T-006, T-009, T-010 | Playwright: alur lengkap keyboard-only, axe hijau, bukti audit event + ParamChanged tampil di UI — **tertahan ADR-002** |
 | T-013 | TODO | `ops/` sesuai §21.4–21.6 (**hanya berkas di repo**, tidak dijalankan di server) | §21.4–21.6 | T-001 | `shellcheck`/`sh -n` hijau; `md5` berkas skrip siap dibanding `audit-consistency.sh`; tanpa secret |
-| T-014 | READY | Spike ADR-002: pilih HTTP server Nim (Mummy vs Prologue), tulis rekomendasi, **STOP minta keputusan** | §12.1, §25 | T-001 | Benchmark + rekomendasi tertulis di `docs/spikes/ADR-002-http-server.md` + entri `ESCALATIONS.md` |
-| T-015 | TODO | Inventaris `cbs-core` (referensi, bukan port) → `docs/migration/cbs-core-inventory.md` | §23, §21.9 | T-001 | Dokumen memuat: fitur, skema, aturan bisnis tervalidasi, kandidat golden test; tanpa menyentuh repo `cbs-core` |
+| T-014 | DONE | Spike ADR-002: pilih HTTP server Nim (Mummy vs Prologue), tulis rekomendasi, **STOP minta keputusan** | §12.1, §25 | T-001 | Benchmark + rekomendasi tertulis di `docs/spikes/ADR-002-http-server.md` + entri `ESCALATIONS.md` — **keputusan pemilik masih terbuka (E-001)** |
+| T-015 | IN_PROGRESS | Inventaris `cbs-core` (referensi, bukan port) → `docs/migration/cbs-core-inventory.md` | §23, §21.9 | T-001 | Dokumen memuat: fitur, skema, aturan bisnis tervalidasi, kandidat golden test; tanpa menyentuh repo `cbs-core` |
 
 ### Catatan urutan
 

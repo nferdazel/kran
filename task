@@ -44,13 +44,14 @@ skip() { printf '\n-- SKIP: %s\n' "$*"; SKIPS="$SKIPS
 have() { command -v "$1" >/dev/null 2>&1; }
 
 nim_files() {
-  find apps modules shared tools -name '*.nim' 2>/dev/null | sort
+  # Fixture test tidak pernah dikompilasi: banyak yang sengaja tidak valid.
+  find apps modules shared tools -name '*.nim' -not -path '*/tests/fixtures/*' 2>/dev/null | sort
 }
 test_files() {
-  find shared modules apps -path '*/tests/t*.nim' 2>/dev/null | sort
+  find apps modules shared tools -path '*/tests/t*.nim' 2>/dev/null | sort
 }
 it_files() {
-  find shared modules apps -path '*/tests/it*.nim' 2>/dev/null | sort
+  find apps modules shared tools -path '*/tests/it*.nim' 2>/dev/null | sort
 }
 
 build_tool() { # build_tool <dir berisi main.nim> -> cetak path binary
@@ -154,8 +155,12 @@ run_nim_test() { # run_nim_test <berkas>
 }
 
 cmd_test() {
-  log "unit + property test"
+  filter="${1:-}"
+  log "unit + property test${filter:+ (filter: $filter)}"
   list=$(test_files)
+  if [ -n "$filter" ]; then
+    list=$(printf '%s\n' "$list" | grep -- "$filter" || true)
+  fi
   if [ -z "$list" ]; then
     # Gate ini sengaja asimetris: repo kosong boleh (Fase 0 baru mulai), tetapi kode yang
     # ada tanpa satu pun test = kegagalan.
@@ -167,6 +172,9 @@ cmd_test() {
 
   log "integration test (Postgres)"
   its=$(it_files)
+  if [ -n "$filter" ]; then
+    its=$(printf '%s\n' "$its" | grep -- "$filter" || true)
+  fi
   if [ -z "$its" ]; then
     skip "belum ada test integrasi (T-004)"
   elif [ -z "$CBS_DATABASE_URL" ]; then
@@ -176,7 +184,10 @@ cmd_test() {
   fi
 
   log "contract test (OpenAPI == implementasi)"
-  if [ ! -d "$ROOT/packages/contracts/openapi" ]; then
+  contract_dir="$ROOT/packages/contracts/openapi"
+  if [ -n "$filter" ] && [ "$filter" != "contract" ]; then
+    :
+  elif [ ! -d "$contract_dir" ]; then
     skip "packages/contracts/openapi belum ada (T-008)"
   else
     skip "contract test menunggu keputusan ADR-002 (T-014)"
@@ -219,7 +230,7 @@ cmd_help() {
 
 case "${1:-help}" in
   check) cmd_check ;;
-  test) cmd_test ;;
+  test) shift; cmd_test "${1:-}" ;;
   e2e) cmd_e2e ;;
   ci) cmd_ci ;;
   build) cmd_build ;;

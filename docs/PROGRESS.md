@@ -36,3 +36,5 @@ PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2)
 | Task | Status | Bukti |
 |---|---|---|
 | T-001 | IN_PROGRESS | — |
+| T-014 | DONE (spike) | `docs/spikes/ADR-002-http-server.md`: Mummy 54.341 rps / Prologue 46.094 / asyncnet 18.824 (`hey -n 10000 -c 50`, laptop 2026-10-13); Mummy 0.4.8 tanpa API streaming (endpoint stream → 501); keputusan menunggu E-001 |
+| T-015 | IN_PROGRESS | subagent berjalan (inventaris `cbs-core`) |
