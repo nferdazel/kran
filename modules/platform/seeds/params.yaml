@@ -40,3 +40,37 @@
   schema: { type: array }
   sensitivity: NORMAL
   default_pack: { base: [6, 7] }
+
+# --- Kebijakan keamanan (T-006, spec §13/§18.2) -------------------------------------------
+# Angka-angka ini adalah **kebijakan institusi**, bukan pasal regulasi. Nilai awal mengikuti
+# rekomendasi umum (OWASP) — ganti sesuai kebijakan dan hasil review keamanan.
+
+# Iterasi PBKDF2: makin tinggi makin lambat ditebak, tapi juga membebani login.
+- key: platform.security.password_pbkdf2_iterations
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 1000, maximum: 5000000 }
+  sensitivity: NORMAL
+  default_pack: { base: 600000 }
+
+- key: platform.security.max_failed_logins
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 1, maximum: 100 }
+  sensitivity: NORMAL
+  default_pack: { base: 5 }
+
+- key: platform.security.lockout_minutes
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 1, maximum: 1440 }
+  sensitivity: NORMAL
+  default_pack: { base: 30 }
+
+# Batas atas umur sesi; `platform.security.session_idle_minutes` (sudah ada) adalah batas idle.
+- key: platform.security.session_absolute_minutes
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 5, maximum: 1440 }
+  sensitivity: NORMAL
+  default_pack: { base: 480 }

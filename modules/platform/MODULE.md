@@ -24,6 +24,8 @@ saat ini belum ada konsumen lintas-modul, jadi belum ada yang perlu diekspor.
 - `platform.outbox`, `platform.inbox` — transactional outbox + de-dup.
 - `platform.param_definition`, `platform.param_value` — parameter framework (T-005).
 - `platform.holiday`, `platform.business_date` — kalender & tanggal buku (T-007).
+- `platform.app_user`, `platform.role`, `platform.permission`, `platform.role_permission`,
+  `platform.user_role`, `platform.role_conflict`, `platform.session` — identitas, akses, sesi (T-006).
 
 ## Invarian yang tidak boleh dilanggar
 
@@ -106,3 +108,29 @@ Invarian tambahan:
 
 Catatan penempatan: `CloseLevel` masih di `domain/calendar.nim`. Saat modul `daycloser` lahir
 (Fase 3), tipe itu pindah ke sana dan modul ini hanya menyediakan `closeLevelsFor`.
+
+## Identitas, akses & sesi (T-006)
+
+| Bagian | Berkas |
+|---|---|
+| Domain otorisasi | `domain/authz.nim` — kode izin `modul.resource.action`, branch scoping, `authorize` (SoD fail-closed), kebijakan sesi & password |
+| Domain scope | `domain/scope.nim` — `ScopeRef` + konvensi lookup parameter (dipakai kalender & auth) |
+| Hash password | `infrastructure/password_hasher.nim` — PBKDF2-HMAC-SHA256; hash token sesi (SHA-256) |
+| Repo | `infrastructure/auth_repo.nim` — user/lockout, role/permission/SoD, sesi |
+| Alur | `infrastructure/auth_service.nim` — `authenticate`, `sessionFor`, `touch`, `logout`, `logoutAll`, `authorizeUser`, `changePassword` |
+| Migrasi | `0006_platform_auth.sql` |
+
+Invarian tambahan:
+
+12. **Password tidak pernah disimpan/di-log mentah**: DB hanya menyimpan
+    `algo$iterasi$salt$digest`; parameter KDF ikut tersimpan supaya hash lama tetap valid.
+13. **Kebijakan dari parameter** (spec §10.4): panjang minimum password, iterasi PBKDF2, batas
+    gagal login, masa lockout, umur sesi idle/absolut. Tidak ada default di kode.
+14. **Token sesi hanya ada di memori/klien**: DB menyimpan hash-nya (`session.token_hash`).
+15. **SoD fail-closed**: penugasan role berkonflik ditolak `grantRole`; bila konflik tetap ada di
+    data, `authorize` menolak semua aksi.
+16. **Anti-enumerasi**: user tak dikenal & password salah sama-sama `INVALID_CREDENTIALS`;
+    user tak dikenal dicatat di audit sebagai digest, bukan nama mentah (§18.2 logging tanpa PII).
+
+Catatan: alur auth tinggal di `infrastructure` (butuh DB). Saat port/use case lapisan
+`application` lahir (pola T-016), isi `auth_service.nim` pindah ke `application/`.

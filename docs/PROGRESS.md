@@ -211,6 +211,7 @@ akses bertipe `params.get`, guard drift harian, UI Parameter Admin.
 | T-004 | DONE | `./task ci` hijau (exit 0, `.build/ci-t004.log`): 153 assertion lulus. `./task dbtools migrate` 2× = idempotent; 14 test integrasi platform + 7 test integrasi pool lulus (hash-chain tamper terdeteksi, outbox de-dup, migrasi atomik) |
 | T-003 | DONE | `./task ci` hijau (exit 0, log `.build/ci-t003.log`): 29 berkas terformat, 30 `nim check`, archcheck/lint-nomagic/paramgen sinkron, 97 assertion test lulus (12 berkas). Gate dibuktikan menolak lewat probe nyata (3 temuan magic + 1 pelanggaran rule C) |
 | T-007 | DONE | `./task ci` hijau: `tcalendar` 29 test + `itcalendar` 11 test lulus (kaskade EOD/EOM/EOQ/EOY, libur berulang, transisi state ilegal ditolak, CAS, rollover, mutation test `weekend_days`). Rincian: `docs/tasks/T-007.md` |
+| T-006 | DONE | `./task ci` hijau: `tauthz` 19 + `tpassword` 12 + `itauth` 13 test lulus. Vektor PBKDF2 dihitung independen (Python hashlib). Audit context terisi lengkap; lockout & kebijakan dari parameter; SoD dua lapis (grant + otorisasi). Rincian: `docs/tasks/T-006.md` |
 | T-013 | DONE (berkas) | `bash -n` 7/7 skrip (gate `./task check`), `audit-consistency.sh` lokal exit 0, `migrate.sh` exit 2 tanpa argumen, JSON webhook valid, tanpa secret. Belum dijalankan di server. Rincian: `docs/PROGRESS-T013.md` |
 
 ## T-007 — Kalender + business date (DONE, commit menyusul)
@@ -239,3 +240,20 @@ argumen exit 2, JSON webhook valid, scan rahasia bersih (hanya `127.0.0.1`/`CHAN
 `shellcheck` tidak terpasang → level `error` di-gate bila tersedia, level `warning` dicatat
 sebagai O-014. Laporan rinci subagent: `docs/PROGRESS-T013.md`; rencana: `docs/tasks/T-013.md`.
 **Belum pernah dijalankan di server** — itu memang di luar batas task.
+
+
+## T-006 — Auth + RBAC + audit context + branch scoping (DONE, commit menyusul)
+
+Scope, keputusan, batasan: `docs/tasks/T-006.md`. Ringkas bukti:
+
+- Skema `0006_platform_auth.sql` (`app_user`, `role`, `permission`, `role_permission`,
+  `user_role` + `branch_id`, `role_conflict`, `session`); domain `authz.nim` + `scope.nim`;
+  hasher PBKDF2 `password_hasher.nim`; repo `auth_repo.nim`; alur `auth_service.nim`.
+- Keputusan baru: D-013 (nimcrypto/PBKDF2, **HUMAN-REVIEW-REQUIRED**), D-014 (`user` → `app_user`).
+  Item baru: O-015 (MFA belum ada), O-016 (matriks SoD kosong), O-017 (tipe id cabang tidak seragam).
+- Refactor kecil: `ScopeRef`/`lookupFor` dipindah ke `domain/scope.nim` (dipakai kalender + auth),
+  dan aturan "tanpa fallback" parameter dikumpulkan di `param_repo.activeValueJson` (dulu hanya
+  di `calendar_repo`).
+- `./task test tauthz` 19, `./task test tpassword` 12, `./task test itauth` 13 — semuanya lulus;
+  `./task ci` hijau.
+- Dependensi baru: `nimcrypto >= 0.7.3` di `cbs.nimble` (sudah terpasang; pure Nim, tanpa lib native).

@@ -15,7 +15,7 @@ berkas rencana di `docs/tasks/T-xxx.md`.
 | T-003 | DONE | Tooling: `tools/archcheck`, `tools/lint-nomagic`, `tools/paramgen` (+ test tool) | §5.1, §5.2, §10.3, §10.4 | T-001, T-002 | archcheck menolak fixture pelanggaran; lint-nomagic menolak fixture magic; paramgen deterministik + `--check` gagal saat drift |
 | T-004 | DONE | Skeleton `platform`: pg pool, migration runner (expand-only), outbox/inbox, audit hash-chain | §9, §12.4, §18.2 | T-002, T-003 | `./task test` dengan `CBS_DATABASE_URL` hijau: migrasi idempotent (up 2× aman), outbox de-dup, hash-chain terverifikasi + terdeteksi saat dirusak |
 | T-005 | DONE | Parameter framework: tabel + resolusi effective-dated + maker-checker + cache/NOTIFY + startup check | §10 | T-003, T-004 | Test: resolusi PRODUCT→BRANCH→INSTITUTION→SEGMENT→GLOBAL pada `as_of`; overlap ACTIVE ditolak EXCLUDE; ParamNotFound tanpa fallback; startup check gagal-cepat; invalidasi cache via NOTIFY |
-| T-006 | TODO | Auth + RBAC + audit context + branch scoping dasar | §13, §18.2 | T-004, T-005 | Test authz matrix (role conflict + branch) hijau; audit context terisi di use case; sesi cookie HttpOnly |
+| T-006 | DONE | Auth + RBAC + audit context + branch scoping dasar | §13, §18.2 | T-004, T-005 | Test authz matrix (role conflict + branch) hijau — `tauthz` 19 + `itauth` 13 test; audit context terisi (actor/cabang/IP/device/alasan/correlation); atribut cookie `HttpOnly; Secure; SameSite=Strict`. MFA & RLS lanjut di T-017/O-015 |
 | T-007 | DONE | Kalender + business date (state OPEN/CLOSING/CLOSED, roll over) | §9.3, §11.2 | T-004, T-005 | Test: hari libur dari param/tabel, level close (EOD/EOM/EOQ/EOY) terpilih dari kalender, transisi state ditolak bila ilegal — `tcalendar` 29 test + `itcalendar` 11 test lulus |
 | T-008 | BLOCKED | OpenAPI skeleton + generate client TS + contract test | §13 | T-001, T-014 | OpenAPI lint hijau; client TS ter-generate ulang tanpa diff; contract test implementasi↔OpenAPI hijau — **bagian contract test tertahan keputusan ADR-002** |
 | T-009 | BLOCKED | SSE hub (LISTEN/NOTIFY + outbox → klien, `Last-Event-ID`) | §19.1, §13 | T-004, T-014 | Test: event dari outbox sampai ke klien, reconnect tanpa kehilangan event — **tertahan ADR-002** |
@@ -33,6 +33,9 @@ berkas rencana di `docs/tasks/T-xxx.md`.
 - Task di luar daftar ini ditemukan saat kerja → tambahkan di sini, jangan disisipkan diam-diam.
 - T-005 selesai untuk cakupan DB/repo; lapisan application dipisah ke T-016 supaya tidak ada
   pekerjaan yang "diam-diam setengah" (AGENTS.md §5).
+- T-017 (usulan, dari T-006): MFA TOTP/enrolment + verifikasi saat login (spec §13/§18.2),
+  plus kebijakan deteksi sesi ganda & unlock akun oleh admin. Belum masuk backlog resmi sampai
+  pemilik menyetujui.
 - T-013 selesai sebagai **berkas** saja (sesuai batas task): kontrak CLI `--role=migrate|ctl`
   (freeze gate & migration gate di `deploy-vps.sh`) belum ada di kode, jadi skripnya belum bisa
   dijalankan utuh. Dicatat di OPEN_ITEMS O-013.
