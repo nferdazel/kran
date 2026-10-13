@@ -8,3 +8,5 @@ license     = "MIT"
 requires "nim >= 2.2.0"
 requires "db_connector >= 0.1.0"
 requires "yaml >= 2.2.1"
+# PBKDF2-HMAC-SHA256 untuk password (ADR/D-013). Sudah terpasang lokal sebagai 0.7.3.
+requires "nimcrypto >= 0.7.3"

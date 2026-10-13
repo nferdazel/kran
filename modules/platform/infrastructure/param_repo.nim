@@ -83,6 +83,21 @@ proc candidatesOf*(db: DbConn, key: string, asOf: string): seq[ParamCandidate] =
       effectiveFrom: row[4],
       effectiveTo: row[5])
 
+proc activeValueJson*(db: DbConn, key, asOf: string, lookup: ScopeLookup): JsonNode =
+  ## Nilai aktif paling spesifik untuk `key` pada `asOf`. Raise `ValueError` bila tidak ada —
+  ## satu-satunya tempat aturan "tanpa fallback diam-diam" (spec §10.6) diterapkan.
+  let picked = resolveCandidate(candidatesOf(db, key, asOf), lookup)
+  if picked.isNone:
+    raise newException(ValueError,
+      "parameter " & key & " tidak punya nilai aktif pada " & asOf)
+  picked.get().value
+
+proc activeParamInt*(db: DbConn, key, asOf: string, lookup: ScopeLookup): int =
+  let value = db.activeValueJson(key, asOf, lookup)
+  if value.kind != JInt:
+    raise newException(ValueError, "parameter " & key & " bukan integer: " & $value)
+  int(value.getInt)
+
 type
   DefinitionRow* = object
     key*: string

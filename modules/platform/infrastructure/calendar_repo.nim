@@ -12,17 +12,12 @@ import std/[json, options]
 
 import db_connector/db_postgres
 
-import ../domain/[calendar, param]
+import ../domain/[calendar, scope]
 import ./param_repo
 import kernel/[businessdate, ids, paramkey, result]
 import kernel/generated/paramkeys
 
 type
-  ScopeRef* = object
-    ## Scope yang sedang dilayani (institusi akar memakai `scopeId` kosong).
-    scopeType*: ParamScopeType
-    scopeId*: string
-
   BusinessDateRow* = object
     scopeType*: ParamScopeType
     scopeId*: string
@@ -38,20 +33,10 @@ type
     isWorkingDay*: bool
     closeLevels*: set[CloseLevel]
 
-proc lookupFor(scope: ScopeRef): ScopeLookup =
-  let (scopeType, scopeId) = (scope.scopeType, scope.scopeId)
-  result = proc(t: ParamScopeType): string =
-    if t == scopeType: scopeId else: ""
-
 proc paramJson*[T](db: DbConn, key: ParamKey[T], scope: ScopeRef,
                    asOf: string): JsonNode =
-  ## Nilai parameter wajib ada pada `asOf` untuk scope tersebut.
-  let picked = resolveCandidate(candidatesOf(db, keyString(key), asOf), lookupFor(scope))
-  if picked.isNone:
-    raise newException(ValueError,
-      "parameter " & keyString(key) & " tanpa nilai aktif pada " & asOf &
-      " (scope " & $scope.scopeType & ")")
-  picked.get().value
+  ## Nilai parameter wajib ada pada `asOf` untuk scope tersebut (lihat `activeValueJson`).
+  db.activeValueJson(keyString(key), asOf, lookupFor(scope))
 
 proc addHoliday*(db: DbConn, scope: ScopeRef, holidayDate, nameKey: string,
                  recurring = false): bool =

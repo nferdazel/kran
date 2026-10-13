@@ -51,6 +51,42 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "platform.security.lockout_minutes",
+    "module": "platform",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.security.lockout_minutes",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 1440
+    }
+  },
+  {
+    "key": "platform.security.max_failed_logins",
+    "module": "platform",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.security.max_failed_logins",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 100
+    }
+  },
+  {
     "key": "platform.security.password_min_length",
     "module": "platform",
     "valueType": "integer",
@@ -66,6 +102,42 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     "jsonSchema": {
       "minimum": 8,
       "maximum": 64
+    }
+  },
+  {
+    "key": "platform.security.password_pbkdf2_iterations",
+    "module": "platform",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.security.password_pbkdf2_iterations",
+    "jsonSchema": {
+      "minimum": 1000,
+      "maximum": 5000000
+    }
+  },
+  {
+    "key": "platform.security.session_absolute_minutes",
+    "module": "platform",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.security.session_absolute_minutes",
+    "jsonSchema": {
+      "minimum": 5,
+      "maximum": 1440
     }
   },
   {

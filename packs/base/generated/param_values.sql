@@ -27,7 +27,35 @@ INSERT INTO platform.param_value
   (param_value_id, key, scope_type, scope_id, value, effective_from, status,
    maker, checker, reason)
 VALUES
+  (md5('platform.security.lockout_minutes|base')::uuid, 'platform.security.lockout_minutes', 'GLOBAL', NULL, '30'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+ON CONFLICT (param_value_id) DO NOTHING;
+
+INSERT INTO platform.param_value
+  (param_value_id, key, scope_type, scope_id, value, effective_from, status,
+   maker, checker, reason)
+VALUES
+  (md5('platform.security.max_failed_logins|base')::uuid, 'platform.security.max_failed_logins', 'GLOBAL', NULL, '5'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+ON CONFLICT (param_value_id) DO NOTHING;
+
+INSERT INTO platform.param_value
+  (param_value_id, key, scope_type, scope_id, value, effective_from, status,
+   maker, checker, reason)
+VALUES
   (md5('platform.security.password_min_length|base')::uuid, 'platform.security.password_min_length', 'GLOBAL', NULL, '12'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+ON CONFLICT (param_value_id) DO NOTHING;
+
+INSERT INTO platform.param_value
+  (param_value_id, key, scope_type, scope_id, value, effective_from, status,
+   maker, checker, reason)
+VALUES
+  (md5('platform.security.password_pbkdf2_iterations|base')::uuid, 'platform.security.password_pbkdf2_iterations', 'GLOBAL', NULL, '600000'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+ON CONFLICT (param_value_id) DO NOTHING;
+
+INSERT INTO platform.param_value
+  (param_value_id, key, scope_type, scope_id, value, effective_from, status,
+   maker, checker, reason)
+VALUES
+  (md5('platform.security.session_absolute_minutes|base')::uuid, 'platform.security.session_absolute_minutes', 'GLOBAL', NULL, '480'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
 ON CONFLICT (param_value_id) DO NOTHING;
 
 INSERT INTO platform.param_value

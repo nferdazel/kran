@@ -12,7 +12,7 @@ import "platform-lib/db/config"
 import "platform-lib/db/pool"
 import dbtools/lib
 import kernel/[auditcontext, businessdate, clock, ids, paramkey, result]
-import platform/domain/calendar
+import platform/domain/[calendar, scope]
 import platform/infrastructure/[param_repo, calendar_repo]
 
 const

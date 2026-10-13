@@ -30,7 +30,51 @@ ON CONFLICT (key) DO UPDATE SET
 INSERT INTO platform.param_definition
   (key, module, value_type, json_schema, allowed_scopes, description_key,
    regulatory_refs, sensitivity, requires_approval, since_version)
+VALUES ('platform.security.lockout_minutes', 'platform', 'integer', '{"minimum":1,"maximum":1440}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.platform.security.lockout_minutes', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
+ON CONFLICT (key) DO UPDATE SET
+  module = EXCLUDED.module, value_type = EXCLUDED.value_type,
+  json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,
+  description_key = EXCLUDED.description_key, regulatory_refs = EXCLUDED.regulatory_refs,
+  sensitivity = EXCLUDED.sensitivity, requires_approval = EXCLUDED.requires_approval,
+  since_version = EXCLUDED.since_version;
+
+INSERT INTO platform.param_definition
+  (key, module, value_type, json_schema, allowed_scopes, description_key,
+   regulatory_refs, sensitivity, requires_approval, since_version)
+VALUES ('platform.security.max_failed_logins', 'platform', 'integer', '{"minimum":1,"maximum":100}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.platform.security.max_failed_logins', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
+ON CONFLICT (key) DO UPDATE SET
+  module = EXCLUDED.module, value_type = EXCLUDED.value_type,
+  json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,
+  description_key = EXCLUDED.description_key, regulatory_refs = EXCLUDED.regulatory_refs,
+  sensitivity = EXCLUDED.sensitivity, requires_approval = EXCLUDED.requires_approval,
+  since_version = EXCLUDED.since_version;
+
+INSERT INTO platform.param_definition
+  (key, module, value_type, json_schema, allowed_scopes, description_key,
+   regulatory_refs, sensitivity, requires_approval, since_version)
 VALUES ('platform.security.password_min_length', 'platform', 'integer', '{"minimum":8,"maximum":64}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.platform.security.password_min_length', ARRAY[]::text[], 'CRITICAL', true, '0.1.0')
+ON CONFLICT (key) DO UPDATE SET
+  module = EXCLUDED.module, value_type = EXCLUDED.value_type,
+  json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,
+  description_key = EXCLUDED.description_key, regulatory_refs = EXCLUDED.regulatory_refs,
+  sensitivity = EXCLUDED.sensitivity, requires_approval = EXCLUDED.requires_approval,
+  since_version = EXCLUDED.since_version;
+
+INSERT INTO platform.param_definition
+  (key, module, value_type, json_schema, allowed_scopes, description_key,
+   regulatory_refs, sensitivity, requires_approval, since_version)
+VALUES ('platform.security.password_pbkdf2_iterations', 'platform', 'integer', '{"minimum":1000,"maximum":5000000}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.platform.security.password_pbkdf2_iterations', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
+ON CONFLICT (key) DO UPDATE SET
+  module = EXCLUDED.module, value_type = EXCLUDED.value_type,
+  json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,
+  description_key = EXCLUDED.description_key, regulatory_refs = EXCLUDED.regulatory_refs,
+  sensitivity = EXCLUDED.sensitivity, requires_approval = EXCLUDED.requires_approval,
+  since_version = EXCLUDED.since_version;
+
+INSERT INTO platform.param_definition
+  (key, module, value_type, json_schema, allowed_scopes, description_key,
+   regulatory_refs, sensitivity, requires_approval, since_version)
+VALUES ('platform.security.session_absolute_minutes', 'platform', 'integer', '{"minimum":5,"maximum":1440}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.platform.security.session_absolute_minutes', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
 ON CONFLICT (key) DO UPDATE SET
   module = EXCLUDED.module, value_type = EXCLUDED.value_type,
   json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,

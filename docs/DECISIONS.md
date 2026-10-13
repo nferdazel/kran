@@ -156,3 +156,32 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
   pack (D-009), bukan sekadar menambah baris seed.
 - **Konsekuensi**: konsumen kalender tidak perlu tahu nama pack. Keterbatasan lookup institusi
   dari konteks cabang dicatat di OPEN_ITEMS O-012.
+
+## D-013 — PBKDF2-HMAC-SHA256 (nimcrypto) untuk hashing password
+
+- **Konteks**: T-006 butuh hashing password. Stdlib Nim 2.2 **tidak punya** SHA-256/HMAC
+  (`std/sha1`, `std/md5` saja), sehingga pilihannya: menulis SHA-256 sendiri, memakai pustaka
+  pure-Nim (`nimcrypto`, sudah terpasang 0.7.3 karena spike ADR-002), atau pustaka native
+  (argon2/libsodium) yang harus tersedia di mesin dev **dan** server produksi.
+- **Keputusan**: `nimcrypto` (dipin `>= 0.7.3` di `cbs.nimble`), algoritma
+  **PBKDF2-HMAC-SHA256** (RFC 2898 §5.2), parameter tersimpan bersama hash
+  (`algo$iterasi$salt$digest`) sehingga perubahan kebijakan tidak mematahkan hash lama.
+  Iterasi dari parameter `platform.security.password_pbkdf2_iterations` (default pack 600.000).
+  Perbandingan digest waktu-tetap; token sesi di-hash dengan SHA-256 biasa (entropi 256-bit).
+- **Alasan menolak alternatif**: menulis KDF sendiri = anti-pola kriptografi (dan tidak bisa
+  diuji terhadap implementasi lain); dependensi native menambah beban operasional §21 tanpa
+  manfaat di Fase 0.
+- **Konsekuensi**: **HUMAN-REVIEW-REQUIRED** — area kriptografi. Vektor uji dihitung independen
+  dengan Python `hashlib.pbkdf2_hmac` (`modules/platform/tests/tpassword.nim`). Bila institusi
+  mensyaratkan Argon2id, penggantiannya lokal: hanya `password_hasher.nim` + satu ADR.
+
+## D-014 — `platform.user` → `platform.app_user`
+
+- **Konteks**: spec §9.2 menyebut tabel `platform.user`; `USER` adalah kata kunci SQL di
+  PostgreSQL (reserved), sehingga nama itu harus dikutip di setiap query.
+- **Keputusan**: tabel dinamai `platform.app_user`. Nama lain di daftar §9.2
+  (`role`, `permission`, `role_permission`, `user_role`, `session`) aman dipakai apa adanya.
+  Kolom tambahan buatan sendiri (spec hanya menyebut nama tabel): status/lockout/hash di
+  `app_user`, `branch_id` di `user_role`, dan tabel `role_conflict` untuk matriks SoD §18.2.
+- **Konsekuensi**: spec §9.2 perlu dikoreksi saat ada kesempatan. Bentuk kolom didokumentasikan
+  di `modules/platform/MODULE.md`.
