@@ -160,9 +160,10 @@ celah yang diakui dokumen.
 
 ### 2.9 Pelaporan OJK — [jalan sebagian]
 - Mesin laporan berkala: `apps/api/internal/ojkreport/` (`definitions.go`,
-  `builder.go`, `coa_mapping.go`, form `form00_*`…`form06_*`, `bmpk.go`). 45 form resmi
-  terdaftar; **43 `Buildable:true`, 11 `Buildable:false`** (hitung grep `definitions.go`)
-  `(belum diverifikasi bila dibaca per form mana)`.
+  `builder.go`, `coa_mapping.go`, form `form00_*`…`form06_*`, `bmpk.go`).
+  `OJKBulananForms` = **45 form** resmi SEOJK 16/2024 (39 `true`/6 `false`,
+  `definitions.go:142`+); `OJKReportDefinitions` = **9 laporan** (4 `true`/5 `false`,
+  `definitions.go:65-130`). Total 54 entri (43 `true`, 11 `false`).
 - Register OJK: AYDA (`domain/ayda.go`, migrasi `000115`), aset tetap (`000119`), aset
   keuangan lainnya (`000121`), kas valas (`000123`), kepemilikan BPR (`000116`), kelembagaan
   (`000112`), modal (`000128`), penyertaan (`000120`), pinjaman diterima (`000117`),
@@ -400,8 +401,11 @@ Legenda: **[V]** tervalidasi (ada rujukan dokumen/regulasi **dan** ada uji);
 
 ### 4.14 Maker-checker & limit per peran — [V]
 - Satu sumber ambang persetujuan (`maker_checker.<jenis>.threshold`) & matriks limit
-  `limit.<peran>.<jenis>.<sufiks>`; 72 kunci `limit.*` ter-seed. Bukti:
-  `docs/KEPUTUSAN.md:490-514`; migrasi `000051`, `000054`, `000080`.
+  `limit.<peran>.<jenis>.<sufiks>`; **63 kunci `limit.*`** ter-seed di `000051` (dihitung
+  dari literal `'limit.*'`; 83 kunci config total di migrasi itu). Bukti: migrasi
+  `000051`, `000054`, `000080`; `docs/KEPUTUSAN.md:490-514`. **Selisih dokumen↔kode**:
+  `docs/KEPUTUSAN.md:497` menyebut "72 kunci" — tidak cocok dengan isi migrasi (63).
+  README menetapkan migrasi/kode sebagai sumber kebenaran (`cbs-core/README.md`).
 - Ambang kosong = **setiap** koreksi wajib disetujui (`docs/KEPUTUSAN.md:147-150`).
 
 ### 4.15 Dormant, reversal, koreksi kredit — [V]
@@ -427,9 +431,10 @@ Legenda: **[V]** tervalidasi (ada rujukan dokumen/regulasi **dan** ada uji);
   → **kosong**. Semua kasus uji berupa nilai literal di dalam berkas `*_test.go`
   (370 berkas). Ini justru mudah dipindahkan: setiap uji = kasus + angka harapan eksplisit.
 - **Seed parameter produksi** (bukan data nasabah) ada di migrasi — berguna sebagai
-  *reference config*, bukan golden finansial: `packages/db-migrations/000051` (72 kunci
-  `limit.*`), `000042`/`000069`/`000071` (COA + config CKPN), `000134` (PD/LGD PABL
-  sementara), `000002` (`staff_users` seed dengan hash **placeholder** — tidak bisa login).
+  *reference config*, bukan golden finansial: `packages/db-migrations/000051` (63 kunci
+  `limit.*`; dokumen menyebut 72 — lihat §4.14), `000042`/`000069`/`000071` (COA + config
+  CKPN), `000134` (PD/LGD PABL sementara), `000002` (`staff_users` seed dengan hash
+  **placeholder** — tidak bisa login).
 - **Tidak ada seed nasabah/kredit/rekening contoh** di migrasi (grep `INSERT INTO
   customers/loans/accounts` hanya menemukan COA/parameter, bukan data nasabah).
 - Harness uji integrasi menghasilkan data sintetis per test (`newMoneyEnv`,
@@ -583,8 +588,13 @@ Read-only, akar `cbs-core/` kecuali disebut lain.
 ---
 
 ### Penghitung kejujuran (untuk reviewer)
-- Klaim "data/pengguna nyata di produksi": **belum dapat dipastikan** → ditandai §8.1, §1.
-- Nomor pasal regulasi: hanya **dikutip dari dokumen/kode `cbs-core`**; verifikasi compliance
-  di luar lingkup dan tetap terbuka (spec §4/§1.8) — tidak ada pasal yang saya karang.
-- Modul SHU/koperasi: **tidak ditemukan** (dinyatakan eksplisit §4.16), bukan asumsi diam.
-- Berkas `cbs-core` **tidak diubah**: hanya dibaca (`git -C cbs-core status` diharapkan bersih).
+- Klaim "data/pengguna nyata di produksi": **belum dapat dipastikan** → §8.1, §1.
+- Nomor pasal hanya **dikutip dari dokumen/kode `cbs-core`**; verifikasi compliance tetap
+  terbuka (spec §4/§1.8) — tidak ada pasal yang dikarang.
+- Modul SHU/koperasi **tidak ditemukan** (§4.16), bukan asumsi diam.
+- Berkas `cbs-core` **tidak diubah**: dibaca saja (`git -C cbs-core status` bersih).
+- Klaim `(belum diverifikasi)`: **4** (§1 commit-count, §1 uji web, §8.1 data produksi,
+  §9 dokumen belum dibaca). **Verifikasi pass kedua** mengoreksi 2 angka: `Buildable` OJK
+  (§2.9) = 45 form `OJKBulananForms` (39/6) + 9 laporan `OJKReportDefinitions` (4/5,
+  `definitions.go:65,142`); kunci `limit.*` "72" (`docs/KEPUTUSAN.md:497`) ≠ **63** (`000051`,
+  §4.14). Angka lain cocok (699/370 Go, 78.063 LoC, 134/39/173 migrasi, 62 tabel, `fade1465`).
