@@ -143,6 +143,28 @@ cmd_i18n() {
   ok "katalog i18n lengkap"
 }
 
+cmd_shlint() {
+  log "shell sintaks skrip ops (bash -n + shellcheck)"
+  files=$(find "$ROOT/ops" -type f -name '*.sh' 2>/dev/null | sort)
+  if [ -z "$files" ]; then
+    skip "belum ada skrip ops (T-013)"
+    return 0
+  fi
+  for f in $files; do bash -n "$f" || die "sintaks bash salah: $f"; done
+  if have shellcheck; then
+    # Level `error` memblokir (bug nyata). Temuan level `warning`/`info` dilaporkan saja:
+    # kualitas lint penuh belum diverifikasi di mesin pengembang (shellcheck tidak terpasang),
+    # jadi belum pantas dijadikan gate yang bisa memblokir tanpa bukti.
+    for f in $files; do
+      shellcheck -S error "$f" || die "shellcheck (level error): $f"
+      shellcheck -S warning -f gcc "$f" 2>/dev/null | head -10 || true
+    done
+  else
+    info "shellcheck tidak ada di PATH — hanya bash -n"
+  fi
+  ok "$(printf '%s\n' "$files" | wc -l | tr -d ' ') skrip lolos bash -n"
+}
+
 cmd_check() {
   mkdir -p "$BUILD"
   cmd_fmt_check
@@ -151,6 +173,7 @@ cmd_check() {
   cmd_nomagic
   cmd_paramgen
   cmd_i18n
+  cmd_shlint
 }
 
 run_nim_test() { # run_nim_test <berkas>
@@ -162,6 +185,7 @@ run_nim_test() { # run_nim_test <berkas>
 
 cmd_test() {
   filter="${1:-}"
+  matched=0
   log "unit + property test${filter:+ (filter: $filter)}"
   list=$(test_files)
   if [ -n "$filter" ]; then
@@ -169,10 +193,13 @@ cmd_test() {
   fi
   if [ -z "$list" ]; then
     # Gate ini sengaja asimetris: repo kosong boleh (Fase 0 baru mulai), tetapi kode yang
-    # ada tanpa satu pun test = kegagalan.
-    [ -z "$(nim_files)" ] || die "ada kode Nim tetapi tidak ada test (cari */tests/t*.nim)"
-    skip "belum ada kode maupun test Nim (mulai T-002)"
+    # ada tanpa satu pun test = kegagalan. Dengan filter, daftar kosong itu wajar (mis. filter
+    # hanya cocok untuk integration test); filter yang tidak cocok dengan test mana pun
+    # diperiksa di akhir fungsi.
+    [ -z "$(nim_files)" ] || [ -n "$filter" ] || die "ada kode Nim tetapi tidak ada test (cari */tests/t*.nim)"
+    [ -n "$filter" ] || skip "belum ada kode maupun test Nim (mulai T-002)"
   else
+    matched=1
     for f in $list; do info "$f"; run_nim_test "$f"; done
   fi
 
@@ -182,11 +209,16 @@ cmd_test() {
     its=$(printf '%s\n' "$its" | grep -- "$filter" || true)
   fi
   if [ -z "$its" ]; then
-    skip "belum ada test integrasi (T-004)"
+    [ -n "$filter" ] || skip "belum ada test integrasi (T-004)"
   elif [ -z "$CBS_DATABASE_URL" ]; then
     skip "CBS_DATABASE_URL kosong - test integrasi melewati dirinya sendiri (lihat .local/dev.env / ./task devdb up)"
   else
+    matched=1
     for f in $its; do info "$f"; run_nim_test "$f"; done
+  fi
+
+  if [ -n "$filter" ] && [ "$matched" -eq 0 ]; then
+    die "filter '$filter' tidak cocok dengan test mana pun"
   fi
 
   log "contract test (OpenAPI == implementasi)"

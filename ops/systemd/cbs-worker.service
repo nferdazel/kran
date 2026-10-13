@@ -1,0 +1,38 @@
+# cbs-worker.service — unit systemd USER untuk worker CBS (--role=worker).
+#
+# Spec: §21.4 (#10), §21.5 (Unit), §9 (outbox/worker), §22.
+#
+# Binary & env sama dengan cbs-api (satu binary multi-role, §26.1 #5); bedanya
+# hanya argumen `--role=worker`. Worker memproses outbox/task terjadwal — tidak
+# membuka port HTTP publik.
+#
+# Pasang di server sebagai ~/.config/systemd/user/cbs-worker.service, lalu:
+#   systemctl --user daemon-reload && systemctl --user enable --now cbs-worker
+#
+# CATATAN: sama seperti cbs-api.service, directive namespace (ProtectSystem/
+# ProtectHome) menunggu verifikasi di server sebelum diaktifkan.
+
+[Unit]
+Description=CBS Worker (Nim, --role=worker)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/qouver/apps/cbs
+EnvironmentFile=/srv/qouver/apps/cbs/env/cbs-prod.env
+ExecStart=/srv/qouver/apps/cbs/bin/cbs-api --role=worker
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal
+
+# Opsional, verifikasi dulu di server (kemungkinan diabaikan pada user unit):
+# ProtectSystem=full
+# ProtectHome=read-only
+# ReadWritePaths=/srv/qouver/apps/cbs
+
+[Install]
+WantedBy=default.target
