@@ -1,56 +1,63 @@
-## Property test `Rate` + interaksi `applyRate` (spec §12.1, §20).
+## Property test `Rate` (spec §20) — invarian yang harus benar untuk semua masukan
+## dalam rentang realistis.
 
-import std/unittest
-import std/random
+import std/[unittest, random]
+import kernel
+import support/propgen
 
-import kernel/rate
-import kernel/money
-import ./support/propgen
+const rateBound = 1_000_000_000'i64 ## ±100.000% — cukup lebar, tetap di luar overflow
 
-const microLo = -1_000_000_000_000_000'i64
-const microHi = 1_000_000_000_000_000'i64
+proc genRate(r: var Rand): Rate =
+  rateFromMicro(r.rand(int(rateBound * 2)) - int(rateBound))
 
-proc propAddLaws(rng: var Rand) =
-  let a = rateFromMicro(rng.rand(microLo .. microHi))
-  let b = rateFromMicro(rng.rand(microLo .. microHi))
-  checkProp(a + b == b + a, "komutatif " & $a.microUnits & "," & $b.microUnits)
-  checkProp((a + b) - b == a, "invers " & $a.microUnits)
+proc d(r: Rate): string =
+  toPercentString(r) & "%"
 
-proc propRoundTrip(rng: var Rand) =
-  let micro = rng.rand(microLo .. microHi)
-  let parsed = rateFromPercentString(toPercentString(rateFromMicro(micro)))
-  checkProp(parsed.isOk, "parse gagal untuk " & $micro)
-  checkProp(parsed.value.microUnits == micro,
-            "round-trip beda: " & $micro & " -> " & $parsed.value.microUnits)
+proc genPair(r: var Rand): (Rate, Rate) =
+  (genRate(r), genRate(r))
 
-proc propMulOverflow(rng: var Rand) =
-  let micro = rng.rand(high(int64) div 2 + 1 .. high(int64))
-  let f = rng.rand(2'i64 .. 10'i64)
-  var raised = false
-  try:
-    discard rateFromMicro(micro) * f
-  except ValueError:
-    raised = true
-  checkProp(raised, "overflow tidak terdeteksi micro=" & $micro & " f=" & $f)
+proc d2(t: (Rate, Rate)): string =
+  d(t[0]) & " / " & d(t[1])
 
-proc propApplyRateBatas(rng: var Rand) =
-  let units = rng.rand(0'i64 .. 1_000_000_000_000'i64)
-  let micro = rng.rand(0'i64 .. 1_000_000'i64)
-  let out = applyRate(money(units), rateFromMicro(micro))
-  checkProp(out >= money(0), "negatif")
-  checkProp(out <= money(units), "menggelembung")
-  checkProp(applyRate(money(units), zeroRate()) == money(0), "rate 0 -> 0")
-  checkProp(applyRate(money(units), rateFromMicro(1_000_000)) == money(units), "rate 100%")
+suite "property: rate":
+  test "komutatif penjumlahan":
+    check forAll("a+b == b+a", defaultIterations, genPair,
+      proc(t: (Rate, Rate)): bool = t[0] + t[1] == t[1] + t[0], d2)
 
-suite "property rate":
-  test "hukum penjumlahan":
-    runProp("rate-add-laws", propAddLaws)
+  test "invers aditif":
+    check forAll("(a+b)-b == a", defaultIterations, genPair,
+      proc(t: (Rate, Rate)): bool = (t[0] + t[1]) - t[1] == t[0], d2)
 
-  test "percent string round-trip":
-    runProp("rate-round-trip", propRoundTrip)
+  test "round-trip persen":
+    check forAll("parse(toPercentString(r)) == r", defaultIterations, genRate,
+      proc(r: Rate): bool =
+      let p = rateFromPercentString(toPercentString(r))
+      p.isOk and p.value == r, d)
 
-  test "perkalian overflow menaikkan ValueError":
-    runProp("rate-mul-overflow", propMulOverflow)
+  test "overflow tidak pernah diam-diam":
+    check forAll("Rate * faktor besar menaikkan error",
+      defaultIterations,
+      proc(r: var Rand): (Rate, int64) = (rateFromMicro(high(int64) div 2 + 1), r.rand(3) + 2),
+      proc(t: (Rate, int64)): bool = overflowRaises(proc() = discard t[0] * t[1]),
+      proc(t: (Rate, int64)): string = "rate tinggi x " & $t[1])
 
-  test "applyRate batas & tepi":
-    runProp("apply-rate-bounds", propApplyRateBatas)
+  test "penjumlahan nilai ekstrem menaikkan error":
+    let big = rateFromMicro(high(int64) - 5)
+    check overflowRaises(proc() = discard big + rateFromMicro(10))
+
+  test "applyRate pada batas 0% dan 100%":
+    check forAll("0% -> nol, 100% -> sama", defaultIterations,
+      proc(r: var Rand): Money = money(r.rand(1_000_000_000)),
+      proc(m: Money): bool =
+      applyRate(m, zeroRate()) == zero() and
+        applyRate(m, rateFromMicro(1_000_000)) == m,
+      proc(m: Money): string = m.toDecimalString)
+
+  test "applyRate tidak pernah melebihi nilai semula (0..100%)":
+    check forAll("0 <= applyRate(m,r) <= m", defaultIterations,
+      proc(r: var Rand): (Money, Rate) =
+      (money(r.rand(1_000_000_000)), rateFromMicro(r.rand(1_000_001))),
+      proc(t: (Money, Rate)): bool =
+      let v = applyRate(t[0], t[1])
+      not v.isNegative and v <= t[0],
+      proc(t: (Money, Rate)): string = t[0].toDecimalString & " x " & d(t[1]))

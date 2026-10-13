@@ -1,62 +1,71 @@
 import std/unittest
-
-import kernel/businessdate
-
-proc d(s: string): BusinessDate =
-  parseBusinessDate(s).value
+import std/times
+import kernel
 
 suite "businessdate":
-  test "validasi tanggal nyata":
-    check businessDate(2024, 2, 29).isOk      # kabisat
-    check businessDate(2023, 2, 29).isErr     # bukan kabisat
-    check businessDate(2026, 2, 30).isErr
-    check businessDate(2026, 13, 1).isErr
-    check businessDate(2026, 0, 1).isErr
-    check businessDate(2026, 4, 31).isErr
+  test "parse dan format ISO round-trip":
+    let d = parseBusinessDate("2026-10-13").value
+    check d.year == 2026
+    check d.month == 10
+    check d.day == 13
+    check d.toIso == "2026-10-13"
+    check $d == "2026-10-13"
+    check businessDate(2026, 1, 5).value.toIso == "2026-01-05"
+    check parseBusinessDate(" 2026-10-13 ").value == d
+
+  test "menolak tanggal tidak sah":
+    for s in ["2026-02-30", "2023-02-29", "2026-13-01", "2026-00-10", "2026-10-32",
+              "2026-1-1", "20261013", "2026/10/13", "", "abcd-ef-gh", "2026-10-13T00:00"]:
+      check parseBusinessDate(s).isErr
+    check businessDate(2024, 2, 29).isOk # 2024 kabisat
     check businessDate(0, 1, 1).isErr
+    check businessDate(10000, 1, 1).isErr
 
-  test "isLeapYear":
-    check isLeapYear(2024)
-    check not isLeapYear(2023)
-    check not isLeapYear(1900)
-    check isLeapYear(2000)
+  test "tahun kabisat":
+    # Kualifikasi modul wajib di sini: `std/times` juga mengekspor `isLeapYear`.
+    check businessdate.isLeapYear(2024)
+    check businessdate.isLeapYear(2000)
+    check not businessdate.isLeapYear(2100)
+    check not businessdate.isLeapYear(2023)
+    check daysInMonth(2024, 2) == 29
+    check daysInMonth(2023, 2) == 28
+    check daysInMonth(2026, 4) == 30
 
-  test "parse tepat YYYY-MM-DD":
-    check parseBusinessDate("2026-10-13").isOk
-    check parseBusinessDate("2026-10-13").value.toIso == "2026-10-13"
-    check parseBusinessDate("2026-2-1").isErr
-    check parseBusinessDate("2026-02-30").isErr
-    check parseBusinessDate("2026/10/13").isErr
-    check parseBusinessDate("2026-10-13 ").isErr
+  test "addDays melintasi batas bulan/tahun/kabisat":
+    check parseBusinessDate("2024-02-28").value.addDays(1).toIso == "2024-02-29"
+    check parseBusinessDate("2024-02-28").value.addDays(2).toIso == "2024-03-01"
+    check parseBusinessDate("2023-02-28").value.addDays(1).toIso == "2023-03-01"
+    check parseBusinessDate("2023-12-31").value.addDays(1).toIso == "2024-01-01"
+    check parseBusinessDate("2024-01-01").value.addDays(-1).toIso == "2023-12-31"
+    let d = parseBusinessDate("2026-10-13").value
+    check d.addDays(365).addDays(-365) == d
 
-  test "dayOfWeek ISO-8601":
-    check d("1970-01-01").dayOfWeek == 4    # Kamis
-    check d("2000-01-01").dayOfWeek == 6    # Sabtu
-    check d("2026-10-13").dayOfWeek == 2    # Selasa
-    check d("2024-02-29").dayOfWeek == 4    # Kamis (kabisat)
+  test "daysBetween":
+    let a = parseBusinessDate("2024-01-01").value
+    let b = parseBusinessDate("2024-12-31").value
+    check daysBetween(a, b) == 365
+    check daysBetween(a, parseBusinessDate("2025-01-01").value) == 366 # 2024 kabisat
+    check daysBetween(b, a) == -365
+    check daysBetween(a, a) == 0
 
-  test "addDays lintas bulan/tahun":
-    check d("2024-02-28").addDays(1).toIso == "2024-02-29"
-    check d("2024-02-28").addDays(2).toIso == "2024-03-01"
-    check d("2023-02-28").addDays(1).toIso == "2023-03-01"
-    check d("2024-03-01").addDays(-1).toIso == "2024-02-29"
-    check d("2024-12-31").addDays(1).toIso == "2025-01-01"
+  test "dayOfWeek (ISO: 1=Senin) cocok dengan std/times":
+    # Cross-check independen: tanggal acuan dihitung dengan pustaka standar.
+    for s in ["1970-01-01", "2000-02-29", "2023-01-01", "2024-02-29", "2026-10-13",
+              "2099-12-31", "2026-01-04", "2026-01-05"]:
+      let d = parseBusinessDate(s).value
+      let dt = dateTime(d.year, Month(d.month), d.day, 0, 0, 0, 0, utc())
+      let isoDow = weekday(dt).ord + 1 # WeekDay: dMon..dSun = 0..6
+      check d.dayOfWeek == isoDow
 
-  test "daysBetween lintas kabisat":
-    check daysBetween(d("2024-01-01"), d("2025-01-01")) == 366
-    check daysBetween(d("2023-01-01"), d("2024-01-01")) == 365
-    check daysBetween(d("2024-02-28"), d("2024-03-01")) == 2
-    check daysBetween(d("2023-02-28"), d("2023-03-01")) == 1
-    check daysBetween(d("2024-03-01"), d("2024-02-28")) == -2
-
-  test "isLastDayOfMonth / isLastDayOfYear":
-    check d("2024-02-29").isLastDayOfMonth
-    check not d("2024-02-28").isLastDayOfMonth
-    check d("2026-04-30").isLastDayOfMonth
-    check d("2024-12-31").isLastDayOfYear
-    check not d("2024-12-30").isLastDayOfYear
+  test "akhir bulan/tahun":
+    check parseBusinessDate("2024-02-29").value.isLastDayOfMonth
+    check not parseBusinessDate("2024-02-28").value.isLastDayOfMonth
+    check parseBusinessDate("2023-02-28").value.isLastDayOfMonth
+    check parseBusinessDate("2026-12-31").value.isLastDayOfYear
+    check not parseBusinessDate("2026-12-30").value.isLastDayOfYear
 
   test "urutan":
-    check d("2024-01-01") < d("2024-01-02")
-    check d("2024-01-02") <= d("2024-01-02")
-    check d("2023-12-31") < d("2024-01-01")
+    check parseBusinessDate("2026-01-31").value < parseBusinessDate("2026-02-01").value
+    check parseBusinessDate("2026-02-01").value <= parseBusinessDate("2026-02-01").value
+    check cmp(parseBusinessDate("2026-02-01").value,
+              parseBusinessDate("2026-01-31").value) == 1

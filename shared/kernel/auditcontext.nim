@@ -1,26 +1,45 @@
-## `AuditContext` — konteks audit (spec §13: siapa, cabang, IP, device, alasan) yang otomatis
-## diteruskan ke use case. `userId` = id pelaku; `branchIds` = cakupan cabang (branch scoping).
+## AuditContext — siapa/untuk apa sebuah use case dipanggil (spec §13).
+##
+## Konteks ini **wajib** diteruskan ke use case dan ikut tercatat pada audit log
+## (spec §9.1(7), §11.7 "alasan" pada parameter). Isinya bukan nilai bisnis.
 
 import std/times
-
-import ./ids
-import ./clock
+import ./ids, ./clock
 
 type
-  ## Konteks audit satu aksi. `startedAt` eksplisit agar domain tetap bebas waktu implisit.
   AuditContext* = object
     userId*: Id
-    branchIds*: seq[Id]
-    ip*, device*, reason*, correlationId*: string
-    startedAt*: DateTime
+    branchIds*: seq[Id]  ## cabang yang boleh disentuh (branch scoping, spec §18.2)
+    ip*: string
+    device*: string
+    reason*: string      ## alasan eksplisit; wajib untuk aksi sensitif (unmask, override)
+    correlationId*: string
+    startedAt*: DateTime ## UTC
 
-proc newAuditContext*(userId: Id, branchIds: seq[Id] = @[], ip = "", device = "", reason = "",
-                      correlationId = "", startedAt: DateTime): AuditContext =
-  ## Bangun konteks audit; `startedAt` wajib eksplisit.
-  AuditContext(userId: userId, branchIds: branchIds, ip: ip, device: device, reason: reason,
-               correlationId: correlationId, startedAt: startedAt)
+proc newAuditContext*(
+    userId: Id,
+    branchIds: seq[Id] = @[],
+    ip = "",
+    device = "",
+    reason = "",
+    correlationId = "",
+    startedAt: DateTime,
+): AuditContext =
+  AuditContext(
+    userId: userId,
+    branchIds: branchIds,
+    ip: ip,
+    device: device,
+    reason: reason,
+    correlationId: correlationId,
+    startedAt: startedAt,
+  )
 
-proc newAuditContext*(userId: Id; clock: Clock; branchIds: seq[Id] = @[], ip = "",
-                      device = "", reason = "", correlationId = ""): AuditContext =
-  ## Overload: `startedAt` diambil dari `clock` (UTC).
-  newAuditContext(userId, branchIds, ip, device, reason, correlationId, clock.now())
+proc newAuditContext*(userId: Id, clock: Clock, branchIds: seq[Id] = @[]): AuditContext =
+  ## Varian praktis: waktu & correlation ID diambil dari inject.
+  newAuditContext(
+    userId,
+    branchIds = branchIds,
+    correlationId = newCorrelationId(),
+    startedAt = clock.now(),
+  )

@@ -1,43 +1,54 @@
 import std/unittest
-import std/times
-import std/strutils
+import std/[sets, times]
+import kernel
 
-import kernel/ids
-import kernel/clock
-
-suite "ids":
-  test "newId menghasilkan UUIDv7 valid":
-    let c = fakeClock(dateTime(2026, mOct, 13, 0, 0, 0, 0, utc()))
+suite "ids (UUIDv7)":
+  test "newId menghasilkan UUIDv7 yang valid":
+    let c = fakeClock(dateTime(2026, Month(10), 13, 9, 0, 0, 0, utc()))
     let id = newId(c)
+    check ($id).len == 36
     check isUuidV7($id)
-    check parseId($id).isOk
-    check parseId($id).value == id
+    check ($id)[8] == '-' and ($id)[13] == '-' and ($id)[18] == '-' and ($id)[23] == '-'
+    check ($id)[14] == '7'
+    check ($id)[19] in {'8', '9', 'a', 'b'}
 
-  test "UUIDv7 terurut waktu":
-    let c = fakeClock(dateTime(2026, mOct, 13, 0, 0, 0, 0, utc()))
-    let a = newId(c)
-    c.advance(1)
-    let b = newId(c)
-    check ($a) < ($b)
+  test "prefiks timestamp membuat urutan bertambah seiring waktu":
+    let c = fakeClock(dateTime(2026, Month(10), 13, 9, 0, 0, 0, utc()))
+    let a = $newId(c)
+    c.advance(1) # 1 detik
+    let b = $newId(c)
+    c.advance(3600)
+    let d = $newId(c)
+    check a < b
+    check b < d
 
-  test "newId unik walau waktu sama":
-    let c = fakeClock(dateTime(2026, mOct, 13, 0, 0, 0, 0, utc()))
-    let a = newId(c)
-    let b = newId(c)
-    check a != b
+  test "unik dalam satu milidetik yang sama":
+    let c = fakeClock(dateTime(2026, Month(10), 13, 9, 0, 0, 0, utc()))
+    var seen = initHashSet[string]()
+    for _ in 0 ..< 2000:
+      seen.incl($newId(c))
+    check seen.len == 2000
 
-  test "parseId menolak non-v7 dan bentuk salah":
-    check not isUuidV7("00000000-0000-4000-8000-000000000000")  # versi 4
-    check not isUuidV7("tidak-uuid")
-    check parseId("00000000-0000-4000-8000-000000000000").isErr
-
-  test "parseId menormalkan ke lowercase":
-    let c = fakeClock(dateTime(2026, mOct, 13, 0, 0, 0, 0, utc()))
+  test "parseId round-trip & validasi":
+    let c = systemClock()
     let id = newId(c)
-    check parseId(($id).toUpperAscii()).value == id
+    check parseId($id).value == id
+    check parseId("00000000-0000-7000-8000-000000000000").isOk
+    check parseId("00000000-0000-0000-8000-000000000000").isOk # versi 0 tetap sah diparsing
+    check not isUuidV7("00000000-0000-0000-8000-000000000000")
+    check isUuidV7($parseId("00000000-0000-7000-8000-000000000000").value)
+    check parseId("00000000000070008000000000000000").isErr # tanpa dash
+    check parseId("00000000-0000-7000-8000-00000000000g").isErr
+    check parseId("not-a-uuid").isErr
+    check parseId("00000000-0000-7000-8000-0000000000000").isErr
+    # bentuk huruf besar dinormalkan ke lowercase
+    check $parseId("ABCDEF00-0000-7000-8000-000000000000").value ==
+      "abcdef00-0000-7000-8000-000000000000"
 
-  test "newCorrelationId 32 hex":
-    let corr = newCorrelationId()
-    check corr.len == 32
-    for ch in corr:
-      check ch in {'0' .. '9', 'a' .. 'f'}
+  test "correlation id: 32 hex, unik":
+    let a = newCorrelationId()
+    let b = newCorrelationId()
+    check a.len == 32
+    check a != b
+    for c in a:
+      check c in {'0' .. '9', 'a' .. 'f'}

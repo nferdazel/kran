@@ -78,6 +78,6 @@ proc sensitivityName*(s: ParamSensitivity): string {.inline.} =
 
 const paramScopeResolutionOrder* = [
   ## Urutan resolusi nilai: paling spesifik lebih dulu (spec §10.2).
-  ## Satu tempat saja; dipakai `platform/param` dan diuji di sana.
+    ## Satu tempat saja; dipakai `platform/param` dan diuji di sana.
   pstProduct, pstBranch, pstInstitution, pstSegment, pstRole, pstGlobal
 ]

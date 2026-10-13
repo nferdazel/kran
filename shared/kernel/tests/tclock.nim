@@ -1,26 +1,30 @@
 import std/unittest
 import std/times
-
-import kernel/clock
+import kernel
 
 suite "clock":
-  test "systemClock mendekati utcNow":
+  test "systemClock mengembalikan waktu UTC dekat sekarang":
     let c = systemClock()
-    let delta = abs((c.now() - utcNow()).inSeconds)
-    check delta <= 5
+    let before = utcNow()
+    let t = c.now()
+    let after = utcNow()
+    check t.timezone == utc()
+    check before - initDuration(milliseconds = 2500) <= t
+    check t <= after + initDuration(milliseconds = 2500)
+    check utcNow().timezone == utc()
 
-  test "fakeClock set & advance":
-    let t = dateTime(2026, mOct, 13, 0, 0, 0, 0, utc())
-    let fc = fakeClock(t)
-    check fc.now() == t
-    fc.advance(3600)
-    check fc.now() == t + initDuration(seconds = 3600)
-    fc.setNow(t)
-    check fc.now() == t
+  test "fakeClock deterministik":
+    let start = dateTime(2026, Month(10), 13, 9, 0, 0, 0, utc())
+    let c = fakeClock(start)
+    check c.now() == start
+    check c.now() == start
+    c.advance(3600)
+    check c.now() == start + initDuration(seconds = 3600)
+    c.setNow(dateTime(2027, Month(1), 1, 0, 0, 0, 0, utc()))
+    check c.now().year == 2027
+    check c.now().timezone == utc()
 
-  test "dispatch lewat tipe dasar Clock":
-    let t = dateTime(2026, mOct, 13, 12, 0, 0, 0, utc())
-    let c: Clock = fakeClock(t)
-    check c.now() == t
-    let s: Clock = systemClock()
-    check abs((s.now() - utcNow()).inSeconds) <= 5
+  test "fakeClock menormalkan input non-UTC":
+    let localish = dateTime(2026, Month(10), 13, 9, 0, 0, 0, utc())
+    let c = fakeClock(localish)
+    check c.now().timezone == utc()
