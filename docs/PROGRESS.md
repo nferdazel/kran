@@ -210,3 +210,32 @@ akses bertipe `params.get`, guard drift harian, UI Parameter Admin.
 | T-005 | DONE (DB/repo) | `./task ci` hijau (exit 0, `.build/ci-t005.log`): 187 assertion. 17 test parameter lulus: resolusi 5 scope, efektif-dated, EXCLUDE overlap, maker-checker (+ self-approval ditolak), supersede, startup check, NOTIFY diterima pendengar. Sisa lapisan application → T-016 |
 | T-004 | DONE | `./task ci` hijau (exit 0, `.build/ci-t004.log`): 153 assertion lulus. `./task dbtools migrate` 2× = idempotent; 14 test integrasi platform + 7 test integrasi pool lulus (hash-chain tamper terdeteksi, outbox de-dup, migrasi atomik) |
 | T-003 | DONE | `./task ci` hijau (exit 0, log `.build/ci-t003.log`): 29 berkas terformat, 30 `nim check`, archcheck/lint-nomagic/paramgen sinkron, 97 assertion test lulus (12 berkas). Gate dibuktikan menolak lewat probe nyata (3 temuan magic + 1 pelanggaran rule C) |
+| T-007 | DONE | `./task ci` hijau: `tcalendar` 29 test + `itcalendar` 11 test lulus (kaskade EOD/EOM/EOQ/EOY, libur berulang, transisi state ilegal ditolak, CAS, rollover, mutation test `weekend_days`). Rincian: `docs/tasks/T-007.md` |
+| T-013 | DONE (berkas) | `bash -n` 7/7 skrip (gate `./task check`), `audit-consistency.sh` lokal exit 0, `migrate.sh` exit 2 tanpa argumen, JSON webhook valid, tanpa secret. Belum dijalankan di server. Rincian: `docs/PROGRESS-T013.md` |
+
+## T-007 — Kalender + business date (DONE, commit menyusul)
+
+Scope, keputusan, dan batasan: `docs/tasks/T-007.md`. Ringkas bukti:
+
+- Domain `modules/platform/domain/calendar.nim` + skema `0005_platform_calendar.sql`
+  (`platform.holiday`, `platform.business_date`) + repo `infrastructure/calendar_repo.nim`.
+- Parameter baru `platform.calendar.weekend_days` (json, GLOBAL/BRANCH) → artefak paramgen
+  di-generate ulang; `./task paramgen --check` sinkron.
+- `./task test tcalendar` → 29 test lulus; `./task test itcalendar` → 11 test lulus (DB dev via
+  tunnel): kaskade EOD/EOM/EOQ/EOY, libur berulang tahunan, libur cabang, transisi state ilegal
+  ditolak, CAS, rollover, dan mutation test param (`weekend_days` → `[5,6]` menggeser hari kerja).
+- `./task ci` hijau. Dua test lama diperbaiki agar tidak mengunci jumlah migrasi (dulu hardcode
+  `4`): sekarang dihitung dari `migrationsOf(root)`.
+- Dua deviasi spec §9.3 dicatat di DECISIONS D-011 (setelah diuji langsung ke Postgres, bukan
+  dari ingatan) dan D-012.
+- Perbaikan kecil pada `tools/devdb.sh` (`psql` meneruskan argumen tambahan) dan `tools/paramgen`
+  (reason seed menyebut scope sebenarnya, dulu selalu `'segment pack seed'` meski scope `GLOBAL`).
+
+## T-013 — Artefak `ops/` (DONE, berkas saja)
+
+Dikerjakan subagent latar (general) lalu **diverifikasi ulang sesi ini**: `bash -n` 7/7 skrip
+(sekarang di-gate `./task check`), `audit-consistency.sh` mode lokal exit 0, `migrate.sh` tanpa
+argumen exit 2, JSON webhook valid, scan rahasia bersih (hanya `127.0.0.1`/`CHANGE_ME`).
+`shellcheck` tidak terpasang → level `error` di-gate bila tersedia, level `warning` dicatat
+sebagai O-014. Laporan rinci subagent: `docs/PROGRESS-T013.md`; rencana: `docs/tasks/T-013.md`.
+**Belum pernah dijalankan di server** — itu memang di luar batas task.

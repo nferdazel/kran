@@ -1,0 +1,74 @@
+# Caddyfile.cbs.example — blok Caddy untuk CBS.
+#
+# Spec: §21.5 (site/hostname terpisah + header keamanan lengkap), §21.6 (versi-kan
+# di ops/caddy), audit server 2026-10-13 §4 (P2: header keamanan tidak seragam).
+#
+# Ini CONTOH: file Caddyfile di server (/etc/caddy/Caddyfile) tetap sumber
+# kebenaran. Salin blok yang relevan, lalu `caddy validate` + `systemctl reload caddy`.
+# Hostname pasti & record DNS-nya keputusan pemilik (jangan mengarang DNS).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A. Backoffice web (SPA statis, spec §12, §14). Menggantikan cbs.qouver.com
+#    milik cbs-core saat cutover (§21.5). Reverse-proxy ke web yang di-serve
+#    sendiri (127.0.0.1:3005 pada transisi) — sesuaikan bila diserve statis.
+# ─────────────────────────────────────────────────────────────────────────────
+cbs.qouver.com {
+	encode zstd gzip
+
+	reverse_proxy 127.0.0.1:3005
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# CSP awal (spec §21.5 meminta CSP + frame-ancestors). Sesuaikan setelah
+		# T-010 (aset SvelteKit mungkin butuh nonce/hash). frame-ancestors di sini
+		# melengkapi X-Frame-Options.
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+	}
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# B. API — hostname TERPISAH, bukan menumpang api.qouver.com (§21.5). Port
+#    transisi 8095 (§21.5) diambil alih saat cutover. Ganti hostname bila pemilik
+#    memilih nama lain; ini hanya contoh.
+# ─────────────────────────────────────────────────────────────────────────────
+cbs-api.qouver.com {
+	encode zstd gzip
+
+	# Metrik Prometheus bukan untuk publik (§22): scrape langsung ke 127.0.0.1.
+	handle /metrics* {
+		respond 403
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8095
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# C. Transisi (SELAMA cbs-core masih melayani) — gabungkan `handle` ini ke blok
+#    `api.qouver.com` yang SUDAH ADA. Header ditambahkan di dalam handle supaya
+#    tidak bergantung pada blok induk yang saat ini tanpa header (§21.5).
+#
+#    handle /cbs/* {
+#        uri strip_prefix /cbs
+#        reverse_proxy 127.0.0.1:8095
+#        header {
+#            Strict-Transport-Security "max-age=31536000"
+#            X-Content-Type-Options "nosniff"
+#            X-Frame-Options "DENY"
+#            Referrer-Policy "strict-origin-when-cross-origin"
+#        }
+#    }
+#    handle /hooks/* {
+#        reverse_proxy 127.0.0.1:9000
+#    }
+# ─────────────────────────────────────────────────────────────────────────────
