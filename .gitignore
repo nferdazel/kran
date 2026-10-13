@@ -1,0 +1,26 @@
+# build & tool cache
+.build/
+node_modules/
+.turbo/
+
+# rahasia & konfigurasi lokal (bootstrap config dev, TIDAK pernah masuk repo)
+.local/
+*.env
+!*.env.example
+!**/ops/env/*.env.example
+
+# data cluster lokal (bila pernah dipakai)
+pgdata/
+
+# JS/TS
+.pnpm-store/
+apps/web/.svelte-kit/
+apps/web/build/
+packages/api-client/src/generated/DO_NOT_EDIT.md
+
+# test artifacts
+test-results/
+playwright-report/
+
+# OS
+.DS_Store

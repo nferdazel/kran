@@ -1,0 +1,236 @@
+#!/usr/bin/env sh
+#
+# CBS - satu pintu perintah (AGENTS.md 2).
+#
+#   ./task check   format + lint + archcheck + lint-nomagic + paramgen --check + i18n check
+#   ./task test    unit + property + integration (Postgres) + contract
+#   ./task e2e     Playwright (e2e + axe + visual 2 tema)
+#   ./task ci      semua di atas
+#   ./task build   bangun binary apps/api
+#   ./task fmt     rapikan format (menulis ulang berkas)
+#   ./task devdb   kelola DB dev di server (tunnel) - lihat tools/devdb.sh
+#   ./task help
+#
+# Skrip POSIX sengaja dipilih alih-alih Taskfile/just: tanpa dependensi tooling baru,
+# perintah yang sama dipakai laptop dan CI. Lihat docs/DECISIONS.md D-001.
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$ROOT"
+
+BUILD="$ROOT/.build"
+BIN="$BUILD/bin"
+NIMPATH="-p:$ROOT/shared -p:$ROOT/modules -p:$ROOT/apps -p:$ROOT/tools -p:$ROOT/tools/dbtools"
+NIMFLAGS="--hints:off --warnings:on --path:$ROOT/shared --path:$ROOT/modules --path:$ROOT/apps --path:$ROOT/tools"
+
+# Bootstrap config lokal (bukan nilai bisnis): CBS_DATABASE_URL untuk test integrasi.
+if [ -f "$ROOT/.local/dev.env" ]; then
+  set -a
+  . "$ROOT/.local/dev.env"
+  set +a
+fi
+: "${CBS_DATABASE_URL:=}"
+
+mkdir -p "$BUILD" "$BIN"
+
+SKIPS=""
+
+log()  { printf '\n== %s\n' "$*"; }
+info() { printf '   %s\n' "$*"; }
+ok()   { printf '   ok: %s\n' "$*"; }
+die()  { printf '\n!! GAGAL: %s\n' "$*" >&2; exit 1; }
+skip() { printf '\n-- SKIP: %s\n' "$*"; SKIPS="$SKIPS
+   - $*"; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+nim_files() {
+  find apps modules shared tools -name '*.nim' 2>/dev/null | sort
+}
+test_files() {
+  find shared modules apps -path '*/tests/t*.nim' 2>/dev/null | sort
+}
+it_files() {
+  find shared modules apps -path '*/tests/it*.nim' 2>/dev/null | sort
+}
+
+build_tool() { # build_tool <dir berisi main.nim> -> cetak path binary
+  mkdir -p "$BIN"
+  name=$(basename "$1")
+  nim c $NIMFLAGS --out:"$BIN/$name" "$1/main.nim" >/dev/null || die "gagal build tool $1"
+  printf '%s/%s' "$BIN" "$name"
+}
+
+cmd_fmt() {
+  have nimpretty || die "nimpretty tidak ada di PATH (bagian dari Nim)"
+  for f in $(nim_files); do nimpretty --indent:2 --maxLineLen:100 "$f" >/dev/null; done
+  printf '   ok: format diterapkan\n'
+}
+
+cmd_fmt_check() {
+  log "format (nimpretty)"
+  have nimpretty || die "nimpretty tidak ada di PATH (bagian dari Nim)"
+  n=0
+  bad=""
+  for f in $(nim_files); do
+    n=$((n + 1))
+    if ! nimpretty --indent:2 --maxLineLen:100 --stdin <"$f" 2>/dev/null | diff -q - "$f" >/dev/null 2>&1; then
+      bad="$bad
+   - $f"
+    fi
+  done
+  [ -z "$bad" ] || die "berkas berikut tidak nimpretty-clean:$bad
+   jalankan: ./task fmt"
+  ok "$n berkas"
+}
+
+cmd_lint() {
+  log "lint (nim check)"
+  n=0
+  for f in $(nim_files); do
+    n=$((n + 1))
+    nim check $NIMFLAGS "$f" >"$BUILD/check.log" 2>&1 || {
+      cat "$BUILD/check.log" >&2
+      die "nim check gagal: $f"
+    }
+  done
+  ok "$n berkas"
+}
+
+cmd_archcheck() {
+  log "archcheck (batas arsitektur modul)"
+  [ -d "$ROOT/tools/archcheck" ] || { skip "tools/archcheck belum ada (T-003)"; return 0; }
+  tool=$(build_tool "$ROOT/tools/archcheck")
+  "$tool" "$ROOT" || die "pelanggaran batas arsitektur"
+  ok "batas modul bersih"
+}
+
+cmd_nomagic() {
+  log "lint-nomagic (nilai bisnis tidak boleh di kode)"
+  [ -d "$ROOT/tools/lint-nomagic" ] || { skip "tools/lint-nomagic belum ada (T-003)"; return 0; }
+  tool=$(build_tool "$ROOT/tools/lint-nomagic")
+  "$tool" "$ROOT" || die "magic number bisnis terdeteksi"
+  ok "tidak ada magic number bisnis"
+}
+
+cmd_paramgen() {
+  log "paramgen --check (kode == definisi parameter)"
+  [ -d "$ROOT/tools/paramgen" ] || { skip "tools/paramgen belum ada (T-003)"; return 0; }
+  tool=$(build_tool "$ROOT/tools/paramgen")
+  "$tool" --root "$ROOT" --check || die "kode dan definisi parameter tidak sinkron (jalankan: ./task paramgen-gen)"
+  ok "sinkron"
+}
+
+cmd_paramgen_gen() {
+  tool=$(build_tool "$ROOT/tools/paramgen")
+  "$tool" --root "$ROOT" --gen
+}
+
+cmd_i18n() {
+  log "i18n check (key id+en lengkap, tanpa key yatim)"
+  if [ ! -d "$ROOT/packages/i18n/messages" ]; then
+    skip "packages/i18n/messages belum ada (T-010)"
+    return 0
+  fi
+  tool=$(build_tool "$ROOT/tools/i18ncheck")
+  "$tool" "$ROOT" || die "katalog i18n tidak lengkap"
+  ok "katalog i18n lengkap"
+}
+
+cmd_check() {
+  mkdir -p "$BUILD"
+  cmd_fmt_check
+  cmd_lint
+  cmd_archcheck
+  cmd_nomagic
+  cmd_paramgen
+  cmd_i18n
+}
+
+run_nim_test() { # run_nim_test <berkas>
+  f="$1"
+  name=$(basename "$f" .nim)
+  nim c $NIMFLAGS --out:"$BIN/$name" "$f" >/dev/null || die "gagal kompilasi test $f"
+  "$BIN/$name" || die "test gagal: $f"
+}
+
+cmd_test() {
+  log "unit + property test"
+  list=$(test_files)
+  if [ -z "$list" ]; then
+    # Gate ini sengaja asimetris: repo kosong boleh (Fase 0 baru mulai), tetapi kode yang
+    # ada tanpa satu pun test = kegagalan.
+    [ -z "$(nim_files)" ] || die "ada kode Nim tetapi tidak ada test (cari */tests/t*.nim)"
+    skip "belum ada kode maupun test Nim (mulai T-002)"
+  else
+    for f in $list; do info "$f"; run_nim_test "$f"; done
+  fi
+
+  log "integration test (Postgres)"
+  its=$(it_files)
+  if [ -z "$its" ]; then
+    skip "belum ada test integrasi (T-004)"
+  elif [ -z "$CBS_DATABASE_URL" ]; then
+    skip "CBS_DATABASE_URL kosong - test integrasi melewati dirinya sendiri (lihat .local/dev.env / ./task devdb up)"
+  else
+    for f in $its; do info "$f"; run_nim_test "$f"; done
+  fi
+
+  log "contract test (OpenAPI == implementasi)"
+  if [ ! -d "$ROOT/packages/contracts/openapi" ]; then
+    skip "packages/contracts/openapi belum ada (T-008)"
+  else
+    skip "contract test menunggu keputusan ADR-002 (T-014)"
+  fi
+}
+
+cmd_e2e() {
+  if [ ! -f "$ROOT/apps/web/package.json" ]; then
+    skip "apps/web/package.json belum ada (T-010)"
+    return 0
+  fi
+  have pnpm || die "pnpm tidak ada di PATH"
+  (cd "$ROOT/apps/web" && pnpm run e2e)
+}
+
+cmd_build() {
+  mkdir -p "$BIN"
+  [ -f "$ROOT/apps/api/src/main.nim" ] || die "apps/api/src/main.nim belum ada (T-004)"
+  nim c $NIMFLAGS --mm:orc --threads:on --out:"$BIN/cbs-api" "$ROOT/apps/api/src/main.nim"
+  ok "$BIN/cbs-api"
+}
+
+summarize() {
+  if [ -n "$SKIPS" ]; then
+    printf '\n== catatan: target yang dilewati (belum ada / menunggu keputusan):%s\n' "$SKIPS"
+  fi
+}
+
+cmd_ci() {
+  cmd_check
+  cmd_test
+  cmd_e2e
+  summarize
+  printf '\n== CI hijau\n'
+}
+
+cmd_help() {
+  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+case "${1:-help}" in
+  check) cmd_check ;;
+  test) cmd_test ;;
+  e2e) cmd_e2e ;;
+  ci) cmd_ci ;;
+  build) cmd_build ;;
+  fmt) cmd_fmt ;;
+  lint) cmd_lint ;;
+  archcheck) mkdir -p "$BUILD"; cmd_archcheck ;;
+  nomagic) mkdir -p "$BUILD"; cmd_nomagic ;;
+  paramgen) mkdir -p "$BUILD"; cmd_paramgen ;;
+  paramgen-gen) mkdir -p "$BUILD"; cmd_paramgen_gen ;;
+  i18n) mkdir -p "$BUILD"; cmd_i18n ;;
+  devdb) shift; exec "$ROOT/tools/devdb.sh" "$@" ;;
+  help | -h | --help) cmd_help ;;
+  *) die "perintah tidak dikenal: $1 (coba ./task help)" ;;
+esac

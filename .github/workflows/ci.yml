@@ -1,0 +1,65 @@
+name: CI
+
+# Gerbang verifikasi saja (spec §21.1): tidak membangun image, tidak memanggil webhook,
+# tidak melakukan deploy. Deploy terjadi di server lewat webhook -> deploy-vps.sh.
+#
+# Job ditambahkan bertahap bersama komponennya (lihat docs/ci-jobs.md): job kosong yang
+# selalu hijau tidak menegakkan apa pun.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nim-check:
+    name: Nim (check + unit/property test)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          # Dipin supaya hasil bisa diulang dan berbeda dari toolchain lokal tidak lolos diam-diam.
+          nim-version: '2.2.12'
+
+      - name: Cache nimble
+        uses: actions/cache@v4
+        with:
+          path: ~/.nimble
+          key: nimble-${{ runner.os }}-2.2.12-${{ hashFiles('cbs.nimble') }}
+
+      - name: Install dependencies
+        run: nimble install -d -y
+
+      - name: ./task check
+        # format + nim check + archcheck + lint-nomagic + paramgen --check + i18n check
+        run: ./task check
+
+      - name: ./task test
+        # unit + property. Test integrasi melewati dirinya sendiri tanpa CBS_DATABASE_URL
+        # (job db-tests yang menyediakannya, lihat docs/ci-jobs.md).
+        run: ./task test
+
+  security:
+    name: Security (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
