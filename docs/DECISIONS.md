@@ -59,3 +59,36 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
   - DB `cbs` milik `cbs-core` **tidak disentuh**; tidak ada perubahan config/backup/hook di server.
 - **Alternatif**: Postgres lokal via Docker (ditolak pemilik); hanya CI (verifikasi lokal lemah).
 - **Status**: diterima pemilik (dikonfirmasi di sesi 2026-10-13).
+
+## D-005 — Skrip SQL multi-pernyataan dijalankan lewat `PQexec`, bukan `db_postgres.exec`
+
+- **Konteks**: `db_connector` (`db_postgres.exec`) selalu memakai `PQexecParams`, yang hanya
+  menerima **satu** pernyataan; berkas migrasi berisi banyak pernyataan, termasuk badan fungsi
+  PL/pgSQL. Sebaliknya, parameterisasi query biasa tetap memakai API `db_connector`
+  (`?` + argumen, di-escape client-side oleh `dbQuote`).
+- **Keputusan**: `tools/dbtools.execScript` memanggil `pqexec` (libpq langsung) hanya untuk
+  menjalankan berkas migrasi & bootstrap; semua query aplikasi tetap lewat `db_connector`.
+- **Konsekuensi**: satu titik pemakaian API tingkat rendah, terkurung di runner migrasi; pesan
+  error diambil dari `pqresultErrorMessage`/`pqerrorMessage`.
+- **Alternatif**: memecah berkas migrasi per pernyataan, atau menambah dependensi runner lain
+  (ditolak: nilai tambahnya kecil, risikonya lebih besar).
+
+## D-006 — Hash rantai audit dihitung di database
+
+- **Konteks**: hash chain harus tidak bisa dilewati oleh jalur tulis mana pun, dan hasil
+  verifikasi harus stabil lintas sesi (timezone/`DateStyle` berbeda).
+- **Keputusan**: trigger `platform.audit_log_chain` mengisi `prev_hash` + `hash` memakai
+  `pgcrypto.digest('sha256')` atas payload kanonik (`platform.audit_log_payload()`, UTC
+  eksplisit, tanggal ISO). Aplikasi tidak pernah menulis kolom hash.
+- **Konsekuensi**: rantai ikut menyerialkan append (`pg_advisory_xact_lock`) — aman untuk
+  volume Fase 0, dicatat sebagai risiko skala. Menambah/mengubah kolom payload = seluruh baris
+  lama dianggap rusak sampai fungsi payload disesuaikan (didokumentasikan di `MODULE.md`).
+- **Alternatif**: hash di Nim (ditolak: bisa dilewati, dan menambah implementasi hash sendiri).
+
+## D-007 — Tunnel dev DB tidak boleh mati di tengah sesi
+
+- **Konteks**: master koneksi SSH `ControlPersist=600` menutup tunnel setelah 10 menit idle →
+  test integrasi gagal `Connection refused` di tengah sesi panjang (kejadian nyata 2026-10-13).
+- **Keputusan**: `tools/devdb.sh` menerima `CBS_DEVDB_PERSIST` (default tetap 600 detik);
+  nilai panjang (7200) diset di `.local/dev.env` (mesin-lokal, gitignored).
+- **Konsekuensi**: perilaku default repo tidak berubah; sesi kerja lokal tidak lagi terputus.

@@ -9,6 +9,7 @@
 #   ./task build   bangun binary apps/api
 #   ./task fmt     rapikan format (menulis ulang berkas)
 #   ./task devdb   kelola DB dev di server (tunnel) - lihat tools/devdb.sh
+#   ./task dbtools migrate|status|validate   migrasi SQL (butuh CBS_DATABASE_URL)
 #   ./task help
 #
 # Skrip POSIX sengaja dipilih alih-alih Taskfile/just: tanpa dependensi tooling baru,
@@ -247,6 +248,7 @@ case "${1:-help}" in
   paramgen-gen) mkdir -p "$BUILD"; cmd_paramgen_gen ;;
   i18n) mkdir -p "$BUILD"; cmd_i18n ;;
   devdb) shift; exec "$ROOT/tools/devdb.sh" "$@" ;;
+  dbtools) shift; mkdir -p "$BUILD"; tool=$(build_tool "$ROOT/tools/dbtools"); "$tool" --root "$ROOT" "$@" ;;
   help | -h | --help) cmd_help ;;
   *) die "perintah tidak dikenal: $1 (coba ./task help)" ;;
 esac

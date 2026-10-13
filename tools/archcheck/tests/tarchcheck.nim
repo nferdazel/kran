@@ -97,3 +97,21 @@ suite "archcheck: escape hatch & klasifikasi":
   test "expandBracketForm":
     check expandBracketForm("std/[a, b]") == @["std/a", "std/b"]
     check expandBracketForm("std/strutils") == @["std/strutils"]
+
+  test "paket pihak ketiga bukan pelanggaran batas modul":
+    check scanSource(infraLending, "import db_connector/db_postgres\n").len == 0
+    check scanSource(infraLending, "import db_connector/postgres\n").len == 0
+    check scanSource(infraLending, "import yaml\n").len == 0
+    check scanSource(infraLending, "import std/json, db_connector/db_postgres\n").len == 0
+    # ...tetapi internal modul bisnis tetap pelanggaran
+    let v = scanSource(infraLending, "import deposit/infrastructure/pg_repo\n")
+    check v.len == 1
+    check v[0].rule == "C"
+
+  test "import berkutip (nama dir bertanda hubung) tidak salah dianggap modul bisnis":
+    let rel = "modules/lending/infrastructure/pg_repo.nim"
+    check scanSource(rel, "import \"platform-lib/db/pool\"\n").len == 0
+    check scanSource(rel, "import \"platform-lib/log\"\n").len == 0
+    check scanSource(domLending, "import \"platform-lib/db/pool\"\n").len == 1
+    check unquote("\"platform-lib/db/pool\"") == "platform-lib/db/pool"
+    check unquote("platform-lib/db/pool") == "platform-lib/db/pool"
