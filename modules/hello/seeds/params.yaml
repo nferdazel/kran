@@ -1,0 +1,6 @@
+# Definisi parameter modul `hello` (spec §10.3).
+#
+# Belum ada parameter. Tambahkan di sini, lalu jalankan `./task paramgen-gen` supaya
+# konstanta bertipe ikut ter-regenerate. Nilai bisnis tidak boleh ditulis di kode
+# (spec §10.4, dijaga `tools/lint-nomagic`).
+[]
