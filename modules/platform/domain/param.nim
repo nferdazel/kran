@@ -200,3 +200,18 @@ proc typeShapeMessage*(valueType: ParamValueType): string =
   of pvtRate: "string persen"
   of pvtDate: "string tanggal ISO (YYYY-MM-DD)"
   of pvtJson: "JSON apa saja"
+
+type
+  ParamSnapshot* = object
+    ## Nilai aktif + definisi minimum yang diperlukan untuk konversi bertipe (spec §10.4).
+    ## Dipakai bersama cache in-proc supaya aturan validasi tetap satu tempat.
+    value*: JsonNode
+    valueType*: ParamValueType
+    schema*: JsonNode
+
+proc checkedSnapshot*[T](key: string, snapshot: ParamSnapshot): Result[T, ParamError] =
+  ## Validasi bentuk tipe **dan** schema, lalu konversi (urutan ini supaya pesan errornya jelas).
+  if not valueMatchesType(snapshot.valueType, snapshot.value):
+    return err[T, ParamError](paramError(pekTypeMismatch, key,
+      "nilai tidak sesuai tipe " & valueTypeName(snapshot.valueType) & ": " & $snapshot.value))
+  checkedValue[T](key, snapshot.value, snapshot.schema)
