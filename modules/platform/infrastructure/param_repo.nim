@@ -65,7 +65,7 @@ proc singleRow*(db: DbConn, q: SqlQuery, args: varargs[string, `$`]): Option[Row
   else:
     some(rows[0])
 
-proc pgArrayItems(raw: string): seq[string] =
+proc pgArrayItems*(raw: string): seq[string] =
   for item in raw.strip(chars = {'{', '}'}).split(','):
     let s = item.strip()
     if s.len > 0:
