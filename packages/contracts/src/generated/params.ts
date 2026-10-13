@@ -34,6 +34,23 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "platform.calendar.weekend_days",
+    "module": "platform",
+    "valueType": "json",
+    "tsType": "unknown",
+    "scopes": [
+      "GLOBAL",
+      "BRANCH"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.calendar.weekend_days",
+    "jsonSchema": {
+      "type": "array"
+    }
+  },
+  {
     "key": "platform.security.password_min_length",
     "module": "platform",
     "valueType": "integer",

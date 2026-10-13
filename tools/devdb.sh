@@ -66,7 +66,7 @@ case "${1:-status}" in
   up) up ;;
   down) down ;;
   status) status ;;
-  psql) load_env; exec psql "$CBS_DATABASE_URL" ;;
+  psql) load_env; exec psql "$CBS_DATABASE_URL" "$@" ;;
   url) load_env; printf '%s\n' "$CBS_DATABASE_URL" ;;
   *) die "perintah tidak dikenal: $1 (up|down|status|psql|url)" ;;
 esac

@@ -1,7 +1,7 @@
 # Modul `platform`
 
-Lintas-modul: audit trail, outbox/inbox, dan (menyusul) user/role/session, parameter,
-kalender, workflow, notifikasi (spec §8, §9.2).
+Lintas-modul: audit trail, outbox/inbox, parameter, kalender & business date, dan (menyusul)
+user/role/session, workflow, notifikasi (spec §8, §9.2).
 
 ## Isi saat ini (T-004)
 
@@ -12,7 +12,7 @@ kalender, workflow, notifikasi (spec §8, §9.2).
 | Repo audit | `infrastructure/audit_repo.nim` | `appendAudit`, `verifyChain` |
 | Repo outbox | `infrastructure/outbox_repo.nim` | `appendEvent`, `claimBatch`, `markDone/Failed`, `redrive` |
 | Repo inbox | `infrastructure/inbox_repo.nim` | `claimInbox` (de-dup per konsumen) |
-| Migrasi | `migrations/0001..0003` | schema, audit_log, outbox+inbox |
+| Migrasi | `migrations/0001..0005` | schema, audit_log, outbox+inbox, parameter, kalender |
 
 `api.nim` (permukaan publik modul) menyusul bersama T-005 (parameter) / T-006 (auth):
 saat ini belum ada konsumen lintas-modul, jadi belum ada yang perlu diekspor.
@@ -22,6 +22,8 @@ saat ini belum ada konsumen lintas-modul, jadi belum ada yang perlu diekspor.
 - `platform.schema_migration` — dibuat `tools/dbtools`, bukan migrasi modul.
 - `platform.audit_log` — **append-only** + hash chain.
 - `platform.outbox`, `platform.inbox` — transactional outbox + de-dup.
+- `platform.param_definition`, `platform.param_value` — parameter framework (T-005).
+- `platform.holiday`, `platform.business_date` — kalender & tanggal buku (T-007).
 
 ## Invarian yang tidak boleh dilanggar
 
@@ -81,3 +83,26 @@ Jebakan yang sudah ditemukan (jangan diulang):
 - `db_connector.getRow` mengembalikan kolom kosong untuk 0 baris → pakai `singleRow`/`getAllRows`.
 - `db_postgres.exec` hanya menerima status COMMAND_OK → `SELECT` (mis. advisory lock, `pg_notify`)
   harus lewat `getValue`/`execScript`.
+
+## Kalender & business date (T-007)
+
+| Bagian | Berkas |
+|---|---|
+| Domain | `domain/calendar.nim` — `CalendarShape`, hari kerja, `nextWorkingDay`, `closeLevelsFor`, state + `canTransition` |
+| Repo | `infrastructure/calendar_repo.nim` — bentuk kalender dari param, `platform.holiday`, lifecycle business date (`ensure`/`transition`/`rollover`), `workingDayInfo` |
+| Migrasi | `0005_platform_calendar.sql` |
+| Parameter | `platform.calendar.weekend_days` (json, nomor hari ISO 1=Senin…7=Minggu), `platform.calendar.fiscal_year_start_month` |
+
+Invarian tambahan:
+
+9. **Nilai kalender tidak di kode**: akhir pekan & awal tahun fiskal dari parameter, hari libur
+   dari `platform.holiday`. Tidak ada fallback bila param kosong (error).
+10. **Jalur state business date hanya satu**: `OPEN → CLOSING → CLOSED`, lalu rollover mengubah
+    `current_business_date` pada baris `CLOSED` (state kembali `OPEN`). Reopen/reverse EOD
+    dilarang sampai ada kebijakan approval (§11.7). Transisi dijaga `canTransition` + CAS
+    (`UPDATE ... WHERE state = expected`).
+11. **`current_business_date`, bukan `current_date`** — D-011; keunikan scope lewat
+    `UNIQUE INDEX (scope_type, COALESCE(scope_id,''))`, karena Postgres menolak ekspresi di PK.
+
+Catatan penempatan: `CloseLevel` masih di `domain/calendar.nim`. Saat modul `daycloser` lahir
+(Fase 3), tipe itu pindah ke sana dan modul ini hanya menyediakan `closeLevelsFor`.

@@ -415,7 +415,8 @@ proc renderValuesSql*(pack: string, defs: seq[ParamDef]): string =
     result.add("VALUES\n  (md5('" & d.key & "|" & pack & "')::uuid, '" & d.key & "', '" &
       scopeType & "', " & (if scopeId.len == 0: "NULL" else: "'" & scopeId & "'") & ", '" &
       jsonString(value) & "'::jsonb, DATE '" & d.effectiveFrom &
-      "', 'ACTIVE', '" & seedMakerUuid & "', '" & seedCheckerUuid & "', 'segment pack seed')\n")
+      "', 'ACTIVE', '" & seedMakerUuid & "', '" & seedCheckerUuid & "', 'pack seed: " &
+      pack & " @ " & scopeType & "')\n")
     result.add("ON CONFLICT (param_value_id) DO NOTHING;\n\n")
 
 proc outputsOf*(root: string, defs: seq[ParamDef]): seq[Output] =

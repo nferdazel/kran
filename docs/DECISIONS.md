@@ -127,3 +127,32 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
 - **Keputusan**: modul memakai helper `singleRow` di atas `getAllRows` untuk mengambil opsional
   satu baris; `getRow` tidak dipakai di repo platform.
 - **Konsekuensi**: satu helper kecil dan jelas; jebakan ini didokumentasikan di MODULE.md/T-005.
+
+## D-011 — Koreksi DDL spec §9.3 (`business_date`)
+
+- **Konteks**: contoh DDL `platform.business_date` di spec §9.3 **tidak valid di PostgreSQL 18**
+  (diuji langsung ke DB dev, bukan dari ingatan):
+  1. `current_date` sebagai nama kolom tanpa kutip = `syntax error` (bentrok kata kunci
+     `CURRENT_DATE`); memakai tanda kutip di semua query akan mudah salah.
+  2. `PRIMARY KEY (scope_type, COALESCE(scope_id, '...'))` = `syntax error` — Postgres tidak
+     menerima ekspresi di kolom PRIMARY KEY (ekspresi hanya boleh di `CREATE INDEX`/`EXCLUDE`).
+- **Keputusan**: kolom dinamai `current_business_date`; keunikan scope dijaga
+  `CREATE UNIQUE INDEX business_date_scope_uq (scope_type, COALESCE(scope_id, ''))`, dan
+  `scope_id` tetap `NULL` untuk scope akar (institusi). `scope_id` bertipe `text` (bukan `uuid`)
+  supaya seragam dengan `platform.param_value.scope_id` (spec §10.2) dan `platform.holiday`.
+- **Konsekuensi**: spec §9.3 perlu diperbarui saat ada kesempatan (bukan blocker). Tabel baru
+  lain di modul `platform` mengikuti pola yang sama: `scope_id text` + unique index ekspresi.
+- **Alternatif yang ditolak**: sentinel UUID untuk scope akar (mengubah makna "NULL = institusi"
+  yang dipakai `param_value`) dan selalu mengutip `"current_date"` (rapuh, mudah terlewat).
+
+## D-012 — `weekend_days` disemai di GLOBAL, bukan SEGMENT
+
+- **Konteks**: parameter `platform.calendar.weekend_days` awalnya dideklarasikan dengan scope
+  `[GLOBAL, BRANCH, SEGMENT]`. Aturan seed D-009 menyemai ke `SEGMENT` (scope_id = nama pack)
+  bila `SEGMENT` diizinkan — akibatnya nilai awal hanya terbaca oleh pemanggil yang menyebut
+  segmen `base`, dan pembacaan biasa (institusi/cabang) tidak menemukan nilai sama sekali.
+- **Keputusan**: `scopes: [GLOBAL, BRANCH]` — nilai awal di `GLOBAL`, cabang boleh menimpa.
+  Variasi pekan kerja per **segmen** ditunda; bila nanti dibutuhkan, itu mengubah aturan seed
+  pack (D-009), bukan sekadar menambah baris seed.
+- **Konsekuensi**: konsumen kalender tidak perlu tahu nama pack. Keterbatasan lookup institusi
+  dari konteks cabang dicatat di OPEN_ITEMS O-012.
