@@ -62,12 +62,14 @@ suite "paramgen: validasi key & tipe":
 suite "paramgen: generate":
   test "loadAllDefs membaca YAML fixture, urut & lengkap":
     let defs = loadAllDefs(fixtureRoot)
-    check defs.len == 5
-    check defs[0].key == "deposit.savings.min_balance"
+    check defs.len == 6
+    check defs[0].key == "deposit.payroll.admin_fee"
     check defs[^1].key == "platform.calendar.fiscal_year_start_month"
     check defs[0].module == "deposit"
-    check defs[0].valueType == "money"
     check defs[0].defaultPack["base"].kind == JString
+    let minBalance = defs.filterIt(it.key == "deposit.savings.min_balance")[0]
+    check minBalance.valueType == "money"
+    check not minBalance.requiresApproval
     let lending = defs.filterIt(it.key == "lending.collectibility.dpd.kl")[0]
     check lending.sensitivity == "CRITICAL"
     check lending.regulatoryRefs == @["REG-204"]
@@ -80,9 +82,10 @@ suite "paramgen: generate":
     check nim.contains("const P_lending_collectibility_dpd_kl* = ParamKey[int64]")
     check nim.contains("""ParamKey[Rate]("lending.ppap.rate.kl")""")
     check nim.contains("""ParamKey[Money]("deposit.savings.min_balance")""")
+    check nim.contains("""ParamKey[Money]("deposit.payroll.admin_fee")""")
     check nim.contains("""ParamKey[string]("deposit.statement.line_label")""")
     check nim.contains("valueType: pvtInteger")
-    check nim.contains("scopes: {pstProduct, pstBranch}")
+    check nim.contains("scopes: {pstGlobal, pstProduct, pstBranch}")
     check nim.contains("sensitivity: psCritical")
     check nim.contains("requiresApproval: false")
     check nim.contains("regulatoryRefs: @[\"REG-204\"]")
@@ -132,6 +135,23 @@ suite "paramgen: generate":
     let defs = loadAllDefs(fixtureRoot)
     let base = renderValuesSql("base", defs)
     check base.contains("'GLOBAL', NULL")
+    check base.contains("'SEGMENT', 'base'") # deposit.payroll.admin_fee
+
+  test "parameter tanpa SEGMENT/GLOBAL tidak bisa disemai -> error jelas":
+    var raised = false
+    try:
+      discard seedScope(loadAllDefs(fixtureRoot)[0], "base") # min_balance kini punya GLOBAL
+      let deposit = loadAllDefs(fixtureRoot)
+      for d in deposit:
+        if d.key == "deposit.payroll.admin_fee":
+          discard seedScope(d, "base") # punya SEGMENT -> boleh
+      # definisi tanpa SEGMENT/GLOBAL:
+      var def = ParamDef(key: "x.y", scopes: @["INSTITUTION"])
+      discard seedScope(def, "base")
+    except ParamgenError as e:
+      raised = true
+      check e.msg.contains("tidak bisa disemai")
+    check raised
 
   test "packNames hanya pack yang benar-benar dipakai":
     check packNames(loadAllDefs(fixtureRoot)) == @["base", "bpr", "koperasi"]
