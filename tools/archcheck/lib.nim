@@ -10,7 +10,7 @@
 ##
 ## Escape hatch: `# archcheck:ok <alasan-obligatoris>` pada baris import yang sama.
 
-import std/[strutils, os]
+import std/[strutils, os, algorithm]
 
 type
   Category* = enum
@@ -31,12 +31,26 @@ type
 const
   layerNames = ["domain", "application", "infrastructure", "interface"]
   ## Awalan yang bukan nama modul bisnis; import ke sini tidak dianggap menembus modul.
-  knownRoots = ["std", "kernel", "pkg", "apps", "tools", "shared", "modules", "system"]
+  knownRoots = ["std", "kernel", "pkg", "apps", "tools", "shared", "modules", "system",
+                "platform-lib"]
+  ## Nama modul bisnis menurut spec §7/§8. `scanRoot` menggantinya dengan daftar nyata dari
+  ## struktur direktori; daftar ini hanya default supaya pemeriksaan teks tetap bisa diuji.
+  ## Import ke paket pihak ketiga (`db_connector/...`) bukan pelanggaran batas modul.
+  knownModuleNames* = ["platform", "party", "product", "deposit", "lending", "teller",
+                       "ledger", "daycloser", "compliance", "reporting", "tax", "coop",
+                       "sharia"]
   hatch = "# archcheck:ok"
+
+proc unquote*(s: string): string =
+  ## Nim mengizinkan `import "platform-lib/db/pool"` (perlu untuk nama dir ber-tanda hubung).
+  if s.len >= 2 and s[0] == '"' and s[^1] == '"':
+    s[1 .. ^2]
+  else:
+    s
 
 proc normalizeImport*(imp: string): string =
   ## Buang `./` dan `../` berulang supaya bentuk relatif dan bentuk `-p:modules` sama.
-  var s = imp.strip()
+  var s = unquote(imp.strip())
   while s.startsWith("./") or s.startsWith("../"):
     if s.startsWith("./"):
       s = s[2 .. ^1]
@@ -122,27 +136,35 @@ proc layerOf*(n: string): string =
       return layer
   ""
 
-proc isCrossModuleInternal*(imp: string, ownModule: string): bool =
-  ## True bila import menembus internal modul lain (bukan lewat `/api`).
+proc isCrossModuleInternal*(imp: string, ownModule: string,
+                            modules: openArray[string] = knownModuleNames): bool =
+  ## True bila import menembus internal **modul bisnis** lain (bukan lewat `/api`).
+  ## Import ke paket pihak ketiga atau ke akar bersama (kernel/platform-lib) bukan pelanggaran.
   let n = normalizeImport(imp)
   if not n.contains('/'):
     return false
   let head = n.split('/')[0]
   if head == ownModule or head in knownRoots or head in layerNames:
     return false
+  if head notin modules:
+    return false
   let rest = n[head.len + 1 .. ^1]
   not rest.startsWith("api")
 
 proc forbiddenForDomain(imp: string): bool =
   let n = normalizeImport(imp)
-  n.startsWith("db_connector") or n.startsWith("db_postgres") or
+  ## `platform-lib` membungkus DB/HTTP/log: tidak ada urusan di domain yang murni.
+  n.startsWith("platform-lib") or
+    n.startsWith("db_connector") or n.startsWith("db_postgres") or
     n.startsWith("std/asyncdispatch") or n.startsWith("std/net") or
     n.startsWith("std/httpclient") or n.startsWith("std/osproc") or
     n.startsWith("std/os")
 
 proc forbiddenForApplication(imp: string): bool =
   let n = normalizeImport(imp)
-  n.startsWith("db_connector") or n.startsWith("db_postgres") or
+  ## Application boleh memakai `platform-lib/log` (cross-cutting), tetapi bukan pool DB/HTTP.
+  n.startsWith("platform-lib/db") or
+    n.startsWith("db_connector") or n.startsWith("db_postgres") or
     n.startsWith("std/httpclient")
 
 proc isKernelForeignImport(imp: string): bool =
@@ -156,7 +178,8 @@ proc isKernelForeignImport(imp: string): bool =
 proc violation(path: string, line: int, rule, message: string): Violation =
   Violation(path: path, line: line, rule: rule, message: message)
 
-proc scanSource*(relPath, source: string): seq[Violation] =
+proc scanSource*(relPath, source: string,
+                 modules: openArray[string] = knownModuleNames): seq[Violation] =
   ## Pindai satu berkas. `relPath` relatif terhadap akar repo (mis. `modules/x/domain/y.nim`).
   let (category, module) = classify(relPath)
   if category == catSkip:
@@ -177,7 +200,7 @@ proc scanSource*(relPath, source: string): seq[Violation] =
           result.add violation(relPath, lineNo, "D",
             "kernel hanya boleh stdlib & sesama kernel: " & imp)
         continue
-      if isCrossModuleInternal(imp, module):
+      if isCrossModuleInternal(imp, module, modules):
         result.add violation(relPath, lineNo, "C",
           "modul hanya lewat api.nim modul lain, bukan internalnya: " & imp)
         continue
@@ -199,9 +222,19 @@ proc scanSource*(relPath, source: string): seq[Violation] =
       else:
         discard
 
+proc moduleNamesUnder*(root: string): seq[string] =
+  ## Nama modul nyata dari `modules/` — dipakai supaya aturan C tidak menebak dari daftar.
+  let dir = root / "modules"
+  if dirExists(dir):
+    for kind, path in walkDir(dir):
+      if kind in {pcDir, pcLinkToDir}:
+        result.add extractFilename(path)
+  result.sort()
+
 proc scanRoot*(root: string): seq[Violation] =
   ## Telusuri `root` dan pindai semua berkas `.nim` yang relevan.
   let skipDirs = [".git", ".build", "node_modules", ".local", "nimcache"]
+  let modules = moduleNamesUnder(root)
   for path in walkDirRec(root, yieldFilter = {pcFile}):
     let rel = relativePath(path, root).replace('\\', '/')
     var skip = false
@@ -218,7 +251,7 @@ proc scanRoot*(root: string): seq[Violation] =
       source = readFile(path)
     except CatchableError:
       continue
-    result.add scanSource(rel, source)
+    result.add scanSource(rel, source, modules)
 
 proc formatViolation*(v: Violation): string =
   v.path & ":" & $v.line & ": [" & v.rule & "] " & v.message

@@ -20,6 +20,9 @@ SOCK="$ROOT/.local/devdb.sock"
 LOCAL_PORT="${CBS_DEVDB_PORT:-55432}"
 SSH_HOST="${CBS_DEVDB_SSH:-sachiel@43.133.148.191}"
 SSH_KEY="${CBS_DEVDB_SSH_KEY:-$HOME/.ssh/id_ed25519}"
+# Berapa lama master koneksi bertahan setelah idle (detik). Naikkan bila menjalankan
+# test integrasi panjang; mesin-lokal, jangan dijadikan nilai di repo.
+SSH_PERSIST="${CBS_DEVDB_PERSIST:-600}"
 
 die() { printf '!! %s\n' "$*" >&2; exit 1; }
 load_env() {
@@ -38,7 +41,7 @@ up() {
   mkdir -p "$ROOT/.local"
   ssh -f -N \
     -o BatchMode=yes -o ExitOnForwardFailure=yes \
-    -o ControlMaster=yes -o ControlPath="$SOCK" -o ControlPersist=600 \
+    -o ControlMaster=yes -o ControlPath="$SOCK" -o ControlPersist="$SSH_PERSIST" \
     -i "$SSH_KEY" \
     -L "127.0.0.1:$LOCAL_PORT:127.0.0.1:5432" \
     "$SSH_HOST"
