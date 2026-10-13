@@ -1,0 +1,18 @@
+# Fixture: modul `lending` (bentuk mengikuti contoh spec §10.3).
+
+- key: lending.collectibility.dpd.kl
+  type: integer
+  scopes: [INSTITUTION, SEGMENT]
+  schema: { minimum: 1, maximum: 365 }
+  sensitivity: CRITICAL
+  regulatory_refs: [REG-204]
+  default_pack: { bpr: 91, koperasi: 91 }
+  description_key: param.lending.collectibility.dpd.kl
+
+- key: lending.ppap.rate.kl
+  type: rate
+  scopes: [INSTITUTION, SEGMENT]
+  schema: { minimum: 0, maximum: 100 }
+  sensitivity: CRITICAL
+  regulatory_refs: [REG-204]
+  default_pack: { bpr: "0.5", koperasi: "0.5" }
