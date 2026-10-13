@@ -28,3 +28,15 @@
   schema: { minimum: 1, maximum: 12 }
   sensitivity: NORMAL
   default_pack: { base: 1 }
+
+# Hari kerja tidak di-hardcode: bentuk akhir pekan adalah kebijakan institusi/segmen
+# (mis. Jumat–Sabtu untuk segmen tertentu). Nomor hari ISO: 1 = Senin … 7 = Minggu.
+- key: platform.calendar.weekend_days
+  type: json
+  # Tanpa SEGMENT: nilai pack masuk scope GLOBAL (aturan seed D-009), sementara cabang yang
+  # butuh pekan kerja berbeda bisa menimpanya di scope BRANCH. Variasi per segmen menyusul
+  # bila memang dibutuhkan (akan mengubah aturan seed pack, bukan sekadar menambah baris).
+  scopes: [GLOBAL, BRANCH]
+  schema: { type: array }
+  sensitivity: NORMAL
+  default_pack: { base: [6, 7] }

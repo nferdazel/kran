@@ -56,12 +56,14 @@ proc tempRoot(name: string): string =
 
 suite "platform: migrasi":
   test "menerapkan semua, lalu idempotent (up 2x aman)":
+    let jumlahMigrasi = migrationsOf(repoRoot).len
+    check jumlahMigrasi > 0
     let first = applyMigrations(db, repoRoot)
-    check first.applied.len == 4
+    check first.applied.len == jumlahMigrasi
     check first.skipped.len == 0
     let second = applyMigrations(db, repoRoot)
     check second.applied.len == 0
-    check second.skipped.len == 4
+    check second.skipped.len == jumlahMigrasi
     check db.getValue(
       sql"SELECT (to_regclass('platform.schema_migration') IS NOT NULL)::text") == "true"
     check db.getValue(
@@ -70,7 +72,8 @@ suite "platform: migrasi":
       sql"SELECT (to_regclass('platform.inbox') IS NOT NULL)::text") == "true"
     check db.getValue(
       sql"SELECT (to_regclass('platform.audit_log') IS NOT NULL)::text") == "true"
-    check db.getValue(sql"SELECT count(*) FROM platform.schema_migration") == "4"
+    check db.getValue(sql"SELECT count(*) FROM platform.schema_migration") ==
+      $jumlahMigrasi
 
   test "berkas migrasi yang sudah diterapkan tidak boleh berubah (checksum)":
     let root = tempRoot("drift")
@@ -97,7 +100,9 @@ suite "platform: migrasi":
     check raised
     check db.getValue(
       sql"SELECT (to_regclass('platform.probe_broken') IS NULL)::text") == "true"
-    check db.getValue(sql"SELECT count(*) FROM platform.schema_migration") == "4"
+    # semua migrasi asli sudah tercatat pada test pertama; probe yang gagal tidak tercatat
+    check db.getValue(sql"SELECT count(*) FROM platform.schema_migration") ==
+      $migrationsOf(repoRoot).len
 
 suite "platform: outbox":
   test "de-dup: publisher yang di-retry tidak menggandakan peristiwa":

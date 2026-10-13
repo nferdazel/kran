@@ -3,14 +3,18 @@
 ## Ubah definisi di `modules/<m>/seeds/params.yaml`, lalu jalankan `./task paramgen-gen`.
 
 import ../paramkey
+import std/json
 
 const paramKeys*: seq[string] = @[
   "platform.calendar.fiscal_year_start_month",
+  "platform.calendar.weekend_days",
   "platform.security.password_min_length",
   "platform.security.session_idle_minutes",
 ]
 
 const P_platform_calendar_fiscal_year_start_month* = ParamKey[int64]("platform.calendar.fiscal_year_start_month")
+
+const P_platform_calendar_weekend_days* = ParamKey[JsonNode]("platform.calendar.weekend_days")
 
 const P_platform_security_password_min_length* = ParamKey[int64]("platform.security.password_min_length")
 
@@ -26,6 +30,17 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.platform.calendar.fiscal_year_start_month",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "platform.calendar.weekend_days",
+    module: "platform",
+    valueType: pvtJson,
+    scopes: {pstGlobal, pstBranch},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.platform.calendar.weekend_days",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(
