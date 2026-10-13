@@ -92,3 +92,38 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
 - **Keputusan**: `tools/devdb.sh` menerima `CBS_DEVDB_PERSIST` (default tetap 600 detik);
   nilai panjang (7200) diset di `.local/dev.env` (mesin-lokal, gitignored).
 - **Konsekuensi**: perilaku default repo tidak berubah; sesi kerja lokal tidak lagi terputus.
+
+## D-008 — Baris SUPERSEDED tetap menjawab tanggal lampau; EXCLUDE mencakup ACTIVE + SUPERSEDED
+
+- **Konteks**: saat nilai baru diaktifkan, nilai lama harus berhenti berlaku. Bila nilai lama
+  hanya ditandai `SUPERSEDED` dan query `as_of` menyaring `status = 'ACTIVE'`, maka tanggal
+  historis kehilangan nilai (gap) — terdeteksi oleh test resolusi/supersede (T-005).
+- **Keputusan**: `approve` memangkas `effective_to` nilai lama (= `effective_from` baru) dan
+  menandainya `SUPERSEDED`; query nilai berlaku menyertakan `ACTIVE` **dan** `SUPERSEDED`.
+  EXCLUDE `btree_gist` menjangkau kedua status supaya riwayat tidak bisa dibuat ambigu.
+- **Konsekuensi**: satu nilai tunggal per (key, scope, tanggal) tetap terjaga, riwayat utuh,
+  dan PENDING/DRAFT/REJECTED tidak ikut menghalangi aktivasi.
+
+## D-009 — Aturan tempat seed pack (paramgen) & makna ACTIVE untuk nilai pack
+
+- **Konteks**: nilai awal pack harus ditulis di scope yang benar. Sebelumnya tool menebak
+  (`scopes[0]`, mis. `INSTITUTION` dengan `scope_id = 'base'`) — `scope_id` palsu yang tidak
+  akan pernah cocok dengan institusi nyata.
+- **Keputusan**: `paramgen` menyemai di `SEGMENT` (scope_id = nama pack) bila parameter
+  mengizinkan `SEGMENT`, selain itu `GLOBAL`; bila keduanya tidak diizinkan → **gagal** dengan
+  pesan jelas. Sebagai konsekuensi, parameter yang butuh nilai awal menambahkan `GLOBAL` ke
+  `scopes` (keputusan pemilik parameter, bukan tool).
+- Nilai pack disemai sebagai `ACTIVE` oleh dua UUID sistem (pack generator & pack reviewer):
+  pack adalah artefak repo yang di-review pada commit, bukan perubahan runtime — invarian
+  `checker <> maker` tetap utuh.
+- **Konsekuensi**: paket parameter tidak bisa lagi menyemai nilai untuk parameter yang hanya
+  `INSTITUTION`/`BRANCH`/`PRODUCT`; itu memang harus diputuskan manusia.
+
+## D-010 — `db_connector.getRow` tidak bisa dipakai untuk "tidak ditemukan"
+
+- **Konteks**: `db_postgres.getRow` mengembalikan `Row` berisi kolom kosong (bukan `Row`
+  kosong) bila hasilnya 0 baris, sehingga `row.len == 0` bukan penanda "tidak ada". Ini sudah
+  menyesatkan implementasi parameternya (query lanjutan memakai string kosong sebagai tanggal).
+- **Keputusan**: modul memakai helper `singleRow` di atas `getAllRows` untuk mengambil opsional
+  satu baris; `getRow` tidak dipakai di repo platform.
+- **Konsekuensi**: satu helper kecil dan jelas; jebakan ini didokumentasikan di MODULE.md/T-005.

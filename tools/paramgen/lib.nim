@@ -39,9 +39,17 @@ const
   allowedTypes* = ["integer", "decimal", "string", "bool", "json", "enum", "money", "rate",
                    "date"]
   allowedScopes* = ["GLOBAL", "INSTITUTION", "BRANCH", "PRODUCT", "SEGMENT", "ROLE"]
+  ## Subset JSON Schema yang dipahami validator runtime (modules/platform/domain/param.nim).
+  ## Kunci lain ditolak di sini supaya definisi tidak menjanjikan validasi yang tak ada.
+  knownSchemaKeywords* = ["type", "minimum", "maximum", "minLength", "maxLength", "enum",
+                          "description"]
+  schemaTypeNames* = ["integer", "number", "string", "boolean", "object", "array"]
   nimGeneratedPath* = "shared/kernel/generated/paramkeys.nim"
   tsGeneratedPath* = "packages/contracts/src/generated/params.ts"
+  ## UUID sistem untuk seed pack: pack berasal dari repo yang di-review pada commit, bukan
+  ## perubahan runtime. Dua UUID berbeda supaya invarian 4-eyes (checker <> maker) tetap utuh.
   seedMakerUuid* = "00000000-0000-0000-0000-0000000000a1"
+  seedCheckerUuid* = "00000000-0000-0000-0000-0000000000a2"
   banner* = "JANGAN EDIT — dihasilkan tools/paramgen dari modules/*/seeds/params.yaml"
 
 proc fail(msg: string) {.noreturn.} =
@@ -159,6 +167,12 @@ proc parseDefsFromJson*(module: string, node: JsonNode): seq[ParamDef] =
     if d.valueType == "enum" and d.enumValues.len == 0:
       fail(d.key & ": tipe enum wajib punya `enum`")
     if not d.schema.isNil and d.schema.kind == JObject:
+      for k, _ in d.schema.pairs:
+        if k notin knownSchemaKeywords:
+          fail(d.key & ": schema." & k & " tidak didukung validator runtime (didukung: " &
+            knownSchemaKeywords.join(", ") & ")")
+      if d.schema.hasKey("type") and d.schema["type"].getStr("") notin schemaTypeNames:
+        fail(d.key & ": schema.type tidak dikenal: " & d.schema["type"].getStr(""))
       if d.schema.hasKey("minimum") and d.schema.hasKey("maximum"):
         if d.schema["minimum"].getFloat() > d.schema["maximum"].getFloat():
           fail(d.key & ": schema.minimum > schema.maximum")
@@ -315,14 +329,26 @@ proc packNames*(defs: seq[ParamDef]): seq[string] =
   for p in s: result.add p
   result.sort()
 
-proc seedScope(d: ParamDef, pack: string): tuple[scopeType, scopeId: string] =
-  ## Nilai pack disemai pada scope paling spesifik yang diizinkan definisinya.
+proc seedScope*(d: ParamDef, pack: string): tuple[scopeType, scopeId: string] =
+  ## Menentukan tempat nilai pack disemai. Aturannya sengaja ketat supaya tidak ada scope_id
+  ## palsu:
+  ##   1. bila parameter mengizinkan `SEGMENT` → (`SEGMENT`, nama pack);
+  ##   2. selain itu bila mengizinkan `GLOBAL` → (`GLOBAL`, NULL);
+  ##   3. selain itu → gagal: pack tidak punya tempat yang sah untuk nilai awal.
+  ##      (Menambahkan `GLOBAL` ke `scopes` adalah keputusan pemilik parameter, bukan tebakan tool.)
   if "SEGMENT" in d.scopes:
     ("SEGMENT", pack)
   elif "GLOBAL" in d.scopes:
     ("GLOBAL", "")
   else:
-    (d.scopes[0], pack)
+    fail(d.key & ": pack `" & pack &
+      "` tidak bisa disemai karena parameter tidak mengizinkan scope SEGMENT maupun GLOBAL")
+
+proc definitionsPath*(): string =
+  "packs/base/generated/param_definitions.sql"
+
+proc valuesPath*(pack: string): string =
+  "packs/" & pack & "/generated/param_values.sql"
 
 proc renderDefinitionSql*(defs: seq[ParamDef]): string =
   ## Semua **definisi** parameter (pack-independent). Dipisah dari nilai pack supaya
@@ -338,16 +364,18 @@ proc renderDefinitionSql*(defs: seq[ParamDef]): string =
     return
   for d in defs:
     var scopes: seq[string]
-    for s in d.scopes: scopes.add("'" & s & "'")
+    for sc in d.scopes: scopes.add("'" & sc & "'")
     var refs: seq[string]
     for r in d.regulatoryRefs: refs.add("'" & r & "'")
+    # ARRAY[] tanpa cast ditolak Postgres ("cannot determine type of empty array").
+    let refsSql = if refs.len == 0: "ARRAY[]::text[]" else: "ARRAY[" & refs.join(", ") & "]"
     result.add("INSERT INTO platform.param_definition\n")
     result.add("  (key, module, value_type, json_schema, allowed_scopes, description_key,\n")
     result.add("   regulatory_refs, sensitivity, requires_approval, since_version)\n")
     result.add("VALUES ('" & d.key & "', '" & d.module & "', '" & d.valueType & "', '" &
       (if d.schema.isNil: "{}" else: jsonString(d.schema)) &
-      "'::jsonb, ARRAY[" & scopes.join(", ") & "], '" & d.descriptionKey & "', ARRAY[" &
-      refs.join(", ") & "], '" & d.sensitivity & "', " &
+      "'::jsonb, ARRAY[" & scopes.join(", ") & "], '" & d.descriptionKey & "', " &
+      refsSql & ", '" & d.sensitivity & "', " &
       (if d.requiresApproval: "true" else: "false") & ", '" & d.sinceVersion & "')\n")
     result.add("ON CONFLICT (key) DO UPDATE SET\n")
     result.add("  module = EXCLUDED.module, value_type = EXCLUDED.value_type,\n")
@@ -355,12 +383,6 @@ proc renderDefinitionSql*(defs: seq[ParamDef]): string =
     result.add("  description_key = EXCLUDED.description_key, regulatory_refs = EXCLUDED.regulatory_refs,\n")
     result.add("  sensitivity = EXCLUDED.sensitivity, requires_approval = EXCLUDED.requires_approval,\n")
     result.add("  since_version = EXCLUDED.since_version;\n\n")
-
-proc definitionsPath*(): string =
-  "packs/base/generated/param_definitions.sql"
-
-proc valuesPath*(pack: string): string =
-  "packs/" & pack & "/generated/param_values.sql"
 
 proc renderValuesSql*(pack: string, defs: seq[ParamDef]): string =
   ## Nilai awal untuk satu segment pack. **Bukan** fallback kode (spec §10.3): aplikasi
@@ -370,6 +392,8 @@ proc renderValuesSql*(pack: string, defs: seq[ParamDef]): string =
   result.add("--\n")
   result.add("-- Prasyarat: packs/base/generated/param_definitions.sql sudah dijalankan.\n")
   result.add("-- Nilai di bawah ini NILAI AWAL untuk segmen ini, BUKAN fallback kode (spec §10.3).\n")
+  result.add("-- Disemai sebagai ACTIVE oleh dua UUID sistem (pack generator & pack reviewer):\n")
+  result.add("-- pack berasal dari repo yang di-review, bukan perubahan runtime.\n")
   result.add("-- NEEDS-COMPLIANCE-REVIEW: nilai yang menyentuh rate/ambang/denda wajib\n")
   result.add("-- diverifikasi compliance officer sebelum dipakai produksi (spec §1.8).\n")
   result.add("-- Idempotent: aman dijalankan berulang.\n\n")
@@ -386,11 +410,12 @@ proc renderValuesSql*(pack: string, defs: seq[ParamDef]): string =
     let (scopeType, scopeId) = seedScope(d, pack)
     let value = d.defaultPack[pack]
     result.add("INSERT INTO platform.param_value\n")
-    result.add("  (param_value_id, key, scope_type, scope_id, value, effective_from, status, maker, reason)\n")
+    result.add("  (param_value_id, key, scope_type, scope_id, value, effective_from, status,\n")
+    result.add("   maker, checker, reason)\n")
     result.add("VALUES\n  (md5('" & d.key & "|" & pack & "')::uuid, '" & d.key & "', '" &
       scopeType & "', " & (if scopeId.len == 0: "NULL" else: "'" & scopeId & "'") & ", '" &
       jsonString(value) & "'::jsonb, DATE '" & d.effectiveFrom &
-      "', 'ACTIVE', '" & seedMakerUuid & "', 'segment pack seed')\n")
+      "', 'ACTIVE', '" & seedMakerUuid & "', '" & seedCheckerUuid & "', 'segment pack seed')\n")
     result.add("ON CONFLICT (param_value_id) DO NOTHING;\n\n")
 
 proc outputsOf*(root: string, defs: seq[ParamDef]): seq[Output] =

@@ -1,0 +1,30 @@
+# Definisi parameter modul `platform` (spec §10.3).
+#
+# Nilai di `default_pack` adalah **nilai awal pack**, BUKAN fallback kode: aplikasi tetap
+# gagal-cepat (`ParamNotFound`) bila nilai aktif tidak ada (spec §10.6).
+#
+# `regulatory_refs` sengaja kosong sampai register regulasi §4 diverifikasi compliance
+# (docs/OPEN_ITEMS.md O-001) — jangan menebak nomor pasal.
+
+- key: platform.security.session_idle_minutes
+  type: integer
+  # GLOBAL dipakai sebagai tempat nilai default pack (spec §10.2/§10.3); INSTITUTION boleh
+  # menimpanya. Tanpa GLOBAL, pack tidak punya tempat menaruh nilai awal yang sah.
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 1, maximum: 1440 }
+  sensitivity: NORMAL
+  default_pack: { base: 30 }
+
+- key: platform.security.password_min_length
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 8, maximum: 64 }
+  sensitivity: CRITICAL
+  default_pack: { base: 12 }
+
+- key: platform.calendar.fiscal_year_start_month
+  type: integer
+  scopes: [GLOBAL]
+  schema: { minimum: 1, maximum: 12 }
+  sensitivity: NORMAL
+  default_pack: { base: 1 }

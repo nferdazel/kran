@@ -14,7 +14,7 @@ berkas rencana di `docs/tasks/T-xxx.md`.
 | T-002 | DONE | `shared/kernel`: Money (fixed-point 10⁴), Rate, BusinessDate, Result, Clock, IdGen (UUIDv7), AuditContext | §5.2, §9.1(2/6/8), §12.1 | T-001 | `./task test` hijau; property test (asosiatif, pembulatan, tanpa overflow, round-trip) lolos; tidak ada `float` di kernel |
 | T-003 | DONE | Tooling: `tools/archcheck`, `tools/lint-nomagic`, `tools/paramgen` (+ test tool) | §5.1, §5.2, §10.3, §10.4 | T-001, T-002 | archcheck menolak fixture pelanggaran; lint-nomagic menolak fixture magic; paramgen deterministik + `--check` gagal saat drift |
 | T-004 | DONE | Skeleton `platform`: pg pool, migration runner (expand-only), outbox/inbox, audit hash-chain | §9, §12.4, §18.2 | T-002, T-003 | `./task test` dengan `CBS_DATABASE_URL` hijau: migrasi idempotent (up 2× aman), outbox de-dup, hash-chain terverifikasi + terdeteksi saat dirusak |
-| T-005 | TODO | Parameter framework: tabel + resolusi effective-dated + maker-checker + cache/NOTIFY + startup check | §10 | T-003, T-004 | Test: resolusi PRODUCT→BRANCH→INSTITUTION→SEGMENT→GLOBAL pada `as_of`; overlap ACTIVE ditolak EXCLUDE; ParamNotFound tanpa fallback; startup check gagal-cepat; invalidasi cache via NOTIFY |
+| T-005 | DONE | Parameter framework: tabel + resolusi effective-dated + maker-checker + cache/NOTIFY + startup check | §10 | T-003, T-004 | Test: resolusi PRODUCT→BRANCH→INSTITUTION→SEGMENT→GLOBAL pada `as_of`; overlap ACTIVE ditolak EXCLUDE; ParamNotFound tanpa fallback; startup check gagal-cepat; invalidasi cache via NOTIFY |
 | T-006 | TODO | Auth + RBAC + audit context + branch scoping dasar | §13, §18.2 | T-004, T-005 | Test authz matrix (role conflict + branch) hijau; audit context terisi di use case; sesi cookie HttpOnly |
 | T-007 | TODO | Kalender + business date (state OPEN/CLOSING/CLOSED, roll over) | §9.3, §11.2 | T-004, T-005 | Test: hari libur dari param, level close (EOD/EOM/EOQ/EOY) terpilih dari kalender, transisi state ditolak bila ilegal |
 | T-008 | BLOCKED | OpenAPI skeleton + generate client TS + contract test | §13 | T-001, T-014 | OpenAPI lint hijau; client TS ter-generate ulang tanpa diff; contract test implementasi↔OpenAPI hijau — **bagian contract test tertahan keputusan ADR-002** |
@@ -24,12 +24,15 @@ berkas rencana di `docs/tasks/T-xxx.md`.
 | T-012 | BLOCKED | End-to-end Fase 0: login → ubah parameter (maker-checker) → audit → event SSE di UI | §23 | T-005, T-006, T-009, T-010 | Playwright: alur lengkap keyboard-only, axe hijau, bukti audit event + ParamChanged tampil di UI — **tertahan ADR-002** |
 | T-013 | TODO | `ops/` sesuai §21.4–21.6 (**hanya berkas di repo**, tidak dijalankan di server) | §21.4–21.6 | T-001 | `shellcheck`/`sh -n` hijau; `md5` berkas skrip siap dibanding `audit-consistency.sh`; tanpa secret |
 | T-014 | DONE | Spike ADR-002: pilih HTTP server Nim (Mummy vs Prologue), tulis rekomendasi, **STOP minta keputusan** | §12.1, §25 | T-001 | Benchmark + rekomendasi tertulis di `docs/spikes/ADR-002-http-server.md` + entri `ESCALATIONS.md` — **keputusan pemilik masih terbuka (E-001)** |
+| T-016 | TODO | Layanan parameter (lapisan application): cache in-proc per business date + konsumen NOTIFY, akses bertipe `params.get`, guard drift harian | §10.3, §10.4 | T-005 | `application/` tidak mengimpor driver DB (archcheck); cache invalid setelah NOTIFY; `get` bertipe mengembalikan nilai aktif; drift DB vs generated terdeteksi |
 | T-015 | DONE | Inventaris `cbs-core` (referensi, bukan port) → `docs/migration/cbs-core-inventory.md` | §23, §21.9 | T-001 | Dokumen memuat: fitur, skema, aturan bisnis tervalidasi, kandidat golden test; tanpa menyentuh repo `cbs-core` |
 
 ### Catatan urutan
 
 - T-014 harus dikerjakan cepat karena memblokir T-008/T-009/T-012.
 - Task di luar daftar ini ditemukan saat kerja → tambahkan di sini, jangan disisipkan diam-diam.
+- T-005 selesai untuk cakupan DB/repo; lapisan application dipisah ke T-016 supaya tidak ada
+  pekerjaan yang "diam-diam setengah" (AGENTS.md §5).
 
 ## Fase 1+ (ringkas, dari spec §23)
 

@@ -2,11 +2,17 @@
 
 - key: deposit.savings.min_balance
   type: money
-  scopes: [PRODUCT, BRANCH]
+  scopes: [GLOBAL, PRODUCT, BRANCH]
   schema: { minimum: 0 }
   sensitivity: NORMAL
   requires_approval: false
   default_pack: { base: "10000.00" }
+
+- key: deposit.payroll.admin_fee
+  type: money
+  scopes: [INSTITUTION, SEGMENT]
+  schema: { minimum: 0 }
+  default_pack: { base: "2500.00" }
 
 - key: deposit.statement.line_label
   type: string

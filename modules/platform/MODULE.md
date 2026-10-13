@@ -58,3 +58,26 @@ saat ini belum ada konsumen lintas-modul, jadi belum ada yang perlu diekspor.
 
 Migrasi ditulis dengan pola **expand-only**; perubahan destruktif butuh header
 `-- dbtools:destructive <alasan>` dan dianggap keputusan terpisah (spec §9.1(11)).
+
+## Parameter (T-005)
+
+| Bagian | Berkas |
+|---|---|
+| Domain | `domain/param.nim` — urutan resolusi, validasi schema (subset), konversi bertipe |
+| Repo | `infrastructure/param_repo.nim` — kandidat pada `as_of`, submit/approve/reject, `missingActiveKeys`, `LISTEN/NOTIFY` |
+| Migrasi | `0004_platform_parameter.sql` |
+
+Invarian tambahan:
+
+6. **Satu nilai berlaku per (key, scope, tanggal)** — EXCLUDE menjangkau `ACTIVE` **dan**
+   `SUPERSEDED` (D-008). Nilai lama dipangkas (`effective_to`), bukan dihapus.
+7. **Semua aktivasi butuh orang kedua** (`checker <> maker`, ditegakkan skema). Aktivasi menulis
+   audit + event `ParamChanged` ke outbox + `NOTIFY platform_param_changed`.
+8. **Tidak ada fallback**: key tanpa nilai berlaku → pemanggil melempar `ParamNotFound`
+   (spec §10.6). Jangan menambahkan default di kode.
+
+Jebakan yang sudah ditemukan (jangan diulang):
+
+- `db_connector.getRow` mengembalikan kolom kosong untuk 0 baris → pakai `singleRow`/`getAllRows`.
+- `db_postgres.exec` hanya menerima status COMMAND_OK → `SELECT` (mis. advisory lock, `pg_notify`)
+  harus lewat `getValue`/`execScript`.

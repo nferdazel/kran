@@ -140,6 +140,47 @@ hanya bentuk URL tanpa `sslmode`.
 
 ---
 
+---
+
+## 2026-10-13 — T-005 parameter framework (tabel, resolusi, maker-checker, NOTIFY, startup check)
+
+**Rencana/scope**: `docs/tasks/T-005.md` (cakupan DB/repo; lapisan application dipisah ke T-016).
+
+**Bukti `./task ci`** (log `.build/ci-t005.log`, exit 0):
+
+```
+$ ./task ci
+== format (nimpretty)          ok: 48 berkas
+== lint (nim check)            ok: 49 berkas
+== archcheck / lint-nomagic    bersih
+== paramgen --check            sinkron (3 definisi seed)
+== unit + property test        17 berkas test (kernel 9, platform-lib 2, platform 2, tools 4)
+== integration test (Postgres) itplatform.nim, itpool.nim, itparam.nim
+== i18n / contract / e2e       SKIP (T-010; T-008 menunggu E-001)
+== CI hijau                    (187 assertion lulus, 0 gagal)
+```
+
+**Test parameter (17, ringkas)**: seed `paramgen` dieksekusi nyata ke DB; key tak terdaftar &
+scope di luar `allowed_scopes` & nilai melanggar schema ditolak; resolusi
+PRODUCT→BRANCH→INSTITUTION→SEGMENT→GLOBAL dengan/tanpa tiap scope; efektif-dated (nilai
+belum/sudah lewat tidak dipakai); overlap ACTIVE ditolak EXCLUDE; periode bersambung diterima;
+submit→PENDING (belum terlihat aplikasi); approve→ACTIVE; self-approval ditolak DB; approve
+bukan-PENDING ditolak; supersede memangkas nilai lama; reject; startup check melaporkan key
+tanpa nilai aktif; NOTIFY diterima koneksi pendengar setelah approval.
+
+**Keputusan**: `docs/DECISIONS.md` D-008 (SUPERSEDED tetap menjawab tanggal lampau + EXCLUDE
+mencakup keduanya), D-009 (aturan tempat seed pack + ACTIVE oleh dua UUID sistem),
+D-010 (jebakan `db_connector.getRow`).
+
+**Bug nyata yang ketemu dan diperbaiki**: seed SQL `ARRAY[]` tanpa cast (ditolak Postgres);
+`scope_id` palsu pada seed pack; gap nilai historis saat supersede (D-008);
+`db_postgres.exec` menolak SELECT (dipakai untuk advisory lock → memakai `getValue`).
+
+**Sisa pekerjaan (task baru T-016, bukan "selesai sebagian")**: cache in-proc + konsumen NOTIFY,
+akses bertipe `params.get`, guard drift harian, UI Parameter Admin.
+
+---
+
 ## Catatan proses (jujur, 2026-10-13)
 
 1. **Commit `01094a1` tercampur.** Commit untuk spike ADR-002 memakai `git add -A` sehingga
@@ -166,5 +207,6 @@ hanya bentuk URL tanpa `sslmode`.
 | T-002 | DONE | `./task test kernel` → 52 assertion lulus, 0 gagal; `./task check` ok (20 berkas); grep non-komentar `float` = bersih |
 | T-014 | DONE (spike) | `docs/spikes/ADR-002-http-server.md`: Mummy 54.341 rps / Prologue 46.094 / asyncnet 18.824 (`hey -n 10000 -c 50`, laptop 2026-10-13); Mummy 0.4.8 tanpa API streaming (endpoint stream → 501); keputusan menunggu E-001 |
 | T-015 | DONE | `docs/migration/cbs-core-inventory.md` (600 baris). Angka kunci diverifikasi ulang dari `cbs-core`: 699 berkas Go, 370 `*_test.go`, 173 migrasi, README menyebut BPR/BPRS (bukan koperasi). 4 klaim ditandai `(belum diverifikasi)` |
+| T-005 | DONE (DB/repo) | `./task ci` hijau (exit 0, `.build/ci-t005.log`): 187 assertion. 17 test parameter lulus: resolusi 5 scope, efektif-dated, EXCLUDE overlap, maker-checker (+ self-approval ditolak), supersede, startup check, NOTIFY diterima pendengar. Sisa lapisan application → T-016 |
 | T-004 | DONE | `./task ci` hijau (exit 0, `.build/ci-t004.log`): 153 assertion lulus. `./task dbtools migrate` 2× = idempotent; 14 test integrasi platform + 7 test integrasi pool lulus (hash-chain tamper terdeteksi, outbox de-dup, migrasi atomik) |
 | T-003 | DONE | `./task ci` hijau (exit 0, log `.build/ci-t003.log`): 29 berkas terformat, 30 `nim check`, archcheck/lint-nomagic/paramgen sinkron, 97 assertion test lulus (12 berkas). Gate dibuktikan menolak lewat probe nyata (3 temuan magic + 1 pelanggaran rule C) |
