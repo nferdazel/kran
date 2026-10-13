@@ -1,43 +1,68 @@
 import std/unittest
-
-import kernel/money
-import kernel/rate
+import kernel
 
 suite "money":
-  test "golden: 1500000.00 round-trip":
-    let m = moneyFromString("1500000.00")
-    check m.isOk
-    check m.value.minorUnits == 15_000_000_000'i64
-    check toDecimalString(m.value) == "1500000.0000"
+  test "parse dan format kanonik (selalu 4 desimal)":
+    # 1.500.000,0000 -> 1_500_000 * 10^4 = 15_000_000_000 unit terkecil
+    check moneyFromString("1500000.00").value.minorUnits == 15_000_000_000
+    check moneyFromString("1500000.00").value.toDecimalString == "1500000.0000"
+    check moneyFromString("-12.5").value.toDecimalString == "-12.5000"
+    check moneyFromString("0").value.toDecimalString == "0.0000"
+    check moneyFromString("+0.0001").value.minorUnits == 1
+    check moneyFromString(" 7.25 ").value.minorUnits == 72_500
 
-  test "golden: applyRate 50%":
-    check applyRate(money(1000), rateFromMicro(500000)) == money(500)
-
-  test "pembulatan half-to-even pada 0.5/1.5/2.5":
-    check (money(1) div 2) == money(0)   # 0.5 -> 0 (genap)
-    check (money(3) div 2) == money(2)   # 1.5 -> 2 (genap)
-    check (money(5) div 2) == money(2)   # 2.5 -> 2 (genap)
-    check (money(7) div 2) == money(4)   # 3.5 -> 4 (genap)
-
-  test "display 2 desimal half-to-even":
-    check toDisplayString(money(50)) == "0.00"    # 0.0050 -> 0.00
-    check toDisplayString(money(150)) == "0.02"   # 0.0150 -> 0.02
-    check toDisplayString(money(250)) == "0.02"   # 0.0250 -> 0.02
-
-  test "parse bentuk negatif dan nol":
-    check moneyFromString("-12.5").value == money(-125000)
-    check moneyFromString("0").value == money(0)
-    check toDecimalString(money(-125000)) == "-12.5000"
-
-  test "parse menolak bentuk tak valid":
+  test "parse menolak bentuk tidak sah (tanpa pembulatan diam-diam)":
     check moneyFromString("").isErr
+    check moneyFromString("1.23456").isErr # > 4 desimal
+    check moneyFromString("12,5").isErr
     check moneyFromString("abc").isErr
     check moneyFromString("1.2.3").isErr
-    check moneyFromString("1.23456").isErr   # > 4 desimal
     check moneyFromString(".5").isErr
-    check moneyFromString("1.").isErr
+    check moneyFromString("5.").isErr
+    check moneyFromString("1e3").isErr
+    check moneyFromString("99999999999999999999").isErr # overflow -> error, bukan crash
 
-  test "overflow menaikkan MoneyOverflowError":
+  test "aritmetika dasar":
+    check money(1) + money(2) == money(3)
+    check money(1) - money(3) == money(-2)
+    check -money(3) == money(-3)
+    check money(3) - money(3) == zero()
+    check money(2) * 3 == money(6)
+    check sum(@[money(1), money(2), money(3)]) == money(6)
+    check sum(newSeq[Money]()) == zero()
+
+  test "perbandingan dan tanda":
+    check money(1) < money(2)
+    check money(2) <= money(2)
+    check money(2) > money(1)
+    check cmp(money(1), money(2)) == -1
+    check isZero(zero())
+    check isNegative(money(-1))
+    check isPositive(money(1))
+    check abs(money(-5)) == money(5)
+
+  test "pembagian half-to-even":
+    check divRoundHalfEven(5, 2) == 2 # 2,5 -> 2 (genap)
+    check divRoundHalfEven(7, 2) == 4 # 3,5 -> 4 (genap)
+    check divRoundHalfEven(1, 2) == 0 # 0,5 -> 0 (genap)
+    check divRoundHalfEven(3, 2) == 2 # 1,5 -> 2 (genap)
+    check divRoundHalfEven(-5, 2) == -2
+    check divRoundHalfEven(-7, 2) == -4
+    check divRoundHalfEven(-1, 2) == 0
+    check divRoundHalfEven(4, 2) == 2
+    check money(7) div 2 == money(4)
+    check money(-7) div 2 == money(-4)
+    expect ValueError:
+      discard money(1) div 0
+
+  test "tampilan 2 desimal juga half-to-even":
+    check money(12_345).toDisplayString == "1.23" # 1,2345 -> 1,23
+    check money(12_350).toDisplayString == "1.24" # 1,2350 -> 1,24 (2 ganjil -> naik)
+    check money(12_450).toDisplayString == "1.24" # 1,2450 -> 1,24 (4 genap -> tetap)
+    check money(-12_350).toDisplayString == "-1.24"
+    check zero().toDisplayString == "0.00"
+
+  test "overflow tidak pernah diam-diam":
     expect MoneyOverflowError:
       discard money(high(int64)) + money(1)
     expect MoneyOverflowError:
@@ -47,16 +72,18 @@ suite "money":
     expect MoneyOverflowError:
       discard -money(low(int64))
 
-  test "bagi nol menaikkan ValueError":
-    expect ValueError:
-      discard money(10) div 0
-
-  test "operasi dasar":
-    check money(10) + money(5) == money(15)
-    check money(10) - money(5) == money(5)
-    check money(10) < money(11)
-    check money(10) <= money(10)
-    check sum(@[money(1), money(2), money(3)]) == money(6)
-    check isZero(money(0))
-    check isNegative(money(-1))
-    check abs(money(-7)) == money(7)
+  test "applyRate - golden values":
+    check applyRate(money(1000), rateFromMicro(500_000)) == money(500) # 50%
+    check applyRate(money(1_000_000), rateFromPercentString("12.5").value) == money(125_000)
+    check applyRate(money(0), rateFromMicro(500_000)) == zero()
+    check applyRate(money(1000), zeroRate()) == zero()
+    # pembulatan half-to-even pada unit terkecil (rate 0,05% = 500 micro)
+    check applyRate(money(1000), rateFromMicro(500)) == money(0) # 0,5 -> 0
+    check applyRate(money(3000), rateFromMicro(500)) == money(2) # 1,5 -> 2
+    check applyRate(money(5000), rateFromMicro(500)) == money(2) # 2,5 -> 2 (genap)
+    check applyRate(money(7000), rateFromMicro(500)) == money(4) # 3,5 -> 4 (genap)
+    check applyRate(money(1), rateFromMicro(500_000)) == money(0) # 0,5 -> 0
+    check applyRate(money(3), rateFromMicro(500_000)) == money(2) # 1,5 -> 2
+    # nilai besar tidak overflow (dekomposisi q·micro + rem·micro/1e6)
+    check applyRate(money(1_000_000_000_000), rateFromPercentString("100").value) ==
+      money(1_000_000_000_000)

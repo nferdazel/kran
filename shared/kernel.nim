@@ -1,15 +1,25 @@
-## `kernel` — umbrella shared kernel (spec §5.2). Kecil & stabil; tanpa "utils" serbaguna.
+## `shared/kernel` — shared kernel kecil & stabil (spec §5.2).
 ##
-## `import kernel` membawa tipe inti: `Result`/`AppError`, `Money`, `Rate`, `BusinessDate`,
-## `Clock`, `Id`, `AuditContext`, plus `paramkey` (kontrak parameter, spec §10.2–§10.4).
+## Isi yang sengaja ada: tipe nilai uang/rate/tanggal, `Result`, `Clock`, `Id`,
+## `AuditContext`, dan kontrak key parameter. **Tidak boleh** ada "utils" serbaguna di sini.
+##
+## Modul CBS sebaiknya `import kernel` (berkas ini) untuk permukaan lengkap, atau impor
+## submodul spesifik (`import kernel/money`) bila ingin lebih sempit.
 
-import ./kernel/result
-import ./kernel/rate
-import ./kernel/money
-import ./kernel/businessdate
-import ./kernel/clock
-import ./kernel/ids
-import ./kernel/auditcontext
-import ./kernel/paramkey
+import kernel/result
+import kernel/paramkey
+import kernel/rate
+import kernel/money
+import kernel/businessdate
+import kernel/clock
+import kernel/ids
+import kernel/auditcontext
 
-export result, rate, money, businessdate, clock, ids, auditcontext, paramkey
+export result
+export paramkey
+export rate
+export money
+export businessdate
+export clock
+export ids
+export auditcontext

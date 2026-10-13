@@ -1,49 +1,40 @@
-## Harness property test deterministik (spec §20; tanpa dependensi property-test eksternal).
+## Harness property-test kecil (spec §20: "property-based").
 ##
-## Seed tetap (bisa di-override lewat `setPropSeed`), iterasi default 500. Saat gagal:
-## cetak seed + iterasi + counterexample, lalu `fail`.
+## **Bukan** framework: cukup untuk invarian kernel. Kalau nanti requirement naik
+## (shrinking, coverage), evaluasi `testament`/pustaka property — dan tulis ADR-nya.
 ##
-## Nama berkas **tidak** diawali `t` agar tidak dijalankan sebagai berkas test oleh `./task`.
+## Aturan penting: **deterministik**. Seed tetap, sehingga kegagalan bisa diulang persis.
 
 import std/random
-import std/unittest
 
 type
-  ## Kegagalan property yang membawa counterexample.
-  PropFailure* = object of ValueError
+  Gen*[T] = proc(r: var Rand): T
 
-var
-  propSeed*: int64 = 0x5EED_C0DE'i64
-  propIterations*: int = 500
+const defaultSeed* = 0x5EE5'i64
+const defaultIterations* = 500
 
-proc setPropSeed*(s: int64) =
-  ## Override seed (determinisme tetap; untuk reproduksi).
-  propSeed = s
+proc forAll*[T](
+    name: string,
+    iterations: int,
+    gen: Gen[T],
+    check: proc(x: T): bool {.closure.},
+    describe: proc(x: T): string {.closure.},
+    seed: int64 = defaultSeed,
+): bool =
+  ## Mengembalikan `false` (dan mencetak counterexample) bila ada satu kasus gagal.
+  var r = initRand(seed)
+  for i in 0 ..< iterations:
+    let x = gen(r)
+    if not check(x):
+      echo "  PROP GAGAL [", name, "] seed=", seed, " iterasi=", i,
+        " nilai=", describe(x)
+      return false
+  true
 
-proc setPropIterations*(n: int) =
-  ## Override jumlah iterasi.
-  propIterations = n
-
-template checkProp*(cond: bool, counterexample: string) =
-  ## Periksa invariant; bila gagal, angkat `PropFailure` berisi counterexample.
-  if not bool(cond):
-    raise newException(PropFailure, counterexample)
-
-proc runProp*(name: string, body: proc(rng: var Rand) {.closure.}) =
-  ## Jalankan `body` `propIterations` kali dengan RNG deterministik.
-  var rng = initRand(propSeed)
-  for iter in 0 ..< propIterations:
-    try:
-      body(rng)
-    except PropFailure as e:
-      echo "PROPERTY FAIL: ", name, " seed=", propSeed, " iterasi=", iter
-      echo "  counterexample: ", e.msg
-      fail()
-    except CatchableError as e:
-      echo "PROPERTY FAIL: ", name, " seed=", propSeed, " iterasi=", iter
-      echo "  error tak terduga: ", e.name, " - ", e.msg
-      fail()
-
-proc randInt64*(rng: var Rand, lo, hi: int64): int64 =
-  ## Bilangan acak pada rentang inklusif.
-  rng.rand(lo .. hi)
+proc overflowRaises*(f: proc(): void {.closure.}): bool =
+  ## Benar bila `f` menaikkan ValueError (dipakai untuk membuktikan overflow/0 ditolak).
+  try:
+    f()
+  except ValueError, RangeDefect:
+    return true
+  false

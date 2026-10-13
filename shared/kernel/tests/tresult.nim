@@ -1,49 +1,35 @@
 import std/unittest
-import std/strutils
-
 import kernel/result
 
 suite "result":
-  test "ok / err dan isOk / isErr":
-    let a = ok[int, string](42)
+  test "ok dan err dasar":
+    let a = ok[int, string](3)
     check a.isOk
     check not a.isErr
-    check a.value == 42
+    check a.value == 3
     let b = err[int, string]("boom")
     check b.isErr
-    check not b.isOk
     check b.error == "boom"
 
-  test "value menaikkan ValueError bila error":
+  test "value() pada error adalah bug -> ValueError":
     let b = err[int, string]("boom")
     expect ValueError:
       discard b.value
 
-  test "error menaikkan ValueError bila sukses":
-    let a = ok[int, string](1)
+  test "error() pada ok adalah bug -> ValueError":
     expect ValueError:
-      discard a.error
+      discard ok[int, string](1).error
 
-  test "value AppError memuat code":
-    let r = err[int, AppError](appError("DEP-1001", "deposit.err", aekDomain, "gagal"))
-    var msg = ""
-    try:
-      discard r.value
-    except ValueError as e:
-      msg = e.msg
-    check msg.contains("DEP-1001")
-    check msg.contains("gagal")
+  test "mapOk / mapErr":
+    check ok[int, string](2).mapOk(proc(v: int): int = v * 3).value == 6
+    check err[int, string]("x").mapOk(proc(v: int): int = v * 3).isErr
+    check err[int, string]("x").mapErr(proc(s: string): string = s & "!").error == "x!"
+    check ok[int, string](2).mapErr(proc(s: string): string = s & "!").value == 2
 
-  test "mapOk hanya mengubah jalur sukses":
-    let a = ok[int, string](3)
-    check a.mapOk(proc(v: int): int = v * 2).value == 6
-    let b = err[int, string]("x")
-    check b.mapOk(proc(v: int): int = v * 2).error == "x"
-
-  test "appError dan $":
-    let e = appError("DEP-1001", "deposit.err", aekDomain, "detail",
-                     @[("amount", "1000")])
+  test "AppError membawa kode + kunci i18n (bukan kalimat jadi)":
+    let e = appError("DEP-1001", "deposit.error.limit", aekValidation, "limit harian")
     check e.code == "DEP-1001"
-    check e.kind == aekDomain
-    check e.params.len == 1
-    check ($e).contains("DEP-1001")
+    check e.i18nKey == "deposit.error.limit"
+    check e.kind == aekValidation
+    check $e == "DEP-1001 [VALIDATION] deposit.error.limit: limit harian"
+    check appError("X-1", "k", aekNotFound).kind == aekNotFound
