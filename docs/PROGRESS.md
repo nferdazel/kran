@@ -31,10 +31,31 @@ PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2)
 
 ---
 
+---
+
+## Catatan proses (jujur, 2026-10-13)
+
+1. **Commit `01094a1` tercampur.** Commit untuk spike ADR-002 memakai `git add -A` sehingga
+   ikut menyeret draf `shared/kernel/**` dan `docs/migration/cbs-core-inventory.md` yang saat
+   itu belum selesai. Tidak ada yang hilang, tetapi commit itu tidak lagi "satu perubahan
+   logis" (AGENTS.md §3). Tidak saya tulis ulang karena rewrite history butuh persetujuan
+   pemilik — dicatat di sini sebagai deviasi. Commit-commit setelahnya kembali satu-topik.
+2. **Tiga percobaan subagent gagal** (T-002, T-003, T-015) dengan error `invalid request`
+   dari sisi penyedia setelah prompt panjang terkirim; hanya T-015 yang akhirnya selesai
+   (percobaan kedua/ketiga). Akibatnya: T-002 sempat meninggalkan `propgen.nim` versi
+   berbeda + `tprop_rate.nim` yang tidak kompilasi (`out` sebagai nama variabel, API harness
+   tidak cocok). Berkas itu ditulis ulang dengan harness final; `propgen.nim` subagent
+   tertimpa versi final. T-003 akhirnya **tidak** dikerjakan subagent dan menjadi tanggungan
+   sesi ini.
+3. **Reviewer independen** (AGENTS.md §4 butir 5) belum dijalankan per task; rencananya satu
+   review batch di akhir milestone atas area kritis (hash-chain audit, param framework,
+   uang/rate), karena biaya dan karena task sejauh ini masih scaffolding + kernel. Keputusan
+   ini dicatat supaya tidak terlihat seperti kelalaian.
+
 ## Status task
 
-| Task | Status | Bukti |
-|---|---|---|
-| T-001 | IN_PROGRESS | — |
+| Task | Status | Bukti ||---|---|---|
+| T-001 | DONE | `./task ci` hijau; commit `5964665` |
+| T-002 | DONE | `./task test kernel` → 52 assertion lulus, 0 gagal; `./task check` ok (20 berkas); grep non-komentar `float` = bersih |
 | T-014 | DONE (spike) | `docs/spikes/ADR-002-http-server.md`: Mummy 54.341 rps / Prologue 46.094 / asyncnet 18.824 (`hey -n 10000 -c 50`, laptop 2026-10-13); Mummy 0.4.8 tanpa API streaming (endpoint stream → 501); keputusan menunggu E-001 |
-| T-015 | IN_PROGRESS | subagent berjalan (inventaris `cbs-core`) |
+| T-015 | DONE | `docs/migration/cbs-core-inventory.md` (600 baris). Angka kunci diverifikasi ulang dari `cbs-core`: 699 berkas Go, 370 `*_test.go`, 173 migrasi, README menyebut BPR/BPRS (bukan koperasi). 4 klaim ditandai `(belum diverifikasi)` |
