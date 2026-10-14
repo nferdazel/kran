@@ -3,8 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "comment": "Katalog pesan (spec §16.2) + proyek inlang untuk Paraglide. Katalog = satu berkas datar per locale (messages/<locale>.json) dengan prefiks namespace pada nama key; lihat docs/tasks/T-010.md untuk alasan bentuk ini.",
+  "comment": "Katalog pesan (spec \u00a716.2) + proyek inlang untuk Paraglide. Katalog = satu berkas datar per locale (messages/<locale>.json) dengan prefiks namespace pada nama key; lihat docs/tasks/T-010.md untuk alasan bentuk ini.",
   "scripts": {
     "compile": "paraglide-js compile --project ./project.inlang --outdir ./generated"
+  },
+  "devDependencies": {
+    "@inlang/plugin-m-function-matcher": "2.3.2",
+    "@inlang/plugin-message-format": "4.5.2"
   }
 }

@@ -300,3 +300,17 @@ kode karena Paraglide v2 merusak sintaks ICU mentah.
 
 Item baru: O-020 (lockfile JS belum bisa dibuat), O-021 (plugin Paraglide dari CDN), O-022
 (visual regression ditunda), O-023 (ESLint a11y belum ada), O-024 (komponen headless menyusul).
+
+### T-010 — lanjutan (2026-10-14): lockfile JS + plugin Paraglide lokal
+
+Temuan lingkungan: registry npm di `~/.npmrc` (`artifactory.pegadaian.co.id`) tidak resolve
+(NXDOMAIN), dan pnpm membaca `pnpm_config_registry` — bukan `npm_config_registry`. Dengan
+override itu, `pnpm install` bekerja: `pnpm-lock.yaml` berhasil dibuat, lolos supply-chain policy
+pnpm, dan `pnpm install --frozen-lockfile` bersih. Plugin Paraglide kini di-vendor sebagai
+devDependency `packages/i18n` (tanpa CDN), sehingga build tidak butuh jaringan.
+
+Bukti: `pnpm_config_registry=https://registry.npmjs.org/ pnpm install --lockfile-only` (159
+entri, "Lockfile passes supply-chain policies"), lalu `pnpm install --frozen-lockfile` →
+"Already up to date"; `./task e2e` tetap hijau (12 test + vitest 34 + svelte-check 0 error)
+dengan `modules` menunjuk jalur lokal. Prosedur: `docs/runbooks/dev-web.md`.
+Keputusan: D-018. Item O-020 & O-021 ditutup.

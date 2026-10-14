@@ -196,10 +196,12 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
   (`common_*`, nanti `deposit_*`). Namespace tetap dipaksakan sebagai **aturan key**
   (`tools/i18ncheck`: key wajib berbentuk `namespace_segmen`), jadi disiplin §16.2 tidak hilang,
   hanya lokasinya berpindah dari nama berkas ke nama key.
-- **Keputusan kedua**: plugin Paraglide diambil dari CDN jsdelivr **versi pin**
-  (`@inlang/plugin-message-format@4.5.2`, `@inlang/plugin-m-function-matcher@2.3.2`), karena
-  registry npm privat di mesin dev (`artifactory.pegadaian.co.id`) tidak resolve sehingga
-  `pnpm install` paket itu gagal. Cache unduhan tidak di-commit.
+- **Keputusan kedua** (semula): plugin Paraglide diambil dari CDN jsdelivr versi pin, karena
+  registry npm privat di mesin dev (`artifactory.pegadaian.co.id`) tidak resolve. **Direvisi pada
+  2026-10-14** setelah ditemukan cara override registry (lihat D-018): plugin kini
+  di-vendor sebagai devDependency `packages/i18n` dan dirujuk lewat jalur lokal
+  (`./node_modules/@inlang/plugin-*/dist/index.js` dari direktori `packages/i18n`). Build web
+  tidak lagi butuh jaringan.
 - **Konsekuensi**: build web butuh jaringan sekali (atau plugin di-vendor setelah registry normal);
   dicatat O-021. Bila plugin versi baru memperbaiki pola `{namespace}`, migrasi murah karena
   prefix key sudah memisahkan namespace.
@@ -226,3 +228,19 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
   (`ERR_PNPM_NO_OFFLINE_META` untuk `@bytecodealliance/jco-transpile`; registry privat tidak
   resolve). Versi dependency dipin eksak di `package.json` sebagai jaring sementara; job CI
   `web-e2e` memakai `pnpm install` sampai lockfile bisa dibuat (O-020).
+
+## D-018 — Registry npm: override `pnpm_config_registry` + lockfile JS
+
+- **Konteks**: dua upaya memasang paket baru gagal/menggantung karena `~/.npmrc` menunjuk
+  `https://artifactory.pegadaian.co.id/repository/npm-group-1/` yang **tidak resolve** dari
+  jaringan mesin ini (`nslookup` → NXDOMAIN, `curl` → 000). `npm_config_registry=…` **tidak**
+  mengubah perilaku pnpm (pnpm membaca `pnpm_config_registry`), sehingga kegagalan tampak seperti
+  masalah jaringan biasa.
+- **Keputusan**: override registry lewat env var pnpm, hanya untuk perintah install:
+  `pnpm_config_registry=https://registry.npmjs.org/ pnpm install …`. `~/.npmrc` milik pengguna
+  tidak diubah (bukan milik repo).
+- **Konsekuensi**: lockfile JS (`pnpm-lock.yaml`) **bisa** dibuat, lolos supply-chain policy pnpm
+  organisasi, dan dipakai CI dengan `--frozen-lockfile`. Plugin Paraglide di-vendor lokal
+  (D-015). Prosedur lengkap: `docs/runbooks/dev-web.md`.
+- **Catatan**: perintah install tanpa override tetap akan menggantung, jadi runbook ini penting
+  saat ada kontributor baru atau saat menambah dependency (mis. tooling OpenAPI di T-008).
