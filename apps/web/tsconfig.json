@@ -1,0 +1,21 @@
+{
+  "extends": "$app/tsconfig",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "src",
+    "tests",
+    "playwright.config.ts",
+    "vite.config.ts"
+  ],
+  "exclude": [
+    "src/service-worker",
+    "src/lib/paraglide/server.js",
+    "src/lib/paraglide/server.d.ts"
+  ]
+}

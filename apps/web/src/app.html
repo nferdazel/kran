@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="id-ID" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CBS</title>
+    <!--
+      Skrip inline kecil menetapkan tema sebelum render (spec §15.3) untuk mencegah flash.
+      Nilai disimpan di localStorage kunci `cbs-theme`: "light" | "dark" | "system".
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("cbs-theme");
+          var dark =
+            stored === "dark" ||
+            ((stored === null || stored === "system") &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var theme = dark ? "dark" : "light";
+          var root = document.documentElement;
+          root.setAttribute("data-theme", theme);
+          root.style.colorScheme = theme;
+        } catch (e) {
+          /* localStorage bisa diblokir; biarkan tema default. */
+        }
+      })();
+    </script>
+    %sveltekit.head%
+  </head>
+  <body data-sveltekit-preload-data="hover">
+    <div style="display: contents">%sveltekit.body%</div>
+  </body>
+</html>

@@ -1,0 +1,148 @@
+/*
+ * Design tokens CBS (spec §15). Sumber kebenaran tunggal untuk warna, spasi, radius,
+ * tipografi, elevasi, dan motion.
+ *
+ * Aturan:
+ *  - Token warna SEMANTIK (bukan nama warna mentah), mis. `--color-text` bukan `--blue`.
+ *  - Tema dipilih lewat atribut `<html data-theme="light|dark">` (spec §15.3); skrip inline
+ *    kecil di `apps/web/src/app.html` menetapkan tema sebelum render untuk mencegah flash.
+ *  - Kontras pasangan token diuji otomatis di `packages/ui/tests/tokens.contrast.test.ts`
+ *    (spec §15.4): teks normal >= 4.5:1, teks besar & UI >= 3:1, pada KEDUA tema.
+ *  - Status tidak boleh hanya lewat warna (spec §15.4) — selalu teks/ikon.
+ */
+
+:root {
+  /* Tipografi */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --line-height-tight: 1.25;
+  --line-height-base: 1.5;
+
+  /* Spasi (skala 4px) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+
+  /* Radius */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-full: 9999px;
+
+  /* Elevasi */
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.08);
+  --shadow-2: 0 2px 8px rgb(0 0 0 / 0.12);
+  --shadow-3: 0 8px 24px rgb(0 0 0 / 0.16);
+
+  /* Motion */
+  --motion-duration-fast: 120ms;
+  --motion-duration-base: 200ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Ukuran kontrol (spec §17.1: target minimal 24x24 CSS px) */
+  --control-min-size: 1.5rem;
+
+  /* Layout */
+  --layout-max-width: 72rem;
+}
+
+/* ---- Token warna per tema (spec §15.1, §15.3) ---- */
+
+[data-theme="light"] {
+  color-scheme: light;
+  --color-bg: #ffffff;
+  --color-surface: #f4f6f9;
+  --color-surface-raised: #ffffff;
+  --color-text: #12181f;
+  --color-text-muted: #565f6d;
+  --color-text-on-primary: #ffffff;
+  --color-border: #7b8695;
+  --color-primary: #1d4ed8;
+  --color-primary-hover: #1a44bd;
+  --color-danger: #b42318;
+  --color-success: #0a6b45;
+  --color-warning: #92400e;
+  --color-focus-ring: #1d4ed8;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: #0e1116;
+  --color-surface: #171c24;
+  --color-surface-raised: #1e2530;
+  --color-text: #eef2f7;
+  --color-text-muted: #aab4c2;
+  --color-text-on-primary: #0e1116;
+  --color-border: #6b7684;
+  --color-primary: #8ab4ff;
+  --color-primary-hover: #a9c6ff;
+  --color-danger: #ff9b90;
+  --color-success: #64d19a;
+  --color-warning: #f2c14e;
+  --color-focus-ring: #8ab4ff;
+}
+
+/* Spec §17.1: indikator fokus selalu terlihat, kontras >= 3:1. */
+:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+/* Spec §15.5: dukung preferensi kontras tinggi. */
+@media (prefers-contrast: more) {
+  [data-theme="light"] {
+    --color-text-muted: #3a424e;
+    --color-border: #3a424e;
+  }
+  [data-theme="dark"] {
+    --color-text-muted: #d6dde6;
+    --color-border: #9aa5b3;
+  }
+}
+
+/* Spec §15.5: Windows High Contrast / forced-colors — serahkan warna ke sistem. */
+@media (forced-colors: active) {
+  :root {
+    --color-border: CanvasText;
+    --color-focus-ring: Highlight;
+  }
+}
+
+/* Spec §15.6: cetak selalu mode terang. */
+@media print {
+  [data-theme="dark"] {
+    color-scheme: light;
+    --color-bg: #ffffff;
+    --color-surface: #ffffff;
+    --color-surface-raised: #ffffff;
+    --color-text: #000000;
+    --color-text-muted: #333333;
+    --color-text-on-primary: #000000;
+    --color-border: #000000;
+    --color-primary: #000000;
+    --color-primary-hover: #000000;
+    --color-danger: #000000;
+    --color-success: #000000;
+    --color-warning: #000000;
+    --color-focus-ring: #000000;
+  }
+}
+
+/* Spec §17.1: hormati preferensi gerak minimal. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration-fast: 0ms;
+    --motion-duration-base: 0ms;
+  }
+}
