@@ -429,3 +429,13 @@ test mandiri di `itauth` (periode calon & konteks scope `INSTITUTION:<id>`), ked
 **GAGAL** di bawah mutasi yang bersangkutan. MINOR lain: hazard urutan test (komentar eksplisit +
 test baru dibuat mandiri), nilai calon tanpa cek visibilitas scope (O-044), dan anotasi D-028
 butir 5 yang sempat bertentangan dengan D-029 butir 3.
+
+### Review ronde 5 — APPROVE
+
+Ronde 5 memverifikasi sendiri daya tangkap dua test ronde 4 (masing-masing mutasi: tepat satu test
+GAGAL, sisanya hijau), mengecek konsistensi angka dokumen (421 = 416 + 3 + 2; 37 berkas test =
+27 `t*.nim` + 10 `it*.nim`), dan meng-enumerasi ulang himpunan tanggal `sessionPolicyCandidateProblem`
+tanpa menemukan jendela yang belum tertutup/tercatat. **Verdict: APPROVE**, tanpa BLOCKER/MAJOR.
+Dua MINOR ditangani: komentar test yang berlebihan dilunakkan, dan bentuk input tanggal rusak
+(500 vs 400) ditajamkan ke O-035. Review batch Fase 0 selesai: 5 ronde (4× TIDAK APPROVE, ditutup
+berurutan oleh D-027, D-028, D-029) — di dalam batas AGENTS.md §4 butir 7.

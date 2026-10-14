@@ -1,6 +1,7 @@
 # Laporan Milestone M0 — Fase 0 (fondasi)
 
-Tanggal: **14 Oktober 2026**. Branch: `feat/fase0-fondasi` (21 commit di atas skeleton `5964665`,
+Tanggal: **14 Oktober 2026**. Branch: `feat/fase0-fondasi` (26 commit di atas skeleton `5964665`,
+termasuk 5 commit perbaikan hasil review),
 **belum di-merge ke `main`** — push ke `main` = deploy, jadi merge hanya oleh manusia, AGENTS.md §3).
 
 Fase 0 = deliverable spec §23 "skeleton jalan end-to-end". Semua task T-001…T-016 berstatus DONE;
@@ -21,7 +22,7 @@ tidak ada lagi task `READY` di backlog.
 | T-009 | Realtime: outbox → `NOTIFY` → hub → klien WS + resume token | `637230d` |
 | T-010 | Shell SvelteKit: design token, tema, i18n Paraglide, gate axe | `66825e6`, `a8a1e8d` |
 | T-011 | `tools/scaffold` + modul contoh `hello` | `15cd5ba` |
-| T-012 | **Alur Fase 0 end-to-end**: login → maker-checker parameter → audit → realtime di UI | `1f681ac`, `a1b6dc5`, `c7f394c` |
+| T-012 | **Alur Fase 0 end-to-end**: login → maker-checker parameter → audit → realtime di UI | `1f681ac`; perbaikan review: `a1b6dc5`, `c7f394c`, `deef34b`, `34424a0` |
 | T-013 | `ops/` (berkas skrip saja; **belum pernah dijalankan di server**) | `219f9af` |
 | T-014 | Spike ADR-002 (Mummy vs Prologue vs asyncnet) → keputusan pemilik: Mummy + WebSocket | `01094a1`, `38cdedb` |
 | T-015 | Inventaris `cbs-core` (referensi, bukan port) | `73c6cd8` |
@@ -55,11 +56,13 @@ menjalankan sendiri `./task check`/`./task test`.
 | 2 (`1f681ac..a1b6dc5`) | TIDAK APPROVE | (a) jendela tanggal efektif **masa depan** (deterministik); (b) balapan dua persetujuan lintas-key | ditutup D-028 + test repo & HTTP |
 | 3 (`a1b6dc5..c7f394c`) | TIDAK APPROVE | (a) test HTTP tidak membedakan kode lama/baru; (b) cabang `committedFromDates` tak teruji; (c) aturan "tanggal tak dapat dinilai" bisa menelan tanggal efektif kandidat; (d) baris `SUPERSEDED` ber-tanggal depan hilang dari himpunan tanggal | ditutup D-029 + 3 test, masing-masing diverifikasi GAGAL bila perbaikannya dikembalikan |
 | 4 (`c7f394c..deef34b`) | TIDAK APPROVE | Cabang `effectiveTo` tanpa test pembeda — reviewer membuktikan sendiri: mutasi "abaikan `effectiveTo`" membuat **seluruh suite tetap hijau** | ditutup 2 test mandiri (periode calon, konteks scope `INSTITUTION:<id>`), keduanya diverifikasi GAGAL di bawah mutasinya |
+| 5 (`deef34b..34424a0`) | **APPROVE** | — (reviewer menjalankan sendiri kedua mutasi: test pembeda terbukti nyata; enumerasi jendela tersisa pada himpunan tanggal/`committedFromDates` → semuanya tertutup atau tercatat sebagai O-043/O-044) | Review ditutup. Sisa 2 MINOR ditangani: komentar test dilunakkan, dan bentuk input tanggal rusak (500 vs 400) ditajamkan ke O-035 |
 
 Temuan MINOR/pertanyaan tidak ditutup di sini sesuai AGENTS.md §4 butir 6, tetapi **dicatat**:
 O-034…O-044. Tidak ada temuan BLOCKER. Catatan budaya: dua ronde terakhir menilai **bukti test**
 (mutation test), bukan hanya kode — itu justru yang menemukan lubang, dan dilanjutkan sendiri oleh
-saya untuk setiap perbaikan.
+saya untuk setiap perbaikan. Verifikasi silang angka: 421 `[OK]` = 416 + 3 (ronde 3) + 2 (ronde 4);
+37 berkas test = 27 `t*.nim` + 10 `it*.nim`.
 
 ## 4. Deviasi dari spec (disengaja, tercatat)
 
@@ -79,12 +82,12 @@ saya untuk setiap perbaikan.
   dihitung independen, area tetap wajib ditinjau manusia sebelum produksi.
 - **Hash-chain audit**: `audit_log` + `audit_verify` (T-004) dan catatan O-037/O-038 (invarian kursor
   `seq` tidak tertulis; potensi alarm palsu verifikasi).
-- **Authz/sesi + invariant kebijakan sesi**: D-027/D-028 mengubah jalur persetujuan parameter dan
-  login; perlu tinjauan manusia sebelum dipakai dengan data nyata.
+- **Authz/sesi + invariant kebijakan sesi**: D-027/D-028/D-029 mengubah jalur persetujuan parameter
+  dan login; perlu tinjauan manusia sebelum dipakai dengan data nyata.
 
 ## 6. Risiko & item terbuka yang menghalangi produksi
 
-`docs/OPEN_ITEMS.md` memuat **40 item** (O-001…O-042; nomor `O-020`/`O-021` tidak pernah dipakai).
+`docs/OPEN_ITEMS.md` memuat **42 item** (O-001…O-044; nomor `O-020`/`O-021` tidak pernah dipakai).
 Yang paling menghalangi:
 
 | Item | Kenapa penting |
@@ -102,7 +105,9 @@ Yang paling menghalangi:
 Fase 0 tercapai: satu alur nyata **login → ajukan perubahan parameter (maker) → setujui (checker) →
 jejak audit + peristiwa realtime di UI tanpa reload** berjalan di atas kerangka yang diminta spec
 (clean architecture + gate otomatis, tanpa nilai bisnis di kode, uang lewat `Money`, i18n id+en,
-a11y axe 2 tema, audit hash-chain, parameter dari DB).
+a11y axe 2 tema, audit hash-chain, parameter dari DB). Review independen ditutup **APPROVE** pada
+ronde ke-5 (lima ronde, tanpa BLOCKER; semua MAJOR ditutup dengan test yang terbukti menangkap
+regresinya, sisa temuan MINOR tercatat sebagai O-034…O-044).
 
 **STOP** di batas milestone sesuai AGENTS.md §7. Yang saya minta dari pemilik:
 
