@@ -59,7 +59,7 @@ proc settingsOf*(db: DbConn, scope: ScopeRef, asOf: string): SecuritySettings =
       keyString(P_platform_security_session_absolute_minutes), asOf, lookup))
 
 proc sessionPolicyCandidateProblem*(db: DbConn, key: string, candidate: JsonNode,
-                                    scopeType, scopeId, effectiveFrom, asOf: string): string =
+                                    effectiveFrom, effectiveTo, asOf: string): string =
   ## `""` bila perubahan aman; pesan pelanggaran bila kombinasi kebijakan sesi yang **akan**
   ## berlaku melanggar aturan domain `sessionPolicy` (idle ≤ absolut, spec §18.2).
   ##
@@ -75,10 +75,13 @@ proc sessionPolicyCandidateProblem*(db: DbConn, key: string, candidate: JsonNode
   ##   - tanggal mulai efektif sisi lainnya yang sudah disetujui (perubahan ber-tanggal depan di
   ##     sisi lain bisa membuat kombinasi tidak sah **setelah** perubahan kita disetujui).
   ##
-  ## Setiap baris yang sudah disetujui divalidasi pada tanggal efektifnya sendiri, sehingga
-  ## "tanggal tak dapat dinilai" (salah satu sisi belum punya nilai di tanggal itu) hanya muncul
-  ## untuk keadaan yang memang belum lengkap — dan keadaan itu harus tetap bisa **diperbaiki** lewat
-  ## alur normal, jadi dilewati.
+  ## Pada tanggal yang tercakup periode calon, nilai sisi calon **sudah pasti** (tidak perlu dibaca
+  ## dari DB) — kalau sisi itu yang gagal dibaca, seluruh tanggal depan akan terlewat dan jendela
+  ## yang justru dicegah tetap terbuka. Yang boleh "tidak dapat dinilai" hanya sisi lainnya, dan itu
+  ## memang keadaan belum lengkap yang harus tetap bisa **diperbaiki** lewat alur normal.
+  ##
+  ## Konteks scope penilaian = konteks tempat aplikasi membaca kebijakan sesi (`institutionScope()`,
+  ## spec §13/§18.2), supaya vonisnya sama dengan perilaku login yang sesungguhnya.
   ##
   ## Hanya pasangan parameter ini yang diperiksa: aturan lintas-parameter lain belum ada di spec.
   if candidate.kind != JInt:
@@ -94,12 +97,7 @@ proc sessionPolicyCandidateProblem*(db: DbConn, key: string, candidate: JsonNode
   # memang tidak dipakai, hanya efek samping penguncian.
   discard db.getAllRows(sql"SELECT pg_advisory_xact_lock(hashtext('platform.security.session_policy'))")
 
-  var evalScope = ScopeRef(scopeType: parseScopeType(scopeType), scopeId: scopeId)
-  if evalScope.scopeType == pstGlobal:
-    # Kebijakan sesi dibaca aplikasi pada konteks institusi (spec §13/§18.2), jadi kombinasi
-    # dinilai di konteks yang sama — baris GLOBAL tetap terlihat sebagai nilai paling umum.
-    evalScope = institutionScope()
-  let lookup = lookupFor(evalScope)
+  let lookup = lookupFor(institutionScope())
   let today = if asOf.len >= 10: asOf[0 .. 9] else: asOf
   let otherKey = if key == idleKey: absoluteKey else: idleKey
 
@@ -115,21 +113,24 @@ proc sessionPolicyCandidateProblem*(db: DbConn, key: string, candidate: JsonNode
       unique.add date
 
   for date in unique:
+    # Periode calon = [effectiveFrom, effectiveTo). Di luar itu nilainya dibaca dari DB seperti biasa.
+    let candidateApplies = date >= effectiveFrom and (effectiveTo.len == 0 or date < effectiveTo)
     var idle = 0
     var absolute = 0
-    try:
-      idle = db.activeParamInt(idleKey, date, lookup)
-      absolute = db.activeParamInt(absoluteKey, date, lookup)
-    except ValueError:
-      # Salah satu sisi belum punya nilai pada tanggal itu: tidak ada kombinasi yang bisa dinilai.
-      continue
-    # Nilai calon berlaku sejak tanggal efektifnya (dan merupakan nilai terbaru untuk key itu —
-    # bila ada baris yang lebih akhir, persetujuannya sendiri akan ditolak EXCLUDE).
-    if date >= effectiveFrom:
-      if key == idleKey:
-        idle = int(candidate.getInt)
-      else:
-        absolute = int(candidate.getInt)
+    if candidateApplies and key == idleKey:
+      idle = int(candidate.getInt)
+    else:
+      try:
+        idle = db.activeParamInt(idleKey, date, lookup)
+      except ValueError:
+        continue
+    if candidateApplies and key == absoluteKey:
+      absolute = int(candidate.getInt)
+    else:
+      try:
+        absolute = db.activeParamInt(absoluteKey, date, lookup)
+      except ValueError:
+        continue
     try:
       discard sessionPolicy(idle, absolute)
     except ValueError as e:

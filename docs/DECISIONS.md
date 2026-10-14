@@ -487,3 +487,37 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
   per pemeriksaan) dan mengambil kunci advisory; keduanya hanya terjadi untuk pasangan parameter
   kebijakan sesi, bukan untuk semua perubahan parameter. Sisa keterbatasan: validasi hanya berlaku
   pada pasangan ini (aturan lintas-parameter lain belum ada di spec → O-041).
+
+## D-029 — Ronde 3 review: memperketat himpunan tanggal pemeriksaan kebijakan sesi
+
+- **Konteks**: ronde 3 review independen menilai serialisasi lintas-key **benar** (kunci advisory
+  dilepas hanya saat commit; urutan kunci → audit selalu sama sehingga tidak menimbulkan deadlock
+  baru) dan penilaian tanggal-depan **menutup kasus paling sederhana**, tetapi menemukan empat
+  lubang di himpunan tanggal + test yang tidak membedakan kode lama/baru.
+- **Keputusan**:
+  1. `param_repo.committedFromDates` menyertakan `SUPERSEDED`, bukan hanya `ACTIVE` — baris
+     ber-tanggal depan yang kemudian dipangkas baris yang lebih akhir tetap berlaku sampai
+     `effective_to`-nya (pola riwayat effective-dated, `activeValueSql`/D-008), jadi tanggal
+     mulainya tetap titik perubahan nilai. Tanpa ini, nilai absolut 2026-12-01 yang dipangkas
+     2027-01-01 hilang dari penilaian dan kombinasi tidak sah 2026-12-01…2027-01-01 lolos.
+  2. Pada tanggal yang tercakup periode calon, nilai sisi calon **tidak dibaca dari DB**. Kalau
+     sisi itu ikut diwajibkan terbaca, satu periode berakhir tanpa penerus (`effective_to` tanpa
+     baris pengganti) membuat seluruh tanggal — termasuk tanggal efektif calon — dilewati, dan
+     pemeriksaan ini jadi tidak menangkap apa pun.
+  3. Konteks scope penilaian disamakan dengan konteks baca aplikasi (`institutionScope()`,
+     `handlers_auth` → `settingsOf`), termasuk untuk calon ber-scope `INSTITUTION`: baris
+     INSTITUTION ber-id konkret memang tidak dibaca aplikasi selama O-012 belum dirapikan, jadi
+     menilainya dengan id itu akan menghasilkan vonis yang tidak mencerminkan perilaku login.
+  4. Periode calon dipatuhi (`[effectiveFrom, effectiveTo)`) saat menentukan tanggal mana yang
+     memakai nilai calon.
+  5. Test: setiap perbaikan di atas punya test yang **GAGAL bila perbaikannya dikembalikan**
+     (diverifikasi dengan memasang sementara perilaku lama): `itauth` (tanggal mulai sisi lain,
+     baris yang dipangkas, sisi calon tak terbaca) dan `itapi_auth` (kandidat mulai hari ini dengan
+     absolut turun mulai besok — kasus yang lolos pada kode lama).
+- **Alasan**: himpunan tanggal adalah inti kebenaran pemeriksaan ini; setiap tanggal yang hilang
+  dari himpunan = jendela lockout yang tidak terdeteksi. Memilih "lebih banyak tanggal" aman karena
+  penilaian hanya menolak kombinasi yang benar-benar tidak sah, dan aturan "tanggal tak dapat
+  dinilai dilewati" dibatasi hanya pada sisi yang memang belum lengkap.
+- **Konsekuensi**: satu batas pemeriksaan yang tetap: keadaan "satu sisi tanpa nilai aktif sama
+  sekali" dilewati supaya bisa diperbaiki lewat alur normal (D-027 butir 2). Kerangka parameter yang
+  membuat celah nilai (baris ACTIVE ber-`effective_to` tanpa penerus) dicatat sebagai O-043.

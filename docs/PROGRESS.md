@@ -409,3 +409,14 @@ ada serialisasi. Diperbaiki dengan penilaian berbasis himpunan tanggal + `pg_adv
 
 Temuan MINOR/pertanyaan ronde 1–2 dicatat sebagai O-034…O-042 (tidak ditutup di sini sesuai
 AGENTS.md §4 butir 6). Keputusan "percobaan ditolak tidak diaudit" dicatat di D-028.
+
+### Review ronde 3 — 4 MAJOR (himpunan tanggal + test) ditutup
+
+Ronde 3 memverifikasi serialisasi lintas-key **benar** dan mengakui penilaian tanggal-depan
+menutup kasus paling sederhana, tetapi menemukan: (a) test HTTP tidak membedakan kode lama/baru
+(kandidat 1001 sudah ditolak kode lama karena 1001 > 479), (b) cabang `committedFromDates` tidak
+teruji, (c) aturan "tanggal tak dapat dinilai dilewati" bisa menelan tanggal efektif kandidat
+sendiri, dan (d) baris `SUPERSEDED` ber-tanggal depan hilang dari himpunan tanggal. Semuanya
+diperbaiki (D-029) dengan test yang diverifikasi **GAGAL** bila perbaikannya dikembalikan
+(percobaan memasang perilaku lama sementara, lalu dikembalikan). `itauth` kini 18 test;
+`itapi_auth` 18. Catatan kerangka parameter yang muncul: O-043.
