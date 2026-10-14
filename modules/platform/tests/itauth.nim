@@ -366,8 +366,10 @@ suite "kebijakan sesi: aturan lintas-parameter":
     check sessionPolicyCandidateProblem(db, sessionIdleKey, %*30, asOf, "", asOf) == ""
 
   test "periode calon dipatuhi: nilai kandidat tidak dipakai setelah effectiveTo":
-    # Sisi absolut & idle dibuat sendiri oleh test ini (tanggal jauh di depan) supaya tidak
-    # bergantung urutan test lain. Kandidat idle 30 berlaku hanya [asOf, 2026-11-01); mulai
+    # Baris absolut & idle untuk tanggal jauh dibuat sendiri oleh test ini, tetapi **tetap**
+    # bergantung pada celah nilai idle yang dibuat test sebelumnya (baris pack dipangkas di `asOf`):
+    # tanpa celah itu, pada 2026-12-01 sudah ada pelanggaran 600 > 100 dan pesan yang dikembalikan
+    # lebih dulu bukan tanggal 2030-01-01. Kandidat idle 30 berlaku hanya [asOf, 2026-11-01); mulai
     # 2030-01-01 nilai idle yang sesungguhnya adalah 600 — di situ 600 > 50 = pelanggaran, dan
     # pelanggaran itu hilang bila `effectiveTo` kandidat diabaikan (30 ≤ 50).
     let dari = "2030-01-01"
