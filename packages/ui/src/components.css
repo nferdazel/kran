@@ -1,0 +1,264 @@
+/*
+ * Komponen presentasional dasar CBS (spec §14.1 `packages/ui`, §17.1).
+ *
+ * Prinsip:
+ *  - Hanya memakai design token (`--color-*`, `--space-*`, dst) — tidak ada warna mentah,
+ *    sehingga tema light/dark dan `prefers-contrast`/`forced-colors` bekerja otomatis.
+ *  - Kelas dipakai pada **elemen semantik** (`button`, `a`, `table`, `fieldset`), bukan `<div>`
+ *    berpura-pura tombol (spec §17.1: elemen semantik dulu, ARIA kemudian).
+ *  - Properti logis (`margin-inline`, `padding-block`) supaya siap RTL (spec §16.2).
+ *  - Target sentuh minimal 24x24 CSS px (spec §17.1 / WCAG 2.5.8).
+ *
+ * Komponen headless (bits-ui/Melt) dan komponen kompleks (dialog, combobox, tabel
+ * ter-virtualisasi) menyusul; lihat docs/tasks/T-010.md bagian batasan.
+ */
+
+.cbs-skip-link {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  z-index: 100;
+  padding-block: var(--space-2);
+  padding-inline: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: var(--color-text-on-primary);
+  text-decoration: none;
+  /* Disembunyikan sampai difokus (bukan `display:none`, agar tetap dapat difokus). */
+  transform: translateY(-200%);
+}
+
+.cbs-skip-link:focus-visible {
+  transform: none;
+}
+
+.cbs-shell {
+  min-block-size: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--line-height-base);
+}
+
+.cbs-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+  justify-content: space-between;
+  padding-block: var(--space-3);
+  padding-inline: var(--space-4);
+  background: var(--color-surface);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.cbs-header__brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.cbs-header__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+}
+
+.cbs-nav {
+  padding-block: var(--space-2);
+  padding-inline: var(--space-4);
+  background: var(--color-surface);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.cbs-nav ul {
+  display: flex;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cbs-main {
+  width: 100%;
+  max-inline-size: var(--layout-max-width);
+  margin-inline: auto;
+  padding-block: var(--space-5);
+  padding-inline: var(--space-4);
+}
+
+.cbs-footer {
+  padding-block: var(--space-3);
+  padding-inline: var(--space-4);
+  background: var(--color-surface);
+  border-block-start: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* Target minimal 24x24 (spec §17.1). */
+.cbs-button,
+.cbs-select,
+.cbs-link {
+  min-block-size: var(--control-min-size);
+  min-inline-size: var(--control-min-size);
+}
+
+.cbs-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding-block: var(--space-2);
+  padding-inline: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.cbs-button:hover {
+  background: var(--color-surface);
+}
+
+.cbs-button[aria-pressed="true"] {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-text-on-primary);
+}
+
+.cbs-select {
+  padding-block: var(--space-2);
+  padding-inline: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.cbs-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.cbs-fieldset > legend {
+  padding: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.cbs-radio-group {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.cbs-card {
+  padding-block: var(--space-4);
+  padding-inline: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-1);
+}
+
+.cbs-card + .cbs-card {
+  margin-block-start: var(--space-4);
+}
+
+.cbs-status-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Status: warna + ikon + teks (spec §15.4 — jangan hanya warna). */
+.cbs-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cbs-status__icon {
+  font-size: var(--text-sm);
+  line-height: 1;
+}
+
+.cbs-status--ok {
+  color: var(--color-success);
+}
+
+.cbs-status--warning {
+  color: var(--color-warning);
+}
+
+.cbs-status--danger {
+  color: var(--color-danger);
+}
+
+.cbs-muted {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.cbs-business-date {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .cbs-button,
+  .cbs-skip-link {
+    transition:
+      background-color var(--motion-duration-fast) var(--motion-ease),
+      transform var(--motion-duration-fast) var(--motion-ease);
+  }
+}
+
+/* Utilitas: menyembunyikan secara visual tanpa menghilangkan dari pohon a11y. */
+.cbs-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Radio tema: input asli tetap terlihat & dapat difokus (semantik dulu, §17.1). */
+.cbs-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-block: var(--space-1);
+  padding-inline: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  cursor: pointer;
+  min-block-size: var(--control-min-size);
+}
+
+.cbs-radio:hover {
+  background: var(--color-surface);
+}
+
+.cbs-radio:has(input:checked) {
+  border-color: var(--color-primary);
+}

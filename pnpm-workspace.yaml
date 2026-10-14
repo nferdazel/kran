@@ -1,0 +1,4 @@
+# Workspace TS (spec §7): apps/* + packages/*. Nim tetap satu paket nimble (D-002).
+packages:
+  - apps/*
+  - packages/*

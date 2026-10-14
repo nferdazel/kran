@@ -4,7 +4,7 @@
 #
 #   ./task check   format + lint + archcheck + lint-nomagic + paramgen --check + i18n check
 #   ./task test    unit + property + integration (Postgres) + contract
-#   ./task e2e     Playwright (e2e + axe + visual 2 tema)
+#   ./task e2e     web: kontras token + svelte-check + Playwright (axe 2 tema x 2 locale, keyboard)
 #   ./task ci      semua di atas
 #   ./task build   bangun binary apps/api
 #   ./task fmt     rapikan format (menulis ulang berkas)
@@ -238,8 +238,36 @@ cmd_e2e() {
     skip "apps/web/package.json belum ada (T-010)"
     return 0
   fi
-  have pnpm || die "pnpm tidak ada di PATH"
-  (cd "$ROOT/apps/web" && pnpm run e2e)
+  # Binary lokal dipakai langsung, bukan lewat `pnpm run`: pnpm 10+ memasang ulang dependency
+  # lebih dulu bila lockfile/package.json dirasa tidak sinkron, dan install itu butuh registry.
+  # Di mesin pengembangan registry privat (artifactory) tidak resolve, sehingga `pnpm run` bisa
+  # menggantung. Binary lokal deterministik dan tetap benar di CI setelah `pnpm install`.
+  web_bin="$ROOT/apps/web/node_modules/.bin"
+  ui_bin="$ROOT/packages/ui/node_modules/.bin"
+  if [ ! -x "$web_bin/playwright" ] || [ ! -x "$ui_bin/vitest" ]; then
+    skip "dependency JS belum terpasang (jalankan: pnpm install) — e2e/a11y dilewati"
+    return 0
+  fi
+
+  log "kontras token (vitest, packages/ui)"
+  (cd "$ROOT/packages/ui" && "$ui_bin/vitest" run) || die "test kontras token gagal"
+  ok "pasangan token lolos ambang kontras (light + dark)"
+
+  log "i18n: kompilasi Paraglide + tipe pesan"
+  (cd "$ROOT/apps/web" && "$web_bin/paraglide-js" compile \
+    --project ../../packages/i18n/project.inlang \
+    --outdir ./src/lib/paraglide \
+    --emit-ts-declarations >/dev/null) || die "kompilasi Paraglide gagal"
+  ok "pesan terkompilasi"
+
+  log "svelte-check (tipe + diagnostik a11y komponen)"
+  (cd "$ROOT/apps/web" && "$web_bin/svelte-kit" sync >/dev/null && "$web_bin/svelte-check" --tsconfig ./tsconfig.json) \
+    || die "svelte-check menemukan error"
+  ok "0 error"
+
+  log "e2e (Playwright): axe 2 tema x 2 locale + alur keyboard-only"
+  (cd "$ROOT/apps/web" && "$web_bin/playwright" test) || die "e2e gagal"
+  ok "e2e hijau"
 }
 
 cmd_build() {

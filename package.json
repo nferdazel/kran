@@ -1,0 +1,16 @@
+{
+  "name": "cbs-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "comment": "Root workspace pnpm. Satu pintu perintah tetap ./task (D-001); skrip di sini hanya untuk paket TS.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build:web": "pnpm --filter @cbs/web build",
+    "check:web": "pnpm --filter @cbs/web check",
+    "test:ui": "pnpm --filter @cbs/ui test",
+    "e2e": "pnpm --filter @cbs/web e2e"
+  }
+}

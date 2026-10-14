@@ -50,6 +50,36 @@ jobs:
         # (job db-tests yang menyediakannya, lihat docs/ci-jobs.md).
         run: ./task test
 
+  web-e2e:
+    name: Web (svelte-check + axe + Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install JS dependencies
+        # Lockfile JS belum bisa dibuat di mesin dev (registry privat tidak resolve) — lihat
+        # docs/OPEN_ITEMS.md O-020. Setelah lockfile ada, ubah menjadi --frozen-lockfile.
+        run: pnpm install
+
+      - name: Install browser Playwright
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: ./task e2e
+        # kontras token + svelte-check + Playwright (axe 2 tema x 2 locale, alur keyboard-only)
+        run: ./task e2e
+
   security:
     name: Security (gitleaks)
     runs-on: ubuntu-latest

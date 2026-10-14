@@ -1,0 +1,34 @@
+{
+  "name": "@cbs/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#lib/*": "./src/lib/*"
+  },
+  "comment": "Shell SvelteKit (spec \u00a714). SPA (adapter-static + fallback); e2e Playwright + axe (spec \u00a717.2). Versi dependency dipin (spec \u00a718.2).",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "sync": "svelte-kit sync",
+    "i18n:compile": "paraglide-js compile --project ../../packages/i18n/project.inlang --outdir ./src/lib/paraglide --emit-ts-declarations",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@cbs/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@inlang/paraglide-js": "2.27.0",
+    "@playwright/test": "1.64.0",
+    "@sveltejs/adapter-static": "4.0.0",
+    "@sveltejs/kit": "3.0.1",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "svelte": "5.57.2",
+    "svelte-check": "4.7.6",
+    "typescript": "5.9.3",
+    "vite": "8.3.4"
+  }
+}

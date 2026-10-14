@@ -24,3 +24,15 @@ playwright-report/
 
 # OS
 .DS_Store
+
+# Paraglide (dihasilkan dari packages/i18n/messages saat build)
+apps/web/src/lib/paraglide/
+packages/i18n/generated/
+
+# cache plugin inlang (diunduh dari CDN saat compile; bukan sumber kebenaran)
+packages/i18n/project.inlang/cache/
+packages/i18n/project.inlang/.lix/
+packages/i18n/project.inlang/.meta.json
+
+# Playwright
+blob-report/

@@ -1,0 +1,18 @@
+{
+  "name": "@cbs/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "comment": "Design system presentasional (spec §7, §15). Token = sumber kebenaran warna/spacing/radius/tipografi; komponen dasar = CSS kelas pada elemen semantik.",
+  "exports": {
+    "./tokens.css": "./tokens/tokens.css",
+    "./components.css": "./src/components.css",
+    "./contrast": "./src/contrast.ts"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "5.0.4"
+  }
+}
