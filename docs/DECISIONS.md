@@ -473,6 +473,8 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
      menjadi atomik untuk pasangan key ini. Dilepas otomatis di akhir transaksi.
   5. Penilaian memakai konteks scope yang sama dengan tempat aplikasi membaca kebijakan sesi
      (`institutionScope()`, spec §13/§18.2); untuk calon ber-scope lain, scope calon itu sendiri.
+  **Revisi**: butir ini diubah oleh D-029 butir 3 — penilaian kini **selalu** memakai konteks baca
+  aplikasi, termasuk untuk calon ber-scope lain.
 - **Alasan menolak alternatif**: **trigger/constraint DB** akan memindahkan aturan domain ke SQL dan
   jauh lebih sulit dibaca/diuji (dan tetap butuh kunci advisory untuk serialisasi); **menolak
   perubahan ber-tanggal depan** untuk kedua key ini akan melarang fitur efektif-dated yang diminta
@@ -521,3 +523,22 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
 - **Konsekuensi**: satu batas pemeriksaan yang tetap: keadaan "satu sisi tanpa nilai aktif sama
   sekali" dilewati supaya bisa diperbaiki lewat alur normal (D-027 butir 2). Kerangka parameter yang
   membuat celah nilai (baris ACTIVE ber-`effective_to` tanpa penerus) dicatat sebagai O-043.
+
+### Tambahan D-029 — ronde 4: bukti pembeda untuk `effectiveTo` & konteks scope
+
+Ronde 4 menyatakan kode D-029 **benar** (mutation test-nya sendiri mengonfirmasi dua perbaikan
+GAGAL bila dikembalikan), tetapi menemukan bahwa (a) cabang `effectiveTo` belum punya test pembeda —
+mutation "abaikan `effectiveTo`" membuat **seluruh suite hijau** — dan (b) perubahan konteks scope
+(D-029 butir 3) belum diuji dengan baris `INSTITUTION:<id>` nyata. Keduanya ditutup dengan dua test
+mandiri di `itauth` (membuat barisnya sendiri, tanggal jauh di depan, supaya tidak bergantung urutan
+test lain):
+
+- "periode calon dipatuhi: nilai kandidat tidak dipakai setelah `effectiveTo`" — GAGAL bila
+  `effectiveTo` diabaikan (diverifikasi dengan memasang mutasinya sementara).
+- "baris ber-scope `INSTITUTION` dengan id konkret tidak mengubah vonis" — GAGAL bila konteks
+  penilaian memakai id institusi konkret (baris itu jadi terlihat dan vonisnya berubah).
+
+Catatan tambahan: hazard urutan test diakui eksplisit (komentar di awal suite) dan test baru dibuat
+mandiri; sisa hazard dicatat sebagai keterbatasan, bukan dianggap tidak ada. Nilai calon yang
+dipakai tanpa memeriksa visibilitas scope dicatat sebagai O-044 (sifatnya konservatif, sudah ada
+sebelum D-029). Butir 5 D-028 sudah dianotasi agar tidak bertentangan dengan D-029 butir 3.

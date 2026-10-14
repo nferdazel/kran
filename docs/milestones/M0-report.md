@@ -35,7 +35,9 @@ Bukti per task ada di `docs/PROGRESS.md`; rencana & kriteria T-012 di `docs/task
 - `./task check` → format 106 berkas, `nim check` 107 berkas, archcheck bersih, lint-nomagic bersih,
   paramgen sinkron, i18n 88 key × 2 locale tanpa key yatim, 7 skrip ops lolos `bash -n`.
 - `./task openapi` → kontrak lolos lint (fail-severity warn), klien TS sinkron, typecheck hijau.
-- `./task test` → **416 `[OK]`, 0 gagal** (unit + property + integrasi Postgres, 38 berkas test).
+- `./task test` → **421 `[OK]`, 0 gagal** (unit + property + integrasi Postgres, **37** berkas test
+  dijalankan; `apps/api/tests/wsclient.nim` dan `shared/kernel/tests/support/propgen.nim` adalah
+  helper, bukan biner test — koreksi dari angka 38 yang sempat tertulis di pesan commit T-012).
 - `./task e2e` → kontras token 34, `svelte-check` 0 error/0 warning, Playwright **18 lulus**:
   axe `/` × 2 tema × 2 locale, keyboard-only shell, `flow.spec.ts` (alur dua konteks maker/checker
   dengan penanda `__guard` → nilai ACTIVE muncul di sesi maker **tanpa reload**; jejak audit memuat
@@ -50,10 +52,14 @@ menjalankan sendiri `./task check`/`./task test`.
 | Ronde | Verdict | Temuan MAJOR | Status |
 |---|---|---|---|
 | 1 (`5964665..1f681ac`) | TIDAK APPROVE | (a) persetujuan ganda bisa lolos — 4-eyes bocor; (b) kombinasi parameter kebijakan sesi yang sah per-key membuat seluruh login gagal 500 tanpa amplop | ditutup D-027 + test yang GAGAL bila penjaganya dilepas |
-| 2 (`1f681ac..a1b6dc5`) | TIDAK APPROVE | (a) jendela tanggal efektif **masa depan** (deterministik); (b) balapan dua persetujuan lintas-key | ditutup D-028 + 2 test baru (repo & HTTP) |
+| 2 (`1f681ac..a1b6dc5`) | TIDAK APPROVE | (a) jendela tanggal efektif **masa depan** (deterministik); (b) balapan dua persetujuan lintas-key | ditutup D-028 + test repo & HTTP |
+| 3 (`a1b6dc5..c7f394c`) | TIDAK APPROVE | (a) test HTTP tidak membedakan kode lama/baru; (b) cabang `committedFromDates` tak teruji; (c) aturan "tanggal tak dapat dinilai" bisa menelan tanggal efektif kandidat; (d) baris `SUPERSEDED` ber-tanggal depan hilang dari himpunan tanggal | ditutup D-029 + 3 test, masing-masing diverifikasi GAGAL bila perbaikannya dikembalikan |
+| 4 (`c7f394c..deef34b`) | TIDAK APPROVE | Cabang `effectiveTo` tanpa test pembeda — reviewer membuktikan sendiri: mutasi "abaikan `effectiveTo`" membuat **seluruh suite tetap hijau** | ditutup 2 test mandiri (periode calon, konteks scope `INSTITUTION:<id>`), keduanya diverifikasi GAGAL di bawah mutasinya |
 
-Temuan MINOR/pertanyaan (ronde 1–2) tidak ditutup di sini sesuai AGENTS.md §4 butir 6, tetapi
-**dicatat**: O-034…O-042. Tidak ada temuan BLOCKER.
+Temuan MINOR/pertanyaan tidak ditutup di sini sesuai AGENTS.md §4 butir 6, tetapi **dicatat**:
+O-034…O-044. Tidak ada temuan BLOCKER. Catatan budaya: dua ronde terakhir menilai **bukti test**
+(mutation test), bukan hanya kode — itu justru yang menemukan lubang, dan dilanjutkan sendiri oleh
+saya untuk setiap perbaikan.
 
 ## 4. Deviasi dari spec (disengaja, tercatat)
 
