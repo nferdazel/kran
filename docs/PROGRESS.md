@@ -274,3 +274,29 @@ Bukti: `tparamservice` 13 test, `itparamservice` 6 test (termasuk invalidasi lew
 drift == 0 setelah seed), `./task archcheck` bersih **dan** probe pelanggaran (`import
 db_connector` di `application/probe_bad.nim`) benar-benar ditolak gate sebelum berkas probe
 dihapus. `./task ci` hijau. Item baru: O-018 (watcher parameter belum punya thread/loop sendiri).
+
+## T-010 — Shell aplikasi web (SvelteKit) + design token + tema + i18n + baseline a11y (DONE)
+
+Scope & keputusan: `docs/tasks/T-010.md`. Ringkas: workspace pnpm (`apps/*`, `packages/*`),
+`packages/config` (tsconfig bersama), `packages/ui` (token semantik light/dark, kelas komponen
+dasar pada elemen semantik, test kontras), `packages/i18n` (katalog id/en + proyek inlang),
+`apps/web` (SvelteKit 3 SPA: landmark + skip link + judul halaman + indikator business date +
+kontrol tema/bahasa + live region), `tools/i18ncheck` (gate katalog §16.3), Playwright
+(axe 2 tema × 2 locale + alur keyboard-only), job CI `web-e2e`.
+
+Bukti: `./task e2e` hijau — vitest kontras 34 test, `svelte-check` 0 error/0 warning, Playwright
+12 test (4 axe + 4 keyboard + 4 struktur/perilaku); `./task i18n` → `2 locale, 28 key/locale,
+tidak ada temuan`; `ti18ncheck` 24 test. `./task ci` **exit 0** ("CI hijau"): format 78 berkas,
+lint 79 berkas, archcheck/nomagic/paramgen bersih, bash -n 7 skrip, 23 unit + 6 integration Nim
+test (311 `[OK]`), plus seluruh gate web di atas. Satu SKIP: contract test (T-008, menunggu
+ADR-002/E-001).
+
+Deviasi yang disengaja dan alasannya (detail + bukti di `docs/tasks/T-010.md`): SvelteKit 3 tanpa
+`svelte.config.js` dan tanpa alias `$lib`; katalog i18n satu berkas datar per locale dengan
+prefiks namespace pada key (pola `{locale}/{namespace}.json` terbukti menghasilkan nol pesan);
+plugin Paraglide dari CDN versi pin; kontrol tema/bahasa berupa radio native (`<select>` tidak
+dapat diubah lewat keyboard di Chromium headless sehingga tidak dapat diuji); jamak dipilih di
+kode karena Paraglide v2 merusak sintaks ICU mentah.
+
+Item baru: O-020 (lockfile JS belum bisa dibuat), O-021 (plugin Paraglide dari CDN), O-022
+(visual regression ditunda), O-023 (ESLint a11y belum ada), O-024 (komponen headless menyusul).
