@@ -22,6 +22,7 @@ import platform/infrastructure/[audit_repo, auth_repo, auth_service, calendar_re
 const
   repoRoot = "."
   iterationsKey = "platform.security.password_pbkdf2_iterations"
+  sessionIdleKey = "platform.security.session_idle_minutes"
   asOf = "2026-10-13"
   branchBandung = "11111111-1111-1111-1111-111111111111"
   branchSurabaya = "22222222-2222-2222-2222-222222222222"
@@ -276,3 +277,24 @@ suite "ganti password":
     check changePassword(db, user, settings(), passwordAwal, "password-baru-panjang")
     check login("ganti-password", passwordAwal).outcome == aoInvalidCredentials
     check login("ganti-password", "password-baru-panjang").outcome == aoSuccess
+
+suite "kebijakan sesi: aturan lintas-parameter":
+  test "kandidat yang melanggar idle <= absolut dilaporkan; yang sah tidak":
+    # Aturan domainnya milik `sessionPolicy` (spec §18.2). Yang diuji di sini adalah pemeriksaan
+    # **calon nilai** terhadap nilai sisi lainnya yang sedang aktif — jalan yang mencegah nilai
+    # sah-per-schema (mis. idle 600 + absolut 480) disetujui dan mematikan seluruh login.
+    let kebijakan = settings()
+    check kebijakan.sessionAbsoluteMinutes > 0
+    let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey,
+      %*(kebijakan.sessionAbsoluteMinutes + 1), instScope, asOf)
+    check melanggar.contains("tidak boleh melebihi")
+
+    # Tepat pada batas (idle = absolut) masih sah.
+    check sessionPolicyCandidateProblem(db, sessionIdleKey,
+      %*kebijakan.sessionAbsoluteMinutes, instScope, asOf) == ""
+
+    # Key yang bukan bagian kebijakan sesi tidak diperiksa di sini.
+    check sessionPolicyCandidateProblem(db, iterationsKey, %*1, instScope, asOf) == ""
+
+    # Nilai yang bukan integer bukan urusan pemeriksaan ini (bentuk nilai dijaga `submitValue`).
+    check sessionPolicyCandidateProblem(db, sessionIdleKey, %*"bukan-angka", instScope, asOf) == ""

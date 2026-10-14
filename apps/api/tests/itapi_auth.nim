@@ -34,6 +34,8 @@ const
   ParamsPath = "/api/v1/params"
   AuditPath = "/api/v1/audit"
   ParamKey = "platform.security.max_failed_logins"
+  SessionIdleKey = "platform.security.session_idle_minutes"
+  SessionAbsoluteKey = "platform.security.session_absolute_minutes"
   MakerUser = "dev.maker"
   CheckerUser = "dev.checker"
   DevPassword = "rahasia-panjang-123"
@@ -330,6 +332,74 @@ suite "parameter maker-checker lewat HTTP":
     let reply = postJson("/api/v1/params/platform.tidak.ada/changes",
       %*{"value": 1, "reason": "uji key tak dikenal"}, tokenOf(maker))
     check reply.code == 400
+
+suite "aturan lintas-parameter kebijakan sesi lewat HTTP":
+  test "pengajuan yang membuat idle > absolut ditolak 400, tanpa efek samping":
+    let maker = login(MakerUser)
+    let makerToken = tokenOf(maker)
+    let params = getJson(ParamsPath, makerToken).body
+    let idle = activeValueOf(params, SessionIdleKey).getInt()
+    let absolute = activeValueOf(params, SessionAbsoluteKey).getInt()
+    # Kombinasi tidak sah: idle di atas absolut, tetapi masih di dalam schema (1..1440).
+    let badIdle = max(absolute + 1, idle + 1)
+    check badIdle > absolute
+    check badIdle <= 1440
+
+    let reply = postJson("/api/v1/params/" & SessionIdleKey & "/changes",
+      %*{"value": badIdle, "reason": "uji otomatis: kombinasi kebijakan sesi tidak sah"},
+      makerToken)
+    check reply.code == 400
+    checkProblem("/api/v1/params/{key}/changes", "POST", "400", reply.body)
+
+    # Ditolak berarti tidak ada baris PENDING yang tertinggal, dan konfigurasi lama tetap berlaku:
+    # login berikutnya tetap 200 (kalau nilai buruk sempat aktif, login gagal 500).
+    for item in itemWith(getJson(ParamsPath, makerToken).body, SessionIdleKey):
+      check item["status"].getStr() != "PENDING"
+    check activeValueOf(getJson(ParamsPath, makerToken).body, SessionIdleKey).getInt() == idle
+    check login(MakerUser).code == 200
+
+  test "persetujuan yang membuat kombinasi tidak sah ditolak 409 (dua pengajuan sah)":
+    # Dua pengajuan yang masing-masing sah saat diajukan, tetapi kombinasinya tidak setelah yang
+    # pertama aktif. Inilah alasan pemeriksaan harus ada di **persetujuan**, bukan hanya pengajuan.
+    let maker = login(MakerUser)
+    let makerToken = tokenOf(maker)
+    let checker = login(CheckerUser)
+    let checkerToken = tokenOf(checker)
+
+    let absoluteAwal = activeValueOf(getJson(ParamsPath, makerToken).body,
+      SessionAbsoluteKey).getInt()
+    let idleAwal = activeValueOf(getJson(ParamsPath, makerToken).body, SessionIdleKey).getInt()
+    let absoluteBaru = max(5, absoluteAwal - 1) # masih >= idle lama (idle <= absolutBaru)
+    check idleAwal <= absoluteBaru
+    let idleBaru = absoluteBaru + 1 # sah terhadap absolut LAMA, tidak sah terhadap absolut BARU
+    check idleBaru <= absoluteAwal
+
+    let ajukanAbsolut = postJson("/api/v1/params/" & SessionAbsoluteKey & "/changes",
+      %*{"value": absoluteBaru, "reason": "uji otomatis: turunkan batas absolut"},
+      makerToken)
+    check ajukanAbsolut.code == 201
+    let ajukanIdle = postJson("/api/v1/params/" & SessionIdleKey & "/changes",
+      %*{"value": idleBaru, "reason": "uji otomatis: naikkan batas idle"},
+      makerToken)
+    check ajukanIdle.code == 201
+
+    let setujuiAbsolut = postJson("/api/v1/params/changes/" &
+      ajukanAbsolut.body["paramValueId"].getStr() & "/approve", newJObject(), checkerToken)
+    check setujuiAbsolut.code == 200
+
+    let setujuiIdle = postJson("/api/v1/params/changes/" &
+      ajukanIdle.body["paramValueId"].getStr() & "/approve", newJObject(), checkerToken)
+    check setujuiIdle.code == 409
+    check setujuiIdle.body["params"]["reason"].getStr() == "invalid_combination"
+    checkProblem("/api/v1/params/changes/{paramValueId}/approve", "POST", "409",
+      setujuiIdle.body)
+    # Nilai yang ditolak tetap PENDING (bisa ditinjau manusia), dan kebijakan aktif tetap sah.
+    var masihPending = false
+    for item in itemWith(getJson(ParamsPath, makerToken).body, SessionIdleKey):
+      if item["paramValueId"].getStr() == ajukanIdle.body["paramValueId"].getStr():
+        masihPending = item["status"].getStr() == "PENDING"
+    check masihPending
+    check login(MakerUser).code == 200
 
 suite "audit lewat HTTP":
   test "jejak submit & approve parameter terbaca kembali lengkap":

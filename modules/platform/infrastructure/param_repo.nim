@@ -215,15 +215,11 @@ proc submitValue*(db: DbConn, paramValueId, key, scopeType, scopeId: string,
     paramValueId, key, scopeType, scopeId, $value, effectiveFrom, effectiveTo, $maker, reason)
   SubmitResult(paramValueId: paramValueId, status: pvPending)
 
-proc approveValue*(db: DbConn, paramValueId: string, checker: Id): bool =
-  ## Menyetujui nilai (checker) → ACTIVE. Mengembalikan `false` bila nilainya tidak PENDING.
-  ## Baris ACTIVE sebelumnya pada (key, scope) yang sama dan mulai lebih awal dipangkas
-  ## (`SUPERSEDED`, `effective_to` = `effective_from` baru) — pola supersede, bukan tumpang tindih.
-  ## Raise `DbError` bila periode baru menabrak ACTIVE lain (EXCLUDE) atau `checker = maker`.
-  if db.getValue(sql"SELECT status FROM platform.param_value WHERE param_value_id = ?::uuid",
-      paramValueId) != "PENDING":
-    return false
-  discard db.execAffectedRows(sql"""
+proc supersedePreviousValues*(db: DbConn, paramValueId: string): int =
+  ## Memangkas nilai ACTIVE sebelumnya pada (key, scope) yang sama (`SUPERSEDED`, `effective_to` =
+  ## `effective_from` nilai baru) — pola supersede, bukan tumpang tindih. Dipisah dari
+  ## `approveValue` supaya langkah aktivasi bisa diuji sendiri (lihat `activatePending`).
+  db.execAffectedRows(sql"""
     UPDATE platform.param_value o
        SET status = 'SUPERSEDED', effective_to = n.effective_from
       FROM platform.param_value n
@@ -234,9 +230,28 @@ proc approveValue*(db: DbConn, paramValueId: string, checker: Id): bool =
        AND o.param_value_id <> n.param_value_id
        AND o.effective_from < n.effective_from
        AND (o.effective_to IS NULL OR o.effective_to > n.effective_from)""", paramValueId)
+
+proc activatePending*(db: DbConn, paramValueId: string, checker: Id): bool =
+  ## PENDING → ACTIVE; `true` hanya bila statusnya benar-benar berpindah.
+  ##
+  ## Klausa `AND status = 'PENDING'` adalah penjaga **optimistik**: dua checker yang menyetujui
+  ## nilai yang sama hampir bersamaan tidak bisa dua-duanya berhasil. Pemeriksaan status sebelum
+  ## ini (`approveValue`) hanya melihat snapshot READ COMMITTED; tanpa penjaga di UPDATE, yang
+  ## kalah tetap menulis ACTIVE + audit + event kedua. Yang kalah kini melihat 0 baris, lalu
+  ## `approveChange` melempar `ValueError` dan pemanggil membatalkan transaksinya (409
+  ## `not_pending`).
   db.execAffectedRows(sql"""
     UPDATE platform.param_value SET status = 'ACTIVE', checker = ?::uuid
-     WHERE param_value_id = ?::uuid""", $checker, paramValueId) == 1
+     WHERE param_value_id = ?::uuid AND status = 'PENDING'""", $checker, paramValueId) == 1
+
+proc approveValue*(db: DbConn, paramValueId: string, checker: Id): bool =
+  ## Menyetujui nilai (checker) → ACTIVE. Mengembalikan `false` bila nilainya tidak PENDING.
+  ## Raise `DbError` bila periode baru menabrak ACTIVE lain (EXCLUDE) atau `checker = maker`.
+  if db.getValue(sql"SELECT status FROM platform.param_value WHERE param_value_id = ?::uuid",
+      paramValueId) != "PENDING":
+    return false
+  discard supersedePreviousValues(db, paramValueId)
+  activatePending(db, paramValueId, checker)
 
 proc rejectValue*(db: DbConn, paramValueId: string, checker: Id, reason: string): bool =
   db.execAffectedRows(sql"""
@@ -319,6 +334,27 @@ type
     eventId*: Id
     auditHash*: string
 
+  PendingRow* = object
+    ## Nilai yang akan diaktifkan: key/scope/nilai/tanggal efektif. Dipakai `approveChange`
+    ## (snapshot audit) dan pemeriksaan lintas-parameter sebelum aktivasi.
+    key*: string
+    scopeType*: string
+    scopeId*: string
+    value*: JsonNode
+    effectiveFrom*: string
+
+proc pendingValueOf*(db: DbConn, paramValueId: string): Option[PendingRow] =
+  ## `none` bila id tidak ada (pemanggil memetakannya ke 404).
+  let found = db.singleRow(sql"""
+    SELECT key, scope_type, coalesce(scope_id, ''), value::text,
+           to_char(effective_from, 'YYYY-MM-DD') FROM platform.param_value
+     WHERE param_value_id = ?::uuid""", paramValueId)
+  if found.isNone:
+    return none(PendingRow)
+  let row = found.get()
+  some(PendingRow(key: row[0], scopeType: row[1], scopeId: row[2],
+    value: parseJson(row[3]), effectiveFrom: row[4]))
+
 proc submitChange*(db: DbConn, ctx: AuditContext, clock: Clock, key, scopeType, scopeId: string,
                    value: JsonNode, effectiveFrom, effectiveTo, reason: string): ChangeOutcome =
   ## Satu transaksi (pemanggil membungkus `withTx`): nilai PENDING + audit + event outbox.
@@ -341,13 +377,10 @@ proc approveChange*(db: DbConn, ctx: AuditContext, clock: Clock,
                     paramValueId: string): ChangeOutcome =
   ## Aktivasi oleh checker: supersede nilai lama + audit + event + `NOTIFY` invalidasi cache.
   ## Raise `DbError` bila bentrok periode (EXCLUDE) atau `checker = maker`.
-  let found = db.singleRow(sql"""
-    SELECT key, scope_type, coalesce(scope_id, ''), value::text,
-           to_char(effective_from, 'YYYY-MM-DD') FROM platform.param_value
-     WHERE param_value_id = ?::uuid""", paramValueId)
+  let found = pendingValueOf(db, paramValueId)
   if found.isNone:
     raise newException(ValueError, "param_value_id tidak ditemukan: " & paramValueId)
-  let row = found.get()
+  let pending = found.get()
   # Snapshot ACTIVE sebelum perubahan (untuk audit `before`).
   var beforeValue = newJNull()
   let before = db.singleRow(sql"""
@@ -355,7 +388,8 @@ proc approveChange*(db: DbConn, ctx: AuditContext, clock: Clock,
      WHERE key = ? AND scope_type = ? AND coalesce(scope_id, '') = ?
        AND status IN ('ACTIVE', 'SUPERSEDED') AND effective_from <= ?::date
        AND (effective_to IS NULL OR effective_to > ?::date)
-      ORDER BY effective_from DESC LIMIT 1""", row[0], row[1], row[2], row[4], row[4])
+      ORDER BY effective_from DESC LIMIT 1""",
+    pending.key, pending.scopeType, pending.scopeId, pending.effectiveFrom, pending.effectiveFrom)
   if before.isSome:
     beforeValue = parseJson(before.get()[0])
 
@@ -364,11 +398,11 @@ proc approveChange*(db: DbConn, ctx: AuditContext, clock: Clock,
 
   result.paramValueId = paramValueId
   result.auditHash = appendAudit(db, newAuditEntry(ctx, "param.approve", "param_value",
-    paramValueId, clock, businessDate = row[4], before = beforeValue,
-    after = parseJson(row[3])))
+    paramValueId, clock, businessDate = pending.effectiveFrom, before = beforeValue,
+    after = pending.value))
   result.eventId = newId(clock)
   discard appendEvent(db, newOutboxEvent(result.eventId, "param.changed", "param_value",
     paramValueId, "param.change:" & paramValueId & ":approved", %*{
-      "key": row[0], "scope_type": row[1], "scope_id": row[2], "status": $pvActive,
-      "effective_from": row[4], "value": parseJson(row[3])}))
-  notifyChange(db, row[0])
+      "key": pending.key, "scope_type": pending.scopeType, "scope_id": pending.scopeId,
+      "status": $pvActive, "effective_from": pending.effectiveFrom, "value": pending.value}))
+  notifyChange(db, pending.key)

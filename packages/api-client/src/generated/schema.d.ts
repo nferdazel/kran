@@ -754,7 +754,9 @@ export interface operations {
             405: components["responses"]["Problem"];
             /**
              * @description Tidak bisa disetujui: bukan `PENDING` (`params.reason` = `not_pending`), pengesahan
-             *     sendiri (`self_approval`), atau periode bertabrakan (`period_conflict`)
+             *     sendiri (`self_approval`), periode bertabrakan (`period_conflict`), atau nilai itu
+             *     melanggar aturan lintas-parameter saat digabung nilai lain yang aktif
+             *     (`invalid_combination`, mis. `session_idle_minutes` > `session_absolute_minutes`).
              */
             409: {
                 headers: {

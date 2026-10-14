@@ -65,6 +65,14 @@ proc handleLogin*(app: AppContext, req: Request) {.gcsafe.} =
   except DbError:
     req.respondProblem(pkInternal, "Internal Server Error", "login gagal diproses")
     return
+  except ValueError as e:
+    # Kebijakan keamanan dari parameter tidak sah (mis. `session_idle_minutes` >
+    # `session_absolute_minutes`): konfigurasi institusi yang rusak, bukan kesalahan pengguna.
+    # Tetap dijawab sebagai `problem+json` sesuai kontrak — bukan 500 mentah tanpa amplop — dan
+    # sebabnya terlihat di `detail` supaya bisa langsung ditindaklanjuti.
+    req.respondProblem(pkInternal, "Internal Server Error",
+      "kebijakan keamanan tidak sah: " & e.msg)
+    return
 
   case authResult.outcome
   of aoSuccess:
@@ -103,7 +111,9 @@ proc handleSession*(app: AppContext, req: Request) {.gcsafe.} =
       dbCalls:
         let settings = settingsOf(db, institutionScope(), utcDateOf(app.clock))
         discard touch(db, app.clock, settings, p.session))
-  except DbError:
+  except DbError, ValueError:
+    # Perpanjangan bersifat best-effort: batas absolut tetap berlaku, dan kegagalan membaca
+    # kebijakan (parameter hilang atau kombinasi tidak sah) tidak boleh menggagalkan permintaan.
     discard
 
   req.respondJson(200, %*{
