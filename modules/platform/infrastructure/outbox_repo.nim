@@ -13,7 +13,12 @@ import std/[json, strutils]
 import db_connector/db_postgres
 
 import ../domain/event
-import kernel/ids
+import kernel/[ids, result]
+
+const
+  ## Token resume "kosong": uuid yang dijamin tidak ada di tabel, sehingga anchor tidak ketemu
+  ## dan replay dimulai dari awal.
+  zeroUuid* = "00000000-0000-0000-0000-000000000000"
 
 proc appendEvent*(db: DbConn, ev: OutboxEvent): bool =
   ## Menulis peristiwa ke outbox. Mengembalikan `false` bila `dedup_key` sudah ada
@@ -65,6 +70,62 @@ proc claimBatch*(db: DbConn, worker: string, limit: int): seq[OutboxEvent] =
       attempts: parseInt(row[10]),
       lockedBy: row[11],
       lastError: row[12])
+
+proc latestEventId*(db: DbConn): string =
+  ## Id peristiwa terakhir di outbox ("" bila kosong). Dipakai pump saat mulai: stream dimulai dari
+  ## "sekarang", riwayat diambil klien lewat resume/HTTP — bukan disemprotkan ke setiap klien baru.
+  let row = db.getRow(
+    sql"SELECT outbox_id::text FROM platform.outbox ORDER BY seq DESC LIMIT 1")
+  if row.len == 0: "" else: row[0]
+
+proc fetchAfter*(db: DbConn, afterEventId: string, limit: int): seq[OutboxEvent] =
+  ## Peristiwa yang urutannya setelah token, terurut `seq` (bukan waktu) supaya resume tidak
+  ## kehilangan/duplikat peristiwa yang `occurred_at`-nya sama.
+  ##
+  ## Token tak dikenal (mis. sudah dipurge) diperlakukan sebagai "mulai dari awal": klien
+  ## menerima replay penuh (dibatasi `limit`) dan melakukan de-dup berdasarkan `id` — lebih baik
+  ## daripada klien diam-diam kehilangan peristiwa (spec §19.2).
+  ## Token kosong/tidak valid (mis. rusak, atau sudah dipurge) diperlakukan sebagai
+  ## "mulai dari awal": replay penuh (dibatasi `limit`) — klien de-dup berdasarkan `id`.
+  let token =
+    if afterEventId.len == 0:
+      zeroUuid
+    else:
+      let parsed = parseId(afterEventId)
+      if parsed.isOk: $parsed.value else: zeroUuid
+
+  proc rowOf(row: Row): OutboxEvent =
+    OutboxEvent(
+      eventId: Id(row[0]),
+      eventType: row[1],
+      eventVersion: parseInt(row[2]),
+      aggregateType: row[3],
+      aggregateId: row[4],
+      payload: parseJson(row[5]),
+      headers: parseJson(row[6]),
+      dedupKey: row[7],
+      occurredAt: row[8],
+      status: parseEventStatus(row[9]),
+      attempts: parseInt(row[10]),
+      lockedBy: row[11],
+      lastError: row[12])
+
+  for row in db.getAllRows(
+      sql"""WITH anchor AS (
+              SELECT seq FROM platform.outbox WHERE outbox_id = ?::uuid
+            )
+            SELECT o.outbox_id, o.event_type, o.event_version, o.aggregate_type,
+                   o.aggregate_id, o.payload::text, o.headers::text, o.dedup_key,
+                   to_char(o.occurred_at AT TIME ZONE 'UTC',
+                           'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+                   o.status, o.attempts, coalesce(o.locked_by, ''),
+                   coalesce(o.last_error, '')
+              FROM platform.outbox o
+             WHERE o.seq > coalesce((SELECT seq FROM anchor), 0)
+             ORDER BY o.seq
+             LIMIT ?""",
+      token, $limit):
+    result.add rowOf(row)
 
 proc markDone*(db: DbConn, eventId: Id) =
   discard db.execAffectedRows(

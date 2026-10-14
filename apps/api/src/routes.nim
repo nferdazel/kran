@@ -9,7 +9,9 @@
 
 import mummy
 
+import ./events
 import ./health
+import ./problem
 
 type
   HttpMethod* = enum
@@ -31,6 +33,23 @@ proc key*(spec: RouteSpec): string =
   ## Kunci pembanding untuk contract test: `GET /healthz`.
   $spec.httpMethod & " " & spec.path
 
+proc handleEventsStream*(app: AppContext, req: Request) {.gcsafe.} =
+  ## Perekat rute → layanan. Handshake WebSocket ada di `events.openStream`; di sini hanya
+  ## penerjemahan `AppContext` dan penanganan kasus "realtime belum dikonfigurasi".
+  if app.events.isNil:
+    req.respondProblem(pkNotImplemented, "Not Implemented",
+      "layanan realtime tidak dikonfigurasi (CBS_DATABASE_URL kosong saat start)")
+    return
+  app.events.openStream(req)
+
+proc eventRoutes*(): seq[RouteSpec] =
+  ## Satu rute; Mummy mengarahkan permintaan ber-`Upgrade` ke `websocketHandler` (dipasang di
+  ## `server.newApiServer`), sedangkan GET tanpa Upgrade tetap sampai ke handler ini dan dibalas 426.
+  @[
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/events/stream", operationId: "streamEvents",
+              handler: handleEventsStream),
+  ]
+
 proc systemRoutes*(): seq[RouteSpec] =
   @[
     RouteSpec(httpMethod: hmGet, path: "/healthz", operationId: "getHealth",
@@ -40,4 +59,4 @@ proc systemRoutes*(): seq[RouteSpec] =
   ]
 
 proc allRoutes*(): seq[RouteSpec] =
-  systemRoutes()
+  systemRoutes() & eventRoutes()

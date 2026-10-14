@@ -158,6 +158,19 @@ suite "respons sistem sesuai kontrak OpenAPI":
     let response = client.get(baseUrl & "/tidak-ada-rute")
     check parseJson(response.body)["traceId"].getStr() == "trace-dari-caddy"
 
+  test "rute realtime tanpa layanan event -> 501 problem+json sesuai kontrak":
+    ## `tapi` menyusun `AppContext` tanpa `events` (tanpa DB): rute stream harus membalas problem
+    ## terdeklarasi, bukan crash. Jalur 426/401/403/101 diuji `itapi_ws.nim` (butuh DB + pump).
+    let client = newHttpClient(timeout = 2000)
+    defer: client.close()
+
+    let response = client.get(baseUrl & "/api/v1/events/stream")
+    check response.code.int == 501
+    check "application/problem+json" in response.headers["Content-Type"]
+    let body = parseJson(response.body)
+    check body["code"].getStr() == "NOT_IMPLEMENTED"
+    assertNoSchemaProblems("/api/v1/events/stream", "GET", "501", body, "application/problem+json")
+
   test "rute hanya menerima method yang dideklarasikan":
     let client = newHttpClient(timeout = 2000)
     defer: client.close()

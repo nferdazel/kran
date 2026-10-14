@@ -59,6 +59,20 @@ proc loadContract*(content, origin: string): Contract =
         operationId: operation{"operationId"}.getStr(""),
       )
 
+proc loadSchemaFile*(path: string): Contract =
+  ## Memuat berkas JSON Schema biasa (tanpa `paths`) sebagai dokumen pembanding bentuk.
+  ## Dipakai untuk amplop yang bukan operasi HTTP — mis. pesan WebSocket realtime (spec §12.4).
+  if not fileExists(path):
+    raise newException(ValueError, path & ": skema tidak ditemukan")
+  var nodes: seq[JsonNode]
+  try:
+    nodes = loadToJson(readFile(path))
+  except CatchableError as e:
+    raise newException(ValueError, path & ": JSON tidak valid: " & e.msg)
+  if nodes.len == 0:
+    raise newException(ValueError, path & ": skema kosong")
+  Contract(doc: nodes[0])
+
 proc loadContractFile*(path: string): Contract =
   if not fileExists(path):
     raise newException(ValueError, path & ": kontrak tidak ditemukan")
@@ -191,8 +205,12 @@ proc validateValue*(contract: Contract, rawSchema: JsonNode, value: JsonNode,
     var properties = newJObject()
     if schema.hasKey("properties"):
       properties = schema["properties"]
-    if schema{"additionalProperties"}.kind == JBool and
-        not schema["additionalProperties"].getBool():
+    # `{}` mengembalikan nil bila kunci tidak ada — memeriksa `.kind` langsung akan
+    # men-dereference nil (bukan pesan temuan, tapi proses mati). Ditemukan oleh skema amplop
+    # peristiwa yang propertinya boleh bebas bentuk (`payload` tanpa `additionalProperties`).
+    let additionalProperties = schema{"additionalProperties"}
+    if additionalProperties != nil and additionalProperties.kind == JBool and
+        not additionalProperties.getBool():
       for name, _ in value:
         if not properties.hasKey(name):
           result.add location & ": properti '" & name & "' tidak didefinisikan kontrak"

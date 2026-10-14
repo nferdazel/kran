@@ -21,6 +21,7 @@ type
     pkForbidden = "FORBIDDEN"
     pkBadRequest = "BAD_REQUEST"
     pkMethodNotAllowed = "METHOD_NOT_ALLOWED"
+    pkUpgradeRequired = "UPGRADE_REQUIRED"
     pkNotImplemented = "NOT_IMPLEMENTED"
     pkInternal = "INTERNAL_ERROR"
 
@@ -38,6 +39,7 @@ proc statusOf*(kind: ProblemKind): int =
   of pkForbidden: 403
   of pkNotFound: 404
   of pkMethodNotAllowed: 405
+  of pkUpgradeRequired: 426
   of pkNotImplemented: 501
   of pkInternal: 500
 

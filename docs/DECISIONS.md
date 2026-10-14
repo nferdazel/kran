@@ -279,3 +279,51 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
   (fail-severity `warn`); bila nanti muncul aturan yang tidak relevan, override wajib disertai
   alasan tertulis di `.spectral.yaml`. Validator bentuk respons tetap milik kita
   (`tools/openapi`) dan hanya mendukung subset JSON Schema yang dipakai — batas ini dicatat.
+
+## D-021 — Realtime: NOTIFY di INSERT outbox, resume token `outbox_id`, kebijakan tolak-semua
+
+- **Konteks**: T-009 harus mengalirkan peristiwa platform ke UI (spec §19.1) **dan** menjamin
+  reconnect tidak kehilangan peristiwa (§19.2), tanpa role dispatcher/worker yang berdiri (O-013)
+  dan tanpa otorisasi sesi yang selesai (T-012 belum dikerjakan).
+- **Keputusan**:
+  1. Sinyal realtime = trigger `AFTER INSERT` pada `platform.outbox` yang `pg_notify('cbs_outbox',
+     outbox_id)` (migrasi 0007). Payload hanya id; isi peristiwa dibaca dari tabel. Dispatcher
+     outbox tetap pemilik status `PENDING→DONE/DEAD`.
+  2. Amplop peristiwa (`packages/contracts/events/realtime-envelope.v1.schema.json`) memakai
+     `outbox_id` sebagai `id` **dan** resume token; urutan replay memakai kolom `seq`
+     (`bigint identity`), bukan `occurred_at` (bisa sama). Token tak dikenal = replay dari awal,
+     klien de-dup by `id`.
+  3. Pump memulai dari peristiwa terakhir ("mulai dari sekarang"); backlog diambil klien lewat
+     `resumeFrom` atau HTTP. Kesiapan pump diekspos lewat `pumpReady()`.
+  4. Kebijakan topik default = **tolak semua** (`denyPolicy`) sampai T-012 memasang identitas sesi;
+     identitas sudah dibaca dari cookie `cbs_session`/`Authorization: Bearer`. Topik yang ditolak
+     dilaporkan di balasan `subscribed.denied`.
+  5. Batas protokol (32 topik, 128 karakter) adalah **konfigurasi transport** (`apps/api`) dan
+     dikirim ke lapisan application sebagai `SubscriptionLimits` — lapisan application tidak memuat
+     literal (spec §10.4), dan `lint-nomagic` tetap hijau tanpa escape hatch.
+- **Alasan menolak alternatif**: NOTIFY dari dispatcher (UI bergantung pada komponen yang belum ada);
+  hub dengan antrean/kuota per langganan (tidak ada sinyal "sudah terkirim" dari transport → gate
+  palsu; kebutuhan itu dicatat O-028); membuka stream tanpa otorisasi (spec §18.2); menyimpan batas
+  protokol sebagai angka di `application/` (melanggar §10.4 atau memaksa escape hatch `nomagic:ok`,
+  dan itu otomatis dieskalasi per AGENTS.md §5).
+- **Konsekuensi**: UI memakai shim mirip `EventSource` di atas WS (satu tempat, T-012); pump mati
+  harus diperiksa `/readyz` (O-029); kuota klien lambat belum ada (O-028); nilai batas protokol
+  belum parameter DB (O-030).
+
+## D-022 — Dua bug yang ditemukan test T-009 (validator kontrak & ambang Spectral 101)
+
+- **Konteks**: test ujung-ke-ujung T-009 memakai `tools/openapi` untuk memvalidasi amplop peristiwa
+  dan memvalidasi respons 426 pada operasi realtime. Keduanya memunculkan masalah gate, bukan
+  masalah fitur.
+- **Keputusan**:
+  1. `tools/openapi/lib.nim`: pemeriksaan `additionalProperties` memakai operator `{}`
+     (`schema{"additionalProperties"}.kind`) yang mengembalikan **nil** bila kunci tidak ada →
+     dereference nil → SIGSEGV. Diperbaiki dengan pemeriksaan `nil` eksplisit. Validator tidak
+     boleh mati: ia harus melaporkan temuan atau tidak, tidak boleh menghentikan proses.
+  2. `.spectral.yaml`: satu override untuk operasi `/api/v1/events/stream` mematikan aturan
+     `operation-success-response`. Aturan itu menganggap hanya 2xx/3xx sebagai sukses, sedangkan
+     WebSocket upgrade dijawab **101** (RFC 9110 §15.2.2). Alternatifnya (menambah respons 2xx yang
+     tidak pernah dikirim) berarti mengubah perilaku demi lint. Override dipersempit ke satu
+     operasi dan alasannya tertulis di berkas ruleset.
+- **Konsekuensi**: deviasi gate tercatat dan sempit; bila nanti ada operasi 101 lain, override harus
+  diperluas dengan alasan yang sama, bukan mematikan aturan secara global.

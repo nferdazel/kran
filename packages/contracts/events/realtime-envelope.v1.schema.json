@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cbs.local/contracts/events/realtime-envelope.v1.schema.json",
+  "title": "Amplop peristiwa realtime v1",
+  "description": "Amplop pesan pada WebSocket GET /api/v1/events/stream (spec §12.4, §19.1). Setiap frame adalah objek JSON dengan properti `type` sebagai pembeda; pilih definisi di `$defs` sesuai nilainya: `event` -> Event, `subscribed` -> Subscribed, `resync` -> Resync, `error` -> Error. Server dan klien mengirim bentuk yang sama; yang berbeda hanya arah dan himpunan tipe yang wajar pada arah itu (klien mengirim `subscribe`/`unsubscribe`, server mengirim sisanya). Versi skema dinaikkan bila ada perubahan yang tidak kompatibel; nama berkas memuat versi.",
+  "$defs": {
+    "Event": {
+      "title": "Peristiwa outbox",
+      "description": "Satu peristiwa yang sudah durable di platform.outbox. `id` = outbox_id (UUIDv7) dan sekaligus resume token: klien menyimpan `id` terakhir yang ia terima dan mengirimnya kembali sebagai `resumeFrom` saat reconnect (spec §19.2).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "topic", "eventType", "occurredAt"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["event"]
+        },
+        "id": {
+          "type": "string",
+          "description": "outbox_id (UUIDv7) peristiwa ini."
+        },
+        "topic": {
+          "type": "string",
+          "description": "Topik langganan, mis. `param.changed`. Saat ini sama dengan `eventType`."
+        },
+        "eventType": {
+          "type": "string",
+          "description": "Jenis peristiwa versi-1, mis. `param.changed`."
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Waktu peristiwa terjadi (UTC, ISO-8601 dengan milidetik)."
+        },
+        "payload": {
+          "description": "Isi peristiwa. Bentuknya ditentukan jenis peristiwa (modul pemiliknya), bukan oleh amplop ini."
+        }
+      }
+    },
+
+    "Subscribed": {
+      "title": "Konfirmasi langganan",
+      "description": "Balasan server atas `subscribe`/`unsubscribe`. `denied` sengaja eksplisit: topik yang tidak diizinkan dilaporkan, bukan dibuang diam-diam. `resumed` = jumlah peristiwa yang diputar ulang untuk koneksi ini.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "topics", "denied", "resumed", "replayLimit"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["subscribed"]
+        },
+        "topics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Topik yang benar-benar aktif untuk koneksi ini."
+        },
+        "denied": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Topik yang diminta klien tetapi tidak diizinkan."
+        },
+        "resumed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "replayLimit": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Jumlah maksimum peristiwa per putaran replay."
+        }
+      }
+    },
+
+    "Resync": {
+      "title": "Minta klien mulai ulang",
+      "description": "Server mengirim ini bila peristiwa yang terlewat melebihi batas replay. Klien harus menyegarkan keadaan lewat HTTP lalu mengirim `subscribe` lagi dengan `resumeFrom` yang baru.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "reason"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["resync"]
+        },
+        "reason": {
+          "type": "string",
+          "description": "Alasan mesin, mis. `replay_limit_exceeded`."
+        }
+      }
+    },
+
+    "Error": {
+      "title": "Kesalahan protokol",
+      "description": "Pesan kontrol yang ditolak server. `i18nKey` diterjemahkan frontend (spec §16.1) — server tidak mengirim kalimat siap pakai.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "code", "i18nKey"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["error"]
+        },
+        "code": {
+          "type": "string",
+          "description": "Kode mesin yang stabil, mis. `REALTIME_INVALID_MESSAGE`."
+        },
+        "i18nKey": {
+          "type": "string",
+          "description": "Kunci katalog i18n, mis. `error_realtime_invalid_message`."
+        }
+      }
+    }
+  }
+}

@@ -4,3 +4,13 @@
 # `--fail-severity warn`, jadi setiap override di bawah harus punya alasan — mematikan aturan
 # tanpa alasan sama saja melemahkan gate.
 extends: ["spectral:oas"]
+
+overrides:
+  # `operation-success-response` menganggap hanya 2xx/3xx sebagai "sukses". WebSocket upgrade
+  # dijawab **101** (Switching Protocols) menurut RFC 9110 §15.2.2 — bukan 2xx. Tanpa override ini
+  # gate akan menuntut respons 2xx yang tidak pernah dikirim, dan itu berarti mengubah perilaku
+  # demi lint. Override dipersempit ke satu operasi, bukan ke seluruh kontrak.
+  - files:
+      - cbs-api.yaml#/paths/~1api~1v1~1events~1stream
+    rules:
+      operation-success-response: off

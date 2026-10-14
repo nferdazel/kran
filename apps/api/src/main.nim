@@ -14,6 +14,8 @@ import "platform-lib/db/config"
 import "platform-lib/db/pool"
 import "platform-lib/log"
 
+import ./context
+import ./events
 import ./health
 import ./readiness
 import ./server
@@ -69,13 +71,26 @@ proc main() =
       "' belum diimplementasikan (Fase 0: hanya 'api'; lihat docs/OPEN_ITEMS.md O-013)"
     quit(3)
 
+  let logger = newLogger(app = "cbs-api")
+
+  # Realtime butuh pool sendiri (pump meminjam satu koneksi untuk `LISTEN` seumur proses).
+  # Tanpa `CBS_DATABASE_URL` API tetap hidup untuk `/healthz`, dan rute stream membalas 501.
+  var events: EventService
+  if databaseUrlSet(envTableFromProcess()):
+    events = newEventService(denyPolicy(), newDbPool(dbConfigFromProcessEnv()))
+    startPump(events)
+    discard logger.info("realtime hub aktif",
+      [("policy", "deny-all sampai sesi nyata terpasang (T-012)")])
+  else:
+    discard logger.warn("CBS_DATABASE_URL kosong: realtime tidak aktif", [])
+
   let app = AppContext(
     version: opts.version,
     role: $opts.role,
     startedAt: epochTime(),
     readiness: databaseProbe(),
+    events: events,
   )
-  let logger = newLogger(app = "cbs-api")
   discard logger.info("cbs-api start", [("role", $opts.role),
                                         ("port", $opts.port),
                                         ("address", opts.address),
