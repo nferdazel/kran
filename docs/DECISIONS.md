@@ -446,3 +446,44 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
   digeneralisasi bila aturan kedua muncul (O-041).
 - **Konsekuensi**: deskripsi 409 di kontrak OpenAPI menyebut `invalid_combination` (klien TS
   diregenerasi). Temuan MINOR dari review dicatat sebagai O-034…O-039, tidak ditutup di sini.
+
+## D-028 — Pemeriksaan kebijakan sesi: timeline (bukan satu tanggal) + kunci serialisasi
+
+- **Konteks**: ronde 2 review independen menilai penjaga double-approve (D-027) tertutup, tetapi
+  menemukan bahwa pemeriksaan lintas-parameter masih bocor di dua jalan:
+  1. **Jendela tanggal efektif depan** (deterministik): calon nilai dinilai hanya pada tanggal buku
+     hari ini, sedangkan perubahan mendukung `effectiveFrom` masa depan. idle/absolut yang
+     masing-masing sah hari ini bisa menjadi tidak sah pada tanggal efektifnya — dan lockout-nya
+     baru muncul keesokan hari, tanpa balapan.
+  2. **Balapan dua key**: dua persetujuan bersamaan (satu untuk `idle`, satu untuk `absolut`) yang
+     masing-masing sah terhadap nilai lawan yang **sudah** commit bisa dua-duanya lolos, karena
+     tidak ada serialisasi antar-key (kunci baris `supersede` hanya menyentuh key yang sama).
+- **Keputusan**:
+  1. Penilaian dilakukan pada **himpunan tanggal**, bukan satu tanggal: hari ini, tanggal efektif
+     calon, dan tanggal mulai efektif sisi lainnya yang **sudah disetujui** (`ACTIVE`) dan belum
+     lewat. Tanggal-tanggal itu adalah satu-satunya titik di mana kombinasi bisa berubah, sehingga
+     perubahan ber-tanggal depan dinilai pada tanggal yang benar — termasuk perubahan sisi lain yang
+     disetujui setelah perubahan kita.
+  2. Nilai calon dipakai hanya untuk tanggal ≥ tanggal efektifnya.
+  3. Bila salah satu sisi belum punya nilai pada tanggal itu, tanggal itu **dilewati** — bukan
+     ditolak: keadaan belum lengkap harus tetap bisa **diperbaiki** lewat alur normal (prinsip yang
+     sama dengan D-027 butir 2).
+  4. `pg_advisory_xact_lock(hashtext('platform.security.session_policy'))` diambil **sebelum**
+     pemeriksaan, di dalam transaksi pengajuan/persetujuan, sehingga "periksa lalu aktifkan"
+     menjadi atomik untuk pasangan key ini. Dilepas otomatis di akhir transaksi.
+  5. Penilaian memakai konteks scope yang sama dengan tempat aplikasi membaca kebijakan sesi
+     (`institutionScope()`, spec §13/§18.2); untuk calon ber-scope lain, scope calon itu sendiri.
+- **Alasan menolak alternatif**: **trigger/constraint DB** akan memindahkan aturan domain ke SQL dan
+  jauh lebih sulit dibaca/diuji (dan tetap butuh kunci advisory untuk serialisasi); **menolak
+  perubahan ber-tanggal depan** untuk kedua key ini akan melarang fitur efektif-dated yang diminta
+  spec §10.2; **daycloser** hanya mendeteksi setelah terlambat, sedangkan temuan ini soal mencegah.
+- **Keputusan lain yang dicatat di sini (pertanyaan reviewer)**: percobaan yang **ditolak** (400/409)
+  tidak ditulis ke audit maupun outbox. Alasannya: tidak ada perubahan keadaan yang perlu
+  dipertanggungjawabkan, dan itu konsisten dengan 409 lain (`not_pending`, `self_approval`,
+  `period_conflict`) serta percobaan login gagal yang sudah punya jalurnya sendiri
+  (`auth.login.failure`). Bila kelak audit percobaan ditolak diperlukan (mis. kepatuhan), itu
+  perubahan kebijakan audit tersendiri — bukan tambahan diam-diam di sini.
+- **Konsekuensi**: pemeriksaan ini kini butuh membaca riwayat tanggal kedua key (satu query kecil
+  per pemeriksaan) dan mengambil kunci advisory; keduanya hanya terjadi untuk pasangan parameter
+  kebijakan sesi, bukan untuk semua perubahan parameter. Sisa keterbatasan: validasi hanya berlaku
+  pada pasangan ini (aturan lintas-parameter lain belum ada di spec → O-041).

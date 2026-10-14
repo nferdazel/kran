@@ -7,7 +7,7 @@
 ## Semua angka kebijakan (panjang password, iterasi KDF, lockout, umur sesi) datang dari
 ## parameter DB — tidak ada default di kode (spec §10.6).
 
-import std/[json, options, times]
+import std/[algorithm, json, options, times]
 
 import db_connector/db_postgres
 
@@ -59,7 +59,7 @@ proc settingsOf*(db: DbConn, scope: ScopeRef, asOf: string): SecuritySettings =
       keyString(P_platform_security_session_absolute_minutes), asOf, lookup))
 
 proc sessionPolicyCandidateProblem*(db: DbConn, key: string, candidate: JsonNode,
-                                   scope: ScopeRef, asOf: string): string =
+                                    scopeType, scopeId, effectiveFrom, asOf: string): string =
   ## `""` bila perubahan aman; pesan pelanggaran bila kombinasi kebijakan sesi yang **akan**
   ## berlaku melanggar aturan domain `sessionPolicy` (idle ≤ absolut, spec §18.2).
   ##
@@ -67,33 +67,73 @@ proc sessionPolicyCandidateProblem*(db: DbConn, key: string, candidate: JsonNode
   ## sah menurut schema-nya sendiri (idle ≤ 1440, absolut ≥ 5), tetapi kombinasinya bisa tidak sah
   ## (mis. idle 600 + absolut 480). Bila kombinasi seperti itu sampai ACTIVE, **seluruh login gagal**
   ## (`sessionPolicy` menolak) dan pemulihannya butuh akses DB langsung — persis situasi yang harus
-  ## dicegah alur maker-checker. Dipanggil saat pengajuan **dan** saat persetujuan, karena dua
-  ## pengajuan yang masing-masing sah bisa bertabrakan setelah salah satunya aktif.
+  ## dicegah alur maker-checker. Dipanggil saat pengajuan **dan** saat persetujuan.
+  ##
+  ## Nilainya dinilai pada beberapa tanggal, bukan hanya hari ini:
+  ##   - hari ini,
+  ##   - tanggal efektif calon (perubahan ber-tanggal depan),
+  ##   - tanggal mulai efektif sisi lainnya yang sudah disetujui (perubahan ber-tanggal depan di
+  ##     sisi lain bisa membuat kombinasi tidak sah **setelah** perubahan kita disetujui).
+  ##
+  ## Setiap baris yang sudah disetujui divalidasi pada tanggal efektifnya sendiri, sehingga
+  ## "tanggal tak dapat dinilai" (salah satu sisi belum punya nilai di tanggal itu) hanya muncul
+  ## untuk keadaan yang memang belum lengkap — dan keadaan itu harus tetap bisa **diperbaiki** lewat
+  ## alur normal, jadi dilewati.
   ##
   ## Hanya pasangan parameter ini yang diperiksa: aturan lintas-parameter lain belum ada di spec.
   if candidate.kind != JInt:
     return "" # tipe/schema ditangani `submitValue`; di sini bukan urusan bentuk nilai
-  var idleMinutes = 0
-  var absoluteMinutes = 0
-  try:
-    if key == keyString(P_platform_security_session_idle_minutes):
-      idleMinutes = int(candidate.getInt)
-      absoluteMinutes = db.activeParamInt(
-        keyString(P_platform_security_session_absolute_minutes), asOf, lookupFor(scope))
-    elif key == keyString(P_platform_security_session_absolute_minutes):
-      absoluteMinutes = int(candidate.getInt)
-      idleMinutes = db.activeParamInt(
-        keyString(P_platform_security_session_idle_minutes), asOf, lookupFor(scope))
-    else:
-      return ""
-  except ValueError:
-    # Sisi lainnya belum punya nilai aktif: tidak ada kombinasi yang bisa dinilai. Perubahan
-    # dibiarkan lewat supaya keadaan itu masih bisa **diperbaiki** lewat alur normal.
+  let idleKey = keyString(P_platform_security_session_idle_minutes)
+  let absoluteKey = keyString(P_platform_security_session_absolute_minutes)
+  if key != idleKey and key != absoluteKey:
     return ""
-  try:
-    discard sessionPolicy(idleMinutes, absoluteMinutes)
-  except ValueError as e:
-    return e.msg
+  # Serialisasi "periksa lalu aktifkan" untuk kedua key ini: tanpa ini, dua persetujuan yang
+  # berjalan bersamaan (satu di tiap key) sama-sama membaca keadaan sebelum commit dan sama-sama
+  # lolos. Kunci dilepas otomatis di akhir transaksi pemanggil.
+  # `getAllRows` (bukan `exec`): driver ini menolak SELECT lewat `exec` — dan hasil kuncinya
+  # memang tidak dipakai, hanya efek samping penguncian.
+  discard db.getAllRows(sql"SELECT pg_advisory_xact_lock(hashtext('platform.security.session_policy'))")
+
+  var evalScope = ScopeRef(scopeType: parseScopeType(scopeType), scopeId: scopeId)
+  if evalScope.scopeType == pstGlobal:
+    # Kebijakan sesi dibaca aplikasi pada konteks institusi (spec §13/§18.2), jadi kombinasi
+    # dinilai di konteks yang sama — baris GLOBAL tetap terlihat sebagai nilai paling umum.
+    evalScope = institutionScope()
+  let lookup = lookupFor(evalScope)
+  let today = if asOf.len >= 10: asOf[0 .. 9] else: asOf
+  let otherKey = if key == idleKey: absoluteKey else: idleKey
+
+  var dates = @[today]
+  if effectiveFrom >= today:
+    dates.add effectiveFrom
+  for date in db.committedFromDates(otherKey, today):
+    dates.add date
+  dates.sort()
+  var unique: seq[string]
+  for date in dates:
+    if unique.len == 0 or unique[^1] != date:
+      unique.add date
+
+  for date in unique:
+    var idle = 0
+    var absolute = 0
+    try:
+      idle = db.activeParamInt(idleKey, date, lookup)
+      absolute = db.activeParamInt(absoluteKey, date, lookup)
+    except ValueError:
+      # Salah satu sisi belum punya nilai pada tanggal itu: tidak ada kombinasi yang bisa dinilai.
+      continue
+    # Nilai calon berlaku sejak tanggal efektifnya (dan merupakan nilai terbaru untuk key itu —
+    # bila ada baris yang lebih akhir, persetujuannya sendiri akan ditolak EXCLUDE).
+    if date >= effectiveFrom:
+      if key == idleKey:
+        idle = int(candidate.getInt)
+      else:
+        absolute = int(candidate.getInt)
+    try:
+      discard sessionPolicy(idle, absolute)
+    except ValueError as e:
+      return "pada " & date & ": " & e.msg
   ""
 
 proc businessDateFor(db: DbConn, scope: ScopeRef, nowIso: string): string =

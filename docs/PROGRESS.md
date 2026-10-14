@@ -391,3 +391,21 @@ pencarian label di spec dibuat eksak.
 Item baru: O-031 (bootstrap user produksi — jangan ditebak di kode), O-032 (saring daftar
 parameter/audit per cabang), O-033 (tautan masuk di header + penyesuaian test urutan Tab).
 Laporan milestone: `docs/milestones/M0-report.md`.
+
+### Review independen batch Fase 0 (2 ronde) — hasil & tindak lanjut
+
+Ronde 1 (diff `5964665..1f681ac`) → **TIDAK APPROVE**, 2 MAJOR: (a) persetujuan ganda bisa lolos
+(`approveValue` memeriksa status lewat SELECT, UPDATE aktivasi tanpa syarat status) dan (b)
+kombinasi parameter kebijakan sesi yang sah per-key bisa membuat seluruh login gagal 500 tanpa
+amplop. Keduanya diperbaiki (D-027) + test yang gagal bila penjaganya dilepas.
+
+Ronde 2 (diff `1f681ac..a1b6dc5`) → penjaga double-approve dinyatakan **tertutup**, tetapi muncul
+2 MAJOR baru pada pemeriksaan lintas-parameter: (c) jendela tanggal efektif **masa depan** — nilai
+dinilai hanya pada tanggal buku hari ini, padahal `effectiveFrom` depan didukung, sehingga
+kombinasi bisa menjadi tidak sah pada tanggal efektifnya (deterministik, tanpa balapan); dan (d)
+balapan dua persetujuan lintas-key (satu `idle`, satu `absolut`) yang sama-sama lolos karena tidak
+ada serialisasi. Diperbaiki dengan penilaian berbasis himpunan tanggal + `pg_advisory_xact_lock`
+(D-028) + 2 test baru (repo & HTTP) yang gagal tanpa perbaikan itu.
+
+Temuan MINOR/pertanyaan ronde 1–2 dicatat sebagai O-034…O-042 (tidak ditutup di sini sesuai
+AGENTS.md §4 butir 6). Keputusan "percobaan ditolak tidak diaudit" dicatat di D-028.

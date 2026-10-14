@@ -83,6 +83,17 @@ proc candidatesOf*(db: DbConn, key: string, asOf: string): seq[ParamCandidate] =
       effectiveFrom: row[4],
       effectiveTo: row[5])
 
+proc committedFromDates*(db: DbConn, key, sinceIso: string): seq[string] =
+  ## Tanggal mulai efektif yang **sudah disetujui** (`ACTIVE`) dan belum lewat untuk satu key.
+  ## Dipakai pemeriksaan lintas-parameter: perubahan ber-tanggal depan hanya terlihat bila kita
+  ## menilai nilai pada titik-titik perubahan itu, bukan hanya "hari ini".
+  for row in db.getAllRows(sql"""
+    SELECT DISTINCT to_char(effective_from, 'YYYY-MM-DD')
+      FROM platform.param_value
+     WHERE key = ? AND status = 'ACTIVE' AND effective_from >= ?::date
+     ORDER BY 1""", key, sinceIso):
+    result.add row[0]
+
 proc activeValueJson*(db: DbConn, key, asOf: string, lookup: ScopeLookup): JsonNode =
   ## Nilai aktif paling spesifik untuk `key` pada `asOf`. Raise `ValueError` bila tidak ada —
   ## satu-satunya tempat aturan "tanpa fallback diam-diam" (spec §10.6) diterapkan.
