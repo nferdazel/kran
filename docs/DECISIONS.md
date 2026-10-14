@@ -244,3 +244,21 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
   (D-015). Prosedur lengkap: `docs/runbooks/dev-web.md`.
 - **Catatan**: perintah install tanpa override tetap akan menggantung, jadi runbook ini penting
   saat ada kontributor baru atau saat menambah dependency (mis. tooling OpenAPI di T-008).
+
+## D-019 — ADR-002: Mummy sebagai server HTTP + WebSocket untuk realtime
+
+- **Konteks**: spike T-014 mengukur Mummy 0.4.8 (54.341 rps), Prologue (46.094), hand-rolled
+  `std/asyncnet` (18.824, terhukum `Connection: close`). Mummy tidak punya API streaming (SSE
+  tidak mungkin tanpa soket mentah); Mummy/Prologue memanggil handler di thread sehingga handler
+  **boleh blocking** — penting karena spec §12.1 mewajibkan `db_connector` sinkron (di model async
+  satu query PG membekukan seluruh API; pengalaman `fond` D-17).
+- **Keputusan (pemilik, 2026-10-14, menjawab E-001)**: **Mummy** untuk HTTP/REST + **WebSocket**
+  untuk realtime. Deviasi spec §19.1 (SSE → WS) disetujui; spec §19.1/§13 diperbarui hari yang sama.
+- **Konsekuensi**:
+  - Endpoint realtime tetap `GET /api/v1/events/stream` (upgrade WS); amplop pesan tetap
+    `id`/`topic`/`payload`; `Last-Event-ID` diganti *resume token* yang diputar ulang dari outbox.
+  - Frontend memakai shim mirip `EventSource` di atas WS (satu tempat, T-009/T-012).
+  - Binari multi-role (`--role=api|worker|migrate|ctl`) dan `/healthz`,`/readyz` yang ditunggu
+    `ops/` (O-013, O-019) menjadi mungkin dan dikerjakan bersama server ini.
+  - Mengganti server di kemudian hari hanya menyentuh lapisan transport (rute/handler terpisah
+    dari use case), karena handler tetap memanggil use case yang sama.

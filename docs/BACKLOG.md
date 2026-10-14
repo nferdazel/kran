@@ -17,11 +17,11 @@ berkas rencana di `docs/tasks/T-xxx.md`.
 | T-005 | DONE | Parameter framework: tabel + resolusi effective-dated + maker-checker + cache/NOTIFY + startup check | §10 | T-003, T-004 | Test: resolusi PRODUCT→BRANCH→INSTITUTION→SEGMENT→GLOBAL pada `as_of`; overlap ACTIVE ditolak EXCLUDE; ParamNotFound tanpa fallback; startup check gagal-cepat; invalidasi cache via NOTIFY |
 | T-006 | DONE | Auth + RBAC + audit context + branch scoping dasar | §13, §18.2 | T-004, T-005 | Test authz matrix (role conflict + branch) hijau — `tauthz` 19 + `itauth` 13 test; audit context terisi (actor/cabang/IP/device/alasan/correlation); atribut cookie `HttpOnly; Secure; SameSite=Strict`. MFA & RLS lanjut di T-017/O-015 |
 | T-007 | DONE | Kalender + business date (state OPEN/CLOSING/CLOSED, roll over) | §9.3, §11.2 | T-004, T-005 | Test: hari libur dari param/tabel, level close (EOD/EOM/EOQ/EOY) terpilih dari kalender, transisi state ditolak bila ilegal — `tcalendar` 29 test + `itcalendar` 11 test lulus |
-| T-008 | BLOCKED | OpenAPI skeleton + generate client TS + contract test | §13 | T-001, T-014 | OpenAPI lint hijau; client TS ter-generate ulang tanpa diff; contract test implementasi↔OpenAPI hijau — **bagian contract test tertahan keputusan ADR-002** |
-| T-009 | BLOCKED | SSE hub (LISTEN/NOTIFY + outbox → klien, `Last-Event-ID`) | §19.1, §13 | T-004, T-014 | Test: event dari outbox sampai ke klien, reconnect tanpa kehilangan event — **tertahan ADR-002** |
+| T-008 | READY | OpenAPI skeleton + generate client TS + contract test | §13 | T-001, T-014 ✅ | OpenAPI lint hijau; client TS ter-generate ulang tanpa diff; contract test implementasi↔OpenAPI hijau |
+| T-009 | READY | Realtime hub (LISTEN/NOTIFY + outbox → klien WS, *resume token*) | §19.1, §13 | T-004, T-014 ✅ | Test: event dari outbox sampai ke klien, reconnect tanpa kehilangan event (resume) |
 | T-010 | DONE | `apps/web` shell + design tokens + tema dark/light + i18n Paraglide + a11y baseline | §14–§17 | T-001 | `./task e2e` hijau: axe 0 pelanggaran serious/critical × 2 tema × 2 locale; test kontras token; i18n check tanpa key yatim |
 | T-011 | DONE | `tools/scaffold` (template modul) + modul contoh `hello` | §5.5, §27.B | T-002, T-004 | `tscaffold` 11 test; `modules/hello` hasil generate lolos `./task ci`; archcheck memeriksa `hello` (diuji dengan menyuntikkan pelanggaran); `MODULE.md` terisi |
-| T-012 | BLOCKED | End-to-end Fase 0: login → ubah parameter (maker-checker) → audit → event SSE di UI | §23 | T-005, T-006, T-009, T-010 | Playwright: alur lengkap keyboard-only, axe hijau, bukti audit event + ParamChanged tampil di UI — **tertahan ADR-002** |
+| T-012 | READY | End-to-end Fase 0: login → ubah parameter (maker-checker) → audit → event realtime di UI | §23 | T-005, T-006, T-008, T-009, T-010 | Playwright: alur lengkap keyboard-only, axe hijau, bukti audit event + ParamChanged tampil di UI |
 | T-013 | DONE | `ops/` sesuai §21.4–21.6 (**hanya berkas di repo**, tidak dijalankan di server) | §21.4–21.6 | T-001 | `bash -n` 7/7 skrip hijau (di-gate di `./task check`); `shellcheck` tidak terpasang di mesin ini — level `error` akan memblokir begitu tersedia; `md5` siap dibanding `audit-consistency.sh`; tanpa secret — **belum pernah dijalankan di server** |
 | T-014 | DONE | Spike ADR-002: pilih HTTP server Nim (Mummy vs Prologue), tulis rekomendasi, **STOP minta keputusan** | §12.1, §25 | T-001 | Benchmark + rekomendasi tertulis di `docs/spikes/ADR-002-http-server.md` + entri `ESCALATIONS.md` — **keputusan pemilik masih terbuka (E-001)** |
 | T-016 | DONE | Layanan parameter (lapisan application): cache in-proc per business date + konsumen NOTIFY, akses bertipe `params.get`, guard drift harian | §10.3, §10.4 | T-005 | `application/` tanpa driver DB (archcheck bersih + probe pelanggaran terbukti ditolak); cache invalid setelah NOTIFY (`itparamservice`); `get` bertipe OK; drift DB vs generated == 0 temuan. Sisa: watcher otomatis menunggu T-009 (O-018) |
@@ -29,7 +29,8 @@ berkas rencana di `docs/tasks/T-xxx.md`.
 
 ### Catatan urutan
 
-- T-014 harus dikerjakan cepat karena memblokir T-008/T-009/T-012.
+- T-014 selesai; **keputusan pemilik 2026-10-14 = Opsi A: Mummy + WebSocket** (D-019,
+  spec §19.1 diperbarui). T-008/T-009/T-012 kini `READY`, urutannya T-008 → T-009 → T-012.
 - Task di luar daftar ini ditemukan saat kerja → tambahkan di sini, jangan disisipkan diam-diam.
 - T-005 selesai untuk cakupan DB/repo; lapisan application dipisah ke T-016 supaya tidak ada
   pekerjaan yang "diam-diam setengah" (AGENTS.md §5).

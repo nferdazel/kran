@@ -13,7 +13,10 @@ Format entri:
 - Fakta:
 - Opsi + rekomendasi:
 - Yang dibutuhkan dari manusia:
-- Status: TERBUKA | TERJAWAB (tanggal)
+- **Keputusan pemilik (2026-10-14): Opsi A** — Mummy (HTTP/REST) + **WebSocket** untuk realtime;
+  deviasi spec §19.1 (SSE → WS) disetujui. Spec §19.1 sudah diperbarui pada tanggal yang sama;
+  endpoint tetap `GET /api/v1/events/stream` dengan *resume token* sebagai pengganti `Last-Event-ID`.
+- Status: TERJAWAB (2026-10-14) | TERJAWAB (tanggal)
 ```
 
 ---

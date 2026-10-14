@@ -247,7 +247,7 @@ infrastructure (PG, mail,  ├──► application (use case, port) ──► d
 
 ### 5.4 Reactive
 - **Backend**: event-driven internal (domain event → *transactional outbox* → subscriber), tidak ada side-effect di tengah transaksi.
-- **Realtime ke UI**: SSE (Server-Sent Events) didorong dari `LISTEN/NOTIFY` + outbox.
+- **Realtime ke UI**: WebSocket didorong dari `LISTEN/NOTIFY` + outbox (§19.1).
 - **Frontend**: Svelte 5 runes (`$state`, `$derived`, `$effect`) + server-state cache yang di-invalidasi oleh event.
 - Detail di §19.
 
@@ -263,7 +263,7 @@ infrastructure (PG, mail,  ├──► application (use case, port) ──► d
 
 ### 6.1 Diagram Konteks
 ```
- [Browser: SvelteKit SPA/SSR] ──HTTPS/JSON+SSE──► [API: Nim modular monolith] ──► [PostgreSQL]
+ [Browser: SvelteKit SPA/SSR] ──HTTPS/JSON + WS──► [API: Nim modular monolith] ──► [PostgreSQL]
                                                       │   ├─ module: platform, party, product, deposit, lending, ...
                                                       │   ├─ daycloser (orchestrator)
                                                       │   └─ outbox dispatcher / job runner (in-proc worker pool)
@@ -273,7 +273,7 @@ infrastructure (PG, mail,  ├──► application (use case, port) ──► d
 ### 6.2 Proses Runtime
 | Proses | Peran | Catatan |
 |---|---|---|
-| `cbs-api` | HTTP API + SSE | Stateless, bisa >1 instance |
+| `cbs-api` | HTTP API + WebSocket | Stateless, bisa >1 instance |
 | `cbs-worker` | Job runner, outbox dispatcher, day-close executor | Binary sama, mode berbeda (`--role=worker`) |
 | `postgres` | Sumber kebenaran | Primary + replica/backup (lihat §22) |
 | `web` | SvelteKit (static build disajikan reverse proxy, atau node adapter) | Sesuai pola server existing |
@@ -604,7 +604,7 @@ type
 1. **Plan**: tentukan close level dari kalender (via parameter fiscal year & holiday), kumpulkan task, topological sort → DAG.
 2. **Precheck gates** (contoh): semua sesi teller tutup & kas seimbang; tidak ada transaksi *pending approval*; rekening antar-kantor/suspense = 0 atau tercatat; tidak ada batch lain berjalan (advisory lock); versi parameter ter-snapshot.
 3. **Freeze**: set business date `CLOSING` → transaksi online ditolak/antri sesuai kebijakan param (`daycloser.txn_policy_during_close`).
-4. **Execute**: jalankan task siap secara paralel (worker pool), chunk-level checkpoint, event progress → SSE.
+4. **Execute**: jalankan task siap secara paralel (worker pool), chunk-level checkpoint, event progress → realtime (WS).
 5. **Postcheck gates**: rekonsiliasi (saldo subledger = GL; TB seimbang; jumlah akrual = jurnal), hasil disimpan sebagai bukti.
 6. **Seal**: snapshot saldo & trial balance harian, hitung hash ringkasan run (tamper-evident).
 7. **Rollover**: business date → hari kerja berikutnya (`OPEN`), publikasi `BusinessDateOpened`.
@@ -756,7 +756,7 @@ Implementasi Postgres di `infrastructure/`; fake in-memory untuk unit test.
 - **Konvensi**: resource-oriented; `PATCH` parsial; paginasi cursor; filter/sort terstandar; waktu ISO-8601; tanggal bisnis `YYYY-MM-DD`; uang sebagai **string desimal** (`"1500000.00"`) + `currency`.
 - **Error**: `application/problem+json` (RFC 9457) dengan `code`, `i18nKey`, `params`, `traceId`. Frontend yang menerjemahkan pesan sesuai locale.
 - **Idempotency-Key** untuk transaksi; **ETag/If-Match** untuk update (optimistic lock).
-- **Realtime**: `GET /api/v1/events/stream` (SSE) dengan topik berotorisasi (mis. `daycloser.run.{id}`, `account.{id}.balance`).
+- **Realtime**: `GET /api/v1/events/stream` (WebSocket; lihat §19.1) dengan topik berotorisasi (mis. `daycloser.run.{id}`, `account.{id}.balance`).
 - **AuthN**: sesi dengan cookie `HttpOnly`+`Secure`+`SameSite=Strict` (BFF-friendly) atau token pendek + refresh; MFA TOTP; parameter kebijakan di DB.
 - **AuthZ**: RBAC (permission granular `modul.resource.action`) + *branch scoping* + atribut (limit nominal) + **maker-checker** sebagai kemampuan platform (`/approvals`).
 - **Rate limiting** & lockout (param).
@@ -771,7 +771,7 @@ Implementasi Postgres di `infrastructure/`; fake in-memory untuk unit test.
 |---|---|---|
 | Framework | **SvelteKit** + **Svelte 5 (runes)**, TS `strict` | Reaktif native, ringan |
 | Mode render | **SPA** (`adapter-static`, fallback) untuk back-office; SSR hanya bila perlu | KISS & deploy mudah di server sendiri |
-| Server state | **TanStack Query (Svelte)** + invalidasi oleh SSE | Cache, retry, dedup |
+| Server state | **TanStack Query (Svelte)** + invalidasi oleh event realtime | Cache, retry, dedup |
 | Form | **Superforms/Formsnap** atau util sendiri + validasi dari skema kontrak | Aksesibel, error terasosiasi |
 | Komponen headless a11y | **bits-ui** / Melt UI sebagai dasar, dibungkus di `packages/ui` | Keyboard & ARIA matang |
 | Styling | **CSS variables (design tokens)** + Tailwind (opsional) atau CSS modules | Theming mudah |
@@ -913,17 +913,22 @@ Use case ─(1 transaksi)─► state change + outbox row
                                   │
                       Dispatcher (SKIP LOCKED)
                        ├─► subscriber in-proc (ledger posting, compliance, notifikasi, read-model updater)
-                       └─► NOTIFY ► SSE hub ► klien
+                       └─► NOTIFY ► realtime hub ► klien
 ```
 - **Read model/ projection** untuk layar berat (dashboard, saldo ringkas) diperbarui oleh event handler; boleh direbuild dari ledger.
 - **Backpressure**: dispatcher batch + limit konkurensi; *dead-letter* tabel untuk event gagal (dengan UI re-drive).
+- **Transport realtime: WebSocket, bukan SSE** (perubahan 2026-10-14, keputusan pemilik atas E-001/ADR-002).
+  Alasan: Mummy (server HTTP terpilih) tidak punya API streaming sehingga SSE tidak dapat
+  diimplementasikan tanpa menulis soket mentah; Mummy mendukung WebSocket first-class. Endpoint
+  tetap `GET /api/v1/events/stream` (upgrade ke WS) dengan *resume token* sebagai pengganti
+  `Last-Event-ID`. Kontrak pesan memakai amplop yang sama (`id`, `topic`, `payload`).
 
 ### 19.2 Frontend
 - `$state/$derived/$effect` untuk state lokal; **query cache** untuk server state.
-- SSE → handler mengubah/ meng-*invalidate* query terkait (mis. `account.{id}.balance` → refetch/ patch saldo).
+- Event realtime (WS) → handler mengubah/ meng-*invalidate* query terkait (mis. `account.{id}.balance` → refetch/ patch saldo).
 - Optimistic update hanya untuk operasi non-finansial; operasi finansial menunggu konfirmasi server (korektness > kecepatan).
 - Aksesibilitas reaktif: pembaruan real-time diumumkan via live region secukupnya (hindari kebisingan).
-- Reconnect SSE dengan `Last-Event-ID` agar tak kehilangan event.
+- Reconnect WS membawa *resume token* (id event terakhir) agar tak kehilangan event; server memutar ulang dari outbox.
 
 ---
 
@@ -1114,7 +1119,7 @@ Bila `cbs-core` ternyata prototipe tanpa data nyata, tahap 3–4 dilewati (cukup
 
 | Fase | Fokus | Deliverable utama | Kriteria selesai |
 |---|---|---|---|
-| **0. Fondasi** | Monorepo, tooling, CI sesuai pola existing, **inventaris `cbs-core`**, `shared/kernel`, `platform` (auth, RBAC, audit, **param framework**, kalender, outbox, i18n, design system dasar + tema), template modul, `archcheck`/`lint-nomagic`/`paramgen` | Skeleton jalan end-to-end (login → ubah param → audit → SSE) | Semua gate CI aktif; hello-module < 1 hari |
+| **0. Fondasi** | Monorepo, tooling, CI sesuai pola existing, **inventaris `cbs-core`**, `shared/kernel`, `platform` (auth, RBAC, audit, **param framework**, kalender, outbox, i18n, design system dasar + tema), template modul, `archcheck`/`lint-nomagic`/`paramgen` | Skeleton jalan end-to-end (login → ubah param → audit → event realtime WS) | Semua gate CI aktif; hello-module < 1 hari |
 | **1. Core Ledger & Party** | `party` (CIF+KYC dasar), `ledger` (COA, posting rule, periode), `product` factory | Jurnal immutable, TB, produk parametrik | Property test double-entry lulus |
 | **2. Deposit + Teller** | Rekening simpanan (pokok/wajib/sukarela/tabungan), teller session, cetak | Transaksi tunai & PB, saldo realtime | Alur teller keyboard-only lulus a11y |
 | **3. Day-Close Framework** | `daycloser` penuh (EOD/EOM/EOY), task deposit & ledger, simulasi, UI monitor | Simulasi 12 bulan sintetis lulus | EOD target performa tercapai |
