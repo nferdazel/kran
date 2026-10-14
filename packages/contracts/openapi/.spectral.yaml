@@ -1,0 +1,6 @@
+# Ruleset Spectral untuk kontrak OpenAPI CBS (spec §13).
+#
+# Dasar: `spectral:oas` (rekomendasi resmi). Gate di `./task openapi` memakai
+# `--fail-severity warn`, jadi setiap override di bawah harus punya alasan — mematikan aturan
+# tanpa alasan sama saja melemahkan gate.
+extends: ["spectral:oas"]

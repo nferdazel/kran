@@ -1,0 +1,187 @@
+openapi: 3.1.0
+
+info:
+  title: CBS API
+  version: 0.1.0
+  summary: Kontrak HTTP API CBS (koperasi, BPR/BPRS, BMT)
+  description: |
+    Kontrak ini adalah **sumber kebenaran** untuk API HTTP CBS (spec §13). Handler di sisi Nim
+    ditulis manual mengikuti dokumen ini, dan `apps/api/tests/tcontract.nim` + `itapi.nim`
+    membuktikan implementasi ≡ kontrak (parity rute + validasi bentuk respons).
+
+    Konvensi (spec §13):
+    - Endpoint bisnis di bawah `/api/v1`; health/readiness di akar (dipakai gate deploy).
+    - Uang dikirim sebagai **string desimal** (`"1500000.00"`) + `currency`, bukan number.
+    - Tanggal bisnis `YYYY-MM-DD`; waktu ISO-8601 UTC.
+    - Error memakai `application/problem+json` (RFC 9457) dengan `code`, `i18nKey`, `params`,
+      `traceId`; pesan manusia diterjemahkan frontend dari `i18nKey`.
+    - Operasi yang mengubah state memakai `Idempotency-Key`; update memakai `If-Match` (ETag).
+
+    Tahap Fase 0: dokumen ini **tumbuh bersama implementasi** — pada T-008 hanya memuat endpoint
+    sistem (kesehatan); T-009 menambah realtime, T-012 menambah auth/parameter/audit. Setiap
+    operasi yang ada di sini wajib dilayani implementasi (dijaga contract test).
+  license:
+    name: MIT
+    identifier: MIT
+  contact:
+    name: Pemilik produk CBS
+    url: https://github.com/cbs/cbs
+
+servers:
+  - url: /
+    description: Server yang sama dengan aplikasi web (BFF); lihat `ops/caddy/Caddyfile`.
+
+tags:
+  - name: system
+    description: Kesehatan proses — dipakai systemd, webhook deploy, dan smoke test.
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      tags: [system]
+      summary: Liveness proses
+      description: |
+        Selalu 200 selama proses HTTP hidup dan melayani permintaan. Tidak menyentuh DB:
+        liveness tidak boleh gagal karena DB mati (spec §21.4 #11).
+      security: []
+      responses:
+        "200":
+          description: Proses hidup
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "405":
+          description: Method tidak diizinkan untuk path ini
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /readyz:
+    get:
+      operationId: getReadiness
+      tags: [system]
+      summary: Kesiapan melayani trafik
+      description: |
+        Memeriksa dependensi yang wajib. Dipakai gate deploy (`ops/scripts/deploy-vps.sh`)
+        untuk memutuskan lanjut atau rollback (spec §21.4 #11, §22).
+      security: []
+      responses:
+        "200":
+          description: Siap melayani
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        "503":
+          description: Belum siap (salah satu pemeriksaan gagal)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        "405":
+          description: Method tidak diizinkan untuk path ini
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+components:
+  responses:
+    Problem:
+      description: Error dengan amplop RFC 9457 (`application/problem+json`)
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status, version, uptimeSeconds, role]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+          description: Versi aplikasi (dari konfigurasi saat start).
+        uptimeSeconds:
+          type: integer
+          minimum: 0
+        role:
+          type: string
+          enum: [api, worker, ctl, migrate]
+          description: Role proses yang sedang berjalan (spec §12.5, §21.4).
+
+    Readiness:
+      type: object
+      additionalProperties: false
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReadinessCheck"
+
+    ReadinessCheck:
+      type: object
+      additionalProperties: false
+      required: [name, status]
+      properties:
+        name:
+          type: string
+          description: Nama pemeriksaan, mis. `database`, `migrations`.
+        status:
+          type: string
+          enum: [ok, failed]
+        detail:
+          type: string
+          description: Keterangan singkat saat gagal (tanpa data sensitif).
+
+    Problem:
+      type: object
+      additionalProperties: false
+      description: |
+        Amplop error RFC 9457 (spec §13). `i18nKey` menunjuk katalog pesan frontend; `params`
+        memuat nilai untuk placeholder pesan itu (tanpa data sensitif).
+      required: [type, title, status, code, i18nKey, traceId]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          description: URI tipe problem, mis. `/problems/param-not-found`.
+        title:
+          type: string
+          description: Ringkasan singkat (log/diagnostik).
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+          description: Penjelasan tambahan untuk operator (bukan untuk pengguna akhir).
+        code:
+          type: string
+          description: Kode mesin yang stabil, mis. `PARAM_NOT_FOUND`.
+        i18nKey:
+          type: string
+          description: Kunci katalog i18n untuk pesan pengguna, mis. `error_param_not_found`.
+        params:
+          type: object
+          additionalProperties:
+            type: string
+          description: Placeholder untuk `i18nKey`.
+        traceId:
+          type: string
+          description: Korelasi dengan log & audit (spec §18.2).

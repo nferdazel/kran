@@ -2,3 +2,7 @@
 packages:
   - apps/*
   - packages/*
+allowBuilds:
+  # Scarf = telemetri opsional dari rantai dependensi Spectral. Ditolak secara sadar:
+  # build script pihak ketiga tidak dijalankan, apalagi yang mengirim data (kebijakan §18.2).
+  '@scarf/scarf': false

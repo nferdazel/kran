@@ -12,5 +12,10 @@
     "check:web": "pnpm --filter @cbs/web check",
     "test:ui": "pnpm --filter @cbs/ui test",
     "e2e": "pnpm --filter @cbs/web e2e"
+  },
+  "devDependencies": {
+    "@stoplight/spectral-cli": "6.17.0",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
   }
 }

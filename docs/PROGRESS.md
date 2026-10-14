@@ -314,3 +314,22 @@ entri, "Lockfile passes supply-chain policies"), lalu `pnpm install --frozen-loc
 "Already up to date"; `./task e2e` tetap hijau (12 test + vitest 34 + svelte-check 0 error)
 dengan `modules` menunjuk jalur lokal. Prosedur: `docs/runbooks/dev-web.md`.
 Keputusan: D-018. Item O-020 & O-021 ditutup.
+
+## T-008 — OpenAPI skeleton + klien TS + contract test (DONE)
+
+Setelah keputusan ADR-002 (E-001 → Mummy + WebSocket, D-019), T-008 dikerjakan: kontrak
+`packages/contracts/openapi/cbs-api.yaml` (operasi yang **sudah** dilayani saja), klien TS
+(`packages/api-client`, tipe hasil generate + wrapper `openapi-fetch` + typecheck), dan binari
+HTTP pertama `apps/api` (Mummy: `--role`, router dari tabel rute, `/healthz`, `/readyz`,
+problem+json RFC 9457, probe DB). Tooling baru: `tools/openapi` (parity rute + validator subset
+JSON Schema). Gate baru `./task openapi` + step CI `web-e2e`.
+
+Bukti: `./task openapi` hijau (lint `--fail-severity warn`, klien sinkron, typecheck bersih);
+`topenapi` 20 test, `tcontract` 4, `tapi` 6 (respons nyata vs kontrak: status, `Content-Type`,
+bentuk JSON), `itapi` 2 (readiness dengan DB nyata: `database` ok). `./task ci` exit 0.
+Bug nyata tertangkap smoke test: closure handler di dalam loop membuat `/healthz` melayani handler
+`/readyz` — diperbaiki (`bindHandler`) dan dikunci oleh `tapi`.
+
+Item baru: O-025 (shutdown `server.close()` crash di Mummy+ORC), O-026 (`schemathesis` belum ada),
+O-027 (job CI `db-tests`/`traceability` belum ada). O-019 diperbarui: `/healthz`/`/readyz` sudah
+ada (versi awal); O-013 tetap terbuka (role `migrate`/`ctl`/`worker` belum ada).

@@ -5,6 +5,7 @@
 #   ./task check   format + lint + archcheck + lint-nomagic + paramgen --check + i18n check
 #   ./task test    unit + property + integration (Postgres) + contract
 #   ./task e2e     web: kontras token + svelte-check + Playwright (axe 2 tema x 2 locale, keyboard)
+#   ./task openapi lint kontrak OpenAPI + cek klien TS sinkron (openapi-gen = tulis ulang)
 #   ./task ci      semua di atas
 #   ./task build   bangun binary apps/api
 #   ./task fmt     rapikan format (menulis ulang berkas)
@@ -144,6 +145,56 @@ cmd_i18n() {
   ok "katalog i18n lengkap"
 }
 
+# Binary lokal dipakai langsung (bukan lewat `pnpm run`) supaya tidak ada install tersembunyi;
+# lihat docs/runbooks/dev-web.md.
+web_bin() { # web_bin <nama> -> cetak path binary workspace root bila ada
+  b="$ROOT/node_modules/.bin/$1"
+  [ -x "$b" ] && printf '%s' "$b"
+}
+
+cmd_openapi() {
+  log "openapi (lint kontrak + klien TS sinkron dengan kontrak)"
+  yaml="$ROOT/packages/contracts/openapi/cbs-api.yaml"
+  ruleset="$ROOT/packages/contracts/openapi/.spectral.yaml"
+  generated="$ROOT/packages/api-client/src/generated/schema.d.ts"
+  if [ ! -f "$yaml" ]; then
+    skip "kontrak OpenAPI belum ada (T-008)"
+    return 0
+  fi
+  spectral=$(web_bin spectral || true)
+  gen=$(web_bin openapi-typescript || true)
+  if [ -z "$spectral" ] || [ -z "$gen" ]; then
+    skip "dependency JS belum terpasang (pnpm install) — lint/generate dilewati"
+    return 0
+  fi
+
+  "$spectral" lint --ruleset "$ruleset" --fail-severity warn "$yaml" \
+    || die "lint OpenAPI gagal"
+  ok "kontrak lolos lint (fail-severity warn)"
+
+  tmp="$BUILD/schema.d.ts"
+  "$gen" "$yaml" -o "$tmp" >/dev/null || die "generate klien TS gagal"
+  if ! diff -q "$tmp" "$generated" >/dev/null 2>&1; then
+    die "klien TS tidak sinkron dengan kontrak — jalankan: ./task openapi-gen"
+  fi
+  ok "klien TS sinkron dengan kontrak"
+
+  tsc=$(web_bin tsc || true)
+  if [ -n "$tsc" ]; then
+    "$tsc" -p "$ROOT/packages/api-client" --noEmit || die "typecheck paket klien API gagal"
+    ok "paket klien API lolos typecheck"
+  fi
+}
+
+cmd_openapi_gen() {
+  yaml="$ROOT/packages/contracts/openapi/cbs-api.yaml"
+  generated="$ROOT/packages/api-client/src/generated/schema.d.ts"
+  gen=$(web_bin openapi-typescript || true)
+  [ -n "$gen" ] || die "dependency JS belum terpasang (pnpm install)"
+  "$gen" "$yaml" -o "$generated" || die "generate klien TS gagal"
+  ok "$generated"
+}
+
 cmd_shlint() {
   log "shell sintaks skrip ops (bash -n + shellcheck)"
   files=$(find "$ROOT/ops" -type f -name '*.sh' 2>/dev/null | sort)
@@ -221,16 +272,6 @@ cmd_test() {
   if [ -n "$filter" ] && [ "$matched" -eq 0 ]; then
     die "filter '$filter' tidak cocok dengan test mana pun"
   fi
-
-  log "contract test (OpenAPI == implementasi)"
-  contract_dir="$ROOT/packages/contracts/openapi"
-  if [ -n "$filter" ] && [ "$filter" != "contract" ]; then
-    :
-  elif [ ! -d "$contract_dir" ]; then
-    skip "packages/contracts/openapi belum ada (T-008)"
-  else
-    skip "contract test menunggu keputusan ADR-002 (T-014)"
-  fi
 }
 
 cmd_e2e() {
@@ -292,6 +333,7 @@ summarize() {
 
 cmd_ci() {
   cmd_check
+  cmd_openapi
   cmd_test
   cmd_e2e
   summarize
@@ -315,6 +357,8 @@ case "${1:-help}" in
   paramgen) mkdir -p "$BUILD"; cmd_paramgen ;;
   paramgen-gen) mkdir -p "$BUILD"; cmd_paramgen_gen ;;
   i18n) mkdir -p "$BUILD"; cmd_i18n ;;
+  openapi) mkdir -p "$BUILD"; cmd_openapi ;;
+  openapi-gen) mkdir -p "$BUILD"; cmd_openapi_gen ;;
   devdb) shift; exec "$ROOT/tools/devdb.sh" "$@" ;;
   dbtools) shift; mkdir -p "$BUILD"; tool=$(build_tool "$ROOT/tools/dbtools"); "$tool" --root "$ROOT" "$@" ;;
   scaffold) shift; mkdir -p "$BUILD"; cmd_scaffold "$@" ;;
