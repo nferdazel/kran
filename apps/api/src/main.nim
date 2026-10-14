@@ -14,6 +14,9 @@ import "platform-lib/db/config"
 import "platform-lib/db/pool"
 import "platform-lib/log"
 
+import kernel/clock
+
+import ./access
 import ./context
 import ./events
 import ./health
@@ -73,24 +76,30 @@ proc main() =
 
   let logger = newLogger(app = "cbs-api")
 
-  # Realtime butuh pool sendiri (pump meminjam satu koneksi untuk `LISTEN` seumur proses).
-  # Tanpa `CBS_DATABASE_URL` API tetap hidup untuk `/healthz`, dan rute stream membalas 501.
-  var events: EventService
+  # Satu pool per proses: dipakai handler REST (auth/parameter/audit), kebijakan realtime, dan
+  # pump `LISTEN` (pump meminjam satu koneksi seumur proses).
+  # Tanpa `CBS_DATABASE_URL` API tetap hidup untuk `/healthz`, dan rute yang butuh DB membalas 501.
+  var pool: DbPool
   if databaseUrlSet(envTableFromProcess()):
-    events = newEventService(denyPolicy(), newDbPool(dbConfigFromProcessEnv()))
-    startPump(events)
-    discard logger.info("realtime hub aktif",
-      [("policy", "deny-all sampai sesi nyata terpasang (T-012)")])
-  else:
-    discard logger.warn("CBS_DATABASE_URL kosong: realtime tidak aktif", [])
+    pool = newDbPool(dbConfigFromProcessEnv())
 
-  let app = AppContext(
+  var app = AppContext(
     version: opts.version,
     role: $opts.role,
     startedAt: epochTime(),
     readiness: databaseProbe(),
-    events: events,
+    pool: pool,
+    clock: systemClock(),
   )
+
+  if pool.isNil:
+    discard logger.warn("CBS_DATABASE_URL kosong: basis data & realtime tidak aktif", [])
+  else:
+    app.events = newEventService(realtimePolicy(app), pool)
+    startPump(app.events)
+    discard logger.info("realtime hub aktif",
+      [("policy", "sesi cookie + izin per topik (T-012)")])
+
   discard logger.info("cbs-api start", [("role", $opts.role),
                                         ("port", $opts.port),
                                         ("address", opts.address),

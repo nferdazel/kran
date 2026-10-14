@@ -20,6 +20,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@cbs/api-client':
+        specifier: workspace:*
+        version: link:../../packages/api-client
       '@cbs/ui':
         specifier: workspace:*
         version: link:../../packages/ui

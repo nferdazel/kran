@@ -364,3 +364,30 @@ tolak-semua, batas protokol sebagai parameter) dan D-022 (perbaikan validator + 
 yang sempit untuk respons 101). Item baru: O-028 (kuota antrean keluar per koneksi), O-029 (pump
 mati belum diperiksa `/readyz`), O-030 (batas protokol belum parameter DB). O-018 sebagian
 terjawab: jalur `LISTEN` kini ada di pump; invalidasi cache parameter tetap punya pompa sendiri.
+
+## T-012 — End-to-end Fase 0: login → parameter (maker-checker) → audit → realtime di UI (DONE)
+
+Fase 0 kini tertutup ujung-ke-ujung. HTTP layer baru (`identity.nim`, `access.nim`,
+`handlers_auth/param/audit.nim`) memakai layanan yang sudah ada — `auth_service`, `param_repo`,
+`audit_repo` — tanpa use case application-layer baru (D-023…D-026 untuk alasan keputusannya).
+Sesi menjadi pemilik otorisasi realtime: topik dipetakan ke izin dan `*` selalu ditolak (D-024),
+melunasi kebijakan "tolak semua" dari D-021. UI `/login` + `/app` berbicara same-origin lewat proxy
+Vite/Caddy sehingga cookie `HttpOnly; Secure; SameSite=Strict` berlaku tanpa CORS (D-025).
+
+Bukti: `./task ci` exit 0. Rinciannya — `itapi_auth` 15 `[OK]` (cookie, 401/403, alur
+maker-checker HTTP 400/401/403/404/409, audit, dan **dua peristiwa `param.changed` nyata** lewat
+klien WS); `tapi` 10 (7 rute tanpa layanan → 501 `problem+json` sesuai kontrak, pola rute, pemetaan
+topik, tanpa wildcard implisit); Playwright 18 lulus termasuk `flow.spec.ts` 6 test (alur dua
+konteks maker/checker dengan penanda `__guard` — nilai ACTIVE muncul di sesi maker **tanpa reload**;
+audit memuat `param.submit` + alasan pengguna & `param.approve`; axe `/login` + `/app` × 2 tema
+bersih); `svelte-check` 0 error; vitest kontras 34. Total 410 assertion Nim hijau.
+
+Temuan nyata saat verifikasi: (1) `DYLD_*` tidak diwariskan ke `webServer` Playwright sehingga API
+gagal memuat libpq — diperbaiki dengan me-`source` `.local/dev.env` di perintah API (D-026);
+(2) proses API sisa sesi yang terputus memegang port 8099 dan memblokir run berikutnya (akar
+masalah sama dengan O-025); (3) `getByLabel` juga cocok dengan seksi ber-`aria-labelledby`, jadi
+pencarian label di spec dibuat eksak.
+
+Item baru: O-031 (bootstrap user produksi — jangan ditebak di kode), O-032 (saring daftar
+parameter/audit per cabang), O-033 (tautan masuk di header + penyesuaian test urutan Tab).
+Laporan milestone: `docs/milestones/M0-report.md`.

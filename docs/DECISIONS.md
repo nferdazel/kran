@@ -327,3 +327,78 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
      operasi dan alasannya tertulis di berkas ruleset.
 - **Konsekuensi**: deviasi gate tercatat dan sempit; bila nanti ada operasi 101 lain, override harus
   diperluas dengan alasan yang sama, bukan mematikan aturan secara global.
+
+## D-023 — Seed user dev/e2e lewat `dbtools seed` (bootstrap produksi tetap terbuka)
+
+- **Konteks**: alur T-012 (login → maker-checker → audit → realtime) butuh user nyata di DB dengan
+  izin terpisah (pengaju vs penyetuju). Tanpa itu, alur ujung-ke-ujung hanya bisa diuji dengan
+  menyuntik baris langsung di test — tidak menguji login/izin yang sebenarnya.
+- **Keputusan**:
+  1. `packs/base/seed/0001_dev_users.sql` memuat user sintetis `dev.maker`/`dev.checker`
+     (kata sandi dev, izin `platform.param.submit` vs `platform.param.approve`) dengan penanda
+     jelas di berkasnya: **DEV/TEST ONLY**.
+  2. Perintah `./task dbtools seed [--dev]`: seed pack selalu idempoten; bagian dev **hanya**
+     dijalankan dengan flag `--dev` (dipakai `./task e2e`, bukan bagian alur produksi).
+  3. Nilai bisnis tidak ditanam di seed user (hanya identitas + izin role), dan `default_pack`
+     parameter tetap satu-satunya tempat nilai awal (spec §10.3).
+- **Alasan menolak alternatif**: menaruh user dev di migrasi (dijalankan produksi) akan mengirim
+  akun dengan kata sandi yang diketahui ke lingkungan nyata; menyuntik baris di test menghilangkan
+  cakupan login/otorisasi.
+- **Konsekuensi / item terbuka**: **bootstrap user produksi belum diputuskan** (siapa admin pertama,
+  kata sandi awal, wajib ganti saat login pertama) → `docs/OPEN_ITEMS.md` O-031. Jangan menebaknya
+  di kode.
+
+## D-024 — Otorisasi topik realtime mengikuti sesi, tanpa wildcard implisit
+
+- **Konteks**: D-021 menetapkan kebijakan default **tolak semua** sampai ada identitas, dan T-012
+  adalah tempat sesi dipasang. Muncul pertanyaan kedua: apakah klien boleh meminta `*`.
+- **Keputusan**:
+  1. `access.nim` memetakan topik yang diminta ke izin nyata (`param.changed` →
+     `platform.param.read`) dan hanya mengizinkan topik yang **disebut eksplisit**.
+  2. `*` selalu ditolak; topik yang ditolak dilaporkan di `subscribed.denied` supaya klien tahu
+     bedanya "tidak ada peristiwa" dan "tidak berhak".
+  3. Aturan ini sama dengan `splitAllowed` di hub: tidak ada dua definisi wildcard di dua lapisan.
+- **Alasan menolak alternatif**: memperluas `*` menjadi "semua topik yang boleh" membuat arti
+  langganan bergantung pada waktu (izin bisa berubah) dan menyembunyikan topik yang benar-benar
+  dibutuhkan klien; juga menambah permukaan bagi bug izin yang senyap.
+- **Konsekuensi**: klien wajib menyebut topiknya (UI T-012 mengirim `["param.changed"]`). Bila
+  nanti jumlah topik per layar membengkak, urutanannya tetap eksplisit di sisi klien.
+
+## D-025 — Satu origin: proxy dev/preview untuk `/api` (cookie `SameSite=Strict`, tanpa CORS)
+
+- **Konteks**: spesifikasi menetapkan cookie sesi `HttpOnly` + `Secure` + `SameSite=Strict` (§13).
+  Kalau halaman dilayani origin Vite dan API di origin/port lain, browser tidak akan mengirim
+  cookie pada permintaan lintas-situs, sehingga pilihannya cuma melonggarkan cookie atau
+  mengaktifkan CORS + `credentials` (dan tetap repot dengan `SameSite`).
+- **Keputusan**:
+  1. `apps/web/vite.config.ts` meneruskan `/api`, `/healthz`, `/readyz` ke `cbs-api`
+     (`CBS_API_TARGET`, default `http://127.0.0.1:8080`), dengan `ws: true` untuk upgrade
+     `/api/v1/events/stream` (spec §19.3).
+  2. Aplikasi web selalu berbicara same-origin (`baseUrl` klien kosong); tidak ada penanganan token
+     di JS dan tidak ada konfigurasi CORS di API.
+  3. Produksi memakai bentuk yang sama: satu origin di belakang Caddy (halaman + `/api`).
+- **Alasan menolak alternatif**: melonggarkan `SameSite` melemahkan pertahanan CSRF yang justru
+  diminta spec; CORS + `credentials` menambah jalur kode baru yang harus diuji di dua mode.
+- **Konsekuensi**: `apps/web/playwright.config.ts` menyalakan API di port e2e (8099) dan menyetel
+  `CBS_API_TARGET`, supaya e2e menguji origin tunggal yang sama seperti dev/produksi.
+
+## D-026 — `webServer` Playwright me-`source` `.local/dev.env` (variabel `DYLD_*` tidak diwariskan)
+
+- **Konteks**: `apps/api` memuat libpq lewat `dlopen`. Di mesin dev ini libpq Homebrew bersifat
+  keg-only, jadi hanya ditemukan lewat `DYLD_FALLBACK_LIBRARY_PATH` dari `.local/dev.env`.
+  `./task e2e` mengekspor variabel itu, tetapi `webServer` Playwright menjalankan perintahnya lewat
+  shell perantara ber-hardened dan dyld **menghapus** variabel `DYLD_*` di batas proses seperti itu
+  (diuji langsung: `node` melihat variabelnya, anak yang di-`spawn` lewat `sh -c` tidak). Akibatnya
+  binary API gagal start dengan "could not load: libpq.dylib" — padahal dijalankan manual baik-baik
+  saja.
+- **Keputusan**:
+  1. Perintah API di `apps/web/playwright.config.ts` me-`source` `.local/dev.env` sendiri
+     (`set -a; [ -f … ] && . … ; set +a; exec …`) lalu `exec` binary-nya. Menyetel variabel di shell
+     yang sama dengan `exec` membuatnya selamat; mengandalkan pewarisan lewat `env` webServer tidak.
+  2. Lingkungan proses induk tetap diteruskan eksplisit (`...inheritedEnv`) supaya `PATH` dan
+     variabel lain tidak hilang bila Playwright mengganti (bukan menggabung) lingkungan.
+  3. Berkas `.local/dev.env` opsional: bila tidak ada (CI), perintah tetap berjalan dan sumber
+     konfigurasi datang dari `env` webServer seperti semula.
+- **Konsekuensi**: konfigurasi e2e memuat satu baris shell yang spesifik mesin dev, dengan alasan
+  tertulis. Bila kelak libpq tersedia di jalur sistem (atau API memakai driver tanpa `dlopen`),
+  baris itu bisa dihapus.

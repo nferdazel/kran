@@ -13,6 +13,22 @@ import { defineConfig } from "vite";
  *  - `emitTsDeclarations` penting: tanpa itu tidak ada `.d.ts`, sehingga `svelte-check` kehilangan
  *    jaminan "key pesan bertipe" yang jadi alasan memilih Paraglide (spec §14.1/§16.2).
  */
+/**
+ * Proxy API (dev `vite` maupun `vite preview` Playwright) — spec §14.1: tanpa proxy, cookie
+ * sesi `SameSite=Strict` tidak akan ikut terkirim karena halaman di origin Vite dan API di
+ * origin lain. Lewat proxy semua jadi same-origin; `ws: true` meneruskan upgrade WebSocket
+ * `/api/v1/events/stream` (spec §19.3).
+ *
+ * Port API dev default 8080; Playwright menimpanya lewat `CBS_API_TARGET` ke port e2e 8099
+ * (playwright.config.ts) supaya tidak bentrok dengan API dev yang sedang berjalan.
+ */
+const apiTarget = process.env.CBS_API_TARGET ?? "http://127.0.0.1:8080";
+const proxy = {
+  "/api": { target: apiTarget, changeOrigin: false, ws: true },
+  "/healthz": { target: apiTarget, changeOrigin: false },
+  "/readyz": { target: apiTarget, changeOrigin: false },
+};
+
 export default defineConfig({
   plugins: [
     paraglideVitePlugin({
@@ -25,4 +41,6 @@ export default defineConfig({
       adapter: adapter({ fallback: "index.html" }),
     }),
   ],
+  server: { proxy },
+  preview: { proxy },
 });

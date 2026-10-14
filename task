@@ -4,7 +4,8 @@
 #
 #   ./task check   format + lint + archcheck + lint-nomagic + paramgen --check + i18n check
 #   ./task test    unit + property + integration (Postgres) + contract
-#   ./task e2e     web: kontras token + svelte-check + Playwright (axe 2 tema x 2 locale, keyboard)
+#   ./task e2e     web: kontras token + svelte-check + Playwright (axe 2 tema x 2 locale, keyboard,
+#                   alur login/maker-checker/realtime bila CBS_DATABASE_URL tersedia)
 #   ./task openapi lint kontrak OpenAPI + cek klien TS sinkron (openapi-gen = tulis ulang)
 #   ./task ci      semua di atas
 #   ./task build   bangun binary apps/api
@@ -306,7 +307,21 @@ cmd_e2e() {
     || die "svelte-check menemukan error"
   ok "0 error"
 
-  log "e2e (Playwright): axe 2 tema x 2 locale + alur keyboard-only"
+  # API e2e (spec §17.2): hanya bila ada DB. Migrasi + seed dev idempoten dulu, baru Playwright
+  # mengangkat binary hasil build di port 8099 (lihat apps/web/playwright.config.ts).
+  if [ -z "$CBS_DATABASE_URL" ]; then
+    skip "CBS_DATABASE_URL kosong — API e2e tidak dijalankan, spec alur login/maker-checker dilewati"
+  else
+    log "API e2e: build + migrasi + seed dev"
+    cmd_build
+    mkdir -p "$BUILD"
+    dbt=$(build_tool "$ROOT/tools/dbtools")
+    "$dbt" --root "$ROOT" migrate || die "migrasi DB dev gagal"
+    "$dbt" --root "$ROOT" seed --dev || die "seed dev gagal"
+    ok "API e2e siap (migrasi + seed dev idempoten)"
+  fi
+
+  log "e2e (Playwright): axe 2 tema x 2 locale + alur keyboard-only + alur login/maker-checker"
   (cd "$ROOT/apps/web" && "$web_bin/playwright" test) || die "e2e gagal"
   ok "e2e hijau"
 }

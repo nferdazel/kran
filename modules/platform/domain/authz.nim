@@ -135,10 +135,18 @@ proc refreshedExpiry*(s: SessionState, policy: SessionPolicy,
   let candidate = now + initDuration(minutes = policy.idleMinutes)
   if candidate > s.absoluteExpiresAt: s.absoluteExpiresAt else: candidate
 
+const sessionCookieAttributeList* = "Path=/; HttpOnly; Secure; SameSite=Strict"
+  ## Daftar atribut cookie sesi (spec §13) tanpa `Max-Age`: satu definisi, dipakai cookie hidup
+  ## maupun cookie penghapus — cookie dengan bentuk berbeda akan diabaikan browser, dan sesi
+  ## tidak benar-benar terhapus.
+
 proc sessionCookieAttributes*(policy: SessionPolicy): string =
   ## Atribut cookie sesi (spec §13): HttpOnly + Secure + SameSite=Strict, tanpa nilai.
-  "Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=" &
-    $(policy.absoluteMinutes * secondsPerMinute)
+  sessionCookieAttributeList & "; Max-Age=" & $(policy.absoluteMinutes * secondsPerMinute)
+
+proc clearedCookieAttributes*(): string =
+  ## Atribut untuk **menghapus** cookie saat logout (umur 0).
+  sessionCookieAttributeList & "; Max-Age=0"
 
 proc passwordProblems*(minLength: int, username, plaintext: string): seq[PasswordProblem] =
   ## Kebijakan panjang dulu (aturan kompleksitas menyusul bila institusi meminta).

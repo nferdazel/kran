@@ -40,6 +40,14 @@ tags:
   - name: realtime
     description: |
       Peristiwa platform untuk UI (spec §19). Transport: WebSocket (ADR-002/D-019).
+  - name: auth
+    description: Sesi login (spec §13, §18.2) — masuk, identitas, keluar.
+  - name: params
+    description: |
+      Parameter efektif-dated dengan maker-checker (spec §10.2, §10.4): pengajuan butuh penyetuju
+      lain, dan nilai aktif lama dipangkas saat nilai baru disetujui.
+  - name: audit
+    description: Jejak audit append-only ber-rantai hash (spec §9.1(7), §18.2).
 
 paths:
   /healthz:
@@ -159,6 +167,300 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
 
+  /api/v1/auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Masuk dan buat sesi
+      description: |
+        Memverifikasi kredensial dan membuat sesi. Token sesi dikirim **hanya** lewat cookie
+        `HttpOnly`+`Secure`+`SameSite=Strict` (spec §13) — tidak ada salinan di badan respons.
+
+        Pesan salah-password, akun tak dikenal, dan akun non-aktif dibedakan lewat `params.reason`
+        (`invalid_credentials`, `locked`, `inactive`) untuk audit, tetapi badan respons tidak
+        mengungkap keberadaan akun.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Sesi dibuat; cookie `cbs_session` diset
+          headers:
+            Set-Cookie:
+              description: Cookie sesi (`HttpOnly`, `Secure`, `SameSite=Strict`)
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          description: Kredensial tidak cocok
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Akun terkunci atau tidak aktif (`params.reason` = `locked`/`inactive`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/auth/session:
+    get:
+      operationId: getSession
+      tags: [auth]
+      summary: Identitas sesi yang sedang aktif
+      description: |
+        Mengembalikan pengguna, peran, dan izin efektif sesi pada cookie. Sekaligus memperpanjang
+        batas idle sesi (spec §18.2) — dipakai UI sebagai denyut saat memuat halaman.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Sesi sah
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionInfo"
+        "401":
+          description: Tidak ada sesi sah
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Cabut sesi dan hapus cookie
+      description: |
+        Mencabut sesi pada cookie dan mengirim cookie kedaluwarsa (`Max-Age=0`). Setelah ini
+        token lama tidak lagi sah (`revoked_at` terisi) — bukan sekadar dihapus di browser.
+      security:
+        - sessionCookie: []
+      responses:
+        "204":
+          description: Sesi dicabut; cookie dihapus (`Max-Age=0`)
+          headers:
+            Set-Cookie:
+              description: Cookie sesi kedaluwarsa
+              schema:
+                type: string
+        "401":
+          description: Tidak ada sesi sah
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/params:
+    get:
+      operationId: listParams
+      tags: [params]
+      summary: Daftar nilai parameter
+      description: |
+        Nilai parameter beserta statusnya (`ACTIVE`, `PENDING`, `SUPERSEDED`, `REJECTED`) untuk UI
+        Parameter Admin (spec §10.7). Filter `status=PENDING` = daftar yang menunggu checker.
+        Daftar belum disaring per scope/cabang (lihat batasan di `docs/tasks/T-012.md`).
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [DRAFT, PENDING, ACTIVE, SUPERSEDED, REJECTED]
+      responses:
+        "200":
+          description: Daftar nilai parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParamValueList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/params/{key}/changes:
+    post:
+      operationId: submitParamChange
+      tags: [params]
+      summary: Ajukan perubahan parameter (maker)
+      description: |
+        Mengajukan nilai baru untuk sebuah parameter. Hasilnya **selalu** `PENDING`: aktivasi
+        butuh penyetuju lain (spec §10.2, maker-checker). Nilai divalidasi terhadap definisi
+        (tipe + JSON Schema + scope yang diizinkan).
+
+        `reason` wajib: audit perubahan parameter harus bisa menjelaskan alasannya (spec §11.7).
+        `effectiveFrom` kosong = tanggal buku hari ini.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Kunci parameter, mis. `platform.security.max_failed_logins`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ParamChangeRequest"
+      responses:
+        "201":
+          description: Pengajuan tercatat sebagai `PENDING`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParamSubmitResponse"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/params/changes/{paramValueId}/approve:
+    post:
+      operationId: approveParamChange
+      tags: [params]
+      summary: Setujui perubahan parameter (checker)
+      description: |
+        Mengaktifkan nilai `PENDING` menjadi `ACTIVE` dan memangkas nilai aktif sebelumnya
+        (`SUPERSEDED`). Penyetuju **wajib berbeda** dari pengaju — ditegakkan skema DB
+        (`self_approval`), bukan hanya kode. Konflik periode (EXCLUDE) juga ditolak.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: paramValueId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Nilai diaktifkan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParamApprovalResponse"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          description: "paramValueId tidak ditemukan"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "409":
+          description: |
+            Tidak bisa disetujui: bukan `PENDING` (`params.reason` = `not_pending`), pengesahan
+            sendiri (`self_approval`), atau periode bertabrakan (`period_conflict`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/audit:
+    get:
+      operationId: listAudit
+      tags: [audit]
+      summary: Jejak audit terbaru
+      description: |
+        Daftar entri audit (urut terbaru dulu). Rantai hash-nya diverifikasi di DB
+        (`platform.audit_verify`), bukan di handler. `action` menyaring dengan **awalan**
+        (mis. `param.`).
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 20
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Awalan action, mis. `param.` atau `auth.login`.
+      responses:
+        "200":
+          description: Daftar entri audit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -261,3 +563,207 @@ components:
         traceId:
           type: string
           description: Korelasi dengan log & audit (spec §18.2).
+
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 1
+          writeOnly: true
+
+    LoginResponse:
+      type: object
+      additionalProperties: false
+      required: [userId, sessionId, expiresAt]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+          format: uuid
+        expiresAt:
+          type: string
+          description: Batas idle sesi (ISO-8601 UTC).
+
+    SessionInfo:
+      type: object
+      additionalProperties: false
+      required: [userId, username, fullName, mustChangePassword, roles, permissions, expiresAt]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        username:
+          type: string
+        fullName:
+          type: string
+        mustChangePassword:
+          type: boolean
+        roles:
+          type: array
+          items:
+            type: string
+        permissions:
+          type: array
+          items:
+            type: string
+            description: Kode izin `modul.resource.action` (spec §13).
+        expiresAt:
+          type: string
+          description: Batas idle sesi (ISO-8601 UTC); batas absolut tidak pernah dilampaui.
+
+    ParamValue:
+      type: object
+      additionalProperties: false
+      required: [paramValueId, key, scopeType, scopeId, status, value, effectiveFrom,
+                 effectiveTo, maker, checker, reason, requiresApproval]
+      properties:
+        paramValueId:
+          type: string
+          format: uuid
+        key:
+          type: string
+        scopeType:
+          type: string
+          enum: [GLOBAL, INSTITUTION, BRANCH, PRODUCT, SEGMENT]
+        scopeId:
+          type: string
+        status:
+          type: string
+          enum: [DRAFT, PENDING, ACTIVE, SUPERSEDED, REJECTED]
+        value:
+          description: Nilai parameter; bentuknya ditentukan JSON Schema definisinya.
+        effectiveFrom:
+          type: string
+          format: date
+        effectiveTo:
+          type: string
+          description: Kosong = berlaku tanpa batas akhir.
+        maker:
+          type: string
+        checker:
+          type: string
+        reason:
+          type: string
+        requiresApproval:
+          type: boolean
+
+    ParamValueList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParamValue"
+
+    ParamChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [value, reason]
+      properties:
+        value:
+          description: Nilai baru; divalidasi terhadap tipe & JSON Schema definisi parameter.
+        scopeType:
+          type: string
+          enum: [GLOBAL, INSTITUTION, BRANCH, PRODUCT, SEGMENT]
+          default: GLOBAL
+        scopeId:
+          type: string
+        effectiveFrom:
+          type: string
+          format: date
+        effectiveTo:
+          type: string
+        reason:
+          type: string
+          minLength: 1
+
+    ParamSubmitResponse:
+      type: object
+      additionalProperties: false
+      required: [paramValueId, key, status, scopeType, scopeId, value, effectiveFrom,
+                 effectiveTo, reason]
+      properties:
+        paramValueId:
+          type: string
+          format: uuid
+        key:
+          type: string
+        status:
+          type: string
+          enum: [PENDING]
+        scopeType:
+          type: string
+        scopeId:
+          type: string
+        value:
+          description: Nilai yang diajukan (belum aktif sampai disetujui).
+        effectiveFrom:
+          type: string
+          format: date
+        effectiveTo:
+          type: string
+        reason:
+          type: string
+
+    ParamApprovalResponse:
+      type: object
+      additionalProperties: false
+      required: [paramValueId, status]
+      properties:
+        paramValueId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [ACTIVE]
+
+    AuditItem:
+      type: object
+      additionalProperties: false
+      required: [seq, recordedAt, businessDate, actorUserId, actorRole, action, resourceType,
+                 resourceId, reason, after]
+      properties:
+        seq:
+          type: integer
+          minimum: 1
+        recordedAt:
+          type: string
+          description: ISO-8601 UTC (zona tetap, bukan zona server).
+        businessDate:
+          type: string
+          description: Tanggal buku saat aksi terjadi (`YYYY-MM-DD`); kosong bila belum ada.
+        actorUserId:
+          type: string
+        actorRole:
+          type: string
+        action:
+          type: string
+          description: Mis. `param.submit`, `param.approve`, `auth.login.success`.
+        resourceType:
+          type: string
+        resourceId:
+          type: string
+        reason:
+          type: string
+        after:
+          description: Nilai sesudah aksi (bentuk mengikuti action).
+
+    AuditList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditItem"

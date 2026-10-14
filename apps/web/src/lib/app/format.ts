@@ -47,3 +47,20 @@ export function formatDate(isoDate: string): string {
     new Date(Date.UTC(year, month - 1, day)),
   );
 }
+
+/** Waktu ISO-8601 UTC (mis. `recordedAt` audit) → tampilan tanggal + jam locale aktif. */
+export function formatDateTime(iso: string): string {
+  const value = new Date(iso);
+  if (Number.isNaN(value.getTime())) {
+    return iso;
+  }
+  return new Intl.DateTimeFormat(currentLocale(), {
+    dateStyle: "medium",
+    timeStyle: "medium",
+  }).format(value);
+}
+
+/** Jam locale aktif (indikator realtime). */
+export function formatClock(at: Date): string {
+  return new Intl.DateTimeFormat(currentLocale(), { timeStyle: "medium" }).format(at);
+}

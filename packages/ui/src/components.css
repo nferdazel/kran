@@ -104,6 +104,7 @@
 
 /* Target minimal 24x24 (spec §17.1). */
 .cbs-button,
+.cbs-input,
 .cbs-select,
 .cbs-link {
   min-block-size: var(--control-min-size);
@@ -261,4 +262,94 @@
 
 .cbs-radio:has(input:checked) {
   border-color: var(--color-primary);
+}
+
+/* Tautan: warna aksen pada latar token (pasangan `primary`/`bg` & `surface` diuji kontrasnya). */
+.cbs-link {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.cbs-link:hover {
+  color: var(--color-primary-hover);
+}
+
+/* Aksi utama satu halaman: satu tombol beraksen, sisanya netral (Part 3 "one deliberate accent"). */
+.cbs-button--primary {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-text-on-primary);
+}
+
+.cbs-button--primary:hover {
+  background: var(--color-primary-hover);
+}
+
+/* Form native berlabel nyata (spec §17.1: elemen semantik dulu, ARIA kemudian). */
+.cbs-form {
+  display: grid;
+  gap: var(--space-4);
+  max-inline-size: 32rem;
+}
+
+.cbs-field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.cbs-label {
+  font-size: var(--text-sm);
+}
+
+.cbs-input,
+.cbs-select {
+  padding-block: var(--space-2);
+  padding-inline: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+}
+
+/* Pesan galat: teks + warna danger (bukan warna saja) dan `role="alert"` di komponen. */
+.cbs-alert {
+  padding-block: var(--space-2);
+  padding-inline: var(--space-3);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-md);
+  color: var(--color-danger);
+}
+
+/* Tajuk halaman + aksi (mis. Keluar) sebaris, membungkus di layar sempit. */
+.cbs-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Tabel data: pembungkus menggulir mendatar agar tidak meluber di layar sempit (R-03). */
+.cbs-table-wrap {
+  overflow-x: auto;
+}
+
+.cbs-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+}
+
+.cbs-table th,
+.cbs-table td {
+  padding-block: var(--space-2);
+  padding-inline-end: var(--space-3);
+  text-align: start;
+  vertical-align: top;
+  border-block-end: 1px solid var(--color-border);
+}
+
+.cbs-table th {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
 }

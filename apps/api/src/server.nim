@@ -3,6 +3,8 @@
 ## Handler dipanggil di **thread Mummy**, jadi boleh blocking — penting karena `db_connector`
 ## sinkron diwajibkan spec §12.1 (satu query sinkron tidak boleh membekukan seluruh API).
 
+import std/strutils
+
 import mummy
 import mummy/routers
 
@@ -32,15 +34,28 @@ proc bindHandler*(handler: RouteHandler, app: AppContext): RequestHandler =
   ## terakhir — pernah kejadian di sini (`/healthz` melayani handler `/readyz`).
   result = proc(req: Request) {.gcsafe.} = handler(app, req)
 
+proc mummyPattern*(path: string): string =
+  ## Kontrak memakai `{nama}` (OpenAPI/URI template, spec §13); router Mummy memakai `@nama`.
+  ## Konversi satu tempat di sini supaya `RouteSpec.path` tetap sama dengan kontrak (dibandingkan
+  ## `apps/api/tests/tcontract.nim`) tanpa router perlu tahu dua gaya penulisan.
+  var segments: seq[string]
+  for segment in path.split('/'):
+    if segment.len > 2 and segment[0] == '{' and segment[^1] == '}':
+      segments.add("@" & segment[1 .. ^2])
+    else:
+      segments.add(segment)
+  segments.join("/")
+
 proc buildRouter*(app: AppContext): Router =
   for spec in allRoutes():
     let handleRequest = bindHandler(spec.handler, app)
+    let pattern = mummyPattern(spec.path)
     case spec.httpMethod
-    of hmGet: result.get(spec.path, handleRequest)
-    of hmPost: result.post(spec.path, handleRequest)
-    of hmPut: result.put(spec.path, handleRequest)
-    of hmPatch: result.patch(spec.path, handleRequest)
-    of hmDelete: result.delete(spec.path, handleRequest)
+    of hmGet: result.get(pattern, handleRequest)
+    of hmPost: result.post(pattern, handleRequest)
+    of hmPut: result.put(pattern, handleRequest)
+    of hmPatch: result.patch(pattern, handleRequest)
+    of hmDelete: result.delete(pattern, handleRequest)
 
 proc requestHandler*(app: AppContext): RequestHandler =
   ## Router dipegang closure; Mummy memanggil handler ini dari worker thread-nya.

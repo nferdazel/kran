@@ -60,6 +60,39 @@ suite "dbtools: penemuan & urutan":
     check validateMigrations(@[a, a]).len == 1
     check validateMigrations(@[a]).len == 0
 
+suite "dbtools: berkas seed":
+  test "generated lebih dulu, seed tulis-tangan hanya bila --dev":
+    let root = workRoot / "seed-order"
+    if dirExists(root):
+      removeDir(root)
+    createDir(root / "packs" / "base" / "generated")
+    createDir(root / "packs" / "base" / "seed")
+    writeFile(root / "packs" / "base" / "generated" / "param_values.sql", "SELECT 1;")
+    writeFile(root / "packs" / "base" / "generated" / "param_definitions.sql", "SELECT 1;")
+    writeFile(root / "packs" / "base" / "seed" / "0001_dev_users.sql", "SELECT 1;")
+
+    check seedFiles(root) == @[
+      "packs/base/generated/param_definitions.sql",
+      "packs/base/generated/param_values.sql"]
+    check seedFiles(root, dev = true) == @[
+      "packs/base/generated/param_definitions.sql",
+      "packs/base/generated/param_values.sql",
+      "packs/base/seed/0001_dev_users.sql"]
+
+  test "pack tanpa folder generated/seed tidak membuat error":
+    let root = workRoot / "seed-kosong"
+    if dirExists(root):
+      removeDir(root)
+    createDir(root / "packs" / "kosong")
+    check seedFiles(root, dev = true).len == 0
+
+  test "root tanpa folder packs -> daftar kosong":
+    let root = workRoot / "seed-tanpa-packs"
+    if dirExists(root):
+      removeDir(root)
+    createDir(root)
+    check seedFiles(root, dev = true).len == 0
+
 suite "dbtools: pembersihan komentar & literal":
   test "komentar baris & blok dibuang":
     check stripSqlComments("SELECT 1; -- drop table x\n").contains("SELECT 1;")
