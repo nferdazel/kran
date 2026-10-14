@@ -58,6 +58,44 @@ proc settingsOf*(db: DbConn, scope: ScopeRef, asOf: string): SecuritySettings =
     sessionAbsoluteMinutes: db.activeParamInt(
       keyString(P_platform_security_session_absolute_minutes), asOf, lookup))
 
+proc sessionPolicyCandidateProblem*(db: DbConn, key: string, candidate: JsonNode,
+                                   scope: ScopeRef, asOf: string): string =
+  ## `""` bila perubahan aman; pesan pelanggaran bila kombinasi kebijakan sesi yang **akan**
+  ## berlaku melanggar aturan domain `sessionPolicy` (idle ≤ absolut, spec §18.2).
+  ##
+  ## Kenapa pemeriksaan ini ada: `session_idle_minutes` dan `session_absolute_minutes` masing-masing
+  ## sah menurut schema-nya sendiri (idle ≤ 1440, absolut ≥ 5), tetapi kombinasinya bisa tidak sah
+  ## (mis. idle 600 + absolut 480). Bila kombinasi seperti itu sampai ACTIVE, **seluruh login gagal**
+  ## (`sessionPolicy` menolak) dan pemulihannya butuh akses DB langsung — persis situasi yang harus
+  ## dicegah alur maker-checker. Dipanggil saat pengajuan **dan** saat persetujuan, karena dua
+  ## pengajuan yang masing-masing sah bisa bertabrakan setelah salah satunya aktif.
+  ##
+  ## Hanya pasangan parameter ini yang diperiksa: aturan lintas-parameter lain belum ada di spec.
+  if candidate.kind != JInt:
+    return "" # tipe/schema ditangani `submitValue`; di sini bukan urusan bentuk nilai
+  var idleMinutes = 0
+  var absoluteMinutes = 0
+  try:
+    if key == keyString(P_platform_security_session_idle_minutes):
+      idleMinutes = int(candidate.getInt)
+      absoluteMinutes = db.activeParamInt(
+        keyString(P_platform_security_session_absolute_minutes), asOf, lookupFor(scope))
+    elif key == keyString(P_platform_security_session_absolute_minutes):
+      absoluteMinutes = int(candidate.getInt)
+      idleMinutes = db.activeParamInt(
+        keyString(P_platform_security_session_idle_minutes), asOf, lookupFor(scope))
+    else:
+      return ""
+  except ValueError:
+    # Sisi lainnya belum punya nilai aktif: tidak ada kombinasi yang bisa dinilai. Perubahan
+    # dibiarkan lewat supaya keadaan itu masih bisa **diperbaiki** lewat alur normal.
+    return ""
+  try:
+    discard sessionPolicy(idleMinutes, absoluteMinutes)
+  except ValueError as e:
+    return e.msg
+  ""
+
 proc businessDateFor(db: DbConn, scope: ScopeRef, nowIso: string): string =
   ## Tanggal buku institusi bila sudah ada; kalau belum, tanggal UTC hari ini.
   let row = businessDateOf(db, scope)

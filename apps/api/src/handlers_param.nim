@@ -11,7 +11,8 @@ import mummy
 import db_connector/db_postgres
 
 import platform/domain/param
-import platform/infrastructure/param_repo
+import platform/domain/scope
+import platform/infrastructure/[auth_service, param_repo]
 
 import ./access
 import ./context
@@ -24,6 +25,9 @@ const
   ## yang meminta seluruh tabel; bukan ambang bisnis.
   listLimit* = 200 # nomagic:ok batas ukuran respons, bukan nilai bisnis
   defaultScopeType* = "GLOBAL"
+  ## Alasan 409 ketika nilai yang akan diaktifkan melanggar aturan lintas-parameter
+  ## (lihat `sessionPolicyCandidateProblem`). Kontrak menyebut nilai ini di deskripsi 409.
+  reasonCombination* = "invalid_combination"
 
 proc itemJson(row: ParamValueRow): JsonNode =
   ## Bentuk satu item daftar (kontrak `ParamValue`). Nama field = kontrak, bukan nama kolom.
@@ -114,6 +118,12 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
     withDbTx(app.pool, proc(db: DbConn) {.gcsafe.} =
       dbCalls:
         let ctx = auditContextFor(principal.get(), req, app.clock, reason)
+        # Aturan lintas-parameter diperiksa lebih dulu: nilai yang sah sendiri bisa tetap ditolak
+        # bila digabung nilai lain yang sudah aktif (lihat `sessionPolicyCandidateProblem`).
+        let combinationProblem = sessionPolicyCandidateProblem(db, key, node["value"],
+          institutionScope(), businessDateIso(app.clock))
+        if combinationProblem.len > 0:
+          raise newException(ValueError, combinationProblem)
         let outcome = submitChange(db, ctx, app.clock, key, scopeType, scopeId, node["value"],
           effectiveFrom, effectiveTo, reason)
         status = 201
@@ -171,11 +181,25 @@ proc handleApproveParamChange*(app: AppContext, req: Request) {.gcsafe.} =
           reasonParam = "not_pending"
           problem = "nilai tidak berstatus PENDING (sekarang " & $current.get() & ")"
         else:
-          let ctx = auditContextFor(principal.get(), req, app.clock,
-            "persetujuan perubahan parameter")
-          let outcome = approveChange(db, ctx, app.clock, paramValueId)
-          status = 200
-          payload = %*{"paramValueId": outcome.paramValueId, "status": $pvActive})
+          # Persetujuan adalah pintu terakhir: dua pengajuan yang masing-masing sah bisa
+          # bertabrakan setelah salah satunya aktif, jadi kombinasi diperiksa lagi di sini.
+          let pending = pendingValueOf(db, paramValueId)
+          let combinationProblem =
+            if pending.isSome:
+              sessionPolicyCandidateProblem(db, pending.get().key, pending.get().value,
+                institutionScope(), businessDateIso(app.clock))
+            else:
+              ""
+          if combinationProblem.len > 0:
+            status = 409
+            reasonParam = reasonCombination
+            problem = combinationProblem
+          else:
+            let ctx = auditContextFor(principal.get(), req, app.clock,
+              "persetujuan perubahan parameter")
+            let outcome = approveChange(db, ctx, app.clock, paramValueId)
+            status = 200
+            payload = %*{"paramValueId": outcome.paramValueId, "status": $pvActive})
   except ValueError as e:
     status = 409
     reasonParam = "not_pending"

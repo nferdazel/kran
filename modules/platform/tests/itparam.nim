@@ -284,6 +284,22 @@ suite "param: maker-checker":
       "inst-1", asOf)
     check missing == @[passwordKey]
 
+  test "aktivasi hanya dari PENDING (penjaga anti double-approve)":
+    # Dua checker yang menyetujui nilai yang sama hampir bersamaan: yang kalah tidak boleh
+    # menulis ACTIVE kedua kalinya (audit + event ganda, `checker` tertimpa). Penjaganya ada di
+    # langkah aktivasi, bukan di pemeriksaan status `approveValue` yang hanya melihat snapshot.
+    # Scope baru supaya tidak menabrak EXCLUDE maupun hitungan kandidat test lain.
+    let submit = dbPool.withTx(proc(d: DbConn): ChangeOutcome =
+      submitChange(d, ctxMaker, sysClock, sessionKey, "INSTITUTION", "inst-penjaga", %*70,
+        "2026-01-01", "", "uji penjaga aktivasi"))
+    check rowStatus(db, submit.paramValueId) == "PENDING"
+    check dbPool.withTx(proc(d: DbConn): bool =
+      activatePending(d, submit.paramValueId, checker))
+    check rowStatus(db, submit.paramValueId) == "ACTIVE"
+    # Percobaan berikutnya (simulasi checker yang kalah balapan) tidak boleh mengaku berhasil.
+    check not dbPool.withTx(proc(d: DbConn): bool =
+      activatePending(d, submit.paramValueId, checker))
+
 suite "param: cache & NOTIFY":
   test "NOTIFY terkirim saat approval, koneksi pendengar menerimanya":
     listenChanges(talker)

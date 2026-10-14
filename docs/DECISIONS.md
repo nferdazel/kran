@@ -402,3 +402,47 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
 - **Konsekuensi**: konfigurasi e2e memuat satu baris shell yang spesifik mesin dev, dengan alasan
   tertulis. Bila kelak libpq tersedia di jalur sistem (atau API memakai driver tanpa `dlopen`),
   baris itu bisa dihapus.
+
+## D-027 — Dua temuan MAJOR review batch Fase 0 dan cara menutupnya
+
+- **Konteks**: review independen atas diff Fase 0 (`5964665..1f681ac`, konteks bersih, prompt di
+  `docs/agent/REVIEWER.md`) memutuskan **TIDAK APPROVE** dengan dua temuan MAJOR. Keduanya di jalur
+  akses/integritas, bukan soal gaya. Reviewer juga memverifikasi sendiri `./task check` dan
+  `./task test` (exit 0, 410 `[OK]`) sehingga angka bukti di commit bukan klaim sepihak.
+- **Temuan 1 — persetujuan ganda bisa lolos (4-eyes bocor)**. `approveValue` memeriksa status lewat
+  SELECT (snapshot READ COMMITTED) dan UPDATE aktivasi akhirnya tidak menyebut status. Dua checker
+  yang menyetujui nilai yang sama hampir bersamaan bisa dua-duanya "berhasil": dua audit
+  `param.approve`, dua event `param.changed`, `checker` tertimpa, dan 409 `not_pending` yang
+  dijanjikan kontrak tidak pernah terjadi.
+  **Perbaikan**: langkah aktivasi dipisah ke `activatePending` dengan penjaga optimistik
+  `AND status = 'PENDING'`. Yang kalah melihat 0 baris → `ValueError` → transaksi dibatalkan
+  pemanggil → 409 `not_pending`. Supersede tetap dijalankan lebih dulu (urutan itu dibutuhkan
+  EXCLUDE karena baris ACTIVE lama masih menutupi periode baru), dan pembatalan transaksi
+  mengembalikan status baris lama — jadi tidak ada keadaan "lama sudah dipangkas, baru gagal".
+  **Bukti**: test `itparam` "aktivasi hanya dari PENDING (penjaga anti double-approve)" — GAGAL bila
+  klausa penjaganya dilepas (diverifikasi dengan melepasnya sementara, lalu dikembalikan).
+  **Catatan jujur**: harness test belum memakai `--threads:on`, jadi balapan dua koneksinya tidak
+  direproduksi; yang diuji adalah kontrak langkah aktivasi → O-040.
+- **Temuan 2 — kombinasi parameter yang sah per-key bisa mematikan seluruh login**.
+  `session_idle_minutes` (1..1440) dan `session_absolute_minutes` (5..1440) masing-masing sah
+  menurut schema-nya, tetapi idle > absolut membuat `sessionPolicy` melempar `ValueError`. Handler
+  login hanya menangkap `DbError` → 500 mentah tanpa amplop, dan pemulihannya mustahil lewat UI
+  (memperbaiki parameter butuh login) sehingga butuh akses DB langsung.
+  **Perbaikan**:
+  1. `auth_service.sessionPolicyCandidateProblem` menilai **calon nilai** terhadap nilai sisi lain
+     yang sedang aktif memakai aturan domain `sessionPolicy`; dipanggil saat pengajuan (400) dan
+     saat persetujuan (409 `invalid_combination`) — di persetujuan juga perlu, karena dua pengajuan
+     yang masing-masing sah bisa bertabrakan setelah salah satunya aktif.
+  2. `handleLogin` menjawab `ValueError` kebijakan sebagai `problem+json` (kontrak `Problem` belum
+     punya 503, jadi 500 + sebab di `detail`), dan perpanjangan best-effort di `handleSession`
+     menelan `ValueError` tanpa menggagalkan permintaan.
+  **Bukti**: `itapi_auth` "pengajuan yang membuat idle > absolut ditolak 400, tanpa efek samping"
+  dan "persetujuan yang membuat kombinasi tidak sah ditolak 409 (dua pengajuan sah)"; `itauth` untuk
+  fungsi pemeriksanya (batas sah, key lain, nilai bukan integer).
+- **Alasan memilih pemeriksaan eksplisit, bukan mekanisme umum**: framework parameter belum punya
+  konsep invariant lintas-key; menambahkannya adalah fitur (butuh ADR + bentuk deklarasi di
+  `params.yaml`), bukan perbaikan temuan. Pasangan kebijakan sesi adalah satu-satunya aturan
+  lintas-parameter yang diminta spec (§18.2). Fungsinya diberi nama dan alasan jelas supaya mudah
+  digeneralisasi bila aturan kedua muncul (O-041).
+- **Konsekuensi**: deskripsi 409 di kontrak OpenAPI menyebut `invalid_combination` (klien TS
+  diregenerasi). Temuan MINOR dari review dicatat sebagai O-034…O-039, tidak ditutup di sini.
