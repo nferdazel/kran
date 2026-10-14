@@ -420,3 +420,12 @@ sendiri, dan (d) baris `SUPERSEDED` ber-tanggal depan hilang dari himpunan tangg
 diperbaiki (D-029) dengan test yang diverifikasi **GAGAL** bila perbaikannya dikembalikan
 (percobaan memasang perilaku lama sementara, lalu dikembalikan). `itauth` kini 18 test;
 `itapi_auth` 18. Catatan kerangka parameter yang muncul: O-043.
+
+### Review ronde 4 — 1 MAJOR (bukti pembeda `effectiveTo`) + 4 MINOR ditutup
+
+Ronde 4 memverifikasi kode D-029 benar lewat mutation test-nya sendiri, tetapi menemukan test yang
+tidak membedakan: mutasi "abaikan `effectiveTo`" membuat seluruh suite tetap hijau. Ditambahkan dua
+test mandiri di `itauth` (periode calon & konteks scope `INSTITUTION:<id>`), keduanya diverifikasi
+**GAGAL** di bawah mutasi yang bersangkutan. MINOR lain: hazard urutan test (komentar eksplisit +
+test baru dibuat mandiri), nilai calon tanpa cek visibilitas scope (O-044), dan anotasi D-028
+butir 5 yang sempat bertentangan dengan D-029 butir 3.

@@ -279,6 +279,9 @@ suite "ganti password":
     check login("ganti-password", passwordAwal).outcome == aoInvalidCredentials
     check login("ganti-password", "password-baru-panjang").outcome == aoSuccess
 
+## Catatan: suite ini berjalan berurutan dan beberapa test memakai baris yang dibuat test
+## sebelumnya (tanggal makin ke depan). Test baru sebaiknya membuat barisnya sendiri — lihat test
+## "periode calon dipatuhi" yang sengaja mandiri.
 suite "kebijakan sesi: aturan lintas-parameter":
   test "kandidat pada hari ini: melanggar dilaporkan, tepat batas sah, key lain tidak diperiksa":
     # Aturan domainnya milik `sessionPolicy` (spec §18.2). Yang diuji di sini adalah pemeriksaan
@@ -350,4 +353,31 @@ suite "kebijakan sesi: aturan lintas-parameter":
     let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey, %*500, "2026-12-01", "",
       asOf)
     check melanggar.contains("2026-12-01")
+    check melanggar.contains("tidak boleh melebihi")
+
+  test "baris ber-scope INSTITUTION dengan id konkret tidak mengubah vonis":
+    # Aplikasi membaca kebijakan sesi di konteks institusi **tanpa id** (O-012), sehingga baris
+    # `INSTITUTION:<id>` tidak pernah dipakai login. Vonis pemeriksaan harus mengikuti konteks itu:
+    # kalau baris ini dianggap berlaku, idle 30 > absolut 5 → "melanggar" yang tidak nyata.
+    let ubahScope = submitChange(db, adminCtx, sysClock, absoluteKey, "INSTITUTION", "inst-1", %*5,
+      asOf, "", "uji: batas absolut scope institusi")
+    discard approveChange(db, newAuditContext(parseId($newId(sysClock)).value(), sysClock),
+      sysClock, ubahScope.paramValueId)
+    check sessionPolicyCandidateProblem(db, sessionIdleKey, %*30, asOf, "", asOf) == ""
+
+  test "periode calon dipatuhi: nilai kandidat tidak dipakai setelah effectiveTo":
+    # Sisi absolut & idle dibuat sendiri oleh test ini (tanggal jauh di depan) supaya tidak
+    # bergantung urutan test lain. Kandidat idle 30 berlaku hanya [asOf, 2026-11-01); mulai
+    # 2030-01-01 nilai idle yang sesungguhnya adalah 600 — di situ 600 > 50 = pelanggaran, dan
+    # pelanggaran itu hilang bila `effectiveTo` kandidat diabaikan (30 ≤ 50).
+    let dari = "2030-01-01"
+    for (k, v) in [(absoluteKey, %*50), (sessionIdleKey, %*600)]:
+      let ubah = submitChange(db, adminCtx, sysClock, k, "GLOBAL", "", v, dari, "",
+        "uji: nilai sisi " & k & " untuk tanggal jauh")
+      discard approveChange(db, newAuditContext(parseId($newId(sysClock)).value(), sysClock),
+        sysClock, ubah.paramValueId)
+
+    let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey, %*30, asOf, "2026-11-01",
+      asOf)
+    check melanggar.contains(dari)
     check melanggar.contains("tidak boleh melebihi")
