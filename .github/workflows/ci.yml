@@ -69,9 +69,7 @@ jobs:
           cache: pnpm
 
       - name: Install JS dependencies
-        # Lockfile JS belum bisa dibuat di mesin dev (registry privat tidak resolve) — lihat
-        # docs/OPEN_ITEMS.md O-020. Setelah lockfile ada, ubah menjadi --frozen-lockfile.
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Install browser Playwright
         run: pnpm exec playwright install --with-deps chromium
