@@ -185,3 +185,44 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
   `app_user`, `branch_id` di `user_role`, dan tabel `role_conflict` untuk matriks SoD §18.2.
 - **Konsekuensi**: spec §9.2 perlu dikoreksi saat ada kesempatan. Bentuk kolom didokumentasikan
   di `modules/platform/MODULE.md`.
+
+## D-015 — Bentuk katalog i18n: satu berkas datar per locale (+ plugin Paraglide dari CDN)
+
+- **Konteks**: spec §16.2 mengusulkan `messages/{id,en}/<namespace>.json`. Saat implementasi,
+  kompilasi Paraglide dengan pola `./messages/{locale}/{namespace}.json` **menghasilkan nol pesan**
+  (compile "sukses", `_index.js` kosong) — diuji dengan dua bentuk isi (bersarang dan datar).
+  Pola `./messages/{locale}.json` dengan isi datar bekerja.
+- **Keputusan**: katalog = satu berkas datar per locale, key berprefiks namespace
+  (`common_*`, nanti `deposit_*`). Namespace tetap dipaksakan sebagai **aturan key**
+  (`tools/i18ncheck`: key wajib berbentuk `namespace_segmen`), jadi disiplin §16.2 tidak hilang,
+  hanya lokasinya berpindah dari nama berkas ke nama key.
+- **Keputusan kedua**: plugin Paraglide diambil dari CDN jsdelivr **versi pin**
+  (`@inlang/plugin-message-format@4.5.2`, `@inlang/plugin-m-function-matcher@2.3.2`), karena
+  registry npm privat di mesin dev (`artifactory.pegadaian.co.id`) tidak resolve sehingga
+  `pnpm install` paket itu gagal. Cache unduhan tidak di-commit.
+- **Konsekuensi**: build web butuh jaringan sekali (atau plugin di-vendor setelah registry normal);
+  dicatat O-021. Bila plugin versi baru memperbaiki pola `{namespace}`, migrasi murah karena
+  prefix key sudah memisahkan namespace.
+
+## D-016 — Kontrol tema & bahasa: grup radio native, bukan `<select>`
+
+- **Konteks**: `page.keyboard` terhadap `<select>` **tidak mengubah nilai sama sekali** pada
+  Chromium headless yang dipakai verifikasi (ArrowDown/Enter/End diabaikan), sehingga janji
+  "alur kritis bisa keyboard-only" (§17.1) tidak dapat dibuktikan.
+- **Keputusan**: tema (system/light/dark) dan bahasa (id/en) memakai `fieldset`+`legend`+radio
+  native. Semantik lebih kaya, satu tab stop per grup, dan panah/`change` terbukti dapat diuji.
+- **Konsekuensi**: jumlah locale yang besar nanti mungkin lebih nyaman dengan `<select>`; itu
+  dapat ditinjau saat locale bertambah, dengan syarat jalur keyboard-nya bisa diuji.
+
+## D-017 — `./task e2e` memakai binary lokal, bukan `pnpm run` (dan belum ada lockfile JS)
+
+- **Konteks**: pnpm 10+ memasang ulang dependency lebih dulu bila menganggap `package.json`
+  tidak sinkron dengan lockfile/store; di mesin ini install itu menyentuh registry privat yang
+  tidak resolve sehingga perintah bisa menggantung (>10 menit, teramati).
+- **Keputusan**: `./task e2e` memanggil `apps/web/node_modules/.bin/{playwright,svelte-check,
+  svelte-kit,paraglide-js}` dan `packages/ui/node_modules/.bin/vitest` langsung. Deterministik
+  lokal, dan tetap benar di CI setelah `pnpm install`.
+- **Konsekuensi**: `pnpm-lock.yaml` **belum ada** — `pnpm install --lockfile-only` gagal
+  (`ERR_PNPM_NO_OFFLINE_META` untuk `@bytecodealliance/jco-transpile`; registry privat tidak
+  resolve). Versi dependency dipin eksak di `package.json` sebagai jaring sementara; job CI
+  `web-e2e` memakai `pnpm install` sampai lockfile bisa dibuat (O-020).
