@@ -5,7 +5,7 @@
 ## hasil ke HTTP. Pesan error untuk pengguna tidak ditulis dalam bahasa apa pun: UI memakai
 ## `i18nKey` dari amplop Problem (spec §16).
 
-import std/[json, options, strutils]
+import std/[json, options]
 
 import mummy
 import db_connector/db_postgres

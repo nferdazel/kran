@@ -11,7 +11,6 @@ import mummy
 import db_connector/db_postgres
 
 import platform/domain/param
-import platform/domain/scope
 import platform/infrastructure/[auth_service, param_repo]
 
 import ./access
