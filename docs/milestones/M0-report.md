@@ -78,7 +78,8 @@ Temuan MINOR/pertanyaan (ronde 1–2) tidak ditutup di sini sesuai AGENTS.md §4
 
 ## 6. Risiko & item terbuka yang menghalangi produksi
 
-`docs/OPEN_ITEMS.md` memuat **42 item** (O-001…O-042). Yang paling menghalangi:
+`docs/OPEN_ITEMS.md` memuat **40 item** (O-001…O-042; nomor `O-020`/`O-021` tidak pernah dipakai).
+Yang paling menghalangi:
 
 | Item | Kenapa penting |
 |---|---|

@@ -84,13 +84,16 @@ proc candidatesOf*(db: DbConn, key: string, asOf: string): seq[ParamCandidate] =
       effectiveTo: row[5])
 
 proc committedFromDates*(db: DbConn, key, sinceIso: string): seq[string] =
-  ## Tanggal mulai efektif yang **sudah disetujui** (`ACTIVE`) dan belum lewat untuk satu key.
-  ## Dipakai pemeriksaan lintas-parameter: perubahan ber-tanggal depan hanya terlihat bila kita
-  ## menilai nilai pada titik-titik perubahan itu, bukan hanya "hari ini".
+  ## Tanggal mulai efektif yang **sudah disetujui** dan belum lewat untuk satu key.
+  ##
+  ## `ACTIVE` **dan** `SUPERSEDED` ikut disertakan: baris yang sudah dipangkas tetap berlaku sampai
+  ## `effective_to`-nya (pola riwayat effective-dated, sama seperti `activeValueSql`), jadi tanggal
+  ## mulainya tetap titik perubahan nilai yang harus dinilai. Tanpa itu, baris ber-tanggal depan yang
+  ## kemudian dipangkas oleh baris yang lebih akhir akan hilang dari himpunan tanggal.
   for row in db.getAllRows(sql"""
     SELECT DISTINCT to_char(effective_from, 'YYYY-MM-DD')
       FROM platform.param_value
-     WHERE key = ? AND status = 'ACTIVE' AND effective_from >= ?::date
+     WHERE key = ? AND status IN ('ACTIVE', 'SUPERSEDED') AND effective_from >= ?::date
      ORDER BY 1""", key, sinceIso):
     result.add row[0]
 
@@ -353,18 +356,21 @@ type
     scopeId*: string
     value*: JsonNode
     effectiveFrom*: string
+    effectiveTo*: string
 
 proc pendingValueOf*(db: DbConn, paramValueId: string): Option[PendingRow] =
   ## `none` bila id tidak ada (pemanggil memetakannya ke 404).
   let found = db.singleRow(sql"""
     SELECT key, scope_type, coalesce(scope_id, ''), value::text,
-           to_char(effective_from, 'YYYY-MM-DD') FROM platform.param_value
+           to_char(effective_from, 'YYYY-MM-DD'),
+           coalesce(to_char(effective_to, 'YYYY-MM-DD'), '')
+      FROM platform.param_value
      WHERE param_value_id = ?::uuid""", paramValueId)
   if found.isNone:
     return none(PendingRow)
   let row = found.get()
   some(PendingRow(key: row[0], scopeType: row[1], scopeId: row[2],
-    value: parseJson(row[3]), effectiveFrom: row[4]))
+    value: parseJson(row[3]), effectiveFrom: row[4], effectiveTo: row[5]))
 
 proc submitChange*(db: DbConn, ctx: AuditContext, clock: Clock, key, scopeType, scopeId: string,
                    value: JsonNode, effectiveFrom, effectiveTo, reason: string): ChangeOutcome =

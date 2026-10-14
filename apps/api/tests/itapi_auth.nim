@@ -408,18 +408,19 @@ suite "aturan lintas-parameter kebijakan sesi lewat HTTP":
     let checkerToken = tokenOf(checker)
     let besok = (now().utc + initDuration(days = 1)).format("yyyy-MM-dd")
 
-    # Batas absolut disetujui untuk tanggal besok: kombinasi yang berlaku mulai besok menjadi
-    # (idle hari itu, absolut baru). Nilai idle yang hanya dinilai "hari ini" akan lolos.
-    let naikkanAbsolut = postJson("/api/v1/params/" & SessionAbsoluteKey & "/changes",
-      %*{"value": 1000, "reason": "uji otomatis: batas absolut untuk besok",
+    # Batas absolut diturunkan **mulai besok**: kombinasi yang berlaku mulai besok jadi
+    # (idle hari itu, 200). Kandidat idle 300 yang diajukan mulai HARI INI sah terhadap nilai hari
+    # ini (300 <= 479) tetapi tidak sah mulai besok (300 > 200) — hanya pemeriksaan pada tanggal
+    # efektif sisi lain yang bisa menangkapnya.
+    let turunkanAbsolut = postJson("/api/v1/params/" & SessionAbsoluteKey & "/changes",
+      %*{"value": 200, "reason": "uji otomatis: batas absolut untuk besok",
          "effectiveFrom": besok}, makerToken)
-    check naikkanAbsolut.code == 201
-    check postJson("/api/v1/params/changes/" & naikkanAbsolut.body["paramValueId"].getStr() &
+    check turunkanAbsolut.code == 201
+    check postJson("/api/v1/params/changes/" & turunkanAbsolut.body["paramValueId"].getStr() &
       "/approve", newJObject(), checkerToken).code == 200
 
     let idleTerlaluTinggi = postJson("/api/v1/params/" & SessionIdleKey & "/changes",
-      %*{"value": 1001, "reason": "uji otomatis: idle di atas absolut baru",
-         "effectiveFrom": besok}, makerToken)
+      %*{"value": 300, "reason": "uji otomatis: idle di atas absolut mulai besok"}, makerToken)
     check idleTerlaluTinggi.code == 400
     checkProblem("/api/v1/params/{key}/changes", "POST", "400", idleTerlaluTinggi.body)
     check login(MakerUser).code == 200
