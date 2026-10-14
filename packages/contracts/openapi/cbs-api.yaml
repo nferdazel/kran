@@ -20,6 +20,9 @@ info:
     Tahap Fase 0: dokumen ini **tumbuh bersama implementasi** — pada T-008 hanya memuat endpoint
     sistem (kesehatan); T-009 menambah realtime, T-012 menambah auth/parameter/audit. Setiap
     operasi yang ada di sini wajib dilayani implementasi (dijaga contract test).
+
+    Peristiwa realtime (amplop WebSocket) punya skema sendiri di `packages/contracts/events`
+    (spec §12.4), bukan sebagai operasi HTTP.
   license:
     name: MIT
     identifier: MIT
@@ -34,6 +37,9 @@ servers:
 tags:
   - name: system
     description: Kesehatan proses — dipakai systemd, webhook deploy, dan smoke test.
+  - name: realtime
+    description: |
+      Peristiwa platform untuk UI (spec §19). Transport: WebSocket (ADR-002/D-019).
 
 paths:
   /healthz:
@@ -92,7 +98,77 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/events/stream:
+    get:
+      operationId: streamEvents
+      tags: [realtime]
+      summary: Langganan peristiwa realtime (WebSocket)
+      description: |
+        Menaikkan koneksi HTTP ke WebSocket dan mengalirkan peristiwa outbox. Skema amplop pesan
+        ada di `packages/contracts/events/realtime-envelope.v1.schema.json`.
+
+        Pesan dari klien: `{"type":"subscribe","topics":["param.changed"],"resumeFrom":"<id>"}`
+        dan `{"type":"unsubscribe"}`. Balasan `subscribed` memuat topik yang disetujui, topik yang
+        **ditolak** (eksplisit, bukan dibuang diam-diam), dan jumlah peristiwa yang diputar ulang.
+
+        Resume: `resumeFrom` = `id` peristiwa terakhir yang diterima klien. Server memutar ulang
+        dari outbox sehingga reconnect tidak kehilangan peristiwa (spec §19.2). Bila peristiwa yang
+        terlewat melebihi batas replay, server mengirim `{"type":"resync"}` dan klien harus
+        menyegarkan keadaan lewat HTTP.
+
+        Otorisasi: identitas dari cookie sesi `cbs_session` (spec §13) atau header
+        `Authorization: Bearer`; topik difilter izin per langganan. Selama sesi belum terpasang
+        (T-012), kebijakan default menolak semua koneksi.
+
+        Permintaan tanpa `Upgrade: websocket` dibalas 426 — endpoint ini tidak melayani HTTP biasa.
+      security:
+        - sessionCookie: []
+      responses:
+        "101":
+          description: Koneksi dinaikkan ke WebSocket; lanjutan komunikasi memakai amplop peristiwa.
+        "401":
+          description: Tidak ada identitas sesi
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Identitas tidak diizinkan membuka stream
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "405":
+          description: Method tidak diizinkan untuk path ini
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "426":
+          description: Permintaan bukan WebSocket upgrade
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          description: Layanan realtime tidak dikonfigurasi (mis. tanpa koneksi DB saat start)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
 components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: cbs_session
+      description: |
+        Sesi login (spec §13): cookie `HttpOnly`, `Secure`, `SameSite=Lax`. Header
+        `Authorization: Bearer <token>` juga diterima untuk klien non-browser.
+
   responses:
     Problem:
       description: Error dengan amplop RFC 9457 (`application/problem+json`)

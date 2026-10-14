@@ -6,6 +6,8 @@
 import mummy
 import mummy/routers
 
+import ./context
+import ./events
 import ./health
 import ./problem
 import ./routes
@@ -51,9 +53,17 @@ proc requestHandler*(app: AppContext): RequestHandler =
       $req.httpMethod & " tidak didukung untuk " & req.path)
   result = router.toHandler()
 
-proc newApiServer*(app: AppContext): Server =
-  ## Server HTTP saja; hub WebSocket menyusul di T-009.
-  newServer(requestHandler(app))
+proc websocketHandlerOf(app: AppContext): WebSocketHandler =
+  ## Handler WebSocket dipasang sekali di awal (Mummy memakainya untuk semua koneksi).
+  ## `nil` bila realtime tidak dikonfigurasi — Mummy menangani `nil` dengan aman.
+  if app.events.isNil:
+    nil
+  else:
+    app.events.websocketHandler()
+
+proc newApiServer*(app: AppContext, logHandler: LogHandler = nil): Server =
+  newServer(requestHandler(app), websocketHandler = websocketHandlerOf(app),
+            logHandler = logHandler)
 
 proc serveApi*(app: AppContext, port: int, address: string) =
   let server = newApiServer(app)

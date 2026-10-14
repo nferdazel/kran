@@ -333,3 +333,34 @@ Bug nyata tertangkap smoke test: closure handler di dalam loop membuat `/healthz
 Item baru: O-025 (shutdown `server.close()` crash di Mummy+ORC), O-026 (`schemathesis` belum ada),
 O-027 (job CI `db-tests`/`traceability` belum ada). O-019 diperbarui: `/healthz`/`/readyz` sudah
 ada (versi awal); O-013 tetap terbuka (role `migrate`/`ctl`/`worker` belum ada).
+
+## T-009 — Realtime hub: outbox → klien WebSocket, resume token (DONE)
+
+Peristiwa outbox kini mengalir ke UI: trigger `AFTER INSERT` di `platform.outbox` mengirim
+`pg_notify('cbs_outbox', outbox_id)` (migrasi 0007); satu thread pump di `apps/api` memegang
+koneksi `LISTEN`, membaca peristiwa setelah token dari tabel, lalu menyebarkannya lewat hub murni
+(`modules/platform/application/realtime.nim`) ke koneksi WebSocket (`apps/api/src/events.nim`).
+Kontrak: operasi `GET /api/v1/events/stream` (101/401/403/405/426/500/501) + skema amplop
+`packages/contracts/events/realtime-envelope.v1.schema.json` (spec §12.4). `AppContext` dipindah ke
+`apps/api/src/context.nim` agar modul fitur tidak membuat impor melingkar dengan `health`.
+
+Bukti: `./task ci` exit 0. `trealtime` 26 test (topik, langganan, amplop, pesan kontrol, izin),
+`itrealtime` 5 (INSERT → NOTIFY → pendengar → baca tabel → fanout; resume; token asing; dedup_key),
+`itapi_ws` 11 dengan **klien WebSocket nyata** (`apps/api/tests/wsclient.nim`, ~170 baris, tanpa
+dependensi baru): 426 tanpa upgrade, 401 tanpa identitas, 403 tanpa izin, pengiriman langsung,
+`subscribed.denied` eksplisit, pesan tidak valid → frame error, unsubscribe berhenti, resume urut
+(`resumed=2`), resync saat melebihi batas replay, token tak dikenal → replay dari awal. `tapi`
+bertambah 1 test (rute realtime tanpa layanan → 501 sesuai kontrak).
+
+Bug nyata yang tertangkap verifikasi: (1) topik langganan tidak diteruskan ke hub → peristiwa tidak
+pernah dikirim (hanya terlihat oleh test ujung-ke-ujung); (2) `tools/openapi` bisa SIGSEGV saat
+memvalidasi skema dengan properti bebas bentuk (`{}`→nil pada `additionalProperties`); (3) klien uji
+"tidak pernah menerima" respons kecil karena `recv(size, timeout)` Nim menunggu seluruh `size` byte.
+Test yang sempat flaky ±50% karena pump menyala terlambat (peristiwa uji dianggap riwayat)
+diperbaiki dengan sinyal `pumpReady()` — bukan `sleep`.
+
+Keputusan: D-021 (NOTIFY di INSERT, resume token `outbox_id`, pump "mulai dari sekarang", default
+tolak-semua, batas protokol sebagai parameter) dan D-022 (perbaikan validator + override Spectral
+yang sempit untuk respons 101). Item baru: O-028 (kuota antrean keluar per koneksi), O-029 (pump
+mati belum diperiksa `/readyz`), O-030 (batas protokol belum parameter DB). O-018 sebagian
+terjawab: jalur `LISTEN` kini ada di pump; invalidasi cache parameter tetap punya pompa sendiri.

@@ -12,7 +12,7 @@ user/role/session, workflow, notifikasi (spec §8, §9.2).
 | Repo audit | `infrastructure/audit_repo.nim` | `appendAudit`, `verifyChain` |
 | Repo outbox | `infrastructure/outbox_repo.nim` | `appendEvent`, `claimBatch`, `markDone/Failed`, `redrive` |
 | Repo inbox | `infrastructure/inbox_repo.nim` | `claimInbox` (de-dup per konsumen) |
-| Migrasi | `migrations/0001..0005` | schema, audit_log, outbox+inbox, parameter, kalender |
+| Migrasi | `migrations/0001..0007` | schema, audit_log, outbox+inbox, parameter, kalender, auth, NOTIFY outbox (realtime) |
 
 `api.nim` (permukaan publik modul) menyusul bersama T-005 (parameter) / T-006 (auth):
 saat ini belum ada konsumen lintas-modul, jadi belum ada yang perlu diekspor.
@@ -134,3 +134,24 @@ Invarian tambahan:
 
 Catatan: alur auth tinggal di `infrastructure` (butuh DB). Saat port/use case lapisan
 `application` lahir (pola T-016), isi `auth_service.nim` pindah ke `application/`.
+
+## Realtime (T-009, spec §19.1/§19.2)
+
+| Bagian | Berkas | Catatan |
+|---|---|---|
+| Hub (murni) | `application/realtime.nim` | topik, langganan, fanout, amplop pesan (`encodeEvent`/`encodeSubscribed`/`encodeResync`/`encodeError`), pembacaan pesan kontrol klien, batas protokol sebagai parameter (`SubscriptionLimits`) |
+| Pendengar outbox | `infrastructure/outbox_listener.nim` | `LISTEN cbs_outbox`, tunggu notifikasi, baca peristiwa setelah token (`outbox_repo.fetchAfter`/`latestEventId`) |
+| Transport | `apps/api/src/events.nim` | handshake WS, state koneksi, `TopicPolicy`, replay/resume, pump (`LISTEN` → hub → soket) |
+| Trigger NOTIFY | `migrations/0007_platform_outbox_notify.sql` | `pg_notify('cbs_outbox', outbox_id)` pada `AFTER INSERT` di `platform.outbox` |
+| Skema amplop | `packages/contracts/events/realtime-envelope.v1.schema.json` | spec §12.4: skema event tidak ditaruh di kontrak OpenAPI |
+
+Invarian tambahan:
+
+9. **NOTIFY bukan pengangkut data**: payload hanya `outbox_id`; isi peristiwa dibaca dari tabel.
+   Kanal dipakai bersama `outbox_listener.nim` (nama konstanta di sana) — jangan mengarang kanal
+   baru di modul lain.
+10. **Urutan peristiwa memakai `seq`** (`bigint identity`), bukan `occurred_at`; resume token yang
+    tidak dikenal diperlakukan sebagai "mulai dari awal", dan klien de-dup berdasarkan `id`.
+11. **Kebijakan realtime default menolak** (`denyPolicy`): sampai sesi nyata (T-012) terpasang,
+    stream tertutup untuk semua identitas. Uji menyuntikkan kebijakannya sendiri
+    (`allowAllPolicy` di transport, uji topik per-izin untuk yang lain).

@@ -11,25 +11,10 @@ import std/[json, times]
 
 import mummy
 
+import ./context
 import ./http_util
 
-type
-  CheckStatus* = enum
-    csOk = "ok"
-    csFailed = "failed"
-
-  ReadinessCheck* = object
-    name*: string
-    status*: CheckStatus
-    detail*: string
-
-  ReadinessProbe* = proc(): seq[ReadinessCheck] {.gcsafe.}
-
-  AppContext* = object
-    version*: string
-    role*: string
-    startedAt*: float ## epoch seconds; dari `epochTime()` saat proses start
-    readiness*: ReadinessProbe
+export context
 
 proc uptimeSeconds*(app: AppContext): int64 =
   ## Dibulatkan ke bawah; selalu >= 0 walaupun jam sistem mundur.

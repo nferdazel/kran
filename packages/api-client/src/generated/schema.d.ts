@@ -46,6 +46,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/events/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Langganan peristiwa realtime (WebSocket)
+         * @description Menaikkan koneksi HTTP ke WebSocket dan mengalirkan peristiwa outbox. Skema amplop pesan
+         *     ada di `packages/contracts/events/realtime-envelope.v1.schema.json`.
+         *
+         *     Pesan dari klien: `{"type":"subscribe","topics":["param.changed"],"resumeFrom":"<id>"}`
+         *     dan `{"type":"unsubscribe"}`. Balasan `subscribed` memuat topik yang disetujui, topik yang
+         *     **ditolak** (eksplisit, bukan dibuang diam-diam), dan jumlah peristiwa yang diputar ulang.
+         *
+         *     Resume: `resumeFrom` = `id` peristiwa terakhir yang diterima klien. Server memutar ulang
+         *     dari outbox sehingga reconnect tidak kehilangan peristiwa (spec §19.2). Bila peristiwa yang
+         *     terlewat melebihi batas replay, server mengirim `{"type":"resync"}` dan klien harus
+         *     menyegarkan keadaan lewat HTTP.
+         *
+         *     Otorisasi: identitas dari cookie sesi `cbs_session` (spec §13) atau header
+         *     `Authorization: Bearer`; topik difilter izin per langganan. Selama sesi belum terpasang
+         *     (T-012), kebijakan default menolak semua koneksi.
+         *
+         *     Permintaan tanpa `Upgrade: websocket` dibalas 426 — endpoint ini tidak melayani HTTP biasa.
+         */
+        get: operations["streamEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -185,6 +221,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Readiness"];
+                };
+            };
+        };
+    };
+    streamEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Koneksi dinaikkan ke WebSocket; lanjutan komunikasi memakai amplop peristiwa. */
+            101: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Tidak ada identitas sesi */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Identitas tidak diizinkan membuka stream */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Method tidak diizinkan untuk path ini */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Permintaan bukan WebSocket upgrade */
+            426: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            500: components["responses"]["Problem"];
+            /** @description Layanan realtime tidak dikonfigurasi (mis. tanpa koneksi DB saat start) */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
