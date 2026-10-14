@@ -23,6 +23,7 @@ const
   repoRoot = "."
   iterationsKey = "platform.security.password_pbkdf2_iterations"
   sessionIdleKey = "platform.security.session_idle_minutes"
+  absoluteKey = "platform.security.session_absolute_minutes"
   asOf = "2026-10-13"
   branchBandung = "11111111-1111-1111-1111-111111111111"
   branchSurabaya = "22222222-2222-2222-2222-222222222222"
@@ -286,15 +287,36 @@ suite "kebijakan sesi: aturan lintas-parameter":
     let kebijakan = settings()
     check kebijakan.sessionAbsoluteMinutes > 0
     let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey,
-      %*(kebijakan.sessionAbsoluteMinutes + 1), instScope, asOf)
+      %*(kebijakan.sessionAbsoluteMinutes + 1), "INSTITUTION", "", asOf, asOf)
     check melanggar.contains("tidak boleh melebihi")
 
     # Tepat pada batas (idle = absolut) masih sah.
     check sessionPolicyCandidateProblem(db, sessionIdleKey,
-      %*kebijakan.sessionAbsoluteMinutes, instScope, asOf) == ""
+      %*kebijakan.sessionAbsoluteMinutes, "INSTITUTION", "", asOf, asOf) == ""
 
     # Key yang bukan bagian kebijakan sesi tidak diperiksa di sini.
-    check sessionPolicyCandidateProblem(db, iterationsKey, %*1, instScope, asOf) == ""
+    check sessionPolicyCandidateProblem(db, iterationsKey, %*1, "INSTITUTION", "", asOf, asOf) == ""
 
     # Nilai yang bukan integer bukan urusan pemeriksaan ini (bentuk nilai dijaga `submitValue`).
-    check sessionPolicyCandidateProblem(db, sessionIdleKey, %*"bukan-angka", instScope, asOf) == ""
+    check sessionPolicyCandidateProblem(db, sessionIdleKey, %*"bukan-angka", "INSTITUTION", "",
+      asOf, asOf) == ""
+
+  test "perubahan ber-tanggal depan dinilai pada tanggal efektifnya, bukan hanya hari ini":
+    # Nilai absolut disetujui untuk tanggal depan: mulai 2026-12-01 kebijakan yang berlaku adalah
+    # idle 30 / absolut 100. Calon idle yang dinilai **hanya di hari ini** akan lolos (30 ≤ 480),
+    # padahal pada tanggal itu kombinasi baru tidak sah — inilah jendela yang harus ditutup.
+    let upcoming = "2026-12-01"
+    # `INSTITUTION` wajib ber-`scope_id` konkret (CHECK `param_value_global_scope_chk`).
+    let ubahAbsolut = submitChange(db, adminCtx, sysClock, absoluteKey, "INSTITUTION", "inst-1",
+      %*100, upcoming, "", "uji: batas absolut untuk tanggal depan")
+    discard approveChange(db, newAuditContext(parseId($newId(sysClock)).value(), sysClock),
+      sysClock, ubahAbsolut.paramValueId)
+
+    let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey, %*150, "INSTITUTION",
+      "inst-1", upcoming, asOf)
+    check melanggar.contains(upcoming)
+    check melanggar.contains("tidak boleh melebihi")
+
+    # idle 50 pada tanggal itu tetap sah.
+    check sessionPolicyCandidateProblem(db, sessionIdleKey, %*50, "INSTITUTION", "inst-1",
+      upcoming, asOf) == ""
