@@ -21,7 +21,7 @@ berkas rencana di `docs/tasks/T-xxx.md`.
 | T-009 | DONE | Realtime hub (LISTEN/NOTIFY + outbox → klien WS, *resume token*) | §19.1, §13 | T-004, T-014 ✅ | `./task ci` hijau. `itrealtime` 5 + `itapi_ws` 11 + `trealtime` 26: peristiwa outbox sampai ke klien WS nyata, resume/resync terbukti, penolakan (426/401/403) & topik ditolak dilaporkan. Kebijakan default tolak-semua sampai T-012 memasang sesi (D-021). Sisa: O-028/O-029/O-030 |
 | T-010 | DONE | `apps/web` shell + design tokens + tema dark/light + i18n Paraglide + a11y baseline | §14–§17 | T-001 | `./task e2e` hijau: axe 0 pelanggaran serious/critical × 2 tema × 2 locale; test kontras token; i18n check tanpa key yatim |
 | T-011 | DONE | `tools/scaffold` (template modul) + modul contoh `hello` | §5.5, §27.B | T-002, T-004 | `tscaffold` 11 test; `modules/hello` hasil generate lolos `./task ci`; archcheck memeriksa `hello` (diuji dengan menyuntikkan pelanggaran); `MODULE.md` terisi |
-| T-012 | READY | End-to-end Fase 0: login → ubah parameter (maker-checker) → audit → event realtime di UI | §23 | T-005, T-006, T-008, T-009, T-010 | Playwright: alur lengkap keyboard-only, axe hijau, bukti audit event + ParamChanged tampil di UI |
+| T-012 | DONE | End-to-end Fase 0: login → ubah parameter (maker-checker) → audit → event realtime di UI | §23 | T-005, T-006, T-008, T-009, T-010 | `./task ci` hijau. `flow.spec.ts` 6 test: alur dua konteks (maker & checker) dengan penanda `__guard` membuktikan nilai ACTIVE tampil di sesi maker **tanpa reload** (peristiwa `param.changed`), jejak audit memuat `param.submit` + alasan & `param.approve`, Keluar → `/login`; axe `/login` + `/app` × 2 tema bersih. API: `itapi_auth` 15 + `tapi` 10 `[OK]` (kebijakan realtime berbasis sesi, tanpa wildcard implisit). Sisa: O-031 (bootstrap user produksi), O-032 (saring per cabang), O-033 (tautan masuk di header) |
 | T-013 | DONE | `ops/` sesuai §21.4–21.6 (**hanya berkas di repo**, tidak dijalankan di server) | §21.4–21.6 | T-001 | `bash -n` 7/7 skrip hijau (di-gate di `./task check`); `shellcheck` tidak terpasang di mesin ini — level `error` akan memblokir begitu tersedia; `md5` siap dibanding `audit-consistency.sh`; tanpa secret — **belum pernah dijalankan di server** |
 | T-014 | DONE | Spike ADR-002: pilih HTTP server Nim (Mummy vs Prologue), tulis rekomendasi, **STOP minta keputusan** | §12.1, §25 | T-001 | Benchmark + rekomendasi tertulis di `docs/spikes/ADR-002-http-server.md` + entri `ESCALATIONS.md` — **keputusan pemilik masih terbuka (E-001)** |
 | T-016 | DONE | Layanan parameter (lapisan application): cache in-proc per business date + konsumen NOTIFY, akses bertipe `params.get`, guard drift harian | §10.3, §10.4 | T-005 | `application/` tanpa driver DB (archcheck bersih + probe pelanggaran terbukti ditolak); cache invalid setelah NOTIFY (`itparamservice`); `get` bertipe OK; drift DB vs generated == 0 temuan. Sisa: watcher otomatis menunggu T-009 (O-018) |
@@ -30,7 +30,9 @@ berkas rencana di `docs/tasks/T-xxx.md`.
 ### Catatan urutan
 
 - T-014 selesai; **keputusan pemilik 2026-10-14 = Opsi A: Mummy + WebSocket** (D-019,
-  spec §19.1 diperbarui). T-008/T-009/T-012 kini `READY`, urutannya T-008 → T-009 → T-012.
+  spec §19.1 diperbarui). T-008 → T-009 → T-012 seluruhnya `DONE`: **Fase 0 lengkap** (semua task
+  T-001…T-016 berstatus DONE; laporan milestone di `docs/milestones/M0-report.md`). Tidak ada lagi
+  task `READY` di Fase 0 — menunggu keputusan manusia untuk membuka Fase 1 (spec §23).
 - Task di luar daftar ini ditemukan saat kerja → tambahkan di sini, jangan disisipkan diam-diam.
 - T-005 selesai untuk cakupan DB/repo; lapisan application dipisah ke T-016 supaya tidak ada
   pekerjaan yang "diam-diam setengah" (AGENTS.md §5).

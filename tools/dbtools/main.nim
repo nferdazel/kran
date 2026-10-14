@@ -3,6 +3,7 @@
 ##   dbtools [--root <dir>] validate              # tanpa DB: urutan + pemeriksaan berkas
 ##   dbtools [--root <dir>] migrate [--dry-run]   # butuh CBS_DATABASE_URL
 ##   dbtools [--root <dir>] status                # butuh CBS_DATABASE_URL
+##   dbtools [--root <dir>] seed [--dev]          # butuh CBS_DATABASE_URL; --dev = seed dev/test
 ##
 ## Keluar: 0 sukses, 1 masalah data/migrasi, 2 kesalahan pemakaian.
 
@@ -14,11 +15,12 @@ import "platform-lib/db/pool"
 import lib
 
 proc usage() =
-  stderr.writeLine("pemakaian: dbtools [--root <dir>] validate|migrate|status [--dry-run]")
+  stderr.writeLine("pemakaian: dbtools [--root <dir>] validate|migrate|status|seed [--dry-run] [--dev]")
 
 var root = getCurrentDir()
 var command = ""
 var dryRun = false
+var devSeeds = false
 
 let args = commandLineParams()
 var i = 0
@@ -32,6 +34,8 @@ while i < args.len:
     root = absolutePath(args[i])
   of "--dry-run":
     dryRun = true
+  of "--dev":
+    devSeeds = true
   of "--help", "-h":
     usage()
     quit(0)
@@ -91,6 +95,20 @@ proc runMigrate(db: DbConn): int =
       echo "  + " & id
   0
 
+proc runSeed(db: DbConn): int =
+  ## Terapkan berkas seed pack (`packs/*/generated/*.sql`) + berkas dev/test bila `--dev`.
+  ## Idempotent: seluruh berkas seed memakai `ON CONFLICT`, jadi aman dijalankan berulang.
+  let files = seedFiles(root, devSeeds)
+  if files.len == 0:
+    echo "dbtools seed: tidak ada berkas seed"
+    return 0
+  for rel in files:
+    execScript(db, readFile(root / rel))
+    echo "  + " & rel
+  echo "dbtools seed: " & $files.len & " berkas diterapkan" &
+    (if devSeeds: " (termasuk seed dev/test)" else: "")
+  0
+
 try:
   case command
   of "validate":
@@ -105,7 +123,7 @@ try:
     runPlan()
     quit(0)
 
-  of "migrate", "status":
+  of "migrate", "status", "seed":
     let envT = envTableFromProcess()
     if not databaseUrlSet(envT):
       stderr.writeLine("CBS_DATABASE_URL belum diisi (lihat docs/runbooks/dev-db.md)")
@@ -114,7 +132,10 @@ try:
     var code = 0
     try:
       code = pool.withConn(proc(db: DbConn): int =
-        if command == "status": runStatus(db) else: runMigrate(db))
+        case command
+        of "status": runStatus(db)
+        of "seed": runSeed(db)
+        else: runMigrate(db))
     finally:
       pool.close()
     quit(code)

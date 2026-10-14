@@ -10,6 +10,9 @@
 import mummy
 
 import ./events
+import ./handlers_audit
+import ./handlers_auth
+import ./handlers_param
 import ./health
 import ./problem
 
@@ -58,5 +61,33 @@ proc systemRoutes*(): seq[RouteSpec] =
               handler: handleReadiness),
   ]
 
+proc authRoutes*(): seq[RouteSpec] =
+  ## Sesi: masuk, identitas, keluar (spec §13).
+  @[
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/auth/login", operationId: "login",
+              handler: handleLogin),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/auth/session", operationId: "getSession",
+              handler: handleSession),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/auth/logout", operationId: "logout",
+              handler: handleLogout),
+  ]
+
+proc paramRoutes*(): seq[RouteSpec] =
+  ## Parameter: daftar, pengajuan (maker), persetujuan (checker) — spec §10.2/§10.7.
+  @[
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/params", operationId: "listParams",
+              handler: handleListParams),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/params/{key}/changes",
+              operationId: "submitParamChange", handler: handleSubmitParamChange),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/params/changes/{paramValueId}/approve",
+              operationId: "approveParamChange", handler: handleApproveParamChange),
+  ]
+
+proc auditRoutes*(): seq[RouteSpec] =
+  @[
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/audit", operationId: "listAudit",
+              handler: handleListAudit),
+  ]
+
 proc allRoutes*(): seq[RouteSpec] =
-  systemRoutes() & eventRoutes()
+  systemRoutes() & authRoutes() & paramRoutes() & auditRoutes() & eventRoutes()

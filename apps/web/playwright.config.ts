@@ -11,6 +11,74 @@ import { defineConfig, devices } from "@playwright/test";
  */
 const PORT = 4173;
 const baseURL = `http://127.0.0.1:${PORT}`;
+// Port API e2e: sengaja beda dari 8080 (API dev) supaya dua proses bisa hidup berdampingan
+// dan Playwright selalu menguji binary hasil `./task build`, bukan sisa proses lama.
+const API_PORT = 8099;
+const apiURL = `http://127.0.0.1:${API_PORT}`;
+const dbURL = process.env.CBS_DATABASE_URL ?? "";
+
+type Server = {
+  command: string;
+  url: string;
+  reuseExistingServer: boolean;
+  timeout: number;
+  env?: Record<string, string>;
+  stdout?: "pipe" | "ignore";
+  stderr?: "pipe" | "ignore";
+};
+
+/**
+ * Lingkungan proses induk, diteruskan eksplisit ke tiap `webServer`.
+ *
+ * Playwright memakai `env` yang diberikan sebagai **pengganti** lingkungan proses, dan API Nim
+ * butuh `DYLD_FALLBACK_LIBRARY_PATH` di mesin dev ini (libpq Homebrew bersifat keg-only) —
+ * tanpa diteruskan, binary API gagal start dengan "could not load: libpq.dylib".
+ */
+const inheritedEnv = Object.fromEntries(
+  Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+);
+
+const servers: Server[] = [];
+
+/**
+ * API hanya dijalankan bila `CBS_DATABASE_URL` ada (sumbernya `.local/dev.env`, di-export
+ * `./task e2e`): alur login→maker-checker→realtime butuh DB + seed dev yang sudah dimigrasi.
+ * Tanpa DB, spec alur menyatakan dirinya dilewati; spec a11y/keyboard tetap berjalan.
+ */
+if (dbURL !== "") {
+  // Binary API memuat libpq lewat `dlopen`. Di mesin dev, libpq Homebrew bersifat keg-only dan
+  // hanya ditemukan lewat `DYLD_FALLBACK_LIBRARY_PATH` dari `.local/dev.env`. Variabel `DYLD_*`
+  // tidak selamat melewati proses perantara ber-hardened (dyld menghapusnya), jadi berkas itu
+  // di-`source` langsung oleh perintah ini sebelum `exec` — bukan dikirim lewat `env` Playwright.
+  const apiCommand = [
+    "set -a;",
+    "[ -f ../../.local/dev.env ] && . ../../.local/dev.env;",
+    "set +a;",
+    `exec ../../.build/bin/cbs-api --role=api --port=${API_PORT} --address=127.0.0.1`,
+  ].join(" ");
+
+  servers.push({
+    command: apiCommand,
+    url: `${apiURL}/healthz`,
+    env: { ...inheritedEnv, CBS_DATABASE_URL: dbURL },
+    reuseExistingServer: false,
+    timeout: 30_000,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+}
+
+servers.push({
+  command: `./node_modules/.bin/vite build && ./node_modules/.bin/vite preview --port ${PORT} --strictPort --host 127.0.0.1`,
+  url: baseURL,
+  // Selalu bangun ulang: kalau server lama dibiarkan (mis. sisa run yang terputus), test bisa
+  // "hijau" melawan build lama. Build di sini hanya hitungan detik.
+  env: { ...inheritedEnv, CBS_API_TARGET: apiURL },
+  reuseExistingServer: false,
+  timeout: 180_000,
+  stdout: "ignore",
+  stderr: "pipe",
+});
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -31,14 +99,5 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  webServer: {
-    command: `./node_modules/.bin/vite build && ./node_modules/.bin/vite preview --port ${PORT} --strictPort --host 127.0.0.1`,
-    url: baseURL,
-    // Selalu bangun ulang: kalau server lama dibiarkan (mis. sisa run yang terputus), test bisa
-    // "hijau" melawan build lama. Build di sini hanya hitungan detik.
-    reuseExistingServer: false,
-    timeout: 180_000,
-    stdout: "ignore",
-    stderr: "pipe",
-  },
+  webServer: servers,
 });

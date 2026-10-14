@@ -4,7 +4,7 @@ import openapi/lib
 
 import mummy
 
-import ../src/[health, server]
+import ../src/[access, health, server]
 
 ## Test server HTTP tanpa layanan eksternal (tanpa DB): aman dijalankan di CI mana pun, jadi
 ## dinamai `t*` (unit) dan bukan `it*`. Yang diuji: respons nyata **sesuai kontrak** (spec §13) —
@@ -182,3 +182,58 @@ suite "respons sistem sesuai kontrak OpenAPI":
     let body = parseJson(response.body)
     check body["code"].getStr() == "METHOD_NOT_ALLOWED"
     assertNoSchemaProblems("/healthz", "GET", "405", body, "application/problem+json")
+
+suite "rute T-012 tanpa basis data":
+  test "auth/parameter/audit membalas 501 problem+json sesuai kontrak":
+    ## `tapi` menyusun `AppContext` tanpa `pool`: rute yang butuh DB harus membalas problem yang
+    ## dideklarasikan kontrak, bukan crash atau diam. Jalur 200/401/403/409-nya diuji
+    ## `itapi_auth.nim` (butuh DB + seed dev).
+    setup:
+      contract = loadContractFile(ContractPath)
+      (apiServer, baseUrl) = startServer(nil)
+      waitUntilServing(baseUrl)
+
+    let cases = [
+      ("POST", "/api/v1/auth/login", "login"),
+      ("GET", "/api/v1/auth/session", "getSession"),
+      ("POST", "/api/v1/auth/logout", "logout"),
+      ("GET", "/api/v1/params", "listParams"),
+      ("POST", "/api/v1/params/platform.security.max_failed_logins/changes",
+       "submitParamChange"),
+      ("POST", "/api/v1/params/changes/00000000-0000-7000-8000-000000000000/approve",
+       "approveParamChange"),
+      ("GET", "/api/v1/audit", "listAudit"),
+    ]
+    for (verb, path, operationId) in cases:
+      let client = newHttpClient(timeout = 2000)
+      defer: client.close()
+      var response: Response
+      if verb == "GET":
+        response = client.get(baseUrl & path)
+      else:
+        response = client.post(baseUrl & path, "{}")
+      check response.code.int == 501
+      check "application/problem+json" in response.headers["Content-Type"]
+      let body = parseJson(response.body)
+      check body["code"].getStr() == "NOT_IMPLEMENTED"
+      # Path ber-parameter di kontrak memakai `{nama}`; yang diuji di sini path nyata.
+      let contractPath =
+        if operationId == "submitParamChange": "/api/v1/params/{key}/changes"
+        elif operationId == "approveParamChange":
+          "/api/v1/params/changes/{paramValueId}/approve"
+        else: path
+      assertNoSchemaProblems(contractPath, verb, "501", body, "application/problem+json")
+
+suite "pola rute & pemetaan topik (murni)":
+  test "pola kontrak `{nama}` diterjemahkan ke router Mummy `@nama`":
+    check mummyPattern("/healthz") == "/healthz"
+    check mummyPattern("/api/v1/params/{key}/changes") == "/api/v1/params/@key/changes"
+    check mummyPattern("/api/v1/params/changes/{paramValueId}/approve") ==
+      "/api/v1/params/changes/@paramValueId/approve"
+
+  test "setiap topik realtime punya izin yang membukanya":
+    check permissionForTopic("param.changed") == "platform.param.read"
+    check permissionForTopic("topik.tak.dikenal") == ""
+    check knownTopics().len == topicPermissions.len
+    for topic in knownTopics():
+      check permissionForTopic(topic).len > 0

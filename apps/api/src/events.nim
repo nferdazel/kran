@@ -30,10 +30,12 @@ import platform/infrastructure/[outbox_listener, outbox_repo]
 import "platform-lib/db/pool"
 
 import ./db_bridge
+import ./identity
 import ./problem
 
+export identity
+
 const
-  SessionCookieName* = "cbs_session"
   ## Batas pesan langganan (pertahanan protokol, bukan parameter bisnis): 32 topik per langganan,
   ## panjang topik maksimum 128 karakter. Diberikan ke lapisan application lewat
   ## `SubscriptionLimits` supaya nilainya tidak menjadi literal di sana (spec §10.4).
@@ -110,23 +112,6 @@ proc hasToken(value, token: string): bool =
     if cmpIgnoreCase(part.strip(), token) == 0:
       return true
   false
-
-proc identityFromRequest*(req: Request): string =
-  ## Cookie sesi (spec §13: HttpOnly) atau `Authorization: Bearer`. Kosong = anonim.
-  ## Hanya **token** yang diambil; endpoint ini tidak menafsirkan isinya (itu tugas T-012).
-  for part in req.headers["Cookie"].split(';'):
-    let item = part.strip()
-    if item.startsWith(SessionCookieName & "="):
-      return item[SessionCookieName.len + 1 .. ^1]
-  const bearer = "Bearer "
-  let authorization = req.headers["Authorization"]
-  if authorization.startsWith(bearer):
-    return authorization[bearer.len .. ^1]
-  ""
-
-# ---------------------------------------------------------------------------------------------
-# Layanan
-# ---------------------------------------------------------------------------------------------
 
 proc newEventService*(policy: TopicPolicy, pool: DbPool, resumeLimit = 200,
                       maxResumeBatches = 10): EventService =

@@ -82,6 +82,164 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Masuk dan buat sesi
+         * @description Memverifikasi kredensial dan membuat sesi. Token sesi dikirim **hanya** lewat cookie
+         *     `HttpOnly`+`Secure`+`SameSite=Strict` (spec §13) — tidak ada salinan di badan respons.
+         *
+         *     Pesan salah-password, akun tak dikenal, dan akun non-aktif dibedakan lewat `params.reason`
+         *     (`invalid_credentials`, `locked`, `inactive`) untuk audit, tetapi badan respons tidak
+         *     mengungkap keberadaan akun.
+         */
+        post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Identitas sesi yang sedang aktif
+         * @description Mengembalikan pengguna, peran, dan izin efektif sesi pada cookie. Sekaligus memperpanjang
+         *     batas idle sesi (spec §18.2) — dipakai UI sebagai denyut saat memuat halaman.
+         */
+        get: operations["getSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cabut sesi dan hapus cookie
+         * @description Mencabut sesi pada cookie dan mengirim cookie kedaluwarsa (`Max-Age=0`). Setelah ini
+         *     token lama tidak lagi sah (`revoked_at` terisi) — bukan sekadar dihapus di browser.
+         */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/params": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daftar nilai parameter
+         * @description Nilai parameter beserta statusnya (`ACTIVE`, `PENDING`, `SUPERSEDED`, `REJECTED`) untuk UI
+         *     Parameter Admin (spec §10.7). Filter `status=PENDING` = daftar yang menunggu checker.
+         *     Daftar belum disaring per scope/cabang (lihat batasan di `docs/tasks/T-012.md`).
+         */
+        get: operations["listParams"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/params/{key}/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ajukan perubahan parameter (maker)
+         * @description Mengajukan nilai baru untuk sebuah parameter. Hasilnya **selalu** `PENDING`: aktivasi
+         *     butuh penyetuju lain (spec §10.2, maker-checker). Nilai divalidasi terhadap definisi
+         *     (tipe + JSON Schema + scope yang diizinkan).
+         *
+         *     `reason` wajib: audit perubahan parameter harus bisa menjelaskan alasannya (spec §11.7).
+         *     `effectiveFrom` kosong = tanggal buku hari ini.
+         */
+        post: operations["submitParamChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/params/changes/{paramValueId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Setujui perubahan parameter (checker)
+         * @description Mengaktifkan nilai `PENDING` menjadi `ACTIVE` dan memangkas nilai aktif sebelumnya
+         *     (`SUPERSEDED`). Penyetuju **wajib berbeda** dari pengaju — ditegakkan skema DB
+         *     (`self_approval`), bukan hanya kode. Konflik periode (EXCLUDE) juga ditolak.
+         */
+        post: operations["approveParamChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Jejak audit terbaru
+         * @description Daftar entri audit (urut terbaru dulu). Rantai hash-nya diverifikasi di DB
+         *     (`platform.audit_verify`), bukan di handler. `action` menyaring dengan **awalan**
+         *     (mis. `param.`).
+         */
+        get: operations["listAudit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -136,6 +294,106 @@ export interface components {
             };
             /** @description Korelasi dengan log & audit (spec §18.2). */
             traceId: string;
+        };
+        LoginRequest: {
+            username: string;
+            password: string;
+        };
+        LoginResponse: {
+            /** Format: uuid */
+            userId: string;
+            /** Format: uuid */
+            sessionId: string;
+            /** @description Batas idle sesi (ISO-8601 UTC). */
+            expiresAt: string;
+        };
+        SessionInfo: {
+            /** Format: uuid */
+            userId: string;
+            username: string;
+            fullName: string;
+            mustChangePassword: boolean;
+            roles: string[];
+            permissions: string[];
+            /** @description Batas idle sesi (ISO-8601 UTC); batas absolut tidak pernah dilampaui. */
+            expiresAt: string;
+        };
+        ParamValue: {
+            /** Format: uuid */
+            paramValueId: string;
+            key: string;
+            /** @enum {string} */
+            scopeType: "GLOBAL" | "INSTITUTION" | "BRANCH" | "PRODUCT" | "SEGMENT";
+            scopeId: string;
+            /** @enum {string} */
+            status: "DRAFT" | "PENDING" | "ACTIVE" | "SUPERSEDED" | "REJECTED";
+            /** @description Nilai parameter; bentuknya ditentukan JSON Schema definisinya. */
+            value: unknown;
+            /** Format: date */
+            effectiveFrom: string;
+            /** @description Kosong = berlaku tanpa batas akhir. */
+            effectiveTo: string;
+            maker: string;
+            checker: string;
+            reason: string;
+            requiresApproval: boolean;
+        };
+        ParamValueList: {
+            items: components["schemas"]["ParamValue"][];
+        };
+        ParamChangeRequest: {
+            /** @description Nilai baru; divalidasi terhadap tipe & JSON Schema definisi parameter. */
+            value: unknown;
+            /**
+             * @default GLOBAL
+             * @enum {string}
+             */
+            scopeType: "GLOBAL" | "INSTITUTION" | "BRANCH" | "PRODUCT" | "SEGMENT";
+            scopeId?: string;
+            /** Format: date */
+            effectiveFrom?: string;
+            effectiveTo?: string;
+            reason: string;
+        };
+        ParamSubmitResponse: {
+            /** Format: uuid */
+            paramValueId: string;
+            key: string;
+            /** @enum {string} */
+            status: "PENDING";
+            scopeType: string;
+            scopeId: string;
+            /** @description Nilai yang diajukan (belum aktif sampai disetujui). */
+            value: unknown;
+            /** Format: date */
+            effectiveFrom: string;
+            effectiveTo: string;
+            reason: string;
+        };
+        ParamApprovalResponse: {
+            /** Format: uuid */
+            paramValueId: string;
+            /** @enum {string} */
+            status: "ACTIVE";
+        };
+        AuditItem: {
+            seq: number;
+            /** @description ISO-8601 UTC (zona tetap, bukan zona server). */
+            recordedAt: string;
+            /** @description Tanggal buku saat aksi terjadi (`YYYY-MM-DD`); kosong bila belum ada. */
+            businessDate: string;
+            actorUserId: string;
+            actorRole: string;
+            /** @description Mis. `param.submit`, `param.approve`, `auth.login.success`. */
+            action: string;
+            resourceType: string;
+            resourceId: string;
+            reason: string;
+            /** @description Nilai sesudah aksi (bentuk mengikuti action). */
+            after: unknown;
+        };
+        AuditList: {
+            items: components["schemas"]["AuditItem"][];
         };
     };
     responses: {
@@ -287,6 +545,257 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+        };
+    };
+    login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Sesi dibuat; cookie `cbs_session` diset */
+            200: {
+                headers: {
+                    /** @description Cookie sesi (`HttpOnly`, `Secure`, `SameSite=Strict`) */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            /** @description Kredensial tidak cocok */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Akun terkunci atau tidak aktif (`params.reason` = `locked`/`inactive`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+        };
+    };
+    getSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sesi sah */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionInfo"];
+                };
+            };
+            /** @description Tidak ada sesi sah */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sesi dicabut; cookie dihapus (`Max-Age=0`) */
+            204: {
+                headers: {
+                    /** @description Cookie sesi kedaluwarsa */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Tidak ada sesi sah */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+        };
+    };
+    listParams: {
+        parameters: {
+            query?: {
+                status?: "DRAFT" | "PENDING" | "ACTIVE" | "SUPERSEDED" | "REJECTED";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar nilai parameter */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParamValueList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+        };
+    };
+    submitParamChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Kunci parameter, mis. `platform.security.max_failed_logins`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ParamChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Pengajuan tercatat sebagai `PENDING` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParamSubmitResponse"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+        };
+    };
+    approveParamChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paramValueId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Nilai diaktifkan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParamApprovalResponse"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            /** @description paramValueId tidak ditemukan */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            405: components["responses"]["Problem"];
+            /**
+             * @description Tidak bisa disetujui: bukan `PENDING` (`params.reason` = `not_pending`), pengesahan
+             *     sendiri (`self_approval`), atau periode bertabrakan (`period_conflict`)
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+        };
+    };
+    listAudit: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description Awalan action, mis. `param.` atau `auth.login`. */
+                action?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar entri audit */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
         };
     };
 }

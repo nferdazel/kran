@@ -17,6 +17,21 @@ type
     expectedHash*: string
     actualHash*: string
 
+  AuditListItem* = object
+    ## Satu baris audit untuk ditampilkan (UI audit trail, spec §21.4). Isinya subset kolom yang
+    ## boleh dibaca peran admin; nilai mentah `before`/`after` ikut karena audit memang catatan
+    ## lengkap (`afterValue` nil bila tidak ada).
+    seq*: int64
+    recordedAt*: string ## ISO-8601 UTC
+    businessDate*: string
+    actorUserId*: string
+    actorRole*: string
+    action*: string
+    resourceType*: string
+    resourceId*: string
+    reason*: string
+    afterValue*: JsonNode
+
 proc jsonOrNull(n: JsonNode): string =
   if n.isNil: "null" else: $n
 
@@ -57,3 +72,32 @@ proc chainOk*(rows: openArray[AuditChainRow]): bool =
 
 proc countAudit*(db: DbConn): int64 =
   parseBiggestInt(db.getValue(sql"SELECT count(*) FROM platform.audit_log"))
+
+proc listAudit*(db: DbConn, limit: int, action = ""): seq[AuditListItem] =
+  ## Daftar audit terbaru (urut `seq` menurun). `action` kosong = semua action; pencocokan
+  ## memakai **awalan** supaya `param.` bisa menyeleksi satu keluarga aksi.
+  ##
+  ## Batas jumlah baris wajib ada: tabel audit tidak pernah dipangkas, jadi daftar tanpa batas
+  ## akan tumbuh tanpa kendali. Pemanggil (HTTP) yang menetapkan nilainya.
+  for row in db.getAllRows(sql"""
+    SELECT seq::text,
+           to_char(recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+           coalesce(to_char(business_date, 'YYYY-MM-DD'), ''),
+           coalesce(actor_user_id::text, ''), coalesce(actor_role, ''),
+           action, coalesce(resource_type, ''), coalesce(resource_id, ''),
+           coalesce(reason, ''), coalesce(after_value::text, 'null')
+      FROM platform.audit_log
+     WHERE (?::text = '' OR action LIKE ? || '%')
+     ORDER BY seq DESC
+     LIMIT ?::int""", action, action, $limit):
+    result.add AuditListItem(
+      seq: parseBiggestInt(row[0]),
+      recordedAt: row[1],
+      businessDate: row[2],
+      actorUserId: row[3],
+      actorRole: row[4],
+      action: row[5],
+      resourceType: row[6],
+      resourceId: row[7],
+      reason: row[8],
+      afterValue: parseJson(row[9]))

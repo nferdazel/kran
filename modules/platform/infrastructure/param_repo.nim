@@ -157,6 +157,15 @@ proc rowStatus*(db: DbConn, paramValueId: string): string =
   db.getValue(sql"SELECT status FROM platform.param_value WHERE param_value_id = ?::uuid",
     paramValueId)
 
+proc statusOf*(db: DbConn, paramValueId: string): Option[ParamStatus] =
+  ## Status nilai parameter, `none` bila id tidak ada. Dipakai handler persetujuan: membedakan
+  ## "tidak ada" (404) dari "bukan PENDING" (409) tanpa menebak dari pesan error DB.
+  let found = singleRow(db,
+    sql"SELECT status FROM platform.param_value WHERE param_value_id = ?::uuid", paramValueId)
+  if found.isNone:
+    return none(ParamStatus)
+  some(parseStatus(found.get()[0]))
+
 proc paramValueId*(db: DbConn, key, scopeType, scopeId, effectiveFrom: string): string =
   ## Mencari id nilai untuk (key, scope, effective_from) — dipakai test & UI nanti.
   if scopeId.len == 0:
@@ -242,6 +251,52 @@ proc pendingValues*(db: DbConn): seq[(string, string)] =
     SELECT param_value_id::text, key FROM platform.param_value
      WHERE status IN ('DRAFT','PENDING') ORDER BY recorded_at"""):
     result.add (row[0], row[1])
+
+type
+  ParamValueRow* = object
+    ## Satu baris `param_value` + metadata definisinya — bahan daftar UI Parameter Admin
+    ## (spec §10.7): nilai aktif maupun yang menunggu persetujuan.
+    paramValueId*: string
+    key*: string
+    scopeType*: string
+    scopeId*: string
+    status*: ParamStatus
+    value*: JsonNode
+    effectiveFrom*: string
+    effectiveTo*: string
+    maker*: string
+    checker*: string
+    reason*: string
+    requiresApproval*: bool
+
+proc paramValueRows*(db: DbConn, status = "", limit = 200): seq[ParamValueRow] =
+  ## Daftar nilai parameter (semua scope) untuk UI. `status` kosong = semua status; disaring
+  ## memakai nama status kanonik (`ACTIVE`, `PENDING`, …). Batas jumlah baris wajib.
+  for row in db.getAllRows(sql"""
+    SELECT v.param_value_id::text, v.key, v.scope_type, coalesce(v.scope_id::text, ''),
+           v.status, v.value::text,
+           to_char(v.effective_from, 'YYYY-MM-DD'),
+           coalesce(to_char(v.effective_to, 'YYYY-MM-DD'), ''),
+           coalesce(v.maker::text, ''), coalesce(v.checker::text, ''), coalesce(v.reason, ''),
+           d.requires_approval
+      FROM platform.param_value v
+      JOIN platform.param_definition d ON d.key = v.key
+     WHERE (?::text = '' OR v.status = ?)
+     ORDER BY v.key, v.recorded_at DESC
+     LIMIT ?::int""", status, status, $limit):
+    result.add ParamValueRow(
+      paramValueId: row[0],
+      key: row[1],
+      scopeType: row[2],
+      scopeId: row[3],
+      status: parseStatus(row[4]),
+      value: parseJson(row[5]),
+      effectiveFrom: row[6],
+      effectiveTo: row[7],
+      maker: row[8],
+      checker: row[9],
+      reason: row[10],
+      requiresApproval: row[11] == "t")
 
 proc missingActiveKeys*(db: DbConn, keys: openArray[string], scopeType: ParamScopeType,
                         scopeId, asOf: string): seq[string] =

@@ -234,6 +234,31 @@ proc migrationsOf*(root: string): seq[Migration] =
     if result == 0:
       result = cmp(a.filename, b.filename))
 
+proc seedFiles*(root: string, dev = false): seq[string] =
+  ## Berkas seed yang diterapkan `dbtools seed`, relatif terhadap `root`.
+  ##
+  ## Urutan: untuk setiap pack (abjad) — `generated/*.sql` lebih dulu (definisi parameter sebelum
+  ## nilai), lalu `seed/*.sql` **hanya bila** `dev`. `generated/` = keluaran `paramgen` (jangan
+  ## diedit manusia); `seed/` = berkas tulis-tangan untuk dev/test (mis. pengguna sintetis) yang
+  ## tidak dipakai produksi.
+  for pack in walkDir(root / "packs"):
+    if pack.kind != pcDir:
+      continue
+    var generated: seq[string]
+    var devSeeds: seq[string]
+    if dirExists(pack.path / "generated"):
+      for entry in walkDir(pack.path / "generated"):
+        if entry.kind == pcFile and entry.path.endsWith(".sql"):
+          generated.add relativePath(entry.path, root)
+    if dev and dirExists(pack.path / "seed"):
+      for entry in walkDir(pack.path / "seed"):
+        if entry.kind == pcFile and entry.path.endsWith(".sql"):
+          devSeeds.add relativePath(entry.path, root)
+    generated.sort()
+    devSeeds.sort()
+    result.add generated
+    result.add devSeeds
+
 proc validateMigrations*(migra: seq[Migration]): seq[string] =
   ## Temuan yang membuat seluruh run dibatalkan (dijalankan tanpa DB).
   var seen: seq[string]

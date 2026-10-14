@@ -17,7 +17,8 @@
     "e2e": "playwright test"
   },
   "dependencies": {
-    "@cbs/ui": "workspace:*"
+    "@cbs/ui": "workspace:*",
+    "@cbs/api-client": "workspace:*"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
