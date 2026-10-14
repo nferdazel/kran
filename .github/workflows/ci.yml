@@ -74,6 +74,10 @@ jobs:
       - name: Install browser Playwright
         run: pnpm exec playwright install --with-deps chromium
 
+      - name: ./task openapi
+        # lint kontrak OpenAPI + klien TS sinkron + typecheck paket klien
+        run: ./task openapi
+
       - name: ./task e2e
         # kontras token + svelte-check + Playwright (axe 2 tema x 2 locale, alur keyboard-only)
         run: ./task e2e

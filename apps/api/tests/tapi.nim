@@ -1,0 +1,171 @@
+import std/[httpclient, json, net, os, strutils, times, unittest]
+
+import openapi/lib
+
+import mummy
+
+import ../src/[health, server]
+
+## Test server HTTP tanpa layanan eksternal (tanpa DB): aman dijalankan di CI mana pun, jadi
+## dinamai `t*` (unit) dan bukan `it*`. Yang diuji: respons nyata **sesuai kontrak** (spec §13) —
+## status, `Content-Type`, dan bentuk JSON (subset JSON Schema di `tools/openapi`).
+##
+## Readiness yang menyentuh DB diuji terpisah di `itapi.nim` (butuh CBS_DATABASE_URL).
+
+const ContractPath = "packages/contracts/openapi/cbs-api.yaml"
+
+type
+  ServeArgs = object
+    server: Server
+    port: int
+
+var
+  contract: Contract
+  apiServer: Server
+  baseUrl: string
+  serverThread: Thread[ServeArgs]
+
+proc freePort(): int =
+  ## Tanya OS port bebas: bind ke port 0, baca hasilnya, lalu tutup.
+  let socket = newSocket()
+  socket.bindAddr(Port(0), "127.0.0.1")
+  result = int(socket.getLocalAddr()[1])
+  socket.close()
+
+proc serveInThread(args: ServeArgs) {.thread.} =
+  try:
+    args.server.serve(Port(args.port), "127.0.0.1")
+  except CatchableError:
+    discard # penutupan server di akhir test memang bisa memunculkan error
+
+proc startServer(readiness: ReadinessProbe): tuple[server: Server, url: string] =
+  let port = freePort()
+  result.url = "http://127.0.0.1:" & $port
+  result.server = newServer(requestHandler(AppContext(
+    version: "test-0.0.0",
+    role: "api",
+    startedAt: epochTime(),
+    readiness: readiness,
+  )))
+  createThread(serverThread, serveInThread, ServeArgs(server: result.server, port: port))
+
+proc waitUntilServing(url: string) =
+  let deadline = epochTime() + 5.0
+  while epochTime() < deadline:
+    try:
+      let probe = newHttpClient(timeout = 1000)
+      defer: probe.close()
+      if probe.get(url & "/healthz").code == Http200:
+        return
+    except CatchableError:
+      discard
+    sleep(50)
+  check false # server tidak pernah siap
+
+proc getJson(client: HttpClient, path: string):
+    tuple[code: int, contentType: string, body: JsonNode] =
+  let response = client.get(baseUrl & path)
+  result.code = response.code.int
+  result.contentType = response.headers["Content-Type"]
+  result.body = parseJson(response.body)
+
+proc failuresFor(path, verb, status: string, body: JsonNode): seq[string] =
+  ## Bentuk respons nyata vs skema kontrak.
+  contract.validateValue(contract.responseSchema(path, verb, status), body, "$")
+
+proc assertNoSchemaProblems(path, verb, status: string, body: JsonNode,
+                            contentType = "application/json") =
+  let problems = contract.validateValue(
+    contract.responseSchema(path, verb, status, contentType), body, "$")
+  check problems.len == 0
+  for problem in problems:
+    checkpoint problem
+
+proc assertProblemEnvelope(body: JsonNode) =
+  ## Amplop RFC 9457 dipakai untuk error yang tidak terikat operasi (mis. 404 rute tak dikenal).
+  let problems = contract.validateValue(
+    contract.doc["components"]["schemas"]["Problem"], body, "$")
+  check problems.len == 0
+  for problem in problems:
+    checkpoint problem
+
+suite "respons sistem sesuai kontrak OpenAPI":
+  setup:
+    contract = loadContractFile(ContractPath)
+    (apiServer, baseUrl) = startServer(nil)
+    waitUntilServing(baseUrl)
+
+  # Server sengaja tidak ditutup di akhir test: `server.close()` pada Mummy 0.4.8 + ORC
+  # membuat proses mati (SIGSEGV di `destroy` -> ORC cycle collector, terlihat saat uji ini
+  # pertama ditulis). Proses test berakhir sendiri sehingga thread server ikut berakhir.
+  # Shutdown yang benar dicatat di docs/OPEN_ITEMS.md (O-025).
+
+  test "/healthz -> 200 sesuai skema Health":
+    let client = newHttpClient(timeout = 2000)
+    defer: client.close()
+
+    let response = getJson(client, "/healthz")
+    check response.code == 200
+    check "application/json" in response.contentType
+    check response.body["status"].getStr() == "ok"
+    check response.body["role"].getStr() == "api"
+    assertNoSchemaProblems("/healthz", "GET", "200", response.body)
+
+  test "/readyz tanpa probe -> 200 ok sesuai skema Readiness":
+    let client = newHttpClient(timeout = 2000)
+    defer: client.close()
+
+    let response = getJson(client, "/readyz")
+    check response.code == 200
+    check response.body["status"].getStr() == "ok"
+    check response.body["checks"].len == 0
+    assertNoSchemaProblems("/readyz", "GET", "200", response.body)
+
+  test "/readyz dengan probe gagal -> 503 degraded sesuai skema Readiness":
+    ## Kontrak mengizinkan 503 dengan bentuk Readiness yang sama; bentuknya harus tetap valid.
+    let failing = startServer(proc(): seq[ReadinessCheck] {.gcsafe.} =
+      @[ReadinessCheck(name: "database", status: csFailed, detail: "sengaja gagal")])
+    waitUntilServing(failing.url)
+    let client = newHttpClient(timeout = 2000)
+    defer: client.close()
+
+    let response = client.get(failing.url & "/readyz")
+    check response.code.int == 503
+    let body = parseJson(response.body)
+    check body["status"].getStr() == "degraded"
+    check body["checks"][0]["status"].getStr() == "failed"
+    assertNoSchemaProblems("/readyz", "GET", "503", body)
+
+  test "rute tak dikenal -> 404 problem+json sesuai skema Problem":
+    let client = newHttpClient(timeout = 2000)
+    defer: client.close()
+
+    let response = client.get(baseUrl & "/tidak-ada-rute")
+    check response.code.int == 404
+    check "application/problem+json" in response.headers["Content-Type"]
+
+    let body = parseJson(response.body)
+    assertProblemEnvelope(body)
+    check body["code"].getStr() == "NOT_FOUND"
+    check body["i18nKey"].getStr() == "error_not_found"
+    check body["traceId"].getStr().len > 0
+
+  test "traceId meneruskan X-Request-Id dari proxy":
+    let client = newHttpClient(timeout = 2000)
+    defer: client.close()
+
+    client.headers["X-Request-Id"] = "trace-dari-caddy"
+    let response = client.get(baseUrl & "/tidak-ada-rute")
+    check parseJson(response.body)["traceId"].getStr() == "trace-dari-caddy"
+
+  test "rute hanya menerima method yang dideklarasikan":
+    let client = newHttpClient(timeout = 2000)
+    defer: client.close()
+
+    # /healthz hanya GET; method lain dibalas 405 dengan amplop problem (dideklarasikan kontrak).
+    let response = client.post(baseUrl & "/healthz", "")
+    check response.code.int == 405
+    check "application/problem+json" in response.headers["Content-Type"]
+    let body = parseJson(response.body)
+    check body["code"].getStr() == "METHOD_NOT_ALLOWED"
+    assertNoSchemaProblems("/healthz", "GET", "405", body, "application/problem+json")

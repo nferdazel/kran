@@ -10,3 +10,5 @@ requires "db_connector >= 0.1.0"
 requires "yaml >= 2.2.1"
 # PBKDF2-HMAC-SHA256 untuk password (ADR/D-013). Sudah terpasang lokal sebagai 0.7.3.
 requires "nimcrypto >= 0.7.3"
+# HTTP server + WebSocket (ADR-002/D-019). Terpasang lokal sebagai 0.4.8.
+requires "mummy >= 0.4.8"

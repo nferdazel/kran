@@ -262,3 +262,20 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
     `ops/` (O-013, O-019) menjadi mungkin dan dikerjakan bersama server ini.
   - Mengganti server di kemudian hari hanya menyentuh lapisan transport (rute/handler terpisah
     dari use case), karena handler tetap memanggil use case yang sama.
+
+## D-020 — Tooling kontrak API: `openapi-typescript` + `openapi-fetch` + Spectral
+
+- **Konteks**: spec §13 menetapkan OpenAPI 3.1 sebagai sumber kebenaran, klien TS di-generate
+  (`openapi-typescript` + pembungkus fetch tipis), dan "OpenAPI lint hijau" jadi kriteria T-008.
+  Menulis generator/linter sendiri = memelihara parser OpenAPI (pekerjaan besar, mudah salah).
+- **Keputusan**: `openapi-typescript@7.13.0` (tipe), `openapi-fetch@0.17.0` (klien tipis tanpa
+  runtime dependensi), `@stoplight/spectral-cli@6.17.0` + `spectral:oas` sebagai linter. Versi
+  dipin eksak; semua masuk `pnpm-lock.yaml`. Gate: `./task openapi`
+  (`spectral --fail-severity warn`, regen tanpa diff, `tsc -p packages/api-client --noEmit`).
+- **Alasan menolak alternatif**: `@hey-api/openapi-ts` (bagus tapi menghasilkan runtime yang lebih
+  besar dan tidak diminta spec); generator tulisan sendiri (menambah permukaan bug di area yang
+  bukan keunggulan kita); tanpa linter (kriteria "lint hijau" jadi klaim kosong).
+- **Konsekuensi**: ruleset awal = `spectral:oas` **tanpa override** supaya ambangnya ketat
+  (fail-severity `warn`); bila nanti muncul aturan yang tidak relevan, override wajib disertai
+  alasan tertulis di `.spectral.yaml`. Validator bentuk respons tetap milik kita
+  (`tools/openapi`) dan hanya mendukung subset JSON Schema yang dipakai — batas ini dicatat.
