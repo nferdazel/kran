@@ -7,7 +7,7 @@
 ##
 ## Test ini **menghapus schema `platform`** di DB yang ditunjuk `CBS_DATABASE_URL` (DB dev).
 
-import std/[json, options, os, sets, strutils, times, unittest]
+import std/[algorithm, json, options, os, sets, strutils, times, unittest]
 import db_connector/db_postgres
 
 import "platform-lib/db/config"
@@ -65,10 +65,11 @@ proc ctxFor(userId: string; branch = branchBandung; reason = "uji otomatis"): Au
     ip = "10.0.0.5", device = "teller-pc-1", reason = reason, correlationId = "corr-uji",
     startedAt = jamKerja.now())
 
-proc buatUser(username: string; password = passwordAwal; status = "ACTIVE"): string =
+proc buatUser(username: string; password = passwordAwal; status = "ACTIVE";
+             iterations = 1000): string =
   result = $newId(sysClock)
   check insertUser(db, NewUser(userId: result, username: username, fullName: "Uji " & username,
-    passwordHash: $hashPassword(password, 1000)))
+    passwordHash: $hashPassword(password, iterations)))
   if status != "ACTIVE":
     check setUserStatus(db, result, status)
 
@@ -85,11 +86,17 @@ proc auditRows(action: string): seq[Row] =
            to_char(business_date, 'YYYY-MM-DD'), reason, after_value::text
       FROM platform.audit_log WHERE action = ? ORDER BY seq""", action)
 
-proc login(username, password: string; branch = branchBandung): AuthResult =
-  ## Login dengan konteks lengkap seperti dari HTTP layer nanti.
+proc loginWith(username, password: string; setelan: SecuritySettings;
+               branch = branchBandung): AuthResult =
+  ## Login dengan setelan eksplisit. Dipakai uji biaya KDF (O-034) yang perlu jumlah iterasi
+  ## terkendali — bukan nilai parameter dev yang sengaja diturunkan supaya suite ini cepat.
   let found = userByUsername(db, username)
   let uid = if found.isSome: found.get().userId else: ""
-  authenticate(db, ctxFor(uid, branch), jamKerja, instScope, settings(), username, password)
+  authenticate(db, ctxFor(uid, branch), jamKerja, instScope, setelan, username, password)
+
+proc login(username, password: string; branch = branchBandung): AuthResult =
+  ## Login dengan konteks lengkap seperti dari HTTP layer nanti.
+  loginWith(username, password, settings(), branch)
 
 suite "login: sukses + audit context":
   test "login benar membuat sesi dan mencatat konteks lengkap di audit":
@@ -128,6 +135,9 @@ suite "login: sukses + audit context":
 
   test "akun INACTIVE ditolak (bukan sekadar gagal password)":
     let uid = buatUser("duduk-perkara", passwordAwal, "INACTIVE")
+    # Kata sandi salah lebih dulu: jawabannya harus generik, bukan "akun tidak aktif" — kalau tidak,
+    # status akun bisa dibaca tanpa tahu kata sandinya (O-034).
+    check login("duduk-perkara", "kata-sandi-salah-panjang").outcome == aoInvalidCredentials
     let res = login("duduk-perkara", passwordAwal)
     check res.outcome == aoInactive
     let rows = auditRows("auth.login.failure")
@@ -136,6 +146,38 @@ suite "login: sukses + audit context":
     check terakhir[0] == uid
     check parseJson(terakhir[7])["reason"].getStr == "status"
 
+suite "anti-enumerasi akun (O-034)":
+  test "akun tak dikenal mengerjakan PBKDF2 berbiaya setara dengan akun yang ada":
+    ## Yang diukur bukan selisih kecil, melainkan jalur yang **melewatkan KDF sepenuhnya** — dulu
+    ## jawaban untuk akun tak dikenal kembali ±30x lebih cepat. Iterasi 60.000 dipakai supaya biaya
+    ## KDF mendominasi waktu perjalanan ke DB (dev DB ada di server, bukan lokal).
+    let setelan = SecuritySettings(
+      minPasswordLength: settings().minPasswordLength,
+      pbkdf2Iterations: 60_000,
+      maxFailedLogins: settings().maxFailedLogins,
+      lockoutMinutes: settings().lockoutMinutes,
+      sessionIdleMinutes: settings().sessionIdleMinutes,
+      sessionAbsoluteMinutes: settings().sessionAbsoluteMinutes)
+
+    discard buatUser("biaya-setara", "kata-sandi-uji-panjang", "ACTIVE", setelan.pbkdf2Iterations)
+
+    proc medianMs(username: string): float =
+      var sampel: seq[float]
+      for _ in 1 .. 3:
+        let mulai = epochTime()
+        discard loginWith(username, "kata-sandi-salah-panjang", setelan)
+        sampel.add((epochTime() - mulai) * 1000.0)
+      sampel.sort()
+      sampel[1] # median
+
+    let dikenal = medianMs("biaya-setara")
+    let takDikenal = medianMs("akun-yang-tidak-pernah-ada")
+    check dikenal > 0.0
+    # Toleransi lebar: yang hendak ditangkap adalah perbedaan golongan (tanpa KDF vs dengan KDF),
+    # bukan variasi beberapa milidetik.
+    check takDikenal > dikenal / 2.5
+    check takDikenal < dikenal * 2.5
+
 suite "lockout dari parameter":
   test "gagal berulang mengunci akun; password benar tetap ditolak saat terkunci":
     let uid = buatUser("salah-terus")
@@ -143,7 +185,9 @@ suite "lockout dari parameter":
     check maks >= 1
     for i in 1 .. maks:
       let res = login("salah-terus", "password-salah")
-      check res.outcome == (if i == maks: aoLocked else: aoInvalidCredentials)
+      # Termasuk percobaan yang membuat akun terkunci: jawabannya tetap kredensial invalid.
+      # Menjawab "terkunci" di situ sama dengan mengumumkan bahwa akunnya ada (O-034).
+      check res.outcome == aoInvalidCredentials
     # audit setiap percobaan gagal
     var gagal = 0
     for row in auditRows("auth.login.failure"):

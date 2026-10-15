@@ -96,9 +96,12 @@ export interface paths {
          * @description Memverifikasi kredensial dan membuat sesi. Token sesi dikirim **hanya** lewat cookie
          *     `HttpOnly`+`Secure`+`SameSite=Strict` (spec §13) — tidak ada salinan di badan respons.
          *
-         *     Pesan salah-password, akun tak dikenal, dan akun non-aktif dibedakan lewat `params.reason`
-         *     (`invalid_credentials`, `locked`, `inactive`) untuk audit, tetapi badan respons tidak
-         *     mengungkap keberadaan akun.
+         *     Kata sandi **selalu diverifikasi lebih dulu** — akun tak dikenal pun mengerjakan KDF
+         *     berbiaya setara, supaya waktu responsnya tidak membedakan akun ada/tidak. Salah kata sandi
+         *     dijawab 401 `invalid_credentials` (termasuk bila percobaan itu yang barusan mengunci akun);
+         *     kata sandi benar tetapi akun terkunci/tidak aktif dijawab 403 dengan `params.reason`
+         *     `locked`/`inactive`. Jadi keadaan akun hanya diberitahukan kepada orang yang memang memegang
+         *     kata sandinya, dan badan respons tidak mengungkap keberadaan akun kepada yang lain.
          */
         post: operations["login"];
         delete?: never;
