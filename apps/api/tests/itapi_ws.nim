@@ -110,6 +110,14 @@ proc gatedSession(identity: string): bool {.gcsafe.} =
   discard identity
   sessionMasihSah.load()
 
+## Izin topik yang bisa "dicabut" dari test (O-046): sesi tetap sah, hanya izinnya hilang.
+var izinTopikMasihAda: Atomic[bool]
+izinTopikMasihAda.store(true)
+proc gatedTopics(identity: string, requested: seq[string]): seq[string] {.gcsafe.} =
+  discard identity
+  if izinTopikMasihAda.load():
+    result = requested
+
 proc paramTopicsOnly(identity: string, requested: seq[string]): seq[string] {.gcsafe.} =
   discard identity
   for topic in requested:
@@ -164,6 +172,16 @@ startPump(gatedService)
 waitForPump(gatedService)
 let gatedPort = startServer(gatedService)
 waitUntilServing(gatedPort)
+
+# Izin dicabut di tengah umur koneksi (O-046): sesi sengaja tetap sah supaya yang diuji benar-benar
+# jalur izin, bukan jalur sesi.
+let izinService = newEventService(
+  TopicPolicy(canOpen: allowOpen, allowedTopics: gatedTopics, sessionValid: allowSession),
+  dbPool, sessionRecheckSeconds = 0)
+startPump(izinService)
+waitForPump(izinService)
+let izinPort = startServer(izinService)
+waitUntilServing(izinPort)
 
 proc uniqueTopic(): string =
   "test.realtime." & $epochTime() & "." & $rand(1_000_000)
@@ -254,6 +272,39 @@ suite "realtime: pump menyambung ulang (O-029)":
     check langganan["denied"].len == 0
     let eventIdKedua = appendTestEvent(topicKedua, %*{"key": "y", "n": 3})
     check klienKedua.nextOfType("event", 10000)["id"].getStr() == eventIdKedua
+
+suite "realtime: izin langganan diperiksa ulang (O-046)":
+  test "izin dicabut di tengah langganan → langganan ditutup, sesi tetap sah":
+    izinTopikMasihAda.store(true)
+    let topic = uniqueTopic()
+    var client = connect("127.0.0.1", izinPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    defer: client.close()
+    client.sendText(subscribeJson(topic, ""))
+    let subscribed = client.nextOfType("subscribed", 5000)
+    check subscribed["topics"][0].getStr() == topic
+    check subscribed["denied"].len == 0
+    check izinService.connectionCount() == 1
+
+    # Kontrol: selama izin masih ada, langganan hidup (tidak ada soket yang ditutup).
+    sleep(300)
+    check izinService.connectionCount() == 1
+
+    # Izin dicabut — sesi tetap sah, jadi yang berubah hanya hak atas topiknya.
+    izinTopikMasihAda.store(false)
+    let frame = client.nextOfType("error", 5000)
+    check frame["code"].getStr() == "REALTIME_FORBIDDEN"
+    check izinService.connectionCount() == 0
+
+    # Setelah ditutup, klien yang menyambung ulang akan ditolak saat berlangganan (bukan drop):
+    # perilaku handshake tidak berubah.
+    var ulang = connect("127.0.0.1", izinPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    defer: ulang.close()
+    ulang.sendText(subscribeJson(uniqueTopic(), ""))
+    let lagi = ulang.nextOfType("subscribed", 5000)
+    check lagi["topics"].len == 0
+    check lagi["denied"].len == 1
+
+    izinTopikMasihAda.store(true)
 
 suite "realtime: penolakan sebelum upgrade":
   test "GET tanpa Upgrade -> 426 problem+json sesuai kontrak":

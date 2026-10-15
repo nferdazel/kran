@@ -567,3 +567,8 @@ masuk.
   Bukti: itapi_ws 13 `[OK]` (uji memutus koneksi pump dengan `pg_terminate_backend`), itapi 7 `[OK]`
   (keputusan readiness), **dua mutasi terbukti membuat uji gagal** (tanpa penyambungan ulang;
   dengan penyambungan ulang tetapi titik mulai di-reset). Lag outbox tetap O-019.
+
+- **T-030 DONE** (O-046 selesai): langganan realtime yang sudah terbuka kini diperiksa ulang izin
+  topiknya (bukan hanya sesinya). Topik yang dicabut menutup langganan (`REALTIME_FORBIDDEN`); klien
+  tanpa topik dibiarkan terhubung seperti perilaku handshake. Bukti: itapi_ws 14 `[OK]`, dan uji itu
+  **gagal** bila penutupan langganan dihapus (mutasi). Gate penuh batch menyusul di T-031.
