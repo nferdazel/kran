@@ -37,6 +37,12 @@ type
     sessionId*: string
     token*: string ## token mentah; hanya ada di sini, DB menyimpan hash-nya
 
+  PasswordPolicyError* = object of ValueError
+    ## Kata sandi **baru** melanggar kebijakan, bukan kesalahan konfigurasi. Dipisahkan dari
+    ## `ValueError` biasa supaya pemanggil HTTP bisa menjawab 400 (salah pengguna) alih-alih 500
+    ## (konfigurasi institusi rusak), dan supaya exception-nya boleh menembus transaksi sehingga
+    ## tulisan apa pun yang sudah terjadi dibatalkan — bukan ditangkap dan di-commit separuh.
+
 proc utcIso*(dt: DateTime): string =
   ## Bentuk waktu tetap untuk DB & perbandingan string (selalu UTC, akhiran `Z`).
   dt.utc.format("yyyy-MM-dd'T'HH:mm:ss'Z'")
@@ -234,14 +240,53 @@ proc authorizeUser*(db: DbConn, userId, targetBranch, permission: string): Authz
   ## Keputusan otorisasi untuk pengguna: izin efektif dari role + branch scoping + SoD.
   authorize(grantsOf(db, userId), targetBranch, permission, conflictPairs(db))
 
-proc changePassword*(db: DbConn, user: UserRow, settings: SecuritySettings,
-                     oldPassword, newPassword: string): bool =
+proc changePassword*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
+                     user: UserRow, settings: SecuritySettings,
+                     oldPassword, newPassword: string, keepSessionId = ""): bool =
   ## Ganti password sendiri: password lama harus benar, password baru harus lolos kebijakan
-  ## (kecuali panjang minimum — dinilai **sebelum** hash supaya tidak ada hash sia-sia).
+  ## (dinilai **sebelum** hash supaya tidak ada hash sia-sia).
+  ##
+  ## Efek sampingnya menyatu di sini supaya pemanggil cukup membungkus satu transaksi: hash diganti,
+  ## `must_change_password` dibersihkan (`setPassword`), audit ditulis, dan **sesi lain dicabut**
+  ## kecuali `keepSessionId`. Kalau kata sandi diganti karena diduga bocor, sesi lama tidak boleh
+  ## tetap hidup; pemiliknya sendiri tidak perlu login ulang.
   if not verifyPassword(oldPassword, user.passwordHash):
     return false
   let problems = passwordProblems(settings.minPasswordLength, user.username, newPassword)
   if problems.len > 0:
-    raise newException(ValueError, "password baru tidak memenuhi kebijakan: " & $problems)
+    raise (ref PasswordPolicyError)(msg: "password baru tidak memenuhi kebijakan: " & $problems)
   discard setPassword(db, user.userId, $hashPassword(newPassword, settings.pbkdf2Iterations))
+  let revoked = revokeSessionsExcept(db, user.userId, keepSessionId, utcIso(clock.now()),
+    "password_change")
+  auditAuth(db, ctx, clock, scope, "user.password_change", user.userId,
+    %*{"username": user.username, "otherSessionsRevoked": revoked})
+  true
+
+proc bootstrapFirstAdmin*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
+                          username, fullName, roleCode, password: string,
+                          iterations: int): bool =
+  ## Admin pertama (prosedur bootstrap produksi; keputusan D-034, task T-027). Membuat user dengan
+  ## `must_change_password = true`, memberi role, dan menulis audit `user.bootstrap`.
+  ##
+  ## Mengembalikan `false` bila username sudah ada **atau** sudah ada pengguna yang memegang
+  ## `roleCode`. Penjagaan kedua itu yang membuat perintah ini benar-benar sekali-jalan: tanpa itu,
+  ## bootstrap bisa diam-diam jadi jalur membuat admin berikutnya.
+  ##
+  ## Kata sandinya diacak pemanggil (CLI) dan tidak pernah dicatat di sini; yang tersimpan hanya
+  ## hash-nya.
+  ##
+  ## **Pemanggil wajib membungkus ini dalam satu transaksi** (pengguna + role + audit harus lahir
+  ## bersama; lihat `withRoleDb(..., useTx = true)`). Di dalam transaksi itu, kunci mutex di bawah
+  ## menutup celah check-then-act: dua `bootstrap-admin` yang berjalan bersamaan tidak bisa
+  ## sama-sama lolos pemeriksaan lalu membuat dua admin.
+  discard db.getValue(sql"SELECT pg_advisory_xact_lock(hashtext('cbs:bootstrap_first_admin'))")
+  if userByUsername(db, username).isSome or countUsersWithRole(db, roleCode) > 0:
+    return false
+  let userId = $newId(clock)
+  if not insertUser(db, NewUser(userId: userId, username: username, fullName: fullName,
+    passwordHash: $hashPassword(password, iterations), mustChangePassword: true)):
+    return false
+  discard grantRole(db, userId, roleCode, "", "")
+  auditAuth(db, ctx, clock, scope, "user.bootstrap", userId,
+    %*{"username": username, "role": roleCode, "mustChangePassword": true})
   true

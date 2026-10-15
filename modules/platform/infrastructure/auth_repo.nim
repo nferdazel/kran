@@ -26,6 +26,7 @@ type
     username*: string
     fullName*: string
     passwordHash*: string
+    mustChangePassword*: bool ## true untuk admin pertama hasil bootstrap (T-027)
 
   SessionRow* = object
     sessionId*: string
@@ -51,10 +52,11 @@ proc insertUser*(db: DbConn, user: NewUser): bool =
   let algo = user.passwordHash.split('$')[0]
   db.execAffectedRows(sql"""
     INSERT INTO platform.app_user
-      (user_id, username, full_name, password_algo, password_hash)
-    VALUES (?::uuid, lower(?), ?, ?, ?)
+      (user_id, username, full_name, password_algo, password_hash, must_change_password)
+    VALUES (?::uuid, lower(?), ?, ?, ?, ?)
     ON CONFLICT (user_id) DO NOTHING""",
-    user.userId, user.username, user.fullName, algo, user.passwordHash) == 1
+    user.userId, user.username, user.fullName, algo, user.passwordHash,
+    user.mustChangePassword) == 1
 
 proc userByUsername*(db: DbConn, username: string): Option[UserRow] =
   let found = db.singleRow(sql("SELECT " & userColumns &
@@ -276,6 +278,24 @@ proc revokeSessionsOfUser*(db: DbConn, userId, nowIso, reason: string): int =
   db.execAffectedRows(sql"""
     UPDATE platform.session SET revoked_at = ?::timestamptz, revoked_reason = ?
      WHERE user_id = ?::uuid AND revoked_at IS NULL""", nowIso, reason, userId)
+
+proc revokeSessionsExcept*(db: DbConn, userId, keepSessionId, nowIso, reason: string): int =
+  ## Mencabut semua sesi aktif pengguna **kecuali** satu (sesi yang sedang dipakai). Dipakai saat
+  ## pengguna mengganti kata sandinya sendiri: sesi yang dipakai tetap hidup, sesi lain diputus.
+  ## `keepSessionId` kosong = cabut semuanya (sama seperti `revokeSessionsOfUser`).
+  db.execAffectedRows(sql"""
+    UPDATE platform.session SET revoked_at = ?::timestamptz, revoked_reason = ?
+     WHERE user_id = ?::uuid AND revoked_at IS NULL
+       AND (? = '' OR session_id::text <> ?)""",
+    nowIso, reason, userId, keepSessionId, keepSessionId)
+
+proc countUsersWithRole*(db: DbConn, roleCode: string): int =
+  ## Berapa pengguna (status apa pun) yang memegang `roleCode`. Dipakai bootstrap admin pertama
+  ## untuk memastikan perintahnya benar-benar sekali-jalan (T-027).
+  parseInt(db.getValue(sql"""
+    SELECT count(DISTINCT ur.user_id)
+      FROM platform.user_role ur JOIN platform.role r ON r.role_id = ur.role_id
+     WHERE r.code = lower(?)""", roleCode))
 
 proc activeSessionCount*(db: DbConn, userId, nowIso: string): int =
   parseInt(db.getValue(sql"""

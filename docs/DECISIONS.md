@@ -699,3 +699,44 @@ O-012). Dicatat sebagai keputusan, bukan sekadar niat, supaya task turunannya pu
    diminta" dan "kosong" tidak lagi berarti sama) dan dikerjakan bersama pemindahan resolusi ke
    lapisan application di **T-016**, dengan test golden sebelum perilakunya berubah. Tidak ada
    perubahan kode hari ini.
+
+## D-035 — T-027: admin pertama, katalog RBAC di migrasi, dan penjagaan sesi wajib-ganti
+
+Keputusan pemilik 15 Okt 2026 (D-034) yang paling besar konsekuensinya: prosedur bootstrap admin
+pertama. Saat dikerjakan, satu hal ternyata **tidak** bisa sekadar "panggil perintah baru":
+
+**Katalog izin & role sistem dipindah dari seed dev ke migrasi.** `dbtools seed` menerapkan
+`packs/*/generated/*.sql` selalu, tetapi `packs/*/seed/*.sql` hanya dengan `--dev`; katalog izin
+(`platform.param.read` dst.) dan role (`param_maker`, `param_checker`) hanya ada di seed dev. Di
+produksi, admin pertama karena itu akan dibuat **tanpa satu pun izin** — dengan kata lain bootstrap
+yang "berhasil" tetapi tidak bisa dipakai. Katalognya sekarang ada di
+`modules/platform/migrations/0008_platform_rbac_catalogue.sql`; seed dev hanya menjaga pengguna dan
+pemberian rolenya. Alasan memilih migrasi, bukan jalur seed produksi baru: kode izin terikat kode
+program (`apps/api/src/access.nim`), jadi ia struktural, ikut versi, dan ikut jalur expand-only —
+bukan nilai bisnis yang bisa diubah institusi.
+
+Keputusan lain di task ini, dengan alasan yang perlu diketahui pembaca berikutnya:
+
+1. **Penjagaan "wajib ganti kata sandi" ada di `requirePermission`**, bukan di tiap handler. Satu
+   tempat berarti rute baru tidak bisa lupa. Rute yang **tidak** butuh izin (`getSession`, `logout`,
+   `changePassword`) tidak melewatinya, jadi alurnya tetap bisa diselesaikan. Jalur realtime memakai
+   definisi yang sama (`sessionCanWork`), supaya sesi berkata-sandi-sementara tidak bisa menyedot
+   data lewat langganan.
+2. **Kata sandi lama yang salah dijawab 403, bukan 401.** Sesi memang masih sah; 401 akan membuat
+   klien memperlakukannya sebagai "sesi berakhir" dan mengeluarkan pengguna hanya karena salah
+   mengetik. `params.reason` (`old_password_mismatch`, `password_policy`) adalah yang membedakan
+   sebabnya untuk UI.
+3. **Mengganti kata sandi mencabut sesi lain, tetapi tidak sesi yang sedang dipakai.** Kalau kata
+   sandi diganti karena diduga bocor, sesi lama tidak boleh tetap hidup; pemiliknya sendiri tidak
+   perlu masuk ulang. Repo mendapat `revokeSessionsExcept` untuk itu.
+4. **`bootstrap-admin` adalah satu-satunya perintah `ctl` yang menulis**, dan sekali-jalan bukan
+   lewat flag melainkan lewat keadaan data: ditolak bila username sudah ada **atau** sudah ada
+   pemegang role admin. Flag bisa dilewatkan karena tergesa-gesa; keadaan data tidak.
+5. **Seed dev menyetel ulang pengguna dev (`ON CONFLICT (username) DO UPDATE`)**, bukan
+   `DO NOTHING`: e2e alur wajib-ganti mengubah kata sandi `dev.firstlogin`, jadi seed harus bisa
+   mengembalikannya agar `./task e2e` bisa dijalankan berulang.
+
+Tidak ada gate yang dilonggarkan di sini: yang berubah adalah tempat katalog RBAC hidup, dan itu
+**memperbaiki** jalur produksi yang sebelumnya tidak punya izin sama sekali (dua item baru dicatat:
+O-050 percobaan kata sandi lama tidak dibatasi/diaudit, O-051 kebijakan kata sandi tidak terbaca UI,
+O-052 kebijakan lanjutan kata sandi).

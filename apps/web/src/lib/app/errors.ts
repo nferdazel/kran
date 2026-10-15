@@ -26,3 +26,18 @@ export function problemMessage(problem: Problem): string {
   const template = PROBLEM_MESSAGES[problem.i18nKey];
   return template ? template() : m.error_generic();
 }
+
+/**
+ * Pesan untuk alur ganti kata sandi (T-027).
+ *
+ * `problemMessage` memetakan menurut `i18nKey` (jenis masalah), tetapi di sini dua sebab berbeda
+ * sama-sama datang sebagai 400/403 — kata sandi lama tidak cocok dan kata sandi baru melanggar
+ * kebijakan — dan server membedakannya lewat `params.reason`. Tanpa pemetaan ini, pengguna hanya
+ * melihat "permintaan tidak sah" tanpa tahu bagian mana yang harus diperbaiki.
+ */
+export function passwordProblemMessage(problem: Problem): string {
+  const reason = problem.params?.reason;
+  if (reason === "old_password_mismatch") return m.password_error_old();
+  if (reason === "password_policy") return m.password_error_policy();
+  return problemMessage(problem);
+}

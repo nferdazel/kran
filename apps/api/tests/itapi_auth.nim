@@ -31,6 +31,7 @@ const
   LoginPath = "/api/v1/auth/login"
   SessionPath = "/api/v1/auth/session"
   LogoutPath = "/api/v1/auth/logout"
+  PasswordPath = "/api/v1/auth/password"
   ParamsPath = "/api/v1/params"
   AuditPath = "/api/v1/audit"
   ParamKey = "platform.security.max_failed_logins"
@@ -38,6 +39,9 @@ const
   SessionAbsoluteKey = "platform.security.session_absolute_minutes"
   MakerUser = "dev.maker"
   CheckerUser = "dev.checker"
+  ## User seed yang `must_change_password = true`: dipakai alur wajib-ganti. Passwordnya sama.
+  FirstLoginUser = "dev.firstlogin"
+  PasswordBaru = "kata-sandi-baru-panjang"
   DevPassword = "rahasia-panjang-123"
   CookieName = "cbs_session"
 
@@ -584,3 +588,96 @@ suite "realtime dengan sesi":
     check problems.len == 0
     for problem in problems:
       checkpoint problem
+
+suite "ganti kata sandi lewat HTTP":
+  test "tanpa cookie → 401":
+    let reply = postJson(PasswordPath,
+      %*{"oldPassword": DevPassword, "newPassword": PasswordBaru})
+    check reply.code == 401
+    checkProblem(PasswordPath, "POST", "401", reply.body)
+
+  test "badan tidak lengkap → 400":
+    let sesi = login(MakerUser)
+    let reply = postJson(PasswordPath, %*{"oldPassword": DevPassword}, tokenOf(sesi))
+    check reply.code == 400
+    checkProblem(PasswordPath, "POST", "400", reply.body)
+
+  test "kata sandi lama salah → 403 `old_password_mismatch` dan sesi tidak dicabut":
+    let sesi = login(MakerUser)
+    let token = tokenOf(sesi)
+    let reply = postJson(PasswordPath,
+      %*{"oldPassword": "kata-sandi-salah-panjang", "newPassword": PasswordBaru}, token)
+    check reply.code == 403
+    check reply.body["params"]["reason"].getStr() == "old_password_mismatch"
+    checkProblem(PasswordPath, "POST", "403", reply.body)
+    # Sengaja 403, bukan 401: klien yang memperlakukan 401 sebagai "sesi berakhir" tidak boleh
+    # mengeluarkan pengguna hanya karena salah mengetik kata sandi lama.
+    check getJson(SessionPath, token).code == 200
+
+  test "kata sandi baru melanggar kebijakan → 400 `password_policy`":
+    let sesi = login(MakerUser)
+    let reply = postJson(PasswordPath,
+      %*{"oldPassword": DevPassword, "newPassword": "pendek"}, tokenOf(sesi))
+    check reply.code == 400
+    check reply.body["params"]["reason"].getStr() == "password_policy"
+    checkProblem(PasswordPath, "POST", "400", reply.body)
+    # Kata sandi lama tetap berlaku setelah percobaan yang gagal.
+    check login(MakerUser, DevPassword).code == 200
+
+  test "wajib ganti: rute ber-izin ditolak, sesi & alur ganti tetap terbuka":
+    let pertama = login(FirstLoginUser)
+    check pertama.code == 200
+    let token = tokenOf(pertama)
+
+    let info = getJson(SessionPath, token)
+    check info.code == 200
+    check info.body["mustChangePassword"].getBool()
+
+    let ditolak = getJson(ParamsPath, token)
+    check ditolak.code == 403
+    check ditolak.body["params"]["reason"].getStr() == "password_change_required"
+    checkProblem(ParamsPath, "GET", "403", ditolak.body)
+
+    # Langganan realtime memakai definisi "sesi yang boleh bekerja" yang sama, jadi sesi
+    # berkata-sandi-sementara tidak bisa menyedot data lewat jalur itu.
+    check not sessionCanWork(app, token)
+
+    # Ganti bukan sekadar boleh: itu satu-satunya jalan keluar dari keadaan ini.
+    let ganti = postJson(PasswordPath,
+      %*{"oldPassword": DevPassword, "newPassword": PasswordBaru}, token)
+    check ganti.code == 204
+    let sesudah = getJson(SessionPath, token)
+    check sesudah.code == 200
+    check not sesudah.body["mustChangePassword"].getBool()
+    check getJson(ParamsPath, token).code == 200
+    check sessionCanWork(app, token)
+
+  test "berhasil: sesi lain dicabut, kata sandi lama mati, audit tercatat":
+    let sesiA = login(FirstLoginUser, PasswordBaru)
+    let sesiB = login(FirstLoginUser, PasswordBaru)
+    check sesiA.code == 200
+    check sesiB.code == 200
+    let tokenA = tokenOf(sesiA)
+    let tokenB = tokenOf(sesiB)
+    let baruLagi = "kata-sandi-ketiga-panjang"
+
+    let ganti = postJson(PasswordPath,
+      %*{"oldPassword": PasswordBaru, "newPassword": baruLagi}, tokenA)
+    check ganti.code == 204
+
+    # Sesi yang dipakai tetap hidup; sesi lain milik pengguna yang sama dicabut.
+    check getJson(SessionPath, tokenA).code == 200
+    check getJson(SessionPath, tokenB).code == 401
+
+    # Kata sandi lama tidak bisa dipakai lagi; yang baru bisa.
+    check login(FirstLoginUser, PasswordBaru).code == 401
+    check login(FirstLoginUser, baruLagi).code == 200
+
+    # Jejak auditnya terlihat lewat API, bukan cuma dipercaya dari kode repo.
+    let audit = getJson(AuditPath & "?action=user.password_change", tokenA)
+    check audit.code == 200
+    var adaJejak = false
+    for item in audit.body["items"]:
+      if item["action"].getStr() == "user.password_change":
+        adaJejak = true
+    check adaJejak

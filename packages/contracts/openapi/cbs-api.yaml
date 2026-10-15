@@ -280,6 +280,59 @@ paths:
         "501":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/auth/password:
+    post:
+      operationId: changePassword
+      tags: [auth]
+      summary: Ganti kata sandi sendiri
+      description: |
+        Mengganti kata sandi pengguna yang sedang masuk. Kata sandi lama wajib benar; kata sandi
+        baru dinilai kebijakan (panjang minimum dari parameter institusi, tidak sama dengan
+        username, tanpa spasi). Sesi yang dipakai **tetap hidup**, sedangkan sesi lain milik
+        pengguna yang sama dicabut — kalau kata sandi diganti karena diduga bocor, sesi lama tidak
+        boleh melanjutkan.
+
+        Rute ini (bersama `getSession` dan `logout`) tetap bisa dipakai walaupun
+        `SessionInfo.mustChangePassword` masih `true`; rute lain menjawab 403 dengan
+        `params.reason` = `password_change_required` sampai kata sandinya diganti.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        "204":
+          description: Kata sandi diganti; sesi lain dicabut
+        "400":
+          description: |
+            Badan permintaan tidak lengkap, atau kata sandi baru melanggar kebijakan
+            (`params.reason` = `password_policy`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Tidak ada sesi sah
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Kata sandi lama tidak cocok (`params.reason` = `old_password_mismatch`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
   /api/v1/params:
     get:
       operationId: listParams
@@ -575,6 +628,20 @@ components:
           type: string
           minLength: 1
         password:
+          type: string
+          minLength: 1
+          writeOnly: true
+
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [oldPassword, newPassword]
+      properties:
+        oldPassword:
+          type: string
+          minLength: 1
+          writeOnly: true
+        newPassword:
           type: string
           minLength: 1
           writeOnly: true

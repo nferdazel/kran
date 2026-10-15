@@ -149,6 +149,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ganti kata sandi sendiri
+         * @description Mengganti kata sandi pengguna yang sedang masuk. Kata sandi lama wajib benar; kata sandi
+         *     baru dinilai kebijakan (panjang minimum dari parameter institusi, tidak sama dengan
+         *     username, tanpa spasi). Sesi yang dipakai **tetap hidup**, sedangkan sesi lain milik
+         *     pengguna yang sama dicabut — kalau kata sandi diganti karena diduga bocor, sesi lama tidak
+         *     boleh melanjutkan.
+         *
+         *     Rute ini (bersama `getSession` dan `logout`) tetap bisa dipakai walaupun
+         *     `SessionInfo.mustChangePassword` masih `true`; rute lain menjawab 403 dengan
+         *     `params.reason` = `password_change_required` sampai kata sandinya diganti.
+         */
+        post: operations["changePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/params": {
         parameters: {
             query?: never;
@@ -298,6 +326,10 @@ export interface components {
         LoginRequest: {
             username: string;
             password: string;
+        };
+        ChangePasswordRequest: {
+            oldPassword: string;
+            newPassword: string;
         };
         LoginResponse: {
             /** Format: uuid */
@@ -647,6 +679,61 @@ export interface operations {
             };
             /** @description Tidak ada sesi sah */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+        };
+    };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Kata sandi diganti; sesi lain dicabut */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /**
+             * @description Badan permintaan tidak lengkap, atau kata sandi baru melanggar kebijakan
+             *     (`params.reason` = `password_policy`)
+             */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Tidak ada sesi sah */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Kata sandi lama tidak cocok (`params.reason` = `old_password_mismatch`) */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

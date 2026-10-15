@@ -2,17 +2,25 @@
 ##
 ##   cbs-api --role=api [--port=8080] [--address=127.0.0.1] [--version=<string>]
 ##   cbs-api --role=migrate [--check|--up] [--root=<dir>]  migrasi: terapkan, atau periksa saja
-##   cbs-api --role=ctl <perintah> [--root=<dir>] perintah operasional aman (read-only)
+##   cbs-api --role=ctl <perintah> [--root=<dir>] perintah operasional (read-only, kecuali
+##                                                `bootstrap-admin`)
+##   cbs-api --role=ctl bootstrap-admin --username=<nama>   admin pertama (kata sandi diacak,
+##                                                          wajib ganti saat login pertama)
 ##   cbs-api --role=worker                        belum ada pekerjaan di Fase 0 → gagal cepat
 ##
-## Kontrak `ctl` sengaja hanya berisi perintah yang **aman** (tanpa menulis data), karena skrip ops
-## dan gate deploy memanggilnya otomatis. Role `worker` masih gagal cepat dengan pesan jelas —
+## Kontrak `ctl` berisi perintah yang **aman** (tanpa menulis data), kecuali `bootstrap-admin` yang
+## memang menulis — ia sekali-jalan (menolak bila sudah ada pemegang role admin) dan hanya mencetak
+## kata sandi awal ke stdout, tidak pernah menyimpannya. Skrip ops dan gate deploy memanggil
+## perintah lain di role ini secara otomatis. Role `worker` masih gagal cepat dengan pesan jelas —
 ## lebih baik daripada diam-diam berjalan sebagai API (O-013).
 ##
 ## Yang dibaca dari lingkungan hanyalah konfigurasi bootstrap (koneksi DB, port) — bukan nilai
 ## bisnis; nilai bisnis selalu dari parameter DB (spec §10, §12.5).
 
-import std/[atomics, os, posix, strutils, times]
+import std/[atomics, os, strutils, sysrand, times]
+# Hanya yang dipakai dari `std/posix`: modul itu juga mengekspor `Clock`/`Id`, yang bertabrakan
+# dengan `kernel/clock`/`kernel/ids` (dipakai perintah bootstrap admin).
+from std/posix import signal, SIGINT, SIGTERM
 
 import db_connector/db_postgres
 
@@ -21,9 +29,9 @@ import "platform-lib/db/pool"
 import "platform-lib/log"
 import dbtools/lib
 
-import kernel/clock
-import platform/domain/event
-import platform/infrastructure/[audit_repo, outbox_repo]
+import kernel/[auditcontext, clock, ids]
+import platform/domain/[authz, event, scope]
+import platform/infrastructure/[audit_repo, auth_service, outbox_repo]
 
 import ./access
 import ./context
@@ -33,9 +41,24 @@ import ./readiness
 import ./server
 import ./version
 
+const
+  ## Nama perintah `ctl` yang membuat admin pertama; disebut di bantuan, penjagaan argumen, dan
+  ## pengujian kontrak peran CLI.
+  bootstrapAdminCmd* = "bootstrap-admin"
+
+  ## Role yang diberikan `bootstrap-admin`. `platform_admin` diisi migrasi
+  ## `0008_platform_rbac_catalogue.sql` beserta seluruh izin yang dikenal, jadi admin pertama
+  ## memang bisa bekerja — tanpa itu perintahnya hanya menghasilkan pengguna tanpa izin.
+  bootstrapAdminRole* = "platform_admin"
+
+  ## Alfabet kata sandi awal: 32 karakter (pangkat dua, sehingga satu byte acak dipetakan tanpa
+  ## bias lewat `and 31`). Huruf yang mudah tertukar saat disalin dibuang (I, O, l, 0, 1) dan
+  ## tidak ada spasi — kebijakan kata sandi menolak spasi.
+  bootstrapAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
 const Usage =
   "pemakaian: cbs-api --role=api|migrate|ctl|worker [--root=<dir>] [--port=8080] " &
-  "[--address=127.0.0.1] [--version=<string>] [--check|--up] [<perintah ctl>]"
+  "[--address=127.0.0.1] [--version=<string>] [--check|--up] [--username=<nama>] [<perintah ctl>]"
 
 type
   CliOptions = object
@@ -43,9 +66,10 @@ type
     port: int
     address: string
     version: string
-    root: string ## akar repo untuk `--role=migrate` (letak `modules/*/migrations`)
-    cmd: string  ## perintah posisi untuk `--role=ctl`
-    sub: string  ## subperintah `--role=migrate`: --check | --up
+    root: string     ## akar repo untuk `--role=migrate` (letak `modules/*/migrations`)
+    cmd: string      ## perintah posisi untuk `--role=ctl`
+    sub: string      ## subperintah `--role=migrate`: --check | --up
+    username: string ## `--role=ctl bootstrap-admin`: nama admin pertama
 
 proc die(msg: string) =
   stderr.writeLine "cbs-api: " & msg
@@ -72,6 +96,8 @@ proc parseArgs(argv: seq[string]): CliOptions =
       result.address = arg["--address=".len .. ^1]
     elif arg.startsWith("--version="):
       result.version = arg["--version=".len .. ^1]
+    elif arg.startsWith("--username="):
+      result.username = arg["--username=".len .. ^1]
     elif arg.startsWith("--root="):
       result.root = arg["--root=".len .. ^1]
     elif arg == "--check" or arg == "--up":
@@ -88,6 +114,9 @@ proc parseArgs(argv: seq[string]): CliOptions =
     die("argumen posisi hanya untuk --role=ctl: " & result.cmd)
   if result.sub.len > 0 and result.role != roleMigrate:
     die("subperintah " & result.sub & " hanya untuk --role=migrate")
+  if result.username.len > 0 and
+     not (result.role == roleCtl and result.cmd == bootstrapAdminCmd):
+    die("--username hanya untuk `--role=ctl " & bootstrapAdminCmd & "`")
 
 var shutdownRequested: Atomic[bool]
 
@@ -115,23 +144,33 @@ proc watchStop(app: AppContext) {.thread.} =
   stderr.writeLine "cbs-api: berhenti dengan tenang (SIGINT/SIGTERM)"
   quit(0)
 
-const CtlUsage =
+const CtlUsage* =
   "perintah ctl:\n" &
-  "  verify-audit   : periksa rantai audit (kode keluar 1 bila ada entri tidak utuh)\n" &
-  "  outbox-status  : jumlah peristiwa outbox per status\n" &
+  "  verify-audit    : periksa rantai audit (kode keluar 1 bila ada entri tidak utuh)\n" &
+  "  outbox-status   : jumlah peristiwa outbox per status\n" &
+  "  bootstrap-admin : buat admin pertama (butuh --username=<nama>; kata sandi dicetak sekali,\n" &
+  "                    wajib diganti saat login pertama; menolak bila admin sudah ada)\n" &
   "  daycloser-status: (belum ada di Fase 0 → kode 3)\n" &
-  "  help           : tampilkan bantuan ini"
+  "  help            : tampilkan bantuan ini"
 
-proc withRoleDb(body: proc(db: DbConn): int): int =
+proc withRoleDb*(body: proc(db: DbConn): int, useTx = false): int =
   ## Peran operasional butuh basis data. Tanpa `CBS_DATABASE_URL` keluar **kode 2** dengan pesan
   ## jelas (bukan stack trace), supaya skrip ops bisa membedakan salah konfigurasi dari kegagalan.
+  ##
+  ## `useTx = true` membungkus `body` dalam satu transaksi: dipakai perintah yang melakukan beberapa
+  ## tulisan (`bootstrap-admin`: pengguna + role + audit) supaya kegagalan di tengah tidak
+  ## meninggalkan pengguna setengah jadi. Perintah read-only cukup memakai koneksi biasa.
   if not databaseUrlSet(envTableFromProcess()):
     stderr.writeLine "cbs-api: CBS_DATABASE_URL kosong — peran ini membutuhkan basis data"
     return 2
   let pool = newDbPool(dbConfigFromProcessEnv())
   defer: pool.close()
   try:
-    pool.withConn(proc(db: DbConn): int {.closure.} = body(db))
+    let run = proc(db: DbConn): int {.closure.} = body(db)
+    if useTx:
+      pool.withTx(run)
+    else:
+      pool.withConn(run)
   except DbError as e:
     stderr.writeLine "cbs-api: gagal terhadap basis data: " & e.msg
     1
@@ -140,6 +179,12 @@ proc withRoleDb(body: proc(db: DbConn): int): int =
     1
   except IOError as e:
     stderr.writeLine "cbs-api: gagal membaca berkas: " & e.msg
+    1
+  except ValueError as e:
+    # Kebijakan/konfigurasi tidak sah (mis. kombinasi parameter sesi, atau penugasan role yang
+    # melanggar pemisahan tugas). Ditangkap di sini supaya peran operasional tidak pernah
+    # menyerahkan stack trace ke skrip ops.
+    stderr.writeLine "cbs-api: perintah tidak bisa dijalankan: " & e.msg
     1
 
 proc auditExitCode*(rows: openArray[AuditChainRow]): int =
@@ -150,12 +195,75 @@ proc auditExitCode*(rows: openArray[AuditChainRow]): int =
       return 1
   0
 
-proc runCtl*(command, root: string): int =
+proc randomPassword(length: int): string =
+  ## Kata sandi acak dari `std/sysrand` (CSPRNG sistem operasi) — **bukan** `std/random`, yang
+  ## bisa diprediksi dan tidak boleh dipakai untuk kredensial.
+  var bytes = newSeq[byte](length)
+  if not urandom(bytes):
+    return ""
+  for b in bytes:
+    result.add bootstrapAlphabet[int(b) and 31]
+
+proc runBootstrapAdmin(db: DbConn, username: string, clock: Clock): int =
+  ## Admin pertama: buat pengguna, beri role admin, cetak kata sandi awal **sekali**.
+  ##
+  ## Kata sandinya diacak di sini dan hanya hidup di memori + stdout; yang tersimpan di DB hanya
+  ## hash-nya. Pengguna dibuat dengan `must_change_password = true`, jadi kata sandi ini hanya
+  ## berguna untuk satu kali masuk (lihat `handleChangePassword` dan penjagaan izin).
+  ##
+  ## Pemanggilnya wajib memakai `withRoleDb(..., useTx = true)`: rangkaian tulisan ini (pengguna,
+  ## role, audit) harus seluruhnya berhasil atau tidak sama sekali.
+  if username.len == 0:
+    stderr.writeLine "cbs-api: `ctl " & bootstrapAdminCmd & "` butuh --username=<nama>"
+    return 2
+
+  let instScope = institutionScope()
+  # Nilai keamanan dibaca dari parameter DB (spec §10) — CLI tidak boleh punya ambang sendiri.
+  # Tanggalnya tanggal UTC hari ini: parameter keamanan berlaku sejak jauh sebelumnya, dan
+  # `settingsOf` memang meminta "per tanggal berapa nilainya dibaca".
+  let now = clock.now()
+  let utcDate = utcIso(now)
+  let settings = settingsOf(db, instScope, utcDate[0 .. 9])
+  # Panjangnya mengikuti kebijakan institusi dengan margin, bukan angka tetap di kode.
+  let password = randomPassword(max(20, settings.minPasswordLength + 8))
+  if password.len == 0:
+    stderr.writeLine "cbs-api: gagal membaca sumber acak sistem (urandom)"
+    return 1
+  let problems = passwordProblems(settings.minPasswordLength, username, password)
+  if problems.len > 0:
+    # Tidak seharusnya terjadi (alfabetnya tanpa spasi). Kalau terjadi, admin akan terjebak dengan
+    # kata sandi yang ditolak kebijakannya sendiri — lebih baik gagal sekarang daripada
+    # menyerahkan kredensial yang tidak bisa dipakai untuk menggantinya.
+    stderr.writeLine "cbs-api: kata sandi acak yang dihasilkan tidak lolos kebijakan: " & $problems
+    return 1
+
+  let ctx = newAuditContext(Id(""), device = "cbs-api ctl",
+    reason = "bootstrap admin pertama", startedAt = clock.now())
+  if not bootstrapFirstAdmin(db, ctx, clock, instScope, username, username,
+                             bootstrapAdminRole, password, settings.pbkdf2Iterations):
+    stderr.writeLine "cbs-api: bootstrap ditolak: sudah ada pengguna bernama '" & username &
+      "' atau sudah ada pemegang role '" & bootstrapAdminRole & "'."
+    stderr.writeLine "  Perintah ini sekali-jalan; untuk admin berikutnya pakai penugasan role biasa."
+    return 3
+
+  echo "kata sandi awal untuk '" & username & "' (ditampilkan sekali, tidak disimpan di mana pun):"
+  echo password
+  echo "Masuk dengan kata sandi itu, lalu ganti saat diminta — sebelum diganti, akun ini hanya"
+  echo "bisa memakai /auth/session, /auth/password, dan /auth/logout."
+  0
+
+proc runCtl*(command, root: string, username = ""): int =
   ## Peran `ctl`: perintah operasional yang aman (read-only), dipakai skrip ops dan freeze gate.
+  ## Satu-satunya pengecualian adalah `bootstrap-admin`, yang memang harus menulis dan sengaja
+  ## sekali-jalan.
   if command.len == 0 or command == "help":
     echo CtlUsage
     return 0
   case command
+  of bootstrapAdminCmd:
+    # `useTx = true`: pengguna, role, dan audit harus lahir bersama — lihat `bootstrapFirstAdmin`.
+    withRoleDb(proc(db: DbConn): int {.closure.} =
+      runBootstrapAdmin(db, username, systemClock()), useTx = true)
   of "verify-audit":
     withRoleDb(proc(db: DbConn): int {.closure.} =
       let rows = verifyChain(db)
@@ -246,7 +354,7 @@ proc main() =
   if opts.role == roleMigrate:
     quit(runMigrate(opts.root, opts.sub))
   if opts.role == roleCtl:
-    quit(runCtl(opts.cmd, opts.root))
+    quit(runCtl(opts.cmd, opts.root, opts.username))
   if opts.role == roleWorker:
     stderr.writeLine "cbs-api: role 'worker' belum ada pekerjaannya (Fase 0: 'api' dan peran " &
       "operasional 'migrate'/'ctl'; lihat docs/OPEN_ITEMS.md O-013)"

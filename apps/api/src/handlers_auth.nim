@@ -12,7 +12,7 @@ import db_connector/db_postgres
 
 import platform/domain/[authz, scope]
 import platform/infrastructure/auth_service
-import kernel/[auditcontext, clock, ids]
+import kernel/[auditcontext, clock, ids, result]
 
 import ./access
 import ./context
@@ -26,6 +26,9 @@ const
   ## kontrak tidak menebak bentuk JSON.
   fieldUsername* = "username"
   fieldPassword* = "password"
+  ## Nama field badan permintaan ganti kata sandi (kontrak `ChangePasswordRequest`).
+  fieldOldPassword* = "oldPassword"
+  fieldNewPassword* = "newPassword"
 
 proc utcDateOf(clock: Clock): string =
   ## Tanggal buku yang dipakai untuk membaca parameter: tanggal UTC hari ini. Kalender modul
@@ -142,3 +145,62 @@ proc handleLogout*(app: AppContext, req: Request) {.gcsafe.} =
   var headers = emptyHttpHeaders()
   headers["Set-Cookie"] = SessionCookieName & "=; " & clearedCookieAttributes()
   req.respond(204, headers)
+
+proc handleChangePassword*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `POST /api/v1/auth/password` — ganti kata sandi sendiri (T-027).
+  ##
+  ## Rute ini tidak meminta izin apa pun, dan itu disengaja: pemilik sesi yang masih wajib
+  ## mengganti kata sandi (admin pertama hasil bootstrap) justru harus bisa sampai ke sini,
+  ## sementara rute ber-izin sudah ditolak `requirePermission` (alasan
+  ## `password_change_required`).
+  let principal = requirePrincipal(app, req)
+  if principal.isNone:
+    return
+  let p = principal.get()
+
+  let body = parseJsonBody(req)
+  if body.isNone:
+    req.respondProblem(pkBadRequest, "Bad Request", "badan permintaan harus JSON")
+    return
+  let oldPassword = body.get().jsonField(fieldOldPassword)
+  let newPassword = body.get().jsonField(fieldNewPassword)
+  if oldPassword.len == 0 or newPassword.len == 0:
+    req.respondProblem(pkBadRequest, "Bad Request", "oldPassword dan newPassword wajib diisi")
+    return
+
+  var changed = false
+  try:
+    # Satu transaksi: hash baru, pencabutan sesi lain, dan entri audit harus ikut bersama-sama.
+    # Pelanggaran kebijakan (`PasswordPolicyError`) sengaja dibiarkan menembus blok ini — supaya
+    # transaksinya dibatalkan, bukan di-commit dengan tulisan separuh.
+    withDbTx(app.pool, proc(db: DbConn) {.gcsafe.} =
+      dbCalls:
+        let instScope = institutionScope()
+        let settings = settingsOf(db, instScope, utcDateOf(app.clock))
+        let ctx = newAuditContext(parseId(p.user.userId).value(), ip = clientIp(req),
+          device = deviceOf(req), reason = "ganti kata sandi sendiri",
+          correlationId = traceIdFrom(req), startedAt = app.clock.now())
+        changed = changePassword(db, ctx, app.clock, instScope, p.user, settings,
+          oldPassword, newPassword, keepSessionId = p.session.sessionId))
+  except PasswordPolicyError:
+    req.respondProblem(newProblem(pkBadRequest, "Bad Request",
+      "kata sandi baru tidak memenuhi kebijakan",
+      traceId = traceIdFrom(req), params = @[("reason", "password_policy")]))
+    return
+  except DbError:
+    req.respondProblem(pkInternal, "Internal Server Error", "ganti kata sandi gagal diproses")
+    return
+  except ValueError as e:
+    req.respondProblem(pkInternal, "Internal Server Error",
+      "kebijakan keamanan tidak sah: " & e.msg)
+    return
+
+  if not changed:
+    # 403, bukan 401: sesinya sah, yang salah hanya kata sandi lama. Klien yang memperlakukan 401
+    # sebagai "sesi berakhir" tidak jadi mengeluarkan pengguna dari halaman ini.
+    req.respondProblem(newProblem(pkForbidden, "Forbidden", "kata sandi lama tidak cocok",
+      traceId = traceIdFrom(req), params = @[("reason", "old_password_mismatch")]))
+    return
+
+  # Cookie tidak diganti: sesi yang dipakai tetap sah, hanya sesi lain yang dicabut.
+  req.respond(204, emptyHttpHeaders())

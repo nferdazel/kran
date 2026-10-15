@@ -515,3 +515,34 @@ diverifikasi dengan menambahkan definisi ber-`false` ke seed asli (gagal, lalu d
 
 Task turunan: **T-027** (bootstrap + endpoint ganti kata sandi) dan **T-028** (kebijakan
 anti-enumerasi), keduanya READY dan keduanya menandai `HUMAN-REVIEW-REQUIRED`.
+
+## T-027 — bootstrap admin + ganti kata sandi (O-031) SELESAI
+
+Dijalankan sesuai keputusan D-034, dengan satu temuan yang mengubah cakupan: katalog izin & role
+sistem hanya ada di seed dev (`dbtools seed` tidak menerapkannya tanpa `--dev`), sehingga admin
+pertama di produksi akan dibuat tanpa izin apa pun. Katalognya dipindah ke migrasi
+`0008_platform_rbac_catalogue.sql` (D-035), dan seed dev disederhanakan menjadi pengguna + pemberian
+role saja.
+
+Hasil: `POST /api/v1/auth/password` (+ kontrak + klien TS), penjagaan wajib-ganti di satu tempat
+(`requirePermission`, plus `sessionCanWork` untuk realtime), `ctl bootstrap-admin` sekali-jalan
+(kata sandi acak CSPRNG dicetak sekali), halaman `/app/password` + guard layout `/app`, dan e2e alur
+wajib-ganti (axe 2 tema).
+
+Bukti akhir: itapi_auth 28 `[OK]`, itapi_roles 12 `[OK]`, itauth 22 `[OK]`, tparamgen 20 `[OK]`,
+e2e password 3 lulus, svelte-check 0 error, i18n check lengkap, dan `./task ci` **hijau**
+(450 `[OK]`, e2e 22 lulus, 109 berkas `nim check`, 9 migrasi — angka README disamakan dengan run
+ini). Biner diuji langsung untuk tiap kode keluar (0/2/3) dan barisnya diperiksa di DB dev, lalu
+user uji dibersihkan.
+
+Review independen (konteks bersih) mengeluarkan CHANGES-REQUIRED dengan **satu MAJOR**: tulisan
+bootstrap belum atomik (pengguna + role + audit bisa ter-commit separuh). Diperbaiki dengan
+`withRoleDb(..., useTx = true)` + `pg_advisory_xact_lock` (menutup celah check-then-act
+sekali-jalan), plus `PasswordPolicyError` agar pelanggaran kebijakan membatalkan transaksi alih-alih
+di-commit. Semua MINOR juga dikerjakan (klaim runbook, identifier Inggris, pertanyaan i18n role →
+O-053). Dua kali e2e merah di CI: tenggang 5 s untuk aksi PBKDF2, lalu tes yang berbagi keadaan user
+seed — keduanya dicatat di `docs/tasks/T-027.md` sebagai pelajaran, bukan dihapus dari sejarah.
+
+Sisa yang dicatat jujur: O-050 (percobaan kata sandi lama tidak dibatasi/diaudit), O-051 (kebijakan
+kata sandi tidak terbaca UI sebelum ditolak), O-052 (kedaluwarsa/riwayat/kualitas kata sandi).
+Task berikutnya yang sudah READY: **T-028** (kebijakan anti-enumerasi akun, O-034).

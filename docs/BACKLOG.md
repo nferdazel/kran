@@ -36,7 +36,7 @@ berkas rencana di `docs/tasks/T-xxx.md`.
 | T-024 | Shutdown bersih (O-025) | DONE |
 | T-025 | Invarian kursor outbox + test balapan dua koneksi (O-037, O-040) | DONE |
 | T-026 | Kontrak CLI multi-role + jalur skrip ops (O-013) | DONE |
-| T-027 | Bootstrap admin produksi + endpoint ganti kata sandi (O-031) | READY |
+| T-027 | Bootstrap admin produksi + endpoint ganti kata sandi (O-031) | DONE |
 | T-028 | Kebijakan anti-enumerasi akun (O-034) | READY |
 
 Nomor T-017 tetap **dipesan** untuk usulan MFA (belum disetujui pemilik) supaya tidak bentrok.

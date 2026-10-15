@@ -136,6 +136,15 @@ proc requirePermission*(ctx: AppContext, req: Request, principal: Principal,
     req.respondProblem(pkNotImplemented, "Not Implemented",
       "layanan basis data tidak dikonfigurasi")
     return false
+  if principal.user.mustChangePassword:
+    # Kata sandi sementara (admin pertama hasil bootstrap, T-027) hanya boleh dipakai untuk
+    # menggantinya. Rute ber-izin ditolak di satu tempat ini — bukan di tiap handler — supaya tidak
+    # ada rute baru yang lupa. `getSession`, `logout`, dan `changePassword` tidak melewati fungsi
+    # ini, jadi alur wajib-ganti tetap bisa diselesaikan.
+    req.respondProblem(newProblem(pkForbidden, "Forbidden",
+      "kata sandi harus diganti lebih dulu",
+      traceId = traceIdFrom(req), params = @[("reason", "password_change_required")]))
+    return false
   let allowed = withDbConn(ctx.pool, proc(db: DbConn): bool {.gcsafe.} =
     authorized(db, principal, permission))
   if not allowed:
@@ -143,15 +152,22 @@ proc requirePermission*(ctx: AppContext, req: Request, principal: Principal,
       traceId = traceIdFrom(req), params = @[("permission", permission)]))
   allowed
 
+proc sessionCanWork*(ctx: AppContext, identity: string): bool {.gcsafe.} =
+  ## Sesi yang boleh **bekerja**: ada, sah, dan tidak sedang wajib ganti kata sandi (T-027).
+  ## Dipakai jalur realtime supaya sesi ber-kata-sandi-sementara tidak bisa menyedot data lewat
+  ## langganan, sejalan dengan penjagaan `requirePermission`.
+  if ctx.pool.isNil:
+    return false
+  withDbConn(ctx.pool, proc(db: DbConn): bool {.gcsafe.} =
+    let p = resolvePrincipal(db, ctx.clock, identity)
+    p.isSome and not p.get().user.mustChangePassword)
+
 proc realtimePolicy*(ctx: AppContext): TopicPolicy =
   ## Kebijakan untuk `events.newEventService`: koneksi hanya dibuka bila cookie sesinya sah dan
   ## topik disaring per izin.
   TopicPolicy(
     canOpen: proc(identity: string): bool {.gcsafe.} =
-    if ctx.pool.isNil:
-      return false
-    withDbConn(ctx.pool, proc(db: DbConn): bool {.gcsafe.} =
-      resolvePrincipal(db, ctx.clock, identity).isSome),
+    sessionCanWork(ctx, identity),
     allowedTopics: proc(identity: string, requested: seq[string]): seq[string] {.gcsafe.} =
     if ctx.pool.isNil:
       return @[]
@@ -159,9 +175,6 @@ proc realtimePolicy*(ctx: AppContext): TopicPolicy =
       topicsAllowedFor(db, ctx.clock, identity, requested)),
     sessionValid: proc(identity: string): bool {.gcsafe.} =
     # Dipakai pump untuk memeriksa ulang langganan yang sudah terbuka (O-036): sesi bisa
-    # dicabut/kedaluwarsa setelah handshake. Resolusi principal yang sama dengan `canOpen` supaya
-    # "identitas sah" hanya punya satu definisi (termasuk pengguna yang dinonaktifkan).
-    if ctx.pool.isNil:
-      return false
-    withDbConn(ctx.pool, proc(db: DbConn): bool {.gcsafe.} =
-      resolvePrincipal(db, ctx.clock, identity).isSome))
+    # dicabut/kedaluwarsa setelah handshake. Definisi yang sama dengan `canOpen` supaya
+    # "sesi yang boleh bekerja" hanya punya satu arti (termasuk pengguna yang dinonaktifkan).
+    sessionCanWork(ctx, identity))
