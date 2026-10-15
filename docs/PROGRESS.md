@@ -597,3 +597,14 @@ masuk.
   bukan jaminan bebas flake. Sisa batch: T-035 (migrasi contract/rollback, O-048) dan T-036 (semantik
   parameter O-012/O-039) — keduanya P3, rencananya sudah memuat hasil recon, dan keduanya
   HUMAN-REVIEW-REQUIRED.
+
+- **T-039 DONE** (D-039): seluruh identifier teknis kini KRAN — biner `kran-api`, env `KRAN_*`, kanal
+  NOTIFY `kran_outbox` (migrasi baru `0009`; `0007` tidak disentuh karena checksum-nya diverifikasi),
+  unit `kran-*.service`, hook `kran`, paket `@kran/*`, kelas CSS `kran-*`, localStorage `kran-theme`,
+  nama berkas kontrak/spec/env/Caddyfile, kode galat `KRAN-1xxx`, direktori `/srv/qouver/apps/kran`,
+  dan `application_name` DB/logger. Yang tetap: `cbs-core` (sistem lama, masih berjalan) dan
+  `cbs.qouver.com` + `/cbs/*` (DNS, keputusan pemilik). Bukti: `ci-repeat 3` hijau (464 `[OK]`/putaran,
+  1392 total; e2e 23/putaran), DB+role dev di-rename di server (dbtools 10/10, itapi_ws 15 `[OK]`).
+- Runbook baru `docs/runbooks/deploy-setup.md`: urutan deploy key + webhook, berisi fakta server hasil
+  recon (container `cbs-api` masih memegang 8095; `/srv/qouver/apps/cbs` sudah ada) dan peringatan gh
+  bahwa deploy key yang ditambahkan lewat CLI terikat pada token otentikasi.
