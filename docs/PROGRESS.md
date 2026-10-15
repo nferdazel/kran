@@ -480,3 +480,22 @@ alasan, bukan kode 2. `main.nim` dipagari `when isMainModule` supaya perannya bi
 `apps/api/tests/itapi_roles.nim` (7 test) + runbook baru `docs/runbooks/ops-cli.md`. `migrate.sh`
 disamakan: `--contract`/`--down` ditolak (kode 3) → O-048. Keputusan: D-033. Sisa: worker + freeze gate
 daycloser (O-013).
+
+## Pasca-M0 — review independen batch hardening (T-022…T-026): APPROVE
+
+Reviewer dengan konteks bersih memeriksa diff `e710dbf..HEAD` (T-022…T-026) terhadap spec, kontrak, dan
+implementasi Mummy 0.4.8. Hasil: **APPROVE**, tanpa BLOCKER dan tanpa MAJOR. Empat temuan MINOR
+semuanya diperbaiki di commit lanjutan, bukan ditunda:
+
+1. `itapi_ws`: flag sesi uji dipindah ke `Atomic[bool]` (semula `bool` global yang ditulis thread test
+   dan dibaca thread pump).
+2. `itoutboxcursor`: transaksi "pelanggar" dibungkus `try`/`finally` + ROLLBACK, supaya koneksi tidak
+   pernah kembali ke pool dalam keadaan transaksi terbuka.
+3. `main.nim`: `--role=migrate --up` **menolak** (kode 3) migrasi berpenanda `-- dbtools:destructive`
+   yang belum diterapkan, dan menyebut id berkasnya (D-033 addendum, O-048).
+4. `ops/scripts/migrate.sh`: argumen tambahan pada `--check`/`--up` ditolak skrip dengan pesan jelas,
+   bukan diteruskan sampai keluar kode 2 yang menyesatkan.
+
+Tambahan dari catatan "benar tapi mudah rusak": kegagalan memverifikasi sesi (DB/pool) tidak lagi
+memutus langganan atau mematikan pump; soket dibiarkan dan pemeriksaan diulang pada interval berikutnya.
+Ketergantungan pada detail internal Mummy dicatat sebagai O-049.

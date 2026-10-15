@@ -276,7 +276,15 @@ proc sweepSessions(svc: EventService) =
       svc.streams[socket].lastSessionCheck = getMonoTime()
       candidates.add (clientId, state.identity)
   for candidate in candidates: # nimpretty-ignore: gaya destructuring tuple
-    if not svc.policy.sessionValid(candidate.identity):
+    var sah = true
+    try:
+      sah = svc.policy.sessionValid(candidate.identity)
+    except CatchableError:
+      # Gagal memverifikasi (DB/pool sedang bermasalah) **bukan** alasan memutus langganan atau
+      # mematikan pump: soket dibiarkan, pemeriksaan diulang pada interval berikutnya. Pemadaman DB
+      # tetap terlihat dari jalur lain, sebab pump juga membaca tabel (O-029).
+      continue
+    if not sah:
       svc.dropClient(candidate.clientId, "REALTIME_SESSION_ENDED", "error_unauthorized")
 
 proc onWebSocketEvent(svc: EventService, socket: WebSocket, event: WebSocketEvent,

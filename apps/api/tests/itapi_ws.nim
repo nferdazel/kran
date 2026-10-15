@@ -10,7 +10,7 @@
 ## Test ini **tidak** mengubah schema (migrasi dijalankan lewat runner resmi) dan hanya menambah
 ## baris outbox dengan `dedup_key` unik, jadi aman dijalankan berulang di `cbs_dev`.
 
-import std/[httpclient, json, net, os, random, strutils, times, unittest]
+import std/[atomics, httpclient, json, net, os, random, strutils, times, unittest]
 
 import db_connector/db_postgres
 import mummy
@@ -102,11 +102,13 @@ proc allowSession(identity: string): bool {.gcsafe.} =
   discard identity
   true
 
-## Sesi yang bisa "dicabut" dari test (O-036): pump memeriksa lewat closure ini.
-var sessionMasihSah = true
+## Sesi yang bisa "dicabut" dari test (O-036): pump memeriksa lewat closure ini. Ditulis thread test
+## dan dibaca thread pump, jadi memakai `Atomic` (bukan `bool` global polos).
+var sessionMasihSah: Atomic[bool]
+sessionMasihSah.store(true)
 proc gatedSession(identity: string): bool {.gcsafe.} =
   discard identity
-  sessionMasihSah
+  sessionMasihSah.load()
 
 proc paramTopicsOnly(identity: string, requested: seq[string]): seq[string] {.gcsafe.} =
   discard identity
@@ -349,7 +351,7 @@ suite "realtime: sesi berakhir setelah handshake (O-036)":
     check gatedService.connectionCount() == 1
 
     # Sesi tidak lagi sah (mis. logout/dicabut di tempat lain) — tanpa peristiwa apa pun.
-    sessionMasihSah = false
+    sessionMasihSah.store(false)
 
     let frame = client.nextOfType("error", 5000)
     check frame["code"].getStr() == "REALTIME_SESSION_ENDED"
@@ -359,5 +361,5 @@ suite "realtime: sesi berakhir setelah handshake (O-036)":
     check gatedService.connectionCount() == 0
 
     # Kembalikan keadaan supaya test lain (bila ada) tidak terpengaruh.
-    sessionMasihSah = true
+    sessionMasihSah.store(true)
     client.close()

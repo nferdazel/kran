@@ -655,3 +655,15 @@ sebelum D-029). Butir 5 D-028 sudah dianotasi agar tidak bertentangan dengan D-0
 - **Bukti**: `apps/api/tests/itapi_roles.nim` (7 test) + runbook `docs/runbooks/ops-cli.md`. Sisa
   yang jujur: peran `worker` dan freeze gate daycloser belum ada (O-013) — skrip `ops/` belum pernah
   dijalankan di server.
+
+### D-033 addendum (review independen, 15 Okt 2026) — `--up` menolak migrasi bertanda destruktif
+
+Reviewer menemukan celah yang belum tercatat: `--role=migrate --up` akan menerapkan **berkas migrasi
+berpenanda** `-- dbtools:destructive` yang belum dijalankan (`applyMigrations` hanya menolak DDL
+destruktif yang *tidak* berpenanda). Itu bertabrakan dengan janji `ops/scripts/migrate.sh --up`
+("migrasi expand-only") dan dengan spec §21.7, meski efeknya laten karena belum ada berkas seperti itu.
+
+Keputusan: `--up` sekarang **menolak** dan keluar kode 3 bila ada migrasi berpenanda destruktif yang
+belum diterapkan, dengan menyebut id berkasnya dan menunjuk O-048. Alternatif "biarkan saja, catat
+dokumen" ditolak karena kegagalannya akan muncul di server, bukan di laptop. Kontrak `--contract` yang
+sesungguhnya tetap menyusul di O-048.

@@ -62,3 +62,16 @@ suite "cbs-api: peran CLI (O-013)":
 
   test "migrate --check (read-only): 0 saat tidak ada yang tertunda atau berubah isinya":
     check runMigrate(".", "--check") == 0
+
+  test "`--up` menolak migrasi bertanda destruktif yang belum diterapkan (O-048)":
+    let status = @[
+      MigrationStatus(migration: Migration(id: "0001_ok", seq: 1, destructive: false),
+        applied: false),
+      MigrationStatus(migration: Migration(id: "0002_drop", seq: 2, destructive: true),
+        applied: true), # sudah diterapkan: bukan urusan `--up`
+      MigrationStatus(migration: Migration(id: "0003_drop", seq: 3, destructive: true),
+        applied: false)]
+    check destructivePending(status) == @["0003_drop"]
+    check destructivePending(@[]).len == 0
+    # Di repo ini belum ada migrasi berpenanda destruktif, jadi `--up` tetap jalan.
+    check runMigrate(".", "--up") == 0

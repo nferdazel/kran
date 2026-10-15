@@ -19,6 +19,7 @@
 import std/[atomics, json, os, strutils, times, unittest]
 
 import db_connector/db_postgres
+import db_connector/postgres # `pqtransactionStatus`/`PQTRANS_IDLE` (dipakai pool juga)
 
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
@@ -106,22 +107,32 @@ suite "platform: invarian kursor outbox (O-037)":
     check secondSeq.load() > firstSeq.load()
 
   test "karakterisasi bahaya: tanpa audit lebih dulu, kursor seq melewatkan peristiwa":
-    # Pelanggar: event ditulis **tanpa** audit, transaksinya dibiarkan terbuka.
+    # Pelanggar: event ditulis **tanpa** audit, transaksinya dibiarkan terbuka. Dibungkus
+    # `try`/`finally` supaya kegagalan di tengah jalan tidak mengembalikan koneksi dengan transaksi
+    # terbuka ke pool (baris outbox-nya akan terkunci untuk test berikutnya).
     let offender = dbPool.acquire()
-    exec(offender, sql"BEGIN")
-    let lost = newOutboxEvent(newId(sysClock), "param.changed", "param_value", "kursor-gap",
-      uniqueKey("kursor-gap"), %*{"key": "kursor.gap"})
-    check appendEvent(offender, lost)
-    let lostSeq = seqOf(offender, $lost.eventId)
+    var lost: OutboxEvent
+    var committed: OutboxEvent
+    var lostSeq = 0'i64
+    var committedSeq = 0'i64
+    try:
+      exec(offender, sql"BEGIN")
+      lost = newOutboxEvent(newId(sysClock), "param.changed", "param_value", "kursor-gap",
+        uniqueKey("kursor-gap"), %*{"key": "kursor.gap"})
+      check appendEvent(offender, lost)
+      lostSeq = seqOf(offender, $lost.eventId)
 
-    # Penulis patuh: audit lalu event, commit lebih dulu.
-    let committed = dbPool.withTx(proc(d: DbConn): OutboxEvent {.closure.} =
-      auditEventFirst(d, "param.submit", "kursor-after", "kursor.after"))
-    let committedSeq = seqOf(db, $committed.eventId)
-    check committedSeq > lostSeq
+      # Penulis patuh: audit lalu event, commit lebih dulu.
+      committed = dbPool.withTx(proc(d: DbConn): OutboxEvent {.closure.} =
+        auditEventFirst(d, "param.submit", "kursor-after", "kursor.after"))
+      committedSeq = seqOf(db, $committed.eventId)
+      check committedSeq > lostSeq
 
-    exec(offender, sql"COMMIT") # pelanggar commit belakangan
-    dbPool.release(offender)
+      exec(offender, sql"COMMIT") # pelanggar commit belakangan
+    finally:
+      if pqtransactionStatus(offender) != PQTRANS_IDLE:
+        exec(offender, sql"ROLLBACK")
+      dbPool.release(offender)
 
     # Pembaca berkursor (bentuk yang dipakai pump): sudah sampai `committed` → yang seq-nya lebih
     # kecil tapi commit belakangan tidak akan pernah terbaca.
