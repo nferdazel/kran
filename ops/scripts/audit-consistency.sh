@@ -4,11 +4,11 @@
 #
 # Pelapor (exit 0 selalu) — hitung sendiri baris DRIFT/FAIL.
 #
-# Usage: [CBS_VPS=user@host] ops/scripts/audit-consistency.sh [repo-dir]
-#   - CBS_VPS  tujuan SSH (WAJIB diisi; sengaja tidak di-hardcode agar alamat
+# Usage: [KRAN_VPS=user@host] ops/scripts/audit-consistency.sh [repo-dir]
+#   - KRAN_VPS  tujuan SSH (WAJIB diisi; sengaja tidak di-hardcode agar alamat
 #     server tidak tertanam di repo). Kosong => bagian remote dilewati.
 #   - SSH_KEY  private key (default ~/.ssh/id_ed25519)
-#   - CBS_REMOTE_DIR  direktori skrip di server (default /srv/qouver/apps/cbs/scripts)
+#   - KRAN_REMOTE_DIR  direktori skrip di server (default /srv/qouver/apps/kran/scripts)
 #
 # BELUM PERNAH DIJALANKAN DI SERVER (T-013).
 set -uo pipefail
@@ -16,9 +16,9 @@ set -uo pipefail
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="${1:-$(cd "$SELF_DIR/../.." && pwd)}"
 SCRIPTS_DIR="$REPO_DIR/ops/scripts"
-REMOTE="${CBS_VPS:-}"
+REMOTE="${KRAN_VPS:-}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
-REMOTE_DIR="${CBS_REMOTE_DIR:-/srv/qouver/apps/cbs/scripts}"
+REMOTE_DIR="${KRAN_REMOTE_DIR:-/srv/qouver/apps/kran/scripts}"
 
 md5_of() {
   if command -v md5 >/dev/null 2>&1; then md5 -q "$1"
@@ -33,7 +33,7 @@ for f in "$SCRIPTS_DIR"/*.sh; do
 done
 
 if [ -z "$REMOTE" ]; then
-  printf '\n[info] CBS_VPS kosong — perbandingan server dilewati.\n'
+  printf '\n[info] KRAN_VPS kosong — perbandingan server dilewati.\n'
   exit 0
 fi
 

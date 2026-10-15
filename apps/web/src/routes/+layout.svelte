@@ -6,8 +6,8 @@
    * Catatan: isi `children` dibungkus `{#key locale}` supaya ganti bahasa membangun ulang subtree
    * (fungsi pesan Paraglide bukan store Svelte — lihat penjelasan di `lib/app/i18n.ts`).
    */
-  import "@cbs/ui/tokens.css";
-  import "@cbs/ui/components.css";
+  import "@kran/ui/tokens.css";
+  import "@kran/ui/components.css";
 
   import { onMount } from "svelte";
 
@@ -69,25 +69,25 @@
   }
 </script>
 
-<a class="cbs-skip-link" href="#main">{m.common_skip_to_content()}</a>
+<a class="kran-skip-link" href="#main">{m.common_skip_to_content()}</a>
 
-<div class="cbs-shell" data-resolved-theme={resolved}>
-  <header class="cbs-header">
-    <p class="cbs-header__brand">
+<div class="kran-shell" data-resolved-theme={resolved}>
+  <header class="kran-header">
+    <p class="kran-header__brand">
       <span>{m.common_app_title()}</span>
     </p>
 
-    <div class="cbs-header__meta">
+    <div class="kran-header__meta">
       <!-- Indikator business date selalu tampak (spec §14.3). Nilainya menyusul pada T-012. -->
-      <p class="cbs-business-date">
-        <span class="cbs-muted">{m.common_business_date_label()}:</span>
+      <p class="kran-business-date">
+        <span class="kran-muted">{m.common_business_date_label()}:</span>
         <span>{m.common_business_date_unknown()}</span>
       </p>
 
-      <fieldset class="cbs-fieldset">
+      <fieldset class="kran-fieldset">
         <legend>{m.common_theme_label()}</legend>
         {#each themeChoices as value (value)}
-          <label class="cbs-radio">
+          <label class="kran-radio">
             <input
               type="radio"
               name="theme"
@@ -103,10 +103,10 @@
       <!-- Bahasa lewat grup radio (bukan `<select>`): sama-sama native, tetapi urutan fokus dan
            pergantian pilihan lewat panah dapat diuji keyboard-only tanpa bergantung pada popup
            bawaan browser (spec §17.2). -->
-      <fieldset class="cbs-fieldset">
+      <fieldset class="kran-fieldset">
         <legend>{m.common_locale_label()}</legend>
         {#each supportedLocales as value (value)}
-          <label class="cbs-radio">
+          <label class="kran-radio">
             <input
               type="radio"
               name="locale"
@@ -121,21 +121,21 @@
     </div>
   </header>
 
-  <nav class="cbs-nav" aria-label={m.common_nav_label()}>
+  <nav class="kran-nav" aria-label={m.common_nav_label()}>
     <ul>
-      <li><a class="cbs-link" href="/">{m.common_nav_home()}</a></li>
+      <li><a class="kran-link" href="/">{m.common_nav_home()}</a></li>
     </ul>
   </nav>
 
-  <main id="main" class="cbs-main" tabindex="-1">
+  <main id="main" class="kran-main" tabindex="-1">
     {#key locale}
       {@render children()}
     {/key}
   </main>
 
-  <footer class="cbs-footer">
-    <p class="cbs-muted">{m.common_app_title()}</p>
+  <footer class="kran-footer">
+    <p class="kran-muted">{m.common_app_title()}</p>
   </footer>
 </div>
 
-<p class="cbs-visually-hidden" role="status" aria-live="polite">{announcement}</p>
+<p class="kran-visually-hidden" role="status" aria-live="polite">{announcement}</p>

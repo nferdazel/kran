@@ -1,12 +1,12 @@
-## Titik masuk `cbs-api` (spec §12.5 konfigurasi bootstrap, §21.4 role proses).
+## Titik masuk `kran-api` (spec §12.5 konfigurasi bootstrap, §21.4 role proses).
 ##
-##   cbs-api --role=api [--port=8080] [--address=127.0.0.1] [--version=<string>]
-##   cbs-api --role=migrate [--check|--up] [--root=<dir>]  migrasi: terapkan, atau periksa saja
-##   cbs-api --role=ctl <perintah> [--root=<dir>] perintah operasional (read-only, kecuali
+##   kran-api --role=api [--port=8080] [--address=127.0.0.1] [--version=<string>]
+##   kran-api --role=migrate [--check|--up] [--root=<dir>]  migrasi: terapkan, atau periksa saja
+##   kran-api --role=ctl <perintah> [--root=<dir>] perintah operasional (read-only, kecuali
 ##                                                `bootstrap-admin`)
-##   cbs-api --role=ctl bootstrap-admin --username=<nama>   admin pertama (kata sandi diacak,
+##   kran-api --role=ctl bootstrap-admin --username=<nama>   admin pertama (kata sandi diacak,
 ##                                                          wajib ganti saat login pertama)
-##   cbs-api --role=worker                        belum ada pekerjaan di Fase 0 → gagal cepat
+##   kran-api --role=worker                        belum ada pekerjaan di Fase 0 → gagal cepat
 ##
 ## Kontrak `ctl` berisi perintah yang **aman** (tanpa menulis data), kecuali `bootstrap-admin` yang
 ## memang menulis — ia sekali-jalan (menolak bila sudah ada pemegang role admin) dan hanya mencetak
@@ -58,7 +58,7 @@ const
   bootstrapAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 const Usage =
-  "pemakaian: cbs-api --role=api|migrate|ctl|worker [--root=<dir>] [--port=8080] " &
+  "pemakaian: kran-api --role=api|migrate|ctl|worker [--root=<dir>] [--port=8080] " &
   "[--address=127.0.0.1] [--version=<string>] [--check|--up] [--username=<nama>] [<perintah ctl>]"
 
 type
@@ -73,7 +73,7 @@ type
     username: string ## `--role=ctl bootstrap-admin`: nama admin pertama
 
 proc die(msg: string) =
-  stderr.writeLine "cbs-api: " & msg
+  stderr.writeLine "kran-api: " & msg
   stderr.writeLine Usage
   quit(2)
 
@@ -154,18 +154,18 @@ proc watchStop(app: AppContext) {.thread.} =
   while inFlightCount() > 0 and epochTime() < deadlineDrain:
     sleep(20)
   if inFlightCount() > 0:
-    stderr.writeLine "cbs-api: " & $inFlightCount() &
+    stderr.writeLine "kran-api: " & $inFlightCount() &
       " permintaan masih berjalan setelah " & $shutdownDrainSeconds &
       " detik; dilanjutkan berhenti (O-047)"
   else:
-    stderr.writeLine "cbs-api: permintaan berjalan selesai (drain)"
+    stderr.writeLine "kran-api: permintaan berjalan selesai (drain)"
 
   if not app.events.isNil:
     app.events.stopPump()
     let deadline = epochTime() + 2.0
     while app.events.pumpReady() and epochTime() < deadline:
       sleep(20)
-  stderr.writeLine "cbs-api: berhenti dengan tenang (SIGINT/SIGTERM)"
+  stderr.writeLine "kran-api: berhenti dengan tenang (SIGINT/SIGTERM)"
   quit(0)
 
 const CtlUsage* =
@@ -178,14 +178,14 @@ const CtlUsage* =
   "  help            : tampilkan bantuan ini"
 
 proc withRoleDb*(body: proc(db: DbConn): int, useTx = false): int =
-  ## Peran operasional butuh basis data. Tanpa `CBS_DATABASE_URL` keluar **kode 2** dengan pesan
+  ## Peran operasional butuh basis data. Tanpa `KRAN_DATABASE_URL` keluar **kode 2** dengan pesan
   ## jelas (bukan stack trace), supaya skrip ops bisa membedakan salah konfigurasi dari kegagalan.
   ##
   ## `useTx = true` membungkus `body` dalam satu transaksi: dipakai perintah yang melakukan beberapa
   ## tulisan (`bootstrap-admin`: pengguna + role + audit) supaya kegagalan di tengah tidak
   ## meninggalkan pengguna setengah jadi. Perintah read-only cukup memakai koneksi biasa.
   if not databaseUrlSet(envTableFromProcess()):
-    stderr.writeLine "cbs-api: CBS_DATABASE_URL kosong — peran ini membutuhkan basis data"
+    stderr.writeLine "kran-api: KRAN_DATABASE_URL kosong — peran ini membutuhkan basis data"
     return 2
   let pool = newDbPool(dbConfigFromProcessEnv())
   defer: pool.close()
@@ -196,19 +196,19 @@ proc withRoleDb*(body: proc(db: DbConn): int, useTx = false): int =
     else:
       pool.withConn(run)
   except DbError as e:
-    stderr.writeLine "cbs-api: gagal terhadap basis data: " & e.msg
+    stderr.writeLine "kran-api: gagal terhadap basis data: " & e.msg
     1
   except MigrateError as e:
-    stderr.writeLine "cbs-api: migrasi gagal: " & e.msg
+    stderr.writeLine "kran-api: migrasi gagal: " & e.msg
     1
   except IOError as e:
-    stderr.writeLine "cbs-api: gagal membaca berkas: " & e.msg
+    stderr.writeLine "kran-api: gagal membaca berkas: " & e.msg
     1
   except ValueError as e:
     # Kebijakan/konfigurasi tidak sah (mis. kombinasi parameter sesi, atau penugasan role yang
     # melanggar pemisahan tugas). Ditangkap di sini supaya peran operasional tidak pernah
     # menyerahkan stack trace ke skrip ops.
-    stderr.writeLine "cbs-api: perintah tidak bisa dijalankan: " & e.msg
+    stderr.writeLine "kran-api: perintah tidak bisa dijalankan: " & e.msg
     1
 
 proc auditExitCode*(rows: openArray[AuditChainRow]): int =
@@ -238,7 +238,7 @@ proc runBootstrapAdmin(db: DbConn, username: string, clock: Clock): int =
   ## Pemanggilnya wajib memakai `withRoleDb(..., useTx = true)`: rangkaian tulisan ini (pengguna,
   ## role, audit) harus seluruhnya berhasil atau tidak sama sekali.
   if username.len == 0:
-    stderr.writeLine "cbs-api: `ctl " & bootstrapAdminCmd & "` butuh --username=<nama>"
+    stderr.writeLine "kran-api: `ctl " & bootstrapAdminCmd & "` butuh --username=<nama>"
     return 2
 
   let instScope = institutionScope()
@@ -251,21 +251,21 @@ proc runBootstrapAdmin(db: DbConn, username: string, clock: Clock): int =
   # Panjangnya mengikuti kebijakan institusi dengan margin, bukan angka tetap di kode.
   let password = randomPassword(max(20, settings.minPasswordLength + 8))
   if password.len == 0:
-    stderr.writeLine "cbs-api: gagal membaca sumber acak sistem (urandom)"
+    stderr.writeLine "kran-api: gagal membaca sumber acak sistem (urandom)"
     return 1
   let problems = passwordProblems(settings.minPasswordLength, username, password)
   if problems.len > 0:
     # Tidak seharusnya terjadi (alfabetnya tanpa spasi). Kalau terjadi, admin akan terjebak dengan
     # kata sandi yang ditolak kebijakannya sendiri — lebih baik gagal sekarang daripada
     # menyerahkan kredensial yang tidak bisa dipakai untuk menggantinya.
-    stderr.writeLine "cbs-api: kata sandi acak yang dihasilkan tidak lolos kebijakan: " & $problems
+    stderr.writeLine "kran-api: kata sandi acak yang dihasilkan tidak lolos kebijakan: " & $problems
     return 1
 
-  let ctx = newAuditContext(Id(""), device = "cbs-api ctl",
+  let ctx = newAuditContext(Id(""), device = "kran-api ctl",
     reason = "bootstrap admin pertama", startedAt = clock.now())
   if not bootstrapFirstAdmin(db, ctx, clock, instScope, username, username,
                              bootstrapAdminRole, password, settings.pbkdf2Iterations):
-    stderr.writeLine "cbs-api: bootstrap ditolak: sudah ada pengguna bernama '" & username &
+    stderr.writeLine "kran-api: bootstrap ditolak: sudah ada pengguna bernama '" & username &
       "' atau sudah ada pemegang role '" & bootstrapAdminRole & "'."
     stderr.writeLine "  Perintah ini sekali-jalan; untuk admin berikutnya pakai penugasan role biasa."
     return 3
@@ -293,7 +293,7 @@ proc runCtl*(command, root: string, username = ""): int =
       let rows = verifyChain(db)
       let code = auditExitCode(rows)
       if code == 0:
-        echo "cbs-api ctl verify-audit: rantai audit utuh (" & $rows.len & " entri)"
+        echo "kran-api ctl verify-audit: rantai audit utuh (" & $rows.len & " entri)"
       else:
         var pertama = 0'i64
         var tautanUtuh = false
@@ -302,7 +302,7 @@ proc runCtl*(command, root: string, username = ""): int =
             pertama = row.seq
             tautanUtuh = row.linkOk
             break
-        stderr.writeLine "cbs-api ctl verify-audit: " &
+        stderr.writeLine "kran-api ctl verify-audit: " &
           (if tautanUtuh: "payload berubah" else: "rantai putus") & " pada seq " &
           $pertama & " dari " & $rows.len & " entri"
       code)
@@ -315,11 +315,11 @@ proc runCtl*(command, root: string, username = ""): int =
     # Dipanggil freeze gate `ops/scripts/deploy-vps.sh`. Framework `daycloser` belum ada di
     # Fase 0, jadi perintahnya **dikenali tapi belum diimplementasikan** (kode 3) — lebih jelas
     # daripada "perintah tidak dikenal" (kode 2) yang terbaca seperti salah ketik.
-    stderr.writeLine "cbs-api: ctl daycloser-status belum ada di Fase 0 (framework daycloser " &
+    stderr.writeLine "kran-api: ctl daycloser-status belum ada di Fase 0 (framework daycloser " &
       "menyusul; lihat docs/OPEN_ITEMS.md O-013)"
     3
   else:
-    stderr.writeLine "cbs-api: perintah ctl tidak dikenal: '" & command & "'"
+    stderr.writeLine "kran-api: perintah ctl tidak dikenal: '" & command & "'"
     stderr.writeLine CtlUsage
     2
 
@@ -350,7 +350,7 @@ proc runMigrate*(root: string, sub = ""): int =
           inc belum
         elif s.checksumChanged:
           inc drift
-      echo "cbs-api migrate --check: " & $(status.len - belum) & "/" & $status.len &
+      echo "kran-api migrate --check: " & $(status.len - belum) & "/" & $status.len &
         " diterapkan, " & $drift & " isinya berubah"
       if belum > 0 or drift > 0:
         1
@@ -359,14 +359,14 @@ proc runMigrate*(root: string, sub = ""): int =
     else:
       let blocked = destructivePending(status)
       if blocked.len > 0:
-        stderr.writeLine "cbs-api migrate: " & $blocked.len &
+        stderr.writeLine "kran-api migrate: " & $blocked.len &
           " migrasi bertanda destruktif belum diterapkan: " & blocked.join(", ")
         stderr.writeLine "  Jalur contract/rollback belum ada di Fase 0 (docs/OPEN_ITEMS.md O-048); " &
           "`--up` sengaja menolaknya."
         3
       else:
         let report = applyMigrations(db, root)
-        echo "cbs-api migrate: " & $report.applied.len & " migrasi diterapkan, " &
+        echo "kran-api migrate: " & $report.applied.len & " migrasi diterapkan, " &
           $report.skipped.len & " dilewati (sudah ada)"
         for id in report.applied:
           echo "  + " & id
@@ -380,15 +380,15 @@ proc main() =
   if opts.role == roleCtl:
     quit(runCtl(opts.cmd, opts.root, opts.username))
   if opts.role == roleWorker:
-    stderr.writeLine "cbs-api: role 'worker' belum ada pekerjaannya (Fase 0: 'api' dan peran " &
+    stderr.writeLine "kran-api: role 'worker' belum ada pekerjaannya (Fase 0: 'api' dan peran " &
       "operasional 'migrate'/'ctl'; lihat docs/OPEN_ITEMS.md O-013)"
     quit(3)
 
-  let logger = newLogger(app = "cbs-api")
+  let logger = newLogger(app = "kran-api")
 
   # Satu pool per proses: dipakai handler REST (auth/parameter/audit), kebijakan realtime, dan
   # pump `LISTEN` (pump meminjam satu koneksi seumur proses).
-  # Tanpa `CBS_DATABASE_URL` API tetap hidup untuk `/healthz`, dan rute yang butuh DB membalas 501.
+  # Tanpa `KRAN_DATABASE_URL` API tetap hidup untuk `/healthz`, dan rute yang butuh DB membalas 501.
   var pool: DbPool
   if databaseUrlSet(envTableFromProcess()):
     pool = newDbPool(dbConfigFromProcessEnv())
@@ -403,7 +403,7 @@ proc main() =
   )
 
   if pool.isNil:
-    discard logger.warn("CBS_DATABASE_URL kosong: basis data & realtime tidak aktif", [])
+    discard logger.warn("KRAN_DATABASE_URL kosong: basis data & realtime tidak aktif", [])
   else:
     app.events = newEventService(realtimePolicy(app), pool)
     startPump(app.events)
@@ -421,7 +421,7 @@ proc main() =
   var stopThread: Thread[AppContext]
   createThread(stopThread, watchStop, app)
 
-  discard logger.info("cbs-api start", [("role", $opts.role),
+  discard logger.info("kran-api start", [("role", $opts.role),
                                         ("port", $opts.port),
                                         ("address", opts.address),
                                         ("version", opts.version)])

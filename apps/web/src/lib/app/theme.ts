@@ -1,7 +1,7 @@
 /**
  * Tema light/dark/system (spec §15.2–§15.3).
  *
- * Pilihan disimpan di `localStorage` (`cbs-theme`); profil pengguna di DB menyusul bersama
+ * Pilihan disimpan di `localStorage` (`kran-theme`); profil pengguna di DB menyusul bersama
  * fitur pengaturan (spec §15.2). Tema diterapkan sebagai atribut `data-theme` di `<html>`
  * sehingga token CSS yang berganti, bukan warna per komponen.
  *
@@ -12,7 +12,7 @@
 export type ThemeChoice = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";
 
-export const THEME_STORAGE_KEY = "cbs-theme";
+export const THEME_STORAGE_KEY = "kran-theme";
 
 const CHOICES: readonly ThemeChoice[] = ["light", "dark", "system"];
 

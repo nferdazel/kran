@@ -1,5 +1,5 @@
 {
-  "name": "@cbs/web",
+  "name": "@kran/web",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -17,8 +17,8 @@
     "e2e": "playwright test"
   },
   "dependencies": {
-    "@cbs/ui": "workspace:*",
-    "@cbs/api-client": "workspace:*"
+    "@kran/ui": "workspace:*",
+    "@kran/api-client": "workspace:*"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

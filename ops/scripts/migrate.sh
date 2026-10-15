@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# migrate.sh — migrasi SQL CBS (spec §21.6, §21.4 #8, §21.7). MANUAL / opt-in.
+# migrate.sh — migrasi SQL KRAN (spec §21.6, §21.4 #8, §21.7). MANUAL / opt-in.
 #
 #   migrate.sh --check            periksa urutan/drift tanpa menulis
 #   migrate.sh --up               terapkan migrasi expand-only yang belum tercatat
@@ -17,8 +17,8 @@
 # BELUM PERNAH DIJALANKAN DI SERVER (T-013/T-026): skrip ini masih berkas repo saja.
 set -euo pipefail
 
-APP_DIR="${CBS_APP_DIR:-/srv/qouver/apps/cbs}"
-BIN="${CBS_MIGRATE_BIN:-$APP_DIR/bin/cbs-api}"
+APP_DIR="${KRAN_APP_DIR:-/srv/qouver/apps/kran}"
+BIN="${KRAN_MIGRATE_BIN:-$APP_DIR/bin/kran-api}"
 
 usage() {
   cat >&2 <<'USAGE'

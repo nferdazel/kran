@@ -2,11 +2,12 @@
 
 Core banking untuk standar Indonesia: koperasi (KSP/USP/KSPPS), BPR/BPRS, dan BMT.
 
-Nama produknya **KRAN**; nama paket Nim mengikuti nama repo (`kran.nimble`), sedangkan biner
-`cbs-api`, env `CBS_*`, dan nama berkas kontrak tetap `cbs` — alasannya di `docs/DECISIONS.md`
-D-036 dan D-038.
+Nama produknya **KRAN**; seluruh identifier teknis mengikutinya — biner `kran-api`, env `KRAN_*`,
+database `kran_dev`, unit systemd `kran-*`, kontrak `kran-api.yaml`, paket npm `@kran/*` (keputusan dan
+daftar lengkapnya di `docs/DECISIONS.md` D-039). Hanya `cbs-core` — sistem lama yang masih berjalan dan
+akan di-cutover — yang tetap memakai namanya sendiri.
 
-Satu sumber kebenaran: [`docs/spec/cbs-prd-techspec.md`](docs/spec/cbs-prd-techspec.md) (PRD +
+Satu sumber kebenaran: [`docs/spec/kran-prd-techspec.md`](docs/spec/kran-prd-techspec.md) (PRD +
 technical spec). Aturan kerja untuk manusia maupun agen: [`AGENTS.md`](AGENTS.md).
 
 Stack: PostgreSQL 18 · Nim 2.2 (API, peran CLI) · SvelteKit + TypeScript (back-office).
@@ -37,20 +38,20 @@ selesai. Rencana, kemajuan, dan sisa yang belum bisa ditutup ada di
 ./task devdb up                  # tunnel DB dev di server (docs/runbooks/dev-db.md)
 ./task dbtools migrate           # terapkan migrasi (idempoten)
 ./task dbtools seed --dev        # user + parameter contoh
-./task build                     # binary ke .build/bin/cbs-api
+./task build                     # binary ke .build/bin/kran-api
 ```
 
-Jalankan API (butuh `CBS_DATABASE_URL`; cara mendapatkannya ada di runbook dev-db di atas):
+Jalankan API (butuh `KRAN_DATABASE_URL`; cara mendapatkannya ada di runbook dev-db di atas):
 
 ```sh
-.build/bin/cbs-api --role=api --port=8080 --address=127.0.0.1
+.build/bin/kran-api --role=api --port=8080 --address=127.0.0.1
 ```
 
 Back-office (SvelteKit):
 
 ```sh
 pnpm install                     # catatan registry ada di docs/runbooks/dev-web.md
-pnpm --filter @cbs/web dev       # http://127.0.0.1:5173
+pnpm --filter @kran/web dev       # http://127.0.0.1:5173
 ```
 
 User hasil seed dev: `dev.maker` (mengajukan perubahan parameter) dan `dev.checker` (menyetujui).
@@ -99,13 +100,13 @@ Satu biner, kontrak peran yang bisa dipanggil skrip ops:
 
 | Peran | Perintah | Kode keluar |
 |---|---|---|
-| `api` | `cbs-api --role=api [--port=8080] [--address=127.0.0.1]` | 0 saat berhenti tenang (SIGINT/SIGTERM) |
-| `migrate` | `cbs-api --role=migrate [--check\|--up]` | 0 selesai; 1 ada migrasi tertunda atau isi migrasi berubah |
-| `ctl` | `cbs-api --role=ctl verify-audit\|outbox-status\|help` | 0 normal; 1 hasil buruk (mis. rantai audit tidak utuh) |
-| `ctl` | `cbs-api --role=ctl bootstrap-admin --username=<nama>` | 0 admin dibuat (kata sandi dicetak **sekali**); 3 sudah ada pemegang role admin |
-| `worker` | `cbs-api --role=worker` | 3 belum ada pekerjaannya di Fase 0 |
+| `api` | `kran-api --role=api [--port=8080] [--address=127.0.0.1]` | 0 saat berhenti tenang (SIGINT/SIGTERM) |
+| `migrate` | `kran-api --role=migrate [--check\|--up]` | 0 selesai; 1 ada migrasi tertunda atau isi migrasi berubah |
+| `ctl` | `kran-api --role=ctl verify-audit\|outbox-status\|help` | 0 normal; 1 hasil buruk (mis. rantai audit tidak utuh) |
+| `ctl` | `kran-api --role=ctl bootstrap-admin --username=<nama>` | 0 admin dibuat (kata sandi dicetak **sekali**); 3 sudah ada pemegang role admin |
+| `worker` | `kran-api --role=worker` | 3 belum ada pekerjaannya di Fase 0 |
 
-Salah pakai atau `CBS_DATABASE_URL` kosong menghasilkan kode 2 dengan pesan, bukan stack trace.
+Salah pakai atau `KRAN_DATABASE_URL` kosong menghasilkan kode 2 dengan pesan, bukan stack trace.
 `bootstrap-admin` satu-satunya perintah `ctl` yang menulis; sebelum mengganti kata sandinya, admin itu
 hanya bisa memakai `/auth/session`, `/auth/password`, dan `/auth/logout`.
 Lengkapnya: [`docs/runbooks/ops-cli.md`](docs/runbooks/ops-cli.md).
@@ -121,8 +122,8 @@ Satu pintu: `./task` (skrip POSIX, tanpa dependensi tooling tambahan; `docs/DECI
 | `./task e2e` | kontras token + svelte-check + Playwright (e2e, axe 2 tema, keyboard) |
 | `./task openapi` | lint kontrak OpenAPI + cek klien TS sinkron |
 | `./task ci` | semua di atas; harus hijau sebelum sebuah task dianggap selesai |
-| `./task build` | bangun binary `cbs-api` ke `.build/bin/` |
-| `./task dbtools migrate\|status\|validate` | migrasi SQL (butuh `CBS_DATABASE_URL`) |
+| `./task build` | bangun binary `kran-api` ke `.build/bin/` |
+| `./task dbtools migrate\|status\|validate` | migrasi SQL (butuh `KRAN_DATABASE_URL`) |
 | `./task scaffold <nama> [--dry-run]` | buat kerangka modul baru |
 | `./task devdb up\|down\|status\|psql` | tunnel ke DB dev di server |
 

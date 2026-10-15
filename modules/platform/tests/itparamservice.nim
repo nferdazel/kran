@@ -1,8 +1,8 @@
-## Test integrasi layanan parameter (T-016). Butuh `CBS_DATABASE_URL`.
+## Test integrasi layanan parameter (T-016). Butuh `KRAN_DATABASE_URL`.
 ##
 ## Cakupan kriteria T-016: akses bertipe lewat lapisan application (tanpa driver DB di sana),
 ## cache in-proc melayani nilai tanpa menyentuh DB dan **invalid setelah NOTIFY**, guard drift
-## kode vs DB. Test ini **menghapus schema `platform`** di DB yang ditunjuk `CBS_DATABASE_URL`.
+## kode vs DB. Test ini **menghapus schema `platform`** di DB yang ditunjuk `KRAN_DATABASE_URL`.
 
 import std/[json, options, os, strutils, unittest]
 import db_connector/db_postgres
@@ -22,7 +22,7 @@ const
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
-  echo "itparamservice: CBS_DATABASE_URL kosong — dilewati"
+  echo "itparamservice: KRAN_DATABASE_URL kosong — dilewati"
   quit(0)
 
 let dbPool = newDbPool(dbConfigFromEnv(envT))

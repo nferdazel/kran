@@ -12,11 +12,11 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
  * locale browser dan tidak stabil lintas runner; semua fokus/aktivasi tetap lewat keyboard.
  *
  * Butuh DB + seed user dev (`./task e2e` menyiapkannya lewat `dbtools migrate` + `seed --dev`).
- * Tanpa `CBS_DATABASE_URL` seluruh berkas ini dilewati; `a11y.spec.ts`/`keyboard.spec.ts` tetap
+ * Tanpa `KRAN_DATABASE_URL` seluruh berkas ini dilewati; `a11y.spec.ts`/`keyboard.spec.ts` tetap
  * berjalan karena tidak menyentuh API.
  */
 
-test.skip(!process.env.CBS_DATABASE_URL, "CBS_DATABASE_URL kosong — API e2e tidak dijalankan");
+test.skip(!process.env.KRAN_DATABASE_URL, "KRAN_DATABASE_URL kosong — API e2e tidak dijalankan");
 
 const MAKER = { username: "dev.maker", password: "rahasia-panjang-123" };
 const CHECKER = { username: "dev.checker", password: "rahasia-panjang-123" };
@@ -48,7 +48,7 @@ const THEMES = ["light", "dark"] as const;
 async function prepare(page: Page, theme = "light"): Promise<void> {
   await page.addInitScript((themeChoice: string) => {
     localStorage.setItem("PARAGLIDE_LOCALE", "id");
-    localStorage.setItem("cbs-theme", themeChoice);
+    localStorage.setItem("kran-theme", themeChoice);
   }, theme);
 }
 

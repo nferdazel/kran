@@ -13,7 +13,7 @@
  * ter-virtualisasi) menyusul; lihat docs/tasks/T-010.md bagian batasan.
  */
 
-.cbs-skip-link {
+.kran-skip-link {
   position: absolute;
   inset-block-start: var(--space-2);
   inset-inline-start: var(--space-2);
@@ -28,11 +28,11 @@
   transform: translateY(-200%);
 }
 
-.cbs-skip-link:focus-visible {
+.kran-skip-link:focus-visible {
   transform: none;
 }
 
-.cbs-shell {
+.kran-shell {
   min-block-size: 100vh;
   display: grid;
   grid-template-rows: auto 1fr auto;
@@ -43,7 +43,7 @@
   line-height: var(--line-height-base);
 }
 
-.cbs-header {
+.kran-header {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-4);
@@ -55,7 +55,7 @@
   border-block-end: 1px solid var(--color-border);
 }
 
-.cbs-header__brand {
+.kran-header__brand {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
@@ -63,21 +63,21 @@
   font-weight: 600;
 }
 
-.cbs-header__meta {
+.kran-header__meta {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-4);
   align-items: center;
 }
 
-.cbs-nav {
+.kran-nav {
   padding-block: var(--space-2);
   padding-inline: var(--space-4);
   background: var(--color-surface);
   border-block-end: 1px solid var(--color-border);
 }
 
-.cbs-nav ul {
+.kran-nav ul {
   display: flex;
   gap: var(--space-4);
   margin: 0;
@@ -85,7 +85,7 @@
   list-style: none;
 }
 
-.cbs-main {
+.kran-main {
   width: 100%;
   max-inline-size: var(--layout-max-width);
   margin-inline: auto;
@@ -93,7 +93,7 @@
   padding-inline: var(--space-4);
 }
 
-.cbs-footer {
+.kran-footer {
   padding-block: var(--space-3);
   padding-inline: var(--space-4);
   background: var(--color-surface);
@@ -103,15 +103,15 @@
 }
 
 /* Target minimal 24x24 (spec §17.1). */
-.cbs-button,
-.cbs-input,
-.cbs-select,
-.cbs-link {
+.kran-button,
+.kran-input,
+.kran-select,
+.kran-link {
   min-block-size: var(--control-min-size);
   min-inline-size: var(--control-min-size);
 }
 
-.cbs-button {
+.kran-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -126,17 +126,17 @@
   cursor: pointer;
 }
 
-.cbs-button:hover {
+.kran-button:hover {
   background: var(--color-surface);
 }
 
-.cbs-button[aria-pressed="true"] {
+.kran-button[aria-pressed="true"] {
   border-color: var(--color-primary);
   background: var(--color-primary);
   color: var(--color-text-on-primary);
 }
 
-.cbs-select {
+.kran-select {
   padding-block: var(--space-2);
   padding-inline: var(--space-2);
   border: 1px solid var(--color-border);
@@ -146,7 +146,7 @@
   font: inherit;
 }
 
-.cbs-fieldset {
+.kran-fieldset {
   margin: 0;
   padding: 0;
   border: 0;
@@ -155,18 +155,18 @@
   align-items: center;
 }
 
-.cbs-fieldset > legend {
+.kran-fieldset > legend {
   padding: 0;
   font-size: var(--text-sm);
   color: var(--color-text-muted);
 }
 
-.cbs-radio-group {
+.kran-radio-group {
   display: inline-flex;
   gap: var(--space-1);
 }
 
-.cbs-card {
+.kran-card {
   padding-block: var(--space-4);
   padding-inline: var(--space-4);
   border: 1px solid var(--color-border);
@@ -175,11 +175,11 @@
   box-shadow: var(--shadow-1);
 }
 
-.cbs-card + .cbs-card {
+.kran-card + .kran-card {
   margin-block-start: var(--space-4);
 }
 
-.cbs-status-list {
+.kran-status-list {
   display: grid;
   gap: var(--space-2);
   margin: 0;
@@ -188,41 +188,41 @@
 }
 
 /* Status: warna + ikon + teks (spec §15.4 — jangan hanya warna). */
-.cbs-status {
+.kran-status {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
 
-.cbs-status__icon {
+.kran-status__icon {
   font-size: var(--text-sm);
   line-height: 1;
 }
 
-.cbs-status--ok {
+.kran-status--ok {
   color: var(--color-success);
 }
 
-.cbs-status--warning {
+.kran-status--warning {
   color: var(--color-warning);
 }
 
-.cbs-status--danger {
+.kran-status--danger {
   color: var(--color-danger);
 }
 
-.cbs-muted {
+.kran-muted {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
 }
 
-.cbs-business-date {
+.kran-business-date {
   font-variant-numeric: tabular-nums;
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .cbs-button,
-  .cbs-skip-link {
+  .kran-button,
+  .kran-skip-link {
     transition:
       background-color var(--motion-duration-fast) var(--motion-ease),
       transform var(--motion-duration-fast) var(--motion-ease);
@@ -230,7 +230,7 @@
 }
 
 /* Utilitas: menyembunyikan secara visual tanpa menghilangkan dari pohon a11y. */
-.cbs-visually-hidden {
+.kran-visually-hidden {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;
@@ -243,7 +243,7 @@
 }
 
 /* Radio tema: input asli tetap terlihat & dapat difokus (semantik dulu, §17.1). */
-.cbs-radio {
+.kran-radio {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -256,53 +256,53 @@
   min-block-size: var(--control-min-size);
 }
 
-.cbs-radio:hover {
+.kran-radio:hover {
   background: var(--color-surface);
 }
 
-.cbs-radio:has(input:checked) {
+.kran-radio:has(input:checked) {
   border-color: var(--color-primary);
 }
 
 /* Tautan: warna aksen pada latar token (pasangan `primary`/`bg` & `surface` diuji kontrasnya). */
-.cbs-link {
+.kran-link {
   color: var(--color-primary);
   text-decoration: underline;
 }
 
-.cbs-link:hover {
+.kran-link:hover {
   color: var(--color-primary-hover);
 }
 
 /* Aksi utama satu halaman: satu tombol beraksen, sisanya netral (Part 3 "one deliberate accent"). */
-.cbs-button--primary {
+.kran-button--primary {
   border-color: var(--color-primary);
   background: var(--color-primary);
   color: var(--color-text-on-primary);
 }
 
-.cbs-button--primary:hover {
+.kran-button--primary:hover {
   background: var(--color-primary-hover);
 }
 
 /* Form native berlabel nyata (spec §17.1: elemen semantik dulu, ARIA kemudian). */
-.cbs-form {
+.kran-form {
   display: grid;
   gap: var(--space-4);
   max-inline-size: 32rem;
 }
 
-.cbs-field {
+.kran-field {
   display: grid;
   gap: var(--space-1);
 }
 
-.cbs-label {
+.kran-label {
   font-size: var(--text-sm);
 }
 
-.cbs-input,
-.cbs-select {
+.kran-input,
+.kran-select {
   padding-block: var(--space-2);
   padding-inline: var(--space-2);
   border: 1px solid var(--color-border);
@@ -313,7 +313,7 @@
 }
 
 /* Pesan galat: teks + warna danger (bukan warna saja) dan `role="alert"` di komponen. */
-.cbs-alert {
+.kran-alert {
   padding-block: var(--space-2);
   padding-inline: var(--space-3);
   border: 1px solid var(--color-danger);
@@ -322,7 +322,7 @@
 }
 
 /* Tajuk halaman + aksi (mis. Keluar) sebaris, membungkus di layar sempit. */
-.cbs-toolbar {
+.kran-toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
@@ -331,17 +331,17 @@
 }
 
 /* Tabel data: pembungkus menggulir mendatar agar tidak meluber di layar sempit (R-03). */
-.cbs-table-wrap {
+.kran-table-wrap {
   overflow-x: auto;
 }
 
-.cbs-table {
+.kran-table {
   inline-size: 100%;
   border-collapse: collapse;
 }
 
-.cbs-table th,
-.cbs-table td {
+.kran-table th,
+.kran-table td {
   padding-block: var(--space-2);
   padding-inline-end: var(--space-3);
   text-align: start;
@@ -349,7 +349,7 @@
   border-block-end: 1px solid var(--color-border);
 }
 
-.cbs-table th {
+.kran-table th {
   font-size: var(--text-sm);
   color: var(--color-text-muted);
 }

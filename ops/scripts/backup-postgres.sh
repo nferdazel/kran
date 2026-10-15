@@ -13,13 +13,13 @@
 # BELUM PERNAH DIJALANKAN DI SERVER (T-013).
 set -euo pipefail
 
-BACKUP_ROOT="${CBS_BACKUP_ROOT:-/srv/qouver/backups}"
+BACKUP_ROOT="${KRAN_BACKUP_ROOT:-/srv/qouver/backups}"
 PG_ROOT="$BACKUP_ROOT/postgres"
 DAILY="$PG_ROOT/daily"
 WEEKLY="$PG_ROOT/weekly"
 MONTHLY="$PG_ROOT/monthly"
-PG_CONTAINER="${CBS_PG_CONTAINER:-qouver-postgres}"
-PG_SUPERUSER="${CBS_PG_SUPERUSER:-qouver}"
+PG_CONTAINER="${KRAN_PG_CONTAINER:-qouver-postgres}"
+PG_SUPERUSER="${KRAN_PG_SUPERUSER:-qouver}"
 
 mkdir -p "$DAILY" "$WEEKLY" "$MONTHLY"
 stamp="$(date +%F)"

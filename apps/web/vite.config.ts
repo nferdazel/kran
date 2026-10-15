@@ -19,10 +19,10 @@ import { defineConfig } from "vite";
  * origin lain. Lewat proxy semua jadi same-origin; `ws: true` meneruskan upgrade WebSocket
  * `/api/v1/events/stream` (spec §19.3).
  *
- * Port API dev default 8080; Playwright menimpanya lewat `CBS_API_TARGET` ke port e2e 8099
+ * Port API dev default 8080; Playwright menimpanya lewat `KRAN_API_TARGET` ke port e2e 8099
  * (playwright.config.ts) supaya tidak bentrok dengan API dev yang sedang berjalan.
  */
-const apiTarget = process.env.CBS_API_TARGET ?? "http://127.0.0.1:8080";
+const apiTarget = process.env.KRAN_API_TARGET ?? "http://127.0.0.1:8080";
 const proxy = {
   "/api": { target: apiTarget, changeOrigin: false, ws: true },
   "/healthz": { target: apiTarget, changeOrigin: false },

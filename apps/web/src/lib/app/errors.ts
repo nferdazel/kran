@@ -2,7 +2,7 @@
  * Terjemahan amplop error RFC 9457 (spec §13/§16): UI memakai `problem.i18nKey`, bukan
  * `title`/`detail` mentah. Pesan yang belum dikenali jatuh ke `error_generic`.
  */
-import type { Problem } from "@cbs/api-client";
+import type { Problem } from "@kran/api-client";
 
 import * as m from "#lib/paraglide/messages.js";
 

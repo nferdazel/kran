@@ -1,4 +1,4 @@
-## Test peran CLI `cbs-api` (T-026, O-013) — butuh `CBS_DATABASE_URL`.
+## Test peran CLI `kran-api` (T-026, O-013) — butuh `KRAN_DATABASE_URL`.
 ##
 ## Yang diuji adalah **kontrak** yang dipakai `ops/scripts/migrate.sh` dan gate deploy:
 ## `--role=migrate` idempoten, dan `--role=ctl <perintah>` dengan kode keluar yang bisa diandalkan.
@@ -23,13 +23,13 @@ import ../src/main
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
-  echo "itapi_roles: CBS_DATABASE_URL kosong — dilewati"
+  echo "itapi_roles: KRAN_DATABASE_URL kosong — dilewati"
   quit(0)
 
 let dbPool = newDbPool(dbConfigFromEnv(envT))
 let db = dbPool.acquire()
 
-suite "cbs-api: peran CLI (O-013)":
+suite "kran-api: peran CLI (O-013)":
   test "ctl tanpa perintah / help → 0; perintah tak dikenal → 2":
     check runCtl("", ".") == 0
     check runCtl("help", ".") == 0

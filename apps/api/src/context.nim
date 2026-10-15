@@ -31,7 +31,7 @@ type
     role*: string
     startedAt*: float ## epoch seconds; dari `epochTime()` saat proses start
     readiness*: ReadinessProbe
-    ## `nil` = realtime tidak dikonfigurasi (mis. `CBS_DATABASE_URL` kosong). Rutenya membalas
+    ## `nil` = realtime tidak dikonfigurasi (mis. `KRAN_DATABASE_URL` kosong). Rutenya membalas
     ## problem `NOT_IMPLEMENTED` alih-alih memaksa proses mati.
     events*: EventService
     ## `nil` = tidak ada basis data: rute yang membutuhkannya membalas 501. Poolnya sama dengan

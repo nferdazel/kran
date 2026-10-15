@@ -10,9 +10,9 @@ import ../src/[access, health, server]
 ## dinamai `t*` (unit) dan bukan `it*`. Yang diuji: respons nyata **sesuai kontrak** (spec §13) —
 ## status, `Content-Type`, dan bentuk JSON (subset JSON Schema di `tools/openapi`).
 ##
-## Readiness yang menyentuh DB diuji terpisah di `itapi.nim` (butuh CBS_DATABASE_URL).
+## Readiness yang menyentuh DB diuji terpisah di `itapi.nim` (butuh KRAN_DATABASE_URL).
 
-const ContractPath = "packages/contracts/openapi/cbs-api.yaml"
+const ContractPath = "packages/contracts/openapi/kran-api.yaml"
 
 type
   ServeArgs = object

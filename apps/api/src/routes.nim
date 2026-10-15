@@ -1,7 +1,7 @@
 ## Tabel rute aplikasi — **satu tempat** untuk semua endpoint HTTP.
 ##
 ## Gate `apps/api/tests/tcontract.nim` membandingkan tabel ini dengan
-## `packages/contracts/openapi/cbs-api.yaml` (spec §13: kontrak = sumber kebenaran), jadi
+## `packages/contracts/openapi/kran-api.yaml` (spec §13: kontrak = sumber kebenaran), jadi
 ## menambah rute tanpa memperbarui kontrak (atau sebaliknya) membuat CI merah.
 ##
 ## Rute tumbuh bertahap: T-008 hanya endpoint sistem; T-009 menambah realtime; T-012 auth,
@@ -41,7 +41,7 @@ proc handleEventsStream*(app: AppContext, req: Request) {.gcsafe.} =
   ## penerjemahan `AppContext` dan penanganan kasus "realtime belum dikonfigurasi".
   if app.events.isNil:
     req.respondProblem(pkNotImplemented, "Not Implemented",
-      "layanan realtime tidak dikonfigurasi (CBS_DATABASE_URL kosong saat start)")
+      "layanan realtime tidak dikonfigurasi (KRAN_DATABASE_URL kosong saat start)")
     return
   app.events.openStream(req)
 

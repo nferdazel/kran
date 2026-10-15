@@ -36,7 +36,7 @@ const
 proc stderrSink(line: string) {.gcsafe.} =
   stderr.writeLine(line)
 
-proc newLogger*(level = lvlInfo, app = "cbs", sink: LogSink = nil): Logger =
+proc newLogger*(level = lvlInfo, app = "kran", sink: LogSink = nil): Logger =
   result.level = level
   result.app = app
   result.sink = if sink.isNil: LogSink(stderrSink) else: sink

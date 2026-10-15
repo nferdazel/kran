@@ -124,7 +124,7 @@ paths:
         terlewat melebihi batas replay, server mengirim `{"type":"resync"}` dan klien harus
         menyegarkan keadaan lewat HTTP.
 
-        Otorisasi: identitas dari cookie sesi `cbs_session` (spec §13) atau header
+        Otorisasi: identitas dari cookie sesi `kran_session` (spec §13) atau header
         `Authorization: Bearer`; topik difilter izin per langganan. Selama sesi belum terpasang
         (T-012), kebijakan default menolak semua koneksi.
 
@@ -191,7 +191,7 @@ paths:
               $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
-          description: Sesi dibuat; cookie `cbs_session` diset
+          description: Sesi dibuat; cookie `kran_session` diset
           headers:
             Set-Cookie:
               description: Cookie sesi (`HttpOnly`, `Secure`, `SameSite=Strict`)
@@ -524,7 +524,7 @@ components:
     sessionCookie:
       type: apiKey
       in: cookie
-      name: cbs_session
+      name: kran_session
       description: |
         Sesi login (spec §13): cookie `HttpOnly`, `Secure`, `SameSite=Lax`. Header
         `Authorization: Bearer <token>` juga diterima untuk klien non-browser.

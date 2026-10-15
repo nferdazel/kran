@@ -1,0 +1,38 @@
+# kran-worker.service — unit systemd USER untuk worker KRAN (--role=worker).
+#
+# Spec: §21.4 (#10), §21.5 (Unit), §9 (outbox/worker), §22.
+#
+# Binary & env sama dengan kran-api (satu binary multi-role, §26.1 #5); bedanya
+# hanya argumen `--role=worker`. Worker memproses outbox/task terjadwal — tidak
+# membuka port HTTP publik.
+#
+# Pasang di server sebagai ~/.config/systemd/user/kran-worker.service, lalu:
+#   systemctl --user daemon-reload && systemctl --user enable --now kran-worker
+#
+# CATATAN: sama seperti kran-api.service, directive namespace (ProtectSystem/
+# ProtectHome) menunggu verifikasi di server sebelum diaktifkan.
+
+[Unit]
+Description=KRAN Worker (Nim, --role=worker)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/qouver/apps/kran
+EnvironmentFile=/srv/qouver/apps/kran/env/kran-prod.env
+ExecStart=/srv/qouver/apps/kran/bin/kran-api --role=worker
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal
+
+# Opsional, verifikasi dulu di server (kemungkinan diabaikan pada user unit):
+# ProtectSystem=full
+# ProtectHome=read-only
+# ReadWritePaths=/srv/qouver/apps/kran
+
+[Install]
+WantedBy=default.target

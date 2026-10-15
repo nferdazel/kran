@@ -6,11 +6,11 @@
 ##
 ## Sumber: variabel lingkungan.
 ##
-##   CBS_DATABASE_URL              URL `postgres://user:pass@host:port/db`   (wajib untuk fitur DB)
-##   CBS_DB_POOL_SIZE              jumlah maksimum koneksi (default 8)
-##   CBS_DB_ACQUIRE_TIMEOUT_MS     batas tunggu ambil koneksi (default 5000)
-##   CBS_DB_STATEMENT_TIMEOUT_MS   statement_timeout libpq (default 15000)
-##   CBS_DB_VALIDATE_ON_ACQUIRE    `1`/`0` — cek `PQstatus` saat ambil koneksi (default 1)
+##   KRAN_DATABASE_URL              URL `postgres://user:pass@host:port/db`   (wajib untuk fitur DB)
+##   KRAN_DB_POOL_SIZE              jumlah maksimum koneksi (default 8)
+##   KRAN_DB_ACQUIRE_TIMEOUT_MS     batas tunggu ambil koneksi (default 5000)
+##   KRAN_DB_STATEMENT_TIMEOUT_MS   statement_timeout libpq (default 15000)
+##   KRAN_DB_VALIDATE_ON_ACQUIRE    `1`/`0` — cek `PQstatus` saat ambil koneksi (default 1)
 ##
 ## Batas yang diketahui (jujur): parser URL hanya menerima bentuk di atas, **tanpa parameter
 ## kueri** dan **tanpa sslmode** — `db_connector` menyambung via `PQsetdbLogin`, yang tidak
@@ -50,26 +50,26 @@ proc parseDatabaseUrl*(url: string): DbTarget =
   ## Password di-*percent-decode* supaya aman memakai karakter URL-reserved.
   let u = url.strip()
   if u.len == 0:
-    fail("CBS_DATABASE_URL kosong")
+    fail("KRAN_DATABASE_URL kosong")
   var rest = ""
   if u.startsWith("postgres://"):
     rest = u[len("postgres://") .. ^1]
   elif u.startsWith("postgresql://"):
     rest = u[len("postgresql://") .. ^1]
   else:
-    fail("CBS_DATABASE_URL harus berawalan postgres:// atau postgresql:// (dapat: " &
+    fail("KRAN_DATABASE_URL harus berawalan postgres:// atau postgresql:// (dapat: " &
       u[0 ..< min(12, u.len)] & "...)")
 
   if rest.contains('?'):
-    fail("parameter kueri pada CBS_DATABASE_URL belum didukung (lihat dokumentasi modul ini)")
+    fail("parameter kueri pada KRAN_DATABASE_URL belum didukung (lihat dokumentasi modul ini)")
 
   let slash = rest.find('/')
   if slash < 0:
-    fail("CBS_DATABASE_URL tidak memuat nama database (…/namadb)")
+    fail("KRAN_DATABASE_URL tidak memuat nama database (…/namadb)")
   let authority = rest[0 ..< slash]
   let dbname = rest[slash + 1 .. ^1]
   if dbname.len == 0 or dbname.contains('/'):
-    fail("nama database pada CBS_DATABASE_URL tidak valid")
+    fail("nama database pada KRAN_DATABASE_URL tidak valid")
 
   var creds = ""
   var hostport = authority
@@ -79,7 +79,7 @@ proc parseDatabaseUrl*(url: string): DbTarget =
     hostport = authority[at + 1 .. ^1]
 
   if hostport.len == 0:
-    fail("host pada CBS_DATABASE_URL tidak boleh kosong")
+    fail("host pada KRAN_DATABASE_URL tidak boleh kosong")
 
   result = DbTarget(database: dbname, host: hostport, port: "")
   let colon = hostport.rfind(':')
@@ -87,7 +87,7 @@ proc parseDatabaseUrl*(url: string): DbTarget =
     result.host = hostport[0 ..< colon]
     result.port = hostport[colon + 1 .. ^1]
     if result.port.len == 0:
-      fail("port pada CBS_DATABASE_URL kosong")
+      fail("port pada KRAN_DATABASE_URL kosong")
 
   if creds.len > 0:
     let sep = creds.find(':')
@@ -120,23 +120,23 @@ proc parseBool(env: Table[string, string], key: string, default: bool): bool =
 
 proc dbConfigFromEnv*(env: Table[string, string]): DbConfig =
   ## Membangun konfigurasi dari tabel env (bisa diisi dari proses atau dari test).
-  result.target = parseDatabaseUrl(env.getOrDefault("CBS_DATABASE_URL", ""))
-  result.poolSize = parsePositiveInt(env, "CBS_DB_POOL_SIZE", defaultPoolSize)
+  result.target = parseDatabaseUrl(env.getOrDefault("KRAN_DATABASE_URL", ""))
+  result.poolSize = parsePositiveInt(env, "KRAN_DB_POOL_SIZE", defaultPoolSize)
   result.acquireTimeoutMs =
-    parsePositiveInt(env, "CBS_DB_ACQUIRE_TIMEOUT_MS", defaultAcquireTimeoutMs)
+    parsePositiveInt(env, "KRAN_DB_ACQUIRE_TIMEOUT_MS", defaultAcquireTimeoutMs)
   result.statementTimeoutMs =
-    parsePositiveInt(env, "CBS_DB_STATEMENT_TIMEOUT_MS", defaultStatementTimeoutMs)
-  result.validateOnAcquire = parseBool(env, "CBS_DB_VALIDATE_ON_ACQUIRE", true)
-  let appName = env.getOrDefault("CBS_APP_NAME", "").strip()
+    parsePositiveInt(env, "KRAN_DB_STATEMENT_TIMEOUT_MS", defaultStatementTimeoutMs)
+  result.validateOnAcquire = parseBool(env, "KRAN_DB_VALIDATE_ON_ACQUIRE", true)
+  let appName = env.getOrDefault("KRAN_APP_NAME", "").strip()
   result.target.options = "-c statement_timeout=" & $result.statementTimeoutMs &
-    " -c application_name=" & (if appName.len > 0: appName else: "cbs")
+    " -c application_name=" & (if appName.len > 0: appName else: "kran")
 
 const knownEnvKeys* = [
-  "CBS_DATABASE_URL",
-  "CBS_DB_POOL_SIZE",
-  "CBS_DB_ACQUIRE_TIMEOUT_MS",
-  "CBS_DB_STATEMENT_TIMEOUT_MS",
-  "CBS_DB_VALIDATE_ON_ACQUIRE",
+  "KRAN_DATABASE_URL",
+  "KRAN_DB_POOL_SIZE",
+  "KRAN_DB_ACQUIRE_TIMEOUT_MS",
+  "KRAN_DB_STATEMENT_TIMEOUT_MS",
+  "KRAN_DB_VALIDATE_ON_ACQUIRE",
 ]
 
 proc envTableFromProcess*(): Table[string, string] =
@@ -148,4 +148,4 @@ proc dbConfigFromProcessEnv*(): DbConfig =
 
 proc databaseUrlSet*(env: Table[string, string]): bool =
   ## `true` bila test integrasi punya alasan untuk berjalan (pola sama `cbs-core`).
-  env.getOrDefault("CBS_DATABASE_URL", "").strip().len > 0
+  env.getOrDefault("KRAN_DATABASE_URL", "").strip().len > 0

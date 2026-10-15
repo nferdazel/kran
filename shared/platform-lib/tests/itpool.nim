@@ -1,4 +1,4 @@
-## Test integrasi pool DB (butuh `CBS_DATABASE_URL`; lihat docs/runbooks/dev-db.md).
+## Test integrasi pool DB (butuh `KRAN_DATABASE_URL`; lihat docs/runbooks/dev-db.md).
 ##
 ## Cakupan: kueri parameterized, akuntansi pool, batas tunggu, transaksi explicit (BEGIN/COMMIT/
 ## ROLLBACK), pengembalian koneksi yang masih bertransaksi, kegagalan koneksi.
@@ -14,7 +14,7 @@ import "platform-lib/db/pool"
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
-  echo "itpool: CBS_DATABASE_URL kosong — dilewati"
+  echo "itpool: KRAN_DATABASE_URL kosong — dilewati"
   quit(0)
 
 let baseCfg = dbConfigFromEnv(envT)

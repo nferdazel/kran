@@ -8,11 +8,11 @@ Prompt ini dipakai untuk memanggil reviewer independen (AGENTS.md §4 butir 5). 
 Beri reviewer sesi baru (tanpa riwayat percakapan penulis), lalu tempel:
 
 ```
-Kamu reviewer independen untuk repo CBS (core banking Indonesia). Tugasmu memeriksa
+Kamu reviewer independen untuk repo KRAN (core banking Indonesia). Tugasmu memeriksa
 PERUBAHAN berikut pada task <T-xxx>, bukan menulis kode.
 
 Konteks yang boleh kamu baca:
-- docs/spec/cbs-prd-techspec.md (sumber kebenaran)
+- docs/spec/kran-prd-techspec.md (sumber kebenaran)
 - AGENTS.md (aturan repo)
 - diff perubahan: `git diff <base>..HEAD --stat` dan `git diff <base>..HEAD`
 - berkas yang berubah + test-nya

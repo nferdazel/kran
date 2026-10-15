@@ -1,4 +1,4 @@
-## Test integrasi outbox → hub realtime (butuh `CBS_DATABASE_URL`).
+## Test integrasi outbox → hub realtime (butuh `KRAN_DATABASE_URL`).
 ##
 ## Kriteria T-009: peristiwa dari outbox sampai ke "klien" (di sini: langganan hub) dan resume
 ## tidak kehilangan peristiwa. Transport WebSocket diuji terpisah di
@@ -19,7 +19,7 @@ import platform/infrastructure/[outbox_listener, outbox_repo]
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
-  echo "itrealtime: CBS_DATABASE_URL kosong — dilewati"
+  echo "itrealtime: KRAN_DATABASE_URL kosong — dilewati"
   quit(0)
 
 let dbPool = newDbPool(dbConfigFromEnv(envT))

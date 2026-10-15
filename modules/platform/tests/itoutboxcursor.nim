@@ -1,4 +1,4 @@
-## Test integrasi invarian kursor outbox (T-025; O-037) — butuh `CBS_DATABASE_URL`.
+## Test integrasi invarian kursor outbox (T-025; O-037) — butuh `KRAN_DATABASE_URL`.
 ##
 ## **Invarian**: transaksi yang menulis peristiwa outbox wajib menulis entri audit lebih dulu, di
 ## transaksi yang sama. Alasannya mekanis: `seq` outbox dialokasikan saat INSERT, sedangkan urutan
@@ -30,7 +30,7 @@ import platform/infrastructure/[audit_repo, outbox_repo]
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
-  echo "itoutboxcursor: CBS_DATABASE_URL kosong — dilewati"
+  echo "itoutboxcursor: KRAN_DATABASE_URL kosong — dilewati"
   quit(0)
 
 let dbPool = newDbPool(dbConfigFromEnv(envT))

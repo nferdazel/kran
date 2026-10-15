@@ -12,7 +12,7 @@ async function gotoApp(page: Page, locale = "id", theme = "light"): Promise<void
   await page.addInitScript(
     (init: { locale: string; theme: string }) => {
       localStorage.setItem("PARAGLIDE_LOCALE", init.locale);
-      localStorage.setItem("cbs-theme", init.theme);
+      localStorage.setItem("kran-theme", init.theme);
     },
     { locale, theme },
   );
@@ -33,7 +33,7 @@ test("skip link memindahkan fokus ke konten utama", async ({ page }) => {
   await gotoApp(page);
 
   await page.keyboard.press("Tab");
-  const skip = page.locator("a.cbs-skip-link");
+  const skip = page.locator("a.kran-skip-link");
   await expect(skip).toBeFocused();
   await expect(skip).toBeVisible();
 
@@ -75,7 +75,7 @@ test("setiap kontrol dapat dijangkau keyboard dalam urutan logis", async ({ page
   await gotoApp(page);
 
   await page.keyboard.press("Tab");
-  await expect(page.locator("a.cbs-skip-link")).toBeFocused();
+  await expect(page.locator("a.kran-skip-link")).toBeFocused();
 
   const urutan: string[] = [];
   for (let i = 0; i < 4; i += 1) {

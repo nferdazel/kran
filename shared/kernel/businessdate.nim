@@ -25,7 +25,7 @@ proc daysInMonth*(y, m: int): int =
   else: 0
 
 proc dateErr(msg: string): AppError {.inline.} =
-  appError("CBS-1201", "error.businessDate.invalid", aekValidation, msg)
+  appError("KRAN-1201", "error.businessDate.invalid", aekValidation, msg)
 
 proc businessDate*(y, m, d: int): AppResult[BusinessDate] =
   if y < 1 or y > 9999:

@@ -1,5 +1,5 @@
 {
-  "name": "@cbs/api-client",
+  "name": "@kran/api-client",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "./schema": "./src/generated/schema.d.ts"
   },
   "scripts": {
-    "gen": "openapi-typescript ../../packages/contracts/openapi/cbs-api.yaml -o ./src/generated/schema.d.ts",
+    "gen": "openapi-typescript ../../packages/contracts/openapi/kran-api.yaml -o ./src/generated/schema.d.ts",
     "typecheck": "tsc -p . --noEmit"
   },
   "dependencies": {

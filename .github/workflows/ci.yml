@@ -46,7 +46,7 @@ jobs:
         run: ./task check
 
       - name: ./task test
-        # unit + property. Test integrasi melewati dirinya sendiri tanpa CBS_DATABASE_URL
+        # unit + property. Test integrasi melewati dirinya sendiri tanpa KRAN_DATABASE_URL
         # (job db-tests yang menyediakannya, lihat docs/ci-jobs.md).
         run: ./task test
 

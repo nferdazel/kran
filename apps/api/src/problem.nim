@@ -4,7 +4,7 @@
 ## `detail` dan `params`. Pesan untuk pengguna **tidak** dikirim dalam bahasa apa pun di sini —
 ## frontend menerjemahkan `i18nKey` + `params` (spec §16.1, satu tempat untuk semua teks).
 ##
-## Kontrak: `packages/contracts/openapi/cbs-api.yaml#/components/schemas/Problem`.
+## Kontrak: `packages/contracts/openapi/kran-api.yaml#/components/schemas/Problem`.
 
 import std/[json, strutils]
 

@@ -15,7 +15,7 @@ const baseURL = `http://127.0.0.1:${PORT}`;
 // dan Playwright selalu menguji binary hasil `./task build`, bukan sisa proses lama.
 const API_PORT = 8099;
 const apiURL = `http://127.0.0.1:${API_PORT}`;
-const dbURL = process.env.CBS_DATABASE_URL ?? "";
+const dbURL = process.env.KRAN_DATABASE_URL ?? "";
 
 type Server = {
   command: string;
@@ -41,7 +41,7 @@ const inheritedEnv = Object.fromEntries(
 const servers: Server[] = [];
 
 /**
- * API hanya dijalankan bila `CBS_DATABASE_URL` ada (sumbernya `.local/dev.env`, di-export
+ * API hanya dijalankan bila `KRAN_DATABASE_URL` ada (sumbernya `.local/dev.env`, di-export
  * `./task e2e`): alur login→maker-checker→realtime butuh DB + seed dev yang sudah dimigrasi.
  * Tanpa DB, spec alur menyatakan dirinya dilewati; spec a11y/keyboard tetap berjalan.
  */
@@ -54,13 +54,13 @@ if (dbURL !== "") {
     "set -a;",
     "[ -f ../../.local/dev.env ] && . ../../.local/dev.env;",
     "set +a;",
-    `exec ../../.build/bin/cbs-api --role=api --port=${API_PORT} --address=127.0.0.1`,
+    `exec ../../.build/bin/kran-api --role=api --port=${API_PORT} --address=127.0.0.1`,
   ].join(" ");
 
   servers.push({
     command: apiCommand,
     url: `${apiURL}/healthz`,
-    env: { ...inheritedEnv, CBS_DATABASE_URL: dbURL },
+    env: { ...inheritedEnv, KRAN_DATABASE_URL: dbURL },
     reuseExistingServer: false,
     timeout: 30_000,
     stdout: "pipe",
@@ -73,7 +73,7 @@ servers.push({
   url: baseURL,
   // Selalu bangun ulang: kalau server lama dibiarkan (mis. sisa run yang terputus), test bisa
   // "hijau" melawan build lama. Build di sini hanya hitungan detik.
-  env: { ...inheritedEnv, CBS_API_TARGET: apiURL },
+  env: { ...inheritedEnv, KRAN_API_TARGET: apiURL },
   reuseExistingServer: false,
   timeout: 180_000,
   stdout: "ignore",

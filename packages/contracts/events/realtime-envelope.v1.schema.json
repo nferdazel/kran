@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cbs.local/contracts/events/realtime-envelope.v1.schema.json",
+  "$id": "https://kran.local/contracts/events/realtime-envelope.v1.schema.json",
   "title": "Amplop peristiwa realtime v1",
   "description": "Amplop pesan pada WebSocket GET /api/v1/events/stream (spec §12.4, §19.1). Setiap frame adalah objek JSON dengan properti `type` sebagai pembeda; pilih definisi di `$defs` sesuai nilainya: `event` -> Event, `subscribed` -> Subscribed, `resync` -> Resync, `error` -> Error. Server dan klien mengirim bentuk yang sama; yang berbeda hanya arah dan himpunan tipe yang wajar pada arah itu (klien mengirim `subscribe`/`unsubscribe`, server mengirim sisanya). Versi skema dinaikkan bila ada perubahan yang tidak kompatibel; nama berkas memuat versi.",
   "$defs": {

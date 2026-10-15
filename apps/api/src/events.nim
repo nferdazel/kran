@@ -428,7 +428,7 @@ proc dispatch(svc: EventService, events: seq[RealtimeEvent]) =
 proc logPump(msg: string) =
   ## Pump berjalan di thread sendiri dan modul ini tidak memegang `Logger` (itu milik `main.nim`).
   ## Satu baris ke stderr jauh lebih berguna daripada kegagalan senyap seperti sebelumnya (O-029).
-  stderr.writeLine "cbs-api realtime pump: " & msg
+  stderr.writeLine "kran-api realtime pump: " & msg
 
 proc sleepUnlessStopped(svc: EventService, ms: int) =
   ## Tidur yang bisa dibatalkan: penutupan proses tidak boleh tertunda oleh backoff (lihat

@@ -1,11 +1,11 @@
-## Test integrasi modul `platform` (butuh `CBS_DATABASE_URL`, lihat docs/runbooks/dev-db.md).
+## Test integrasi modul `platform` (butuh `KRAN_DATABASE_URL`, lihat docs/runbooks/dev-db.md).
 ##
 ## Cakupan: migrasi idempotent + atomik + anti-drift, outbox (de-dup, klaim SKIP LOCKED,
 ## backoff, dead-letter, re-drive), inbox (de-dup per konsumen), audit_log (hash chain,
 ## append-only, deteksi perusakan).
 ##
-## Test ini **menghapus schema `platform`** di database yang ditunjuk `CBS_DATABASE_URL`.
-## Itu memang tujuan `cbs_dev` (DB dev khusus), jangan arahkan ke DB lain.
+## Test ini **menghapus schema `platform`** di database yang ditunjuk `KRAN_DATABASE_URL`.
+## Itu memang tujuan `kran_dev` (DB dev khusus), jangan arahkan ke DB lain.
 
 import std/[unittest, os, json, strutils]
 import db_connector/db_postgres
@@ -23,7 +23,7 @@ const
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
-  echo "itplatform: CBS_DATABASE_URL kosong — dilewati"
+  echo "itplatform: KRAN_DATABASE_URL kosong — dilewati"
   quit(0)
 if not dirExists(repoRoot / "modules" / "platform" / "migrations"):
   echo "itplatform: jalankan dari akar repo (modules/platform/migrations tidak ditemukan)"

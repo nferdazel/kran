@@ -8,7 +8,7 @@ import std/[strutils]
 import mummy
 
 const
-  SessionCookieName* = "cbs_session"
+  SessionCookieName* = "kran_session"
 
   ## Panjang User-Agent yang disimpan: cukup untuk korelasi, bukan sidik jari penuh
   ## (spec §18.2 logging). Nilainya teknis, bukan kebijakan bisnis.

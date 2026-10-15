@@ -51,7 +51,7 @@ proc newId*(clock: Clock): Id =
   Id(formatUuid(b))
 
 proc idErr(msg: string): AppError {.inline.} =
-  appError("CBS-1301", "error.id.invalid", aekValidation, msg)
+  appError("KRAN-1301", "error.id.invalid", aekValidation, msg)
 
 proc isHexChar(c: char): bool {.inline.} =
   c in {'0' .. '9', 'a' .. 'f', 'A' .. 'F'}

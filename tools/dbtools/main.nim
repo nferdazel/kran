@@ -1,9 +1,9 @@
 ## dbtools — migrasi, status, validasi (spec §12.1, §21.7).
 ##
 ##   dbtools [--root <dir>] validate              # tanpa DB: urutan + pemeriksaan berkas
-##   dbtools [--root <dir>] migrate [--dry-run]   # butuh CBS_DATABASE_URL
-##   dbtools [--root <dir>] status                # butuh CBS_DATABASE_URL
-##   dbtools [--root <dir>] seed [--dev]          # butuh CBS_DATABASE_URL; --dev = seed dev/test
+##   dbtools [--root <dir>] migrate [--dry-run]   # butuh KRAN_DATABASE_URL
+##   dbtools [--root <dir>] status                # butuh KRAN_DATABASE_URL
+##   dbtools [--root <dir>] seed [--dev]          # butuh KRAN_DATABASE_URL; --dev = seed dev/test
 ##
 ## Keluar: 0 sukses, 1 masalah data/migrasi, 2 kesalahan pemakaian.
 
@@ -126,7 +126,7 @@ try:
   of "migrate", "status", "seed":
     let envT = envTableFromProcess()
     if not databaseUrlSet(envT):
-      stderr.writeLine("CBS_DATABASE_URL belum diisi (lihat docs/runbooks/dev-db.md)")
+      stderr.writeLine("KRAN_DATABASE_URL belum diisi (lihat docs/runbooks/dev-db.md)")
       quit(2)
     let pool = newDbPool(dbConfigFromEnv(envT))
     var code = 0

@@ -3,7 +3,7 @@
  * dihasilkan `openapi-typescript`, bukan salinan tangan — supaya perubahan kontrak terlihat
  * sebagai error tipe di sini.
  */
-import type { components } from "@cbs/api-client/schema";
+import type { components } from "@kran/api-client/schema";
 
 export type SessionInfo = components["schemas"]["SessionInfo"];
 export type ParamValue = components["schemas"]["ParamValue"];

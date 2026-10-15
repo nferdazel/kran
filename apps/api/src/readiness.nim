@@ -66,7 +66,7 @@ proc databaseProbe*(): ReadinessProbe =
   result = proc(): seq[ReadinessCheck] {.gcsafe.} =
     if not databaseUrlSet(envTableFromProcess()):
       return @[ReadinessCheck(name: "database", status: csFailed,
-                              detail: "CBS_DATABASE_URL belum diisi")]
+                              detail: "KRAN_DATABASE_URL belum diisi")]
     try:
       if pool.isNil:
         pool = newDbPool(dbConfigFromProcessEnv())

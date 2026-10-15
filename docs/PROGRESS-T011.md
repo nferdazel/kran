@@ -40,7 +40,7 @@ Commit: lihat §6.
 
 ```
 == unit + property test            semua suite lulus (lihat daftar test §2.4)
-== integration test (Postgres)     SKIP: CBS_DATABASE_URL kosong
+== integration test (Postgres)     SKIP: KRAN_DATABASE_URL kosong
 == contract test                   SKIP: packages/contracts/openapi belum ada (T-008)
 ```
 
@@ -105,7 +105,7 @@ dan `modules/hello` di disk → **identik**, jadi template sudah nimpretty-clean
 
 ## 3. Yang TIDAK bisa diverifikasi (jujur)
 
-- **Test integrasi (Postgres) tidak dijalankan** — `CBS_DATABASE_URL` kosong di worktree ini;
+- **Test integrasi (Postgres) tidak dijalankan** — `KRAN_DATABASE_URL` kosong di worktree ini;
   `itplatform`/`itcalendar`/`itpool` SKIP. Tidak ada DB dibuat (sesuai instruksi).
 - **e2e Playwright tidak dijalankan** — `apps/web` belum ada (T-010).
 - **Kompilasi modul ber-tanda-hubung tidak dijadikan test otomatis.** Dicoba manual (probe) dan

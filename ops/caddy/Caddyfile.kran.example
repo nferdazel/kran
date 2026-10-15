@@ -1,4 +1,4 @@
-# Caddyfile.cbs.example — blok Caddy untuk CBS.
+# Caddyfile.kran.example — blok Caddy untuk KRAN.
 #
 # Spec: §21.5 (site/hostname terpisah + header keamanan lengkap), §21.6 (versi-kan
 # di ops/caddy), audit server 2026-10-13 §4 (P2: header keamanan tidak seragam).
@@ -34,7 +34,7 @@ cbs.qouver.com {
 #    transisi 8095 (§21.5) diambil alih saat cutover. Ganti hostname bila pemilik
 #    memilih nama lain; ini hanya contoh.
 # ─────────────────────────────────────────────────────────────────────────────
-cbs-api.qouver.com {
+kran-api.qouver.com {
 	encode zstd gzip
 
 	# Metrik Prometheus bukan untuk publik (§22): scrape langsung ke 127.0.0.1.

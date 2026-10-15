@@ -20,10 +20,10 @@ importers:
 
   apps/web:
     dependencies:
-      '@cbs/api-client':
+      '@kran/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
-      '@cbs/ui':
+      '@kran/ui':
         specifier: workspace:*
         version: link:../../packages/ui
     devDependencies:

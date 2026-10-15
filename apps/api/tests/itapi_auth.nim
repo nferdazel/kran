@@ -1,13 +1,13 @@
-## Test integrasi HTTP T-012 (butuh `CBS_DATABASE_URL`): login → ubah parameter (maker-checker) →
+## Test integrasi HTTP T-012 (butuh `KRAN_DATABASE_URL`): login → ubah parameter (maker-checker) →
 ## audit → peristiwa realtime ke klien bersesi.
 ##
 ## Yang dibuktikan di sini adalah **jalur penuh lewat HTTP**, bukan pemanggilan lapisan langsung:
 ## cookie sesi benar-benar menyetir identitas, izin efektif menentukan 401/403, dan penyetuju
 ## kedua (`checker <> maker`) ditegakkan. Bentuk setiap respons divalidasi terhadap kontrak
-## OpenAPI (`packages/contracts/openapi/cbs-api.yaml`) supaya handler dan kontrak tidak bisa
+## OpenAPI (`packages/contracts/openapi/kran-api.yaml`) supaya handler dan kontrak tidak bisa
 ## menyimpang diam-diam.
 ##
-## Test ini **menghapus schema `platform`** di DB yang ditunjuk `CBS_DATABASE_URL` (DB dev), lalu
+## Test ini **menghapus schema `platform`** di DB yang ditunjuk `KRAN_DATABASE_URL` (DB dev), lalu
 ## menyiapkan ulang: migrasi + seed pack `base` + seed pengguna dev
 ## (`packs/base/seed/0001_dev_users.sql`). Data dev murni sintetis.
 
@@ -29,7 +29,7 @@ import ../src/[access, context, events, readiness, server]
 import ./wsclient
 
 const
-  ContractPath = "packages/contracts/openapi/cbs-api.yaml"
+  ContractPath = "packages/contracts/openapi/kran-api.yaml"
   EventsSchemaPath = "packages/contracts/events/realtime-envelope.v1.schema.json"
   EventsPath = "/api/v1/events/stream"
   LoginPath = "/api/v1/auth/login"
@@ -47,11 +47,11 @@ const
   FirstLoginUser = "dev.firstlogin"
   PasswordBaru = "kata-sandi-baru-panjang"
   DevPassword = "rahasia-panjang-123"
-  CookieName = "cbs_session"
+  CookieName = "kran_session"
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
-  echo "itapi_auth: CBS_DATABASE_URL kosong — dilewati"
+  echo "itapi_auth: KRAN_DATABASE_URL kosong — dilewati"
   quit(0)
 
 let contract = loadContractFile(ContractPath)

@@ -122,7 +122,7 @@ proc requirePrincipal*(ctx: AppContext, req: Request): Option[Principal] =
   ## mengembalikan `none`; handler cukup berhenti.
   if ctx.pool.isNil:
     req.respondProblem(pkNotImplemented, "Not Implemented",
-      "layanan basis data tidak dikonfigurasi (CBS_DATABASE_URL kosong saat start)")
+      "layanan basis data tidak dikonfigurasi (KRAN_DATABASE_URL kosong saat start)")
     return none(Principal)
   let principal = principalOf(ctx, req)
   if principal.isNone:

@@ -62,14 +62,14 @@
 
 <h1>{m.login_title()}</h1>
 
-<section class="cbs-card">
-  <p class="cbs-muted">{m.login_intro()}</p>
+<section class="kran-card">
+  <p class="kran-muted">{m.login_intro()}</p>
 
-  <form class="cbs-form" onsubmit={submit} novalidate>
-    <div class="cbs-field">
-      <label class="cbs-label" for="login-username">{m.login_username_label()}</label>
+  <form class="kran-form" onsubmit={submit} novalidate>
+    <div class="kran-field">
+      <label class="kran-label" for="login-username">{m.login_username_label()}</label>
       <input
-        class="cbs-input"
+        class="kran-input"
         id="login-username"
         name="username"
         type="text"
@@ -81,10 +81,10 @@
       />
     </div>
 
-    <div class="cbs-field">
-      <label class="cbs-label" for="login-password">{m.login_password_label()}</label>
+    <div class="kran-field">
+      <label class="kran-label" for="login-password">{m.login_password_label()}</label>
       <input
-        class="cbs-input"
+        class="kran-input"
         id="login-password"
         name="password"
         type="password"
@@ -95,11 +95,11 @@
     </div>
 
     {#if errorMessage}
-      <p class="cbs-alert" role="alert">{errorMessage}</p>
+      <p class="kran-alert" role="alert">{errorMessage}</p>
     {/if}
 
     <p>
-      <button class="cbs-button cbs-button--primary" type="submit" disabled={submitting}>
+      <button class="kran-button kran-button--primary" type="submit" disabled={submitting}>
         {submitting ? m.login_submitting() : m.login_submit()}
       </button>
     </p>

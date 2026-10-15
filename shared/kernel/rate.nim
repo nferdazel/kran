@@ -51,7 +51,7 @@ proc `-`*(a, b: Rate): Rate {.inline.} =
 proc `*`*(r: Rate, factor: int64): Rate {.inline.} =
   Rate(micro: checkedMul(r.micro, factor))
 
-proc rateErr(msg: string, code = "CBS-1001"): AppError {.inline.} =
+proc rateErr(msg: string, code = "KRAN-1001"): AppError {.inline.} =
   appError(code, "error.rate.invalid", aekValidation, msg)
 
 proc rateFromPercentString*(s: string): AppResult[Rate] =
@@ -95,7 +95,7 @@ proc rateFromPercentString*(s: string): AppResult[Rate] =
     return err[Rate, AppError](rateErr("titik tanpa angka desimal: " & s))
   if frac.len > 4:
     return err[Rate, AppError](rateErr(
-      "presisi persen maksimum 4 desimal: " & s, "CBS-1002"
+      "presisi persen maksimum 4 desimal: " & s, "KRAN-1002"
     ))
 
   while frac.len < 4:

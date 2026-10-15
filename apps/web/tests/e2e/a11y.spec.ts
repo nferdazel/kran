@@ -49,7 +49,7 @@ async function gotoApp(page: Page, locale: Locale, theme: Theme = "light"): Prom
   await page.addInitScript(
     (init: { locale: string; theme: string }) => {
       localStorage.setItem("PARAGLIDE_LOCALE", init.locale);
-      localStorage.setItem("cbs-theme", init.theme);
+      localStorage.setItem("kran-theme", init.theme);
     },
     { locale, theme },
   );

@@ -4,7 +4,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 /**
  * Alur wajib-ganti kata sandi (T-027, O-031) di UI nyata.
  *
- * Admin pertama dibuat `cbs-api --role=ctl bootstrap-admin` dengan kata sandi acak yang dicetak
+ * Admin pertama dibuat `kran-api --role=ctl bootstrap-admin` dengan kata sandi acak yang dicetak
  * sekali. Sebelum diganti, akun itu hanya boleh memakai `/auth/session`, `/auth/password`, dan
  * `/auth/logout` — rute ber-izin dijawab 403 `password_change_required`. Yang dibuktikan di sini:
  *
@@ -28,7 +28,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
  * `dbtools seed --dev`) menyetel ulang password + `must_change_password` user dev.
  */
 
-test.skip(!process.env.CBS_DATABASE_URL, "CBS_DATABASE_URL kosong — API e2e tidak dijalankan");
+test.skip(!process.env.KRAN_DATABASE_URL, "KRAN_DATABASE_URL kosong — API e2e tidak dijalankan");
 
 const DEV_PASSWORD = "rahasia-panjang-123";
 /** User seed dengan `must_change_password = true` — hanya dipakai test alur. */
@@ -68,7 +68,7 @@ const THEMES = ["light", "dark"] as const;
 async function prepare(page: Page, theme = "light"): Promise<void> {
   await page.addInitScript((themeChoice: string) => {
     localStorage.setItem("PARAGLIDE_LOCALE", "id");
-    localStorage.setItem("cbs-theme", themeChoice);
+    localStorage.setItem("kran-theme", themeChoice);
   }, theme);
 }
 

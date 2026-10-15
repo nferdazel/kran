@@ -72,7 +72,7 @@ peristiwa yang commit belakangan.
 
 ```
 ./task devdb up                # tunnel DB dev (lihat docs/runbooks/dev-db.md)
-./task test itplatform         # test integrasi modul ini (butuh CBS_DATABASE_URL)
+./task test itplatform         # test integrasi modul ini (butuh KRAN_DATABASE_URL)
 ./task dbtools migrate         # menerapkan migrasi
 ```
 
@@ -173,9 +173,9 @@ Catatan: alur auth tinggal di `infrastructure` (butuh DB). Saat port/use case la
 | Bagian | Berkas | Catatan |
 |---|---|---|
 | Hub (murni) | `application/realtime.nim` | topik, langganan, fanout, amplop pesan (`encodeEvent`/`encodeSubscribed`/`encodeResync`/`encodeError`), pembacaan pesan kontrol klien, batas protokol sebagai parameter (`SubscriptionLimits`) |
-| Pendengar outbox | `infrastructure/outbox_listener.nim` | `LISTEN cbs_outbox`, tunggu notifikasi, baca peristiwa setelah token (`outbox_repo.fetchAfter`/`latestEventId`) |
+| Pendengar outbox | `infrastructure/outbox_listener.nim` | `LISTEN kran_outbox`, tunggu notifikasi, baca peristiwa setelah token (`outbox_repo.fetchAfter`/`latestEventId`) |
 | Transport | `apps/api/src/events.nim` | handshake WS, state koneksi, `TopicPolicy`, replay/resume, pump (`LISTEN` → hub → soket) |
-| Trigger NOTIFY | `migrations/0007_platform_outbox_notify.sql` | `pg_notify('cbs_outbox', outbox_id)` pada `AFTER INSERT` di `platform.outbox` |
+| Trigger NOTIFY | `migrations/0007_platform_outbox_notify.sql` | `pg_notify('kran_outbox', outbox_id)` pada `AFTER INSERT` di `platform.outbox` |
 | Skema amplop | `packages/contracts/events/realtime-envelope.v1.schema.json` | spec §12.4: skema event tidak ditaruh di kontrak OpenAPI |
 
 Invarian tambahan:
