@@ -578,3 +578,9 @@ masuk.
   hentikan pump -> keluar 0. Bukti: itapi 8 `[OK]`, e2e shutdown 2 lulus (permintaan lambatnya nyata:
   login PBKDF2 600.000 iterasi), dan test drain **gagal** bila drain dimatikan (mutasi). Batas yang
   tetap: koneksi yang belum masuk handler, dan soket realtime ditutup oleh keluarnya proses.
+
+- **T-033 DONE** (O-011 selesai): pool diuji paralel antar-thread (8 thread pada poolSize=3 dan
+  poolSize=1), dan ditemukan celah nyata — `validateOnAcquire` cuma memeriksa `pqstatus`, jadi
+  koneksi yang sudah mati di server tetap diserahkan ke pemanggil (permintaan pertama setelah restart
+  DB gagal `DbError`). Sekarang validasi nyata (`select 1`) di luar lock. Bukti: itpool 10 `[OK]`,
+  dan uji koneksi mati **gagal** bila validasi dimatikan (mutasi).

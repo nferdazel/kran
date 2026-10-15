@@ -8,10 +8,14 @@
 ##   - **Batas pool**: maksimum `cfg.poolSize` koneksi; menunggu koneksi dibatasi
 ##     `cfg.acquireTimeoutMs` (bukan tanpa batas).
 ##
-## Catatan implementasi (jujur): menunggu koneksi memakai *polling* `sleep(2 ms)` di bawah
-## lock, bukan condition variable, karena `std/locks` tidak menyediakan `wait` bertimeout.
-## Untuk ukuran pool kecil dan trafik Fase 0 ini memadai; bila nanti jadi leher botol,
-## ganti dengan antrean bertimeout (ADR kecil).
+## Catatan implementasi (jujur): menunggu koneksi memakai *polling* `sleep(2 ms)` **di luar lock**
+## (lock hanya dipegang untuk pembukuan daftar idle), bukan condition variable, karena `std/locks`
+## tidak menyediakan `wait` bertimeout. Untuk ukuran pool kecil dan trafik Fase 0 ini memadai; bila
+## nanti jadi leher botol, ganti dengan antrean bertimeout (ADR kecil).
+##
+## `validateOnAcquire` berarti **validasi nyata**: satu `select 1` untuk koneksi yang diambil dari
+## daftar idle (koneksi baru tidak perlu). Harganya satu perjalanan bolak-balik; imbalannya koneksi
+## yang sudah mati di server tidak lagi diserahkan ke pemanggil (T-033).
 ##
 ## Nested `withTx` ditolak (raise) — satu use case = satu transaksi (spec §12.2).
 
@@ -58,6 +62,24 @@ proc openRaw(cfg: DbConfig): DbConn =
 proc healthy(db: DbConn): bool =
   db != nil and pqstatus(db) == CONNECTION_OK
 
+proc pingConn(db: DbConn): bool =
+  ## Validasi **nyata** satu perjalanan bolak-balik ke server.
+  ##
+  ## `pqstatus` saja tidak cukup: koneksi yang sudah ditutup server (restart DB, jaringan putus,
+  ## `pg_terminate_backend`) masih dilaporkan `CONNECTION_OK` sampai libpq mencoba I/O dan gagal.
+  ## Tanpa validasi ini, koneksi mati dari daftar idle diserahkan ke pemanggil dan **permintaan
+  ## pertama setelah DB hidup lagi gagal** — bukan crash, tetapi 500 yang seharusnya bisa dihindari
+  ## (T-033). Hanya dipakai untuk koneksi yang berasal dari daftar idle, dan hanya bila
+  ## `validateOnAcquire` aktif.
+  if db == nil:
+    return false
+  let res = pqexec(db, "select 1".cstring)
+  if res.isNil:
+    return false
+  let ok = pqresultStatus(res) == PGRES_TUPLES_OK
+  pqclear(res)
+  ok
+
 proc rollbackIfOpen(db: DbConn) =
   ## Mengembalikan koneksi ke keadaan IDLE. Aman dipanggil walau transaksi sudah gagal.
   if pqtransactionStatus(db) != PQTRANS_IDLE:
@@ -67,23 +89,40 @@ proc rollbackIfOpen(db: DbConn) =
 
 proc acquire*(p: DbPool): DbConn =
   ## Ambil satu koneksi. Raise `PoolError` bila pool ditutup atau melewati batas tunggu.
+  ##
+  ## Validasi koneksi dari daftar idle dijalankan **di luar lock**: satu perjalanan bolak-balik di
+  ## dalam lock akan menahan seluruh pool (T-033).
   let deadline = epochTime() * 1000.0 + float(p.cfg.acquireTimeoutMs)
   while true:
     var openNew = false
+    var kandidat: DbConn = nil
     withLock p.lock:
       if p.closed:
         raise newException(PoolError, "pool DB sudah ditutup")
       while p.idle.len > 0:
         let c = p.idle.pop()
-        if healthy(c) or not p.cfg.validateOnAcquire:
-          return c
-        # koneksi sudah mati (server restart/jaringan putus): buang, lalu buat ulang.
-        if c != nil:
-          pqfinish(c)
+        if c == nil:
+          dec p.created
+          continue
+        if healthy(c):
+          kandidat = c
+          break
+        # koneksi sudah jelas mati (libpq sudah menandainya): buang, lalu buat ulang.
+        pqfinish(c)
         dec p.created
-      if p.created < p.cfg.poolSize:
+      if kandidat.isNil and p.created < p.cfg.poolSize:
         inc p.created
         openNew = true
+
+    if not kandidat.isNil:
+      if not p.cfg.validateOnAcquire or pingConn(kandidat):
+        return kandidat
+      # Hidup menurut libpq, tetapi sudah mati di server: buang supaya pemanggil tidak menerima
+      # koneksi yang pasti gagal, lalu ambil/buat yang lain.
+      withLock p.lock:
+        dec p.created
+      pqfinish(kandidat)
+      continue
 
     if openNew:
       try:
