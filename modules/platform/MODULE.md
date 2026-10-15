@@ -188,3 +188,25 @@ Invarian tambahan:
 11. **Kebijakan realtime default menolak** (`denyPolicy`): sampai sesi nyata (T-012) terpasang,
     stream tertutup untuk semua identitas. Uji menyuntikkan kebijakannya sendiri
     (`allowAllPolicy` di transport, uji topik per-izin untuk yang lain).
+12. **Pump menyambung ulang, dan titik mulai hanya ditetapkan pada sambungan pertama** (T-029):
+    putusnya koneksi DB pump tidak mematikan realtime diam-diam — pump menyambung ulang dengan
+    backoff, dan lamanya keadaan itu terbaca lewat `pumpDegradedSeconds`. `lastEventId` **tidak**
+    di-reset ke "peristiwa terbaru" saat menyambung ulang: itu akan melewati peristiwa yang terjadi
+    selama putus, padahal pembacaannya memang dari tabel lewat token yang sama. Keadaan itu juga
+    terlihat dari luar: `readiness.realtimeProbe` baru menyatakan `failed` setelah
+    `pumpReadyGraceSeconds` (30 detik), supaya sambungan ulang singkat tidak membuat penyeimbang beban
+    membuang proses yang sebenarnya sehat. Saat proses berhenti, pump dihentikan **setelah** permintaan
+    HTTP yang sedang berjalan selesai (drain, T-032).
+13. **Izin diperiksa ulang per klien, bukan sekali saat handshake** (T-030): `sweepSessions` memeriksa
+    tiap klien **paling sering** sekali per `sessionRecheckSeconds` (bukan setiap peristiwa) dan
+    menutup langganan yang sesi/izinnya sudah tidak sah. Konsekuensi yang diterima: ada jendela
+    staleness maksimum satu interval — peristiwa masih bisa terkirim antara izin dicabut dan
+    pemeriksaan berikutnya (`0` berarti setiap putaran pump). Satu koneksi pump menempati satu koneksi
+    pool, jadi jumlahnya ikut menentukan kebutuhan pool.
+14. **Transport bersandar pada dua sifat Mummy yang tidak dijanjikan API publiknya** (T-034, D-037):
+    `send` aman dari thread lain (pump) sambil handler memakai soket yang sama — penjaminnya adalah
+    antrean kirim per koneksi; dan `close` aman dari thread lain serta tidak menutup soket klien lain
+    setelah `forget`. Bila versi minor mengubahnya **tidak ada** kegagalan kompilasi, hanya pesan yang
+    hilang atau soket yang menggantung saat beban — karena itu `cbs.nimble` membatasi
+    `mummy >= 0.4.8 & < 0.5.0` dan ada daftar periksa upgrade di D-037. Antrean kirim keluar masih
+    tidak dibatasi (O-028).
