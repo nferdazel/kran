@@ -32,19 +32,33 @@ load_env() {
   set +a
 }
 
+probe() {
+  # Bukti nyata bahwa tunnel hidup: query ke DB. `nc`/`ssh -O check` **tidak cukup** — port lokal
+  # masih menerima koneksi walau SSH-nya sudah mati (tunnel basi), dan gejalanya baru muncul sebagai
+  # "server closed the connection unexpectedly" di tengah test (kejadian 14–15 Okt 2026, 3×).
+  [ -n "${CBS_DATABASE_URL:-}" ] || return 1
+  command -v psql >/dev/null 2>&1 || return 1
+  psql "$CBS_DATABASE_URL" -Atc 'select 1' >/dev/null 2>&1
+}
+
 up() {
   load_env
-  if ssh -o ControlPath="$SOCK" -O check "$SSH_HOST" 2>/dev/null; then
-    printf '   tunnel sudah jalan\n'
+  if probe; then
+    printf '   tunnel sudah jalan (query ke DB berhasil)\n'
     return 0
   fi
+  # Tidak ada tunnel atau tunnel basi: buang sisa master connection lalu buka ulang.
+  ssh -o ControlPath="$SOCK" -O exit "$SSH_HOST" 2>/dev/null || true
   mkdir -p "$ROOT/.local"
+  # Keepalive: koneksi yang menganggur diputus jaringan/NAT tanpa opsi ini.
   ssh -f -N \
     -o BatchMode=yes -o ExitOnForwardFailure=yes \
+    -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o TCPKeepAlive=yes \
     -o ControlMaster=yes -o ControlPath="$SOCK" -o ControlPersist="$SSH_PERSIST" \
     -i "$SSH_KEY" \
     -L "127.0.0.1:$LOCAL_PORT:127.0.0.1:5432" \
     "$SSH_HOST"
+  probe || die "tunnel terbuka tetapi query ke DB gagal (cek $ENVFILE / DB server)"
   printf '   tunnel dibuka: 127.0.0.1:%s -> %s:5432\n' "$LOCAL_PORT" "$SSH_HOST"
 }
 

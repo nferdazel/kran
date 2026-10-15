@@ -81,3 +81,15 @@ CBS_DEVDB_PERSIST=7200
 Test integrasi `modules/platform/tests/itplatform.nim` **menghapus schema `platform`**
 (termasuk isi `audit_log`) lalu menerapkan ulang migrasi. Jangan arahkan
 `CBS_DATABASE_URL` ke DB yang datanya berharga.
+
+## Catatan operasional (15 Okt 2026)
+
+`./task devdb up` sekarang membuktikan tunnel dengan **query nyata** ke DB (`select 1`), bukan
+sekadar cek port/`ssh -O check`. Alasannya: tunnel yang SSH-nya sudah mati tetap menerima koneksi di
+port lokal, sehingga gejalanya baru muncul sebagai `server closed the connection unexpectedly` di
+tengah `./task test` (3× kejadian 14–15 Okt 2026). Bila probe gagal, `up` membuang master connection
+yang tersisa lalu membuka tunnel baru, dan gagal keras kalau query tetap tidak bisa.
+
+Koneksi juga memakai keepalive (`ServerAliveInterval=30`, `ServerAliveCountMax=3`, `TCPKeepAlive`)
+supaya tidak diputus jaringan saat menganggur.
+

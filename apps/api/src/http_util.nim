@@ -1,7 +1,7 @@
 ## Utilitas respons HTTP (spec §13): JSON biasa & `application/problem+json`, plus pembacaan
 ## permintaan (badan JSON, parameter path/query) supaya handler tidak mengulang kode parsing.
 
-import std/[json, options]
+import std/[json, options, strutils]
 
 import mummy
 import mummy/routers
@@ -47,3 +47,29 @@ proc queryValue*(req: Request, name: string): string =
     req.queryParams[name]
   except KeyError:
     ""
+
+proc isIsoDate*(s: string): bool =
+  ## Tanggal `YYYY-MM-DD` yang benar-benar ada (mis. `2026-02-31` ditolak, bukan diteruskan ke
+  ## cast `?::date` yang akan melempar `DbError` — kesalahan pemanggil tidak boleh jadi 500).
+  ## Rentang tahun dibatasi hanya pada yang ditulis 4 digit; tidak ada batas bisnis di sini.
+  if s.len != 10 or s[4] != '-' or s[7] != '-':
+    return false
+  for i, c in s:
+    if i == 4 or i == 7:
+      continue
+    if c notin {'0' .. '9'}:
+      return false
+  let year = parseInt(s[0 .. 3])
+  let month = parseInt(s[5 .. 6])
+  let day = parseInt(s[8 .. 9])
+  if year < 1 or month < 1 or month > 12 or day < 1:
+    return false
+  var maxDay: int
+  case month
+  of 2:
+    let leap = (year mod 4 == 0 and year mod 100 != 0) or year mod 400 == 0
+    maxDay = if leap: 29 else: 28
+  of 4, 6, 9, 11: maxDay = 30
+  else: maxDay = 31
+  day <= maxDay
+
