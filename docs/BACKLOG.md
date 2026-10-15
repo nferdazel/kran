@@ -27,6 +27,20 @@ berkas rencana di `docs/tasks/T-xxx.md`.
 | T-016 | DONE | Layanan parameter (lapisan application): cache in-proc per business date + konsumen NOTIFY, akses bertipe `params.get`, guard drift harian | §10.3, §10.4 | T-005 | `application/` tanpa driver DB (archcheck bersih + probe pelanggaran terbukti ditolak); cache invalid setelah NOTIFY (`itparamservice`); `get` bertipe OK; drift DB vs generated == 0 temuan. Sisa: watcher otomatis menunggu T-009 (O-018) |
 | T-015 | DONE | Inventaris `cbs-core` (referensi, bukan port) → `docs/migration/cbs-core-inventory.md` | §23, §21.9 | T-001 | Dokumen memuat: fitur, skema, aturan bisnis tervalidasi, kandidat golden test; tanpa menyentuh repo `cbs-core` |
 
+## Pasca-M0 — Fase 0 dibersihkan (permintaan pemilik, 15 Okt 2026)
+
+| Task | Item | Status |
+|---|---|---|
+| T-022 | Validasi bentuk permintaan parameter (O-035) | DONE |
+| T-023 | Realtime aman-sesi (O-036) | READY |
+| T-024 | Shutdown bersih (O-025) | READY |
+| T-025 | Invarian kursor outbox + test balapan dua koneksi (O-037, O-040) | READY |
+| T-026 | Kontrak CLI multi-role + jalur skrip ops (O-013) | READY |
+
+Nomor T-017 tetap **dipesan** untuk usulan MFA (belum disetujui pemilik) supaya tidak bentrok.
+Keputusan yang menunggu pemilik: O-031 (bootstrap user produksi), O-034 (kebijakan enumerasi akun),
+O-039 (`requires_approval`), O-012 (semantik scope institusi).
+
 ### Catatan urutan
 
 - T-014 selesai; **keputusan pemilik 2026-10-14 = Opsi A: Mummy + WebSocket** (D-019,

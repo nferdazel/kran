@@ -10,6 +10,8 @@ import std/[json, options, strutils]
 import mummy
 import db_connector/db_postgres
 
+import kernel/[ids, paramkey, result]
+
 import platform/domain/param
 import platform/infrastructure/[auth_service, param_repo]
 
@@ -18,7 +20,6 @@ import ./context
 import ./db_bridge
 import ./http_util
 import ./problem
-
 const
   ## Batas ukuran daftar (permintaan & jawaban). Nilainya **teknis** — pertahanan terhadap UI
   ## yang meminta seluruh tabel; bukan ambang bisnis.
@@ -110,6 +111,38 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
     req.respondProblem(pkBadRequest, "Bad Request", "field reason wajib diisi")
     return
 
+  # Validasi bentuk permintaan **sebelum** menyentuh DB: cast `?::date`/`?::uuid` dan CHECK skema
+  # melempar `DbError` yang tidak bisa dibedakan dari gangguan server, jadi tanpa pemeriksaan ini
+  # kesalahan pemanggil dijawab 500 (O-035). Semua di sini 400 menurut kontrak.
+  if not isIsoDate(effectiveFrom):
+    req.respondProblem(pkBadRequest, "Bad Request",
+      "effectiveFrom harus tanggal YYYY-MM-DD yang sah")
+    return
+  if effectiveTo.len > 0:
+    if not isIsoDate(effectiveTo):
+      req.respondProblem(pkBadRequest, "Bad Request",
+        "effectiveTo harus tanggal YYYY-MM-DD yang sah")
+      return
+    if effectiveTo <= effectiveFrom:
+      # CHECK skema `param_value_period_chk`: periode harus punya lebar positif.
+      req.respondProblem(pkBadRequest, "Bad Request",
+        "effectiveTo harus setelah effectiveFrom")
+      return
+
+  var scope: ParamScopeType
+  try:
+    scope = parseScopeType(scopeType)
+  except ValueError as e:
+    req.respondProblem(pkBadRequest, "Bad Request", e.msg)
+    return
+  # CHECK skema `param_value_global_scope_chk`: GLOBAL ⇔ `scope_id` kosong (NULL).
+  if scope == pstGlobal and scopeId.len > 0:
+    req.respondProblem(pkBadRequest, "Bad Request", "scope GLOBAL tidak boleh punya scopeId")
+    return
+  if scope != pstGlobal and scopeId.len == 0:
+    req.respondProblem(pkBadRequest, "Bad Request", "scope " & scopeType & " wajib punya scopeId")
+    return
+
   var status = 0
   var payload = newJObject()
   var problem = ""
@@ -161,6 +194,11 @@ proc handleApproveParamChange*(app: AppContext, req: Request) {.gcsafe.} =
   let paramValueId = pathParam(req, "paramValueId")
   if paramValueId.len == 0:
     req.respondProblem(pkBadRequest, "Bad Request", "paramValueId kosong")
+    return
+  if parseId(paramValueId).isErr:
+    # Id bukan UUID: `?::uuid` akan melempar `DbError` → 500. Kontrak tidak menyediakan 400 di
+    # operasi ini, dan id yang tak bisa ada memang "tidak ditemukan".
+    req.respondProblem(pkNotFound, "Not Found", "paramValueId bukan UUID yang sah")
     return
 
   var status = 0

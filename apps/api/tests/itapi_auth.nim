@@ -425,6 +425,51 @@ suite "aturan lintas-parameter kebijakan sesi lewat HTTP":
     checkProblem("/api/v1/params/{key}/changes", "POST", "400", idleTerlaluTinggi.body)
     check login(MakerUser).code == 200
 
+suite "validasi bentuk permintaan parameter (O-035)":
+  test "tanggal, periode, dan scope yang tidak sah dijawab 400, bukan 500":
+    # Sebelum perbaikan, semuanya berakhir di cast `?::date`/`?::uuid` atau CHECK skema → DbError →
+    # 500. Sekarang diperiksa di handler: kontrak sudah menyediakan 400 untuk operasi ini.
+    let maker = login(MakerUser)
+    let token = tokenOf(maker)
+    let path = "/api/v1/params/" & ParamKey & "/changes"
+    let kasus = [
+      ("efektif bukan tanggal", %*{"value": 9, "reason": "uji", "effectiveFrom": "2026-13-45"}),
+      ("tanggal tidak ada di kalender", %*{"value": 9, "reason": "uji",
+        "effectiveFrom": "2026-02-31"}),
+      ("effectiveTo bukan tanggal", %*{"value": 9, "reason": "uji",
+        "effectiveFrom": "2026-12-01", "effectiveTo": "besok"}),
+      ("periode terbalik", %*{"value": 9, "reason": "uji", "effectiveFrom": "2026-12-31",
+        "effectiveTo": "2026-01-01"}),
+      ("periode kosong (from = to)", %*{"value": 9, "reason": "uji",
+        "effectiveFrom": "2026-12-01", "effectiveTo": "2026-12-01"}),
+      ("scope tidak dikenal", %*{"value": 9, "reason": "uji", "scopeType": "BOGUS"}),
+      ("scopeId pada GLOBAL", %*{"value": 9, "reason": "uji", "scopeType": "GLOBAL",
+        "scopeId": "inst-1"}),
+      ("scope non-GLOBAL tanpa scopeId", %*{"value": 9, "reason": "uji",
+        "scopeType": "INSTITUTION"}),
+    ]
+    for (nama, body) in kasus:
+      checkpoint nama
+      let reply = postJson(path, body, token)
+      check reply.code == 400
+      check reply.body.hasKey("code") # amplop problem+json, bukan 500 tanpa bentuk
+      checkProblem("/api/v1/params/{key}/changes", "POST", "400", reply.body)
+
+  test "paramValueId bukan UUID dijawab 404, bukan 500":
+    let checker = login(CheckerUser)
+    let reply = postJson("/api/v1/params/changes/bukan-uuid/approve", newJObject(),
+      tokenOf(checker))
+    check reply.code == 404
+    checkProblem("/api/v1/params/changes/{paramValueId}/approve", "POST", "404", reply.body)
+
+  test "kontrol: pengajuan dengan tanggal & scope yang sah tetap 201":
+    let maker = login(MakerUser)
+    let reply = postJson("/api/v1/params/" & ParamKey & "/changes",
+      %*{"value": 9, "reason": "kontrol validasi bentuk", "effectiveFrom": "2027-03-01"},
+      tokenOf(maker))
+    check reply.code == 201
+    checkJson("/api/v1/params/{key}/changes", "POST", "201", reply.body)
+
 suite "audit lewat HTTP":
   test "jejak submit & approve parameter terbaca kembali lengkap":
     let checker = login(CheckerUser)
