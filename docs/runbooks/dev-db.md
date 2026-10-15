@@ -26,9 +26,9 @@ Bila `KRAN_DATABASE_URL` kosong atau tunnel mati, uji integrasi **melewati dirin
 ## 3. Batas (jangan dilewati)
 
 - Hanya menyentuh DB dev dan role dev-nya. DB `cbs` (milik `cbs-core`) **tidak disentuh**.
-  Nama DB dev sudah ditetapkan menjadi `kran_dev` (D-039), tetapi **rename di server belum dilakukan**
-  — sampai itu terjadi, `.local/dev.env` sengaja masih menunjuk nama lama (`cbs_dev`) supaya
-  lingkungan dev tetap jalan.
+  Nama DB dan role dev sudah **di-rename di server** menjadi `kran_dev` (D-039, 15 Okt 2026):
+  `ALTER DATABASE` + `ALTER ROLE`, dijalankan sebagai superuser `qouver`. `.local/dev.env` sudah
+  menunjuk ke sana; DB `cbs` milik sistem lama tidak disentuh.
 - Tidak ada perubahan kuadlet/container/config/backup/hook di server.
 - Tidak ada data nyata di DB dev; data uji selalu sintetis (AGENTS.md §3).
 

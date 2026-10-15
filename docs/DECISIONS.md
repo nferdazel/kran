@@ -859,14 +859,17 @@ Yang **tidak** diubah, dan alasannya:
   migrasi yang sudah diterapkan. Kanal diganti lewat migrasi baru `0009` (non-destruktif: tanpa
   DROP/TRUNCATE/RENAME).
 
-Yang belum selesai dan butuh manusia:
+Sudah dikerjakan di server (15 Okt 2026, superuser `qouver` lewat `podman exec qouver-postgres`):
 
-- **`ALTER DATABASE cbs_dev RENAME TO kran_dev`** di server (atau DB baru + dump/restore). Selama belum,
-  `.local/dev.env` sengaja tetap menunjuk nama lama supaya lingkungan dev tetap jalan; setelah rename,
-  ubah nilai `KRAN_DATABASE_URL`.
-- **Direktori server**: default skrip sudah `/srv/qouver/apps/kran`. Bila di server sudah ada
-  `/srv/qouver/apps/cbs` (mis. dari percobaan sebelumnya), perlu `mv` atau set `KRAN_APP_DIR`.
-- **Alias deploy key** di `~/.ssh/config` (mis. `github-kran`) — dibuat saat setup webhook/deploy key.
+- `ALTER DATABASE cbs_dev RENAME TO kran_dev` dan `ALTER ROLE cbs_dev RENAME TO kran_dev`. Dibuktikan
+  sesudahnya: `dbtools status` 10/10 migrasi utuh dan `itapi_ws` 15 `[OK]` menembus DB+role baru.
+- Yang **tidak** disentuh: DB `cbs` (sistem lama), 7 DB `cbs_verify*`, role `cbs_app`, dan
+  `/srv/qouver/apps/cbs` (65 MB, ada sejak 2 Sep 2026). Container sistem lama `cbs-api`
+  (`127.0.0.1:8095`) dan `cbs-web` (3005) dibiarkan berjalan.
+
+Masih butuh manusia (dicatat sebagai O-054/O-055): status `/srv/qouver/apps/cbs` dan container sistem
+lama, kepemilikan 7 DB `cbs_verify*`, penetapan domain KRAN, dan alias deploy key `github-kran`
+(dibuat saat setup webhook — langkahnya di `docs/runbooks/deploy-setup.md`).
 
 Catatan proses (jujur, bagian dari keputusannya): rename dilakukan mekanis lalu diperiksa, dan dua
 kesalahan di ronde itu ketemu dan diperbaiki — (1) `ops/systemd/*.service` awalnya terlewat karena
