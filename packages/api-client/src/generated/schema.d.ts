@@ -67,7 +67,7 @@ export interface paths {
          *     terlewat melebihi batas replay, server mengirim `{"type":"resync"}` dan klien harus
          *     menyegarkan keadaan lewat HTTP.
          *
-         *     Otorisasi: identitas dari cookie sesi `cbs_session` (spec §13) atau header
+         *     Otorisasi: identitas dari cookie sesi `kran_session` (spec §13) atau header
          *     `Authorization: Bearer`; topik difilter izin per langganan. Selama sesi belum terpasang
          *     (T-012), kebijakan default menolak semua koneksi.
          *
@@ -595,7 +595,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Sesi dibuat; cookie `cbs_session` diset */
+            /** @description Sesi dibuat; cookie `kran_session` diset */
             200: {
                 headers: {
                     /** @description Cookie sesi (`HttpOnly`, `Secure`, `SameSite=Strict`) */

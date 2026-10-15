@@ -28,7 +28,7 @@ info:
     identifier: MIT
   contact:
     name: Pemilik produk KRAN
-    url: https://github.com/cbs/cbs
+    url: https://github.com/nferdazel/kran
 
 servers:
   - url: /
