@@ -17,10 +17,33 @@ type Locale = (typeof LOCALES)[number];
 type Theme = (typeof THEMES)[number];
 
 /** Teks yang diharapkan per locale (dibaca dari katalog, bukan tebakan test). */
-const TEXT: Record<Locale, { h1: string; themeDark: string; themeLight: string; localeLabel: string }> = {
-  id: { h1: "Selamat datang", themeDark: "Gelap", themeLight: "Terang", localeLabel: "Bahasa" },
-  en: { h1: "Welcome", themeDark: "Dark", themeLight: "Light", localeLabel: "Language" },
+const TEXT: Record<
+  Locale,
+  { h1: string; appTitle: string; themeDark: string; themeLight: string; localeLabel: string }
+> = {
+  id: {
+    h1: "Selamat datang",
+    appTitle: "KRAN — Sistem Koperasi & Bank",
+    themeDark: "Gelap",
+    themeLight: "Terang",
+    localeLabel: "Bahasa",
+  },
+  en: {
+    h1: "Welcome",
+    appTitle: "KRAN — Cooperative & Bank System",
+    themeDark: "Dark",
+    themeLight: "Light",
+    localeLabel: "Language",
+  },
 };
+
+/**
+ * Pola untuk `toHaveTitle`: Playwright mencocokkan judul **utuh** dengan string, sedangkan judul
+ * halaman berisi nama aplikasi + nama rute. Teksnya dari katalog, jadi metacharacter regex di-escape.
+ */
+function titlePattern(text: string): RegExp {
+  return new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+}
 
 async function gotoApp(page: Page, locale: Locale, theme: Theme = "light"): Promise<void> {
   await page.addInitScript(
@@ -71,7 +94,7 @@ test("struktur shell: landmark, judul halaman, dan indikator business date", asy
   await expect(page.locator("footer")).toBeVisible();
 
   // Judul halaman unik per rute (spec §17.1).
-  await expect(page).toHaveTitle(/CBS/);
+  await expect(page).toHaveTitle(titlePattern(TEXT.id.appTitle));
 
   // Indikator business date selalu tampak (spec §14.3).
   await expect(page.getByText("Tanggal bisnis")).toBeVisible();
