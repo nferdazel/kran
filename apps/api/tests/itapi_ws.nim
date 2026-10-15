@@ -183,6 +183,9 @@ waitForPump(izinService)
 let izinPort = startServer(izinService)
 waitUntilServing(izinPort)
 
+## Uji pemutusan serentak (O-049) memerlukan beberapa klien sekaligus pada satu service.
+const stressClients = 8
+
 proc uniqueTopic(): string =
   "test.realtime." & $epochTime() & "." & $rand(1_000_000)
 
@@ -305,6 +308,54 @@ suite "realtime: izin langganan diperiksa ulang (O-046)":
     check lagi["denied"].len == 1
 
     izinTopikMasihAda.store(true)
+
+suite "realtime: banyak klien diputus serentak (O-049)":
+  test "8 klien diputus bersamaan sambil peristiwa mengalir → server tetap melayani":
+    # Penjaga regresi untuk ketergantungan pada internal Mummy: `send`/`close` dipanggil dari thread
+    # pump sementara handler memakai soket yang sama. Yang dicari bukan nilai balik tertentu,
+    # melainkan "tidak macet, tidak crash, dan proses tetap melayani klien baru" — sifat yang paling
+    # mudah rusak saat Mummy naik versi.
+    sessionMasihSah.store(true)
+    let topik = uniqueTopic()
+    var klien: seq[WsClient]
+    for _ in 1 .. stressClients:
+      var c = connect("127.0.0.1", gatedPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+      c.sendText(subscribeJson(topik, ""))
+      let subscribed = c.nextOfType("subscribed", 5000)
+      check subscribed["denied"].len == 0
+      klien.add c
+    check gatedService.connectionCount() == stressClients
+
+    # Peristiwa mengalir **bersamaan** dengan pencabutan sesi: pump mengirim sementara soket ditutup.
+    for i in 1 .. 20:
+      discard appendTestEvent(topik, %*{"key": "x", "n": i})
+    sessionMasihSah.store(false)
+
+    # Semua langganan harus habis, tanpa menggantung.
+    var habis = false
+    let tenggat = epochTime() + 15.0
+    while epochTime() < tenggat and not habis:
+      habis = gatedService.connectionCount() == 0
+      if not habis:
+        sleep(50)
+    check habis
+    for c in klien.mitems:
+      c.close()
+
+    # Sesi dipulihkan **sebelum** klien baru menyambung: dengan `sessionRecheckSeconds = 0`, klien
+    # yang menyambung saat sesi masih dicabut akan langsung ditutup sweep — bukan yang ingin diuji.
+    sessionMasihSah.store(true)
+
+    # Dan server masih hidup: klien baru tetap dilayani peristiwa.
+    let topikBaru = uniqueTopic()
+    var klienBaru = connect("127.0.0.1", gatedPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    defer: klienBaru.close()
+    klienBaru.sendText(subscribeJson(topikBaru, ""))
+    let langganan = klienBaru.nextOfType("subscribed", 5000)
+    check langganan["denied"].len == 0
+    let eventId = appendTestEvent(topikBaru, %*{"key": "y", "n": 1})
+    check klienBaru.nextOfType("event", 10_000)["id"].getStr() == eventId
+    check gatedService.pumpReady()
 
 suite "realtime: penolakan sebelum upgrade":
   test "GET tanpa Upgrade -> 426 problem+json sesuai kontrak":
