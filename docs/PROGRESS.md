@@ -572,3 +572,9 @@ masuk.
   topiknya (bukan hanya sesinya). Topik yang dicabut menutup langganan (`REALTIME_FORBIDDEN`); klien
   tanpa topik dibiarkan terhubung seperti perilaku handshake. Bukti: itapi_ws 14 `[OK]`, dan uji itu
   **gagal** bila penutupan langganan dihapus (mutasi). Gate penuh batch menyusul di T-031.
+
+- **T-032 DONE** (O-047 selesai): SIGTERM tidak lagi memotong permintaan yang sedang berjalan.
+  Urutannya: tandai berhenti (`/readyz` gagal) -> tunggu permintaan selesai (batas 10 detik) ->
+  hentikan pump -> keluar 0. Bukti: itapi 8 `[OK]`, e2e shutdown 2 lulus (permintaan lambatnya nyata:
+  login PBKDF2 600.000 iterasi), dan test drain **gagal** bila drain dimatikan (mutasi). Batas yang
+  tetap: koneksi yang belum masuk handler, dan soket realtime ditutup oleh keluarnya proses.

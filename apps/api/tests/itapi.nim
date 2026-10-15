@@ -13,7 +13,7 @@ import mummy
 
 import "platform-lib/db/config"
 
-import ../src/[health, readiness, server]
+import ../src/[drain, health, readiness, server]
 
 type
   ServeArgs = object
@@ -91,6 +91,16 @@ suite "readiness realtime (O-029)":
     check hasil[0].name == "pertama"
     check hasil[1].status == csFailed
     check hasil[1].detail == "sebab"
+
+suite "drain saat berhenti (T-032)":
+  test "readiness gagal saat proses sedang berhenti, dan tidak sebelum itu":
+    check drainProbe()().len == 0
+    startDraining()
+    let saatBerhenti = drainProbe()()
+    check saatBerhenti.len == 1
+    check saatBerhenti[0].status == csFailed
+    check saatBerhenti[0].name == "shutdown"
+    check saatBerhenti[0].detail.len > 0
 
 suite "readyz dengan DB nyata":
   test "DB hidup -> 200 dengan check database ok":

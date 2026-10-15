@@ -35,6 +35,7 @@ import platform/infrastructure/[audit_repo, auth_service, outbox_repo]
 
 import ./access
 import ./context
+import ./drain
 import ./events
 import ./health
 import ./readiness
@@ -120,6 +121,12 @@ proc parseArgs(argv: seq[string]): CliOptions =
 
 var shutdownRequested: Atomic[bool]
 
+const
+  ## Batas waktu menunggu permintaan berjalan saat berhenti (detik). Teknis, bukan nilai bisnis:
+  ## batas ini menjaga deploy tidak menggantung tanpa akhir, sementara permintaan normal (termasuk
+  ## login dengan PBKDF2 600.000 iterasi) selesai jauh di bawahnya.
+  shutdownDrainSeconds* = 10.0
+
 proc onStopSignal(sig: cint) {.noconv.} =
   ## Handler sinyal: seminimal mungkin (async-signal-safe). Tidak menulis log dan tidak menyentuh
   ## DB/Mummy di sini — pekerjaan penutupan dilakukan `watchStop` di thread lain.
@@ -127,15 +134,32 @@ proc onStopSignal(sig: cint) {.noconv.} =
   shutdownRequested.store(true)
 
 proc watchStop(app: AppContext) {.thread.} =
-  ## Berhenti dengan tenang saat SIGINT/SIGTERM: hentikan pump realtime (beri kesempatan loopnya
-  ## selesai, dengan batas waktu), tulis satu baris log, lalu keluar dengan **kode 0**.
+  ## Berhenti dengan tenang saat SIGINT/SIGTERM, berurutan:
+  ##   1. tandai proses sedang berhenti supaya `/readyz` gagal (penyeimbang beban berhenti mengirim
+  ##      permintaan baru);
+  ##   2. tunggu permintaan yang **sedang berjalan** selesai, dengan batas waktu;
+  ##   3. hentikan pump realtime (beri kesempatan loopnya selesai, dengan batas waktu);
+  ##   4. tulis satu baris log, keluar dengan **kode 0**.
   ##
   ## `server.close()` sengaja **tidak** dipakai: berhenti bersih tidak membutuhkannya, dan O-025
   ## mencatat SIGSEGV di jalur teardown itu (probe minimal tidak mereproduksinya — lihat
-  ## `docs/spikes/O-025-shutdown.md`). Batas yang diketahui: permintaan yang sedang berjalan
-  ## dipotong saat proses keluar (O-047).
+  ## `docs/spikes/O-025-shutdown.md`). Batas yang diketahui: koneksi yang sudah diterima tetapi belum
+  ## sempat masuk ke handler tetap terpotong, dan soket realtime ditutup oleh keluarnya proses
+  ## (klien menyambung ulang) — lihat `docs/tasks/T-032.md`.
   while not shutdownRequested.load():
     sleep(100)
+
+  startDraining()
+  let deadlineDrain = epochTime() + shutdownDrainSeconds
+  while inFlightCount() > 0 and epochTime() < deadlineDrain:
+    sleep(20)
+  if inFlightCount() > 0:
+    stderr.writeLine "cbs-api: " & $inFlightCount() &
+      " permintaan masih berjalan setelah " & $shutdownDrainSeconds &
+      " detik; dilanjutkan berhenti (O-047)"
+  else:
+    stderr.writeLine "cbs-api: permintaan berjalan selesai (drain)"
+
   if not app.events.isNil:
     app.events.stopPump()
     let deadline = epochTime() + 2.0
@@ -388,7 +412,7 @@ proc main() =
 
   # Readiness = dependensi bootstrap (DB) + realtime (O-029): pump yang mati berlarut harus terlihat
   # dari `/readyz`, tetapi penyambungan ulang sekejap tidak boleh mencabut instance dari trafik.
-  app.readiness = combineProbes(@[databaseProbe(), realtimeProbe(app.events)])
+  app.readiness = combineProbes(@[databaseProbe(), realtimeProbe(app.events), drainProbe()])
 
   # Berhenti bersih (O-025): tanpa ini SIGTERM mematikan proses sebagai sinyal (kode 143) tanpa
   # jalur penutupan apa pun; dengan ini pump dihentikan dan proses keluar kode 0.
