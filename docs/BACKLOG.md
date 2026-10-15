@@ -34,12 +34,16 @@ berkas rencana di `docs/tasks/T-xxx.md`.
 | T-022 | Validasi bentuk permintaan parameter (O-035) | DONE |
 | T-023 | Realtime aman-sesi (O-036) | DONE |
 | T-024 | Shutdown bersih (O-025) | DONE |
-| T-025 | Invarian kursor outbox + test balapan dua koneksi (O-037, O-040) | READY |
+| T-025 | Invarian kursor outbox + test balapan dua koneksi (O-037, O-040) | DONE |
 | T-026 | Kontrak CLI multi-role + jalur skrip ops (O-013) | DONE |
+| T-027 | Bootstrap admin produksi + endpoint ganti kata sandi (O-031) | READY |
+| T-028 | Kebijakan anti-enumerasi akun (O-034) | READY |
 
 Nomor T-017 tetap **dipesan** untuk usulan MFA (belum disetujui pemilik) supaya tidak bentrok.
-Keputusan yang menunggu pemilik: O-031 (bootstrap user produksi), O-034 (kebijakan enumerasi akun),
-O-039 (`requires_approval`), O-012 (semantik scope institusi).
+Keputusan pemilik 15 Okt 2026 (D-034): O-031 (bootstrap: perintah sekali-jalan + wajib ganti, jadi
+T-027), O-034 (status terkunci hanya setelah kata sandi benar + PBKDF2 tiruan, jadi T-028), O-039
+(`requires_approval: false` ditolak `paramgen`, semantik menyusul di T-016), O-012 (tipe lookup
+eksplisit, dikerjakan di T-016). Tidak ada lagi keputusan yang menggantung.
 
 ### Catatan urutan
 

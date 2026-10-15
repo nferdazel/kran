@@ -5,7 +5,7 @@
 ## `--check` (dipakai `./task check`) tidak menulis apa pun dan keluar 1 bila artefak di disk
 ## berbeda dari hasil generate. `--gen` menulis ulang artefak.
 
-import std/os
+import std/[os, strutils]
 import lib
 
 var root = getCurrentDir()
@@ -39,6 +39,12 @@ if not doCheck and not doGen:
   doGen = true
 
 try:
+  let belumDisepakati = undefinedApprovalSemantics(loadAllDefs(root))
+  if belumDisepakati.len > 0:
+    stderr.writeLine("paramgen: `requires_approval: false` belum punya arti yang disepakati " &
+      "(docs/OPEN_ITEMS.md O-039; dijalankan bersama T-016): " & belumDisepakati.join(", "))
+    quit(2)
+
   let seeds = moduleSeedPaths(root)
   if doCheck:
     var note = ""

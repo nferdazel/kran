@@ -14,6 +14,16 @@ proc freshWorkRoot(): string =
   workRoot
 
 suite "paramgen: validasi key & tipe":
+  test "`requires_approval: false` dilaporkan sebagai belum disepakati (O-039)":
+    # Penegakannya di `paramgen` (CLI), bukan di parser: fixture repo ini sengaja memuat `false`
+    # untuk menguji plumbing parser dan emitter, jadi predikat inilah yang dipakai CLI.
+    let defs = parseDefsFromJson("x", parseJson(
+      """[{"key":"x.param.thing","type":"integer","scopes":["GLOBAL"],"requires_approval":false},
+          {"key":"x.param.other","type":"integer","scopes":["GLOBAL"]}]"""))
+    check undefinedApprovalSemantics(defs) == @["x.param.thing"]
+    check undefinedApprovalSemantics(parseDefsFromJson("x", parseJson(
+      """[{"key":"x.param.thing","type":"integer","scopes":["GLOBAL"]}]"""))).len == 0
+
   test "isValidKey":
     check isValidKey("lending.collectibility.dpd.kl")
     check isValidKey("platform.calendar.fiscal_year_start_month")

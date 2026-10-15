@@ -160,6 +160,7 @@ proc parseDefsFromJson*(module: string, node: JsonNode): seq[ParamDef] =
         fail(d.key & ": scope tidak dikenal: " & s)
     if d.sensitivity notin ["NORMAL", "CRITICAL"]:
       fail(d.key & ": sensitivity harus NORMAL atau CRITICAL, bukan " & d.sensitivity)
+
     for r in d.regulatoryRefs:
       if not (r.len == 7 and r.startsWith("REG-") and
               r[4] in {'0' .. '9'} and r[5] in {'0' .. '9'} and r[6] in {'0' .. '9'}):
@@ -197,6 +198,18 @@ proc loadModuleDefs*(root, moduleDirName: string): seq[ParamDef] =
   if nodes.len == 0:
     return @[]
   result = parseDefsFromJson(moduleDirName, nodes[0])
+
+proc undefinedApprovalSemantics*(defs: seq[ParamDef]): seq[string] =
+  ## Definisi yang memakai `requires_approval: false`. Artinya belum disepakati (keputusan pemilik
+  ## 15 Okt 2026, dijalankan bersama T-016; docs/OPEN_ITEMS.md O-039), jadi `paramgen` menolak
+  ## menggenerate repo yang memuatnya.
+  ##
+  ## Penegakannya di **batas CLI** (`tools/paramgen/main.nim`), bukan di parser: parser dan emitter
+  ## tetap bisa menangani `false` dan fixture mengujinya, supaya plumbing kolom yang sudah ada tidak
+  ## ikut terhapus sebelum semantiknya diputuskan.
+  for d in defs:
+    if not d.requiresApproval:
+      result.add d.key
 
 proc loadAllDefs*(root: string): seq[ParamDef] =
   ## Semua modul, urut by key (deterministik).
