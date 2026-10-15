@@ -45,6 +45,28 @@ T-027), O-034 (status terkunci hanya setelah kata sandi benar + PBKDF2 tiruan, j
 (`requires_approval: false` ditolak `paramgen`, semantik menyusul di T-016), O-012 (tipe lookup
 eksplisit, dikerjakan di T-016). Tidak ada lagi keputusan yang menggantung.
 
+## Batch "Fase 0 tahan banting" (permintaan pemilik, 15 Okt 2026)
+
+Tujuan: Fase 0 bukan sekadar hijau sekali, tetapi tidak punya celah yang **diketahui** pada jalur
+kebenaran, keamanan, dan ketahanan yang memang milik Fase 0. Batas fase lain (metrics spec §22,
+DR drill §9, freeze gate `daycloser` fase 3) tidak dipaksakan masuk; ia masuk register batas (T-037).
+
+| Task | Item | Prioritas | Status |
+|---|---|---|---|
+| T-028 | Kebijakan anti-enumerasi akun (O-034) | P1 | READY |
+| T-029 | Pump realtime pulih setelah koneksi putus (O-029) | P1 | READY |
+| T-030 | Izin langganan realtime diperiksa ulang (O-046) | P1 | READY |
+| T-031 | CI stabil: audit flake + aturan isolasi tes + `ci-repeat` | P1 | READY |
+| T-032 | Drain permintaan berjalan saat SIGTERM (O-047) | P2 | READY |
+| T-033 | Pool DB: bukti aman paralel + rapikan klaim (O-011) | P2 | READY |
+| T-034 | Kurangi ketergantungan pada internal Mummy (O-049) | P2 | READY |
+| T-035 | Migrasi contract & rollback (O-048) | P3 | READY |
+| T-036 | Semantik scope institusi & `requires_approval` (O-012, O-039) | P3 | READY |
+| T-037 | Register batas Fase 0 + laporan penutup | P3 | READY |
+
+Urutan kerja: T-028 → T-029 → T-030 → T-031 → T-032 → T-033 → T-034 → T-035 → T-036 → T-037.
+Satu putaran review independen di akhir batch atas diff seluruh batch (pola batch T-022…T-026).
+
 ### Catatan urutan
 
 - T-014 selesai; **keputusan pemilik 2026-10-14 = Opsi A: Mummy + WebSocket** (D-019,
