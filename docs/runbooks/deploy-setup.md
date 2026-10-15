@@ -92,15 +92,30 @@ nyata. Variabel yang dibaca kode: `KRAN_DATABASE_URL`, `KRAN_DB_POOL_SIZE`,
 `KRAN_APP_NAME`. Variabel untuk skrip deploy: `KRAN_GIT_URL`, `KRAN_APP_DIR`, `KRAN_HEALTH_URL`.
 **Tidak ada nilai bisnis di sini** — semuanya dari parameter DB (spec §10).
 
-## D. Yang belum diputuskan manusia
+## D. Fakta server (recon read-only, 15 Okt 2026)
 
-- **Domain**: `ops/caddy/Caddyfile.kran.example` masih memakai `cbs.qouver.com` (domain `cbs-core`
+Diperiksa langsung, bukan diasumsikan:
+
+| Fakta | Nilai |
+|---|---|
+| Postgres | container Podman `qouver-postgres`, `127.0.0.1:5432`, superuser `qouver` |
+| Sistem lama yang berjalan | container `cbs-api` → **127.0.0.1:8095**, `cbs-web` → 127.0.0.1:3005 |
+| `/srv/qouver/apps/cbs` | **sudah ada** (65 MB; `env/ logs/ monorepo/ scripts/`, sejak 2 Sep 2026) |
+| DB terkait sistem lama | `cbs` (14 MB), plus `cbs_verify*` — **jangan disentuh** |
+| Direktori aplikasi kita | `/srv/qouver/apps/kran` (belum ada; default skrip sudah ke sana) |
+
+Konsekuensi: direktori aplikasi kita **wajib** berbeda dari `/srv/qouver/apps/cbs` — bukan sekadar
+preferensi nama, melainkan menghindari tabrakan dengan yang sudah ada. Port 8095 juga masih dipegang
+container `cbs-api`, jadi unit kita belum bisa memakainya sampai cutover (§21.5).
+
+## D2. Yang belum diputuskan manusia
+
+- **Domain**: `ops/caddy/Caddyfile.kran.example` masih memakai `cbs.qouver.com` (domain sistem lama
   selama transisi). Memilih domain KRAN itu keputusan pemilik domain, bukan efek samping rename.
-- **Direktori server**: default skrip adalah `/srv/qouver/apps/kran`. Bila di server sudah ada
-  `/srv/qouver/apps/cbs` (mis. dari percobaan sebelumnya), pindahkan atau set `KRAN_APP_DIR`.
-- **Port 8095** tetap milik `cbs-core` sampai cutover (§21.5).
-- **Nama DB di server**: D-039 sudah menetapkan `kran_dev`, tetapi rename-nya belum dilakukan
-  (lihat `docs/runbooks/dev-db.md`).
+- **Apa isi `/srv/qouver/apps/cbs` sekarang** dan apakah ia masih dipakai (container `cbs-api`/`cbs-web`
+  jalan). Menentukan urutan cutover; bukan sesuatu yang diputuskan agen.
+- **DB `cbs_verify*`** (7 basis data, 10–33 MB) tidak disentuh oleh rename; kepemilikannya perlu
+  dikonfirmasi pemilik sebelum dianggap bagian dari apa pun.
 
 ## E. Verifikasi setelah terpasang
 
