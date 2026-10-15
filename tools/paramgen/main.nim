@@ -39,10 +39,10 @@ if not doCheck and not doGen:
   doGen = true
 
 try:
-  let belumDisepakati = undefinedApprovalSemantics(loadAllDefs(root))
-  if belumDisepakati.len > 0:
+  let undefinedApprovals = undefinedApprovalSemantics(loadAllDefs(root))
+  if undefinedApprovals.len > 0:
     stderr.writeLine("paramgen: `requires_approval: false` belum punya arti yang disepakati " &
-      "(docs/OPEN_ITEMS.md O-039; dijalankan bersama T-016): " & belumDisepakati.join(", "))
+      "(docs/OPEN_ITEMS.md O-039; dijalankan bersama T-016): " & undefinedApprovals.join(", "))
     quit(2)
 
   let seeds = moduleSeedPaths(root)

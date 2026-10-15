@@ -268,16 +268,64 @@ suite "ganti password":
   test "password lama harus benar; password baru dinilai kebijakan; sesi baru bisa login":
     let uid = buatUser("ganti-password")
     let user = userById(db, uid).get()
-    check not changePassword(db, user, settings(), "password-salah", "password-baru-panjang")
+    let ctx = ctxFor(uid)
+    check not changePassword(db, ctx, jamKerja, instScope, user, settings(),
+      "password-salah", "password-baru-panjang")
     var raised = false
     try:
-      discard changePassword(db, user, settings(), passwordAwal, "pendek")
-    except ValueError:
+      discard changePassword(db, ctx, jamKerja, instScope, user, settings(),
+        passwordAwal, "pendek")
+    except PasswordPolicyError:
+      # Tipe khusus, bukan `ValueError` polos: pemanggil HTTP memakainya untuk membedakan salah
+      # pengguna (400) dari konfigurasi institusi yang rusak (500).
       raised = true
     check raised
-    check changePassword(db, user, settings(), passwordAwal, "password-baru-panjang")
+    check changePassword(db, ctx, jamKerja, instScope, user, settings(),
+      passwordAwal, "password-baru-panjang")
     check login("ganti-password", passwordAwal).outcome == aoInvalidCredentials
     check login("ganti-password", "password-baru-panjang").outcome == aoSuccess
+    # Jejak audit ikut ditulis: tanpa itu penggantian kata sandi tidak bisa
+    # dipertanggungjawabkan di kemudian hari (spec §18.2).
+    let jejak = auditRows("user.password_change")
+    check jejak.len == 1
+    check jejak[0][0] == uid
+    check jejak[0][6] == "uji otomatis"
+
+  test "sesi yang dipakai tetap hidup, sesi lain dicabut":
+    let uid = buatUser("cabut-sesi-lain", password = "kata-sandi-awal-panjang")
+    discard login("cabut-sesi-lain", "kata-sandi-awal-panjang")
+    let sesiKedua = login("cabut-sesi-lain", "kata-sandi-awal-panjang")
+    let sesiKetiga = login("cabut-sesi-lain", "kata-sandi-awal-panjang")
+    check sesiKedua.outcome == aoSuccess
+    check sesiKetiga.outcome == aoSuccess
+    let user = userById(db, uid).get()
+    check changePassword(db, ctxFor(uid), jamKerja, instScope, user, settings(),
+      "kata-sandi-awal-panjang", "kata-sandi-baru-panjang",
+      keepSessionId = sesiKetiga.sessionId)
+    check activeSessionCount(db, uid, utcIso(jamKerja.now())) == 1
+    check sessionFor(db, jamKerja, sesiKetiga.token).isSome
+    check sessionFor(db, jamKerja, sesiKedua.token).isNone
+
+suite "bootstrap admin pertama":
+  test "sekali-jalan: admin wajib-ganti, percobaan kedua ditolak":
+    let ctx = ctxFor("")
+    check bootstrapFirstAdmin(db, ctx, jamKerja, instScope, "admin-pertama",
+      "Admin Pertama", "platform_admin", "kata-sandi-acak-panjang", 1000)
+    let admin = userByUsername(db, "admin-pertama").get()
+    check admin.mustChangePassword
+    check "platform_admin" in roleCodesOfUser(db, admin.userId)
+    check login("admin-pertama", "kata-sandi-acak-panjang").outcome == aoSuccess
+
+    # Username lain pun ditolak selama sudah ada pemegang role itu: kalau tidak,
+    # "bootstrap" bisa dipakai lagi diam-diam untuk membuat admin kedua.
+    check not bootstrapFirstAdmin(db, ctx, jamKerja, instScope, "admin-kedua",
+      "Admin Kedua", "platform_admin", "kata-sandi-acak-panjang", 1000)
+
+    # Setelah mengganti kata sandinya, kewajiban ganti hilang dan auditenya lengkap.
+    check changePassword(db, ctxFor(admin.userId), jamKerja, instScope, admin, settings(),
+      "kata-sandi-acak-panjang", "kata-sandi-baru-panjang")
+    check not userById(db, admin.userId).get().mustChangePassword
+    check auditRows("user.bootstrap").len == 1
 
 ## Catatan: suite ini berjalan berurutan dan beberapa test memakai baris yang dibuat test
 ## sebelumnya (tanggal makin ke depan). Test baru sebaiknya membuat barisnya sendiri — lihat test

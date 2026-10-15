@@ -12,6 +12,7 @@ repo** (atau dengan `--root=<dir>` yang menunjuk ke sana), karena migrasi dibaca
 | `ctl` | `cbs-api --role=ctl verify-audit` | **0** rantai audit utuh, **1** ada entri tidak utuh |
 | `ctl` | `cbs-api --role=ctl outbox-status` | **0** (hanya mencetak jumlah per status) |
 | `ctl` | `cbs-api --role=ctl daycloser-status` | **3** belum ada di Fase 0 (dipakai freeze gate deploy) |
+| `ctl` | `cbs-api --role=ctl bootstrap-admin --username=<nama>` | **0** admin dibuat, **3** sudah ada pemegang role admin, **2** tanpa `--username` |
 | `ctl` | `cbs-api --role=ctl help` | **0** |
 | `worker` | `cbs-api --role=worker` | **3** belum ada pekerjaan di Fase 0 |
 | — | argumen salah / perintah tidak dikenal | **2** (bantuan ditulis ke stderr) |
@@ -33,9 +34,9 @@ membedakan ketiganya, jadi jangan "merapikan" kode keluar tanpa memperbarui skri
 
 ## Catatan
 
-- Peran `ctl` sengaja **read-only**: skrip otomatis memanggilnya tanpa pengawasan, jadi tidak boleh
-  ada perintah yang menulis data (re-drive outbox dsb. menyusul sebagai perintah terpisah dengan
-  `--yes`).
+- Peran `ctl` sengaja **read-only**, dengan satu pengecualian: `bootstrap-admin`. Skrip otomatis
+  memanggil perintah lain di peran ini tanpa pengawasan, jadi tidak boleh ada perintah lain yang
+  menulis data (re-drive outbox dsb. menyusul sebagai perintah terpisah dengan `--yes`).
 - `--role=migrate` memakai implementasi yang sama dengan `./task dbtools migrate`/`validate`
   (`tools/dbtools/lib.nim`), supaya tidak ada dua jalur migrasi yang bisa berbeda hasil.
 
@@ -46,3 +47,26 @@ membedakan ketiganya, jadi jangan "merapikan" kode keluar tanpa memperbarui skri
 mengubah satu baris, lalu menyalakannya lagi) untuk membuktikan deteksinya. Jadi kode 1 di DB dev
 bukan sinyal kerusakan nyata — karena itu test peran di `apps/api/tests/itapi_roles.nim` membandingkan
 kode keluar dengan hasil `verifyChain` pada DB yang sedang dipakai, bukan menuntut selalu 0.
+
+
+## Bootstrap admin pertama (`ctl bootstrap-admin`, T-027)
+
+```
+cbs-api --role=ctl bootstrap-admin --username=admin.pertama
+```
+
+Yang terjadi: pengguna dibuat dengan `must_change_password = true` dan role `platform_admin`
+(katalog izin & role sistem ada di migrasi `0008_platform_rbac_catalogue.sql`, jadi role itu memang
+punya seluruh izin yang dikenal), lalu kata sandi awal acak (CSPRNG; panjangnya `password_min_length` + margin, alfabet tanpa
+karakter mudah tertukar) dicetak **sekali** ke stdout. Yang tersimpan di DB hanya hash-nya; kalau
+output-nya hilang sebelum dipakai, tidak ada cara memulihkannya — buat admin lain lewat alur
+penugasan role biasa.
+
+Sebelum kata sandinya diganti, akun itu hanya bisa memakai `/auth/session`, `/auth/password`, dan
+`/auth/logout`. Rute ber-izin dijawab 403 `password_change_required` (juga di jalur realtime), dan
+UI mengarahkan pengguna ke `/app/password` sampai selesai. Setelah ganti, sesi yang sedang dipakai
+tetap hidup dan sesi lain milik pengguna itu dicabut.
+
+Kode keluar: **0** berhasil, **3** ditolak karena sudah ada pemegang role admin (atau username sudah
+dipakai) — perintah ini sekali-jalan dan tidak punya opsi paksa, **2** salah pakai (mis.
+`--username` kosong), **1** gagal terhadap DB / kebijakan keamanan tidak sah.

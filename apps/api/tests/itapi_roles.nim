@@ -16,7 +16,8 @@ import db_connector/db_postgres
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
 import dbtools/lib
-import platform/infrastructure/audit_repo
+import kernel/[clock, ids]
+import platform/infrastructure/[audit_repo, auth_repo]
 
 import ../src/main
 
@@ -53,6 +54,53 @@ suite "cbs-api: peran CLI (O-013)":
 
   test "ctl daycloser-status: dikenali, tapi belum ada di Fase 0 → 3":
     check runCtl("daycloser-status", ".") == 3
+
+  test "ctl bootstrap-admin: tanpa --username → 2 (salah pakai), bantuan menyebutnya":
+    # `bootstrap-admin` satu-satunya perintah `ctl` yang menulis, jadi kontraknya diuji eksplisit.
+    # Alur sukses + kata sandi yang dicetak sekali diuji di `itauth` (butuh skema bersih); di sini
+    # yang penting: salah pakai tidak diam-diam membuat admin, dan perintahnya terlihat di bantuan.
+    check runCtl(bootstrapAdminCmd, ".", "") == 2
+    check CtlUsage.contains(bootstrapAdminCmd)
+
+  test "ctl bootstrap-admin: menolak bila sudah ada pemegang role admin (kode 3)":
+    let uid = $newId(systemClock())
+    let siap = insertUser(db, NewUser(userId: uid, username: "itapi-admin-lama",
+      fullName: "Uji Admin Lama", passwordHash: "x"))
+    if siap:
+      discard grantRole(db, uid, bootstrapAdminRole, "", "")
+    defer:
+      discard db.execAffectedRows(sql"DELETE FROM platform.user_role WHERE user_id = ?::uuid", uid)
+      discard db.execAffectedRows(sql"DELETE FROM platform.app_user WHERE user_id = ?::uuid", uid)
+    # Kode 3 = "dikenali, tapi tidak bisa dijalankan sekarang" (kontrak T-026) — bukan 2 (salah
+    # pakai) dan bukan 0 (seolah-olah berhasil).
+    check runCtl(bootstrapAdminCmd, ".", "itapi-admin-baru") == 3
+
+  test "withRoleDb(useTx = true): kegagalan di tengah membatalkan seluruh tulisan":
+    # Bootstrap menulis tiga hal (pengguna, role, audit). Kalau salah satunya gagal dan transaksinya
+    # tidak membatalkan yang lain, yang tersisa adalah pengguna setengah jadi tanpa role — dan itu
+    # membuat namanya terpakai selamanya tanpa bisa dipakai bekerja.
+    let uid = $newId(systemClock())
+    let code = withRoleDb(proc(db: DbConn): int {.closure.} =
+      discard insertUser(db, NewUser(userId: uid, username: "itapi-rollback",
+        fullName: "Uji Rollback", passwordHash: "x"))
+      # Sengaja gagal setelah tulisan pertama: pembagian dengan nol → `DbError`.
+      discard db.getValue(sql"select (1/0)::int")
+      0, useTx = true)
+    check code == 1
+    check db.getValue(sql"select count(*) from platform.app_user where user_id = ?::uuid",
+      uid) == "0"
+
+  test "tanpa useTx, koneksi perintah tidak membuka transaksi (perilaku lama tetap)":
+    # Penjagaan untuk perubahan di atas: perintah read-only tidak perlu (dan tidak boleh dipaksa)
+    # berjalan dalam transaksi — kalau kelak `useTx` dibalik jadi default, test ini gagal.
+    let uid = $newId(systemClock())
+    check withRoleDb(proc(db: DbConn): int {.closure.} =
+      discard insertUser(db, NewUser(userId: uid, username: "itapi-no-tx",
+        fullName: "Uji Tanpa Tx", passwordHash: "x"))
+      0) == 0
+    check db.getValue(sql"select count(*) from platform.app_user where user_id = ?::uuid",
+      uid) == "1"
+    discard db.execAffectedRows(sql"DELETE FROM platform.app_user WHERE user_id = ?::uuid", uid)
 
   test "migrate idempoten: jalan pertama & kedua → 0, jalan kedua tidak menerapkan apa pun":
     check runMigrate(".") == 0

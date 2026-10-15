@@ -17,10 +17,10 @@ Snapshot `./task ci` di mesin dev, 15 Oktober 2026:
 
 | Ukuran | Nilai |
 |---|---|
-| Pemeriksaan lulus (`[OK]`) | 437 (unit, property, integrasi Postgres, kontrak OpenAPI) |
-| Uji browser (Playwright, axe 2 tema) | 19 |
+| Pemeriksaan lulus (`[OK]`) | 450 (unit, property, integrasi Postgres, kontrak OpenAPI) |
+| Uji browser (Playwright, axe 2 tema) | 22 |
 | Berkas lolos `nim check` | 109 |
-| Migrasi SQL | 8 |
+| Migrasi SQL | 9 |
 
 Angka itu bergerak setiap task. Yang tetap: `./task ci` harus hijau sebelum sebuah task disebut
 selesai. Rencana, kemajuan, dan sisa yang belum bisa ditutup ada di
@@ -98,9 +98,12 @@ Satu biner, kontrak peran yang bisa dipanggil skrip ops:
 | `api` | `cbs-api --role=api [--port=8080] [--address=127.0.0.1]` | 0 saat berhenti tenang (SIGINT/SIGTERM) |
 | `migrate` | `cbs-api --role=migrate [--check\|--up]` | 0 selesai; 1 ada migrasi tertunda atau isi migrasi berubah |
 | `ctl` | `cbs-api --role=ctl verify-audit\|outbox-status\|help` | 0 normal; 1 hasil buruk (mis. rantai audit tidak utuh) |
+| `ctl` | `cbs-api --role=ctl bootstrap-admin --username=<nama>` | 0 admin dibuat (kata sandi dicetak **sekali**); 3 sudah ada pemegang role admin |
 | `worker` | `cbs-api --role=worker` | 3 belum ada pekerjaannya di Fase 0 |
 
 Salah pakai atau `CBS_DATABASE_URL` kosong menghasilkan kode 2 dengan pesan, bukan stack trace.
+`bootstrap-admin` satu-satunya perintah `ctl` yang menulis; sebelum mengganti kata sandinya, admin itu
+hanya bisa memakai `/auth/session`, `/auth/password`, dan `/auth/logout`.
 Lengkapnya: [`docs/runbooks/ops-cli.md`](docs/runbooks/ops-cli.md).
 
 ## Perintah

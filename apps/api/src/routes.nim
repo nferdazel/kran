@@ -70,6 +70,8 @@ proc authRoutes*(): seq[RouteSpec] =
               handler: handleSession),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/auth/logout", operationId: "logout",
               handler: handleLogout),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/auth/password", operationId: "changePassword",
+              handler: handleChangePassword),
   ]
 
 proc paramRoutes*(): seq[RouteSpec] =

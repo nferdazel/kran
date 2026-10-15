@@ -133,8 +133,8 @@ Catatan penempatan: `CloseLevel` masih di `domain/calendar.nim`. Saat modul `day
 | Domain scope | `domain/scope.nim` — `ScopeRef` + konvensi lookup parameter (dipakai kalender & auth) |
 | Hash password | `infrastructure/password_hasher.nim` — PBKDF2-HMAC-SHA256; hash token sesi (SHA-256) |
 | Repo | `infrastructure/auth_repo.nim` — user/lockout, role/permission/SoD, sesi |
-| Alur | `infrastructure/auth_service.nim` — `authenticate`, `sessionFor`, `touch`, `logout`, `logoutAll`, `authorizeUser`, `changePassword` |
-| Migrasi | `0006_platform_auth.sql` |
+| Alur | `infrastructure/auth_service.nim` — `authenticate`, `sessionFor`, `touch`, `logout`, `logoutAll`, `authorizeUser`, `changePassword`, `bootstrapFirstAdmin` |
+| Migrasi | `0006_platform_auth.sql` (tabel) + `0008_platform_rbac_catalogue.sql` (katalog izin & role sistem) |
 
 Invarian tambahan:
 
@@ -147,6 +147,20 @@ Invarian tambahan:
     data, `authorize` menolak semua aksi.
 16. **Anti-enumerasi**: user tak dikenal & password salah sama-sama `INVALID_CREDENTIALS`;
     user tak dikenal dicatat di audit sebagai digest, bukan nama mentah (§18.2 logging tanpa PII).
+    *(Status `locked`/`inactive` masih dibalas sebelum verifikasi password — kebijakannya sudah
+    diputuskan, pelaksanaannya di T-028.)*
+17. **Admin pertama sekali-jalan** (T-027): `bootstrapFirstAdmin` menolak bila username sudah ada
+    atau sudah ada pengguna yang memegang role admin — jadi perintah `ctl bootstrap-admin` tidak
+    bisa diam-diam jadi jalur membuat admin kedua. Kata sandi awalnya diacak CSPRNG, dicetak sekali
+    ke stdout, hanya hash-nya tersimpan, dan pengguna dibuat `must_change_password = true`.
+18. **Sesi wajib-ganti hanya boleh mengganti kata sandi**: `requirePermission` (satu tempat, di
+    `apps/api/src/access.nim`) menolak rute ber-izin dengan 403 `password_change_required` selama
+    `must_change_password` masih true; `getSession`, `logout`, dan `changePassword` tidak melewatinya
+    sehingga alurnya tetap bisa diselesaikan. Jalur realtime memakai definisi yang sama
+    (`sessionCanWork`).
+19. **Katalog izin & role sistem tinggal di migrasi**, bukan di seed dev: `dbtools seed` hanya
+    menerapkan `packs/*/seed/*.sql` dengan `--dev`, sehingga katalog di sana berarti admin pertama di
+    produksi dibuat tanpa satu pun izin (`0008_platform_rbac_catalogue.sql`).
 
 Catatan: alur auth tinggal di `infrastructure` (butuh DB). Saat port/use case lapisan
 `application` lahir (pola T-016), isi `auth_service.nim` pindah ke `application/`.

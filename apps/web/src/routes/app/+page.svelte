@@ -232,6 +232,7 @@
   <h1>{m.app_title()}</h1>
   <p>
     <span class="cbs-muted">{m.app_signed_in_as({ name: session.fullName })}</span>
+    <a class="cbs-button" href="/app/password">{m.app_change_password()}</a>
     <button class="cbs-button" type="button" onclick={logout}>{m.app_logout()}</button>
   </p>
 </div>
