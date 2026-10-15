@@ -284,10 +284,17 @@ proc sweepSessions(svc: EventService) =
   ##
   ## Tiap klien diperiksa paling sering sekali per `sessionRecheckSeconds` (bukan setiap peristiwa),
   ## dan pemeriksaan dijalankan **di luar lock** supaya I/O DB tidak menahan hub. Penilaian memakai
-  ## kebijakan yang sama dengan handshake (`canOpen`) supaya definisi "identitas sah" hanya satu.
+  ## kebijakan yang sama dengan handshake (`canOpen`, `allowedTopics`) supaya definisi "identitas sah"
+  ## dan "topik boleh" hanya satu.
+  ##
+  ## Dua hal diperiksa, dan keduanya bisa berubah tanpa soket terputus:
+  ##   1. sesi masih sah (O-036);
+  ##   2. izin atas topik yang **sudah diberikan** masih ada (O-046) — tanpa ini, pencabutan izin hanya
+  ##      berlaku untuk langganan berikutnya, sementara langganan yang sedang terbuka terus menerima
+  ##      data yang sudah tidak boleh dilihat.
   ## Catatan skala: satu pemeriksaan = satu resolusi principal (beberapa query); bila jumlah klien
   ## nyata bertambah besar, cache principal berumur pendek adalah langkah berikutnya.
-  var candidates: seq[tuple[clientId: uint64, identity: string]]
+  var candidates: seq[tuple[clientId: uint64, identity: string, topics: seq[string]]]
   withLock svc.lock:
     for clientId, socket in svc.sockets:
       if not svc.streams.hasKey(socket):
@@ -298,7 +305,7 @@ proc sweepSessions(svc: EventService) =
       if (getMonoTime() - state.lastSessionCheck).inSeconds < svc.sessionRecheckSeconds:
         continue
       svc.streams[socket].lastSessionCheck = getMonoTime()
-      candidates.add (clientId, state.identity)
+      candidates.add (clientId, state.identity, state.topics)
   for candidate in candidates: # nimpretty-ignore: gaya destructuring tuple
     var sah = true
     try:
@@ -310,6 +317,23 @@ proc sweepSessions(svc: EventService) =
       continue
     if not sah:
       svc.dropClient(candidate.clientId, "REALTIME_SESSION_ENDED", "error_unauthorized")
+      continue
+
+    # Belum ada topik = belum ada yang bisa dicabut (klien yang seluruh langganannya ditolak tetap
+    # terhubung, hanya tidak menerima apa pun — sama seperti saat handshake).
+    if candidate.topics.len == 0:
+      continue
+    var diizinkan: seq[string]
+    try:
+      diizinkan = svc.policy.allowedTopics(candidate.identity, candidate.topics)
+    except CatchableError:
+      # Sama seperti pemeriksaan sesi: gagal memverifikasi bukan alasan memutus langganan.
+      continue
+    if splitAllowed(candidate.topics, diizinkan).denied.len > 0:
+      # Langganan ditutup, bukan disaring per peristiwa: klien akan menyambung ulang dan
+      # berlangganan ulang dengan izin yang berlaku saat itu (langganan yang tidak lagi sah tidak
+      # dibiarkan hidup setengah).
+      svc.dropClient(candidate.clientId, "REALTIME_FORBIDDEN", "error_forbidden")
 
 proc onWebSocketEvent(svc: EventService, socket: WebSocket, event: WebSocketEvent,
                       message: Message) {.gcsafe.} =
