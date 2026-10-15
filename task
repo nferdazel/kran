@@ -26,6 +26,10 @@ BUILD="$ROOT/.build"
 BIN="$BUILD/bin"
 NIMPATH="-p:$ROOT/shared -p:$ROOT/modules -p:$ROOT/apps -p:$ROOT/tools -p:$ROOT/tools/dbtools"
 NIMFLAGS="--hints:off --warnings:on --path:$ROOT/shared --path:$ROOT/modules --path:$ROOT/apps --path:$ROOT/tools"
+# Test dikompilasi (dan di-check) dengan `--threads:on`, sama seperti biner API: beberapa test
+# integrasi mereproduksi interleaving dua koneksi DB (balapan double-approve, invarian kursor
+# outbox) yang hanya mungkin dengan thread nyata (O-040).
+TESTFLAGS="$NIMFLAGS --threads:on"
 
 # Bootstrap config lokal (bukan nilai bisnis): CBS_DATABASE_URL untuk test integrasi.
 if [ -f "$ROOT/.local/dev.env" ]; then
@@ -98,7 +102,9 @@ cmd_lint() {
   n=0
   for f in $(nim_files); do
     n=$((n + 1))
-    nim check $NIMFLAGS "$f" >"$BUILD/check.log" 2>&1 || {
+    flags=$NIMFLAGS
+    case "$f" in */tests/*) flags=$TESTFLAGS ;; esac
+    nim check $flags "$f" >"$BUILD/check.log" 2>&1 || {
       cat "$BUILD/check.log" >&2
       die "nim check gagal: $f"
     }
@@ -232,7 +238,7 @@ cmd_check() {
 run_nim_test() { # run_nim_test <berkas>
   f="$1"
   name=$(basename "$f" .nim)
-  nim c $NIMFLAGS --out:"$BIN/$name" "$f" >/dev/null || die "gagal kompilasi test $f"
+  nim c $TESTFLAGS --out:"$BIN/$name" "$f" >/dev/null || die "gagal kompilasi test $f"
   "$BIN/$name" || die "test gagal: $f"
 }
 

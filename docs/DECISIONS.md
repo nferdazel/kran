@@ -599,3 +599,32 @@ sebelum D-029). Butir 5 D-028 sudah dianotasi agar tidak bertentangan dengan D-0
 - **Bukti**: manual (`kill -TERM` → kode 0, log "berhenti dengan tenang", port bebas) dan otomatis
   (`apps/web/tests/e2e/shutdown.spec.ts`). Daya tangkap: penangan sinyal dilepas sementara → test
   GAGAL; dikembalikan → lulus.
+
+## D-032 — Invarian kursor outbox ditegakkan lewat urutan audit, dan test balapan dua koneksi (O-037, O-040)
+
+- **Konteks**: (a) `platform.outbox.seq` dialokasikan saat INSERT, bukan saat COMMIT, sehingga urutan
+  commit bisa berbeda dari urutan `seq`; pump realtime membaca tabel dengan kursor `seq`, jadi
+  peristiwa yang commit belakangan bisa **terlewat** — bukan tertunda. Invarian yang menyelamatkan
+  (audit lebih dulu) hanya hidup di kepala penulis kode, tidak tertulis dan tidak diuji.
+  (b) Harness test dikompilasi tanpa `--threads:on`, jadi balapan dua koneksi (double-approve) hanya
+  bisa diuji lewat kontrak langkah, bukan interleaving sungguhan.
+- **Keputusan**:
+  1. Aturan penulis ditulis di `modules/platform/MODULE.md`: transaksi yang menulis peristiwa outbox
+     wajib menulis entri audit **lebih dulu, di transaksi yang sama**; trigger rantai audit memegang
+     `pg_advisory_xact_lock(hashtext('platform.audit_log'))` sampai commit sehingga urutan commit
+     mengikuti urutan `seq`.
+  2. Test baru `modules/platform/tests/itoutboxcursor.nim` menjaga dua sisi: invarian berlaku antar
+     dua koneksi nyata (penulis kedua menunggu, `seq`-nya lebih besar) dan karakterisasi bahaya bila
+     aturan dilanggar (kursor melewatkan peristiwa yang commit belakangan).
+  3. Test dikompilasi/di-check dengan `--threads:on` (`TESTFLAGS` di `task`), sama seperti biner API.
+     Test balapan double-approve ditambahkan di `itparam.nim`: dua thread, dua koneksi, gate bersama →
+     tepat satu pemenang, satu audit approve, satu event outbox.
+- **Alternatif yang dipertimbangkan dan ditolak**: (a) kursor tahan-bolong (lookback + de-dup `id`) —
+  menambah kompleksitas di setiap pembaca dan menyembunyikan pelanggaran alih-alih mencegahnya;
+  (b) constraint/trigger DB yang memastikan "ada entri audit di transaksi yang sama" — di Postgres
+  hanya bisa didekati lewat trik `xmin`/constraint trigger yang rapuh, dan dirasa terlalu berisiko
+  untuk nilai yang didapat. Sisa risikonya dicatat di O-037: aturannya ditegakkan disiplin penulis +
+  test, bukan DB.
+- **Bukti**: `itoutboxcursor` (2 test) — lock audit dilepas sementara → test invarian **GAGAL**;
+  `itparam` (25 test) — penjaga `AND status = 'PENDING'` dilepas sementara → test balapan **GAGAL**.
+  Keduanya hijau setelah dikembalikan.
