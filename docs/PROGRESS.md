@@ -608,3 +608,11 @@ masuk.
 - Runbook baru `docs/runbooks/deploy-setup.md`: urutan deploy key + webhook, berisi fakta server hasil
   recon (container `cbs-api` masih memegang 8095; `/srv/qouver/apps/cbs` sudah ada) dan peringatan gh
   bahwa deploy key yang ditambahkan lewat CLI terikat pada token otentikasi.
+
+- **T-040 DONE**: deploy key + hook webhook terpasang di server (user `sachiel`), di luar repo sehingga
+  dicatat tersendiri. Deploy key `~/.ssh/kran_deploy` (read-only, terdaftar id 166514836) + alias
+  `github-kran`; hook `kran` di `/srv/qouver/config/webhook.json` dengan `payload-hmac-sha256` (hook
+  lama sha1, sengaja tidak diwariskan) + drop-in `KRAN_GIT_URL`; hook GitHub id 698395667. Bukti:
+  `ssh -T github-kran` berhasil dari server; uji bertanda tangan benar -> 200 + `kran got matched` +
+  `error in exec ... no such file or directory` (wiring benar, deploy belum mungkin jalan); uji bertanda
+  tangan salah -> 500 `invalid payload signatures`. Lima hook lama tidak disentuh.
