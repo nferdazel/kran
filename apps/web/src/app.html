@@ -6,12 +6,12 @@
     <title>KRAN</title>
     <!--
       Skrip inline kecil menetapkan tema sebelum render (spec §15.3) untuk mencegah flash.
-      Nilai disimpan di localStorage kunci `cbs-theme`: "light" | "dark" | "system".
+      Nilai disimpan di localStorage kunci `kran-theme`: "light" | "dark" | "system".
     -->
     <script>
       (function () {
         try {
-          var stored = localStorage.getItem("cbs-theme");
+          var stored = localStorage.getItem("kran-theme");
           var dark =
             stored === "dark" ||
             ((stored === null || stored === "system") &&

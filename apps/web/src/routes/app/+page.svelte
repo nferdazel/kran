@@ -13,7 +13,7 @@
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
 
-  import type { Problem } from "@cbs/api-client";
+  import type { Problem } from "@kran/api-client";
 
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
@@ -65,10 +65,10 @@
 
   /** Status = teks + ikon + warna, tidak pernah warna saja (spec §15.4). */
   function statusClass(status: string): string {
-    if (status === "ACTIVE") return "cbs-status cbs-status--ok";
-    if (status === "PENDING") return "cbs-status cbs-status--warning";
-    if (status === "REJECTED") return "cbs-status cbs-status--danger";
-    return "cbs-status";
+    if (status === "ACTIVE") return "kran-status kran-status--ok";
+    if (status === "PENDING") return "kran-status kran-status--warning";
+    if (status === "REJECTED") return "kran-status kran-status--danger";
+    return "kran-status";
   }
 
   function statusIcon(status: string): string {
@@ -228,33 +228,33 @@
   <title>{m.common_app_title()} — {m.app_title()}</title>
 </svelte:head>
 
-<div class="cbs-toolbar">
+<div class="kran-toolbar">
   <h1>{m.app_title()}</h1>
   <p>
-    <span class="cbs-muted">{m.app_signed_in_as({ name: session.fullName })}</span>
-    <a class="cbs-button" href="/app/password">{m.app_change_password()}</a>
-    <button class="cbs-button" type="button" onclick={logout}>{m.app_logout()}</button>
+    <span class="kran-muted">{m.app_signed_in_as({ name: session.fullName })}</span>
+    <a class="kran-button" href="/app/password">{m.app_change_password()}</a>
+    <button class="kran-button" type="button" onclick={logout}>{m.app_logout()}</button>
   </p>
 </div>
 
 <!-- Denyut realtime (spec §19.2): status + kapan data terakhir disegarkan, diumumkan halus. -->
 <p role="status" aria-live="polite">
-  <span class="cbs-muted">{m.realtime_label()}:</span>
+  <span class="kran-muted">{m.realtime_label()}:</span>
   {#if realtimeState === "connected"}
-    <span class="cbs-status cbs-status--ok">
-      <span class="cbs-status__icon" aria-hidden="true">✔</span>
+    <span class="kran-status kran-status--ok">
+      <span class="kran-status__icon" aria-hidden="true">✔</span>
       {m.realtime_connected()}
     </span>
   {:else if realtimeState === "reconnecting"}
-    <span class="cbs-status cbs-status--warning">
-      <span class="cbs-status__icon" aria-hidden="true">▲</span>
+    <span class="kran-status kran-status--warning">
+      <span class="kran-status__icon" aria-hidden="true">▲</span>
       {m.realtime_reconnecting()}
     </span>
   {:else}
-    <span class="cbs-muted">{m.realtime_connecting()}</span>
+    <span class="kran-muted">{m.realtime_connecting()}</span>
   {/if}
   {#if updatedAt}
-    <span class="cbs-muted">{m.realtime_updated({ time: formatClock(updatedAt) })}</span>
+    <span class="kran-muted">{m.realtime_updated({ time: formatClock(updatedAt) })}</span>
   {/if}
 </p>
 
@@ -262,37 +262,37 @@
   <p role="status">{m.app_loading()}</p>
 {:else}
   {#if errorMessage}
-    <p class="cbs-alert" role="alert">{errorMessage}</p>
-    <p><button class="cbs-button" type="button" onclick={() => void refresh()}>{m.app_retry()}</button></p>
+    <p class="kran-alert" role="alert">{errorMessage}</p>
+    <p><button class="kran-button" type="button" onclick={() => void refresh()}>{m.app_retry()}</button></p>
   {/if}
   {#if notice}
     <p role="status">{notice}</p>
   {/if}
 
   {#if canSubmit}
-    <section class="cbs-card" aria-labelledby="submit-heading">
+    <section class="kran-card" aria-labelledby="submit-heading">
       <h2 id="submit-heading">{m.params_submit_heading()}</h2>
-      <p class="cbs-muted">{m.params_submit_effective_from_hint()}</p>
+      <p class="kran-muted">{m.params_submit_effective_from_hint()}</p>
 
-      <form class="cbs-form" onsubmit={submitChange} novalidate>
-        <div class="cbs-field">
-          <label class="cbs-label" for="param-key">{m.params_submit_key_label()}</label>
-          <select class="cbs-select" id="param-key" bind:value={formKey}>
+      <form class="kran-form" onsubmit={submitChange} novalidate>
+        <div class="kran-field">
+          <label class="kran-label" for="param-key">{m.params_submit_key_label()}</label>
+          <select class="kran-select" id="param-key" bind:value={formKey}>
             {#each selectableKeys as key (key)}
               <option value={key}>{key}</option>
             {/each}
           </select>
         </div>
 
-        <div class="cbs-field">
-          <label class="cbs-label" for="param-value">{m.params_submit_value_label()}</label>
-          <input class="cbs-input" id="param-value" name="value" bind:value={formValue} required />
+        <div class="kran-field">
+          <label class="kran-label" for="param-value">{m.params_submit_value_label()}</label>
+          <input class="kran-input" id="param-value" name="value" bind:value={formValue} required />
         </div>
 
-        <div class="cbs-field">
-          <label class="cbs-label" for="param-reason">{m.params_submit_reason_label()}</label>
+        <div class="kran-field">
+          <label class="kran-label" for="param-reason">{m.params_submit_reason_label()}</label>
           <input
-            class="cbs-input"
+            class="kran-input"
             id="param-reason"
             name="reason"
             bind:value={formReason}
@@ -300,12 +300,12 @@
           />
         </div>
 
-        <div class="cbs-field">
-          <label class="cbs-label" for="param-effective-from"
+        <div class="kran-field">
+          <label class="kran-label" for="param-effective-from"
             >{m.params_submit_effective_from_label()}</label
           >
           <input
-            class="cbs-input"
+            class="kran-input"
             id="param-effective-from"
             name="effectiveFrom"
             type="date"
@@ -315,7 +315,7 @@
 
         <p>
           <button
-            class="cbs-button cbs-button--primary"
+            class="kran-button kran-button--primary"
             type="submit"
             disabled={sending || formKey === ""}
           >
@@ -326,13 +326,13 @@
     </section>
   {/if}
 
-  <section class="cbs-card" aria-labelledby="pending-heading">
+  <section class="kran-card" aria-labelledby="pending-heading">
     <h2 id="pending-heading">{m.params_pending_heading()}</h2>
     {#if pending.length === 0}
-      <p class="cbs-muted">{m.params_pending_empty()}</p>
+      <p class="kran-muted">{m.params_pending_empty()}</p>
     {:else}
-      <div class="cbs-table-wrap">
-        <table class="cbs-table">
+      <div class="kran-table-wrap">
+        <table class="kran-table">
           <thead>
             <tr>
               <th scope="col">{m.params_col_key()}</th>
@@ -352,7 +352,7 @@
                 <td>{row.maker}</td>
                 <td>
                   <span class={statusClass(row.status)}>
-                    <span class="cbs-status__icon" aria-hidden="true">{statusIcon(row.status)}</span
+                    <span class="kran-status__icon" aria-hidden="true">{statusIcon(row.status)}</span
                     >
                     {statusText(row.status)}
                   </span>
@@ -360,7 +360,7 @@
                 {#if canApprove}
                   <td>
                     <button
-                      class="cbs-button cbs-button--primary"
+                      class="kran-button kran-button--primary"
                       type="button"
                       disabled={approvingId === row.paramValueId}
                       onclick={() => void approve(row.paramValueId)}
@@ -377,13 +377,13 @@
     {/if}
   </section>
 
-  <section class="cbs-card" aria-labelledby="active-heading">
+  <section class="kran-card" aria-labelledby="active-heading">
     <h2 id="active-heading">{m.params_active_heading()}</h2>
     {#if active.length === 0}
-      <p class="cbs-muted">{m.params_active_empty()}</p>
+      <p class="kran-muted">{m.params_active_empty()}</p>
     {:else}
-      <div class="cbs-table-wrap">
-        <table class="cbs-table">
+      <div class="kran-table-wrap">
+        <table class="kran-table">
           <thead>
             <tr>
               <th scope="col">{m.params_col_key()}</th>
@@ -400,7 +400,7 @@
                 <td>{formatDate(row.effectiveFrom)}</td>
                 <td>
                   <span class={statusClass(row.status)}>
-                    <span class="cbs-status__icon" aria-hidden="true">{statusIcon(row.status)}</span
+                    <span class="kran-status__icon" aria-hidden="true">{statusIcon(row.status)}</span
                     >
                     {statusText(row.status)}
                   </span>
@@ -413,13 +413,13 @@
     {/if}
   </section>
 
-  <section class="cbs-card" aria-labelledby="audit-heading">
+  <section class="kran-card" aria-labelledby="audit-heading">
     <h2 id="audit-heading">{m.audit_heading()}</h2>
     {#if audit.length === 0}
-      <p class="cbs-muted">{m.audit_empty()}</p>
+      <p class="kran-muted">{m.audit_empty()}</p>
     {:else}
-      <div class="cbs-table-wrap">
-        <table class="cbs-table">
+      <div class="kran-table-wrap">
+        <table class="kran-table">
           <thead>
             <tr>
               <th scope="col">{m.audit_col_time()}</th>

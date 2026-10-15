@@ -1,8 +1,8 @@
 [
   {
-    "id": "cbs",
-    "execute-command": "/srv/qouver/apps/cbs/scripts/deploy-vps.sh",
-    "command-working-directory": "/srv/qouver/apps/cbs",
+    "id": "kran",
+    "execute-command": "/srv/qouver/apps/kran/scripts/deploy-vps.sh",
+    "command-working-directory": "/srv/qouver/apps/kran",
     "pass-arguments-to-command": [
       {
         "source": "payload",

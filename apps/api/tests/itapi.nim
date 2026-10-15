@@ -1,11 +1,11 @@
-## Test integrasi `/readyz` dengan DB nyata (butuh `CBS_DATABASE_URL`).
+## Test integrasi `/readyz` dengan DB nyata (butuh `KRAN_DATABASE_URL`).
 ##
 ## Kriteria T-008 (bagian readiness): endpoint kesiapan benar-benar memeriksa DB, bukan sekadar
-## mengembalikan 200. Tanpa `CBS_DATABASE_URL` test ini melewati dirinya sendiri (pola yang sama
+## mengembalikan 200. Tanpa `KRAN_DATABASE_URL` test ini melewati dirinya sendiri (pola yang sama
 ## dengan test integrasi lain), sehingga CI tanpa DB tetap hijau.
 ##
 ## Test ini **tidak** mengubah schema: hanya menjalankan `select 1` lewat pool yang sama dengan
-## yang dipakai `/readyz` pada proses `cbs-api`.
+## yang dipakai `/readyz` pada proses `kran-api`.
 
 import std/[httpclient, json, net, os, times, unittest]
 
@@ -39,7 +39,7 @@ proc serveInThread(args: ServeArgs) {.thread.} =
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
-  echo "itapi: CBS_DATABASE_URL kosong — dilewati"
+  echo "itapi: KRAN_DATABASE_URL kosong — dilewati"
   quit(0)
 
 let port = freePort()

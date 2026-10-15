@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# deploy-vps.sh — kontrak deploy CBS di VPS (spec §21.4, §21.5, §21.7).
+# deploy-vps.sh — kontrak deploy KRAN di VPS (spec §21.4, §21.5, §21.7).
 #
-# Dipanggil webhook adnanh/webhook (hook `cbs`) dengan argumen:
-#   $1 = repository.name (mis. "cbs")
+# Dipanggil webhook adnanh/webhook (hook `kran`) dengan argumen:
+#   $1 = repository.name (mis. "kran")
 #   $2 = ref             (mis. "refs/heads/main")
 #
 # Langkah (spec §21.4): ref-guard -> lock -> fetch/reset -> FREEZE GATE ->
@@ -11,23 +11,23 @@
 # auto-rollback -> .deployed_rev -> self-update.
 #
 # Tanpa secret di repo: URL repo + kredensial hanya dari env VPS (mode 600),
-# mis. CBS_GIT_URL=github-cbs:<user>/cbs.git
+# mis. KRAN_GIT_URL=github-kran:<user>/kran.git
 #
 # BELUM PERNAH DIJALANKAN DI SERVER (T-013). Semua path mengikuti §21.5;
 # verifikasi di server sebelum diandalkan.
 set -euo pipefail
 
-REPO="${1:-cbs}"
+REPO="${1:-kran}"
 REF="${2:-}"
 
-APP_DIR="${CBS_APP_DIR:-/srv/qouver/apps/cbs}"
+APP_DIR="${KRAN_APP_DIR:-/srv/qouver/apps/kran}"
 MONO_DIR="$APP_DIR/monorepo"
-BIN="$APP_DIR/bin/cbs-api"
-BIN_NEW="$APP_DIR/bin/cbs-api.new"
-BIN_PREV="$APP_DIR/bin/cbs-api.prev"
+BIN="$APP_DIR/bin/kran-api"
+BIN_NEW="$APP_DIR/bin/kran-api.new"
+BIN_PREV="$APP_DIR/bin/kran-api.prev"
 STATE_FILE="$APP_DIR/.deployed_rev"
 LOG="$APP_DIR/logs/deploy.log"
-HEALTH_URL="${CBS_HEALTH_URL:-http://127.0.0.1:8095/readyz}"
+HEALTH_URL="${KRAN_HEALTH_URL:-http://127.0.0.1:8095/readyz}"
 
 mkdir -p "$APP_DIR/logs"
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG"; }
@@ -48,8 +48,8 @@ if ! flock -n 9; then
   exit 0
 fi
 
-if [ -z "${CBS_GIT_URL:-}" ]; then
-  die "CBS_GIT_URL tidak diset (mis. github-cbs:<user>/cbs.git)"
+if [ -z "${KRAN_GIT_URL:-}" ]; then
+  die "KRAN_GIT_URL tidak diset (mis. github-kran:<user>/kran.git)"
 fi
 
 # 3. Fetch + reset (spec §21.4 #3).
@@ -67,8 +67,8 @@ if [ -d "$MONO_DIR/.git" ]; then
     CHANGED_FILES="apps/ modules/ shared/ migrations/"
   fi
 else
-  log "Cloning cbs -> $MONO_DIR"
-  git clone "$CBS_GIT_URL" "$MONO_DIR"
+  log "Cloning kran -> $MONO_DIR"
+  git clone "$KRAN_GIT_URL" "$MONO_DIR"
   NEW_REV="$(git -C "$MONO_DIR" rev-parse HEAD 2>/dev/null || echo '')"
   CHANGED_FILES="apps/ modules/ shared/ migrations/"
   IS_FIRST=1
@@ -120,14 +120,14 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE 'migrations/' <<<"$CHANGED_FILES"; then
 fi
 
 # 7. Build + ekstrak binary (spec §21.4 #7). Rebuild hanya bila input build berubah.
-if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|cbs\.nimble|cbs\.lock)' <<<"$CHANGED_FILES"; then
+if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|kran\.nimble|kran\.lock)' <<<"$CHANGED_FILES"; then
   log "==> Build API (podman, tag :local + :$REVID)..."
   [ -d "$MONO_DIR/apps/api" ] || die "apps/api tidak ditemukan"
   cd "$MONO_DIR/apps/api" || die "gagal masuk apps/api"
-  podman build -t localhost/cbs-api:local -t "localhost/cbs-api:$REVID" .
+  podman build -t localhost/kran-api:local -t "localhost/kran-api:$REVID" .
   mkdir -p "$APP_DIR/bin"
-  build_cid="$(podman create "localhost/cbs-api:$REVID")"
-  podman cp "$build_cid:/usr/local/bin/cbs-api" "$BIN_NEW"
+  build_cid="$(podman create "localhost/kran-api:$REVID")"
+  podman cp "$build_cid:/usr/local/bin/kran-api" "$BIN_NEW"
   podman rm "$build_cid" >/dev/null
   chmod +x "$BIN_NEW"
 else
@@ -183,10 +183,10 @@ else
 fi
 
 # 10. Restart unit (spec §21.4 #10).
-log "==> restart cbs-api & cbs-worker"
+log "==> restart kran-api & kran-worker"
 systemctl --user daemon-reload
-systemctl --user restart cbs-api
-systemctl --user restart cbs-worker
+systemctl --user restart kran-api
+systemctl --user restart kran-worker
 
 # 11. HEALTH GATE + auto-rollback (spec §21.4 #11): poll /readyz x15.
 healthy=0
@@ -208,8 +208,8 @@ if [ "$healthy" -ne 1 ]; then
     rm -rf "$APP_DIR/web"
     mv "$APP_DIR/web.prev" "$APP_DIR/web"
   fi
-  systemctl --user restart cbs-api || true
-  systemctl --user restart cbs-worker || true
+  systemctl --user restart kran-api || true
+  systemctl --user restart kran-worker || true
   exit 1
 fi
 log "==> API sehat ($HEALTH_URL OK)"

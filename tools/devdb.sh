@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 #
-# DB dev KRAN - database `cbs_dev` di Postgres server (bukan di laptop; keputusan pemilik,
+# DB dev KRAN - database `kran_dev` di Postgres server (bukan di laptop; keputusan pemilik,
 # dicatat di docs/DECISIONS.md D-004). Skrip ini hanya mengelola TUNNEL SSH, bukan DB-nya.
 #
 #   ./task devdb up      buka tunnel 127.0.0.1:55432 -> server 127.0.0.1:5432
@@ -17,12 +17,12 @@ cd "$ROOT"
 
 ENVFILE="$ROOT/.local/dev.env"
 SOCK="$ROOT/.local/devdb.sock"
-LOCAL_PORT="${CBS_DEVDB_PORT:-55432}"
-SSH_HOST="${CBS_DEVDB_SSH:-sachiel@43.133.148.191}"
-SSH_KEY="${CBS_DEVDB_SSH_KEY:-$HOME/.ssh/id_ed25519}"
+LOCAL_PORT="${KRAN_DEVDB_PORT:-55432}"
+SSH_HOST="${KRAN_DEVDB_SSH:-sachiel@43.133.148.191}"
+SSH_KEY="${KRAN_DEVDB_SSH_KEY:-$HOME/.ssh/id_ed25519}"
 # Berapa lama master koneksi bertahan setelah idle (detik). Naikkan bila menjalankan
 # test integrasi panjang; mesin-lokal, jangan dijadikan nilai di repo.
-SSH_PERSIST="${CBS_DEVDB_PERSIST:-600}"
+SSH_PERSIST="${KRAN_DEVDB_PERSIST:-600}"
 
 die() { printf '!! %s\n' "$*" >&2; exit 1; }
 load_env() {
@@ -36,9 +36,9 @@ probe() {
   # Bukti nyata bahwa tunnel hidup: query ke DB. `nc`/`ssh -O check` **tidak cukup** — port lokal
   # masih menerima koneksi walau SSH-nya sudah mati (tunnel basi), dan gejalanya baru muncul sebagai
   # "server closed the connection unexpectedly" di tengah test (kejadian 14–15 Okt 2026, 3×).
-  [ -n "${CBS_DATABASE_URL:-}" ] || return 1
+  [ -n "${KRAN_DATABASE_URL:-}" ] || return 1
   command -v psql >/dev/null 2>&1 || return 1
-  psql "$CBS_DATABASE_URL" -Atc 'select 1' >/dev/null 2>&1
+  psql "$KRAN_DATABASE_URL" -Atc 'select 1' >/dev/null 2>&1
 }
 
 up() {
@@ -73,14 +73,14 @@ down() {
 status() {
   load_env
   command -v psql >/dev/null 2>&1 || die "psql tidak ada di PATH"
-  psql "$CBS_DATABASE_URL" -Atc "select current_database() || ' @ ' || version()"
+  psql "$KRAN_DATABASE_URL" -Atc "select current_database() || ' @ ' || version()"
 }
 
 case "${1:-status}" in
   up) up ;;
   down) down ;;
   status) status ;;
-  psql) load_env; exec psql "$CBS_DATABASE_URL" "$@" ;;
-  url) load_env; printf '%s\n' "$CBS_DATABASE_URL" ;;
+  psql) load_env; exec psql "$KRAN_DATABASE_URL" "$@" ;;
+  url) load_env; printf '%s\n' "$KRAN_DATABASE_URL" ;;
   *) die "perintah tidak dikenal: $1 (up|down|status|psql|url)" ;;
 esac

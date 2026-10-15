@@ -84,7 +84,7 @@ proc `div`*(m: Money, divisor: int64): Money =
   let q = divRoundHalfEven(m.units, d)
   Money(units: (if neg: -q else: q))
 
-proc moneyErr(msg: string, code = "CBS-1101"): AppError {.inline.} =
+proc moneyErr(msg: string, code = "KRAN-1101"): AppError {.inline.} =
   appError(code, "error.money.invalid", aekValidation, msg)
 
 proc moneyFromString*(s: string): AppResult[Money] =
@@ -107,7 +107,7 @@ proc moneyFromString*(s: string): AppResult[Money] =
       whole = checkedMul(whole, 10)
       whole = checkedAdd(whole, int64(ord(t[i]) - ord('0')))
     except MoneyOverflowError:
-      return err[Money, AppError](moneyErr("angka terlalu besar: " & s, "CBS-1102"))
+      return err[Money, AppError](moneyErr("angka terlalu besar: " & s, "KRAN-1102"))
     inc i
   let intDigits = i - intStart
 
@@ -127,7 +127,7 @@ proc moneyFromString*(s: string): AppResult[Money] =
     return err[Money, AppError](moneyErr("titik tanpa angka desimal: " & s))
   if frac.len > moneyScale:
     return err[Money, AppError](moneyErr(
-      "maksimum " & $moneyScale & " desimal: " & s, "CBS-1103"
+      "maksimum " & $moneyScale & " desimal: " & s, "KRAN-1103"
     ))
 
   while frac.len < moneyScale:
@@ -142,7 +142,7 @@ proc moneyFromString*(s: string): AppResult[Money] =
       u = -u
     result = ok[Money, AppError](money(u))
   except MoneyOverflowError:
-    result = err[Money, AppError](moneyErr("angka terlalu besar: " & s, "CBS-1102"))
+    result = err[Money, AppError](moneyErr("angka terlalu besar: " & s, "KRAN-1102"))
 
 proc toDecimalString*(m: Money): string =
   ## Bentuk kanonik untuk API/kontrak: **selalu 4 desimal**, mis. "1500000.0000".

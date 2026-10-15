@@ -305,7 +305,7 @@ proc bootstrapFirstAdmin*(db: DbConn, ctx: AuditContext, clock: Clock, scope: Sc
   ## bersama; lihat `withRoleDb(..., useTx = true)`). Di dalam transaksi itu, kunci mutex di bawah
   ## menutup celah check-then-act: dua `bootstrap-admin` yang berjalan bersamaan tidak bisa
   ## sama-sama lolos pemeriksaan lalu membuat dua admin.
-  discard db.getValue(sql"SELECT pg_advisory_xact_lock(hashtext('cbs:bootstrap_first_admin'))")
+  discard db.getValue(sql"SELECT pg_advisory_xact_lock(hashtext('kran:bootstrap_first_admin'))")
   if userByUsername(db, username).isSome or countUsersWithRole(db, roleCode) > 0:
     return false
   let userId = $newId(clock)

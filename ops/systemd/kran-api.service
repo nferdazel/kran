@@ -1,12 +1,12 @@
-# cbs-api.service — unit systemd USER untuk API CBS (--role=api).
+# kran-api.service — unit systemd USER untuk API KRAN (--role=api).
 #
 # Spec: §21.4 (#10, #11), §21.5 (Unit), §22 (health /healthz + /readyz).
 #
-# Binary native (bukan container): /srv/qouver/apps/cbs/bin/cbs-api.
-# Pasang di server sebagai ~/.config/systemd/user/cbs-api.service, lalu:
-#   systemctl --user daemon-reload && systemctl --user enable --now cbs-api
+# Binary native (bukan container): /srv/qouver/apps/kran/bin/kran-api.
+# Pasang di server sebagai ~/.config/systemd/user/kran-api.service, lalu:
+#   systemctl --user daemon-reload && systemctl --user enable --now kran-api
 #
-# Env bootstrap (mode 600, di LUAR repo): /srv/qouver/apps/cbs/env/cbs-prod.env
+# Env bootstrap (mode 600, di LUAR repo): /srv/qouver/apps/kran/env/kran-prod.env
 # Nilai bisnis TIDAK di sini — semuanya dari parameter DB (§10).
 #
 # Port transisi §21.5: 127.0.0.1:8095 (diambil alih dari cbs-core saat cutover,
@@ -15,18 +15,18 @@
 # CATATAN (jujur): directive pengerasan namespace (ProtectSystem/ProtectHome)
 # hanya dijamin untuk *system* unit; sebagian diabaikan untuk user unit. Karena
 # itu hanya ditempel sebagai komentar sampai diverifikasi di server dengan
-# `systemd-analyze security --user cbs-api`. NoNewPrivileges aman untuk user unit.
+# `systemd-analyze security --user kran-api`. NoNewPrivileges aman untuk user unit.
 
 [Unit]
-Description=CBS API (Nim, --role=api)
+Description=KRAN API (Nim, --role=api)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/srv/qouver/apps/cbs
-EnvironmentFile=/srv/qouver/apps/cbs/env/cbs-prod.env
-ExecStart=/srv/qouver/apps/cbs/bin/cbs-api --role=api
+WorkingDirectory=/srv/qouver/apps/kran
+EnvironmentFile=/srv/qouver/apps/kran/env/kran-prod.env
+ExecStart=/srv/qouver/apps/kran/bin/kran-api --role=api
 Restart=always
 RestartSec=3
 NoNewPrivileges=true
@@ -37,7 +37,7 @@ StandardError=journal
 # Opsional, verifikasi dulu di server (kemungkinan diabaikan pada user unit):
 # ProtectSystem=full
 # ProtectHome=read-only
-# ReadWritePaths=/srv/qouver/apps/cbs
+# ReadWritePaths=/srv/qouver/apps/kran
 
 [Install]
 WantedBy=default.target

@@ -1,8 +1,8 @@
-# CBS Indonesia — PRD & Technical Specification
+# KRAN Indonesia — PRD & Technical Specification
 
 | | |
 |---|---|
-| **Repo** | `cbs` (monorepo) |
+| **Repo** | `kran` (monorepo) |
 | **Status** | Draft v0.1 |
 | **Target segmen** | Koperasi (KSP/USP/KSPPS), BPR, BPRS, BMT |
 | **Stack** | PostgreSQL · Nim (backend) · SvelteKit + TypeScript (frontend) |
@@ -48,10 +48,10 @@
 ## 1. Ringkasan & Tujuan
 
 ### 1.1 Problem
-Lembaga keuangan mikro/kecil di Indonesia (koperasi, BPR/BPRS, BMT) umumnya memakai CBS yang mahal, kaku, atau aplikasi ad-hoc yang tidak siap audit. Perubahan regulasi (rate, PPAP, pelaporan, perpajakan) sering berarti *patch kode*, bukan konfigurasi.
+Lembaga keuangan mikro/kecil di Indonesia (koperasi, BPR/BPRS, BMT) umumnya memakai KRAN yang mahal, kaku, atau aplikasi ad-hoc yang tidak siap audit. Perubahan regulasi (rate, PPAP, pelaporan, perpajakan) sering berarti *patch kode*, bukan konfigurasi.
 
 ### 1.2 Tujuan Produk
-Membangun **CBS standar, modular, open-architecture** yang:
+Membangun **KRAN standar, modular, open-architecture** yang:
 
 1. Melayani 3 rumpun institusi (koperasi, BPR/BPRS, BMT) dari **satu codebase** lewat *product & regulatory pack*.
 2. **Compliance-by-design**: kontrol regulasi jadi first-class (parameter, rule, laporan, audit trail, traceability).
@@ -273,8 +273,8 @@ infrastructure (PG, mail,  ├──► application (use case, port) ──► d
 ### 6.2 Proses Runtime
 | Proses | Peran | Catatan |
 |---|---|---|
-| `cbs-api` | HTTP API + WebSocket | Stateless, bisa >1 instance |
-| `cbs-worker` | Job runner, outbox dispatcher, day-close executor | Binary sama, mode berbeda (`--role=worker`) |
+| `kran-api` | HTTP API + WebSocket | Stateless, bisa >1 instance |
+| `kran-worker` | Job runner, outbox dispatcher, day-close executor | Binary sama, mode berbeda (`--role=worker`) |
 | `postgres` | Sumber kebenaran | Primary + replica/backup (lihat §22) |
 | `web` | SvelteKit (static build disajikan reverse proxy, atau node adapter) | Sesuai pola server existing |
 
@@ -291,7 +291,7 @@ infrastructure (PG, mail,  ├──► application (use case, port) ──► d
 ## 7. Struktur Monorepo
 
 ```
-cbs/
+kran/
 ├─ apps/
 │  ├─ api/                    # entrypoint Nim (api|worker|migrate|all)
 │  └─ web/                    # SvelteKit app (TS)
@@ -955,7 +955,7 @@ Use case ─(1 transaksi)─► state change + outbox row
 
 ## 21. CI/CD (Ikuti Pola Existing)
 
-> **Prinsip**: CBS mengikuti pola yang *benar-benar berjalan* di server (hasil audit setup: GitHub Actions = gerbang verifikasi, deploy = webhook → `deploy-vps.sh` di VPS, build di VPS, Caddy, systemd user unit/ quadlet, env file mode 600). Tidak ada tool baru yang diperkenalkan. Yang ditambahkan hanyalah **kontrol khusus CBS** (deploy-freeze day-close, migrasi aman, backup pra-migrasi, rollback otomatis). Item bertanda *(inferensi)* berasal dari analisis audit, bukan prosedur terdokumentasi.
+> **Prinsip**: KRAN mengikuti pola yang *benar-benar berjalan* di server (hasil audit setup: GitHub Actions = gerbang verifikasi, deploy = webhook → `deploy-vps.sh` di VPS, build di VPS, Caddy, systemd user unit/ quadlet, env file mode 600). Tidak ada tool baru yang diperkenalkan. Yang ditambahkan hanyalah **kontrol khusus KRAN** (deploy-freeze day-close, migrasi aman, backup pra-migrasi, rollback otomatis). Item bertanda *(inferensi)* berasal dari analisis audit, bukan prosedur terdokumentasi.
 
 ### 21.1 Ringkasan Pola Existing
 
@@ -971,7 +971,7 @@ Use case ─(1 transaksi)─► state change + outbox row
 | **Rollback** | Hanya Skyward yang otomatis. Lainnya: revert commit lalu push *(inferensi)*. Image `:local` satu tag ⇒ tidak bisa retag. |
 | **DB** | Backup Postgres 02:00 (retensi daily 7 / weekly 28 / monthly 84). **Restore test belum pernah dilakukan.** `scripts/migrate.sh --down` manual & opt-in. |
 
-### 21.2 Keputusan: CBS = Turunan Pola Skyward
+### 21.2 Keputusan: KRAN = Turunan Pola Skyward
 
 **Alasan**: (1) paling matang & sudah terbukti di server; (2) Nim menghasilkan **binary native** → cocok dengan model Skyward (ekstrak binary dari image, jalan sebagai systemd user unit, tanpa runtime container); (3) konsisten dengan `audit-consistency.sh` yang membandingkan md5 skrip repo vs server.
 
@@ -980,13 +980,13 @@ git push main ──► GitHub Actions (ci.yml: verifikasi saja)           [gerb
         │
         └──────► GitHub webhook (HMAC sha256) ──► Caddy /hooks/* ──► webhook.service
                                                                          │
-                                                  /srv/qouver/apps/cbs/scripts/deploy-vps.sh  (di VPS)
+                                                  /srv/qouver/apps/kran/scripts/deploy-vps.sh  (di VPS)
                           ref-guard → lock → fetch/reset → FREEZE GATE → pre-migration dump
-                          → build (podman) → ekstrak bin/cbs-api → MIGRATION GATE (expand-only)
+                          → build (podman) → ekstrak bin/kran-api → MIGRATION GATE (expand-only)
                           → swap web → restart units → HEALTH GATE (/readyz ×15) → [auto-rollback] → .deployed_rev
 ```
 
-### 21.3 `ci.yml` untuk CBS (verifikasi saja)
+### 21.3 `ci.yml` untuk KRAN (verifikasi saja)
 
 Trigger/ permission/ concurrency **identik** dengan repo lain. Job (paralel bila bisa):
 
@@ -1000,46 +1000,46 @@ Trigger/ permission/ concurrency **identik** dengan repo lain. Job (paralel bila
 | `security` | **gitleaks**, dependency scan (OSV), SAST |
 | `traceability` | Setiap requirement regulasi aktif punya kontrol + test (§4.4) |
 
-Secret CI tetap minim: `GITHUB_TOKEN` dan `CBS_TEST_DATABASE_URL`. **Tidak ada** secret SSH/ deploy di CI.
+Secret CI tetap minim: `GITHUB_TOKEN` dan `KRAN_TEST_DATABASE_URL`. **Tidak ada** secret SSH/ deploy di CI.
 
 ### 21.4 Webhook & `deploy-vps.sh`
 
-**Hook baru `cbs`** di `webhook.json`: `execute-command: /srv/qouver/apps/cbs/scripts/deploy-vps.sh`, argumen `repository.name` + `ref`. **Gunakan `payload-hmac-sha256` + `X-Hub-Signature-256`** (4 hook lama masih sha1 — jangan diwariskan).
+**Hook baru `kran`** di `webhook.json`: `execute-command: /srv/qouver/apps/kran/scripts/deploy-vps.sh`, argumen `repository.name` + `ref`. **Gunakan `payload-hmac-sha256` + `X-Hub-Signature-256`** (4 hook lama masih sha1 — jangan diwariskan).
 
-Langkah skrip (ekstensi kontrak seragam; yang **tebal** = tambahan CBS):
+Langkah skrip (ekstensi kontrak seragam; yang **tebal** = tambahan KRAN):
 
 | # | Langkah | Catatan |
 |---|---|---|
 | 1 | `set -euo pipefail`; ref-guard hanya `refs/heads/main` (fail-closed) | Seragam |
 | 2 | **Lock** (`flock`) agar dua deploy tak berjalan bersamaan | Tambahan |
 | 3 | `git fetch origin main && git reset --hard origin/main` | Seragam |
-| 4 | **FREEZE GATE**: cek state `daycloser` (read-only: `cbs-api --role=ctl daycloser-status` atau query). Bila `CLOSING/RUNNING` → exit tanpa mengubah apa pun, tulis log, jadwalkan retry | Tambahan (§11.7) |
+| 4 | **FREEZE GATE**: cek state `daycloser` (read-only: `kran-api --role=ctl daycloser-status` atau query). Bila `CLOSING/RUNNING` → exit tanpa mengubah apa pun, tulis log, jadwalkan retry | Tambahan (§11.7) |
 | 5 | Rebuild selektif berdasar diff (`apps/api`, `modules/`, `shared/`, `apps/web`, `migrations/`) | Seragam |
 | 6 | **Pre-migration dump** bila ada migrasi baru: `pg_dump -Fc` → `/srv/qouver/backups/pre-deploy/<sha>.dump`, verifikasi `pg_restore --list` | Tambahan |
-| 7 | Build image `podman build`; **tag `:<sha>` + `:local`; simpan tag sebelumnya sebagai `:prev`**; ekstrak binary → `bin/cbs-api` (lama → `bin/cbs-api.prev`) | Pola Skyward; menutup celah "satu tag" |
-| 8 | **MIGRATION GATE**: `cbs-api --role=migrate --check` lalu `--up` (**expand-only**). Gagal ⇒ **deploy dibatalkan sebelum binary diganti** | Pola Skyward |
+| 7 | Build image `podman build`; **tag `:<sha>` + `:local`; simpan tag sebelumnya sebagai `:prev`**; ekstrak binary → `bin/kran-api` (lama → `bin/kran-api.prev`) | Pola Skyward; menutup celah "satu tag" |
+| 8 | **MIGRATION GATE**: `kran-api --role=migrate --check` lalu `--up` (**expand-only**). Gagal ⇒ **deploy dibatalkan sebelum binary diganti** | Pola Skyward |
 | 9 | Web: build ke `web.new` → swap → `web.prev` disimpan | Seragam (pola Skyward/Fond) |
-| 10 | `systemctl --user daemon-reload` + restart `cbs-api` & `cbs-worker` | Seragam |
-| 11 | **HEALTH GATE**: poll `/readyz` ×15 (cek DB, versi migrasi, **startup param check**, drift paramgen). Gagal ⇒ **auto-rollback** (`bin/cbs-api.prev`, `web.prev`), exit 1 | Pola Skyward; **bukan** `is-active` + curl yang diabaikan |
+| 10 | `systemctl --user daemon-reload` + restart `kran-api` & `kran-worker` | Seragam |
+| 11 | **HEALTH GATE**: poll `/readyz` ×15 (cek DB, versi migrasi, **startup param check**, drift paramgen). Gagal ⇒ **auto-rollback** (`bin/kran-api.prev`, `web.prev`), exit 1 | Pola Skyward; **bukan** `is-active` + curl yang diabaikan |
 | 12 | Tulis `.deployed_rev`; log ke `deploy.log` **dan** journal; skrip self-update via `mv` | Pola Skyward |
-| 13 | **Evidence rilis**: simpan SBOM, daftar migrasi, ringkasan test (dari CI), hash binary di `/srv/qouver/apps/cbs/releases/<sha>/` | Tambahan (jejak audit; log GitHub Actions hanya ±90 hari) |
+| 13 | **Evidence rilis**: simpan SBOM, daftar migrasi, ringkasan test (dari CI), hash binary di `/srv/qouver/apps/kran/releases/<sha>/` | Tambahan (jejak audit; log GitHub Actions hanya ±90 hari) |
 
 **Aturan migrasi**: hanya **expand** (additive, kompatibel dengan binary lama) yang otomatis. Migrasi **contract** (drop/rename/ketat) ada di `migrations/contract/` dan hanya dijalankan manual via `scripts/migrate.sh --contract --yes` *setelah* rilis berikutnya stabil. Konsekuensi: auto-rollback binary selalu aman terhadap skema. Tidak ada `--down` otomatis; koreksi = migrasi maju, atau restore dari dump pra-migrasi bila terpaksa.
 
-### 21.5 Komponen Runtime CBS di VPS
+### 21.5 Komponen Runtime KRAN di VPS
 
 | Komponen | Spesifikasi |
 |---|---|
-| Direktori | `/srv/qouver/apps/cbs/{scripts,bin,web,env,logs,releases}` |
-| Unit | `cbs-api.service` (`--role=api`), `cbs-worker.service` (`--role=worker`) — systemd **user** unit, binary `bin/cbs-api` |
-| Env | `env/cbs-prod.env` (mode 600, owner sachiel) berisi **bootstrap config saja** (DB URL, port, role, referensi kunci) — nilai bisnis tetap di DB (§10) |
+| Direktori | `/srv/qouver/apps/kran/{scripts,bin,web,env,logs,releases}` |
+| Unit | `kran-api.service` (`--role=api`), `kran-worker.service` (`--role=worker`) — systemd **user** unit, binary `bin/kran-api` |
+| Env | `env/kran-prod.env` (mode 600, owner sachiel) berisi **bootstrap config saja** (DB URL, port, role, referensi kunci) — nilai bisnis tetap di DB (§10) |
 | Port | `127.0.0.1:<port-baru>` selama transisi; 8095 baru dilepas/ diambil alih saat cutover (§21.9) |
-| Caddy | Site/hostname **terpisah** untuk CBS dengan header keamanan lengkap (CSP, HSTS, X-Content-Type-Options, frame-ancestors, Referrer-Policy). Jangan menumpang `api.qouver.com` yang saat ini tanpa header keamanan |
-| Git | Deploy key SSH per repo (alias `~/.ssh/config`, mis. `github-cbs:...`) |
-| Webhook | Hook `cbs` (sha256), secret di `webhook.json` (600) |
-| Database | Database & role Postgres khusus CBS; role terpisah untuk `app`, `migrate`, `readonly/report` (least privilege) |
+| Caddy | Site/hostname **terpisah** untuk KRAN dengan header keamanan lengkap (CSP, HSTS, X-Content-Type-Options, frame-ancestors, Referrer-Policy). Jangan menumpang `api.qouver.com` yang saat ini tanpa header keamanan |
+| Git | Deploy key SSH per repo (alias `~/.ssh/config`, mis. `github-kran:...`) |
+| Webhook | Hook `kran` (sha256), secret di `webhook.json` (600) |
+| Database | Database & role Postgres khusus KRAN; role terpisah untuk `app`, `migrate`, `readonly/report` (least privilege) |
 
-> **Catatan nama (transisi)**: `cbs` **menggantikan** `cbs-core` (hook `cbs-core`, image `localhost/cbs-*:local`, route `/cbs/*→8095`, site `cbs`→3005). Selama `cbs-core` masih melayani, hook/ image/ unit/ port/ hostname/ direktori CBS baru **tidak boleh bertabrakan** dengannya (bila `/srv/qouver/apps/cbs/` sudah dipakai `cbs-core`, pakai `apps/cbs-next/` sementara lalu rename saat cutover). Pengambilalihan nama dilakukan di cutover (§21.9).
+> **Catatan nama (transisi)**: `cbs` **menggantikan** `cbs-core` (hook `cbs-core`, image `localhost/kran-*:local`, route `/cbs/*→8095`, site `cbs`→3005). Selama `cbs-core` masih melayani, hook/ image/ unit/ port/ hostname/ direktori KRAN baru **tidak boleh bertabrakan** dengannya (bila `/srv/qouver/apps/kran/` sudah dipakai `cbs-core`, pakai `apps/kran-next/` sementara lalu rename saat cutover). Pengambilalihan nama dilakukan di cutover (§21.9).
 
 ### 21.6 Struktur `ops/` di Repo
 
@@ -1051,36 +1051,36 @@ ops/
 │  ├─ backup-pre-deploy.sh
 │  ├─ rollback.sh            # manual: kembali ke bin/*.prev & web.prev (tanpa menyentuh DB)
 │  └─ smoke.sh               # /healthz, /readyz, versi == .deployed_rev
-├─ systemd/                  # cbs-api.service, cbs-worker.service
-├─ caddy/                    # Caddyfile.cbs.example  (+ mulai versi-kan Caddyfile asli)
-├─ webhook/                  # hook.cbs.json.example (sha256)
-└─ env/                      # cbs-prod.env.example   (*.env di-gitignore)
+├─ systemd/                  # kran-api.service, kran-worker.service
+├─ caddy/                    # Caddyfile.kran.example  (+ mulai versi-kan Caddyfile asli)
+├─ webhook/                  # hook.kran.json.example (sha256)
+└─ env/                      # kran-prod.env.example   (*.env di-gitignore)
 ```
 
 ### 21.7 Penyesuaian terhadap Pola (Deviasi Sadar)
 
-| Kebutuhan CBS | Pola existing | Keputusan |
+| Kebutuhan KRAN | Pola existing | Keputusan |
 |---|---|---|
 | Artefak yang diuji = yang di-deploy | Build ulang di VPS setelah CI hijau | Diterima. Kompensasi: toolchain Nim & base image **dipin (digest)**, tag `:<sha>`, `.deployed_rev`, hash binary di `releases/<sha>/`, build reproducible diupayakan |
 | Staging dengan data teranonimisasi | Tidak ada (satu stack prod) | **Usulan**: stack staging di VPS yang sama, port/ DB/ hostname berbeda, di-deploy dari branch `staging` (ref-guard diperluas eksplisit: `main`→prod, `staging`→staging). Data prod tidak pernah disalin mentah (`dbtools anonymize`) |
 | Artefak kepatuhan per rilis | CI tidak upload artifact | Disimpan di server (`releases/<sha>/`), bukan di Actions |
 | Approval manual sebelum prod | Push ke `main` = deploy | Diatur lewat **branch protection** (PR review wajib) + deploy hanya dari `main`. Untuk perubahan kritis tambahkan tag/rilis manual sebagai pemicu (opsional) |
 | Deploy-freeze | Tidak ada | Freeze gate di skrip (§21.4 #4) |
-| Rollback seragam | Hanya Skyward | CBS punya sejak hari pertama (§21.4 #7, #11) |
+| Rollback seragam | Hanya Skyward | KRAN punya sejak hari pertama (§21.4 #7, #11) |
 
 ### 21.8 Celah Existing yang Wajib Ditutup *Sebelum Data Nasabah Asli*
 
-| Celah (dari audit) | Dampak ke CBS | Tindakan |
+| Celah (dari audit) | Dampak ke KRAN | Tindakan |
 |---|---|---|
 | **Restore test belum pernah dilakukan** | Backup yang belum teruji = belum punya backup | **Gate go-live**: restore test bulanan + dicatat di `docs/runbooks` |
-| Backup harian (RPO s.d. 24 jam) | Terlalu longgar untuk uang nyata | Tambahkan **WAL archiving/PITR** untuk DB CBS (§22) |
+| Backup harian (RPO s.d. 24 jam) | Terlalu longgar untuk uang nyata | Tambahkan **WAL archiving/PITR** untuk DB KRAN (§22) |
 | Tanpa secret manager | Kunci enkripsi field (KEK) berisiko | Minimal: KEK di file terpisah (600), **tidak ikut backup DB yang sama**, salinan offline; rencanakan `age`/`sops` kemudian. Dicatat sebagai risiko residual |
-| Caddyfile tanpa version control (±4 `.bak`) | Config proxy CBS tak teraudit | Versi-kan di `ops/caddy/` (dan repo `vps` bila ada) |
-| 4 hook masih sha1 | Lemah | Hook CBS sha256; migrasikan hook lain terpisah |
-| Health gate "palsu" di cbs/sds/majadu | Deploy rusak lolos | CBS memakai gate nyata (§21.4 #11) |
-| `deploy.log` kosong (sds) | Jejak deploy hilang | CBS menulis ke log **dan** journal |
+| Caddyfile tanpa version control (±4 `.bak`) | Config proxy KRAN tak teraudit | Versi-kan di `ops/caddy/` (dan repo `vps` bila ada) |
+| 4 hook masih sha1 | Lemah | Hook KRAN sha256; migrasikan hook lain terpisah |
+| Health gate "palsu" di cbs/sds/majadu | Deploy rusak lolos | KRAN memakai gate nyata (§21.4 #11) |
+| `deploy.log` kosong (sds) | Jejak deploy hilang | KRAN menulis ke log **dan** journal |
 | Key CI di `authorized_keys` memberi shell penuh; HMAC dirotasi manual | Risiko pivot | `restrict,from=` untuk key; jadwalkan rotasi HMAC |
-| Semua app berbagi satu VPS | Build Nim & EOD berebut resource dengan app lain; blast radius | Ukur; untuk produksi nyata pertimbangkan VPS/ instance Postgres khusus CBS |
+| Semua app berbagi satu VPS | Build Nim & EOD berebut resource dengan app lain; blast radius | Ukur; untuk produksi nyata pertimbangkan VPS/ instance Postgres khusus KRAN |
 
 ### 21.9 Cutover & Dekomisioning `cbs-core`
 
@@ -1094,7 +1094,7 @@ Prinsip: `cbs-core` **tetap melayani sampai `cbs` lulus UAT pilot**; tidak ada b
 | 4 | **Shadow/ paralel** *(opsional, bila ada data nyata)* | Skenario transaksi yang sama dijalankan di keduanya, hasil dibandingkan |
 | 5 | **Cutover** (maintenance window) | Freeze `cbs-core` (read-only) → dump final → ETL final → rekonsiliasi lulus → Caddy `/cbs/*` & site `cbs` diarahkan ke upstream baru → hook `cbs-core` dihapus dari `webhook.json` |
 | 6 | **Masa tenggang** | `cbs-core` tetap hidup read-only; rollback cutover = kembalikan Caddy ke upstream lama |
-| 7 | **Dekomisioning** | Stop+disable unit, hapus image `localhost/cbs-*:local` lama, arsipkan repo `cbs-core`, simpan dump final (retensi sesuai kebijakan data keuangan), cabut deploy key, keluarkan dari `audit-consistency.sh`, perbarui `SERVER_STATE.md`, bersihkan `.bak` Caddy terkait |
+| 7 | **Dekomisioning** | Stop+disable unit, hapus image `localhost/kran-*:local` lama, arsipkan repo `cbs-core`, simpan dump final (retensi sesuai kebijakan data keuangan), cabut deploy key, keluarkan dari `audit-consistency.sh`, perbarui `SERVER_STATE.md`, bersihkan `.bak` Caddy terkait |
 
 Bila `cbs-core` ternyata prototipe tanpa data nyata, tahap 3–4 dilewati (cukup arsip dump).
 
@@ -1186,7 +1186,7 @@ Format ADR: konteks → keputusan → konsekuensi → alternatif → status. Dis
 5. **Backend satu binary** multi-role (api/worker/migrate).
 6. **Cetak buku tabungan** dianggap kebutuhan nyata (dot-matrix/ printer buku), detail menyusul.
 7. Integrasi eksternal (Dukcapil, SLIK, PPATK goAML, BI-FAST) di fase akhir lewat adapter.
-8. CBS **menggantikan** `cbs-core` (bukan berdampingan permanen): berjalan dengan nama transisi sampai cutover (§21.9), mengikuti pola Skyward; staging di VPS yang sama dari branch `staging` (§21.7).
+8. KRAN **menggantikan** `cbs-core` (bukan berdampingan permanen): berjalan dengan nama transisi sampai cutover (§21.9), mengikuti pola Skyward; staging di VPS yang sama dari branch `staging` (§21.7).
 
 ### 26.2 Pertanyaan terbuka
 1. Apakah **`cbs-core` berisi data/ pengguna nyata** yang harus dimigrasikan? Menentukan perlu-tidaknya ETL & shadow run (§21.9 tahap 3–4).
@@ -1236,7 +1236,7 @@ Format ADR: konteks → keputusan → konsekuensi → alternatif → status. Dis
 - [ ] Migrasi aman (expand/contract), dokumentasi & MODULE.md diperbarui
 
 ### D. Glosarium Singkat
-**CBS** Core Banking System · **CIF** Customer Information File · **KYC/CDD/EDD** Know Your Customer / Customer & Enhanced Due Diligence · **APU-PPT** Anti Pencucian Uang & Pencegahan Pendanaan Terorisme · **DTTOT** Daftar Terduga Teroris dan Organisasi Teroris · **PEP** Politically Exposed Person · **CTR/STR** Cash/ Suspicious Transaction Report · **DPD** Days Past Due · **PPAP/CKPN** Penyisihan Penghapusan Aset Produktif / Cadangan Kerugian Penurunan Nilai · **KPMM** Kewajiban Penyediaan Modal Minimum · **BMPK/BMPP** Batas Maksimum Pemberian Kredit/ Pinjaman · **SHU** Sisa Hasil Usaha · **RAT** Rapat Anggota Tahunan · **KSP/USP/KSPPS/USPPS** Koperasi Simpan Pinjam / Unit Simpan Pinjam / (Pembiayaan) Syariah · **DPS** Dewan Pengawas Syariah · **DSN-MUI** Dewan Syariah Nasional MUI · **EOD/EOM/EOQ/EOY** End of Day/Month/Quarter/Year · **ADR** Architecture Decision Record.
+**KRAN** Core Banking System · **CIF** Customer Information File · **KYC/CDD/EDD** Know Your Customer / Customer & Enhanced Due Diligence · **APU-PPT** Anti Pencucian Uang & Pencegahan Pendanaan Terorisme · **DTTOT** Daftar Terduga Teroris dan Organisasi Teroris · **PEP** Politically Exposed Person · **CTR/STR** Cash/ Suspicious Transaction Report · **DPD** Days Past Due · **PPAP/CKPN** Penyisihan Penghapusan Aset Produktif / Cadangan Kerugian Penurunan Nilai · **KPMM** Kewajiban Penyediaan Modal Minimum · **BMPK/BMPP** Batas Maksimum Pemberian Kredit/ Pinjaman · **SHU** Sisa Hasil Usaha · **RAT** Rapat Anggota Tahunan · **KSP/USP/KSPPS/USPPS** Koperasi Simpan Pinjam / Unit Simpan Pinjam / (Pembiayaan) Syariah · **DPS** Dewan Pengawas Syariah · **DSN-MUI** Dewan Syariah Nasional MUI · **EOD/EOM/EOQ/EOY** End of Day/Month/Quarter/Year · **ADR** Architecture Decision Record.
 
 ### E. Contoh Posting Rule (data, bukan kode)
 ```yaml

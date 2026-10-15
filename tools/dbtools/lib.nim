@@ -324,7 +324,7 @@ proc applyMigrations*(db: DbConn, root: string, dryRun = false): MigrateReport =
 
   ensureBootstrap(db)
   # `db_postgres.exec` hanya menerima status COMMAND_OK, jadi SELECT kunci memakai getValue.
-  discard db.getValue(sql"SELECT pg_advisory_lock(hashtext('cbs.dbtools.migrate'))")
+  discard db.getValue(sql"SELECT pg_advisory_lock(hashtext('kran.dbtools.migrate'))")
   try:
     var known = initTable[string, string]()
     var appliedSha = initTable[string, string]()
@@ -358,4 +358,4 @@ proc applyMigrations*(db: DbConn, root: string, dryRun = false): MigrateReport =
         raise
       result.applied.add m.id
   finally:
-    discard db.getValue(sql"SELECT pg_advisory_unlock(hashtext('cbs.dbtools.migrate'))")
+    discard db.getValue(sql"SELECT pg_advisory_unlock(hashtext('kran.dbtools.migrate'))")

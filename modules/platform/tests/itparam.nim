@@ -1,11 +1,11 @@
-## Test integrasi parameter framework (butuh `CBS_DATABASE_URL`).
+## Test integrasi parameter framework (butuh `KRAN_DATABASE_URL`).
 ##
 ## Cakupan kriteria T-005: resolusi PRODUCT→BRANCH→INSTITUTION→SEGMENT→GLOBAL pada `as_of`;
 ## overlap ACTIVE ditolak EXCLUDE; `ParamNotFound` tanpa fallback; startup check gagal-cepat;
 ## maker-checker (+ 4-eyes, supersede, reject); audit + event `ParamChanged` di outbox;
 ## invalidasi cache lewat `LISTEN/NOTIFY`.
 ##
-## Test ini **menghapus schema `platform`** di DB yang ditunjuk `CBS_DATABASE_URL` (DB dev).
+## Test ini **menghapus schema `platform`** di DB yang ditunjuk `KRAN_DATABASE_URL` (DB dev).
 
 import std/[atomics, unittest, os, json, options, strutils]
 import db_connector/db_postgres
@@ -26,7 +26,7 @@ const
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
-  echo "itparam: CBS_DATABASE_URL kosong — dilewati"
+  echo "itparam: KRAN_DATABASE_URL kosong — dilewati"
   quit(0)
 
 let dbPool = newDbPool(dbConfigFromEnv(envT))

@@ -1,4 +1,4 @@
-# Ruleset Spectral untuk kontrak OpenAPI CBS (spec §13).
+# Ruleset Spectral untuk kontrak OpenAPI KRAN (spec §13).
 #
 # Dasar: `spectral:oas` (rekomendasi resmi). Gate di `./task openapi` memakai
 # `--fail-severity warn`, jadi setiap override di bawah harus punya alasan — mematikan aturan
@@ -11,6 +11,6 @@ overrides:
   # gate akan menuntut respons 2xx yang tidak pernah dikirim, dan itu berarti mengubah perilaku
   # demi lint. Override dipersempit ke satu operasi, bukan ke seluruh kontrak.
   - files:
-      - cbs-api.yaml#/paths/~1api~1v1~1events~1stream
+      - kran-api.yaml#/paths/~1api~1v1~1events~1stream
     rules:
       operation-success-response: off

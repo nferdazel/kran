@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 /**
  * Berhenti bersih (T-024, O-025) dan drain permintaan berjalan (T-032, O-047): `SIGTERM` harus
  * membuat proses berhenti dengan **kode 0** dan menyelesaikan permintaan yang sudah masuk ke
- * handler. Sebelum T-024 `cbs-api` tidak memasang penangan sinyal sama sekali sehingga SIGTERM
+ * handler. Sebelum T-024 `kran-api` tidak memasang penangan sinyal sama sekali sehingga SIGTERM
  * menghasilkan kode 143 tanpa jalur penutupan apa pun; sebelum T-032 proses keluar seketika,
  * sehingga respons yang sedang dihitung terpotong.
  *
@@ -14,7 +14,7 @@ import { expect, test } from "@playwright/test";
  * tidak boleh diganggu, dan pengujian ini tidak butuh UI. Biner dibangun `./task e2e` lebih dulu.
  */
 
-test.skip(!process.env.CBS_DATABASE_URL, "CBS_DATABASE_URL kosong — API tidak dijalankan");
+test.skip(!process.env.KRAN_DATABASE_URL, "KRAN_DATABASE_URL kosong — API tidak dijalankan");
 
 const DEV_USER = { username: "dev.maker", password: "rahasia-panjang-123" };
 
@@ -50,7 +50,7 @@ async function startApi(): Promise<ApiInstance> {
     [
       "-lc",
       `set -a; [ -f ../../.local/dev.env ] && . ../../.local/dev.env; set +a; ` +
-        `exec ../../.build/bin/cbs-api --role=api --port=${port} --address=127.0.0.1`,
+        `exec ../../.build/bin/kran-api --role=api --port=${port} --address=127.0.0.1`,
     ],
     { stdio: ["ignore", "pipe", "pipe"] },
   );

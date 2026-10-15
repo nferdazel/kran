@@ -5,12 +5,12 @@ import openapi/lib
 import ../src/routes
 
 ## Contract test parity (spec §13, §20): tabel rute implementasi harus **persis** sama dengan
-## operasi di `packages/contracts/openapi/cbs-api.yaml` (method, path, operationId).
+## operasi di `packages/contracts/openapi/kran-api.yaml` (method, path, operationId).
 ##
 ## Test ini murni (tidak menyalakan server/DB) sehingga ikut jalan di CI mana pun; bentuk respons
 ## nyata diperiksa `tapi.nim`.
 
-const ContractPath* = "packages/contracts/openapi/cbs-api.yaml"
+const ContractPath* = "packages/contracts/openapi/kran-api.yaml"
 
 proc declaredRoutes(): seq[DeclaredRoute] =
   for spec in allRoutes():

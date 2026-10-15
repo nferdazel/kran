@@ -16,8 +16,8 @@ ditinggalkan di working tree (orkestrator yang commit).
 | `ops/scripts/backup-pre-deploy.sh` | Dump pra-migrasi ke `/srv/qouver/backups/pre-deploy/<rev>-<ts>.dump`, divalidasi `pg_restore --list` (§21.4 #6). |
 | `ops/scripts/rollback.sh` | Manual: `bin/cbs-api.prev` → `bin/cbs-api` & `web.prev` → `web`; restart; **tanpa menyentuh DB** (§21.6). |
 | `ops/scripts/smoke.sh` | Cek `/healthz`, `/readyz`, dan versi `==` isi `.deployed_rev` (§21.6). |
-| `ops/scripts/audit-consistency.sh` | Bandingkan md5 `ops/scripts/*.sh` (repo) ↔ `<server>/srv/qouver/apps/cbs/scripts/*`. Pelapor (exit 0); alamat server lewat `CBS_VPS` (tidak di-hardcode). |
-| `ops/systemd/cbs-api.service` | Systemd **user** unit, `ExecStart=…/bin/cbs-api --role=api`, `EnvironmentFile=/srv/qouver/apps/cbs/env/cbs-prod.env`, `Restart=always`, `NoNewPrivileges=true`, `PrivateTmp=true` (§21.5). |
+| `ops/scripts/audit-consistency.sh` | Bandingkan md5 `ops/scripts/*.sh` (repo) ↔ `<server>/srv/qouver/apps/kran/scripts/*`. Pelapor (exit 0); alamat server lewat `CBS_VPS` (tidak di-hardcode). |
+| `ops/systemd/cbs-api.service` | Systemd **user** unit, `ExecStart=…/bin/cbs-api --role=api`, `EnvironmentFile=/srv/qouver/apps/kran/env/cbs-prod.env`, `Restart=always`, `NoNewPrivileges=true`, `PrivateTmp=true` (§21.5). |
 | `ops/systemd/cbs-worker.service` | Sama, `--role=worker` (§21.5). |
 | `ops/caddy/Caddyfile.cbs.example` | Site `cbs.qouver.com` (web → 127.0.0.1:3005) + hostname API terpisah (→ 8095) + header keamanan (HSTS/XCTO/XFO/Referrer-Policy/CSP + `frame-ancestors`), `encode zstd gzip`; snippet transisi `api.qouver.com/cbs/*` (§21.5, audit §4 P2). |
 | `ops/webhook/hook.cbs.json.example` | Hook `cbs`, `execute-command` deploy-vps.sh, argumen `repository.name`+`ref`, `trigger-rule` `payload-hmac-sha256` + `X-Hub-Signature-256`, secret placeholder (§21.4). |

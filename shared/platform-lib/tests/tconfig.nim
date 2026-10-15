@@ -8,18 +8,18 @@ proc env(pairs: openArray[(string, string)]): Table[string, string] =
 
 suite "config: parse URL koneksi":
   test "URL dasar (dev, tunnel)":
-    let t = parseDatabaseUrl("postgres://cbs_dev:rahasia@127.0.0.1:55432/cbs_dev")
+    let t = parseDatabaseUrl("postgres://kran_dev:rahasia@127.0.0.1:55432/kran_dev")
     check t.host == "127.0.0.1"
     check t.port == "55432"
-    check t.database == "cbs_dev"
-    check t.user == "cbs_dev"
+    check t.database == "kran_dev"
+    check t.user == "kran_dev"
     check t.password == "rahasia"
 
   test "skema postgresql:// juga diterima, tanpa kredensial":
-    let t = parseDatabaseUrl("postgresql://localhost/cbs_test")
+    let t = parseDatabaseUrl("postgresql://localhost/kran_test")
     check t.host == "localhost"
     check t.port == ""
-    check t.database == "cbs_test"
+    check t.database == "kran_test"
     check t.user == ""
     check t.password == ""
 
@@ -52,36 +52,36 @@ suite "config: parse URL koneksi":
 
 suite "config: env":
   test "nilai default":
-    let c = dbConfigFromEnv(env({"CBS_DATABASE_URL": "postgres://u:p@h:5432/db"}))
+    let c = dbConfigFromEnv(env({"KRAN_DATABASE_URL": "postgres://u:p@h:5432/db"}))
     check c.poolSize == defaultPoolSize
     check c.acquireTimeoutMs == defaultAcquireTimeoutMs
     check c.statementTimeoutMs == defaultStatementTimeoutMs
     check c.validateOnAcquire
     check c.target.options.contains("statement_timeout=15000")
-    check c.target.options.contains("application_name=cbs")
+    check c.target.options.contains("application_name=kran")
 
   test "override via env":
     let c = dbConfigFromEnv(env({
-      "CBS_DATABASE_URL": "postgres://u:p@h:5432/db",
-      "CBS_DB_POOL_SIZE": "3",
-      "CBS_DB_ACQUIRE_TIMEOUT_MS": "250",
-      "CBS_DB_STATEMENT_TIMEOUT_MS": "1000",
-      "CBS_DB_VALIDATE_ON_ACQUIRE": "0",
-      "CBS_APP_NAME": "cbs-api",
+      "KRAN_DATABASE_URL": "postgres://u:p@h:5432/db",
+      "KRAN_DB_POOL_SIZE": "3",
+      "KRAN_DB_ACQUIRE_TIMEOUT_MS": "250",
+      "KRAN_DB_STATEMENT_TIMEOUT_MS": "1000",
+      "KRAN_DB_VALIDATE_ON_ACQUIRE": "0",
+      "KRAN_APP_NAME": "kran-api",
     }))
     check c.poolSize == 3
     check c.acquireTimeoutMs == 250
     check c.statementTimeoutMs == 1000
     check not c.validateOnAcquire
     check c.target.options.contains("statement_timeout=1000")
-    check c.target.options.contains("application_name=cbs-api")
+    check c.target.options.contains("application_name=kran-api")
 
   test "angka/bool tidak valid ditolak (gagal-cepat, bukan diam-diam default)":
-    for bad in [("CBS_DB_POOL_SIZE", "banyak"), ("CBS_DB_POOL_SIZE", "0"),
-                ("CBS_DB_ACQUIRE_TIMEOUT_MS", "-5"),
-                ("CBS_DB_VALIDATE_ON_ACQUIRE", "mungkin")]:
+    for bad in [("KRAN_DB_POOL_SIZE", "banyak"), ("KRAN_DB_POOL_SIZE", "0"),
+                ("KRAN_DB_ACQUIRE_TIMEOUT_MS", "-5"),
+                ("KRAN_DB_VALIDATE_ON_ACQUIRE", "mungkin")]:
       var raised = false
-      var t = env({"CBS_DATABASE_URL": "postgres://u:p@h:5432/db"})
+      var t = env({"KRAN_DATABASE_URL": "postgres://u:p@h:5432/db"})
       t[bad[0]] = bad[1]
       try:
         discard dbConfigFromEnv(t)
@@ -90,11 +90,11 @@ suite "config: env":
       check raised
 
   test "poolSize eksplisit di-clamp oleh env bernilai besar":
-    let c = dbConfigFromEnv(env({"CBS_DATABASE_URL": "postgres://u:p@h:5432/db",
-                                 "CBS_DB_POOL_SIZE": "64"}))
+    let c = dbConfigFromEnv(env({"KRAN_DATABASE_URL": "postgres://u:p@h:5432/db",
+                                 "KRAN_DB_POOL_SIZE": "64"}))
     check c.poolSize == 64
 
   test "databaseUrlSet: penanda test integrasi boleh jalan":
-    check databaseUrlSet(env({"CBS_DATABASE_URL": "postgres://u:p@h:5432/db"}))
+    check databaseUrlSet(env({"KRAN_DATABASE_URL": "postgres://u:p@h:5432/db"}))
     check not databaseUrlSet(env(newSeq[(string, string)]()))
-    check not databaseUrlSet(env({"CBS_DATABASE_URL": "   "}))
+    check not databaseUrlSet(env({"KRAN_DATABASE_URL": "   "}))

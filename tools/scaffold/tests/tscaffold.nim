@@ -7,7 +7,7 @@ const sampleName = "sample"
 
 proc freshTempRoot(): string =
   ## Root sementara di `$TMPDIR`; dibersihkan tiap dipanggil supaya idempotent.
-  result = getTempDir() / "cbs-scaffold-test"
+  result = getTempDir() / "kran-scaffold-test"
   if dirExists(result):
     removeDir(result)
   createDir(result)

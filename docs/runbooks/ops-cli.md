@@ -1,4 +1,4 @@
-# Runbook — kontrak CLI `cbs-api` (peran proses)
+# Runbook — kontrak CLI `kran-api` (peran proses)
 
 Satu biner, empat peran (spec §21.4, §26.1 #5). Semua perintah di bawah dijalankan dari **akar
 repo** (atau dengan `--root=<dir>` yang menunjuk ke sana), karena migrasi dibaca relatif terhadap
@@ -6,18 +6,18 @@ repo** (atau dengan `--root=<dir>` yang menunjuk ke sana), karena migrasi dibaca
 
 | Peran | Perintah | Keluar |
 |---|---|---|
-| `api` | `cbs-api --role=api [--port=8080] [--address=127.0.0.1] [--version=<str>]` | berjalan sampai SIGINT/SIGTERM → **0** (D-031) |
-| `migrate` | `cbs-api --role=migrate` atau `--role=migrate --up` | **0** bila selesai (idempoten) |
-| `migrate` | `cbs-api --role=migrate --check` | **0** bersih, **1** ada migrasi tertunda atau isi migrasi berubah (drift) |
-| `ctl` | `cbs-api --role=ctl verify-audit` | **0** rantai audit utuh, **1** ada entri tidak utuh |
-| `ctl` | `cbs-api --role=ctl outbox-status` | **0** (hanya mencetak jumlah per status) |
-| `ctl` | `cbs-api --role=ctl daycloser-status` | **3** belum ada di Fase 0 (dipakai freeze gate deploy) |
-| `ctl` | `cbs-api --role=ctl bootstrap-admin --username=<nama>` | **0** admin dibuat, **3** sudah ada pemegang role admin, **2** tanpa `--username` |
-| `ctl` | `cbs-api --role=ctl help` | **0** |
-| `worker` | `cbs-api --role=worker` | **3** belum ada pekerjaan di Fase 0 |
+| `api` | `kran-api --role=api [--port=8080] [--address=127.0.0.1] [--version=<str>]` | berjalan sampai SIGINT/SIGTERM → **0** (D-031) |
+| `migrate` | `kran-api --role=migrate` atau `--role=migrate --up` | **0** bila selesai (idempoten) |
+| `migrate` | `kran-api --role=migrate --check` | **0** bersih, **1** ada migrasi tertunda atau isi migrasi berubah (drift) |
+| `ctl` | `kran-api --role=ctl verify-audit` | **0** rantai audit utuh, **1** ada entri tidak utuh |
+| `ctl` | `kran-api --role=ctl outbox-status` | **0** (hanya mencetak jumlah per status) |
+| `ctl` | `kran-api --role=ctl daycloser-status` | **3** belum ada di Fase 0 (dipakai freeze gate deploy) |
+| `ctl` | `kran-api --role=ctl bootstrap-admin --username=<nama>` | **0** admin dibuat, **3** sudah ada pemegang role admin, **2** tanpa `--username` |
+| `ctl` | `kran-api --role=ctl help` | **0** |
+| `worker` | `kran-api --role=worker` | **3** belum ada pekerjaan di Fase 0 |
 | — | argumen salah / perintah tidak dikenal | **2** (bantuan ditulis ke stderr) |
 
-Kode `2` = salah pakai atau konfigurasi (`CBS_DATABASE_URL` kosong), `1` = perintah berjalan tapi
+Kode `2` = salah pakai atau konfigurasi (`KRAN_DATABASE_URL` kosong), `1` = perintah berjalan tapi
 hasilnya buruk (mis. rantai audit tidak utuh), `3` = dikenali tapi belum diimplementasikan. Skrip ops
 membedakan ketiganya, jadi jangan "merapikan" kode keluar tanpa memperbarui skrip.
 
@@ -52,7 +52,7 @@ kode keluar dengan hasil `verifyChain` pada DB yang sedang dipakai, bukan menunt
 ## Bootstrap admin pertama (`ctl bootstrap-admin`, T-027)
 
 ```
-cbs-api --role=ctl bootstrap-admin --username=admin.pertama
+kran-api --role=ctl bootstrap-admin --username=admin.pertama
 ```
 
 Yang terjadi: pengguna dibuat dengan `must_change_password = true` dan role `platform_admin`

@@ -11,9 +11,9 @@
 # BELUM PERNAH DIJALANKAN DI SERVER (T-013).
 set -euo pipefail
 
-APP_DIR="${CBS_APP_DIR:-/srv/qouver/apps/cbs}"
+APP_DIR="${KRAN_APP_DIR:-/srv/qouver/apps/kran}"
 STATE_FILE="$APP_DIR/.deployed_rev"
-BASE_URL="${CBS_BASE_URL:-http://127.0.0.1:8095}"
+BASE_URL="${KRAN_BASE_URL:-http://127.0.0.1:8095}"
 fail=0
 
 for ep in /healthz /readyz; do

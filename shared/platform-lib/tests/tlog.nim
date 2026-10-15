@@ -4,20 +4,20 @@ import "platform-lib/log"
 
 suite "log: format & level":
   test "satu baris JSON valid, field inti ada":
-    let l = newLogger(lvlInfo, "cbs-test", sink = proc(line: string) {.gcsafe.} = discard)
+    let l = newLogger(lvlInfo, "kran-test", sink = proc(line: string) {.gcsafe.} = discard)
     let line = l.info("migrasi selesai", {"applied": "3", "trace_id": "abc"})
     check line.len > 0
     check not line.contains('\n')
     let node = parseJson(line)
     check node["level"].getStr == "info"
-    check node["app"].getStr == "cbs-test"
+    check node["app"].getStr == "kran-test"
     check node["msg"].getStr == "migrasi selesai"
     check node["applied"].getStr == "3"
     check node["ts"].getStr.endsWith("Z")
     check node["trace_id"].getStr == "abc"
 
   test "level di bawah ambang tidak dicetak":
-    let l = newLogger(lvlWarn, "cbs-test", sink = proc(line: string) {.gcsafe.} = discard)
+    let l = newLogger(lvlWarn, "kran-test", sink = proc(line: string) {.gcsafe.} = discard)
     check l.debug("tidak terlihat").len == 0
     check l.info("tidak terlihat").len == 0
     check l.warn("terlihat").len > 0

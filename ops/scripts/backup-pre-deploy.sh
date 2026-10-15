@@ -11,11 +11,11 @@
 set -euo pipefail
 
 REV="${1:-manual}"
-BACKUP_ROOT="${CBS_BACKUP_ROOT:-/srv/qouver/backups}"
+BACKUP_ROOT="${KRAN_BACKUP_ROOT:-/srv/qouver/backups}"
 DEST_DIR="$BACKUP_ROOT/pre-deploy"
-PG_CONTAINER="${CBS_PG_CONTAINER:-qouver-postgres}"
-PG_SUPERUSER="${CBS_PG_SUPERUSER:-qouver}"
-DB_NAME="${CBS_DB_NAME:-cbs}"
+PG_CONTAINER="${KRAN_PG_CONTAINER:-qouver-postgres}"
+PG_SUPERUSER="${KRAN_PG_SUPERUSER:-qouver}"
+DB_NAME="${KRAN_DB_NAME:-kran}"
 
 mkdir -p "$DEST_DIR"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"

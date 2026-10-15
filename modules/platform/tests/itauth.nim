@@ -1,11 +1,11 @@
-## Test integrasi identitas, sesi, izin (T-006). Butuh `CBS_DATABASE_URL`.
+## Test integrasi identitas, sesi, izin (T-006). Butuh `KRAN_DATABASE_URL`.
 ##
 ## Cakupan kriteria T-006: matriks authz (role + branch scoping + SoD) hijau, audit context
 ## terisi di alur use case (actor/cabang/IP/device/alasan/correlation di `audit_log`), sesi
 ## cookie (atribut HttpOnly/Secure/SameSite diuji murni di `tauthz`, di sini lifecycle-nya),
 ## lockout dari parameter, ganti password.
 ##
-## Test ini **menghapus schema `platform`** di DB yang ditunjuk `CBS_DATABASE_URL` (DB dev).
+## Test ini **menghapus schema `platform`** di DB yang ditunjuk `KRAN_DATABASE_URL` (DB dev).
 
 import std/[algorithm, json, options, os, sets, strutils, times, unittest]
 import db_connector/db_postgres
@@ -31,7 +31,7 @@ const
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
-  echo "itauth: CBS_DATABASE_URL kosong — dilewati"
+  echo "itauth: KRAN_DATABASE_URL kosong — dilewati"
   quit(0)
 
 let dbPool = newDbPool(dbConfigFromEnv(envT))

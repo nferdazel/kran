@@ -1,7 +1,7 @@
-# AGENTS.md — repo cbs
+# AGENTS.md — repo kran
 
-Kamu mengembangkan CBS standar Indonesia (koperasi, BPR/BPRS, BMT). Sumber kebenaran:
-`docs/spec/cbs-prd-techspec.md` (PRD/TECHSPEC). Kalau kode dan spec bertentangan, JANGAN
+Kamu mengembangkan KRAN standar Indonesia (koperasi, BPR/BPRS, BMT). Sumber kebenaran:
+`docs/spec/kran-prd-techspec.md` (PRD/TECHSPEC). Kalau kode dan spec bertentangan, JANGAN
 diam-diam memilih; catat di `docs/DECISIONS.md` dan eskalasi (lihat §8).
 
 ## 1. Aturan emas (tidak boleh dilanggar)

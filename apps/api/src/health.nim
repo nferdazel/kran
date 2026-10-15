@@ -5,7 +5,7 @@
 ## - Readiness menjalankan daftar pemeriksaan yang disuntikkan pemanggil (`AppContext.readiness`).
 ##   Daftar kosong = siap (tidak ada dependensi yang bisa diperiksa).
 ##
-## Kontrak: `packages/contracts/openapi/cbs-api.yaml` (`Health`, `Readiness`).
+## Kontrak: `packages/contracts/openapi/kran-api.yaml` (`Health`, `Readiness`).
 
 import std/[json, times]
 

@@ -1,4 +1,4 @@
-# DECISIONS — CBS
+# DECISIONS — KRAN
 
 Keputusan **engineering** yang diambil saat implementasi dan tidak ada di spec §25.
 Keputusan arsitektur yang sudah bernomor di spec (`ADR-001`…`ADR-015`) tetap di
@@ -47,14 +47,14 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
 
 - **Konteks**: uji integrasi butuh Postgres ≥16 (spec §21.3). Pemilik menolak setup Postgres
   lokal; server sudah punya `qouver-postgres` (Postgres 18.6).
-- **Keputusan**: DB khusus `cbs_dev` + role `cbs_dev` di server tersebut, diakses dari laptop
+- **Keputusan**: DB khusus `kran_dev` + role `kran_dev` di server tersebut, diakses dari laptop
   lewat tunnel SSH `127.0.0.1:55432 → 127.0.0.1:5432`. URL (berisi password) disimpan di
-  `.local/dev.env` (gitignored, `chmod 600`). Env var: `CBS_DATABASE_URL`.
+  `.local/dev.env` (gitignored, `chmod 600`). Env var: `KRAN_DATABASE_URL`.
   CI **tidak** memakai server: `services: postgres:18` di GitHub Actions.
 - **Konsekuensi**:
-  - Uji integrasi **melewati dirinya sendiri** bila `CBS_DATABASE_URL` kosong (pola sama
+  - Uji integrasi **melewati dirinya sendiri** bila `KRAN_DATABASE_URL` kosong (pola sama
     dengan repo keluarga `cbs-core`) → `./task test` aman tanpa DB, tapi tidak dianggap bukti.
-  - DB `cbs_dev` ikut ter-backup harian server sampai skrip backup di server di-exclude
+  - DB `kran_dev` ikut ter-backup harian server sampai skrip backup di server di-exclude
     (di luar repo) → dicatat `docs/OPEN_ITEMS.md` O-002.
   - DB `cbs` milik `cbs-core` **tidak disentuh**; tidak ada perubahan config/backup/hook di server.
 - **Alternatif**: Postgres lokal via Docker (ditolak pemilik); hanya CI (verifikasi lokal lemah).
@@ -89,7 +89,7 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
 
 - **Konteks**: master koneksi SSH `ControlPersist=600` menutup tunnel setelah 10 menit idle →
   test integrasi gagal `Connection refused` di tengah sesi panjang (kejadian nyata 2026-10-13).
-- **Keputusan**: `tools/devdb.sh` menerima `CBS_DEVDB_PERSIST` (default tetap 600 detik);
+- **Keputusan**: `tools/devdb.sh` menerima `KRAN_DEVDB_PERSIST` (default tetap 600 detik);
   nilai panjang (7200) diset di `.local/dev.env` (mesin-lokal, gitignored).
 - **Konsekuensi**: perilaku default repo tidak berubah; sesi kerja lokal tidak lagi terputus.
 
@@ -286,7 +286,7 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
   reconnect tidak kehilangan peristiwa (§19.2), tanpa role dispatcher/worker yang berdiri (O-013)
   dan tanpa otorisasi sesi yang selesai (T-012 belum dikerjakan).
 - **Keputusan**:
-  1. Sinyal realtime = trigger `AFTER INSERT` pada `platform.outbox` yang `pg_notify('cbs_outbox',
+  1. Sinyal realtime = trigger `AFTER INSERT` pada `platform.outbox` yang `pg_notify('kran_outbox',
      outbox_id)` (migrasi 0007). Payload hanya id; isi peristiwa dibaca dari tabel. Dispatcher
      outbox tetap pemilik status `PENDING→DONE/DEAD`.
   2. Amplop peristiwa (`packages/contracts/events/realtime-envelope.v1.schema.json`) memakai
@@ -296,7 +296,7 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
   3. Pump memulai dari peristiwa terakhir ("mulai dari sekarang"); backlog diambil klien lewat
      `resumeFrom` atau HTTP. Kesiapan pump diekspos lewat `pumpReady()`.
   4. Kebijakan topik default = **tolak semua** (`denyPolicy`) sampai T-012 memasang identitas sesi;
-     identitas sudah dibaca dari cookie `cbs_session`/`Authorization: Bearer`. Topik yang ditolak
+     identitas sudah dibaca dari cookie `kran_session`/`Authorization: Bearer`. Topik yang ditolak
      dilaporkan di balasan `subscribed.denied`.
   5. Batas protokol (32 topik, 128 karakter) adalah **konfigurasi transport** (`apps/api`) dan
      dikirim ke lapisan application sebagai `SubscriptionLimits` — lapisan application tidak memuat
@@ -371,8 +371,8 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
   cookie pada permintaan lintas-situs, sehingga pilihannya cuma melonggarkan cookie atau
   mengaktifkan CORS + `credentials` (dan tetap repot dengan `SameSite`).
 - **Keputusan**:
-  1. `apps/web/vite.config.ts` meneruskan `/api`, `/healthz`, `/readyz` ke `cbs-api`
-     (`CBS_API_TARGET`, default `http://127.0.0.1:8080`), dengan `ws: true` untuk upgrade
+  1. `apps/web/vite.config.ts` meneruskan `/api`, `/healthz`, `/readyz` ke `kran-api`
+     (`KRAN_API_TARGET`, default `http://127.0.0.1:8080`), dengan `ws: true` untuk upgrade
      `/api/v1/events/stream` (spec §19.3).
   2. Aplikasi web selalu berbicara same-origin (`baseUrl` klien kosong); tidak ada penanganan token
      di JS dan tidak ada konfigurasi CORS di API.
@@ -380,7 +380,7 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
 - **Alasan menolak alternatif**: melonggarkan `SameSite` melemahkan pertahanan CSRF yang justru
   diminta spec; CORS + `credentials` menambah jalur kode baru yang harus diuji di dua mode.
 - **Konsekuensi**: `apps/web/playwright.config.ts` menyalakan API di port e2e (8099) dan menyetel
-  `CBS_API_TARGET`, supaya e2e menguji origin tunggal yang sama seperti dev/produksi.
+  `KRAN_API_TARGET`, supaya e2e menguji origin tunggal yang sama seperti dev/produksi.
 
 ## D-026 — `webServer` Playwright me-`source` `.local/dev.env` (variabel `DYLD_*` tidak diwariskan)
 
@@ -585,7 +585,7 @@ sebelum D-029). Butir 5 D-028 sudah dianotasi agar tidak bertentangan dengan D-0
 
 ## D-031 — Berhenti bersih lewat sinyal: hentikan pump lalu keluar kode 0 (O-025)
 
-- **Konteks**: `cbs-api` tidak memasang penangan sinyal apa pun. `SIGTERM` (yang dikirim `systemctl
+- **Konteks**: `kran-api` tidak memasang penangan sinyal apa pun. `SIGTERM` (yang dikirim `systemctl
   restart` / deploy) mematikan proses sebagai sinyal — kode keluar 143, tanpa jalur penutupan — dan
   proses lama bisa tertinggal berjam-jam (dua proses sisa berumur 16 jam ditemukan saat task ini).
   O-025 melaporkan `server.close()` mematikan proses (SIGSEGV), sehingga jalur itu tidak dipakai.
@@ -650,7 +650,7 @@ sebelum D-029). Butir 5 D-028 sudah dianotasi agar tidak bertentangan dengan D-0
   5. `main.nim` dipagari `when isMainModule` supaya peran bisa dipanggil langsung dari test tanpa
      menjalankan server (kontrak diuji tanpa bergantung hasil `./task build`).
 - **Kode keluar**: 0 sukses, 1 hasil buruk (drift/rantai audit tidak utuh), 2 salah pakai/konfigurasi
-  (mis. `CBS_DATABASE_URL` kosong), 3 dikenali tapi belum diimplementasikan. Ini kontrak yang dibaca
+  (mis. `KRAN_DATABASE_URL` kosong), 3 dikenali tapi belum diimplementasikan. Ini kontrak yang dibaca
   skrip ops; mengubahnya berarti memperbarui skrip (dicatat di `docs/runbooks/ops-cli.md`).
 - **Bukti**: `apps/api/tests/itapi_roles.nim` (7 test) + runbook `docs/runbooks/ops-cli.md`. Sisa
   yang jujur: peran `worker` dan freeze gate daycloser belum ada (O-013) — skrip `ops/` belum pernah
@@ -741,7 +741,7 @@ Tidak ada gate yang dilonggarkan di sini: yang berubah adalah tempat katalog RBA
 O-050 percobaan kata sandi lama tidak dibatasi/diaudit, O-051 kebijakan kata sandi tidak terbaca UI,
 O-052 kebijakan lanjutan kata sandi).
 
-## D-036 — Nama produk: KRAN (identifier teknis tetap `cbs`)
+## D-036 — Nama produk: KRAN (saat itu: identifier teknis tetap `cbs` — lihat D-039)
 
 Keputusan pemilik 15 Okt 2026: nama produknya **KRAN**. Ekspansi "KRAN Rapid Accounting Network"
 adalah lelucon rekursif (gaya WINE/HURD/GNU) dan **bukan** klaim yang ditampilkan di UI, dokumen,
@@ -767,6 +767,9 @@ memutuskan tetap memakai KRAN setelah fakta ini disampaikan.
 **Diperbarui (D-038):** bagian "identifier teknis tidak diubah" tidak lagi mencakup nama berkas
 paket — `cbs.nimble` menjadi `kran.nimble` setelah repo GitHub dinamai ulang. Biner `cbs-api`, prefix
 env `CBS_*`, dan nama berkas kontrak/spec tetap `cbs`.
+
+**Diperbarui (D-039):** batas di atas dicabut atas keputusan pemilik — seluruh identifier teknis ikut
+KRAN. Lihat D-039 untuk daftar lengkap dan apa yang sengaja **tidak** diubah (`cbs-core`).
 
 ## D-037 — Batas versi Mummy dan daftar periksa upgrade (O-049)
 
@@ -818,3 +821,55 @@ Entri dan task yang sudah selesai (`docs/PROGRESS.md`, `docs/tasks/T-001.md`, `T
 O-049 yang sudah ditutup) sengaja **tidak** ditulis ulang: itu catatan apa yang benar saat itu, bukan
 dokumen hidup. Dokumen hidup (`README.md`, `MODULE.md`, `DECISIONS.md`) diperbarui.
 
+**Diperbarui (D-039):** daftar "yang tetap `cbs`" di atas tidak berlaku lagi — lihat D-039.
+
+## D-039 — Seluruh identifier teknis mengikuti KRAN
+
+Keputusan pemilik 15 Okt 2026: batas "nama tampilan saja" (D-036) dan "hanya berkas paket" (D-038)
+dicabut. Seluruh identifier teknis memakai KRAN. Alasan waktu: **sekarang saat termurah** — belum ada
+satu pun proses produksi berjalan (T-013 belum pernah dieksekusi), jadi belum ada berkas env produksi,
+unit systemd hidup, atau hook webhook yang harus dimigrasikan.
+
+| Sebelum | Sesudah |
+|---|---|
+| biner `cbs-api` | `kran-api` |
+| prefix env `CBS_*` | `KRAN_*` |
+| database dev `cbs_dev` | `kran_dev` (**butuh aksi di server** — lihat bawah) |
+| kanal NOTIFY `cbs_outbox` | `kran_outbox` (migrasi baru `0009`; `0007` tidak disentuh) |
+| unit systemd `cbs-api.service`, `cbs-worker.service` | `kran-api.service`, `kran-worker.service` |
+| hook webhook `cbs` (`hook.cbs.json.example`) | `kran` (`hook.kran.json.example`) |
+| paket npm `@cbs/*`, `cbs-monorepo` | `@kran/*`, `kran-monorepo` |
+| kelas CSS `cbs-*` | `kran-*` |
+| kunci localStorage `cbs-theme` | `kran-theme` |
+| berkas `cbs-api.yaml`, `cbs-prd-techspec.md`, `cbs-prod.env.example`, `Caddyfile.cbs.example` | `kran-*` |
+| kode galat mesin `CBS-1xxx` (`shared/kernel/`) | `KRAN-1xxx` |
+| direktori aplikasi di server `/srv/qouver/apps/cbs` (default) | `/srv/qouver/apps/kran` |
+| `application_name` koneksi DB & `app` logger (`cbs`) | `kran` |
+
+Yang **tidak** diubah, dan alasannya:
+
+- **`cbs-core`** — nama sistem lama yang **masih berjalan** di VPS dan akan di-cutover (spec §23).
+  Menggantinya akan membuat dokumen berbohong; sistem lama tetap memakai namanya sendiri.
+- **`cbs.qouver.com` dan path `/cbs/*`** di `Caddyfile.kran.example` — itu DNS/hostname, bukan
+  identifier di repo. Mengubahnya keputusan pemilik domain, bukan efek samping rename.
+- **Catatan historis** (`docs/PROGRESS*.md`, `docs/tasks/**`, `docs/spikes/**`, `docs/milestones/**`,
+  `docs/ESCALATIONS.md`, `docs/migration/**`, entri DECISIONS lama) — rekaman apa yang benar saat itu;
+  kebijakan sama seperti D-038.
+- **Migrasi `0007`** tidak disentuh: sudah diterapkan, dan `dbtools` memverifikasi checksum berkas
+  migrasi yang sudah diterapkan. Kanal diganti lewat migrasi baru `0009` (non-destruktif: tanpa
+  DROP/TRUNCATE/RENAME).
+
+Yang belum selesai dan butuh manusia:
+
+- **`ALTER DATABASE cbs_dev RENAME TO kran_dev`** di server (atau DB baru + dump/restore). Selama belum,
+  `.local/dev.env` sengaja tetap menunjuk nama lama supaya lingkungan dev tetap jalan; setelah rename,
+  ubah nilai `KRAN_DATABASE_URL`.
+- **Direktori server**: default skrip sudah `/srv/qouver/apps/kran`. Bila di server sudah ada
+  `/srv/qouver/apps/cbs` (mis. dari percobaan sebelumnya), perlu `mv` atau set `KRAN_APP_DIR`.
+- **Alias deploy key** di `~/.ssh/config` (mis. `github-kran`) — dibuat saat setup webhook/deploy key.
+
+Catatan proses (jujur, bagian dari keputusannya): rename dilakukan mekanis lalu diperiksa, dan dua
+kesalahan di ronde itu ketemu dan diperbaiki — (1) `ops/systemd/*.service` awalnya terlewat karena
+ekstensi `.service` tidak masuk daftar berkas yang diproses, sehingga unit masih menunjuk biner lama;
+(2) `docs/DECISIONS.md` sempat rusak maknanya karena kalimat "kenapa bukan CBS" di D-036 ikut ter-rename
+jadi "kenapa bukan KRAN" — terbalik dari maksud aslinya.

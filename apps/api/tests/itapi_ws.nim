@@ -1,4 +1,4 @@
-## Test integrasi endpoint realtime `GET /api/v1/events/stream` (butuh `CBS_DATABASE_URL`).
+## Test integrasi endpoint realtime `GET /api/v1/events/stream` (butuh `KRAN_DATABASE_URL`).
 ##
 ## Kriteria T-009: peristiwa dari outbox sampai ke **klien** dan reconnect tidak kehilangan
 ## peristiwa. Jadi di sini dibuktikan jalur penuh: INSERT outbox → trigger NOTIFY (migration 0007)
@@ -8,7 +8,7 @@
 ## topik yang ditolak, dan `resync` ketika peristiwa yang terlewat melebihi batas replay.
 ##
 ## Test ini **tidak** mengubah schema (migrasi dijalankan lewat runner resmi) dan hanya menambah
-## baris outbox dengan `dedup_key` unik, jadi aman dijalankan berulang di `cbs_dev`.
+## baris outbox dengan `dedup_key` unik, jadi aman dijalankan berulang di `kran_dev`.
 
 import std/[atomics, httpclient, json, net, os, random, strutils, times, unittest]
 
@@ -27,13 +27,13 @@ import ../src/[context, events, readiness, server]
 import ./wsclient
 
 const
-  ContractPath = "packages/contracts/openapi/cbs-api.yaml"
+  ContractPath = "packages/contracts/openapi/kran-api.yaml"
   EventsSchemaPath = "packages/contracts/events/realtime-envelope.v1.schema.json"
   EventsPath = "/api/v1/events/stream"
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
-  echo "itapi_ws: CBS_DATABASE_URL kosong — dilewati"
+  echo "itapi_ws: KRAN_DATABASE_URL kosong — dilewati"
   quit(0)
 
 randomize(20261014)
@@ -219,7 +219,7 @@ proc assertProblem(status: int, body: JsonNode, expectedCode: string) =
 
 suite "realtime: pump menyambung ulang (O-029)":
   test "koneksi pump diputus paksa → peristiwa berikutnya tetap terkirim":
-    var client = connect("127.0.0.1", mainPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    var client = connect("127.0.0.1", mainPort, EventsPath, @[("Cookie", "kran_session=uji")])
     defer: client.close()
     let topic = uniqueTopic()
     client.sendText(subscribeJson(topic, ""))
@@ -267,7 +267,7 @@ suite "realtime: pump menyambung ulang (O-029)":
     check probe()[0].status == csOk
 
     # Dan klien kedua yang baru menyambung tetap dilayani setelah semua ini.
-    var klienKedua = connect("127.0.0.1", mainPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    var klienKedua = connect("127.0.0.1", mainPort, EventsPath, @[("Cookie", "kran_session=uji")])
     defer: klienKedua.close()
     let topicKedua = uniqueTopic()
     klienKedua.sendText(subscribeJson(topicKedua, ""))
@@ -280,7 +280,7 @@ suite "realtime: izin langganan diperiksa ulang (O-046)":
   test "izin dicabut di tengah langganan → langganan ditutup, sesi tetap sah":
     izinTopikMasihAda.store(true)
     let topic = uniqueTopic()
-    var client = connect("127.0.0.1", izinPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    var client = connect("127.0.0.1", izinPort, EventsPath, @[("Cookie", "kran_session=uji")])
     defer: client.close()
     client.sendText(subscribeJson(topic, ""))
     let subscribed = client.nextOfType("subscribed", 5000)
@@ -300,7 +300,7 @@ suite "realtime: izin langganan diperiksa ulang (O-046)":
 
     # Setelah ditutup, klien yang menyambung ulang akan ditolak saat berlangganan (bukan drop):
     # perilaku handshake tidak berubah.
-    var ulang = connect("127.0.0.1", izinPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    var ulang = connect("127.0.0.1", izinPort, EventsPath, @[("Cookie", "kran_session=uji")])
     defer: ulang.close()
     ulang.sendText(subscribeJson(uniqueTopic(), ""))
     let lagi = ulang.nextOfType("subscribed", 5000)
@@ -319,7 +319,7 @@ suite "realtime: banyak klien diputus serentak (O-049)":
     let topik = uniqueTopic()
     var klien: seq[WsClient]
     for _ in 1 .. stressClients:
-      var c = connect("127.0.0.1", gatedPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+      var c = connect("127.0.0.1", gatedPort, EventsPath, @[("Cookie", "kran_session=uji")])
       c.sendText(subscribeJson(topik, ""))
       let subscribed = c.nextOfType("subscribed", 5000)
       check subscribed["denied"].len == 0
@@ -348,7 +348,7 @@ suite "realtime: banyak klien diputus serentak (O-049)":
 
     # Dan server masih hidup: klien baru tetap dilayani peristiwa.
     let topikBaru = uniqueTopic()
-    var klienBaru = connect("127.0.0.1", gatedPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    var klienBaru = connect("127.0.0.1", gatedPort, EventsPath, @[("Cookie", "kran_session=uji")])
     defer: klienBaru.close()
     klienBaru.sendText(subscribeJson(topikBaru, ""))
     let langganan = klienBaru.nextOfType("subscribed", 5000)
@@ -372,7 +372,7 @@ suite "realtime: penolakan sebelum upgrade":
     assertProblem(401, parseJson(response.body), "UNAUTHORIZED")
 
   test "identitas tanpa izin -> 403":
-    let response = handshake("127.0.0.1", denyPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    let response = handshake("127.0.0.1", denyPort, EventsPath, @[("Cookie", "kran_session=uji")])
     check response.status == 403
     assertProblem(403, parseJson(response.body), "FORBIDDEN")
 
@@ -387,7 +387,7 @@ suite "realtime: penolakan sebelum upgrade":
 
 suite "realtime: peristiwa sampai ke klien":
   test "peristiwa outbox dikirim ke klien yang berlangganan topiknya":
-    var client = connect("127.0.0.1", mainPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    var client = connect("127.0.0.1", mainPort, EventsPath, @[("Cookie", "kran_session=uji")])
     defer: client.close()
     let topic = uniqueTopic()
     client.sendText(subscribeJson(topic, ""))
@@ -405,7 +405,7 @@ suite "realtime: peristiwa sampai ke klien":
     assertEventEnvelope(frame)
 
   test "topik yang ditolak dilaporkan eksplisit, bukan dibuang diam-diam":
-    var client = connect("127.0.0.1", paramPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    var client = connect("127.0.0.1", paramPort, EventsPath, @[("Cookie", "kran_session=uji")])
     defer: client.close()
     client.sendText("""{"type":"subscribe","topics":["param.changed","audit.appended"]}""")
     let subscribed = client.nextOfType("subscribed", 5000)
@@ -415,7 +415,7 @@ suite "realtime: peristiwa sampai ke klien":
     check subscribed["denied"][0].getStr() == "audit.appended"
 
   test "pesan protokol tidak valid -> frame error dengan kode + kunci i18n":
-    var client = connect("127.0.0.1", mainPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    var client = connect("127.0.0.1", mainPort, EventsPath, @[("Cookie", "kran_session=uji")])
     defer: client.close()
     client.sendText("bukan json")
     let frame = client.nextOfType("error", 5000)
@@ -425,7 +425,7 @@ suite "realtime: peristiwa sampai ke klien":
     check problems.len == 0
 
   test "unsubscribe menghentikan pengiriman":
-    var client = connect("127.0.0.1", mainPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    var client = connect("127.0.0.1", mainPort, EventsPath, @[("Cookie", "kran_session=uji")])
     defer: client.close()
     let topic = uniqueTopic()
     client.sendText(subscribeJson(topic, ""))
@@ -457,7 +457,7 @@ suite "realtime: resume tidak kehilangan peristiwa":
     # sama dua kali (sekali dari replay, sekali dari pump) — dan itu bukan yang diuji di sini.
     sleep(1000)
 
-    var client = connect("127.0.0.1", mainPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    var client = connect("127.0.0.1", mainPort, EventsPath, @[("Cookie", "kran_session=uji")])
     defer: client.close()
     client.sendText(subscribeJson(topic, first))
 
@@ -478,7 +478,7 @@ suite "realtime: resume tidak kehilangan peristiwa":
     let missed = appendTestEvent(topic, %*{"n": 1})
     discard appendTestEvent(topic, %*{"n": 2})
 
-    var client = connect("127.0.0.1", tinyReplayPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    var client = connect("127.0.0.1", tinyReplayPort, EventsPath, @[("Cookie", "kran_session=uji")])
     defer: client.close()
     client.sendText(subscribeJson(topic, anchor))
 
@@ -496,7 +496,7 @@ suite "realtime: resume tidak kehilangan peristiwa":
     let eventId = appendTestEvent(topic, %*{"n": 1})
     sleep(1000) # pump sudah melewatinya; jalur yang diuji adalah replay
 
-    var client = connect("127.0.0.1", mainPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    var client = connect("127.0.0.1", mainPort, EventsPath, @[("Cookie", "kran_session=uji")])
     defer: client.close()
     client.sendText(subscribeJson(topic, "00000000-0000-0000-0000-000000000000"))
     let replayed = client.nextOfType("event", 10000)
@@ -505,7 +505,7 @@ suite "realtime: resume tidak kehilangan peristiwa":
 suite "realtime: sesi berakhir setelah handshake (O-036)":
   test "sesi dicabut → amplop error, soket ditutup, langganan dilepas":
     let topic = uniqueTopic()
-    var client = connect("127.0.0.1", gatedPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    var client = connect("127.0.0.1", gatedPort, EventsPath, @[("Cookie", "kran_session=uji")])
     client.sendText(subscribeJson(topic, ""))
     let subscribed = client.nextOfType("subscribed", 5000)
     check subscribed["topics"][0].getStr() == topic

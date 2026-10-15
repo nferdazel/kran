@@ -40,7 +40,7 @@ proc handleLogin*(app: AppContext, req: Request) {.gcsafe.} =
   ## `POST /api/v1/auth/login` — kredensial → cookie sesi `HttpOnly` (spec §13).
   if app.pool.isNil:
     req.respondProblem(pkNotImplemented, "Not Implemented",
-      "layanan basis data tidak dikonfigurasi (CBS_DATABASE_URL kosong saat start)")
+      "layanan basis data tidak dikonfigurasi (KRAN_DATABASE_URL kosong saat start)")
     return
 
   let body = parseJsonBody(req)

@@ -1,18 +1,18 @@
 #!/usr/bin/env sh
 #
-# CBS - satu pintu perintah (AGENTS.md 2).
+# KRAN - satu pintu perintah (AGENTS.md 2).
 #
 #   ./task check   format + lint + archcheck + lint-nomagic + paramgen --check + i18n check
 #   ./task test    unit + property + integration (Postgres) + contract
 #   ./task e2e     web: kontras token + svelte-check + Playwright (axe 2 tema x 2 locale, keyboard,
-#                   alur login/maker-checker/realtime bila CBS_DATABASE_URL tersedia)
+#                   alur login/maker-checker/realtime bila KRAN_DATABASE_URL tersedia)
 #   ./task openapi lint kontrak OpenAPI + cek klien TS sinkron (openapi-gen = tulis ulang)
 #   ./task ci      semua di atas
 #   ./task ci-repeat [N]  ulangi gate penuh N kali (bawaan 3) - gate kestabilan (T-031)
 #   ./task build   bangun binary apps/api
 #   ./task fmt     rapikan format (menulis ulang berkas)
 #   ./task devdb   kelola DB dev di server (tunnel) - lihat tools/devdb.sh
-#   ./task dbtools migrate|status|validate   migrasi SQL (butuh CBS_DATABASE_URL)
+#   ./task dbtools migrate|status|validate   migrasi SQL (butuh KRAN_DATABASE_URL)
 #   ./task scaffold <nama> [--dry-run]       buat kerangka modul baru (spec §5.5)
 #   ./task help
 #
@@ -32,13 +32,13 @@ NIMFLAGS="--hints:off --warnings:on --path:$ROOT/shared --path:$ROOT/modules --p
 # outbox) yang hanya mungkin dengan thread nyata (O-040).
 TESTFLAGS="$NIMFLAGS --threads:on"
 
-# Bootstrap config lokal (bukan nilai bisnis): CBS_DATABASE_URL untuk test integrasi.
+# Bootstrap config lokal (bukan nilai bisnis): KRAN_DATABASE_URL untuk test integrasi.
 if [ -f "$ROOT/.local/dev.env" ]; then
   set -a
   . "$ROOT/.local/dev.env"
   set +a
 fi
-: "${CBS_DATABASE_URL:=}"
+: "${KRAN_DATABASE_URL:=}"
 
 mkdir -p "$BUILD" "$BIN"
 
@@ -162,7 +162,7 @@ web_bin() { # web_bin <nama> -> cetak path binary workspace root bila ada
 
 cmd_openapi() {
   log "openapi (lint kontrak + klien TS sinkron dengan kontrak)"
-  yaml="$ROOT/packages/contracts/openapi/cbs-api.yaml"
+  yaml="$ROOT/packages/contracts/openapi/kran-api.yaml"
   ruleset="$ROOT/packages/contracts/openapi/.spectral.yaml"
   generated="$ROOT/packages/api-client/src/generated/schema.d.ts"
   if [ ! -f "$yaml" ]; then
@@ -195,7 +195,7 @@ cmd_openapi() {
 }
 
 cmd_openapi_gen() {
-  yaml="$ROOT/packages/contracts/openapi/cbs-api.yaml"
+  yaml="$ROOT/packages/contracts/openapi/kran-api.yaml"
   generated="$ROOT/packages/api-client/src/generated/schema.d.ts"
   gen=$(web_bin openapi-typescript || true)
   [ -n "$gen" ] || die "dependency JS belum terpasang (pnpm install)"
@@ -270,8 +270,8 @@ cmd_test() {
   fi
   if [ -z "$its" ]; then
     [ -n "$filter" ] || skip "belum ada test integrasi (T-004)"
-  elif [ -z "$CBS_DATABASE_URL" ]; then
-    skip "CBS_DATABASE_URL kosong - test integrasi melewati dirinya sendiri (lihat .local/dev.env / ./task devdb up)"
+  elif [ -z "$KRAN_DATABASE_URL" ]; then
+    skip "KRAN_DATABASE_URL kosong - test integrasi melewati dirinya sendiri (lihat .local/dev.env / ./task devdb up)"
   else
     matched=1
     for f in $its; do info "$f"; run_nim_test "$f"; done
@@ -316,8 +316,8 @@ cmd_e2e() {
 
   # API e2e (spec §17.2): hanya bila ada DB. Migrasi + seed dev idempoten dulu, baru Playwright
   # mengangkat binary hasil build di port 8099 (lihat apps/web/playwright.config.ts).
-  if [ -z "$CBS_DATABASE_URL" ]; then
-    skip "CBS_DATABASE_URL kosong — API e2e tidak dijalankan, spec alur login/maker-checker dilewati"
+  if [ -z "$KRAN_DATABASE_URL" ]; then
+    skip "KRAN_DATABASE_URL kosong — API e2e tidak dijalankan, spec alur login/maker-checker dilewati"
   else
     log "API e2e: build + migrasi + seed dev"
     cmd_build
@@ -336,8 +336,8 @@ cmd_e2e() {
 cmd_build() {
   mkdir -p "$BIN"
   [ -f "$ROOT/apps/api/src/main.nim" ] || die "apps/api/src/main.nim belum ada (T-004)"
-  nim c $NIMFLAGS --mm:orc --threads:on --out:"$BIN/cbs-api" "$ROOT/apps/api/src/main.nim"
-  ok "$BIN/cbs-api"
+  nim c $NIMFLAGS --mm:orc --threads:on --out:"$BIN/kran-api" "$ROOT/apps/api/src/main.nim"
+  ok "$BIN/kran-api"
 }
 
 cmd_scaffold() { # cmd_scaffold <nama> [--dry-run]

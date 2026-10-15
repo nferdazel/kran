@@ -1,4 +1,4 @@
-## Pendengar outbox: `LISTEN` kanal `cbs_outbox` + baca peristiwa baru dari tabel (spec §12.4, §19.1).
+## Pendengar outbox: `LISTEN` kanal `kran_outbox` + baca peristiwa baru dari tabel (spec §12.4, §19.1).
 ##
 ## Peran file ini adalah **I/O**: menunggu sinyal dan mengambil data. Logika topik/resume ada di
 ## `application/realtime.nim` (murni) — pemisahan itu yang membuat keduanya dapat diuji terpisah.
@@ -18,7 +18,7 @@ import kernel/[clock, ids]
 
 const
   ## Kanal NOTIFY dari trigger `outbox_notify_insert` (migration 0007).
-  outboxChannel* = "cbs_outbox"
+  outboxChannel* = "kran_outbox"
 
 proc listenOutbox*(db: DbConn) =
   ## `LISTEN` sekali per koneksi pendengar (bukan per query).

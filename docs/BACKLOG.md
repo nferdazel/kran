@@ -1,6 +1,6 @@
-# BACKLOG — CBS
+# BACKLOG — KRAN
 
-Sumber kebenaran produk: `docs/spec/cbs-prd-techspec.md` (§23 = daftar fase).
+Sumber kebenaran produk: `docs/spec/kran-prd-techspec.md` (§23 = daftar fase).
 Status: `TODO` · `READY` · `IN_PROGRESS` · `DONE` · `BLOCKED`.
 
 Aturan pengambilan task (AGENTS.md §4): ambil task `READY` teratas. Satu task = satu
@@ -13,7 +13,7 @@ berkas rencana di `docs/tasks/T-xxx.md`.
 | T-001 | DONE | Skeleton monorepo + satu pintu `./task` + CI dasar | §7, §21.1 | — | `./task check` hijau; tree direktori sesuai §7; `ci.yml` = pola existing (trigger/permissions/concurrency) |
 | T-002 | DONE | `shared/kernel`: Money (fixed-point 10⁴), Rate, BusinessDate, Result, Clock, IdGen (UUIDv7), AuditContext | §5.2, §9.1(2/6/8), §12.1 | T-001 | `./task test` hijau; property test (asosiatif, pembulatan, tanpa overflow, round-trip) lolos; tidak ada `float` di kernel |
 | T-003 | DONE | Tooling: `tools/archcheck`, `tools/lint-nomagic`, `tools/paramgen` (+ test tool) | §5.1, §5.2, §10.3, §10.4 | T-001, T-002 | archcheck menolak fixture pelanggaran; lint-nomagic menolak fixture magic; paramgen deterministik + `--check` gagal saat drift |
-| T-004 | DONE | Skeleton `platform`: pg pool, migration runner (expand-only), outbox/inbox, audit hash-chain | §9, §12.4, §18.2 | T-002, T-003 | `./task test` dengan `CBS_DATABASE_URL` hijau: migrasi idempotent (up 2× aman), outbox de-dup, hash-chain terverifikasi + terdeteksi saat dirusak |
+| T-004 | DONE | Skeleton `platform`: pg pool, migration runner (expand-only), outbox/inbox, audit hash-chain | §9, §12.4, §18.2 | T-002, T-003 | `./task test` dengan `KRAN_DATABASE_URL` hijau: migrasi idempotent (up 2× aman), outbox de-dup, hash-chain terverifikasi + terdeteksi saat dirusak |
 | T-005 | DONE | Parameter framework: tabel + resolusi effective-dated + maker-checker + cache/NOTIFY + startup check | §10 | T-003, T-004 | Test: resolusi PRODUCT→BRANCH→INSTITUTION→SEGMENT→GLOBAL pada `as_of`; overlap ACTIVE ditolak EXCLUDE; ParamNotFound tanpa fallback; startup check gagal-cepat; invalidasi cache via NOTIFY |
 | T-006 | DONE | Auth + RBAC + audit context + branch scoping dasar | §13, §18.2 | T-004, T-005 | Test authz matrix (role conflict + branch) hijau — `tauthz` 19 + `itauth` 13 test; audit context terisi (actor/cabang/IP/device/alasan/correlation); atribut cookie `HttpOnly; Secure; SameSite=Strict`. MFA & RLS lanjut di T-017/O-015 |
 | T-007 | DONE | Kalender + business date (state OPEN/CLOSING/CLOSED, roll over) | §9.3, §11.2 | T-004, T-005 | Test: hari libur dari param/tabel, level close (EOD/EOM/EOQ/EOY) terpilih dari kalender, transisi state ditolak bila ilegal — `tcalendar` 29 test + `itcalendar` 11 test lulus |
@@ -63,6 +63,7 @@ DR drill §9, freeze gate `daycloser` fase 3) tidak dipaksakan masuk; ia masuk r
 | T-035 | Migrasi contract & rollback (O-048) | P3 | READY |
 | T-036 | Semantik scope institusi & `requires_approval` (O-012, O-039) | P3 | READY |
 | T-037 | Register batas Fase 0 + laporan penutup | P3 | DONE |
+| T-039 | Seluruh identifier teknis mengikuti KRAN (D-039) | P2 | IN_PROGRESS |
 
 Urutan kerja: T-028 → T-029 → T-030 → T-031 → T-032 → T-033 → T-034 → T-035 → T-036 → T-037.
 Satu putaran review independen di akhir batch atas diff seluruh batch (pola batch T-022…T-026).

@@ -8,9 +8,9 @@
 # BELUM PERNAH DIJALANKAN DI SERVER (T-013).
 set -euo pipefail
 
-APP_DIR="${CBS_APP_DIR:-/srv/qouver/apps/cbs}"
-BIN="$APP_DIR/bin/cbs-api"
-BIN_PREV="$APP_DIR/bin/cbs-api.prev"
+APP_DIR="${KRAN_APP_DIR:-/srv/qouver/apps/kran}"
+BIN="$APP_DIR/bin/kran-api"
+BIN_PREV="$APP_DIR/bin/kran-api.prev"
 
 if [ ! -f "$BIN_PREV" ]; then
   echo "ERROR: $BIN_PREV tidak ada — tidak ada binary sebelumnya untuk rollback" >&2
@@ -27,6 +27,6 @@ if [ -d "$APP_DIR/web.prev" ]; then
   mv "$APP_DIR/web.prev" "$APP_DIR/web"
 fi
 
-systemctl --user restart cbs-api
-systemctl --user restart cbs-worker
+systemctl --user restart kran-api
+systemctl --user restart kran-worker
 echo "==> rollback selesai (DB tidak disentuh)"

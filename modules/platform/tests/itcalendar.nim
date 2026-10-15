@@ -1,11 +1,11 @@
-## Test integrasi kalender & business date (butuh `CBS_DATABASE_URL`).
+## Test integrasi kalender & business date (butuh `KRAN_DATABASE_URL`).
 ##
 ## Cakupan kriteria T-007: bentuk kalender (akhir pekan, awal tahun fiskal) datang dari
 ## parameter; hari libur dari tabel `platform.holiday` (+ perluasan tahunan); level penutupan
 ## EOD/EOM/EOQ/EOY dipilih kalender; transisi state business date ilegal ditolak; rollover ke
 ## hari kerja berikutnya. Sekaligus mutation test param (spec §10.4): ubah nilai akhir pekan.
 ##
-## Test ini **menghapus schema `platform`** di DB yang ditunjuk `CBS_DATABASE_URL` (DB dev).
+## Test ini **menghapus schema `platform`** di DB yang ditunjuk `KRAN_DATABASE_URL` (DB dev).
 
 import std/[unittest, os, json, options, sets, strutils]
 import "platform-lib/db/config"
@@ -22,7 +22,7 @@ const
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
-  echo "itcalendar: CBS_DATABASE_URL kosong — dilewati"
+  echo "itcalendar: KRAN_DATABASE_URL kosong — dilewati"
   quit(0)
 
 let dbPool = newDbPool(dbConfigFromEnv(envT))
