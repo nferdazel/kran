@@ -8,6 +8,7 @@
 #                   alur login/maker-checker/realtime bila CBS_DATABASE_URL tersedia)
 #   ./task openapi lint kontrak OpenAPI + cek klien TS sinkron (openapi-gen = tulis ulang)
 #   ./task ci      semua di atas
+#   ./task ci-repeat [N]  ulangi gate penuh N kali (bawaan 3) - gate kestabilan (T-031)
 #   ./task build   bangun binary apps/api
 #   ./task fmt     rapikan format (menulis ulang berkas)
 #   ./task devdb   kelola DB dev di server (tunnel) - lihat tools/devdb.sh
@@ -361,6 +362,24 @@ cmd_ci() {
   printf '\n== CI hijau\n'
 }
 
+# Gate kestabilan: `./task ci` menjawab "lulus sekarang", bukan "stabil". Flake hanya terlihat saat
+# diulang, jadi gate penuh dijalankan N kali berturut-turut dan berhenti pada putaran pertama yang
+# merah (T-031). Sengaja tidak dipakai di setiap task: satu putaran sudah ~8 menit.
+cmd_ci_repeat() { # cmd_ci_repeat [jumlah-putaran]
+  putaran_total=${1:-3}
+  case "$putaran_total" in
+    '' | *[!0-9]*) die "jumlah putaran harus angka (mis. ./task ci-repeat 3)" ;;
+  esac
+  [ "$putaran_total" -ge 1 ] || die "jumlah putaran minimal 1"
+  putaran=1
+  while [ "$putaran" -le "$putaran_total" ]; do
+    log "ci-repeat: putaran $putaran/$putaran_total"
+    cmd_ci || die "ci-repeat gagal pada putaran $putaran/$putaran_total"
+    putaran=$((putaran + 1))
+  done
+  printf '\n== ci-repeat hijau: %s putaran berturut-turut\n' "$putaran_total"
+}
+
 cmd_help() {
   sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
 }
@@ -370,6 +389,7 @@ case "${1:-help}" in
   test) shift; cmd_test "${1:-}" ;;
   e2e) cmd_e2e ;;
   ci) cmd_ci ;;
+  ci-repeat) shift; cmd_ci_repeat "${1:-3}" ;;
   build) cmd_build ;;
   fmt) cmd_fmt ;;
   lint) cmd_lint ;;
