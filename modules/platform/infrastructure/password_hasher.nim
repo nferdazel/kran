@@ -2,7 +2,7 @@
 ##
 ## **Keputusan**: PBKDF2-HMAC-SHA256 (RFC 2898 §5.2) dari pustaka `nimcrypto` — KDF standar,
 ## pure Nim (tanpa dependensi native di dev maupun server), sudah terpasang 0.7.3 dan dipin di
-## `cbs.nimble`. Alasan lengkap: `docs/DECISIONS.md` D-013.
+## `kran.nimble`. Alasan lengkap: `docs/DECISIONS.md` D-013.
 ##
 ## **HUMAN-REVIEW-REQUIRED**: ini area kriptografi (penyimpanan password). Vektor uji di
 ## `tests/tpassword.nim` dihitung independen dengan `hashlib.pbkdf2_hmac` (Python), bukan dari

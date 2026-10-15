@@ -25,7 +25,7 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
 ## D-002 — Satu paket nimble untuk seluruh monorepo
 
 - **Konteks**: spec §7 punya `shared/`, `modules/*`, `apps/api`, `tools/*` sebagai paket logis.
-- **Keputusan**: satu `cbs.nimble` di root; direktori sumber di-`-p:` oleh `./task`.
+- **Keputusan**: satu `kran.nimble` di root; direktori sumber di-`-p:` oleh `./task`.
 - **Alasan**: nimble workspace/multi-paket menambah konsep & langkah untuk nilai kecil di Fase 0.
   Satu resolusi dependensi = satu lockfile = satu nimcache.
 - **Konsekuensi**: `nimble install -d -y` memasang seluruh dependensi. Modul tetap terpisah
@@ -39,7 +39,7 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
 - **Keputusan**: `db_connector` 0.1.0 (PostgreSQL) dan `yaml` 2.2.1 (nimYAML, untuk
   `seeds/params.yaml`). Tidak ada dependensi lain (JSON, regex, times dari stdlib;
   property test memakai harness sendiri).
-- **Konsekuensi**: versi dipin di `cbs.nimble`; `yaml` dipakai **hanya** oleh `tools/paramgen`
+- **Konsekuensi**: versi dipin di `kran.nimble`; `yaml` dipakai **hanya** oleh `tools/paramgen`
   (build-time), tidak masuk jalur runtime API → risiko ekosistem terkurung.
 - **Status**: diterima; kandidat diangkat jadi ADR-016 bila `paramgen` jadi alat kritis.
 
@@ -163,7 +163,7 @@ Format: konteks → keputusan → konsekuensi → alternatif → status.
   (`std/sha1`, `std/md5` saja), sehingga pilihannya: menulis SHA-256 sendiri, memakai pustaka
   pure-Nim (`nimcrypto`, sudah terpasang 0.7.3 karena spike ADR-002), atau pustaka native
   (argon2/libsodium) yang harus tersedia di mesin dev **dan** server produksi.
-- **Keputusan**: `nimcrypto` (dipin `>= 0.7.3` di `cbs.nimble`), algoritma
+- **Keputusan**: `nimcrypto` (dipin `>= 0.7.3` di `kran.nimble`), algoritma
   **PBKDF2-HMAC-SHA256** (RFC 2898 §5.2), parameter tersimpan bersama hash
   (`algo$iterasi$salt$digest`) sehingga perubahan kebijakan tidak mematahkan hash lama.
   Iterasi dari parameter `platform.security.password_pbkdf2_iterations` (default pack 600.000).
@@ -764,6 +764,10 @@ yang juga membuat software keuangan pemerintah, KRANAPP (Depok), dan CV. KRAN In
 Pengecekan merek resmi (PDKI/eDJKI) dan domain belum dilakukan dan bukan wewenang agen; pemilik
 memutuskan tetap memakai KRAN setelah fakta ini disampaikan.
 
+**Diperbarui (D-038):** bagian "identifier teknis tidak diubah" tidak lagi mencakup nama berkas
+paket — `cbs.nimble` menjadi `kran.nimble` setelah repo GitHub dinamai ulang. Biner `cbs-api`, prefix
+env `CBS_*`, dan nama berkas kontrak/spec tetap `cbs`.
+
 ## D-037 — Batas versi Mummy dan daftar periksa upgrade (O-049)
 
 `apps/api/src/events.nim` memakai dua sifat Mummy yang **tidak** dijanjikan API publiknya:
@@ -773,7 +777,7 @@ memutuskan tetap memakai KRAN setelah fakta ini disampaikan.
 2. `WebSocket.close` aman dari thread lain (close frame dimasukkan ke antrean yang sama), dan
    pemanggilan setelah `forget` tidak menutup soket klien lain.
 
-Keputusan: **`cbs.nimble` membatasi `mummy >= 0.4.8 & < 0.5.0`,** dan versi 0.4.8 adalah yang diuji.
+Keputusan: **`kran.nimble` membatasi `mummy >= 0.4.8 & < 0.5.0`,** dan versi 0.4.8 adalah yang diuji.
 Alasan: sifat di atas adalah detail implementasi; kenaikan versi minor bisa mengubahnya tanpa
 kegagalan kompilasi, sehingga bugnya hanya muncul sebagai soket yang menggantung atau pesan yang
 hilang saat beban.
@@ -791,3 +795,26 @@ Daftar periksa bila nanti versi Mummy dinaikkan (jalankan sebelum mengganti bata
 Batas yang diketahui (tidak ditangani, tetap sebagai item): antrean kirim keluar per koneksi tidak
 dibatasi (O-028), dan ukuran antrean tidak bisa dibaca dari luar sehingga kuota klien lambat belum
 bisa dipasang tanpa memakai internal Mummy lagi.
+
+## D-038 — Nama berkas paket: `kran.nimble` (selaras nama repo)
+
+Pemilik mengganti nama repo GitHub menjadi `kran` dan memutuskan identifier paket ikut: `cbs.nimble`
+menjadi **`kran.nimble`**, sehingga nama paket Nim menjadi `kran` — `nimble check` membaca nama paket
+dari nama berkas (`Success: The package "kran" is valid.`).
+
+Batasnya, supaya perubahan ini tidak melebar tanpa keputusan: yang berubah **hanya** nama berkas
+paket dan `description` di dalamnya. Yang tetap `cbs`: biner `cbs-api`, prefix env `CBS_*`, nama
+direktori kerja, nama berkas kontrak, dan nama berkas spec. Alasannya sama seperti D-036 — `cbs-api`
+dan `CBS_*` muncul di unit systemd server, berkas env produksi (`/srv/.../env/*.env`), skrip webhook,
+dan prosedur backup; menggantinya adalah perubahan ops yang butuh keputusan sendiri, bukan efek
+samping rename repo.
+
+Dampak yang sudah ditangani: kunci cache dependency `hashFiles('cbs.nimble')` di
+`.github/workflows/ci.yml` **wajib** ikut berubah — kalau tidak, cache di-key oleh nama berkas yang
+sudah tidak ada. `./task build` tidak terpengaruh sama sekali: ia memanggil `nim c` langsung
+(`task:339`) dan tidak pernah membaca berkas `.nimble`.
+
+Entri dan task yang sudah selesai (`docs/PROGRESS.md`, `docs/tasks/T-001.md`, `T-034.md`, serta item
+O-049 yang sudah ditutup) sengaja **tidak** ditulis ulang: itu catatan apa yang benar saat itu, bukan
+dokumen hidup. Dokumen hidup (`README.md`, `MODULE.md`, `DECISIONS.md`) diperbarui.
+

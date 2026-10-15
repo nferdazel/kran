@@ -1,8 +1,9 @@
 # Satu paket Nim untuk seluruh monorepo (lihat docs/DECISIONS.md D-002).
+# Nama berkas = nama paket Nim; ikut nama repo sejak D-038 (`kran`).
 # Direktori sumber ditambahkan lewat `-p:` di ./task, bukan lewat `srcDir` tunggal.
 version     = "0.1.0"
 author      = "Fredianto"
-description = "CBS Indonesia - core banking system (Nim backend + SvelteKit web)"
+description = "KRAN - core banking system (Nim backend + SvelteKit web)"
 license     = "MIT"
 
 requires "nim >= 2.2.0"

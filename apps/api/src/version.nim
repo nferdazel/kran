@@ -2,7 +2,7 @@
 ##
 ## Sumber: env `CBS_VERSION` (diisi saat deploy/systemd) bila ada; kalau tidak, konstanta
 ## `FallbackVersion`. Catatan: pengisian otomatis dari `git describe` saat build belum ada —
-## sampai itu, naikkan `FallbackVersion` bersamaan dengan `version` di `cbs.nimble`.
+## sampai itu, naikkan `FallbackVersion` bersamaan dengan `version` di `kran.nimble`.
 
 import std/os
 
