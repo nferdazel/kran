@@ -1,5 +1,5 @@
 /*
- * Komponen presentasional dasar CBS (spec §14.1 `packages/ui`, §17.1).
+ * Komponen presentasional dasar KRAN (spec §14.1 `packages/ui`, §17.1).
  *
  * Prinsip:
  *  - Hanya memakai design token (`--color-*`, `--space-*`, dst) — tidak ada warna mentah,

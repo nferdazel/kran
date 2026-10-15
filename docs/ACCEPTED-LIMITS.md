@@ -44,11 +44,15 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
   kapasitas.
 - **Deploy & rollback belum pernah dilatih di server.** `ops/scripts/deploy-vps.sh` belum pernah
   dijalankan (T-013); rehearsal-nya pekerjaan tersendiri dan butuh keputusan pemilik.
+- **Gate hijau bukan jaminan bebas flake.** Ada satu flake e2e yang **belum dijelaskan** (4 test login
+  menggantung di satu putaran gate, tidak berulang saat dijalankan ulang; `docs/tasks/T-031.md`).
+  Dugaan penyebabnya dicatat di sana sebagai dugaan, bukan kesimpulan.
 
 ## 4. Bukti yang ada hari ini
 
-- `./task ci-repeat 3` (gate kestabilan, T-031): hijau 3 putaran berturut-turut — angka lengkapnya
-  dicatat di `docs/tasks/T-037.md` pada saat run penutup dijalankan.
+- `./task ci-repeat 3` (gate kestabilan, T-031): hijau **3 putaran berturut-turut** atas tree final
+  T-037 — 464 `[OK]` per putaran (1392 total) dan 23 uji e2e per putaran. Satu flake e2e sebelumnya
+  (4 test login menggantung; tidak berulang) tercatat jujur di `docs/tasks/T-031.md`.
 - Enam perbaikan terbukti **diskriminatif** lewat mutasi (uji gagal saat perbaikan dibalik):
   1. T-028 — hash tiruan PBKDF2 dimatikan;
   2. T-029 — penyambungan ulang pump dihapus;

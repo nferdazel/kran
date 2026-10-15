@@ -62,7 +62,7 @@ DR drill §9, freeze gate `daycloser` fase 3) tidak dipaksakan masuk; ia masuk r
 | T-034 | Kurangi ketergantungan pada internal Mummy (O-049) | P2 | DONE |
 | T-035 | Migrasi contract & rollback (O-048) | P3 | READY |
 | T-036 | Semantik scope institusi & `requires_approval` (O-012, O-039) | P3 | READY |
-| T-037 | Register batas Fase 0 + laporan penutup | P3 | READY |
+| T-037 | Register batas Fase 0 + laporan penutup | P3 | DONE |
 
 Urutan kerja: T-028 → T-029 → T-030 → T-031 → T-032 → T-033 → T-034 → T-035 → T-036 → T-037.
 Satu putaran review independen di akhir batch atas diff seluruh batch (pola batch T-022…T-026).

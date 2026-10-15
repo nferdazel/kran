@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 #
-# DB dev CBS - database `cbs_dev` di Postgres server (bukan di laptop; keputusan pemilik,
+# DB dev KRAN - database `cbs_dev` di Postgres server (bukan di laptop; keputusan pemilik,
 # dicatat di docs/DECISIONS.md D-004). Skrip ini hanya mengelola TUNNEL SSH, bukan DB-nya.
 #
 #   ./task devdb up      buka tunnel 127.0.0.1:55432 -> server 127.0.0.1:5432

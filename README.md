@@ -21,9 +21,9 @@ Snapshot `./task ci` di mesin dev, 15 Oktober 2026:
 
 | Ukuran | Nilai |
 |---|---|
-| Pemeriksaan lulus (`[OK]`) | 458 (unit, property, integrasi Postgres, kontrak OpenAPI) |
-| Uji browser (Playwright, axe 2 tema) | 22 |
-| Berkas lolos `nim check` | 109 |
+| Pemeriksaan lulus (`[OK]`) | 464 (unit, property, integrasi Postgres, kontrak OpenAPI) |
+| Uji browser (Playwright, axe 2 tema) | 23 |
+| Berkas lolos `nim check` | 110 |
 | Migrasi SQL | 9 |
 
 Angka itu bergerak setiap task. Yang tetap: `./task ci` harus hijau sebelum sebuah task disebut

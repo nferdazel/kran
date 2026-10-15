@@ -1,7 +1,7 @@
 ## Property test kernel (spec §20) — invarian yang harus benar untuk **semua** masukan
 ## dalam rentang realistis, bukan hanya contoh pilihan.
 ##
-## Rentang sengaja dibatasi ke nilai besar yang wajar untuk CBS (|nilai| ≤ 10¹² unit
+## Rentang sengaja dibatasi ke nilai besar yang wajar untuk KRAN (|nilai| ≤ 10¹² unit
 ## = 100 juta rupiah) supaya penjumlahan tiga nilai tidak menyentuh batas int64.
 
 import std/[unittest, random]

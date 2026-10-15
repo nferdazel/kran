@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "comment": "Klien TS untuk API CBS (spec \u00a713): tipe dari OpenAPI 3.1 (`openapi-typescript`) + wrapper fetch tipis (`openapi-fetch`). Dihasilkan, jangan diedit tangan.",
+  "comment": "Klien TS untuk API KRAN (spec \u00a713): tipe dari OpenAPI 3.1 (`openapi-typescript`) + wrapper fetch tipis (`openapi-fetch`). Dihasilkan, jangan diedit tangan.",
   "exports": {
     ".": "./src/index.ts",
     "./schema": "./src/generated/schema.d.ts"
