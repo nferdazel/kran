@@ -450,3 +450,12 @@ dan langganan dilepas, memicu jalur klien yang sudah ada untuk kembali ke login 
 Bukti: `itapi_ws` (+1 test, interval 0 → deterministik) dan `itapi_auth` (+1 test: login → WS →
 logout → error + close) — keduanya GAGAL bila `sweepSessions` dilepas. Sisa batas dicatat: O-046
 (izin topik tidak diperiksa ulang).
+
+## Pasca-M0 — T-024 berhenti bersih (O-025) DONE
+
+`cbs-api` kini memasang penangan `SIGINT`/`SIGTERM`: handler hanya menyetel flag atomik, thread
+penunggu menghentikan pump realtime lalu keluar **kode 0** (D-031). `server.close()` sengaja tidak
+dipakai (jalur O-025) — dan probe minimal menunjukkan SIGSEGV itu tidak reput di bentuk minimal, jadi
+O-025 diperkecil menjadi soal teardown in-process, bukan penghalang deploy. Bukti: manual (`kill
+-TERM` → kode 0 + port bebas) dan e2e baru `shutdown.spec.ts`; mutasi (penangan dilepas) membuat test
+GAGAL. Batasan dicatat: O-047 (in-flight dipotong, belum ada drain).
