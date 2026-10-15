@@ -207,6 +207,6 @@ Invarian tambahan:
     `send` aman dari thread lain (pump) sambil handler memakai soket yang sama — penjaminnya adalah
     antrean kirim per koneksi; dan `close` aman dari thread lain serta tidak menutup soket klien lain
     setelah `forget`. Bila versi minor mengubahnya **tidak ada** kegagalan kompilasi, hanya pesan yang
-    hilang atau soket yang menggantung saat beban — karena itu `cbs.nimble` membatasi
+    hilang atau soket yang menggantung saat beban — karena itu `kran.nimble` membatasi
     `mummy >= 0.4.8 & < 0.5.0` dan ada daftar periksa upgrade di D-037. Antrean kirim keluar masih
     tidak dibatasi (O-028).

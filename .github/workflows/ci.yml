@@ -36,7 +36,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nimble
-          key: nimble-${{ runner.os }}-2.2.12-${{ hashFiles('cbs.nimble') }}
+          key: nimble-${{ runner.os }}-2.2.12-${{ hashFiles('kran.nimble') }}
 
       - name: Install dependencies
         run: nimble install -d -y
