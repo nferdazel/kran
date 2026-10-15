@@ -628,3 +628,30 @@ sebelum D-029). Butir 5 D-028 sudah dianotasi agar tidak bertentangan dengan D-0
 - **Bukti**: `itoutboxcursor` (2 test) — lock audit dilepas sementara → test invarian **GAGAL**;
   `itparam` (25 test) — penjaga `AND status = 'PENDING'` dilepas sementara → test balapan **GAGAL**.
   Keduanya hijau setelah dikembalikan.
+
+## D-033 — Kontrak CLI peran proses: kode keluar eksplisit, `ctl` read-only (O-013)
+
+- **Konteks**: `ops/scripts/migrate.sh` dan `deploy-vps.sh` (T-013, berkas repo, belum pernah
+  dijalankan di server) sudah mengandalkan `--role=migrate --check|--up` dan
+  `--role=ctl daycloser-status`, sedangkan biner hanya punya `--role=api` dan menggagalkan peran lain.
+  Kontraknya harus ada di repo dan bisa diuji tanpa menyentuh server.
+- **Keputusan**:
+  1. `--role=migrate [--check|--up] [--root=<dir>]` memakai `tools/dbtools/lib` — jalur migrasi yang
+     **sama** dengan `./task dbtools migrate`/`validate`, supaya tidak ada dua implementasi migrasi.
+     `--check` read-only dan keluar **1** bila ada migrasi tertunda atau isi migrasi berubah (drift).
+  2. `--role=ctl <perintah>` hanya berisi perintah **read-only** (`verify-audit` → 0 utuh / 1 tidak
+     utuh, `outbox-status`, `help`), karena skrip otomatis memanggilnya tanpa pengawasan. Versi
+     perintah yang menulis data (re-drive outbox) menyusul dengan `--yes` sendiri.
+  3. Perintah yang **dikenali tapi belum ada** (`ctl daycloser-status`, `worker`) keluar dengan kode
+     **3** dan pesan yang menyebut alasannya — bukan kode 2 "tidak dikenal", supaya skrip ops bisa
+     membedakan "salah ketik" dari "belum ada di fase ini".
+  4. `--contract`/`--down` (migrasi destruktif/rollback) **tidak** diam-diam diperlakukan sebagai
+     `--up`: biner belum mendukungnya dan `ops/scripts/migrate.sh` menolaknya dengan kode 3 (O-048).
+  5. `main.nim` dipagari `when isMainModule` supaya peran bisa dipanggil langsung dari test tanpa
+     menjalankan server (kontrak diuji tanpa bergantung hasil `./task build`).
+- **Kode keluar**: 0 sukses, 1 hasil buruk (drift/rantai audit tidak utuh), 2 salah pakai/konfigurasi
+  (mis. `CBS_DATABASE_URL` kosong), 3 dikenali tapi belum diimplementasikan. Ini kontrak yang dibaca
+  skrip ops; mengubahnya berarti memperbarui skrip (dicatat di `docs/runbooks/ops-cli.md`).
+- **Bukti**: `apps/api/tests/itapi_roles.nim` (7 test) + runbook `docs/runbooks/ops-cli.md`. Sisa
+  yang jujur: peran `worker` dan freeze gate daycloser belum ada (O-013) — skrip `ops/` belum pernah
+  dijalankan di server.
