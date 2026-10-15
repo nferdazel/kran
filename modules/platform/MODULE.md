@@ -147,8 +147,11 @@ Invarian tambahan:
     data, `authorize` menolak semua aksi.
 16. **Anti-enumerasi**: user tak dikenal & password salah sama-sama `INVALID_CREDENTIALS`;
     user tak dikenal dicatat di audit sebagai digest, bukan nama mentah (§18.2 logging tanpa PII).
-    *(Status `locked`/`inactive` masih dibalas sebelum verifikasi password — kebijakannya sudah
-    diputuskan, pelaksanaannya di T-028.)*
+    **Kata sandi selalu diverifikasi lebih dulu** (O-034): `locked`/`inactive` baru diberitahukan
+    setelah kata sandi benar, dan akun tak dikenal mengerjakan PBKDF2 tiruan berbiaya setara
+    (`dummyPasswordHash`) supaya waktu respons tidak membedakan. Biaya tiruan mengikuti parameter
+    iterasi saat ini; akun lama yang hash-nya dibuat dengan iterasi berbeda tidak ikut setara —
+    yang dijaga adalah kesetaraan dengan "akun yang wajar".
 17. **Admin pertama sekali-jalan** (T-027): `bootstrapFirstAdmin` menolak bila username sudah ada
     atau sudah ada pengguna yang memegang role admin — jadi perintah `ctl bootstrap-admin` tidak
     bisa diam-diam jadi jalur membuat admin kedua. Kata sandi awalnya diacak CSPRNG, dicetak sekali

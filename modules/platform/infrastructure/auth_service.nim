@@ -158,6 +158,26 @@ proc usernameDigest(username: string): string =
   ## korelasi percobaan berulang, tanpa menulis identitas mentah (spec §18.2 logging).
   tokenHash(username)[0 .. 15]
 
+var
+  ## Hash tiruan untuk akun tak dikenal, di-cache per thread. `threadvar` dipilih supaya tidak ada
+  ## keadaan bersama yang perlu dikunci; kalau dua thread menghitung sendiri-sendiri, biayanya sama.
+  dummyHashCache {.threadvar.}: string
+  dummyHashIterations {.threadvar.}: int
+
+proc dummyPasswordHash(iterations: int): string =
+  ## Hash "kata sandi yang tidak akan pernah cocok" untuk akun tak dikenal (O-034): tanpa ini,
+  ## login ke akun yang tidak ada selesai tanpa KDF sama sekali, dan selisih waktunya sendiri sudah
+  ## cukup untuk menebak akun mana yang ada.
+  ##
+  ## Biayanya mengikuti parameter institusi saat ini — sama dengan yang dipakai hash akun baru.
+  ## Catatan jujur: kalau hash akun lama dibuat dengan jumlah iterasi berbeda (mis. parameter
+  ## dinaikkan setelah akun itu dibuat), biaya jalur tiruan tidak lagi setara dengan akun itu;
+  ## yang dijaga adalah kesetaraan dengan "akun yang wajar", bukan dengan setiap akun.
+  if dummyHashCache.len == 0 or dummyHashIterations != iterations:
+    dummyHashIterations = iterations
+    dummyHashCache = $hashPassword("biaya-setara-untuk-akun-tak-dikenal", iterations)
+  dummyHashCache
+
 proc auditAuth(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
                action, userId: string, payload: JsonNode) =
   discard appendAudit(db, newAuditEntry(ctx, action, "app_user", userId, clock,
@@ -169,18 +189,34 @@ proc authenticate*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
   ##
   ## Pesan/gagal tidak membedakan "user tidak ada" dan "password salah" (`aoInvalidCredentials`)
   ## supaya tidak membocorkan keberadaan akun; bedanya hanya tercatat di audit.
+  ##
+  ## **Urutannya penting** (O-034): kata sandi diverifikasi lebih dulu, baru keadaan akun
+  ## (`locked`/`inactive`) diberitahukan. Akun tak dikenal menjalankan PBKDF2 tiruan berbiaya
+  ## setara, jadi waktu responsnya pun tidak membedakan.
   let now = clock.now()
   let nowIso = utcIso(now)
   let found = userByUsername(db, username)
   if found.isNone:
+    # Akun tak dikenal tetap mengerjakan PBKDF2 (hash tiruan berbiaya setara) sebelum menjawab,
+    # supaya waktu respons tidak membedakan "akun ada" dari "tidak ada" (O-034).
+    discard verifyPassword(password, dummyPasswordHash(settings.pbkdf2Iterations))
     auditAuth(db, ctx, clock, scope, "auth.login.failure", "",
       %*{"reason": "unknown_user", "username_digest": usernameDigest(username)})
     return AuthResult(outcome: aoInvalidCredentials)
 
   var user = found.get()
-  let locked = user.status == "LOCKED" and
-    (user.lockedUntil.len == 0 or user.lockedUntil > nowIso)
-  if locked:
+  if not verifyPassword(password, user.passwordHash):
+    user = recordLoginFailure(db, user.userId, settings.maxFailedLogins,
+      settings.lockoutMinutes, nowIso)
+    auditAuth(db, ctx, clock, scope, "auth.login.failure", user.userId,
+      %*{"reason": "bad_password", "failed_attempts": user.failedAttempts,
+         "status": user.status})
+    # Selalu kredensial invalid — **termasuk** pada percobaan yang barusan mengunci akun. Menjawab
+    # "terkunci" di sini akan memberi tahu penyerang bahwa akunnya ada (O-034).
+    return AuthResult(outcome: aoInvalidCredentials, userId: user.userId)
+
+  # Kata sandi benar: baru sekarang keadaan akun boleh diberitahukan kepada pengguna.
+  if user.status == "LOCKED" and (user.lockedUntil.len == 0 or user.lockedUntil > nowIso):
     auditAuth(db, ctx, clock, scope, "auth.login.failure", user.userId,
       %*{"reason": "locked", "locked_until": user.lockedUntil})
     return AuthResult(outcome: aoLocked, userId: user.userId)
@@ -189,16 +225,6 @@ proc authenticate*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
     auditAuth(db, ctx, clock, scope, "auth.login.failure", user.userId,
       %*{"reason": "status", "status": user.status})
     return AuthResult(outcome: aoInactive, userId: user.userId)
-
-  if not verifyPassword(password, user.passwordHash):
-    user = recordLoginFailure(db, user.userId, settings.maxFailedLogins,
-      settings.lockoutMinutes, nowIso)
-    auditAuth(db, ctx, clock, scope, "auth.login.failure", user.userId,
-      %*{"reason": "bad_password", "failed_attempts": user.failedAttempts,
-         "status": user.status})
-    return AuthResult(
-      outcome: (if user.status == "LOCKED": aoLocked else: aoInvalidCredentials),
-      userId: user.userId)
 
   discard recordLoginSuccess(db, user.userId)
   let policy = sessionPolicy(settings.sessionIdleMinutes, settings.sessionAbsoluteMinutes)

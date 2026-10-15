@@ -4,9 +4,9 @@
    * pengelola kata sandi browser bekerja; setelah 200 token sesi sudah di cookie `HttpOnly`
    * (tidak ada di JS), jadi cukup lanjut ke `/app` lewat navigasi klien.
    *
-   * Pesan gagal selalu generik (tidak mengungkapan akun ada/tidak): status 401 memakai pesan
-   * kredensial dari katalog, sedangkan 403 (terkunci/tidak aktif) memakai pesan generik
-   * tersendiri.
+   * Pesan gagal tidak mengungkapkan akun ada/tidak: 401 memakai pesan kredensial generik dari
+   * katalog, dan 403 (terkunci/tidak aktif) hanya mungkin datang **setelah** kata sandi benar
+   * (O-034), jadi pesannya boleh lebih spesifik untuk pemilik akun.
    */
   import { goto } from "$app/navigation";
 
@@ -21,8 +21,15 @@
 
   function loginErrorMessage(error: unknown): string {
     if (api.isProblem(error)) {
-      // 403 = akun terkunci/tidak aktif; jangan tampilkan status akun lebih dari yang perlu.
-      if (error.status === 403) return m.login_error();
+      // 403 hanya dikirim **setelah** kata sandi diverifikasi benar (O-034), jadi menyebut alasan
+      // terkunci/tidak aktif di sini tidak memberi tahu apa pun kepada orang yang tidak memegang
+      // kata sandinya — sementara pemilik akun justru perlu tahu kenapa ia ditolak.
+      if (error.status === 403) {
+        const reason = error.params?.reason;
+        if (reason === "locked") return m.login_locked();
+        if (reason === "inactive") return m.login_inactive();
+        return m.login_error();
+      }
       return problemMessage(error);
     }
     return m.error_generic();

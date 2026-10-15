@@ -53,7 +53,7 @@ DR drill §9, freeze gate `daycloser` fase 3) tidak dipaksakan masuk; ia masuk r
 
 | Task | Item | Prioritas | Status |
 |---|---|---|---|
-| T-028 | Kebijakan anti-enumerasi akun (O-034) | P1 | READY |
+| T-028 | Kebijakan anti-enumerasi akun (O-034) | P1 | DONE |
 | T-029 | Pump realtime pulih setelah koneksi putus (O-029) | P1 | READY |
 | T-030 | Izin langganan realtime diperiksa ulang (O-046) | P1 | READY |
 | T-031 | CI stabil: audit flake + aturan isolasi tes + `ci-repeat` | P1 | READY |

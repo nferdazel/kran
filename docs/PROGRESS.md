@@ -546,3 +546,17 @@ seed — keduanya dicatat di `docs/tasks/T-027.md` sebagai pelajaran, bukan diha
 Sisa yang dicatat jujur: O-050 (percobaan kata sandi lama tidak dibatasi/diaudit), O-051 (kebijakan
 kata sandi tidak terbaca UI sebelum ditolak), O-052 (kedaluwarsa/riwayat/kualitas kata sandi).
 Task berikutnya yang sudah READY: **T-028** (kebijakan anti-enumerasi akun, O-034).
+
+
+## Batch "Fase 0 tahan banting" (T-028…T-037)
+
+Batch dimulai setelah permintaan pemilik: selain hijau, Fase 0 harus tidak punya celah yang
+**diketahui** pada jalur kebenaran, keamanan, dan ketahanan yang memang milik Fase 0. Batas fase lain
+(metrics spec §22, DR drill §9, freeze gate `daycloser` fase 3) dicatat terpisah, bukan dipaksakan
+masuk.
+
+- **T-028 DONE** (O-034 selesai): kata sandi diverifikasi lebih dulu, `locked`/`inactive` hanya
+  dibalas setelah kata sandi benar, akun tak dikenal mengerjakan PBKDF2 tiruan berbiaya setara.
+  Bukti: itauth 23 `[OK]` (+ uji biaya KDF yang terbukti gagal bila hash tiruannya dimatikan),
+  itapi_auth 29 `[OK]`, svelte-check 0, i18n lengkap. Pesan 403 di halaman login kini spesifik
+  (aman, karena 403 hanya datang setelah kata sandi benar).

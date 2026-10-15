@@ -14,12 +14,16 @@
 import std/[httpclient, json, net, os, strutils, times, unittest]
 
 import mummy
+import db_connector/db_postgres
 
 import dbtools/lib
 import kernel/clock
 import openapi/lib
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
+
+import kernel/[clock, ids]
+import platform/infrastructure/[auth_repo, password_hasher]
 
 import ../src/[access, context, events, readiness, server]
 import ./wsclient
@@ -588,6 +592,44 @@ suite "realtime dengan sesi":
     check problems.len == 0
     for problem in problems:
       checkpoint problem
+
+suite "anti-enumerasi akun lewat HTTP (O-034)":
+  test "status terkunci/tidak aktif hanya dibalas setelah kata sandi benar":
+    let db = dbPool.acquire()
+    let terkunci = $newId(systemClock())
+    let nonaktif = $newId(systemClock())
+    let sandi = "kata-sandi-uji-panjang"
+
+    check insertUser(db, NewUser(userId: terkunci, username: "itapi-terkunci",
+      fullName: "Uji Terkunci", passwordHash: $hashPassword(sandi, 1000)))
+    check setUserStatus(db, terkunci, "LOCKED")
+    check insertUser(db, NewUser(userId: nonaktif, username: "itapi-nonaktif",
+      fullName: "Uji Nonaktif", passwordHash: $hashPassword(sandi, 1000)))
+    check setUserStatus(db, nonaktif, "INACTIVE")
+
+    # Kata sandi salah → 401 generik untuk keduanya: status akun tidak boleh bocor.
+    for nama in ["itapi-terkunci", "itapi-nonaktif"]:
+      let salah = login(nama, "kata-sandi-salah-sekali")
+      check salah.code == 401
+      check salah.body["params"]["reason"].getStr() == "invalid_credentials"
+      checkProblem(LoginPath, "POST", "401", salah.body)
+
+    # Kata sandi benar → baru statusnya diberitahukan (pemilik akun berhak tahu kenapa ditolak).
+    let kunci = login("itapi-terkunci", sandi)
+    check kunci.code == 403
+    check kunci.body["params"]["reason"].getStr() == "locked"
+    checkProblem(LoginPath, "POST", "403", kunci.body)
+
+    let mati = login("itapi-nonaktif", sandi)
+    check mati.code == 403
+    check mati.body["params"]["reason"].getStr() == "inactive"
+    checkProblem(LoginPath, "POST", "403", mati.body)
+
+    discard db.execAffectedRows(sql"DELETE FROM platform.app_user WHERE user_id = ?::uuid",
+      terkunci)
+    discard db.execAffectedRows(sql"DELETE FROM platform.app_user WHERE user_id = ?::uuid",
+      nonaktif)
+    dbPool.release(db)
 
 suite "ganti kata sandi lewat HTTP":
   test "tanpa cookie → 401":
