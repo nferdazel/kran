@@ -17,7 +17,7 @@ Snapshot `./task ci` di mesin dev, 15 Oktober 2026:
 
 | Ukuran | Nilai |
 |---|---|
-| Pemeriksaan lulus (`[OK]`) | 436 (unit, property, integrasi Postgres, kontrak OpenAPI) |
+| Pemeriksaan lulus (`[OK]`) | 437 (unit, property, integrasi Postgres, kontrak OpenAPI) |
 | Uji browser (Playwright, axe 2 tema) | 19 |
 | Berkas lolos `nim check` | 109 |
 | Migrasi SQL | 8 |
