@@ -6,3 +6,8 @@ allowBuilds:
   # Scarf = telemetri opsional dari rantai dependensi Spectral. Ditolak secara sadar:
   # build script pihak ketiga tidak dijalankan, apalagi yang mengirim data (kebijakan §18.2).
   '@scarf/scarf': false
+
+# Cooldown paket baru (menit): versi yang baru terbit tidak langsung boleh dipakai.
+# Malware npm umumnya dicabut < 1 jam, jadi jeda ini yang menahannya. Default pnpm 11
+# = 1440 (1 hari); dinaikkan ke 4320 (3 hari) sesuai kebijakan cooldown proyek.
+minimumReleaseAge: 4320
