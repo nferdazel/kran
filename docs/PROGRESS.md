@@ -469,3 +469,14 @@ menunggu, plus karakterisasi bahaya bila aturan dilanggar. Harness test kini dik
 `--threads:on` (sama seperti biner API), dan `itparam.nim` mendapat test balapan double-approve dua
 koneksi (tepat satu pemenang). Mutasi: lock audit dilepas → test invarian GAGAL; penjaga `AND status =
 'PENDING'` dilepas → test balapan GAGAL. Keputusan: D-032.
+
+## Pasca-M0 — T-026 kontrak CLI peran proses (O-013) DONE
+
+Biner kini benar-benar multi-role sesuai yang sudah diandalkan skrip ops: `--role=migrate [--check|--up]`
+(idempoten, memakai jalur `dbtools` yang sama; `--check` keluar 1 saat ada migrasi tertunda/drift) dan
+`--role=ctl verify-audit|outbox-status` (read-only; `verify-audit` keluar 1 bila rantai audit tidak
+utuh). Perintah yang dikenali tapi belum ada (`ctl daycloser-status`, `worker`) keluar kode **3** dengan
+alasan, bukan kode 2. `main.nim` dipagari `when isMainModule` supaya perannya bisa diuji langsung:
+`apps/api/tests/itapi_roles.nim` (7 test) + runbook baru `docs/runbooks/ops-cli.md`. `migrate.sh`
+disamakan: `--contract`/`--down` ditolak (kode 3) → O-048. Keputusan: D-033. Sisa: worker + freeze gate
+daycloser (O-013).

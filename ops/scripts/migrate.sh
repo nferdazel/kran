@@ -7,10 +7,14 @@
 #   migrate.sh --down --yes [N]   rollback N migrasi terakhir; wajib --yes
 #
 # Menjalankan role migrate dari binary multi-role (spec §26.1 #5):
-#   <bin> --role=migrate <subperintah>
+#   <bin> --role=migrate [--check|--up] [--root=<dir>]
 #
-# BELUM PERNAH DIJALANKAN DI SERVER (T-013): flag CLI role migrate belum
-# diimplementasikan (Fase 0). Kontrak flag mengikuti spec §21.6.
+# Kontrak yang **sudah ada di biner** (T-026): `--check` (read-only, kode keluar 1 bila ada migrasi
+# tertunda/berubah isinya) dan `--up` (default: terapkan yang tertunda, idempoten).
+# `--contract` dan `--down` **belum ada** di biner dan ditolak di sini (kode 3) — bukan diam-diam
+# dijalankan sebagai `--up`. Lihat docs/OPEN_ITEMS.md O-048.
+#
+# BELUM PERNAH DIJALANKAN DI SERVER (T-013/T-026): skrip ini masih berkas repo saja.
 set -euo pipefail
 
 APP_DIR="${CBS_APP_DIR:-/srv/qouver/apps/cbs}"
@@ -60,14 +64,16 @@ case "$mode" in
       echo "ERROR: --contract butuh --yes (migrasi destruktif, opt-in manual)" >&2
       exit 2
     fi
-    exec "$BIN" --role=migrate --contract "$@"
+    echo "ERROR: --contract belum ada di biner (Fase 0); lihat docs/OPEN_ITEMS.md O-048" >&2
+    exit 3
     ;;
   --down)
     if ! has_yes "$@"; then
       echo "ERROR: --down butuh --yes (rollback opt-in manual)" >&2
       exit 2
     fi
-    exec "$BIN" --role=migrate --down "$@"
+    echo "ERROR: --down belum ada di biner (Fase 0); lihat docs/OPEN_ITEMS.md O-048" >&2
+    exit 3
     ;;
   *)
     usage

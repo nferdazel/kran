@@ -35,7 +35,7 @@ berkas rencana di `docs/tasks/T-xxx.md`.
 | T-023 | Realtime aman-sesi (O-036) | DONE |
 | T-024 | Shutdown bersih (O-025) | DONE |
 | T-025 | Invarian kursor outbox + test balapan dua koneksi (O-037, O-040) | READY |
-| T-026 | Kontrak CLI multi-role + jalur skrip ops (O-013) | READY |
+| T-026 | Kontrak CLI multi-role + jalur skrip ops (O-013) | DONE |
 
 Nomor T-017 tetap **dipesan** untuk usulan MFA (belum disetujui pemilik) supaya tidak bentrok.
 Keputusan yang menunggu pemilik: O-031 (bootstrap user produksi), O-034 (kebijakan enumerasi akun),
