@@ -7,7 +7,7 @@
 ##
 ## Test ini **menghapus schema `platform`** di DB yang ditunjuk `CBS_DATABASE_URL` (DB dev).
 
-import std/[unittest, os, json, options, strutils]
+import std/[atomics, unittest, os, json, options, strutils]
 import db_connector/db_postgres
 
 import "platform-lib/db/config"
@@ -44,6 +44,31 @@ let maker = newId(sysClock)
 let checker = newId(sysClock)
 let ctxMaker = newAuditContext(maker, sysClock)
 let ctxChecker = newAuditContext(checker, sysClock)
+
+# Balapan dua koneksi (O-040): dua thread meng-approve `param_value_id` yang sama lewat koneksi
+# berbeda, dimulai bersama-sama. Hasilnya harus **tepat satu pemenang** — bukan dua, dan bukan nol.
+type
+  RacerArgs = object
+    pool: DbPool
+    paramValueId: string
+
+var
+  raceGate: Atomic[bool]
+  raceMenang: Atomic[int]
+  raceKalah: Atomic[int]
+  raceSelesai: Atomic[int]
+
+proc racer(args: RacerArgs) {.thread.} =
+  {.cast(gcsafe).}:
+    while not raceGate.load():
+      sleep(2)
+    try:
+      discard args.pool.withTx(proc(d: DbConn): ChangeOutcome {.closure.} =
+        approveChange(d, ctxChecker, sysClock, args.paramValueId))
+      discard raceMenang.fetchAdd(1)
+    except DbError, ValueError:
+      discard raceKalah.fetchAdd(1)
+    discard raceSelesai.fetchAdd(1)
 
 proc activeValues(key: string): seq[ParamCandidate] =
   candidatesOf(db, key, asOf)
@@ -237,6 +262,35 @@ suite "param: maker-checker":
       check e.msg.contains("self_approval") or e.msg.contains("check")
     check raised
     check rowStatus(db, submit.paramValueId) == "PENDING"
+
+  test "balapan dua koneksi (double-approve): tepat satu pemenang (O-040)":
+    let key = sessionKey
+    let submit = dbPool.withTx(proc(d: DbConn): ChangeOutcome =
+      submitChange(d, ctxMaker, sysClock, key, "INSTITUTION", "inst-race", %*75, "2026-09-01", "",
+        "usulan balapan"))
+    raceGate.store(false)
+    raceMenang.store(0)
+    raceKalah.store(0)
+    raceSelesai.store(0)
+    var a: Thread[RacerArgs]
+    var b: Thread[RacerArgs]
+    createThread(a, racer, RacerArgs(pool: dbPool, paramValueId: submit.paramValueId))
+    createThread(b, racer, RacerArgs(pool: dbPool, paramValueId: submit.paramValueId))
+    raceGate.store(true) # lepaskan keduanya
+    joinThread(a)
+    joinThread(b)
+
+    check raceSelesai.load() == 2
+    check raceMenang.load() == 1
+    check raceKalah.load() == 1
+    check rowStatus(db, submit.paramValueId) == "ACTIVE"
+    # Efek samping hanya sekali: satu audit approve + satu event outbox untuk nilai itu.
+    check db.getValue(sql"""
+      SELECT count(*) FROM platform.audit_log
+       WHERE action = 'param.approve' AND resource_id = ?""", submit.paramValueId) == "1"
+    check db.getValue(sql"""
+      SELECT count(*) FROM platform.outbox WHERE dedup_key = ?""",
+      "param.change:" & submit.paramValueId & ":approved") == "1"
 
   test "approve nilai yang bukan PENDING -> ValueError":
     var raised = false

@@ -459,3 +459,13 @@ dipakai (jalur O-025) — dan probe minimal menunjukkan SIGSEGV itu tidak reput 
 O-025 diperkecil menjadi soal teardown in-process, bukan penghalang deploy. Bukti: manual (`kill
 -TERM` → kode 0 + port bebas) dan e2e baru `shutdown.spec.ts`; mutasi (penangan dilepas) membuat test
 GAGAL. Batasan dicatat: O-047 (in-flight dipotong, belum ada drain).
+
+## Pasca-M0 — T-025 invarian kursor outbox + test balapan dua koneksi (O-037, O-040) DONE
+
+Invarian "transaksi penulis event outbox menulis audit lebih dulu" kini tertulis di
+`modules/platform/MODULE.md` (lock rantai audit menserialkan penulis → urutan commit == urutan `seq`)
+dan dijaga `modules/platform/tests/itoutboxcursor.nim`: dua koneksi nyata membuktikan penulis kedua
+menunggu, plus karakterisasi bahaya bila aturan dilanggar. Harness test kini dikompilasi
+`--threads:on` (sama seperti biner API), dan `itparam.nim` mendapat test balapan double-approve dua
+koneksi (tepat satu pemenang). Mutasi: lock audit dilepas → test invarian GAGAL; penjaga `AND status =
+'PENDING'` dilepas → test balapan GAGAL. Keputusan: D-032.

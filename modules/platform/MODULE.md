@@ -52,6 +52,22 @@ saat ini belum ada konsumen lintas-modul, jadi belum ada yang perlu diekspor.
 - Lock `pg_advisory_xact_lock` pada rantai menyerialkan transaksi yang menulis audit. Aman
   untuk volume Fase 0; bila jadi leher botol, ganti dengan `seq` + retry (ADR kecil).
 
+## Invarian: urutan commit == urutan `seq` outbox
+
+`platform.outbox.seq` dialokasikan saat **INSERT**, sedangkan commit bisa terjadi dengan urutan
+berbeda. Pump realtime membaca tabel dengan kursor `seq` (`eventsAfter`), jadi bila urutan itu
+terbalik, peristiwa yang commit belakangan akan **terlewat** — bukan sekadar tertunda.
+
+Aturan penulis: **transaksi yang menulis peristiwa outbox wajib menulis entri audit lebih dulu, di
+transaksi yang sama.** Trigger rantai audit memegang `pg_advisory_xact_lock(hashtext(
+'platform.audit_log'))` **sampai commit**, sehingga penulis audit terserialkan dan urutan commit
+mengikuti urutan `seq`.
+
+Ini bukan konvensi gaya. Dua test di `tests/itoutboxcursor.nim` menjaga keduanya: (1) penulis kedua
+benar-benar menunggu commit penulis pertama dan `seq`-nya lebih besar — **GAGAL** bila lock audit
+dilepas; (2) bila aturan itu dilanggar (event tanpa audit lebih dulu), kursor `seq` memang melewatkan
+peristiwa yang commit belakangan.
+
 ## Menjalankan
 
 ```
