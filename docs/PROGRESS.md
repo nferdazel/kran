@@ -584,3 +584,8 @@ masuk.
   koneksi yang sudah mati di server tetap diserahkan ke pemanggil (permintaan pertama setelah restart
   DB gagal `DbError`). Sekarang validasi nyata (`select 1`) di luar lock. Bukti: itpool 10 `[OK]`,
   dan uji koneksi mati **gagal** bila validasi dimatikan (mutasi).
+
+- **T-034 DONE** (O-049 selesai): dua ketergantungan pada internal Mummy (send & close lintas-thread)
+  dinyatakan di kode, versi dibatasi `>= 0.4.8 & < 0.5.0` (terverifikasi `nimble check`), dan daftar
+  periksa upgrade dicatat sebagai D-037. Bukti: itapi_ws 15 `[OK]` termasuk penjaga regresi 8 klien
+  diputus serentak sambil peristiwa mengalir. Catatan jujur: penjaga itu bukan uji bermutasi.

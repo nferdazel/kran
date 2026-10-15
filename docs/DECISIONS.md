@@ -740,3 +740,31 @@ Tidak ada gate yang dilonggarkan di sini: yang berubah adalah tempat katalog RBA
 **memperbaiki** jalur produksi yang sebelumnya tidak punya izin sama sekali (dua item baru dicatat:
 O-050 percobaan kata sandi lama tidak dibatasi/diaudit, O-051 kebijakan kata sandi tidak terbaca UI,
 O-052 kebijakan lanjutan kata sandi).
+
+## D-037 — Batas versi Mummy dan daftar periksa upgrade (O-049)
+
+`apps/api/src/events.nim` memakai dua sifat Mummy yang **tidak** dijanjikan API publiknya:
+
+1. `WebSocket.send` aman dipanggil dari thread lain (pump) sambil handler memakai soket yang sama —
+   yang menjaminnya adalah antrean kirim per koneksi di dalam Mummy.
+2. `WebSocket.close` aman dari thread lain (close frame dimasukkan ke antrean yang sama), dan
+   pemanggilan setelah `forget` tidak menutup soket klien lain.
+
+Keputusan: **`cbs.nimble` membatasi `mummy >= 0.4.8 & < 0.5.0`,** dan versi 0.4.8 adalah yang diuji.
+Alasan: sifat di atas adalah detail implementasi; kenaikan versi minor bisa mengubahnya tanpa
+kegagalan kompilasi, sehingga bugnya hanya muncul sebagai soket yang menggantung atau pesan yang
+hilang saat beban.
+
+Daftar periksa bila nanti versi Mummy dinaikkan (jalankan sebelum mengganti batas):
+
+- [ ] `./task test "tests/itapi_ws"` — termasuk suite "banyak klien diputus serentak" (8 klien
+      diputus bersamaan sambil peristiwa mengalir; server harus tetap melayani klien baru).
+- [ ] `./task test "tests/itapi_realtime"` dan `./task test "tests/itapi"` (jalur hub & HTTP).
+- [ ] `./task e2e` — khususnya spec realtime (langganan, resume, drop) dan shutdown.
+- [ ] Periksa ulang dua asumsi di atas dengan membaca ulang kode Mummy (`websocket.nim`), karena
+      inilah satu-satunya bagian repo yang bersandar pada internalnya.
+- [ ] Catat hasilnya di entri DECISIONS baru; jangan hanya menaikkan batas versi.
+
+Batas yang diketahui (tidak ditangani, tetap sebagai item): antrean kirim keluar per koneksi tidak
+dibatasi (O-028), dan ukuran antrean tidak bisa dibaca dari luar sehingga kuota klien lambat belum
+bisa dipasang tanpa memakai internal Mummy lagi.

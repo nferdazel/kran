@@ -59,7 +59,7 @@ DR drill §9, freeze gate `daycloser` fase 3) tidak dipaksakan masuk; ia masuk r
 | T-031 | CI stabil: audit flake + aturan isolasi tes + `ci-repeat` | P1 | READY |
 | T-032 | Drain permintaan berjalan saat SIGTERM (O-047) | P2 | DONE |
 | T-033 | Pool DB: bukti aman paralel + rapikan klaim (O-011) | P2 | DONE |
-| T-034 | Kurangi ketergantungan pada internal Mummy (O-049) | P2 | READY |
+| T-034 | Kurangi ketergantungan pada internal Mummy (O-049) | P2 | DONE |
 | T-035 | Migrasi contract & rollback (O-048) | P3 | READY |
 | T-036 | Semantik scope institusi & `requires_approval` (O-012, O-039) | P3 | READY |
 | T-037 | Register batas Fase 0 + laporan penutup | P3 | READY |

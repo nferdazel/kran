@@ -191,6 +191,12 @@ proc topicsOf*(svc: EventService, clientId: uint64): seq[string] =
 proc sendMessage(svc: EventService, clientId: uint64, node: JsonNode) =
   ## Ambil soket di dalam lock, kirim di luarnya: `send` sudah aman antar-thread (Mummy memakai
   ## antrean berlokasi), dan menahan lock saat I/O hanya membuat pump & handler saling menunggu.
+  ##
+  ## **Ketergantungan yang tidak dijanjikan API publik** (O-049): `WebSocket.send` dipanggil dari
+  ## thread lain (pump) sementara handler Mummy memakai soket yang sama; yang membuatnya aman adalah
+  ## antrean kirim per koneksi itu. Bila Mummy menaikkan versi minor, uji di
+  ## `apps/api/tests/itapi_ws.nim` (suite "banyak klien diputus serentak") wajib dijalankan lebih
+  ## dulu — lihat daftar periksa upgrade di docs/DECISIONS.md (D-037).
   var socket: WebSocket
   var found = false
   withLock svc.lock:
@@ -266,6 +272,11 @@ proc dropClient(svc: EventService, clientId: uint64, code, i18nKey: string) =
   ## Amplop `error` lalu tutup soket. Klien menerjemahkan `i18nKey`, dan penutupan memicu
   ## pemeriksaan sesi di sisi klien (`realtime.ts handleClose` → `/auth/session` 401 → kembali ke
   ## login), sehingga soket yang sesinya berakhir tidak berputar-ulang menyambung tanpa akhir.
+  ##
+  ## **Ketergantungan yang tidak dijanjikan API publik** (O-049): `WebSocket.close` di sini dipanggil
+  ## dari thread pump/handler, bukan dari thread yang memegang koneksi itu. Aman pada Mummy 0.4.8
+  ## (close frame dimasukkan ke antrean kirim), dan `forget` setelahnya membuat pemanggilan ganda
+  ## tidak menutup soket milik klien lain. Daftar periksa upgrade: docs/DECISIONS.md (D-037).
   svc.sendMessage(clientId, encodeError(code, i18nKey))
   # `WebSocket` adalah object (bukan ref), jadi "ada/tidak" dilacak eksplisit.
   var socket: WebSocket
