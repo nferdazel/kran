@@ -52,11 +52,12 @@ esac
 [ -x "$BIN" ] || { echo "ERROR: $BIN tidak ada / tidak executable" >&2; exit 1; }
 
 case "$mode" in
-  --check)
-    exec "$BIN" --role=migrate --check "$@"
-    ;;
-  --up)
-    exec "$BIN" --role=migrate --up "$@"
+  --check | --up)
+    # Argumen tambahan tidak diteruskan apa adanya: biner akan membacanya sebagai argumen posisi dan
+    # menjawab kode 2 "argumen posisi hanya untuk --role=ctl", yang menyesatkan. `--yes` hanya milik
+    # jalur destruktif di bawah.
+    [ "$#" -eq 0 ] || { echo "ERROR: $mode tidak menerima argumen tambahan: $*" >&2; usage; }
+    exec "$BIN" --role=migrate "$mode"
     ;;
   --contract)
     # Destruktif (drop/rename/ketat) — hanya manual setelah rilis stabil (§21.4).

@@ -191,6 +191,15 @@ proc runCtl*(command, root: string): int =
     stderr.writeLine CtlUsage
     2
 
+proc destructivePending*(status: seq[MigrationStatus]): seq[string] =
+  ## Migrasi yang **belum diterapkan** dan bertanda `-- dbtools:destructive`. `--up` menolaknya:
+  ## menerapkan DDL destruktif secara otomatis bertabrakan dengan kebijakan expand-only (spec §21.7)
+  ## dan dengan janji `ops/scripts/migrate.sh --up` ("migrasi expand-only"). Jalur contract belum ada
+  ## di Fase 0, jadi menolak lebih benar daripada menerapkannya diam-diam (O-048).
+  for s in status:
+    if not s.applied and s.migration.destructive:
+      result.add s.migration.id
+
 proc runMigrate*(root: string, sub = ""): int =
   ## Peran `migrate` (kontrak yang dipakai `ops/scripts/migrate.sh` dan gate deploy):
   ##   tanpa subperintah / `--up` : terapkan migrasi yang tertunda lalu keluar (idempoten)
@@ -216,12 +225,20 @@ proc runMigrate*(root: string, sub = ""): int =
       else:
         0
     else:
-      let report = applyMigrations(db, root)
-      echo "cbs-api migrate: " & $report.applied.len & " migrasi diterapkan, " &
-        $report.skipped.len & " dilewati (sudah ada)"
-      for id in report.applied:
-        echo "  + " & id
-      0)
+      let blocked = destructivePending(status)
+      if blocked.len > 0:
+        stderr.writeLine "cbs-api migrate: " & $blocked.len &
+          " migrasi bertanda destruktif belum diterapkan: " & blocked.join(", ")
+        stderr.writeLine "  Jalur contract/rollback belum ada di Fase 0 (docs/OPEN_ITEMS.md O-048); " &
+          "`--up` sengaja menolaknya."
+        3
+      else:
+        let report = applyMigrations(db, root)
+        echo "cbs-api migrate: " & $report.applied.len & " migrasi diterapkan, " &
+          $report.skipped.len & " dilewati (sudah ada)"
+        for id in report.applied:
+          echo "  + " & id
+        0)
 
 proc main() =
   let opts = parseArgs(commandLineParams())
