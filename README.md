@@ -1,6 +1,9 @@
-# cbs
+# KRAN
 
 Core banking untuk standar Indonesia: koperasi (KSP/USP/KSPPS), BPR/BPRS, dan BMT.
+
+Nama produknya **KRAN**; identifier teknis tetap `cbs` (biner `cbs-api`, env `CBS_*`, `cbs.nimble`,
+nama berkas kontrak) — alasannya di `docs/DECISIONS.md` D-036.
 
 Satu sumber kebenaran: [`docs/spec/cbs-prd-techspec.md`](docs/spec/cbs-prd-techspec.md) (PRD +
 technical spec). Aturan kerja untuk manusia maupun agen: [`AGENTS.md`](AGENTS.md).

@@ -741,6 +741,29 @@ Tidak ada gate yang dilonggarkan di sini: yang berubah adalah tempat katalog RBA
 O-050 percobaan kata sandi lama tidak dibatasi/diaudit, O-051 kebijakan kata sandi tidak terbaca UI,
 O-052 kebijakan lanjutan kata sandi).
 
+## D-036 — Nama produk: KRAN (identifier teknis tetap `cbs`)
+
+Keputusan pemilik 15 Okt 2026: nama produknya **KRAN**. Ekspansi "KRAN Rapid Accounting Network"
+adalah lelucon rekursif (gaya WINE/HURD/GNU) dan **bukan** klaim yang ditampilkan di UI, dokumen,
+atau kontrak; dokumen hanya memakai "KRAN", sedangkan kategori produknya ditulis apa adanya
+("core banking untuk koperasi, BPR/BPRS, BMT").
+
+Kenapa bukan "CBS": di Indonesia "CBS" sudah menjadi **istilah kategori** yang dipakai vendor sebagai
+label produk (CorSys CBS, CBS BPR/ARB+, IBS Core, Microsys, Assist BPR.Net, Hexa Core), jadi ia tidak
+membedakan. Selain itu spec §23 memakai nama `cbs-core` untuk sistem lama yang akan di-cutover —
+nama produk yang berbeda justru mengurangi salah-tafsir.
+
+Batas perubahan: **nama tampilan saja** — i18n (`common_app_title`, `common_home_intro`,
+`login_intro`), `README.md`, dan `info.title` kontrak OpenAPI. Identifier teknis **tidak** diubah:
+biner `cbs-api`, prefix env `CBS_*`, `cbs.nimble`, direktori kerja, nama berkas kontrak, dan nama
+berkas spec. Alasan: mengganti identifier berarti menyentuh skrip ops, unit systemd, konfigurasi dev,
+dan test — risiko tanpa manfaat produk, sementara yang dilihat pengguna sudah tercakup.
+
+Hasil pengecekan nama (dicatat jujur sebagai jejak): "KRAN" dipakai KRAN Consulting Pvt. Ltd. (India)
+yang juga membuat software keuangan pemerintah, KRANAPP (Depok), dan CV. KRAN Indonesia (Malang).
+Pengecekan merek resmi (PDKI/eDJKI) dan domain belum dilakukan dan bukan wewenang agen; pemilik
+memutuskan tetap memakai KRAN setelah fakta ini disampaikan.
+
 ## D-037 — Batas versi Mummy dan daftar periksa upgrade (O-049)
 
 `apps/api/src/events.nim` memakai dua sifat Mummy yang **tidak** dijanjikan API publiknya:

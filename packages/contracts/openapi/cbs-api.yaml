@@ -1,11 +1,11 @@
 openapi: 3.1.0
 
 info:
-  title: CBS API
+  title: KRAN API
   version: 0.1.0
-  summary: Kontrak HTTP API CBS (koperasi, BPR/BPRS, BMT)
+  summary: Kontrak HTTP API KRAN (koperasi, BPR/BPRS, BMT)
   description: |
-    Kontrak ini adalah **sumber kebenaran** untuk API HTTP CBS (spec §13). Handler di sisi Nim
+    Kontrak ini adalah **sumber kebenaran** untuk API HTTP KRAN (spec §13). Handler di sisi Nim
     ditulis manual mengikuti dokumen ini, dan `apps/api/tests/tcontract.nim` + `itapi.nim`
     membuktikan implementasi ≡ kontrak (parity rute + validasi bentuk respons).
 
@@ -27,7 +27,7 @@ info:
     name: MIT
     identifier: MIT
   contact:
-    name: Pemilik produk CBS
+    name: Pemilik produk KRAN
     url: https://github.com/cbs/cbs
 
 servers:
