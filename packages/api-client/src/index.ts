@@ -1,5 +1,5 @@
 /**
- * Klien API CBS (spec §13): tipe dari kontrak OpenAPI 3.1 (`openapi-typescript`) + wrapper fetch
+ * Klien API KRAN (spec §13): tipe dari kontrak OpenAPI 3.1 (`openapi-typescript`) + wrapper fetch
  * tipis (`openapi-fetch`). Tidak ada logika bisnis di sini — hanya transport bertipe.
  *
  * Konvensi yang dipegang klien ini:

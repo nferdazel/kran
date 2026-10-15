@@ -589,3 +589,11 @@ masuk.
   dinyatakan di kode, versi dibatasi `>= 0.4.8 & < 0.5.0` (terverifikasi `nimble check`), dan daftar
   periksa upgrade dicatat sebagai D-037. Bukti: itapi_ws 15 `[OK]` termasuk penjaga regresi 8 klien
   diputus serentak sambil peristiwa mengalir. Catatan jujur: penjaga itu bukan uji bermutasi.
+
+- **T-037 DONE**: `docs/ACCEPTED-LIMITS.md` (register batas: dampak, cara mendeteksi, pemilik) +
+  laporan penutup. Gate penutup `./task ci-repeat 3` atas tree `c2f7172` hijau 3 putaran: 464 `[OK]`
+  per putaran (1392 total), e2e 23 lulus per putaran. Satu flake e2e sebelumnya (belum dijelaskan,
+  tidak berulang) tercatat di `docs/tasks/T-031.md`, dan register menyatakan tegas bahwa gate hijau
+  bukan jaminan bebas flake. Sisa batch: T-035 (migrasi contract/rollback, O-048) dan T-036 (semantik
+  parameter O-012/O-039) — keduanya P3, rencananya sudah memuat hasil recon, dan keduanya
+  HUMAN-REVIEW-REQUIRED.

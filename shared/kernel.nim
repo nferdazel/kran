@@ -3,7 +3,7 @@
 ## Isi yang sengaja ada: tipe nilai uang/rate/tanggal, `Result`, `Clock`, `Id`,
 ## `AuditContext`, dan kontrak key parameter. **Tidak boleh** ada "utils" serbaguna di sini.
 ##
-## Modul CBS sebaiknya `import kernel` (berkas ini) untuk permukaan lengkap, atau impor
+## Modul KRAN sebaiknya `import kernel` (berkas ini) untuk permukaan lengkap, atau impor
 ## submodul spesifik (`import kernel/money`) bila ingin lebih sempit.
 
 import kernel/result

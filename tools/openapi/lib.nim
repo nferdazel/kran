@@ -2,7 +2,7 @@
 ##
 ## Modul ini dipakai `apps/api/tests/tcontract.nim` (parity rute ↔ kontrak) dan
 ## `apps/api/tests/tapi.nim` (bentuk respons nyata vs skema kontrak). Yang diperiksa adalah
-## **subset** JSON Schema 2020-12 yang benar-benar dipakai kontrak CBS (`type`, `required`,
+## **subset** JSON Schema 2020-12 yang benar-benar dipakai kontrak KRAN (`type`, `required`,
 ## `properties`, `additionalProperties: false`, `enum`, `items`, `minimum`) — bukan validator
 ## penuh. Bila kontrak mulai memakai kata kunci lain, tambahkan di sini sekaligus test-nya;
 ## jangan diamkan (validator yang diam = gate palsu).
