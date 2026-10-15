@@ -582,3 +582,20 @@ sebelum D-029). Butir 5 D-028 sudah dianotasi agar tidak bertentangan dengan D-0
   deterministik) dan `itapi_auth` "logout mengakhiri stream yang sudah terbuka" (server nyata,
   cookie nyata, interval default). Keduanya **GAGAL** bila `sweepSessions` dilepas (diverifikasi
   dengan memasang mutasinya sementara, lalu dikembalikan).
+
+## D-031 — Berhenti bersih lewat sinyal: hentikan pump lalu keluar kode 0 (O-025)
+
+- **Konteks**: `cbs-api` tidak memasang penangan sinyal apa pun. `SIGTERM` (yang dikirim `systemctl
+  restart` / deploy) mematikan proses sebagai sinyal — kode keluar 143, tanpa jalur penutupan — dan
+  proses lama bisa tertinggal berjam-jam (dua proses sisa berumur 16 jam ditemukan saat task ini).
+  O-025 melaporkan `server.close()` mematikan proses (SIGSEGV), sehingga jalur itu tidak dipakai.
+- **Keputusan**: `SIGINT`/`SIGTERM` → handler hanya menyetel flag atomik (tanpa I/O, aman di konteks
+  sinyal) → thread penunggu menghentikan pump realtime (batas tunggu 2 detik), menulis satu baris log,
+  lalu `quit(0)`. `server.close()` **tidak** dipanggil: berhenti bersih tidak membutuhkannya, dan itu
+  jalur yang dilaporkan bermasalah. Probe minimal 15 Okt 2026 tidak mereproduksi SIGSEGV-nya; karena
+  itu O-025 diperkecil menjadi pertanyaan teardown *in-process* (test harness), bukan penghalang
+  produksi — dan tidak ditutup diam-diam.
+- **Batasan yang dicatat**: permintaan HTTP yang sedang berjalan dipotong (belum ada drain) → O-047.
+- **Bukti**: manual (`kill -TERM` → kode 0, log "berhenti dengan tenang", port bebas) dan otomatis
+  (`apps/web/tests/e2e/shutdown.spec.ts`). Daya tangkap: penangan sinyal dilepas sementara → test
+  GAGAL; dikembalikan → lulus.
