@@ -19,7 +19,7 @@
 ##
 ## Kontrak amplop pesan: `packages/contracts/events/realtime-envelope.v1.schema.json`.
 
-import std/[atomics, json, locks, monotimes, strutils, tables, times]
+import std/[atomics, json, locks, monotimes, os, strutils, tables, times]
 
 import mummy
 import db_connector/db_postgres
@@ -42,6 +42,11 @@ const
   subscriptionLimits* = SubscriptionLimits(maxTopics: 32, maxTopicLen: 128)
   ## Jeda tunggu notifikasi per putaran pump (ms); juga interval pemulihan bila notifikasi hilang.
   pumpPollMs* = 250
+
+  ## Backoff penyambungan ulang pump setelah koneksinya putus (O-029): mulai kecil supaya gangguan
+  ## sekejap pulih cepat, dibatasi supaya DB yang benar-benar mati tidak dibombardir.
+  pumpReconnectMinMs* = 250
+  pumpReconnectMaxMs* = 5_000
   ## Interval pemeriksaan ulang sesi per klien (detik) — satu query sesi per klien per interval.
   ## Nilai **teknis** (O-036): sesi bisa dicabut/kedaluwarsa setelah handshake, dan soket yang sudah
   ## terbuka tidak boleh terus menerima peristiwa. Bukan ambang bisnis; dicatat supaya bisa diukur
@@ -81,6 +86,9 @@ type
     sessionRecheckSeconds: int                 ## interval periksa ulang sesi per klien (detik)
     running: Atomic[bool]
     ready: Atomic[bool] ## pump sudah LISTEN + menentukan titik mulai (dipakai uji & diagnostik)
+    pumpPid: Atomic[int]                       ## pid backend koneksi pump (diagnostik + uji pemutusan koneksi)
+    pumpStartedNs: Atomic[int64]               ## waktu pump mulai (ns monotonik); 0 = belum pernah dijalankan
+    pumpLastReadyNs: Atomic[int64]             ## waktu pump terakhir siap (ns monotonik); 0 = belum pernah
     pumping: bool                              ## hanya dibaca/ditulis saat start (satu thread)
     pump: Thread[EventService]
 
@@ -154,6 +162,22 @@ proc newEventService*(policy: TopicPolicy, pool: DbPool, resumeLimit = 200,
   result.sessionRecheckSeconds = max(0, sessionRecheckSeconds)
   result.running.store(false)
   result.ready.store(false)
+
+proc monoNs(): int64 =
+  ## Waktu monotonik (ns). Tahan terhadap perubahan jam sistem, dan cukup untuk mengukur "sudah
+  ## berapa lama pump tidak siap".
+  getMonoTime().ticks
+
+proc pumpDegradedSeconds*(svc: EventService): int64 =
+  ## `0` = pump siap; `-1` = pump memang tidak dijalankan (realtime tidak aktif); `> 0` = sudah berapa
+  ## detik pump tidak siap. Dipakai readiness (O-029) supaya realtime yang mati terlihat operator,
+  ## tanpa membuat gangguan penyambungan ulang sekejap mencabut instance dari trafik.
+  if svc.pumpStartedNs.load() == 0:
+    return -1
+  if svc.ready.load():
+    return 0
+  let sejak = max(svc.pumpStartedNs.load(), svc.pumpLastReadyNs.load())
+  (monoNs() - sejak) div 1_000_000_000
 
 proc connectionCount*(svc: EventService): int =
   withLock svc.lock:
@@ -366,27 +390,67 @@ proc dispatch(svc: EventService, events: seq[RealtimeEvent]) =
     except ValueError:
       discard # id langganan selalu berasal dari `nextId`; ini hanya jaring pengaman
 
+proc logPump(msg: string) =
+  ## Pump berjalan di thread sendiri dan modul ini tidak memegang `Logger` (itu milik `main.nim`).
+  ## Satu baris ke stderr jauh lebih berguna daripada kegagalan senyap seperti sebelumnya (O-029).
+  stderr.writeLine "cbs-api realtime pump: " & msg
+
+proc sleepUnlessStopped(svc: EventService, ms: int) =
+  ## Tidur yang bisa dibatalkan: penutupan proses tidak boleh tertunda oleh backoff (lihat
+  ## `stopPump` dan T-032 soal drain).
+  var left = ms
+  while left > 0 and svc.running.load():
+    let step = min(left, 100)
+    sleep(step)
+    left -= step
+
 proc pumpLoop(svc: EventService) {.thread, gcsafe.} =
-  ## Satu koneksi LISTEN + baca tabel. `LISTEN` terikat koneksi, jadi koneksi ini dipinjam untuk
-  ## seumur pump (bukan per query).
-  try:
-    let db = svc.pool.acquire()
-    listenOutbox(db)
-    # Titik mulai: peristiwa terakhir yang sudah ada. Backlog lama tidak disemprotkan ke klien
-    # baru; klien yang butuh riwayat memintanya lewat `resumeFrom` atau HTTP.
-    svc.lastEventId = latestEventId(db)
-    svc.ready.store(true)
-    while svc.running.load():
-      discard pollOutbox(db, timeoutMs = pumpPollMs)
-      let fetched = eventsAfter(db, svc.lastEventId, svc.resumeLimit)
-      if fetched.len > 0:
-        svc.dispatch(fetched)
-      svc.sweepSessions()
-    svc.ready.store(false)
-  except CatchableError:
-    # Pump mati: stream tidak lagi mendorong peristiwa, tetapi proses tetap melayani HTTP dan
-    # klien yang reconnect akan memutar ulang dari outbox (docs/OPEN_ITEMS.md O-029).
-    svc.ready.store(false)
+  ## Satu koneksi LISTEN + baca tabel, **dengan penyambungan ulang** bila koneksi putus.
+  ##
+  ## `LISTEN` terikat koneksi, jadi koneksi dipinjam selama satu masa hidup sambungan — bukan
+  ## seumur proses. Sebelum ini, kegagalan apa pun pada koneksi itu membuat pump berhenti
+  ## permanen: realtime mati senyap, dan `sweepSessions` (pemeriksaan ulang sesi) ikut berhenti
+  ## (O-029). Sekarang kegagalan hanya berarti "sambungan ini habis", bukan "pump selesai".
+  ##
+  ## Titik mulai (`lastEventId`) **hanya** ditetapkan pada sambungan pertama: kalau di-reset saat
+  ## menyambung ulang, peristiwa yang terbit selama gangguan akan dianggap riwayat dan tidak pernah
+  ## dikirim ke klien yang sudah berlangganan.
+  var backoff = pumpReconnectMinMs
+  var firstConnect = true
+  while svc.running.load():
+    var db: DbConn = nil
+    try:
+      db = svc.pool.acquire()
+      listenOutbox(db)
+      svc.pumpPid.store(parseInt(db.getValue(sql"select pg_backend_pid()")))
+      if firstConnect:
+        # Backlog lama tidak disemprotkan ke klien baru; klien yang butuh riwayat memintanya lewat
+        # `resumeFrom` atau HTTP.
+        svc.lastEventId = latestEventId(db)
+        firstConnect = false
+      svc.ready.store(true)
+      svc.pumpLastReadyNs.store(monoNs())
+      if backoff > pumpReconnectMinMs:
+        logPump("tersambung lagi")
+      backoff = pumpReconnectMinMs
+      while svc.running.load():
+        discard pollOutbox(db, timeoutMs = pumpPollMs)
+        let fetched = eventsAfter(db, svc.lastEventId, svc.resumeLimit)
+        if fetched.len > 0:
+          svc.dispatch(fetched)
+        svc.sweepSessions()
+    except CatchableError as e:
+      logPump("koneksi terputus (" & e.msg & "); menyambung ulang dalam " & $backoff & " ms")
+    finally:
+      svc.ready.store(false)
+      if not db.isNil:
+        try:
+          svc.pool.release(db)
+        except CatchableError:
+          discard # koneksi sudah mati; pool membuang yang mati saat diambil lagi
+    if svc.running.load():
+      sleepUnlessStopped(svc, backoff)
+      backoff = min(backoff * 2, pumpReconnectMaxMs)
 
 proc startPump*(svc: EventService) =
   ## Menyalakan pump. Idempoten; tanpa pool (DB belum dikonfigurasi) tidak melakukan apa pun.
@@ -394,7 +458,13 @@ proc startPump*(svc: EventService) =
     return
   svc.pumping = true
   svc.running.store(true)
+  svc.pumpStartedNs.store(monoNs())
   createThread(svc.pump, pumpLoop, svc)
+
+proc pumpBackendPid*(svc: EventService): int =
+  ## Pid backend koneksi pump saat ini (0 bila pump belum pernah tersambung). Dipakai uji yang
+  ## memutus koneksinya paksa, dan untuk menelusuri masalah di server.
+  svc.pumpPid.load()
 
 proc pumpReady*(svc: EventService): bool =
   ## True setelah pump menyalakan LISTEN dan menetapkan titik mulai: peristiwa yang dibuat

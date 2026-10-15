@@ -59,6 +59,39 @@ proc readinessResponse(): tuple[code: int, body: JsonNode] =
   result.code = response.code.int
   result.body = parseJson(response.body)
 
+suite "readiness realtime (O-029)":
+  test "realtime tidak dijalankan -> ok, bukan kegagalan":
+    let c = realtimeCheck(pumping = false, ready = false, degradedSeconds = 9999, graceSeconds = 30)
+    check c.status == csOk
+    check c.detail == "tidak dijalankan"
+
+  test "pump siap -> ok":
+    check realtimeCheck(pumping = true, ready = true, degradedSeconds = 0, graceSeconds = 30
+      ).status == csOk
+
+  test "penyambungan ulang sekejap tetap ok (tidak mencabut instance dari trafik)":
+    let c = realtimeCheck(pumping = true, ready = false, degradedSeconds = 2, graceSeconds = 30)
+    check c.status == csOk
+    check c.detail == "pump menyambung ulang (2 detik)"
+
+  test "pump mati berlarut -> failed dan sebabnya terlihat":
+    let c = realtimeCheck(pumping = true, ready = false, degradedSeconds = 31, graceSeconds = 30)
+    check c.status == csFailed
+    check c.detail == "pump realtime belum tersambung 31 detik"
+
+  test "combineProbes menjalankan semua pemeriksaan (probe nil dilewati)":
+    var probes: seq[ReadinessProbe]
+    probes.add proc(): seq[ReadinessCheck] {.gcsafe.} =
+      @[ReadinessCheck(name: "pertama", status: csOk)]
+    probes.add nil
+    probes.add proc(): seq[ReadinessCheck] {.gcsafe.} =
+      @[ReadinessCheck(name: "kedua", status: csFailed, detail: "sebab")]
+    let hasil = combineProbes(probes)()
+    check hasil.len == 2
+    check hasil[0].name == "pertama"
+    check hasil[1].status == csFailed
+    check hasil[1].detail == "sebab"
+
 suite "readyz dengan DB nyata":
   test "DB hidup -> 200 dengan check database ok":
     var result: tuple[code: int, body: JsonNode]

@@ -560,3 +560,10 @@ masuk.
   Bukti: itauth 23 `[OK]` (+ uji biaya KDF yang terbukti gagal bila hash tiruannya dimatikan),
   itapi_auth 29 `[OK]`, svelte-check 0, i18n lengkap. Pesan 403 di halaman login kini spesifik
   (aman, karena 403 hanya datang setelah kata sandi benar).
+
+- **T-029 DONE** (O-029 selesai): pump realtime menyambung ulang dengan backoff (dulu mati permanen,
+  dan `sweepSessions` ikut berhenti sehingga sesi tercabut tetap hidup), titik mulai tidak di-reset
+  saat menyambung ulang, putus/pulih tercatat di stderr, dan `/readyz` melaporkan `realtime`.
+  Bukti: itapi_ws 13 `[OK]` (uji memutus koneksi pump dengan `pg_terminate_backend`), itapi 7 `[OK]`
+  (keputusan readiness), **dua mutasi terbukti membuat uji gagal** (tanpa penyambungan ulang;
+  dengan penyambungan ulang tetapi titik mulai di-reset). Lag outbox tetap O-019.
