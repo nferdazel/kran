@@ -23,7 +23,7 @@ import "platform-lib/db/pool"
 import platform/domain/event
 import platform/infrastructure/[outbox_listener, outbox_repo]
 
-import ../src/[context, events, server]
+import ../src/[context, events, readiness, server]
 import ./wsclient
 
 const
@@ -195,6 +195,65 @@ proc assertProblem(status: int, body: JsonNode, expectedCode: string) =
   check problems.len == 0
   check body["code"].getStr() == expectedCode
   check body["i18nKey"].getStr() == "error_" & expectedCode.toLowerAscii()
+
+suite "realtime: pump menyambung ulang (O-029)":
+  test "koneksi pump diputus paksa → peristiwa berikutnya tetap terkirim":
+    var client = connect("127.0.0.1", mainPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    defer: client.close()
+    let topic = uniqueTopic()
+    client.sendText(subscribeJson(topic, ""))
+    let subscribed = client.nextOfType("subscribed", 5000)
+    check subscribed["denied"].len == 0
+
+    # Pump harus benar-benar tersambung sebelum diputus.
+    let pidLama = mainService.pumpBackendPid()
+    check pidLama > 0
+
+    # Putus paksa koneksi pump: ini yang terjadi saat restart DB/jaringan blip, dan dulu membuat
+    # realtime berhenti permanen sampai proses di-restart.
+    check db.getValue(sql"select pg_terminate_backend(?)", pidLama) == "t"
+
+    # Peristiwa diterbitkan **setelah** sesi pump diakhiri di sisi server dan **sebelum** pump
+    # menyambung ulang — inilah peristiwa yang hilang kalau titik mulai (`lastEventId`) di-reset saat
+    # menyambung ulang. Ditulis langsung setelah `pg_terminate_backend` supaya deterministik: sesi
+    # lama pump sudah mati di server, jadi ia tidak mungkin sempat melihat baris ini.
+    let eventId = appendTestEvent(topic, %*{"key": "x", "n": 2})
+
+    # Pump harus menyadari, menyambung ulang (pid baru), dan menandai dirinya siap lagi.
+    var pulih = false
+    let tenggat = epochTime() + 15.0
+    while epochTime() < tenggat and not pulih:
+      pulih = mainService.pumpReady() and mainService.pumpBackendPid() > 0 and
+        mainService.pumpBackendPid() != pidLama
+      if not pulih:
+        sleep(100)
+    check pulih
+
+    # Peristiwa dari masa gangguan tetap sampai ke klien yang sudah berlangganan — tanpa klien perlu
+    # menyambung ulang.
+    let frame = client.nextOfType("event", 15000)
+    check frame["id"].getStr() == eventId
+    check frame["topic"].getStr() == topic
+    check frame["payload"]["n"].getInt() == 2
+    assertEventEnvelope(frame)
+
+    # Pemeriksaan sesi berkala hidup lagi (dulu ikut mati bersama pump).
+    check mainService.pumpReady()
+
+    # Readiness realtime memakai service nyata: pump siap -> ok (O-029).
+    let probe = realtimeProbe(mainService)
+    check probe().len == 1
+    check probe()[0].status == csOk
+
+    # Dan klien kedua yang baru menyambung tetap dilayani setelah semua ini.
+    var klienKedua = connect("127.0.0.1", mainPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    defer: klienKedua.close()
+    let topicKedua = uniqueTopic()
+    klienKedua.sendText(subscribeJson(topicKedua, ""))
+    let langganan = klienKedua.nextOfType("subscribed", 5000)
+    check langganan["denied"].len == 0
+    let eventIdKedua = appendTestEvent(topicKedua, %*{"key": "y", "n": 3})
+    check klienKedua.nextOfType("event", 10000)["id"].getStr() == eventIdKedua
 
 suite "realtime: penolakan sebelum upgrade":
   test "GET tanpa Upgrade -> 426 problem+json sesuai kontrak":
