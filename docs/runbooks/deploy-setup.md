@@ -1,6 +1,7 @@
 # Runbook — setup deploy (deploy key + webhook)
 
-Status: **belum pernah dijalankan**. Langkah yang menyentuh server harus diverifikasi di server; yang
+Status: **deploy belum pernah dijalankan**; deploy key + hook webhook **sudah terpasang**
+(15 Okt 2026, buktinya di `docs/tasks/T-040.md`). Bagian yang masih rencana: latihan deploy (T-013). Langkah yang menyentuh server harus diverifikasi di server; yang
 tidak bisa dibuktikan di sini ditulis begitu, bukan diasumsikan berhasil. Spec: §21.4 (alur deploy),
 §21.5 (unit & direktori), §21.7 (webhook).
 
