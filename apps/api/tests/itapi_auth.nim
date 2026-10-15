@@ -496,6 +496,25 @@ suite "realtime dengan sesi":
     let handshake = wsclient.handshake("127.0.0.1", portOf(baseUrl), EventsPath)
     check handshake.status == 401
 
+  test "logout mengakhiri stream yang sudah terbuka (O-036)":
+    # Sesi dicabut **setelah** handshake: pump memeriksa ulang tiap ≤ `defaultSessionRecheckSeconds`
+    # (5 detik), mengirim amplop `error`, lalu menutup soket. Tanpa pemeriksaan itu, klien dengan
+    # cookie yang sudah dicabut terus menerima peristiwa parameter.
+    let maker = login(MakerUser)
+    let token = tokenOf(maker)
+    var client = wsclient.connect("127.0.0.1", portOf(baseUrl), EventsPath,
+      [("Cookie", CookieName & "=" & token)])
+    client.sendText( $ %*{"type": "subscribe", "topics": ["param.changed"]})
+    check client.nextOfType("subscribed", 5000)["topics"][0].getStr() == "param.changed"
+
+    check postJson(LogoutPath, newJObject(), token).code == 204
+
+    let frame = client.nextOfType("error", 15000)
+    check frame["code"].getStr() == "REALTIME_SESSION_ENDED"
+    check frame["i18nKey"].getStr() == "error_unauthorized"
+    check client.nextText(5000).len == 0 # close frame dari server
+    client.close()
+
   test "topik di luar izin dilaporkan ditolak, bukan dibuang diam-diam":
     let maker = login(MakerUser)
     var client = wsclient.connect("127.0.0.1", portOf(baseUrl), EventsPath,

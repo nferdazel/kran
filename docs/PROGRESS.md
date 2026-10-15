@@ -439,3 +439,14 @@ tanpa menemukan jendela yang belum tertutup/tercatat. **Verdict: APPROVE**, tanp
 Dua MINOR ditangani: komentar test yang berlebihan dilunakkan, dan bentuk input tanggal rusak
 (500 vs 400) ditajamkan ke O-035. Review batch Fase 0 selesai: 5 ronde (4× TIDAK APPROVE, ditutup
 berurutan oleh D-027, D-028, D-029) — di dalam batas AGENTS.md §4 butir 7.
+
+## Pasca-M0 — T-023 realtime aman-sesi (O-036) DONE
+
+Langganan realtime kini berumur **sesi**, bukan seumur soket: pump memeriksa ulang sesi tiap klien
+berkala (`defaultSessionRecheckSeconds = 5`, di luar lock hub, memakai definisi identitas sah yang
+sama dengan handshake). Sesi tidak sah → amplop `error` (`REALTIME_SESSION_ENDED`) lalu soket ditutup
+dan langganan dilepas, memicu jalur klien yang sudah ada untuk kembali ke login (D-030).
+`TopicPolicy.sessionValid` wajib diisi dan `newEventService` gagal keras bila kosong.
+Bukti: `itapi_ws` (+1 test, interval 0 → deterministik) dan `itapi_auth` (+1 test: login → WS →
+logout → error + close) — keduanya GAGAL bila `sweepSessions` dilepas. Sisa batas dicatat: O-046
+(izin topik tidak diperiksa ulang).

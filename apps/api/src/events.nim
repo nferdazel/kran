@@ -19,7 +19,7 @@
 ##
 ## Kontrak amplop pesan: `packages/contracts/events/realtime-envelope.v1.schema.json`.
 
-import std/[atomics, json, locks, strutils, tables]
+import std/[atomics, json, locks, monotimes, strutils, tables, times]
 
 import mummy
 import db_connector/db_postgres
@@ -42,6 +42,11 @@ const
   subscriptionLimits* = SubscriptionLimits(maxTopics: 32, maxTopicLen: 128)
   ## Jeda tunggu notifikasi per putaran pump (ms); juga interval pemulihan bila notifikasi hilang.
   pumpPollMs* = 250
+  ## Interval pemeriksaan ulang sesi per klien (detik) — satu query sesi per klien per interval.
+  ## Nilai **teknis** (O-036): sesi bisa dicabut/kedaluwarsa setelah handshake, dan soket yang sudah
+  ## terbuka tidak boleh terus menerima peristiwa. Bukan ambang bisnis; dicatat supaya bisa diukur
+  ## dan diubah bila jumlah klien bertambah.
+  defaultSessionRecheckSeconds* = 5
 
 type
   TopicPolicy* = object
@@ -50,11 +55,16 @@ type
     ## mengirim pesan `subscribe`.
     canOpen*: proc(identity: string): bool {.gcsafe.}
     allowedTopics*: proc(identity: string, requested: seq[string]): seq[string] {.gcsafe.}
+    sessionValid*: proc(identity: string): bool {.gcsafe.}
+      ## Diperiksa **berkala** oleh pump, bukan sekali saat handshake: sesi bisa dicabut atau
+      ## kedaluwarsa di tengah umur koneksi (O-036). Wajib ada (bukan opsional) supaya tidak ada
+      ## jalur yang lupa mengisinya.
 
   ConnectionState = object
     id*: uint64
     identity*: string
     topics*: seq[string]
+    lastSessionCheck*: MonoTime ## kapan sesi terakhir diperiksa (pump, berkala)
 
   EventService* = ref object
     ## Bidang yang disentuh lebih dari satu thread dilindungi `lock`; `lastEventId` hanya pump.
@@ -68,6 +78,7 @@ type
     lastEventId: string
     resumeLimit: int
     maxResumeBatches: int
+    sessionRecheckSeconds: int                 ## interval periksa ulang sesi per klien (detik)
     running: Atomic[bool]
     ready: Atomic[bool] ## pump sudah LISTEN + menentukan titik mulai (dipakai uji & diagnostik)
     pumping: bool                              ## hanya dibaca/ditulis saat start (satu thread)
@@ -86,9 +97,17 @@ proc denyTopics(identity: string, requested: seq[string]): seq[string] {.gcsafe.
   discard requested
   @[]
 
+proc denySession(identity: string): bool {.gcsafe.} =
+  discard identity
+  false
+
+proc allowSession(identity: string): bool {.gcsafe.} =
+  discard identity
+  true
+
 proc denyPolicy*(): TopicPolicy =
   ## Belum ada sesi nyata (T-012) → tidak ada identitas yang boleh membuka stream.
-  TopicPolicy(canOpen: denyOpen, allowedTopics: denyTopics)
+  TopicPolicy(canOpen: denyOpen, allowedTopics: denyTopics, sessionValid: denySession)
 
 proc allowAllPolicy*(): TopicPolicy =
   ## Semua identitas non-anonim boleh membuka stream dan berlangganan topik apa pun.
@@ -100,7 +119,7 @@ proc allowAllPolicy*(): TopicPolicy =
     discard identity
     requested
 
-  TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics)
+  TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics, sessionValid: allowSession)
 
 # ---------------------------------------------------------------------------------------------
 # Identitas & header
@@ -114,9 +133,15 @@ proc hasToken(value, token: string): bool =
   false
 
 proc newEventService*(policy: TopicPolicy, pool: DbPool, resumeLimit = 200,
-                      maxResumeBatches = 10): EventService =
+                      maxResumeBatches = 10,
+                      sessionRecheckSeconds = defaultSessionRecheckSeconds): EventService =
   ## `resumeLimit` = peristiwa per putaran replay; `maxResumeBatches` = batas putaran sebelum
-  ## klien diminta mulai dari awal (lihat `replayTo`).
+  ## klien diminta mulai dari awal (lihat `replayTo`); `sessionRecheckSeconds` = interval periksa
+  ## ulang sesi (uji memakai nilai kecil/0 supaya tidak menunggu).
+  if policy.sessionValid.isNil:
+    # Gagal keras di sini, bukan crash senyap saat pump memeriksa sesi: tipe tidak bisa memaksa
+    # closure terisi, dan lupa mengisinya = lubang O-036 kembali terbuka tanpa jejak.
+    raise newException(ValueError, "TopicPolicy.sessionValid wajib diisi (lihat O-036)")
   new(result)
   result.hub = newHub()
   initLock(result.lock)
@@ -126,6 +151,7 @@ proc newEventService*(policy: TopicPolicy, pool: DbPool, resumeLimit = 200,
   result.pool = pool
   result.resumeLimit = max(1, resumeLimit)
   result.maxResumeBatches = max(1, maxResumeBatches)
+  result.sessionRecheckSeconds = max(0, sessionRecheckSeconds)
   result.running.store(false)
   result.ready.store(false)
 
@@ -212,6 +238,47 @@ proc forget(svc: EventService, socket: WebSocket) =
       svc.streams.del(socket)
       svc.hub.unsubscribe($clientId)
 
+proc dropClient(svc: EventService, clientId: uint64, code, i18nKey: string) =
+  ## Amplop `error` lalu tutup soket. Klien menerjemahkan `i18nKey`, dan penutupan memicu
+  ## pemeriksaan sesi di sisi klien (`realtime.ts handleClose` → `/auth/session` 401 → kembali ke
+  ## login), sehingga soket yang sesinya berakhir tidak berputar-ulang menyambung tanpa akhir.
+  svc.sendMessage(clientId, encodeError(code, i18nKey))
+  # `WebSocket` adalah object (bukan ref), jadi "ada/tidak" dilacak eksplisit.
+  var socket: WebSocket
+  var ada = false
+  withLock svc.lock:
+    if svc.sockets.hasKey(clientId):
+      socket = svc.sockets[clientId]
+      ada = true
+  if ada:
+    socket.close() # aman dari thread lain: Mummy memasukkan close frame ke antrean kirim
+    svc.forget(socket)
+
+proc sweepSessions(svc: EventService) =
+  ## Sesi bisa dicabut atau kedaluwarsa **setelah** handshake. Tanpa pemeriksaan berkala, soket yang
+  ## sudah terbuka terus menerima peristiwa sampai klien menutupnya sendiri (O-036).
+  ##
+  ## Tiap klien diperiksa paling sering sekali per `sessionRecheckSeconds` (bukan setiap peristiwa),
+  ## dan pemeriksaan dijalankan **di luar lock** supaya I/O DB tidak menahan hub. Penilaian memakai
+  ## kebijakan yang sama dengan handshake (`canOpen`) supaya definisi "identitas sah" hanya satu.
+  ## Catatan skala: satu pemeriksaan = satu resolusi principal (beberapa query); bila jumlah klien
+  ## nyata bertambah besar, cache principal berumur pendek adalah langkah berikutnya.
+  var candidates: seq[tuple[clientId: uint64, identity: string]]
+  withLock svc.lock:
+    for clientId, socket in svc.sockets:
+      if not svc.streams.hasKey(socket):
+        continue
+      let state = svc.streams[socket]
+      if state.identity.len == 0:
+        continue
+      if (getMonoTime() - state.lastSessionCheck).inSeconds < svc.sessionRecheckSeconds:
+        continue
+      svc.streams[socket].lastSessionCheck = getMonoTime()
+      candidates.add (clientId, state.identity)
+  for candidate in candidates: # nimpretty-ignore: gaya destructuring tuple
+    if not svc.policy.sessionValid(candidate.identity):
+      svc.dropClient(candidate.clientId, "REALTIME_SESSION_ENDED", "error_unauthorized")
+
 proc onWebSocketEvent(svc: EventService, socket: WebSocket, event: WebSocketEvent,
                       message: Message) {.gcsafe.} =
   case event
@@ -261,7 +328,8 @@ proc openStream*(svc: EventService, req: Request) {.gcsafe.} =
   withLock svc.lock:
     svc.nextId += 1
     let clientId = svc.nextId
-    svc.streams[socket] = ConnectionState(id: clientId, identity: identity)
+    svc.streams[socket] = ConnectionState(id: clientId, identity: identity,
+      lastSessionCheck: getMonoTime())
     svc.sockets[clientId] = socket
     svc.hub.subscribe($clientId, @[]) # belum ada topik sampai klien mengirim `subscribe`
 
@@ -305,6 +373,7 @@ proc pumpLoop(svc: EventService) {.thread, gcsafe.} =
       let fetched = eventsAfter(db, svc.lastEventId, svc.resumeLimit)
       if fetched.len > 0:
         svc.dispatch(fetched)
+      svc.sweepSessions()
     svc.ready.store(false)
   except CatchableError:
     # Pump mati: stream tidak lagi mendorong peristiwa, tetapi proses tetap melayani HTTP dan

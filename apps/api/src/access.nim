@@ -156,4 +156,12 @@ proc realtimePolicy*(ctx: AppContext): TopicPolicy =
     if ctx.pool.isNil:
       return @[]
     withDbConn(ctx.pool, proc(db: DbConn): seq[string] {.gcsafe.} =
-      topicsAllowedFor(db, ctx.clock, identity, requested)))
+      topicsAllowedFor(db, ctx.clock, identity, requested)),
+    sessionValid: proc(identity: string): bool {.gcsafe.} =
+    # Dipakai pump untuk memeriksa ulang langganan yang sudah terbuka (O-036): sesi bisa
+    # dicabut/kedaluwarsa setelah handshake. Resolusi principal yang sama dengan `canOpen` supaya
+    # "identitas sah" hanya punya satu definisi (termasuk pengguna yang dinonaktifkan).
+    if ctx.pool.isNil:
+      return false
+    withDbConn(ctx.pool, proc(db: DbConn): bool {.gcsafe.} =
+      resolvePrincipal(db, ctx.clock, identity).isSome))
