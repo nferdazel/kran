@@ -83,7 +83,12 @@ servers.push({
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
-  expect: { timeout: 5_000 },
+  // Batas tunggu bawaan 10 s (dari 5 s) — bukan untuk menutupi perilaku yang salah, melainkan karena
+  // lingkungan ini memang lambat: setiap login memverifikasi PBKDF2 600.000 iterasi (parameter dev
+  // `platform.security.password_pbkdf2_iterations`), DB dev ada di server lain lewat tunnel SSH, dan
+  // 4 worker berjalan serentak. Pada 5 s, login yang sepenuhnya normal pun bisa melewati batas dan
+  // membuat CI merah sesekali. Assertion tidak dilonggarkan; hanya batas waktunya (T-031).
+  expect: { timeout: 10_000 },
   fullyParallel: false,
   forbidOnly: true,
   retries: 0,

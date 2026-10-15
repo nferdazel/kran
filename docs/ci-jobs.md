@@ -18,3 +18,30 @@ job kosong yang selalu hijau adalah "hijau palsu". Per tanggal T-001 hanya ada
 Catatan status (2026-10-14): job yang benar-benar ada di `ci.yml` baru `nim-check`, `web-e2e`,
 dan `security`. Baris di atas adalah rencana spec §21.3, bukan kenyataan; selisihnya dicatat
 sebagai item terbuka supaya tidak terlihat seperti sudah lengkap.
+
+## Gate kestabilan: `./task ci-repeat [N]` (T-031)
+
+`./task ci` menjawab "kode ini lulus **sekarang**". Ia tidak menjawab "kode ini **stabil**": flake
+hanya terlihat saat diulang. `./task ci-repeat 3` menjalankan gate penuh tiga kali berturut-turut dan
+berhenti pada putaran pertama yang merah. Dipakai di akhir batch/task besar, bukan di setiap task
+(satu putaran ≈ 8 menit). CI GitHub boleh menambahkannya sebagai jadwal malam bila nanti diinginkan;
+itu perubahan `ci.yml`, dan belum dilakukan.
+
+## Aturan isolasi test (pelajaran 15 Oktober 2026)
+
+Dua kelas flake sudah benar-benar menggigit di repo ini, dan keduanya sudah pernah membuat CI merah
+untuk kode yang benar:
+
+1. **Batas waktu 5 s untuk aksi mahal.** Login/ganti kata sandi menjalankan PBKDF2 600.000 iterasi
+   (parameter dev) sementara DB ada di server lain lewat tunnel, dan 4 worker e2e berjalan serentak.
+   Karena itu: aksi mahal memakai batas waktu **eksplisit**, dan `expect.timeout` bawaan e2e kini
+   10 s. Batas waktu dinaikkan **tanpa** melonggarkan assertion.
+2. **Keadaan yang dibagi antar berkas test.** Test e2e berjalan paralel antar berkas (4 worker), jadi:
+   - satu baris seed (`dev.maker`, `dev.checker`, `dev.firstlogin`, …) hanya boleh **diubah** oleh
+     satu berkas test. Saat ini: `dev.firstlogin` (alur wajib-ganti kata sandi) hanya di
+     `password.spec.ts`; berkas lain memakai `dev.maker`/`dev.checker` secara baca saja;
+   - test tidak boleh mengandalkan keadaan awal yang bersih. Nilai yang menumpuk antar run (mis.
+     nilai parameter) harus **diturunkan dari API** (lihat `nextEffectiveFrom` di `flow.spec.ts`),
+     bukan diasumsikan;
+   - proses yang dibunuh/di-restart oleh test harus memakai port dan instance sendiri
+     (`shutdown.spec.ts` memakai port bebas, bukan 8099 milik `webServer`).
