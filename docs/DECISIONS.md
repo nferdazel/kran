@@ -542,3 +542,43 @@ Catatan tambahan: hazard urutan test diakui eksplisit (komentar di awal suite) d
 mandiri; sisa hazard dicatat sebagai keterbatasan, bukan dianggap tidak ada. Nilai calon yang
 dipakai tanpa memeriksa visibilitas scope dicatat sebagai O-044 (sifatnya konservatif, sudah ada
 sebelum D-029). Butir 5 D-028 sudah dianotasi agar tidak bertentangan dengan D-029 butir 3.
+
+## D-030 — Sesi diperiksa berkala pada stream realtime; soket ditutup saat sesi berakhir (O-036)
+
+- **Konteks**: otorisasi realtime hanya terjadi **saat handshake** (`canOpen`) dan saat `subscribe`.
+  Sesi yang dicabut (logout, penggantian password, pencabutan oleh admin) atau yang lewat batas
+  idle/absolut tidak memutus soket yang sudah terbuka, sehingga klien itu terus menerima
+  `param.changed` — isi parameter keuangan mengalir ke sesi yang seharusnya sudah berakhir.
+- **Keputusan**:
+  1. Pump memeriksa ulang sesi tiap klien secara **berkala** (bukan per peristiwa), dengan interval
+     teknis `defaultSessionRecheckSeconds = 5` dan penilaian memakai `resolvePrincipal` — definisi
+     "identitas sah" yang **sama** dengan handshake (`canOpen`), sehingga pengguna yang dinonaktifkan
+     pun ikut tertangkap.
+  2. Pemeriksaan dijalankan **di luar lock hub** (I/O DB tidak boleh menahan fan-out) dan hasilnya
+     dicatat per klien (`lastSessionCheck`) supaya biayanya satu pemeriksaan per klien per interval.
+  3. Sesi tidak sah → amplop `error` (`REALTIME_SESSION_ENDED`, `i18nKey = error_unauthorized`) lalu
+     soket **ditutup** server-side, dan langganan dilepas. Amplop dipakai supaya klien punya alasan
+     eksplisit; penutupan memicu jalur klien yang sudah ada (`realtime.ts handleClose` → cek
+     `/api/v1/auth/session` → 401 → kembali ke layar login), jadi tidak ada putaran sambung-ulang
+     tanpa akhir. Kunci i18n sengaja memakai kunci yang **sudah ada** (`error_unauthorized`) supaya
+     tidak menambah katalog pesan hanya untuk frame protokol.
+  4. `TopicPolicy.sessionValid` **wajib** diisi; `newEventService` menolak dengan galat jelas bila
+     nil, karena tipe object Nim tidak bisa memaksa closure terisi dan lupa mengisinya = lubang ini
+     kembali terbuka tanpa jejak.
+- **Alasan memilih polling berkala, bukan hanya sinyal dari jalur logout**: jalur pencabutan ada
+  beberapa (logout, `logoutAll`, ganti password, pencabutan admin) dan **kedaluwarsa** idle/absolut
+  sama sekali tidak punya sinyal — jarum jam tidak mengirim peristiwa. Satu pemeriksaan berkala
+  menutup semuanya dengan satu mekanisme, dan biayanya terukur (satu resolusi principal per klien
+  per interval). Alternatif "tutup soket saat logout" tetap dicatat sebagai penghematan yang bisa
+  ditambahkan kemudian, bukan pengganti.
+- **Batasan yang tetap ada (dicatat, bukan disembunyikan)**:
+  - **Perubahan izin topik** tidak diperiksa ulang; langganan yang sudah disetujui tetap berlaku
+    sampai klien `subscribe` lagi atau sesinya berakhir (O-046).
+  - Interval 5 detik berarti ada jendela ≤ 5 detik sebelum soket yang sesinya dicabut berhenti
+    menerima; nilainya teknis dan bisa diturunkan bila perlu.
+  - Biaya satu pemeriksaan = satu resolusi principal (beberapa query); bila jumlah klien nyata besar,
+    langkah berikutnya adalah cache principal berumur pendek (tercatat di komentar `sweepSessions`).
+- **Bukti**: `itapi_ws` "sesi dicabut → amplop error, soket ditutup, langganan dilepas" (interval 0,
+  deterministik) dan `itapi_auth` "logout mengakhiri stream yang sudah terbuka" (server nyata,
+  cookie nyata, interval default). Keduanya **GAGAL** bila `sweepSessions` dilepas (diverifikasi
+  dengan memasang mutasinya sementara, lalu dikembalikan).

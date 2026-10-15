@@ -98,6 +98,16 @@ proc allowTopics(identity: string, requested: seq[string]): seq[string] {.gcsafe
   discard identity
   requested
 
+proc allowSession(identity: string): bool {.gcsafe.} =
+  discard identity
+  true
+
+## Sesi yang bisa "dicabut" dari test (O-036): pump memeriksa lewat closure ini.
+var sessionMasihSah = true
+proc gatedSession(identity: string): bool {.gcsafe.} =
+  discard identity
+  sessionMasihSah
+
 proc paramTopicsOnly(identity: string, requested: seq[string]): seq[string] {.gcsafe.} =
   discard identity
   for topic in requested:
@@ -111,7 +121,8 @@ let db = dbPool.acquire()
 discard applyMigrations(db, ".")
 let sysClock = systemClock()
 
-let mainService = newEventService(TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics), dbPool)
+let mainService = newEventService(TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics,
+                            sessionValid: allowSession), dbPool)
 startPump(mainService)
 # Uji di bawah hanya menguji **pengiriman langsung**; peristiwa yang masuk sebelum pump menetapkan
 # titik mulai dianggap riwayat (by design), jadi tunggu sinyal kesiapan lebih dulu.
@@ -126,20 +137,31 @@ let mainPort = startServer(mainService)
 waitUntilServing(mainPort)
 
 # Penolakan akses: kebijakan "semua ditolak" dan kebijakan yang hanya mengizinkan satu topik.
-let denyService = newEventService(TopicPolicy(canOpen: denyOpen, allowedTopics: denyTopics), nil)
+let denyService = newEventService(TopicPolicy(canOpen: denyOpen, allowedTopics: denyTopics,
+                            sessionValid: allowSession), nil)
 let denyPort = startServer(denyService)
 waitUntilServing(denyPort)
 
 let paramService = newEventService(
-  TopicPolicy(canOpen: allowOpen, allowedTopics: paramTopicsOnly), nil)
+  TopicPolicy(canOpen: allowOpen, allowedTopics: paramTopicsOnly, sessionValid: allowSession), nil)
 let paramPort = startServer(paramService)
 waitUntilServing(paramPort)
 
 # Batas replay kecil: untuk menguji jalur `resync` tanpa menyiapkan ratusan peristiwa.
-let tinyReplayService = newEventService(TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics),
+let tinyReplayService = newEventService(TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics,
+                                                    sessionValid: allowSession),
                                         dbPool, resumeLimit = 1, maxResumeBatches = 1)
 let tinyReplayPort = startServer(tinyReplayService)
 waitUntilServing(tinyReplayPort)
+
+# Sesi berakhir di tengah umur koneksi (O-036): interval 0 supaya setiap putaran pump memeriksa.
+let gatedService = newEventService(
+  TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics, sessionValid: gatedSession),
+  dbPool, sessionRecheckSeconds = 0)
+startPump(gatedService)
+waitForPump(gatedService)
+let gatedPort = startServer(gatedService)
+waitUntilServing(gatedPort)
 
 proc uniqueTopic(): string =
   "test.realtime." & $epochTime() & "." & $rand(1_000_000)
@@ -316,3 +338,26 @@ suite "realtime: resume tidak kehilangan peristiwa":
     client.sendText(subscribeJson(topic, "00000000-0000-0000-0000-000000000000"))
     let replayed = client.nextOfType("event", 10000)
     check replayed["id"].getStr() == eventId
+
+suite "realtime: sesi berakhir setelah handshake (O-036)":
+  test "sesi dicabut → amplop error, soket ditutup, langganan dilepas":
+    let topic = uniqueTopic()
+    var client = connect("127.0.0.1", gatedPort, EventsPath, @[("Cookie", "cbs_session=uji")])
+    client.sendText(subscribeJson(topic, ""))
+    let subscribed = client.nextOfType("subscribed", 5000)
+    check subscribed["topics"][0].getStr() == topic
+    check gatedService.connectionCount() == 1
+
+    # Sesi tidak lagi sah (mis. logout/dicabut di tempat lain) — tanpa peristiwa apa pun.
+    sessionMasihSah = false
+
+    let frame = client.nextOfType("error", 5000)
+    check frame["code"].getStr() == "REALTIME_SESSION_ENDED"
+    check frame["i18nKey"].getStr() == "error_unauthorized"
+    # close frame: `nextText` mengembalikan "" untuk opcode 8.
+    check client.nextText(5000).len == 0
+    check gatedService.connectionCount() == 0
+
+    # Kembalikan keadaan supaya test lain (bila ada) tidak terpengaruh.
+    sessionMasihSah = true
+    client.close()
