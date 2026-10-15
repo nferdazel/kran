@@ -499,3 +499,19 @@ semuanya diperbaiki di commit lanjutan, bukan ditunda:
 Tambahan dari catatan "benar tapi mudah rusak": kegagalan memverifikasi sesi (DB/pool) tidak lagi
 memutus langganan atau mematikan pump; soket dibiarkan dan pemeriksaan diulang pada interval berikutnya.
 Ketergantungan pada detail internal Mummy dicatat sebagai O-049.
+
+## Pasca-M0 — keputusan pemilik dicatat, penegakan `requires_approval` aktif (D-034)
+
+Empat keputusan yang menunggu pemilik sudah diambil (15 Okt 2026) dan dicatat di D-034:
+O-031 bootstrap admin (perintah sekali-jalan + wajib ganti, butuh endpoint ganti kata sandi), O-034
+anti-enumerasi akun (status terkunci hanya setelah kata sandi benar + PBKDF2 tiruan), O-039
+`requires_approval: false` belum boleh dipakai, dan O-012 tipe lookup eksplisit.
+
+Yang langsung dieksekusi hari ini: **O-039**. `paramgen` menolak definisi ber-`requires_approval:
+false` di batas CLI (keluar 2, pesan menyebut O-039 → gate `--check` gagal di CI). Penegakan sengaja
+tidak ditaruh di parser supaya fixture yang menguji parser dan emitter ber-`false` tidak kehilangan
+cakupan sebelum semantiknya diputuskan di T-016; predikatnya diuji langsung dan daya tangkapnya
+diverifikasi dengan menambahkan definisi ber-`false` ke seed asli (gagal, lalu dikembalikan).
+
+Task turunan: **T-027** (bootstrap + endpoint ganti kata sandi) dan **T-028** (kebijakan
+anti-enumerasi), keduanya READY dan keduanya menandai `HUMAN-REVIEW-REQUIRED`.

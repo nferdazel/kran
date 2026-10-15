@@ -667,3 +667,35 @@ Keputusan: `--up` sekarang **menolak** dan keluar kode 3 bila ada migrasi berpen
 belum diterapkan, dengan menyebut id berkasnya dan menunjuk O-048. Alternatif "biarkan saja, catat
 dokumen" ditolak karena kegagalannya akan muncul di server, bukan di laptop. Kontrak `--contract` yang
 sesungguhnya tetap menyusul di O-048.
+
+## D-034 — Empat keputusan pemilik: bootstrap, anti-enumerasi akun, `requires_approval`, arti `scope_id` kosong
+
+Diputuskan pemilik 15 Oktober 2026 setelah opsi dan konsekuensinya dibahas (O-031, O-034, O-039,
+O-012). Dicatat sebagai keputusan, bukan sekadar niat, supaya task turunannya punya rujukan.
+
+1. **O-031 bootstrap user produksi.** Prosedur: satu perintah **sekali-jalan** yang membuat admin
+   pertama dan mencetak kata sandi acak sekali, dengan wajib-ganti pada login pertama
+   (`mustChangePassword` sudah ada di `SessionInfo`). Konsekuensi yang diterima: perintah ini butuh
+   **endpoint ganti kata sandi** yang belum ada (kontrak saat ini hanya `login`/`session`/`logout`),
+   jadi endpoint itu dikerjakan sebagai task pendamping, bukan ditunda terpisah. Alternatif "admin
+   pertama dengan kata sandi yang dimasukkan manusia" ditolak karena mengundang kata sandi lemah
+   yang tidak pernah diganti. Task: **T-027**.
+2. **O-034 enumerasi akun.** Status `locked`/`inactive` dibalas **hanya setelah kata sandi benar**,
+   dan akun tak dikenal menjalankan PBKDF2 tiruan (dummy hash) dengan biaya setara supaya waktu
+   responsnya tidak membedakan. Konsekuensi yang diterima: pengguna yang terkunci dan salah mengetik
+   kata sandi mendapat pesan generik, lalu baru melihat alasan terkunci saat kata sandi benar; itu
+   pertukaran yang disengaja. Task: **T-028**.
+3. **O-039 `requires_approval: false`.** Untuk sekarang `false` **tidak boleh dipakai**: kalau ada
+   definisi seperti itu di `modules/*/seeds/params.yaml`, `paramgen` menolak (keluar **2** dengan
+   pesan yang menyebut O-039) sehingga gate `./task paramgen --check` gagal di CI. Semantik
+   sebenarnya (maker boleh langsung ACTIVE untuk peran tertentu, dengan audit eksplisit) ditetapkan
+   bersama **T-016**. Batas penegakan: dijalankan di **batas CLI** (`tools/paramgen/main.nim`), bukan
+   di parser, karena repo ini sengaja menguji parser dan emitter dengan fixture ber-`false`
+   (`tools/paramgen/tests/fixtures/.../deposit/seeds/params.yaml`) supaya plumbing kolomnya tidak
+   ikut terhapus sebelum semantiknya diputuskan. Predikat `undefinedApprovalSemantics` yang dipakai
+   CLI diuji langsung (`tparamgen`), dan daya tangkapnya diverifikasi dengan menambahkan definisi
+   ber-`false` ke seed asli: `paramgen` gagal, lalu dikembalikan.
+4. **O-012 arti `scope_id` kosong.** Tipe lookup dibuat eksplisit (`Option[Id]`, sehingga "tidak
+   diminta" dan "kosong" tidak lagi berarti sama) dan dikerjakan bersama pemindahan resolusi ke
+   lapisan application di **T-016**, dengan test golden sebelum perilakunya berubah. Tidak ada
+   perubahan kode hari ini.
