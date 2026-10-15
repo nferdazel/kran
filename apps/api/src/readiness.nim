@@ -7,6 +7,7 @@ import "platform-lib/db/config"
 import "platform-lib/db/pool"
 
 import ./db_bridge
+import ./drain
 import ./events
 import ./health
 
@@ -40,6 +41,16 @@ proc realtimeProbe*(svc: EventService; graceSeconds = pumpReadyGraceSeconds): Re
     let degraded = svc.pumpDegradedSeconds()
     @[realtimeCheck(pumping = degraded >= 0, ready = svc.pumpReady(),
                     degradedSeconds = int(max(degraded, 0'i64)), graceSeconds = graceSeconds)]
+
+proc drainProbe*(): ReadinessProbe =
+  ## Saat proses sedang berhenti, readiness **gagal** dengan sengaja: itu cara memberi tahu penyeimbang
+  ## beban agar berhenti mengirim permintaan baru selagi yang sedang berjalan diselesaikan (T-032).
+  result = proc(): seq[ReadinessCheck] {.gcsafe.} =
+    if isDraining():
+      @[ReadinessCheck(name: "shutdown", status: csFailed,
+                       detail: "proses sedang berhenti; permintaan berjalan diselesaikan lebih dulu")]
+    else:
+      @[]
 
 proc combineProbes*(probes: seq[ReadinessProbe]): ReadinessProbe =
   ## Gabungkan beberapa dependensi menjadi satu daftar pemeriksaan (urutan dipertahankan).

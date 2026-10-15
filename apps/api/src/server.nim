@@ -9,6 +9,7 @@ import mummy
 import mummy/routers
 
 import ./context
+import ./drain
 import ./events
 import ./health
 import ./problem
@@ -66,7 +67,15 @@ proc requestHandler*(app: AppContext): RequestHandler =
   router.methodNotAllowedHandler = proc(req: Request) {.gcsafe.} =
     req.respondProblem(pkMethodNotAllowed, "Method Not Allowed",
       $req.httpMethod & " tidak didukung untuk " & req.path)
-  result = router.toHandler()
+  let inner = router.toHandler()
+  # Hitungan permintaan berjalan dibungkus di **satu** tempat (bukan di tiap handler), jadi tidak ada
+  # rute yang bisa lupa dan membuat drain menggantung (T-032).
+  result = proc(req: Request) {.gcsafe.} =
+    beginRequest()
+    try:
+      inner(req)
+    finally:
+      endRequest()
 
 proc websocketHandlerOf(app: AppContext): WebSocketHandler =
   ## Handler WebSocket dipasang sekali di awal (Mummy memakainya untuk semua koneksi).

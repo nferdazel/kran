@@ -36,6 +36,11 @@ Batas yang diketahui dan dicatat (O-047): permintaan HTTP yang sedang berjalan *
 proses keluar — belum ada drain. Karena `serveApi` tidak mengembalikan `Server`, drain menuntut
 perubahan `server.nim`; itu pekerjaan tersendiri, bukan bagian T-024.
 
+**Diperbarui (T-032):** drain sudah ada (`drain.nim` + pembungkus handler di `server.nim` +
+`watchStop` menunggu maksimum 10 detik + `/readyz` gagal saat berhenti). Yang masih terpotong:
+koneksi yang sudah diterima tetapi belum masuk ke handler, dan soket realtime (ditutup oleh keluarnya
+proses; klien menyambung ulang).
+
 ## Bukti
 
 - Manual: `.build/bin/cbs-api --role=api --port=8095` lalu `kill -TERM` → `EXIT_CODE=0`, log
