@@ -1044,3 +1044,8 @@ tidak ada irisan yang saling mematikan. `style-src` tetap memakai `'unsafe-inlin
 **Verifikasi**: build mengandung `<meta http-equiv="content-security-policy">` berisi `sha256-…`;
 suite e2e (Playwright menyajikan hasil build, bukan dev server) lulus — artinya halaman tetap
 ter-hidrasi di bawah kebijakan itu. O-061 ditutup dengan ini.
+
+**Verifikasi di produksi (16 Okt 2026)**: setelah header Caddy diubah menjadi `frame-ancestors 'none'`,
+`https://cbs.qouver.com/login` dibuka dengan Chromium sungguhan: judul halaman KRAN, `data-theme`
+terpasang oleh `theme.js` (bukti script eksternal lolos `script-src 'self'`), input kata sandi ada
+(bukti hidrasi, jadi script inline ber-hash lolos), **0 pelanggaran CSP**, 0 error konsol.

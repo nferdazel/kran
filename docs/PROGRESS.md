@@ -722,3 +722,18 @@ lanjutan. Tidak ada detail infra baru yang masuk; angka snapshot diberi tanggal 
 
 Bukti: `./task ci` hijau (486 `[OK]`, Playwright 34/34, axe 23 lulus, exit 0) dan `./task check` hijau
 pada pohon final.
+
+## CSP diterapkan di produksi (16 Okt 2026) SELESAI
+
+Blok `cbs.qouver.com` di Caddy sekarang hanya membawa `Content-Security-Policy "frame-ancestors 'none'"`
+(backup: `/etc/caddy/Caddyfile.bak.kran-csp-20261016T135721`), sementara kebijakan lengkap datang dari
+`<meta>` ber-hash yang diterbitkan Kit. Dua catatan dari pekerjaan ini, keduanya karena mudah salah:
+
+- Sasaran penggantian harus **blok `cbs.qouver.com`**, bukan kemunculan pertama di berkas: berkas itu
+  memuat kebijakan CSP situs lain (`qouver.com`, dengan sumber `analytics.qouver.com`) dan penggantian
+  "yang pertama ketemu" akan merusak situs itu. File live sempat **tidak** tersentuh karena hal ini
+  ketahuan sebelum diterapkan.
+- Diverifikasi di browser sungguhan terhadap produksi (`https://cbs.qouver.com/login`): judul KRAN,
+  `data-theme` dipasang `theme.js`, input kata sandi ada (hidrasi jalan), **0 pelanggaran CSP**, 0 error
+  konsol. Plus header HSTS/nosniff/X-Frame-Options/Referrer-Policy tetap terkirim dan `/api/v1/auth/session`
+  = 401 bergaya KRAN.

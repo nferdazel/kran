@@ -173,7 +173,7 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE 'migrations/' <<<"$CHANGED_FILES"; then
 fi
 
 # 7. Build + ekstrak binary (spec §21.4 #7). Rebuild hanya bila input build berubah.
-if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|tools/|kran\.nimble|kran\.lock)' <<<"$CHANGED_FILES"; then
+if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|tools/|kran\.nimble|nimble\.lock)' <<<"$CHANGED_FILES"; then
   log "==> Build API (podman, tag :local + :$REVID)..."
   [ -d "$MONO_DIR/apps/api" ] || die "apps/api tidak ditemukan"
   # Konteks build = root monorepo, bukan apps/api: sumber Nim ada di shared/ + modules/ + tools/
