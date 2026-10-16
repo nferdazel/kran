@@ -57,6 +57,10 @@ type
 
 const
   bootstrapSql* = """
+-- `digest()` dipakai runner untuk menghitung sha256 berkas migrasi (pencatatan & deteksi drift),
+-- jadi ekstensinya harus ada **sebelum** migrasi pertama dihitung — sedangkan migrasi 0002 baru
+-- membuatnya. pgcrypto adalah ekstensi *trusted* (PG13+), jadi pemilik database boleh membuatnya.
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE SCHEMA IF NOT EXISTS platform;
 CREATE TABLE IF NOT EXISTS platform.schema_migration (
   migration_id text PRIMARY KEY,
