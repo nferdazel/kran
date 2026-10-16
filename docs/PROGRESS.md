@@ -680,3 +680,45 @@ HSTS/nosniff/X-Frame-Options/Referrer-Policy/CSP. Container lama berhenti dan un
 `unmask` + `start` + kembalikan upstream Caddy ke 3005). Penyebab 403/404 pertama hanyalah label SELinux
 `var_t`: `restorecon` yang dijalankan sebagai root sebelum aturan `semanage fcontext` ada justru
 mengembalikan label ke default — sekarang aturannya permanen (`httpd_sys_content_t`).
+
+## Tindak lanjut audit repo publik + penutupan O-058…O-063 (16 Okt 2026) SELESAI
+
+Keputusan pemilik dijawab dengan pekerjaan, bukan catatan: repo tetap publik, jadi yang dibereskan
+adalah hal-hal yang membuat publikasi itu aman dan jujur.
+
+**Lisensi (D-044)**: berkas `LICENSE` menyatakan proprietary/all-rights-reserved — publik untuk dibaca
+dan diaudit, tanpa izin menyalin/memodifikasi/mendistribusikan/menjalankan sebagai layanan. Metadata
+`kran.nimble` diubah ke `"Proprietary"`; sempat dicoba **menghapus** field itu dan Nimble menolaknya
+(`Incorrect .nimble file ... does not contain a license field`), jadi field dipertahankan dengan
+komentar bahwa `LICENSE` adalah sumber kebenaran. README sekarang menjelaskan status ini dan tidak lagi
+memuat kontradiksi "jangan pernah push ke `main`" vs "push = deploy".
+
+**CSP (D-045, O-061)**: `csp: { mode: "hash" }` di `apps/web/vite.config.ts` membuat Kit menerbitkan
+hash ke `<meta>`. Saya cocokkan hash itu dengan SHA-256 script inline yang dihitung sendiri — identik.
+Script tema di `app.html` pindah menjadi aset `static/theme.js`, karena Kit hanya menghash script
+buatannya sendiri. Blok Caddy sengaja **tidak** memuat `script-src`: dua kebijakan CSP diirisan,
+sehingga `script-src 'self'` di header tanpa hash justru memblokir script ber-hash milik Kit dan
+halaman berhenti ter-hidrasi. Header hanya membawa `frame-ancestors 'none'`.
+
+**Guard seed (O-062)**: `--dev` kini ditolak kecuali nama basis data di `KRAN_DATABASE_URL` berakhir
+`_dev`/`_test` (fail-closed untuk URL yang tidak dikenali), keluar dengan kode 3; parsing URL dan
+batasnya ditutup uji unit.
+
+**Pin dependensi (O-059)**: dependensi dipin **persis** di `kran.nimble` (`db_connector == 0.1.0`,
+`yaml == 2.2.1`, `nimcrypto == 0.7.3`, `mummy == 0.4.8`, `nim >= 2.2.0 & < 2.3.0`). Percobaan
+`nimble lock` **dibatalkan** karena terbukti mematahkan build di mesin ini: dengan berkas lock,
+compiler mencari dependensi di layout lokal (`nimbledeps/`) yang `nimble install -d` tidak membuat,
+sehingga semua build gagal `cannot open file: mummy` — dibuktikan langsung dengan `nim check` (gagal
+dengan lock, hijau tanpa). Sisa jujurnya dicatat: revisi git dependensi tidak ikut terpin.
+
+**Insiden publikasi (O-058)**: hardening SSH dijalankan pemilik; aturan tetap — jangan menambah detail
+infra baru ke repo, dan IP di riwayat diperlakukan sebagai konsekuensi permanen yang tercatat, bukan
+sesuatu yang bisa dibereskan dengan mengedit berkas.
+
+**README**: ditulis ulang untuk pembaca luar (157 baris): apa itu KRAN dan untuk siapa, sejauh mana
+(Fase 0, belum ada pilot/UAT, tidak mengklaim kepatuhan apa pun), arsitektur + alasan tiap aturan, peta
+direktori, penegak mekanis, perintah `./task` yang benar-benar ada, alur git, lisensi, dan bacaan
+lanjutan. Tidak ada detail infra baru yang masuk; angka snapshot diberi tanggal dan batas maknanya.
+
+Bukti: `./task ci` hijau (486 `[OK]`, Playwright 34/34, axe 23 lulus, exit 0) dan `./task check` hijau
+pada pohon final.

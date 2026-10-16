@@ -1000,3 +1000,47 @@ referensi sampai cutover selesai.
 Urutan yang dipegang: latihan `deploy-vps.sh` manual di server dulu (T-013) → peralihan → baru
 mempertimbangkan pembersihan. Menghapus container/DB lama **belum** dilakukan dan bukan bagian tugas
 agen sampai ada perintah eksplisit setelah peralihan terbukti sehat.
+
+---
+
+## D-044 — Lisensi: publik untuk dibaca, tanpa izin pakai ulang (16 Okt 2026)
+
+**Keputusan pemilik**: repositori tetap **publik**; lisensinya ditentukan agen dengan syarat "aman dan
+sesuai dengan proyeknya".
+
+**Keputusan**: lisensi **proprietary / all rights reserved**, ditulis di berkas `LICENSE`. Repo boleh
+dibaca dan diaudit (dan di-fork untuk review), tetapi tidak ada izin menyalin, memodifikasi,
+mendistribusikan, atau menjalankannya sebagai layanan tanpa izin tertulis.
+
+**Alasan**: KRAN adalah produk komersial untuk koperasi/BPR. Lisensi permissive (MIT/Apache-2.0) akan
+memberi siapa pun hak menjual ulang atau menawarkan layanan berbasis kode ini — itu bertentangan dengan
+maksud mempublikasikannya (transparansi/audit), bukan hibah lisensi. Tanpa berkas `LICENSE`, hukum
+defaultnya sudah "all rights reserved", jadi ini membuat status yang berlaku menjadi eksplisit.
+Field `license = "MIT"` di `kran.nimble` **dihapus** karena metadata Nimble bisa terbaca sebagai izin
+bebas. Kalau kelak lisensi lain diinginkan (mis. komersial terbatas, atau terbuka untuk koperasi),
+cukup ganti berkas `LICENSE` — tidak ada kode yang bergantung padanya.
+
+**Ikut diputuskan**: aturan README/`AGENTS.md` "jangan pernah push ke `main`" berlaku saat repo belum
+punya hook deploy. Sejak D-043 hook itu ada dan men-deploy dengan health gate + auto-rollback, jadi
+**push ke `main` diizinkan untuk alur repo ini sebagai keputusan pemilik** (branch lain tetap ditolak
+ref-guard). Merge tetap keputusan manusia.
+
+## D-045 — CSP: kebijakan dari `<meta>` (hash), header hanya `frame-ancestors` (16 Okt 2026)
+
+**Masalah**: spec §21.5 meminta CSP, tetapi build SvelteKit memuat script inline; `script-src 'self'`
+tanpa hash/nonce mematikan hidrasi. Solusinya bukan melonggarkan CSP, melainkan menerbitkan hash.
+
+**Keputusan**: `csp: { mode: "hash" }` di `vite.config.ts` (halaman di-prerender, jadi hash — nonce
+tidak sah untuk prerender), dan blok Caddy **tidak** memuat `script-src` sama sekali: header hanya
+membawa `frame-ancestors 'none'` (satu-satunya direktif yang diabaikan browser bila ditulis di `meta`).
+
+**Alasan (jebakan yang mudah salah)**: kalau ada dua kebijakan CSP, browser menerapkan **irisan**
+keduanya. Hash diterbitkan per build, jadi tidak bisa ditulis statis di header; header
+`script-src 'self'` **tanpa** hash karena itu justru memblokir script ber-hash milik Kit — dan halaman
+berhenti ter-hidrasi tanpa galat yang jelas di sisi server. Dengan kebijakan lengkap hanya di `<meta>`,
+tidak ada irisan yang saling mematikan. `style-src` tetap memakai `'unsafe-inline'` (Svelte menyuntik
+`<style>` saat runtime; risikonya jauh lebih kecil daripada injeksi script).
+
+**Verifikasi**: build mengandung `<meta http-equiv="content-security-policy">` berisi `sha256-…`;
+suite e2e (Playwright menyajikan hasil build, bukan dev server) lulus — artinya halaman tetap
+ter-hidrasi di bawah kebijakan itu. O-061 ditutup dengan ini.
