@@ -1,0 +1,16 @@
+# Konteks build API = ROOT repo (lihat apps/api/Dockerfile). Yang dibuang di sini bukan sekadar
+# kerapian: tanpa berkas ini, konteksnya ~500 MB (node_modules 401 MB + .build 79 MB) sehingga setiap
+# deploy mengirim salinan besar ke podman untuk build yang hanya butuh sumber Nim.
+.git
+.github
+.build
+.local
+.opencode
+docs
+test-results
+node_modules
+**/node_modules
+apps/web/build
+apps/web/.svelte-kit
+packages/*/dist
+*.log
