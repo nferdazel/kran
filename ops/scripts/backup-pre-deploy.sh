@@ -26,9 +26,20 @@ podman exec "$PG_CONTAINER" pg_dump -U "$PG_SUPERUSER" -Fc "$DB_NAME" > "$out"
 
 size="$(wc -c < "$out" | tr -d ' ')"
 if [ "$size" -lt 10000 ]; then
-  echo "ERROR: dump hanya $size byte — hampir pasti gagal" >&2
-  rm -f "$out"
-  exit 1
+  # Dump kecil itu **wajar** kalau DB-nya memang masih kosong (deploy pertama ke DB baru) — dan itu
+  # kejadian nyata di D-043/T-045: guard ini sempat membatalkan deploy pertama padahal dumpnya benar
+  # (874 byte, DB tanpa tabel). Jadi ukurannya dinilai bersama jumlah tabel, bukan sendirian.
+  objects="$(podman exec "$PG_CONTAINER" psql -U "$PG_SUPERUSER" -d "$DB_NAME" -Atc \
+    "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where c.relkind in ('r','p') and n.nspname not in ('pg_catalog','information_schema')" \
+    | tr -d ' ')"
+  if [ "${objects:-0}" -eq 0 ]; then
+    echo "==> catatan: $DB_NAME masih kosong (0 tabel) — dump $size byte itu wajar untuk deploy pertama"
+  else
+    echo "ERROR: dump hanya $size byte padahal $DB_NAME punya $objects tabel — hampir pasti gagal" >&2
+    rm -f "$out"
+    exit 1
+  fi
 fi
 
 if ! podman exec -i "$PG_CONTAINER" pg_restore --list < "$out" >/dev/null 2>&1; then
