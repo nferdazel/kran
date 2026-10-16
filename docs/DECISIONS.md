@@ -1099,3 +1099,20 @@ rekomendasi agen disetujui, dengan dua koreksi dan satu perubahan rencana.
     dua sifat non-publiknya di D-037). ADR tanpa keputusan hanya membingungkan.
 
 Butir 7–9, 11–12 menjadi task T-051/T-053/T-046; butir 10 sengaja terakhir.
+
+---
+
+## D-047 — Nilai kandidat parameter hanya untuk scope yang boleh dilihat pengaju (O-044)
+
+**Keputusan pemilik (16 Okt 2026)**: menyetujui rekomendasi agen — pengaju hanya boleh mengusulkan
+nilai untuk scope yang **dia sendiri boleh baca**. Aturannya sama dengan yang dipakai untuk visibilitas
+pembacaan parameter (O-032, D-046 butir 7), sehingga tidak ada dua aturan berbeda antara membaca dan
+mengusulkan.
+
+**Alasan**: tanpa itu, pengaju bisa menanam nilai pada scope yang tidak terlihat olehnya (mis. cabang
+lain) dan akibatnya baru muncul sebagai "nilai yang berlaku dari mana?" — jenis kekacauan yang sudah
+berulang di register ini (O-012/O-044/O-056). Satu aturan untuk baca dan tulis jauh lebih mudah
+diaudit daripada dua.
+
+**Pelaksanaan**: masuk T-051 bersama O-032/O-043/O-050/O-052; uji izinnya harus mencakup sisi
+pengajuan, bukan hanya pembacaan.
