@@ -60,10 +60,11 @@ proc freePort(): int =
   result = int(socket.getLocalAddr()[1])
   socket.close()
 
-proc startServer(service: EventService): int =
+proc startServer(service: EventService; readiness: ReadinessProbe = nil): int =
   let port = freePort()
   let server = newApiServer(AppContext(version: "itapi-ws-0.0.0", role: "api",
-                                       startedAt: epochTime(), events: service))
+                                       startedAt: epochTime(), events: service,
+                                       readiness: readiness))
   createThread(serverThread, serveInThread, ServeArgs(server: server, port: port))
   port
 
@@ -86,7 +87,7 @@ proc denyOpen(identity: string): bool {.gcsafe.} =
   discard identity
   false
 
-proc denyTopics(identity: string, requested: seq[string]): seq[string] {.gcsafe.} =
+proc denyTopics(identity: string; requested: seq[string]): seq[string] {.gcsafe.} =
   discard identity
   discard requested
   @[]
@@ -94,7 +95,7 @@ proc denyTopics(identity: string, requested: seq[string]): seq[string] {.gcsafe.
 proc allowOpen(identity: string): bool {.gcsafe.} =
   identity.len > 0
 
-proc allowTopics(identity: string, requested: seq[string]): seq[string] {.gcsafe.} =
+proc allowTopics(identity: string; requested: seq[string]): seq[string] {.gcsafe.} =
   discard identity
   requested
 
@@ -113,12 +114,12 @@ proc gatedSession(identity: string): bool {.gcsafe.} =
 ## Izin topik yang bisa "dicabut" dari test (O-046): sesi tetap sah, hanya izinnya hilang.
 var izinTopikMasihAda: Atomic[bool]
 izinTopikMasihAda.store(true)
-proc gatedTopics(identity: string, requested: seq[string]): seq[string] {.gcsafe.} =
+proc gatedTopics(identity: string; requested: seq[string]): seq[string] {.gcsafe.} =
   discard identity
   if izinTopikMasihAda.load():
     result = requested
 
-proc paramTopicsOnly(identity: string, requested: seq[string]): seq[string] {.gcsafe.} =
+proc paramTopicsOnly(identity: string; requested: seq[string]): seq[string] {.gcsafe.} =
   discard identity
   for topic in requested:
     if topic == "param.changed":
@@ -189,7 +190,7 @@ const stressClients = 8
 proc uniqueTopic(): string =
   "test.realtime." & $epochTime() & "." & $rand(1_000_000)
 
-proc appendTestEvent(eventType: string, payload: JsonNode): string =
+proc appendTestEvent(eventType: string; payload: JsonNode): string =
   ## Menulis satu peristiwa outbox dan mengembalikan idnya (resume token-nya).
   let event = newOutboxEvent(sysClock, eventType, "test", eventType, payload,
                              eventType & ":itapi_ws:" & $epochTime() & ":" & $rand(1_000_000))
@@ -210,7 +211,7 @@ proc assertEventEnvelope(frame: JsonNode) =
   for problem in problems:
     checkpoint problem
 
-proc assertProblem(status: int, body: JsonNode, expectedCode: string) =
+proc assertProblem(status: int; body: JsonNode; expectedCode: string) =
   let problems = contract.validateValue(
     contract.responseSchema(EventsPath, "GET", $status, "application/problem+json"), body, "$")
   check problems.len == 0
@@ -524,3 +525,116 @@ suite "realtime: sesi berakhir setelah handshake (O-036)":
     # Kembalikan keadaan supaya test lain (bila ada) tidak terpengaruh.
     sessionMasihSah.store(true)
     client.close()
+
+# ---------------------------------------------------------------------------------------------
+# Readiness `/readyz`: migrasi + lag outbox (O-019)
+# ---------------------------------------------------------------------------------------------
+
+proc pendingMigrationRoot(caseName: string): string =
+  ## Akar repo palsu berisi satu migrasi **expand** yang tidak ada di `platform.schema_migration`
+  ## → probe migrasi harus melihatnya sebagai tertunda.
+  result = ".build/itapi-ws-" & caseName
+  if dirExists(result):
+    removeDir(result)
+  createDir(result / "modules" / "hello" / "migrations")
+  writeFile(result / "modules" / "hello" / "migrations" / "0001_fake.sql", "SELECT 1;\n")
+
+proc readyzOf(port: int): tuple[code: int; body: JsonNode] =
+  let client = newHttpClient(timeout = 5000)
+  defer: client.close()
+  let response = client.get("http://127.0.0.1:" & $port & "/readyz")
+  result.code = response.code.int
+  result.body = parseJson(response.body)
+
+suite "readyz: migrasi & lag outbox (O-019)":
+  test "migrasi terpasang sesuai repo -> probe ok":
+    let probe = migrationProbe(dbPool, ".")
+    check probe().len == 1
+    check probe()[0].name == "migrations"
+    check probe()[0].status == csOk
+
+  test "migrasi expand tertunda -> probe failed":
+    let root = pendingMigrationRoot("mig-pending")
+    defer: removeDir(root)
+    let probe = migrationProbe(dbPool, root)
+    check probe().len == 1
+    check probe()[0].status == csFailed
+    check probe()[0].detail.contains("hello/0001_fake")
+
+  test "akar migrasi tidak tersedia -> probe ok + detail eksplisit":
+    let probe = migrationProbe(dbPool, ".build/itapi-ws-akar-tidak-ada")
+    check probe().len == 1
+    check probe()[0].status == csOk
+    check probe()[0].detail.len > 0
+
+  test "/readyz: migrasi expand tertunda -> 503; bersih -> 200":
+    let root = pendingMigrationRoot("mig-http")
+    defer: removeDir(root)
+
+    let portBad = startServer(nil, migrationProbe(dbPool, root))
+    waitUntilServing(portBad)
+    let bad = readyzOf(portBad)
+    check bad.code == 503
+    check bad.body["status"].getStr() == "degraded"
+    var foundFailed = false
+    for checkItem in bad.body["checks"]:
+      if checkItem["name"].getStr() == "migrations":
+        foundFailed = true
+        check checkItem["status"].getStr() == "failed"
+    check foundFailed
+
+    let portOk = startServer(nil, migrationProbe(dbPool, "."))
+    waitUntilServing(portOk)
+    let ok = readyzOf(portOk)
+    check ok.code == 200
+    check ok.body["status"].getStr() == "ok"
+
+  test "lag outbox di bawah ambang -> probe ok (pump hidup)":
+    let probe = pumpLagProbe(mainService, dbPool)
+    check probe().len == 1
+    check probe()[0].name == "outbox"
+    check probe()[0].status == csOk
+
+  test "lag outbox: pump macet + peristiwa tertua lewat ambang -> /readyz 503":
+    # Konsumen macet ditiru secara deterministik: pump dinyalakan (menetapkan kursor ke titik mulai),
+    # lalu **dihentikan** sebelum peristiwa tertua ditulis — jadi lag benar-benar terukur, tanpa
+    # bergantung pada balapan waktu antara tulis dan putaran pump.
+    #
+    # Uji ini sengaja **terakhir** di suite: ia menulis lalu menghapus baris outbox, dan baris yang
+    # dihapus bisa jadi kursor pump yang sedang hidup. `oldestUndeliveredSeconds` memperlakukan token
+    # tak dikenal sebagai "dari awal" (sama seperti `fetchAfter`), jadi uji probe sehat harus
+    # berjalan sebelum baris mana pun dihapus.
+    let baseId = newId(sysClock)
+    db.exec(sql"""INSERT INTO platform.outbox
+                    (outbox_id, event_type, aggregate_type, aggregate_id, payload, dedup_key)
+                  VALUES (?, 'test.lag.base', 'test', 'x', '{}'::jsonb, ?)""",
+            $baseId, "itapi-lag-base-" & $baseId)
+    let svc = newEventService(TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics,
+                                          sessionValid: allowSession), dbPool)
+    startPump(svc)
+    waitForPump(svc)
+    check svc.pumpCursor().len > 0
+    svc.stopPump()
+    let stopDeadline = epochTime() + 5.0
+    while epochTime() < stopDeadline and svc.pumpReady():
+      sleep(20)
+    # Beri jeda supaya putaran pump terakhir benar-benar selesai membaca sebelum peristiwa ditulis.
+    sleep(50)
+
+    let oldId = newId(sysClock)
+    try:
+      db.exec(sql"""INSERT INTO platform.outbox
+                      (outbox_id, occurred_at, event_type, aggregate_type, aggregate_id, payload,
+                       dedup_key)
+                    VALUES (?, now() - interval '2 minutes', 'test.lag.old', 'test', 'x',
+                            '{}'::jsonb, ?)""",
+              $oldId, "itapi-lag-old-" & $oldId)
+      let port = startServer(nil, pumpLagProbe(svc, dbPool, thresholdSeconds = 30))
+      waitUntilServing(port)
+      let resp = readyzOf(port)
+      check resp.code == 503
+      check resp.body["status"].getStr() == "degraded"
+      check resp.body["checks"][0]["name"].getStr() == "outbox"
+      check resp.body["checks"][0]["status"].getStr() == "failed"
+    finally:
+      db.exec(sql"DELETE FROM platform.outbox WHERE outbox_id IN (?, ?)", $baseId, $oldId)

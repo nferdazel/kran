@@ -477,9 +477,17 @@ proc main() =
     discard logger.info("realtime hub aktif",
       [("policy", "sesi cookie + izin per topik (T-012)")])
 
-  # Readiness = dependensi bootstrap (DB) + realtime (O-029): pump yang mati berlarut harus terlihat
-  # dari `/readyz`, tetapi penyambungan ulang sekejap tidak boleh mencabut instance dari trafik.
-  app.readiness = combineProbes(@[databaseProbe(), realtimeProbe(app.events), drainProbe()])
+  # Readiness = dependensi bootstrap (DB) + skema (O-019) + realtime (O-029) + lag outbox (O-019):
+  # pump yang mati berlarut harus terlihat dari `/readyz`, tetapi penyambungan ulang sekejap tidak
+  # boleh mencabut instance dari trafik. `opts.root` = akar repo untuk membaca daftar migrasi
+  # (default "."; di produksi diarahkan unit systemd ke checkout monorepo).
+  app.readiness = combineProbes(@[
+    databaseProbe(),
+    migrationProbe(app.pool, opts.root),
+    realtimeProbe(app.events),
+    pumpLagProbe(app.events, app.pool),
+    drainProbe(),
+  ])
 
   # Berhenti bersih (O-025): tanpa ini SIGTERM mematikan proses sebagai sinyal (kode 143) tanpa
   # jalur penutupan apa pun; dengan ini pump dihentikan dan proses keluar kode 0.

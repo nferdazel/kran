@@ -1,7 +1,16 @@
 ## Pemeriksaan kesiapan (readiness) yang dipakai `/readyz` — spec §21.4 #11.
 ##
 ## Dipisah dari `main.nim` supaya bisa diuji (`apps/api/tests/itapi.nim`) tanpa menjalankan CLI.
-## Yang diperiksa hanya dependensi bootstrap (DB): nilai bisnis tetap dari parameter DB.
+## Yang diperiksa: dependensi bootstrap (DB), kesesuaian skema (O-019), kesehatan pump realtime
+## (O-029), lag outbox terhadap pump (O-019), dan status drain (T-032). Tidak ada nilai bisnis di sini
+## — ambang yang dipakai bersifat teknis dan diberi komentar.
+
+import std/strutils
+
+import db_connector/db_postgres
+
+import dbtools/lib
+import platform/infrastructure/outbox_repo
 
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
@@ -16,6 +25,13 @@ const
   ## sekejap (mis. DB restart) dipulihkan lewat penyambungan ulang (T-029) dalam hitungan
   ## milidetik–detik; mencabut instance dari trafik untuk itu justru merugikan.
   pumpReadyGraceSeconds* = 30
+
+  ## Ambang lag outbox (detik): usia peristiwa outbox tertua yang belum diproses pump sebelum
+  ## readiness dianggap gagal (O-019). Nilai **teknis**, mengikuti pola `pumpReadyGraceSeconds`:
+  ## pump memutar setiap `pumpPollMs` (250 ms), jadi peristiwa sehat selesai jauh di bawah ambang
+  ## ini. Nilainya sengaja **bukan** parameter DB — `/readyz` adalah gate deploy dan harus tetap
+  ## jalan walau nilai parameter belum/ tidak tersedia.
+  pumpLagSeconds* = 30
 
 proc realtimeCheck*(pumping: bool; ready: bool; degradedSeconds, graceSeconds: int):
     ReadinessCheck =
@@ -76,3 +92,75 @@ proc databaseProbe*(): ReadinessProbe =
       @[ReadinessCheck(name: "database", status: csOk)]
     except CatchableError as e:
       @[ReadinessCheck(name: "database", status: csFailed, detail: e.msg)]
+
+proc migrationCheck*(pendingExpand: seq[string]; verifiable: bool): ReadinessCheck =
+  ## Keputusan readiness migrasi (O-019). Dipisah dari I/O supaya bisa diuji deterministik
+  ## (pola `realtimeCheck`).
+  ##
+  ## `verifiable = false` (akar repo tidak terbaca) **bukan** kegagalan: `/readyz` dipakai health
+  ## gate deploy **dengan auto-rollback**, dan akar migrasi yang tidak dikonfigurasi akan membuat
+  ## setiap deploy mundur tanpa henti. Keadaannya tetap terlihat eksplisit di `detail`, bukan
+  ## disembunyikan sebagai "ok" polos. Migrasi **expand** yang benar-benar tertunda tetap `csFailed`.
+  if not verifiable:
+    ReadinessCheck(name: "migrations", status: csOk,
+                   detail: "akar migrasi tidak tersedia; skema tidak diverifikasi")
+  elif pendingExpand.len > 0:
+    ReadinessCheck(name: "migrations", status: csFailed,
+                   detail: "migrasi expand tertunda: " & pendingExpand.join(", "))
+  else:
+    ReadinessCheck(name: "migrations", status: csOk)
+
+proc pumpLagCheck*(lagSeconds, thresholdSeconds: int): ReadinessCheck =
+  ## Keputusan readiness lag outbox: usia (detik) peristiwa outbox tertua yang belum diproses pump.
+  if lagSeconds <= thresholdSeconds:
+    ReadinessCheck(name: "outbox", status: csOk)
+  else:
+    ReadinessCheck(name: "outbox", status: csFailed,
+                   detail: "peristiwa outbox tertua belum diproses " & $lagSeconds & " detik")
+
+proc migrationProbe*(pool: DbPool; root: string): ReadinessProbe =
+  ## Readiness migrasi (O-019, spec §21.4 #11): basis data harus sudah menerapkan seluruh migrasi
+  ## **expand** repo. Contract/destructive tidak dihitung — sama seperti `--check` (D-040). Jalur ini
+  ## sengaja memakai `appliedMigrationIds` (satu query, tanpa checksum) supaya gate deploy yang
+  ## memanggil `/readyz` berulang kali tetap cepat.
+  result = proc(): seq[ReadinessCheck] {.gcsafe.} =
+    if pool.isNil:
+      # Tidak ada DB: `databaseProbe` yang melaporkannya; jangan gagal dua kali.
+      return @[migrationCheck(@[], verifiable = false)]
+    var migra: seq[Migration]
+    try:
+      migra = migrationsOf(root)
+    except CatchableError:
+      migra = @[]
+    if migra.len == 0:
+      return @[migrationCheck(@[], verifiable = false)]
+    try:
+      let applied = withDbConn(pool, proc(db: DbConn): seq[string] {.gcsafe.} =
+        dbCalls:
+          appliedMigrationIds(db))
+      @[migrationCheck(pendingExpand(migra, applied), verifiable = true)]
+    except CatchableError as e:
+      # DB tidak terjangkau: urusan `databaseProbe`; di sini jangan menambah kegagalan.
+      @[ReadinessCheck(name: "migrations", status: csOk,
+                       detail: "tidak dapat diperiksa: " & e.msg)]
+
+proc pumpLagProbe*(svc: EventService; pool: DbPool;
+                   thresholdSeconds = pumpLagSeconds): ReadinessProbe =
+  ## Readiness lag outbox (O-019): seberapa jauh konsumen in-process (pump realtime) tertinggal.
+  ##
+  ## Tanpa kursor (pump belum menetapkan titik mulai) tidak ada yang diperiksa — pump yang belum
+  ## siap sudah ditangani `realtimeProbe`; di sini jangan mengukur dari nol yang bisa salah.
+  result = proc(): seq[ReadinessCheck] {.gcsafe.} =
+    if svc.isNil or pool.isNil:
+      return @[]
+    let cursor = svc.pumpCursor()
+    if cursor.len == 0:
+      return @[]
+    try:
+      let lag = withDbConn(pool, proc(db: DbConn): int64 {.gcsafe.} =
+        dbCalls:
+          oldestUndeliveredSeconds(db, cursor))
+      @[pumpLagCheck(int(lag), thresholdSeconds)]
+    except CatchableError as e:
+      @[ReadinessCheck(name: "outbox", status: csOk,
+                       detail: "tidak dapat diperiksa: " & e.msg)]

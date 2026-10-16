@@ -436,6 +436,16 @@ proc migrationTableExists*(db: DbConn): bool =
   ## deploy T-045, 16 Okt 2026).
   db.getValue(sql"SELECT to_regclass('platform.schema_migration')") != ""
 
+proc appliedMigrationIds*(db: DbConn): seq[string] =
+  ## Id migrasi yang sudah diterapkan, satu query **tanpa** menghitung checksum. Jalur readiness
+  ## (`/readyz`, O-019) memakainya supaya pemeriksaan skema tidak melakukan satu digest per migrasi
+  ## pada setiap panggilan gate deploy. DB baru (tabel riwayat belum ada) → daftar kosong, bukan
+  ## galat: seluruh migrasi belum diterapkan, dan `pendingExpand` melaporkannya begitu.
+  if not migrationTableExists(db):
+    return @[]
+  for row in db.getAllRows(sql"SELECT migration_id FROM platform.schema_migration"):
+    result.add row[0]
+
 proc reportStatus*(db: DbConn, root: string): seq[MigrationStatus] =
   let migra = migrationsOf(root)
   var known = initTable[string, string]()
