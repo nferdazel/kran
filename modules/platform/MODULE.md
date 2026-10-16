@@ -94,7 +94,10 @@ Invarian tambahan:
 7. **Semua aktivasi butuh orang kedua** (`checker <> maker`, ditegakkan skema). Aktivasi menulis
    audit + event `ParamChanged` ke outbox + `NOTIFY platform_param_changed`.
 8. **Tidak ada fallback**: key tanpa nilai berlaku → pemanggil melempar `ParamNotFound`
-   (spec §10.6). Jangan menambahkan default di kode.
+   (spec §10.6). Jangan menambahkan default di kode. Startup check (`missingActiveKeys`, O-057)
+   memakai jalur `resolveCandidate` + `lookupFor` yang **sama** dengan pembacaan runtime, jadi
+   "aktif" di sini berarti "terlihat resolusi" — `GLOBAL` selalu terlihat, tetapi `scopeId` kosong
+   bukan wildcard (kandidat ber-id konkret tidak menggantikan).
 9. **Lookup scope bertipe eksplisit** (D-041): `ScopeValueLookup` mengembalikan `Option[string]` —
    `some(id)` berarti tipe itu diminta, dan `some("")` **sah** (institusi akar, `scope_id` NULL);
    `none` berarti tidak diminta. Id kosong bukan wildcard, dan tidak ada fallback antar level.

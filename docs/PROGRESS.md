@@ -760,3 +760,41 @@ Tindakan: `O-036` ditutup di `docs/OPEN_ITEMS.md`, `T-047` → DONE dan `T-043` 
 `docs/BACKLOG.md`. Rencana + bukti: `docs/tasks/T-047.md`. Sisa jujur: jendela ≤ 5 detik sebelum soket
 ditutup, dan biaya satu resolusi principal per klien per interval (keduanya tercatat di D-030/O-046).
 Tidak ada test/gate yang dilonggarkan.
+
+## Pasca-M0 — T-048 (O-057) DONE & T-049 (O-035) register basi (16 Okt 2026)
+
+**T-048 (O-057): satu definisi "aktif".** `missingActiveKeys` (startup check) memakai aturan lebih
+longgar daripada resolusi: `scopeId.len == 0` diperlakukan sebagai wildcard, sehingga kandidat
+`INSTITUTION:<id apa pun>` sudah dianggap memenuhi padahal `resolveCandidate` menuntut id yang sama.
+Sekarang fungsinya memakai **jalur yang sama** dengan pembacaan runtime
+(`resolveCandidate(candidatesOf(...), lookupFor(ScopeRef(...)))`) — satu sumber kebenaran, bukan
+logika salinan.
+
+Temuan recon yang mengubah bingkai masalah: `resolveCandidate` (`domain/param.nim:67`) **selalu**
+mencocokkan `GLOBAL`, jadi "GLOBAL selalu memenuhi" **bukan** kelonggaran melainkan perilaku resolusi
+yang memang begitu; yang tidak konsisten hanya wildcard `scopeId` kosong. Karena itu penyelarasan ini
+**tidak** membuat `GLOBAL` berhenti dianggap cukup. Fakta tambahan (penting untuk kekhawatiran
+startup): `missingActiveKeys` **belum** dipanggil jalur start biner — grep seluruh repo hanya menemukan
+pemakaian di `itparam.nim`, dan `main.nim` tidak memanggilnya — jadi perubahan ini tidak bisa membuat
+deploy sehat sekarang menolak start (8 nilai tersemai semuanya `GLOBAL`/NULL, dan `GLOBAL` tetap
+memenuhi).
+
+Bukti: suite baru `itparam` "param: startup check = visibilitas resolusi (O-057)" dengan 2 uji. Yang
+membedakan aturan lama vs baru: nilai hanya di `INSTITUTION:<id konkret>` sementara pemanggil institusi
+akar → resolusi `none`, startup check melaporkan hilang. Diuji dengan fungsi **lama** dikembalikan
+sementara: `./task test itparam` **GAGAL** tepat di uji itu (uji `GLOBAL` tetap `[OK]`); setelah
+implementasi baru dipulihkan, keduanya `[OK]`. `./task check` hijau; `./task test` **488 `[OK]`, 0
+`[FAILED]`** (naik dari 486); `./task ci` **hijau** (e2e 23 lulus / 24.2 dtk, axe 2 tema × 2 locale).
+
+**T-049 (O-035): register basi, tanpa kode.** Semua kasus yang disebut O-035 (tanggal non-ISO,
+tanggal tak ada di kalender, `scopeId` pada `GLOBAL`, kombinasi/scope tak dikenal, `paramValueId`
+non-uuid) ternyata sudah tertutup sejak **T-022** — validasi di `handlers_param.nim:114`/`http_util.nim`
+`isIsoDate`/`parseId` **sebelum** `withDbTx`, teruji di `itapi_auth.nim:437` (7 kasus → 400 +
+`problem+json`) dan `:466` (non-uuid → 404). Pola yang sama seperti O-036/T-047 (baris backlog
+tertinggal `READY`). Tidak ada kasus yang masih 500, jadi tidak ada kode/test baru dan tidak ada baris
+backlog turunan.
+
+Tindakan: `O-057` dan `O-035` ditutup di `docs/OPEN_ITEMS.md`; `T-048`/`T-049` → DONE di
+`docs/BACKLOG.md`; rencana + bukti di `docs/tasks/T-048.md` dan `docs/tasks/T-049.md`. Sisa jujur:
+`missingActiveKeys` belum tersambung ke start biner; resolusi masih di `infrastructure` (D-034 butir 4
+/ T-016). Tidak ada test/gate yang dilonggarkan.
