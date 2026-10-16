@@ -644,3 +644,39 @@ masuk.
   hijau 482 `[OK]`, 0 gagal; seluruh 8 nilai tersemai ber-scope `GLOBAL`/NULL, jadi tak ada nilai berlaku
   yang berpindah. Keputusan D-041 + D-042; sisa temuan dicatat sebagai O-057 (startup check lebih longgar
   dari resolusi). Ditandai **HUMAN-REVIEW-REQUIRED** (menyentuh nilai parameter kebijakan sesi).
+
+## T-045/T-036 lanjutan — repo publik, CI GitHub, latihan deploy, peralihan domain (16 Okt 2026) SELESAI
+
+Tiga hal yang belum pernah benar-benar dijalankan akhirnya dijalankan, dan ketiganya langsung
+menemukan masalah yang tidak bisa dilihat gate lokal.
+
+**CI GitHub.** Run pertama: job `Nim` dan `Security (gitleaks)` hijau, job `Web` gagal di
+`pnpm exec playwright install --with-deps chromium` (`Command "playwright" not found`) — `playwright`
+adalah devDependency `apps/web`, sedangkan `pnpm exec` dijalankan dari root. Sekarang lewat filternya
+(`pnpm --filter @kran/web exec`); tiga run berikutnya hijau.
+
+**Audit repo publik** (diminta pemilik, dijalankan agen review terpisah): tidak ada rahasia, private key,
+DSN ber-kredensial, `.env`, data nyata, atau PII di working tree maupun seluruh riwayat; tidak ada kode
+vendor pihak ketiga. Yang dilaporkan: IP VPS + user SSH ada di **71 commit** riwayat (dari default
+`tools/devdb.sh` yang kini diwajibkan lewat env), detail infra produksi, tidak ada berkas LICENSE
+(`kran.nimble` menyebut MIT — keputusan pemilik), dan guard seed dev hanya berupa flag `--dev`. Dicatat
+sebagai O-058 (+ O-059 lock dependensi, O-060 worker, O-061 CSP).
+
+**Latihan deploy (T-045).** Delapan kegagalan nyata berturut-turut di server, semuanya sudah diperbaiki
+dan di-push: (1) host Rocky 9 tidak punya `libpq` sementara biner dibangun di image Debian → lib
+di-*vendor* dari image ke `$APP_DIR/lib`; (2) deteksi perubahan memakai daftar satu-baris padahal
+grep-nya `^`-anchored → build API dilewati, dan `tools/` tidak dianggap pemicu rebuild; (3)
+`reportStatus` gagal di DB kosong (tabel riwayatnya belum ada) → sekarang read-only dan tahan, dengan uji
+pembeda di `itplatform`; (4) gate migrasi menganggap "tertunda" sebagai kegagalan → sekarang hanya drift
+yang membatalkan; (5) `pgcrypto` perlu ada sebelum checksum pertama dihitung → masuk `bootstrapSql`;
+(6) ambang ukuran dump menolak dump kecil yang sah → dinilai dari isi; (7) jalur hook tidak mewarisi env
+aplikasi → skrip deploy memuat env sendiri; (8) unit tidak meneruskan `--port`/`--address` padahal biner
+tidak membaca `KRAN_PORT` → app memakai 8080 yang sudah dipakai container lain.
+
+**Peralihan (D-043).** `kran-api` memegang `127.0.0.1:8095` dan `cbs.qouver.com` melayani KRAN:
+`/` = 200, `/login` = 200, `/_app/version.json` = 200, `/api/v1/auth/session` = 401 bergaya KRAN, dengan
+HSTS/nosniff/X-Frame-Options/Referrer-Policy/CSP. Container lama berhenti dan unit quadlet-nya di-`mask`
+(berkas `.container`, `/srv/qouver/apps/cbs`, dan DB `cbs`/`cbs_verify*` tidak disentuh; rollback =
+`unmask` + `start` + kembalikan upstream Caddy ke 3005). Penyebab 403/404 pertama hanyalah label SELinux
+`var_t`: `restorecon` yang dijalankan sebagai root sebelum aturan `semanage fcontext` ada justru
+mengembalikan label ke default — sekarang aturannya permanen (`httpd_sys_content_t`).

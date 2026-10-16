@@ -25,6 +25,10 @@ EnvironmentFile=/srv/qouver/apps/kran/env/kran-prod.env
 Environment=LD_LIBRARY_PATH=/srv/qouver/apps/kran/lib
 ExecStart=/srv/qouver/apps/kran/bin/kran-api --role=worker
 Restart=always
+# Peran `worker` belum diimplementasi dan biner sengaja keluar dengan status 3 ("dikenali tetapi
+# ditolak pada keadaan itu", lihat O-060). Tanpa baris ini systemd mengulang start tiap 3 detik dan
+# membanjiri jurnal — sinyal "belum ada" itu sendiri benar, jadi jangan diartikan sebagai crash.
+RestartPreventExitStatus=3
 RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true

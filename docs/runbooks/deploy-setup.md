@@ -90,7 +90,10 @@ Verifikasi tanpa memicu deploy: `gh api repos/nferdazel/kran/hooks` untuk meliha
 Salin dari `ops/env/kran-prod.env.example` ke `/srv/qouver/apps/kran/env/kran-prod.env`, isi nilai
 nyata. Variabel yang dibaca kode: `KRAN_DATABASE_URL`, `KRAN_DB_POOL_SIZE`,
 `KRAN_DB_ACQUIRE_TIMEOUT_MS`, `KRAN_DB_STATEMENT_TIMEOUT_MS`, `KRAN_DB_VALIDATE_ON_ACQUIRE`,
-`KRAN_APP_NAME`. Variabel untuk skrip deploy: `KRAN_GIT_URL`, `KRAN_APP_DIR`, `KRAN_HEALTH_URL`.
+`KRAN_APP_NAME`. Variabel untuk skrip deploy: `KRAN_GIT_URL`, `KRAN_APP_DIR`, `KRAN_HEALTH_URL`,
+`KRAN_ENV_FILE` (opsional, default `$KRAN_APP_DIR/env/kran-prod.env`).
+**`KRAN_PORT` dan `KRAN_BIND_HOST` wajib ada**: biner tidak membacanya sendiri, unit systemd yang
+meneruskannya ke flag `--port`/`--address` (lihat T-045 temuan 8).
 **Tidak ada nilai bisnis di sini** — semuanya dari parameter DB (spec §10).
 
 ## D. Fakta server (recon read-only, 15 Okt 2026)
@@ -129,3 +132,50 @@ unit kita saat peralihan (keputusan pemilik 16 Okt 2026, D-043: replace di tempa
 3. Latihan `deploy-vps.sh` manual di server (T-013): health gate `/readyz` lulus dan `.deployed_rev`
    terisi.
 4. Baru setelah itu merge ke `main` — dan itu tetap keputusan manusia (AGENTS.md §3).
+
+## F. Peralihan ke KRAN — yang benar-benar dilakukan (16 Okt 2026, D-043)
+
+Dijalankan di server, urutannya sengaja begini supaya domain tidak pernah mati lebih lama dari
+pergantian blok Caddy. Sebelum ini KRAN berlatih di `8098`; port itu hanya sementara.
+
+```
+# 1. Bebaskan 8095 dari sistem lama. Stack lama dikelola **quadlet systemd**, bukan podman polos:
+#    `systemctl --user stop cbs-api` — `podman stop` saja akan dihidupkan kembali unitnya.
+systemctl --user stop cbs-api
+# 2. KRAN pindah ke port final: KRAN_PORT=8095 di env, lalu restart unit.
+systemctl --user restart kran-api        # /readyz di 8095 harus 200 sebelum lanjut
+# 3. Blok Caddy: ganti `cbs.qouver.com` dengan blok A `ops/caddy/Caddyfile.kran.example`,
+#    lalu (sekali saja) atur label SELinux untuk akar web:
+semanage fcontext -a -t httpd_sys_content_t "/srv/qouver/apps/kran/web(/.*)?"
+restorecon -RF /srv/qouver/apps/kran/web
+caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy
+# 4. Verifikasi domain, baru matikan web lama:
+#    / dan /login = 200, /api/v1/auth/session = 401 (galat bergaya KRAN)
+systemctl --user stop cbs-web
+# 5. Jangan biarkan container lama bangkit lagi setelah reboot, tetapi jangan hapus apa pun (D-043):
+systemctl --user mask cbs-api cbs-web
+systemctl --user enable kran-api         # kran-worker menyusul sampai perannya ada (O-060)
+```
+
+Jalan mundur (semua berkas lama utuh):
+
+```
+systemctl --user unmask cbs-api cbs-web && systemctl --user start cbs-api cbs-web
+# lalu kembalikan blok cbs.qouver.com ke `reverse_proxy 127.0.0.1:3005` + reload caddy
+# backup Caddyfile ada di /etc/caddy/Caddyfile.bak.kran-<stamp>
+```
+
+Fakta yang membuat peralihan ini tidak lurus (semuanya ketemu di server, bukan di gate lokal):
+
+| Fakta | Konsekuensi |
+|---|---|
+| Host Rocky 9 tidak punya `libpq`; biner dibangun di image Debian | `deploy-vps.sh` mem-*vendor* `libpq.so.5`, `libldap-2.5.so.0`, `liblber-2.5.so.0`, `libsasl2.so.2` dari image ke `$APP_DIR/lib` (nama = soname) dan unit memakai `LD_LIBRARY_PATH`. Alternatif rapi: `dnf install libpq` di host (butuh root) lalu hapus blok vendor |
+| Biner tidak membaca `KRAN_PORT` | unit wajib meneruskan `--port=${KRAN_PORT} --address=${KRAN_BIND_HOST}`; tanpa itu app memakai 8080 — port yang di host ini dipakai container lain (crash-loop) |
+| `webhook.service` tidak mewarisi `EnvironmentFile` unit | `deploy-vps.sh` memuat `$APP_DIR/env/kran-prod.env` sendiri; kalau tidak, deploy dari push gagal `KRAN_DATABASE_URL kosong` |
+| Direktori `web` diganti tiap deploy (`mv web.new web`) | direktori baru mewarisi label SELinux induknya (`var_t`) → Caddy (user `caddy`) menerima 403/404. `deploy-vps.sh` sudah memanggil `restorecon -RF "$APP_DIR/web"`; yang **wajib** ada sekali di server adalah aturan `semanage fcontext` di atas — tanpa aturan itu `restorecon` justru mengembalikan label ke `var_t` |
+| Stack lama = quadlet systemd | `podman stop` tidak cukup; hentikan lewat `systemctl --user stop cbs-*`, lalu `mask` supaya tidak bangkit saat reboot |
+| Situs lain punya `handle /cbs/*` → 8095 | setelah peralihan, path itu menuju KRAN. Dicatat sebagai konsekuensi di O-054 |
+
+Prosedur pemasangan dari nol (ringkas): buat role + DB (`kran_app`/`kran`), salin env, pasang unit,
+`login` root sekali untuk `semanage fcontext`, lalu deploy pertama — ekstensi `pgcrypto`/`btree_gist`
+dibuat oleh migrasi + bootstrap runner, jadi tidak perlu langkah manual di DB.
