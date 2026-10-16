@@ -123,8 +123,10 @@ fi
 if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|kran\.nimble|kran\.lock)' <<<"$CHANGED_FILES"; then
   log "==> Build API (podman, tag :local + :$REVID)..."
   [ -d "$MONO_DIR/apps/api" ] || die "apps/api tidak ditemukan"
-  cd "$MONO_DIR/apps/api" || die "gagal masuk apps/api"
-  podman build -t localhost/kran-api:local -t "localhost/kran-api:$REVID" .
+  # Konteks build = root monorepo, bukan apps/api: sumber Nim ada di shared/ + modules/ + tools/
+  # (beda dari pola Skyward yang modulnya mandiri). Dockerfile-nya di apps/api/Dockerfile.
+  cd "$MONO_DIR" || die "gagal masuk $MONO_DIR"
+  podman build -f apps/api/Dockerfile -t localhost/kran-api:local -t "localhost/kran-api:$REVID" .
   mkdir -p "$APP_DIR/bin"
   build_cid="$(podman create "localhost/kran-api:$REVID")"
   podman cp "$build_cid:/usr/local/bin/kran-api" "$BIN_NEW"
