@@ -964,3 +964,39 @@ kolom `requires_approval` tidak ikut terhapus kalau kelak ada jalur "maker boleh
 Tidak ada kode fast-path baru dan tidak ada constraint DB baru: `submitValue` memang selalu membuat baris
 PENDING, jadi hari ini tidak ada nilai yang bisa aktif tanpa checker — penjagaan `paramgen` mencegah
 definisi yang *berniat* begitu masuk, sebelum ada kode yang membacanya.
+
+## D-043 — KRAN menggantikan `cbs-api`/`cbs-web` di tempat; domain tetap `cbs.qouver.com`
+
+Keputusan pemilik 16 Oktober 2026. Skemanya **replace**, bukan berdampingan: KRAN mengambil alih peran
+sistem lama di host yang sama — `kran-api` memakai `127.0.0.1:8095` dan `kran-web` `127.0.0.1:3005`,
+yaitu port yang sekarang dipegang container `cbs-api`/`cbs-web`. Domainnya **tidak berubah**:
+`cbs.qouver.com` tetap dipakai KRAN, jadi DNS tidak disentuh dan Caddy hanya perlu diarahkan ke upstream
+KRAN saat peralihan.
+
+Konsekuensinya langsung: default di tooling ops (`deploy-vps.sh`: `KRAN_HEALTH_URL=...:8095/readyz`;
+`smoke.sh`: `KRAN_BASE_URL=...:8095`; `kran-prod.env.example`: `# KRAN_PORT=8095`) memang **disengaja**,
+bukan sisa nama lama. Sebelumnya ini terbaca sebagai tabrakan port yang menunggu keputusan; sekarang
+maknanya jelas — peralihan berarti mengganti upstream, bukan menambah aplikasi di port lain.
+
+Menutup **O-055** (domain): tidak ada domain baru yang perlu diputuskan.
+
+### Bukti recon 16 Okt 2026 (read-only, dari server)
+- Container `cbs-api` (`127.0.0.1:8095`) dan `cbs-web` (`127.0.0.1:3005`) berjalan (`Up 2 days`).
+- Tetapi **72 jam terakhir `cbs-api` tidak melayani satu pun permintaan pengguna**: dari 12.750 baris log
+  hanya `/metrics` 6.378, `/api/v1/app-info` 3.190, `/healthz` 3.173. Artinya yang masih menyentuhnya
+  adalah pemantauan, bukan orang.
+- DB `cbs` kecil dan isinya condong ke data referensi/demo: `ojk_kabupaten` 514, `ojk_sektor_ekonomi`
+  476, `system_config` 207, `group_permissions` 132, `journal_lines` 118, `loan_schedules` 108,
+  `accounts` 93, `chart_of_accounts` 89. Tujuh DB `cbs_verify*` ada; tidak disentuh.
+
+### Deviasi dari spec §21.9 (disengaja, tercatat)
+Spec §21.9 berbunyi `cbs-core` **tetap melayani sampai KRAN lulus UAT pilot**. Keputusan ini
+memindahkan peralihan lebih awal untuk *layanan HTTP-nya* (yang nyatanya hanya menerima probe
+pemantauan). Yang **tidak** dibuang: container lama hanya **dihentikan**, tidak dihapus, dan data
+(`/srv/qouver/apps/cbs`, DB `cbs`, `cbs_verify*`) tetap tinggal — jadi jalan mundur tetap ada: nyalakan
+container lama + kembalikan upstream Caddy. Inventaris `cbs-core` (T-015) tetap berlaku sebagai
+referensi sampai cutover selesai.
+
+Urutan yang dipegang: latihan `deploy-vps.sh` manual di server dulu (T-013) → peralihan → baru
+mempertimbangkan pembersihan. Menghapus container/DB lama **belum** dilakukan dan bukan bagian tugas
+agen sampai ada perintah eksplisit setelah peralihan terbukti sehat.

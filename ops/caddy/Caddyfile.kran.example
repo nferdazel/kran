@@ -5,17 +5,30 @@
 #
 # Ini CONTOH: file Caddyfile di server (/etc/caddy/Caddyfile) tetap sumber
 # kebenaran. Salin blok yang relevan, lalu `caddy validate` + `systemctl reload caddy`.
-# Hostname pasti & record DNS-nya keputusan pemilik (jangan mengarang DNS).
+# Hostname sudah diputuskan (D-043, 16 Okt 2026): KRAN memakai `cbs.qouver.com` yang sama dengan
+# sistem lama — DNS tidak disentuh, yang berubah hanya upstream saat peralihan.
 
 # ─────────────────────────────────────────────────────────────────────────────
-# A. Backoffice web (SPA statis, spec §12, §14). Menggantikan cbs.qouver.com
-#    milik cbs-core saat cutover (§21.5). Reverse-proxy ke web yang di-serve
-#    sendiri (127.0.0.1:3005 pada transisi) — sesuaikan bila diserve statis.
+# A. Backoffice web (SPA statis, spec §12, §14). Mengambil alih cbs.qouver.com milik
+#    cbs-core saat peralihan (D-043: replace di tempat, domain tetap; §21.5).
+#    Web diserve **sebagai berkas statis** dari hasil swap `deploy-vps.sh`
+#    (`/srv/qouver/apps/kran/web`) — tidak perlu proses di 3005; port itu hanya
+#    dipakai container `cbs-web` selama sistem lama masih jalan.
+#    `/api/*` tetap **same-origin** (D-025): browser memanggil API lewat host ini, jadi
+#    cookie `SameSite=Strict` tidak perlu diubah dan tidak ada CORS.
 # ─────────────────────────────────────────────────────────────────────────────
 cbs.qouver.com {
 	encode zstd gzip
 
-	reverse_proxy 127.0.0.1:3005
+	root * /srv/qouver/apps/kran/web
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8095
+	}
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
 
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -30,9 +43,10 @@ cbs.qouver.com {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# B. API — hostname TERPISAH, bukan menumpang api.qouver.com (§21.5). Port
-#    transisi 8095 (§21.5) diambil alih saat cutover. Ganti hostname bila pemilik
-#    memilih nama lain; ini hanya contoh.
+# B. API — hostname TERPISAH hanya bila nanti pemilik memutuskan record DNS baru.
+#    Menurut D-043 **tidak dipakai sekarang**: API dijangkau lewat `/api/*` pada
+#    cbs.qouver.com (blok A) dan lewat `api.qouver.com/cbs/*` yang sudah ada.
+#    Blok ini disimpan sebagai contoh bila hostname terpisah diinginkan (§21.5).
 # ─────────────────────────────────────────────────────────────────────────────
 kran-api.qouver.com {
 	encode zstd gzip
@@ -54,7 +68,9 @@ kran-api.qouver.com {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# C. Transisi (SELAMA cbs-core masih melayani) — gabungkan `handle` ini ke blok
+# C. Transisi saja: hanya bila API lama masih dilayani berdampingan. Menurut D-043 KRAN
+#    menggantikan di port yang sama (8095), jadi blok ini tidak dipakai setelah peralihan.
+#    Gabungkan `handle` ini ke blok
 #    `api.qouver.com` yang SUDAH ADA. Header ditambahkan di dalam handle supaya
 #    tidak bergantung pada blok induk yang saat ini tanpa header (§21.5).
 #

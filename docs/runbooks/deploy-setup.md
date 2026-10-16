@@ -106,17 +106,21 @@ Diperiksa langsung, bukan diasumsikan:
 | Direktori aplikasi kita | `/srv/qouver/apps/kran` (belum ada; default skrip sudah ke sana) |
 
 Konsekuensi: direktori aplikasi kita **wajib** berbeda dari `/srv/qouver/apps/cbs` — bukan sekadar
-preferensi nama, melainkan menghindari tabrakan dengan yang sudah ada. Port 8095 juga masih dipegang
-container `cbs-api`, jadi unit kita belum bisa memakainya sampai cutover (§21.5).
+preferensi nama, melainkan menghindari tabrakan dengan yang sudah ada. Port 8095 memang **diambil alih**
+unit kita saat peralihan (keputusan pemilik 16 Okt 2026, D-043: replace di tempat, domain tetap
+`cbs.qouver.com`), jadi urutannya: hentikan container lama → jalankan unit KRAN → arahkan upstream Caddy.
 
-## D2. Yang belum diputuskan manusia
+## D2. Keputusan yang sudah diambil (16 Okt 2026)
 
-- **Domain**: `ops/caddy/Caddyfile.kran.example` masih memakai `cbs.qouver.com` (domain sistem lama
-  selama transisi). Memilih domain KRAN itu keputusan pemilik domain, bukan efek samping rename.
-- **Apa isi `/srv/qouver/apps/cbs` sekarang** dan apakah ia masih dipakai (container `cbs-api`/`cbs-web`
-  jalan). Menentukan urutan cutover; bukan sesuatu yang diputuskan agen.
-- **DB `cbs_verify*`** (7 basis data, 10–33 MB) tidak disentuh oleh rename; kepemilikannya perlu
-  dikonfirmasi pemilik sebelum dianggap bagian dari apa pun.
+- **Domain**: tetap `cbs.qouver.com` — dipakai KRAN setelah peralihan; DNS tidak disentuh (D-043).
+- **Skema peralihan**: **replace** di tempat. `kran-api` mengambil `127.0.0.1:8095`, `kran-web` `3005`,
+  yaitu port yang sekarang dipegang `cbs-api`/`cbs-web` (D-043). Karena itu default `8095` di
+  `deploy-vps.sh`/`smoke.sh` disengaja.
+- **Sisa sistem lama**: dihentikan, **tidak** dihapus; data (`/srv/qouver/apps/cbs`, DB `cbs`,
+  `cbs_verify*`) tetap sebagai jalan mundur. Penghapusan menunggu perintah eksplisit setelah peralihan
+  terbukti sehat — jadi inventaris `cbs-core` (T-015) masih berlaku.
+- **Yang masih menunggu manusia**: latihan `deploy-vps.sh` manual di server (T-013) dan izin sebelum
+  push pertama ke `main` (push = webhook = deploy).
 
 ## E. Verifikasi setelah terpasang
 
