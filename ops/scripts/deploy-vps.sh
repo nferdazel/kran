@@ -53,6 +53,11 @@ if [ -f "$ENV_FILE" ]; then
   log "==> env aplikasi dimuat: $ENV_FILE"
 fi
 
+# Unit systemd meneruskan ${KRAN_PORT}/${KRAN_BIND_HOST} ke biner; kalau kosong, systemd mengirim
+# argumen kosong dan `--port=` gagal dengan galat parse yang membingungkan. Lebih baik berhenti di sini.
+[ -n "${KRAN_PORT:-}" ] || die "KRAN_PORT kosong di $ENV_FILE — unit systemd memakainya untuk --port"
+[ -n "${KRAN_BIND_HOST:-}" ] || die "KRAN_BIND_HOST kosong di $ENV_FILE — unit systemd memakainya untuk --address"
+
 # Salin lib runtime yang tidak ada di host dari image yang baru dibangun. Nama tujuan = **soname**
 # (bukan nama berkas asli) karena `podman cp` mengikuti symlink: tanpa ini `libpq.so.5` hilang dan
 # biner gagal start dengan `could not load: libpq.so(.5|)`. Rantainya terbukti di Rocky 9
