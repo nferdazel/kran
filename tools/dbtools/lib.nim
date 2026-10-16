@@ -554,3 +554,29 @@ proc rollbackMigrations*(db: DbConn, root: string, n: int): seq[string] =
       result.add m.id
   finally:
     discard db.getValue(sql("SELECT pg_advisory_unlock(hashtext('" & migrateLockKey & "'))"))
+
+proc databaseNameOf*(url: string): string =
+  ## Nama basis data dari URL koneksi (`postgres://user:pass@host:port/nama?opsi`). Sengaja tanpa
+  ## pustaka URL: satu-satunya pemakainya penjagaan seed dev, dan bentuk yang perlu dikenali adalah
+  ## bentuk yang kita pakai sendiri. URL tanpa `://`, tanpa path, atau dengan path bersarang
+  ## mengembalikan `""` (tidak dikenali = ditolak).
+  let schemeEnd = url.find("://")
+  if schemeEnd < 0: return ""
+  var rest = url[schemeEnd + 3 .. ^1]
+  let slash = rest.find('/') # pemisah pertama setelah kredensial/host
+  if slash < 0: return ""
+  rest = rest[slash + 1 .. ^1]
+  for sep in ['?', '#']:
+    let i = rest.find(sep)
+    if i >= 0: rest = rest[0 ..< i]
+  let clean = rest.strip()
+  if clean.len == 0 or clean.contains('/'): return ""
+  result = clean
+
+proc devSeedDbAllowed*(url: string): bool =
+  ## `--dev` hanya boleh berjalan di basis data dev/test: nama basis datanya harus berakhir `_dev`
+  ## atau `_test`. `packs/base/seed/0001_dev_users.sql` memuat user contoh dengan kata sandi contoh —
+  ## satu salah ketik URL cukup untuk menanamkannya ke basis data produksi (temuan audit repo publik
+  ## 16 Okt 2026, O-062). Sebelumnya penjagaan hanya berupa flag `--dev` itu sendiri.
+  let name = databaseNameOf(url)
+  result = name.endsWith("_dev") or name.endsWith("_test")

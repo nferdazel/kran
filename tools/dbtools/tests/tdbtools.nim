@@ -275,3 +275,25 @@ suite "dbtools: dua tahap (contract) & rollback":
     let satu = downPlan(root, migrationsOf(root), applied, 1)
     check satu.len == 1
     check satu[0].id == "alpha/0002_b"
+
+suite "dbtools: penjagaan seed dev (O-062)":
+  test "nama basis data dibaca dari URL; kredensial, opsi, dan fragment diabaikan":
+    check databaseNameOf("postgres://user:rahasia@127.0.0.1:5432/kran_dev") == "kran_dev"
+    check databaseNameOf("postgres://user:p@host:5432/kran_dev?sslmode=disable") == "kran_dev"
+    check databaseNameOf("postgresql://host/kran_test#x") == "kran_test"
+    check databaseNameOf("postgres://host:5432/kran_dev") == "kran_dev"
+
+  test "bentuk yang tidak dikenali -> kosong, bukan tebakan":
+    check databaseNameOf("") == ""
+    check databaseNameOf("kran_dev") == ""
+    check databaseNameOf("postgres://host:5432") == ""
+    check databaseNameOf("postgres://host:5432/") == ""
+    check databaseNameOf("postgres://host:5432/a/b") == ""
+
+  test "--dev hanya untuk _dev/_test; selain itu (termasuk tak dikenali) ditolak":
+    check devSeedDbAllowed("postgres://u:p@h:5432/kran_dev")
+    check devSeedDbAllowed("postgres://u:p@h:5432/kran_test")
+    check not devSeedDbAllowed("postgres://u:p@h:5432/kran")
+    check not devSeedDbAllowed("postgres://u:p@h:5432/kran_prod")
+    check not devSeedDbAllowed("postgres://u:p@h:5432/kran_devx")
+    check not devSeedDbAllowed("")
