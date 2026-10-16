@@ -9,6 +9,7 @@
 import std/times
 
 import "platform-lib/db/pool"
+import "platform-lib/crypto/fieldcrypto"
 
 import kernel/clock
 
@@ -39,6 +40,10 @@ type
     pool*: DbPool
     ## Sumber waktu untuk sesi/audit. Dari luar (inject) supaya test bisa memakai `FakeClock`.
     clock*: Clock
+    ## Enkripsi field-level (spec §18.2, T-054). `nil`/belum-terkonfigurasi = `KRAN_KEK_FILE`
+    ## kosong (belum ada kolom terenkripsi); enkripsi/dekripsi menolak eksplisit. Diset &
+    ## divalidasi saat startup lewat `fieldCryptoFromProcessEnv`.
+    fieldCrypto*: FieldCrypto
 
 proc businessDateIso*(clock: Clock): string =
   ## Tanggal "hari ini" versi UTC yang dipakai untuk membaca parameter efektif-dated.

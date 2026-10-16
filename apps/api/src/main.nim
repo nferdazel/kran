@@ -28,6 +28,7 @@ import db_connector/db_postgres
 
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
+import "platform-lib/crypto/fieldcrypto"
 import "platform-lib/log"
 import dbtools/lib
 
@@ -458,6 +459,15 @@ proc main() =
     pool: pool,
     clock: systemClock(),
   )
+
+  # Enkripsi field (T-054, spec §18.2): `KRAN_KEK_FILE` kosong → belum ada kolom terenkripsi,
+  # aplikasi lanjut apa adanya. Diset → berkas KEK dibaca & divalidasi SEKARANG (hilang/rusak/
+  # mode salah/kid tidak sah → tolak start). Tanpa fallback diam-diam (O-056/D-046 butir 6).
+  try:
+    app.fieldCrypto = fieldCryptoFromProcessEnv()
+  except KekError as e:
+    stderr.writeLine "kran-api: " & e.msg
+    quit(2)
 
   if pool.isNil:
     discard logger.warn("KRAN_DATABASE_URL kosong: basis data & realtime tidak aktif", [])

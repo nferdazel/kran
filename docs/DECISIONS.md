@@ -1116,3 +1116,30 @@ diaudit daripada dua.
 
 **Pelaksanaan**: masuk T-051 bersama O-032/O-043/O-050/O-052; uji izinnya harus mencakup sisi
 pengajuan, bukan hanya pembacaan.
+
+---
+
+## D-048 — Enkripsi field-level: envelope KEK→DEK turunan + blind index (ADR-017)
+
+- **Konteks**: spec §18.2 mewajibkan field-level encryption (envelope, blind index) untuk NIK/NPWP/
+  no. HP/alamat; Fase 1 `party` akan mendaratkannya. Register O-006 menyebut "KEK belum ada tempat
+  aman", tetapi kenyataannya **belum ada mekanisme enkripsi field sama sekali** (keputusan pemilik:
+  kerjakan kini sebagai fondasi, bukan menunggu data nyata). Detail + alternatif: `docs/adr/017-field-level-encryption.md`.
+- **Keputusan**: mekanisme di `shared/platform-lib/crypto/fieldcrypto.nim` — KEK di berkas terpisah
+  mode 600 (`KRAN_KEK_FILE`), **DEK per tabel diturunkan** `HMAC-SHA256(KEK, "kran:dek:v1:"||tabel)`,
+  ciphertext `kran:enc:v1:<kid>:<nonce>:<ct||tag>` (AES-256-GCM dari nimcrypto, AAD = nama tabel),
+  dan blind index dengan kunci turunan **terpisah** (`kran:bidx:v1:`). Tanpa dependensi baru.
+- **Alasan**: tidak ada materi kunci di dump/backup DB, tidak ada tabel/kopling lintas-modul baru,
+  dan KEK yang sudah seragam 256-bit membuat HKDF penuh tidak menambah keamanan (HMAC langsung =
+  inti Expand). Rinci di ADR-017.
+- **Konsekuensi (jujur)**: rotasi tidak bisa independen per tabel (DEK terikat KEK → re-enkripsi
+  saat rotasi KEK); rotasi kunci blind index membatalkan indeks (perlu reindex); **KEK hilang = data
+  tak terbaca** (berkas KEK tidak ikut backup DB — inti O-006); konvensi "kunci aktif = entri
+  terakhir". Aktivasi **tanpa fallback senyap** (O-056/D-046 butir 6): `KRAN_KEK_FILE` kosong →
+  aplikasi start apa adanya, enkripsi/dekripsi gagal eksplisit; diset → fail-fast saat startup.
+- **Alternatif ditolak**: DEK terbungkus di tabel registry DB (menaruh kunci di DB); pgcrypto/
+  `pgp_sym_encrypt` (kunci lewat SQL, terkopel ke DB); HKDF penuh (tanpa manfaat di KEK 256-bit);
+  envelope per-record (kompleks tanpa manfaat pada skala pilot).
+- **Status**: diterima; **HUMAN-REVIEW-REQUIRED** sebelum dipakai untuk data anggota nyata (area
+  kriptografi, AGENTS.md §8). Uji: vektor independen Node + roundtrip/tamper/AAD/keyring/blind index
+  (`tfieldcrypto.nim`) dan e2e tabel sementara (`itfieldcrypto.nim`).

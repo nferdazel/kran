@@ -1176,6 +1176,8 @@ Estimasi waktu sengaja tidak dicantumkan sebelum ada keputusan kapasitas tim; te
 | ADR-013 | Mesin PDF/ cetak (HTML→PDF, Typst, dsb.) | — | **Terbuka** — butuh spike |
 | ADR-014 | CI/CD = turunan pola **Skyward** (Actions verifikasi saja → webhook → `deploy-vps.sh`, binary native, health gate + auto-rollback, migrasi expand-only) | Pipeline baru (GHCR/registry, k8s) | Diusulkan (§21) |
 | ADR-015 | KRAN **menggantikan** `cbs-core` lewat cutover bertahap (referensi, bukan port kode; `cbs-core` hidup sampai UAT pilot lulus) | Big-bang; evolusi `cbs-core` (Go) | Diputuskan oleh pemilik |
+| ADR-016 | (kandidat, belum diangkat) `paramgen` sebagai alat kritis | — | Kandidat (lihat `docs/DECISIONS.md` D-014) |
+| ADR-017 | **Enkripsi field-level** (§18.2): envelope KEK→DEK turunan (`HMAC-SHA256`) + AES-256-GCM + blind index; KEK di berkas terpisah mode 600. Detail: `docs/adr/017-field-level-encryption.md` | DEK terbungkus di tabel DB; `pgcrypto`; HKDF penuh; envelope per-record | Diputuskan (desain — `HUMAN-REVIEW-REQUIRED` sebelum data nyata) |
 
 Format ADR: konteks → keputusan → konsekuensi → alternatif → status. Disimpan di `docs/adr/NNN-judul.md`.
 
