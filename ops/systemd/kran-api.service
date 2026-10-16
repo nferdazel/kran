@@ -28,7 +28,10 @@ WorkingDirectory=/srv/qouver/apps/kran
 EnvironmentFile=/srv/qouver/apps/kran/env/kran-prod.env
 # Lib runtime (libpq) tidak ada di host; di-vendor oleh deploy-vps.sh.
 Environment=LD_LIBRARY_PATH=/srv/qouver/apps/kran/lib
-ExecStart=/srv/qouver/apps/kran/bin/kran-api --role=api
+# Port/alamat dari EnvironmentFile di atas. Biner **tidak** membaca KRAN_PORT sendiri (hanya flag
+# `--port`/`--address`), jadi tanpa dua argumen ini ia memakai default 8080 — dan 8080 di server ini
+# sudah dipakai container lain (ditemukan di T-045, 16 Okt 2026: app crash-loop "Address already in use").
+ExecStart=/srv/qouver/apps/kran/bin/kran-api --role=api --port=${KRAN_PORT} --address=${KRAN_BIND_HOST}
 Restart=always
 RestartSec=3
 NoNewPrivileges=true
