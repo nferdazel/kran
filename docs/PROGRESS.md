@@ -737,3 +737,26 @@ Blok `cbs.qouver.com` di Caddy sekarang hanya membawa `Content-Security-Policy "
   `data-theme` dipasang `theme.js`, input kata sandi ada (hidrasi jalan), **0 pelanggaran CSP**, 0 error
   konsol. Plus header HSTS/nosniff/X-Frame-Options/Referrer-Policy tetap terkirim dan `/api/v1/auth/session`
   = 401 bergaya KRAN.
+
+## Pasca-M0 — T-047 (O-036) DONE: register basi, tidak ada kode baru (16 Okt 2026)
+
+`O-036` dan baris backlog `T-047` (juga duplikatnya `T-043`) masih `READY` padahal pekerjaannya sudah
+selesai lebih dulu: **T-023** (`6742b2f`, D-030) memasang `TopicPolicy.sessionValid` + `sweepSessions`
+berkala (interval `defaultSessionRecheckSeconds = 5`, di luar lock hub) yang menutup soket ter-subscribe
+saat sesi tidak sah, dan **T-030** (`c9d290b`) menambah pemeriksaan ulang **izin** topik (O-046). Di
+produksi keduanya tersambung lewat `access.nim` (`realtimePolicy.sessionValid = sessionCanWork`, resolusi
+principal dari DB sehingga sesi yang dicabut/kedaluwarsa dan pengguna non-aktif tertangkap).
+
+Karena kriteria register ("koneksi ter-subscribe ditutup; test ada di suite realtime") sudah terpenuhi,
+**tidak ada kode/test yang ditulis** — mengulang T-023 akan menduplikasi perilaku yang sudah diuji.
+
+Bukti dijalankan ulang pada tree saat ini:
+
+- `./task test` → **486 `[OK]`, 0 `[FAILED]`**; termasuk `itapi_ws` "sesi dicabut → amplop error, soket
+  ditutup, langganan dilepas" dan `itapi_auth` "logout mengakhiri stream yang sudah terbuka (O-036)".
+- `./task ci` → **CI hijau** (e2e 23 lulus / 26.1s, svelte-check 0 error; `itapi_ws` O-036 suite `[OK]`).
+
+Tindakan: `O-036` ditutup di `docs/OPEN_ITEMS.md`, `T-047` → DONE dan `T-043` → DONE (duplikat) di
+`docs/BACKLOG.md`. Rencana + bukti: `docs/tasks/T-047.md`. Sisa jujur: jendela ≤ 5 detik sebelum soket
+ditutup, dan biaya satu resolusi principal per klien per interval (keduanya tercatat di D-030/O-046).
+Tidak ada test/gate yang dilonggarkan.

@@ -67,7 +67,7 @@ DR drill §9, freeze gate `daycloser` fase 3) tidak dipaksakan masuk; ia masuk r
 | T-040 | Setup deploy key + webhook di server (prasyarat deploy) | P2 | DONE |
 | T-041 | `/readyz` memeriksa migrasi & lag outbox (O-019) | P2 | READY |
 | T-042 | Teardown in-process Mummy (O-025) | P3 | READY |
-| T-043 | Soket realtime ditutup saat sesi dicabut (O-036) | P2 | READY |
+| T-043 | Soket realtime ditutup saat sesi dicabut (O-036) | P2 | DONE (duplikat T-023/T-047 — tidak ada pekerjaan tambahan) |
 | T-044 | Flake e2e di dalam gate: diagnosis terbatas (T-031) | P1 | READY |
 | T-045 | Latihan deploy + peralihan di server (D-043) | P2 | BLOCKED (izin push) |
 
@@ -106,14 +106,17 @@ Satu putaran review independen di akhir batch atas diff seluruh batch (pola batc
 
 ## Pasca-M0 — batch keputusan pemilik 16 Okt 2026 (D-046)
 
-Urutan pengerjaan yang disetujui pemilik: keamanan/kebenaran dulu (T-047 → T-048 → T-049), lalu CI
+Urutan pengerjaan yang disetujui pemilik: keamanan/kebenaran dulu (T-048 → T-049; T-047 dilewati karena
+ternyata duplikat dan sudah selesai — lihat T-043), lalu CI
 supaya gate benar-benar mewakili (T-050), lalu aturan kebijakan (T-051), lalu integritas audit dengan
 review manusia (T-052), lalu batch kecil (T-053). MFA (T-046) sengaja **terakhir**: pemilik menilai
 belum perlu, yang diminta hanya bootstrap tanpa pengaktifan.
+Catatan 16 Okt 2026: T-047 ternyata **sudah selesai** lebih dulu lewat T-023 (sesi, D-030) + T-030
+(izin, O-046); barisnya basi. Diverifikasi ulang dan ditutup tanpa perubahan kode (lihat
+`docs/tasks/T-047.md`). Lanjut ke T-048.
 
 | ID | Status | Tujuan | Spec | Deps | Kriteria selesai (dapat diverifikasi mesin) |
 |---|---|---|---|---|---|
-| T-047 | READY | O-036: tutup soket realtime saat sesi/izin dicabut | §19.3 | — | Uji: setelah pencabutan sesi, koneksi yang sudah ter-subscribe ditutup dan klien tidak lagi menerima event; test ada di suite realtime |
 | T-048 | READY | O-057: samakan `missingActiveKeys` dengan aturan resolusi | §10.2 | — | Uji: kasus yang tidak pernah "terlihat" oleh resolusi tidak dihitung aktif, dan sebaliknya; tidak ada kelonggaran tersisa |
 | T-049 | READY | O-035: validasi bentuk input sebelum menyentuh DB (tanggal ISO, uuid, kombinasi scope) → 400/404, bukan 500 | §17 | — | Test: tiap kasus yang dulu 500 kini 400/404 dengan `problem+json`; tidak ada query DB untuk input tak sah |
 | T-050 | READY | O-027 + O-014 + O-023: CI jalankan `db-tests` (Postgres service), `shellcheck -S warning` atas `ops/scripts/*.sh`, ESLint + a11y sebagai error | §21.3 | — | Job CI bertambah dan hijau; `shellcheck`/ESLint dipanggil `./task check`; tidak ada rule a11y yang diturunkan jadi warning |
