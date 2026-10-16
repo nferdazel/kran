@@ -39,10 +39,10 @@ if not doCheck and not doGen:
   doGen = true
 
 try:
-  let undefinedApprovals = undefinedApprovalSemantics(loadAllDefs(root))
-  if undefinedApprovals.len > 0:
-    stderr.writeLine("paramgen: `requires_approval: false` belum punya arti yang disepakati " &
-      "(docs/OPEN_ITEMS.md O-039; dijalankan bersama T-016): " & undefinedApprovals.join(", "))
+  let disallowedApprovals = disallowedApprovalSemantics(loadAllDefs(root))
+  if disallowedApprovals.len > 0:
+    stderr.writeLine("paramgen: `requires_approval: false` tidak diizinkan (D-042; setiap perubahan " &
+      "nilai parameter wajib lewat maker-checker): " & disallowedApprovals.join(", "))
     quit(2)
 
   let seeds = moduleSeedPaths(root)

@@ -908,3 +908,59 @@ kesalahan di ronde itu ketemu dan diperbaiki — (1) `ops/systemd/*.service` awa
 ekstensi `.service` tidak masuk daftar berkas yang diproses, sehingga unit masih menunjuk biner lama;
 (2) `docs/DECISIONS.md` sempat rusak maknanya karena kalimat "kenapa bukan CBS" di D-036 ikut ter-rename
 jadi "kenapa bukan KRAN" — terbalik dari maksud aslinya.
+
+## D-041 — Lookup scope parameter bertipe eksplisit: "tidak diminta" ≠ "id kosong" (menutup O-012)
+
+Diputuskan pemilik 15 Okt 2026 (D-034 butir 4) dan dilaksanakan di T-036.
+
+`ScopeLookup` — proc yang menjawab "id scope apa yang diminta pemanggil untuk tipe ini?" — dulu
+mengembalikan `string`, sehingga `""` berarti dua hal sekaligus: "tipe ini tidak diminta" **dan**
+"diminta tanpa id". Akibatnya `institutionScope()` (tipe `INSTITUTION`, id `""`) tidak pernah bisa
+mencocokkan nilai ber-`scope_id` NULL: nilai level institusi akar tak terjangkau, dan pemanggil itu
+hanya melihat `GLOBAL`.
+
+Sekarang tipenya `ScopeValueLookup* = proc(scopeType: ParamScopeType): Option[string]`:
+
+- `some(id)` — tipe itu diminta dengan id tersebut; `some("")` **sah** dan berarti id kosong
+  (institusi akar, `scope_id` NULL).
+- `none` — tipe itu tidak diminta, jadi tidak pernah cocok.
+
+Perubahan perilaku yang disengaja, dan **hanya** itu: pencocokan scope ber-id kosong pada tipe yang
+memang diminta. Kasus lain tidak berubah — id tak kosong tetap dibandingkan persis, tipe yang tidak
+diminta tetap dilewati — dan itu dipin golden test yang dijalankan **sebelum** perubahannya
+(`docs/tasks/T-036.md`). Perubahan tipe (termasuk namanya) dipilih supaya pemanggil lama tidak bisa
+diam-diam tetap mengembalikan `string`: kompilator menuntut setiap pemakaian diperiksa.
+
+Yang **tidak** ikut berubah, dan alasannya:
+
+- **Tidak ada fallback antar level.** Pemanggil tetap hanya melihat scope-nya sendiri + `GLOBAL`;
+  nilai `BRANCH` tidak otomatis terbaca dari konteks `INSTITUTION`. Urutan di spec §10.2
+  (`PRODUCT → BRANCH → INSTITUTION → SEGMENT → GLOBAL`) dipakai sebagai **prioritas antar kandidat**,
+  bukan rantai fallback antar level — dan uji `tparam`/`itparam` memin "tanpa fallback diam-diam".
+  Menambahkan rantai itu mengubah nilai mana yang berlaku, jadi ia keputusan produk, bukan perbaikan
+  tipe; dicatat sebagai O-056. `branchScope("")` tidak dipakai siapa pun; kalau nanti dipakai, artinya
+  "akar level cabang", bukan "semua cabang".
+- **Pemindahan resolusi ke lapisan application** (bagian lain D-034 butir 4) belum dikerjakan: T-036
+  hanya menyentuh tipe lookup dan pemanggilnya. Sisa itu tetap milik T-016.
+
+Ditutup: O-012. Diubah: `modules/platform/domain/param.nim`, `domain/scope.nim`, MODULE.md (invarian 9).
+
+## D-042 — `requires_approval: false` tidak diizinkan (menutup O-039)
+
+Keputusan pemilik 16 Okt 2026: setiap perubahan nilai parameter wajib lewat maker-checker, jadi definisi
+parameter dengan `requires_approval: false` **tidak diizinkan** — bukan "belum diputuskan". Pertanyaan
+yang menggantung sejak D-034 dijawab dengan pilihan yang paling ketat, dan sejalan dengan spec §10.4
+(Governance: semua perubahan parameter lewat maker-checker + audit; `CRITICAL` lebih ketat lagi).
+
+Yang berubah hanyalah **alasan**, bukan penegakannya:
+
+- Dulu: `paramgen` menolak definisi ber-`false` karena artinya belum disepakati (pesan menyebut O-039).
+- Sekarang: `paramgen` menolaknya karena memang tidak boleh dipakai. Predikatnya berganti nama dari
+  `undefinedApprovalSemantics` menjadi `disallowedApprovalSemantics`, dan pesannya menyebut D-042.
+
+Yang **tidak** berubah: penegakan tetap di **batas CLI** (`tools/paramgen/main.nim`, keluar 2), bukan di
+parser — parser dan emitter tetap menangani `false` dan fixture sengaja mengujinya, supaya plumbing
+kolom `requires_approval` tidak ikut terhapus kalau kelak ada jalur "maker boleh mengaktifkan sendiri".
+Tidak ada kode fast-path baru dan tidak ada constraint DB baru: `submitValue` memang selalu membuat baris
+PENDING, jadi hari ini tidak ada nilai yang bisa aktif tanpa checker — penjagaan `paramgen` mencegah
+definisi yang *berniat* begitu masuk, sebelum ada kode yang membacanya.

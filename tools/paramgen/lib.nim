@@ -199,14 +199,15 @@ proc loadModuleDefs*(root, moduleDirName: string): seq[ParamDef] =
     return @[]
   result = parseDefsFromJson(moduleDirName, nodes[0])
 
-proc undefinedApprovalSemantics*(defs: seq[ParamDef]): seq[string] =
-  ## Definisi yang memakai `requires_approval: false`. Artinya belum disepakati (keputusan pemilik
-  ## 15 Okt 2026, dijalankan bersama T-016; docs/OPEN_ITEMS.md O-039), jadi `paramgen` menolak
-  ## menggenerate repo yang memuatnya.
+proc disallowedApprovalSemantics*(defs: seq[ParamDef]): seq[string] =
+  ## Definisi yang memakai `requires_approval: false`. Sejak keputusan pemilik 16 Okt 2026 (D-042,
+  ## menutup O-039) artinya **ditetapkan, bukan menggantung**: setiap perubahan nilai parameter wajib
+  ## lewat maker-checker, jadi `false` belum diizinkan dan `paramgen` menolaknya.
   ##
   ## Penegakannya di **batas CLI** (`tools/paramgen/main.nim`), bukan di parser: parser dan emitter
-  ## tetap bisa menangani `false` dan fixture mengujinya, supaya plumbing kolom yang sudah ada tidak
-  ## ikut terhapus sebelum semantiknya diputuskan.
+  ## tetap menangani `false` dan fixture sengaja mengujinya, supaya plumbing kolom `requires_approval`
+  ## tetap utuh sampai (dan kalau) jalur "maker boleh mengaktifkan sendiri" benar-benar diputuskan —
+  ## kelak itu butuh izin khusus + jejak audit tersendiri, bukan sekadar kolom ini.
   for d in defs:
     if not d.requiresApproval:
       result.add d.key

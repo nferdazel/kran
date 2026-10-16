@@ -73,13 +73,13 @@ proc racer(args: RacerArgs) {.thread.} =
 proc activeValues(key: string): seq[ParamCandidate] =
   candidatesOf(db, key, asOf)
 
-proc lookup(pairs: seq[(ParamScopeType, string)]): ScopeLookup =
+proc lookup(pairs: seq[(ParamScopeType, string)]): ScopeValueLookup =
   let captured = pairs
-  result = proc(scopeType: ParamScopeType): string =
+  result = proc(scopeType: ParamScopeType): Option[string] =
     for (t, id) in captured:
       if t == scopeType:
-        return id
-    ""
+        return some(id)
+    none(string)
 
 suite "param: seed & definisi":
   test "definisi dari seed paramgen terpasang, nilai pack base ada":

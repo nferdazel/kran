@@ -3,13 +3,15 @@ import std/[unittest, json, options, strutils]
 import kernel/[paramkey, money, rate, businessdate, result]
 import platform/domain/param
 
-proc lookup(pairs: seq[(ParamScopeType, string)]): ScopeLookup =
+proc lookup(pairs: seq[(ParamScopeType, string)]): ScopeValueLookup =
+  ## Pemanggil yang meminta tipe-tipe dalam `pairs`; sisanya `none` (= tidak diminta), bukan `""`
+  ## (= diminta tanpa id) — perbedaan itulah inti O-012.
   let captured = pairs
-  result = proc(scopeType: ParamScopeType): string =
+  result = proc(scopeType: ParamScopeType): Option[string] =
     for (t, id) in captured:
       if t == scopeType:
-        return id
-    ""
+        return some(id)
+    none(string)
 
 proc cand(scopeType: ParamScopeType, scopeId: string, value: JsonNode): ParamCandidate =
   ParamCandidate(paramValueId: "pv-" & $scopeType, scopeType: scopeType, scopeId: scopeId,
@@ -52,6 +54,32 @@ suite "param: urutan resolusi":
 
   test "tidak ada kandidat -> none (pemanggil harus melempar ParamNotFound)":
     check resolveCandidate(@[], lookup(@[])).isNone
+
+suite "param: resolusi scope — batas institusi akar (O-012)":
+  test "pemanggil institusi akar (id kosong) membaca nilai INSTITUTION, bukan GLOBAL":
+    # Sebelum O-012, uji ini mengharapkan GLOBAL/91: tipe lookup hanya `string`, sehingga `""`
+    # berarti "tidak diminta" **dan** "diminta tanpa id", dan kandidat INSTITUTION ber-`scope_id`
+    # NULL tidak terjangkau. Setelah tipe jadi `Option`, `some("")` berarti "diminta", dan nilai
+    # institusi akar menang karena lebih spesifik daripada GLOBAL.
+    let candidates = @[cand(pstGlobal, "", %*91), cand(pstInstitution, "", %*92)]
+    let picked = resolveCandidate(candidates, lookup(@[(pstInstitution, "")]))
+    check picked.isSome
+    check picked.get().scopeType == pstInstitution
+    check picked.get().value.getInt == 92
+
+  test "pemanggil yang tidak meminta apa pun tetap hanya dapat GLOBAL":
+    let candidates = @[cand(pstGlobal, "", %*91), cand(pstInstitution, "", %*92)]
+    let picked = resolveCandidate(candidates, lookup(@[]))
+    check picked.get().value.getInt == 91
+
+  test "id kosong tidak membuat tipe yang tidak diminta ikut cocok":
+    # Penjaga agar "id kosong" tidak berubah jadi wildcard: pemanggil institusi akar tidak boleh
+    # mengambil kandidat BRANCH ber-`scope_id` NULL hanya karena keduanya kosong.
+    let candidates = @[cand(pstGlobal, "", %*91), cand(pstBranch, "", %*99)]
+    let picked = resolveCandidate(candidates, lookup(@[(pstInstitution, "")]))
+    check picked.isSome
+    check picked.get().scopeType == pstGlobal
+    check picked.get().value.getInt == 91
 
 suite "param: validasi schema (subset)":
   test "type":
