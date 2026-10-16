@@ -95,10 +95,10 @@ suite "respons sistem sesuai kontrak OpenAPI":
     (apiServer, baseUrl) = startServer(nil)
     waitUntilServing(baseUrl)
 
-  # Server sengaja tidak ditutup di akhir test: `server.close()` pada Mummy 0.4.8 + ORC
-  # membuat proses mati (SIGSEGV di `destroy` -> ORC cycle collector, terlihat saat uji ini
-  # pertama ditulis). Proses test berakhir sendiri sehingga thread server ikut berakhir.
-  # Shutdown yang benar dicatat di docs/OPEN_ITEMS.md (O-025).
+  # Server sengaja tidak ditutup di akhir test. `server.close()` pada Mummy 0.4.8 + ORC men-`destroy`
+  # di thread pelayan, sedangkan di harness ini server dibangun di thread test — urutan itu SIGSEGV
+  # (repro + urutan aman ada di T-042 / docs/spikes/O-025-shutdown.md). Suite ini tetap butuh server
+  # hidup sepanjang run, dan proses test berakhir sendiri sehingga thread server ikut berakhir.
 
   test "/healthz -> 200 sesuai skema Health":
     let client = newHttpClient(timeout = 2000)
