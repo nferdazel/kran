@@ -27,11 +27,39 @@ BIN_NEW="$APP_DIR/bin/kran-api.new"
 BIN_PREV="$APP_DIR/bin/kran-api.prev"
 STATE_FILE="$APP_DIR/.deployed_rev"
 LOG="$APP_DIR/logs/deploy.log"
+
+# Runtime lib untuk biner native. Host (Rocky 9) tidak punya libpq, sedangkan biner dibangun di image
+# Debian; karena itu lib di-vendor ke $APP_DIR/lib dan dipakai lewat LD_LIBRARY_PATH. Kalau kelak
+# `libpq` dipasang di host, blok vendor di bawah boleh dihapus.
+LIB_DIR="$APP_DIR/lib"
+export LD_LIBRARY_PATH="$LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 HEALTH_URL="${KRAN_HEALTH_URL:-http://127.0.0.1:8095/readyz}"
 
 mkdir -p "$APP_DIR/logs"
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG"; }
 die() { log "ERROR: $*"; exit 1; }
+
+# Salin lib runtime yang tidak ada di host dari image yang baru dibangun. Nama tujuan = **soname**
+# (bukan nama berkas asli) karena `podman cp` mengikuti symlink: tanpa ini `libpq.so.5` hilang dan
+# biner gagal start dengan `could not load: libpq.so(.5|)`. Rantainya terbukti di Rocky 9
+# (16 Okt 2026): libpq.so.5 -> libldap-2.5.so.0 -> liblber-2.5.so.0 -> libsasl2.so.2.
+# Rantai yang kurang akan terlihat di MIGRATION GATE di bawah, bukan diam-diam.
+vendor_runtime_libs() {
+  mkdir -p "$LIB_DIR"
+  local cid; cid="$(podman create "$1")"
+  local item src soname
+  for item in \
+    "usr/lib/x86_64-linux-gnu/libpq.so.5.15:libpq.so.5" \
+    "usr/lib/x86_64-linux-gnu/libldap-2.5.so.0.1.8:libldap-2.5.so.0" \
+    "usr/lib/x86_64-linux-gnu/liblber-2.5.so.0.1.8:liblber-2.5.so.0" \
+    "usr/lib/x86_64-linux-gnu/libsasl2.so.2.0.25:libsasl2.so.2"; do
+    src="${item%%:*}"; soname="${item##*:}"
+    if [ -n "$src" ] && podman cp "$cid:/$src" "$LIB_DIR/$soname" >/dev/null 2>&1; then
+      log "   lib runtime: $soname"
+    fi
+  done
+  podman rm "$cid" >/dev/null 2>&1 || true
+}
 
 log "Deploy trigger received for: $REPO ref=${REF:-<none>}"
 
@@ -62,15 +90,21 @@ if [ -d "$MONO_DIR/.git" ]; then
   if [ -n "$OLD_REV" ] && [ "$OLD_REV" != "$NEW_REV" ]; then
     # *.md tidak memicu rebuild (gaya skyward): dokumen bukan input build.
     CHANGED_FILES="$(git diff --name-only "$OLD_REV" "$NEW_REV" -- ':(exclude)*.md' 2>/dev/null \
-      || echo 'apps/ modules/ shared/ migrations/')"
+      || printf '%s\n' apps/api/ apps/web/ modules/ shared/ migrations/ kran.nimble)"
   else
-    CHANGED_FILES="apps/ modules/ shared/ migrations/"
+    # Satu path per baris: grep per komponen di bawah ber-anchor `^`. (Sebelum ini daftarnya satu
+    # baris dipisah spasi, sehingga `^apps/api/` tidak pernah cocok dan build API dilewati di
+    # deploy pertama — ditemukan di latihan T-045, 16 Okt 2026.)
+    CHANGED_FILES="$(printf '%s\n' apps/api/ apps/web/ modules/ shared/ migrations/ kran.nimble)"
   fi
 else
   log "Cloning kran -> $MONO_DIR"
   git clone "$KRAN_GIT_URL" "$MONO_DIR"
   NEW_REV="$(git -C "$MONO_DIR" rev-parse HEAD 2>/dev/null || echo '')"
-  CHANGED_FILES="apps/ modules/ shared/ migrations/"
+  # Satu path per baris: grep per komponen di bawah ber-anchor `^`. (Sebelum ini daftarnya satu
+  # baris dipisah spasi, sehingga `^apps/api/` tidak pernah cocok dan build API dilewati di deploy
+  # pertama — ditemukan di latihan T-045, 16 Okt 2026.)
+  CHANGED_FILES="$(printf '%s\n' apps/api/ apps/web/ modules/ shared/ migrations/ kran.nimble)"
   IS_FIRST=1
 fi
 
@@ -132,6 +166,7 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|kran\.nimble|
   podman cp "$build_cid:/usr/local/bin/kran-api" "$BIN_NEW"
   podman rm "$build_cid" >/dev/null
   chmod +x "$BIN_NEW"
+  vendor_runtime_libs "localhost/kran-api:$REVID"
 else
   log "==> kode API tidak berubah; build dilewati"
 fi
@@ -143,7 +178,25 @@ if [ "$MIGRATIONS_CHANGED" -eq 1 ]; then
   [ -x "$MIGRATE_BIN" ] || MIGRATE_BIN="$BIN"
   [ -x "$MIGRATE_BIN" ] || die "tidak ada binary untuk migration gate"
   log "==> MIGRATION GATE: --check"
-  "$MIGRATE_BIN" --role=migrate --check || die "migrasi --check gagal (expand-only)"
+  # `--check` keluar 1 untuk dua hal yang berbeda (D-040): migrasi **tertunda** (normal saat deploy —
+  # justru itu yang mau diterapkan) dan migrasi yang **isinya berubah** (drift: berkas yang sudah
+  # diterapkan diubah, berarti DB dan repo tidak lagi sinkron). Hanya yang kedua membatalkan deploy.
+  # Skrip membaca angka drift dari keluarannya; keluaran yang tidak dikenal = fail-closed.
+  if check_out="$("$MIGRATE_BIN" --role=migrate --check 2>&1)"; then
+    log "    migrasi --check bersih"
+  else
+    drift="$(sed -nE 's/.*, ([0-9]+) isinya berubah.*/\1/p' <<<"$check_out" | head -1)"
+    case "${drift:-}" in
+      "")
+        log "$check_out"
+        die "migrasi --check gagal dengan keluaran tak dikenal (gate fail-closed)" ;;
+      0)
+        log "    migrasi tertunda (normal saat deploy); lanjut --up" ;;
+      *)
+        log "$check_out"
+        die "$drift migrasi yang sudah diterapkan berubah isinya (drift) — deploy dibatalkan" ;;
+    esac
+  fi
   log "==> MIGRATION GATE: --up"
   "$MIGRATE_BIN" --role=migrate --up || die "migrasi --up gagal"
 else

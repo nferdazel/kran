@@ -26,6 +26,8 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/srv/qouver/apps/kran
 EnvironmentFile=/srv/qouver/apps/kran/env/kran-prod.env
+# Lib runtime (libpq) tidak ada di host; di-vendor oleh deploy-vps.sh.
+Environment=LD_LIBRARY_PATH=/srv/qouver/apps/kran/lib
 ExecStart=/srv/qouver/apps/kran/bin/kran-api --role=api
 Restart=always
 RestartSec=3
