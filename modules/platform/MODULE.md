@@ -95,6 +95,9 @@ Invarian tambahan:
    audit + event `ParamChanged` ke outbox + `NOTIFY platform_param_changed`.
 8. **Tidak ada fallback**: key tanpa nilai berlaku → pemanggil melempar `ParamNotFound`
    (spec §10.6). Jangan menambahkan default di kode.
+9. **Lookup scope bertipe eksplisit** (D-041): `ScopeValueLookup` mengembalikan `Option[string]` —
+   `some(id)` berarti tipe itu diminta, dan `some("")` **sah** (institusi akar, `scope_id` NULL);
+   `none` berarti tidak diminta. Id kosong bukan wildcard, dan tidak ada fallback antar level.
 
 Jebakan yang sudah ditemukan (jangan diulang):
 

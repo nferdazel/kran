@@ -43,8 +43,12 @@ type
     effectiveFrom*: string
     effectiveTo*: string
 
-  ScopeLookup* = proc(scopeType: ParamScopeType): string {.closure.}
-    ## Id scope yang diminta pemanggil untuk tipe scope tertentu ("" = tidak diminta).
+  ScopeValueLookup* = proc(scopeType: ParamScopeType): Option[string] {.closure.}
+    ## Id scope yang diminta pemanggil untuk tipe scope tertentu (O-012).
+    ##   `some(id)` — tipe ini diminta dengan id tersebut. `some("")` **sah** dan berarti "id kosong",
+    ##               yaitu institusi akar (nilai ber-`scope_id` NULL).
+    ##   `none`     — tipe ini tidak diminta; tidak pernah cocok, jadi tidak ada fallback diam-diam
+    ##               ke scope lain (diuji di `tparam`/`itparam`).
 
 proc paramError*(kind: ParamErrorKind, key, detail: string): ParamError =
   ParamError(kind: kind, key: key, detail: detail)
@@ -61,14 +65,16 @@ proc resolutionRank*(s: ParamScopeType): int =
   high(int)
 
 proc resolveCandidate*(candidates: openArray[ParamCandidate],
-                       lookup: ScopeLookup): Option[ParamCandidate] =
+                       lookup: ScopeValueLookup): Option[ParamCandidate] =
   ## Memilih kandidat paling spesifik yang cocok dengan scope pemanggil.
-  ## `GLOBAL` selalu cocok; scope lain hanya bila `lookup` memberi id yang sama.
+  ## `GLOBAL` selalu cocok; scope lain hanya bila pemanggil **meminta** tipe itu dengan id yang sama.
+  ## Id kosong tetap "diminta" (`institutionScope()` → `some("")`), sehingga nilai institusi akar
+  ## (`scope_id` NULL) terjangkau — sebelum O-012 kasus itu tidak bisa dibedakan dari "tidak diminta".
   var bestRank = high(int)
   for c in candidates:
     if c.scopeType != pstGlobal:
       let wanted = lookup(c.scopeType)
-      if wanted.len == 0 or wanted != c.scopeId:
+      if wanted.isNone or wanted.get() != c.scopeId:
         continue
     let rank = resolutionRank(c.scopeType)
     if rank < bestRank:

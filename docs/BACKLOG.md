@@ -61,7 +61,7 @@ DR drill §9, freeze gate `daycloser` fase 3) tidak dipaksakan masuk; ia masuk r
 | T-033 | Pool DB: bukti aman paralel + rapikan klaim (O-011) | P2 | DONE |
 | T-034 | Kurangi ketergantungan pada internal Mummy (O-049) | P2 | DONE |
 | T-035 | Migrasi contract & rollback (O-048) | P3 | DONE |
-| T-036 | Semantik scope institusi & `requires_approval` (O-012, O-039) | P3 | READY |
+| T-036 | Semantik scope institusi & `requires_approval` (O-012, O-039) | P3 | DONE |
 | T-037 | Register batas Fase 0 + laporan penutup | P3 | DONE |
 | T-039 | Seluruh identifier teknis mengikuti KRAN (D-039) | P2 | DONE |
 | T-040 | Setup deploy key + webhook di server (prasyarat deploy) | P2 | DONE |

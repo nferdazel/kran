@@ -14,14 +14,14 @@ proc freshWorkRoot(): string =
   workRoot
 
 suite "paramgen: validasi key & tipe":
-  test "`requires_approval: false` dilaporkan sebagai belum disepakati (O-039)":
+  test "`requires_approval: false` ditolak: setiap perubahan parameter wajib lewat maker-checker (D-042)":
     # Penegakannya di `paramgen` (CLI), bukan di parser: fixture repo ini sengaja memuat `false`
     # untuk menguji plumbing parser dan emitter, jadi predikat inilah yang dipakai CLI.
     let defs = parseDefsFromJson("x", parseJson(
       """[{"key":"x.param.thing","type":"integer","scopes":["GLOBAL"],"requires_approval":false},
           {"key":"x.param.other","type":"integer","scopes":["GLOBAL"]}]"""))
-    check undefinedApprovalSemantics(defs) == @["x.param.thing"]
-    check undefinedApprovalSemantics(parseDefsFromJson("x", parseJson(
+    check disallowedApprovalSemantics(defs) == @["x.param.thing"]
+    check disallowedApprovalSemantics(parseDefsFromJson("x", parseJson(
       """[{"key":"x.param.thing","type":"integer","scopes":["GLOBAL"]}]"""))).len == 0
 
   test "isValidKey":

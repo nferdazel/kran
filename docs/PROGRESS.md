@@ -629,3 +629,18 @@ masuk.
   `check` di dalam proc pembantu tidak menggagalkan uji (helper `expectMigrateError`/`expectPlanError`
   diperbaiki supaya melempar), dan uji atomisitas pertama tidak diskriminatif (diganti: penghapusan
   barisnya dipaksa gagal). Keputusan D-040 + runbook baru `docs/runbooks/migrasi.md`.
+
+- **T-036 DONE**: dua keputusan pemilik yang menggantung (O-012, O-039) dilaksanakan.
+  (1) Lookup scope parameter menjadi bertipe eksplisit: `ScopeValueLookup` mengembalikan
+  `Option[string]`, sehingga "tidak diminta" (`none`) tidak lagi bermakna sama dengan "diminta tanpa id"
+  (`some("")`) — nilai level `INSTITUTION` ber-`scope_id` NULL jadi terjangkau dari alur login, sedangkan
+  id tak kosong dan tipe yang tidak diminta tidak berubah. Perubahan perilakunya dibuktikan dengan golden
+  test yang dijalankan **sebelum** perubahan (hijau, memin perilaku lama) lalu harapannya dibalik, plus
+  satu uji batas baru: id kosong bukan wildcard. Tidak ada fallback antar level yang ditambahkan —
+  mencocokkan spec §10.2 sebagai rantai fallback adalah keputusan produk, dicatat sebagai O-056.
+  (2) `requires_approval: false` diputuskan pemilik **tidak diizinkan** (setiap perubahan parameter wajib
+  lewat maker-checker): penjagaan `paramgen` tetap, hanya alasannya berubah (`undefinedApprovalSemantics`
+  → `disallowedApprovalSemantics`, pesan menyebut D-042). Bukti: `./task check` hijau dan `./task test`
+  hijau 482 `[OK]`, 0 gagal; seluruh 8 nilai tersemai ber-scope `GLOBAL`/NULL, jadi tak ada nilai berlaku
+  yang berpindah. Keputusan D-041 + D-042; sisa temuan dicatat sebagai O-057 (startup check lebih longgar
+  dari resolusi). Ditandai **HUMAN-REVIEW-REQUIRED** (menyentuh nilai parameter kebijakan sesi).

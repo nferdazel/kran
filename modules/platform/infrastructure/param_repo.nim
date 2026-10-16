@@ -97,7 +97,7 @@ proc committedFromDates*(db: DbConn, key, sinceIso: string): seq[string] =
      ORDER BY 1""", key, sinceIso):
     result.add row[0]
 
-proc activeValueJson*(db: DbConn, key, asOf: string, lookup: ScopeLookup): JsonNode =
+proc activeValueJson*(db: DbConn, key, asOf: string, lookup: ScopeValueLookup): JsonNode =
   ## Nilai aktif paling spesifik untuk `key` pada `asOf`. Raise `ValueError` bila tidak ada —
   ## satu-satunya tempat aturan "tanpa fallback diam-diam" (spec §10.6) diterapkan.
   let picked = resolveCandidate(candidatesOf(db, key, asOf), lookup)
@@ -106,7 +106,7 @@ proc activeValueJson*(db: DbConn, key, asOf: string, lookup: ScopeLookup): JsonN
       "parameter " & key & " tidak punya nilai aktif pada " & asOf)
   picked.get().value
 
-proc activeParamInt*(db: DbConn, key, asOf: string, lookup: ScopeLookup): int =
+proc activeParamInt*(db: DbConn, key, asOf: string, lookup: ScopeValueLookup): int =
   let value = db.activeValueJson(key, asOf, lookup)
   if value.kind != JInt:
     raise newException(ValueError, "parameter " & key & " bukan integer: " & $value)
