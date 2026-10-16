@@ -66,9 +66,9 @@ suite "checkCatalogs":
   test "katalog lengkap & dipakai kode = tanpa temuan":
     let root = makeRepo("bersih")
     writeFileWithDirs(root / "packages/i18n/messages/id.json",
-      """{ "common_app_title": "CBS", "common_greet": "Halo {nama}" }""")
+      """{ "common_app_title": "KRAN", "common_greet": "Halo {nama}" }""")
     writeFileWithDirs(root / "packages/i18n/messages/en.json",
-      """{ "common_app_title": "CBS", "common_greet": "Hello {nama}" }""")
+      """{ "common_app_title": "KRAN", "common_greet": "Hello {nama}" }""")
     writeFileWithDirs(root / "apps/web/src/page.svelte",
       "{m.common_app_title()}\n{m.common_greet({ nama: 'x' })}")
 
@@ -79,9 +79,9 @@ suite "checkCatalogs":
   test "key hanya ada di satu locale = temuan":
     let root = makeRepo("key-hilang")
     writeFileWithDirs(root / "packages/i18n/messages/id.json",
-      """{ "common_app_title": "CBS", "common_only_id": "Hanya di id" }""")
+      """{ "common_app_title": "KRAN", "common_only_id": "Hanya di id" }""")
     writeFileWithDirs(root / "packages/i18n/messages/en.json",
-      """{ "common_app_title": "CBS" }""")
+      """{ "common_app_title": "KRAN" }""")
     writeFileWithDirs(root / "apps/web/src/page.svelte",
       "{m.common_app_title()}{m.common_only_id()}")
 
