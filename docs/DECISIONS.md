@@ -1049,3 +1049,53 @@ ter-hidrasi di bawah kebijakan itu. O-061 ditutup dengan ini.
 `https://cbs.qouver.com/login` dibuka dengan Chromium sungguhan: judul halaman KRAN, `data-theme`
 terpasang oleh `theme.js` (bukti script eksternal lolos `script-src 'self'`), input kata sandi ada
 (bukti hidrasi, jadi script inline ber-hash lolos), **0 pelanggaran CSP**, 0 error konsol.
+
+---
+
+## D-046 — Batch keputusan pemilik 16 Okt 2026 (open items yang butuh manusia)
+
+Pemilik menjawab daftar item yang benar-benar butuh keputusan (bukan pekerjaan teknis). Semua
+rekomendasi agen disetujui, dengan dua koreksi dan satu perubahan rencana.
+
+1. **O-001 (compliance)**: nilai/pasal §4 yang bertanda `V?`/`V!` tetap **belum** terverifikasi, dan
+   tetap wajib bertanda `NEEDS-COMPLIANCE-REVIEW`. Review compliance dijadwalkan **sebelum** fitur
+   Fase 1 yang bergantung angka (bunga, akrual, PPAP, SHU). Tidak ada nilai yang boleh dipakai untuk
+   hitungan nyata sebelum itu.
+2. **O-004 (pilot)**: target pilot ditetapkan **1 koperasi, 1 cabang, < 5.000 anggota**.
+3. **O-003 (data `cbs-core`)**: dikonfirmasi pemilik bahwa isinya **bukan data nyata** — itu hasil uji
+   dengan data yang dibuat "seasli mungkin". Karena itu O-003 ditutup, dan kekhawatiran "jangan
+   menyentuh data nyata" tidak berlaku untuk DB lama. **DB `cbs` tetap tidak dihapus** sampai ada
+   perintah eksplisit (perlindungan rollback), bukan karena dianggap berisi data nyata.
+4. **O-002 (backup harian)**: filter DB non-prod **diterapkan** di skrip live server
+   (`/srv/qouver/scripts/backup-postgres.sh`, dipakai timer 02:00): `postgres`, `%_verify%`, `%_test%`,
+   `%_dev%` dikecualikan. Diverifikasi: daftar DB yang tersisa `bm, cbs, fond, fond_nim, kran, qouver,
+   sds, skyward`. Drop DB `*_verify*` lama **belum** dilakukan (tindakan destruktif; menunggu perintah
+   eksplisit, walaupun isinya sekali pakai).
+5. **O-054 (sisa sistem lama)**: pemilik memilih **lebih cepat**, jadi pembersihan dijalankan segera
+   (bukan menunggu dua minggu/sebulan): `handle /cbs/*` di `api.qouver.com` **dihapus** (backend-nya
+   container lama yang sudah mati; diverifikasi `/cbs/healthz` = 404 dan situs lain tetap normal), dan
+   container `cbs-api`/`cbs-web` **dihapus**. Yang tetap tinggal: image `localhost/cbs-api|cbs-web`,
+   `/srv/qouver/apps/cbs` (berisi `deploy-vps.sh`), dan DB `cbs` + `cbs_verify*` — jalan mundur masih
+   utuh. Backup Caddyfile: `/etc/caddy/Caddyfile.bak-kran-nocbs-20261016T142811`.
+6. **O-056 (rantai fallback parameter)**: **dipertahankan eksplisit** — pemanggil menyebut levelnya,
+   tanpa fallback senyap `PRODUCT → BRANCH → INSTITUTION → SEGMENT → GLOBAL`. Deviasi dari spec §10.2
+   diterima sadar: nilai parameter kebijakan yang "diam-diam berlaku" lebih berbahaya daripada repot
+   menyebut level. Ini bukan utang teknis, melainkan pilihan.
+7. **O-032 (visibilitas params/audit)**: `GLOBAL` selalu tampak; level lain hanya untuk pengguna yang
+   memang ber-scope itu; pembacaan lintas cabang masuk audit. Dikerjakan di T-051.
+8. **O-043 (`effective_to` tanpa penerus)**: **ditolak saat pengajuan** — `effectiveTo` hanya boleh
+   bila ada penerus (atau penanda eksplisit bahwa nilai itu memang berakhir). Bukan task pembersih.
+9. **O-050 + O-052 (kata sandi)**: percobaan kata sandi lama yang salah **diaudit + dibatasi** (angkanya
+   parameter, bukan konstanta). Kebijakan lanjutan: **tidak** ada kedaluwarsa sekarang, riwayat 5,
+   kualitas minimum sebagai parameter. Final menunggu review compliance (butir 1).
+10. **O-015 (MFA)**: **belum perlu diaktifkan**. Pemilik memilih sifatnya bila nanti dipakai:
+    per akun bisa memilih memakai MFA atau tidak, **default mati**, demi kemudahan login dan pengujian.
+    Yang diminta sekarang: **siapkan bootstrap-nya** (skema, parameter, jalur verifikasi) tanpa
+    mengaktifkan apa pun — direncanakan sebagai T-046 dan **tidak** dikerjakan sebelum batch lain.
+11. **O-016 (matriks SoD)**: diisi bersama compliance setelah butir 1; tidak dikarang sekarang.
+12. **O-006 (KEK)**: tetap seperti sekarang — berkas terpisah mode 600 di luar backup DB — plus rencana
+    `sops`/`age` **sebelum** data pilot nyata masuk.
+13. **O-005 / ADR-002 (HTTP server)**: **ditutup**: Mummy 0.4.8 dipakai dan sudah diuji (termasuk
+    dua sifat non-publiknya di D-037). ADR tanpa keputusan hanya membingungkan.
+
+Butir 7–9, 11–12 menjadi task T-051/T-053/T-046; butir 10 sengaja terakhir.
