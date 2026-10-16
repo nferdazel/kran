@@ -96,6 +96,10 @@ var
   stressErrors: Atomic[int]
   stressIterations: Atomic[int]
   stressPids: array[stressThreads, int]
+  ## Galat terakhir per thread. Hitungan saja tidak cukup untuk menyelidiki kegagalan yang jarang:
+  ## tanpa pesannya, sekali muncul kita tetap tidak tahu apakah itu kebocoran/invarian pool atau
+  ## koneksi yang putus di luar pool (pernah terjadi saat gate 15 Okt 2026 — 2 dari 200 iterasi).
+  stressLastError: array[stressThreads, string]
 
 proc stressWorker(args: StressArgs) {.thread, gcsafe.} =
   ## Meminjam-mengembalikan koneksi berkali-kali dari satu thread. Kegagalan dicatat sebagai hitungan
@@ -116,14 +120,20 @@ proc stressWorker(args: StressArgs) {.thread, gcsafe.} =
         discard args.pool.withTx(proc(db: DbConn): string =
           db.getValue(sql"SELECT ?::text", "ok"))
         discard stressIterations.fetchAdd(1)
-    except CatchableError:
+    except CatchableError as e:
       discard stressErrors.fetchAdd(1)
+      if args.slot < stressLastError.len:
+        # Tiap thread hanya menulis slotnya sendiri, jadi akses ini aman; cast-nya sama jenisnya
+        # dengan `.cast(gcsafe)` untuk jalur pool di atas.
+        {.cast(gcsafe).}:
+          stressLastError[args.slot] = $e.name & ": " & e.msg
 
 proc runStress(pool: DbPool; iterations: int) =
   stressErrors.store(0)
   stressIterations.store(0)
   for i in 0 ..< stressThreads:
     stressPids[i] = 0
+    stressLastError[i] = ""
   var workers: array[stressThreads, Thread[StressArgs]]
   for i in 0 ..< stressThreads:
     createThread(workers[i], stressWorker, StressArgs(pool: pool, slot: i, iterations: iterations))
@@ -135,6 +145,13 @@ suite "pool: paralel antar-thread":
     let pool = newDbPool(cfgWith(poolSize = 3, acquireTimeoutMs = 15_000))
     defer: pool.close()
     runStress(pool, 25)
+
+    # Pesan galat dicetak sebelum assertion: kalau ini muncul sekali di gate, penyebabnya harus
+    # sudah terbaca dari log gate — bukan perlu direproduksi dulu.
+    if stressErrors.load() > 0:
+      for i in 0 ..< stressThreads:
+        if stressLastError[i].len > 0:
+          echo "  stress thread " & $i & ": " & stressLastError[i]
 
     check stressErrors.load() == 0
     check stressIterations.load() == stressThreads * 25
