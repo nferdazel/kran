@@ -18,7 +18,7 @@ cd "$ROOT"
 ENVFILE="$ROOT/.local/dev.env"
 SOCK="$ROOT/.local/devdb.sock"
 LOCAL_PORT="${KRAN_DEVDB_PORT:-55432}"
-SSH_HOST="${KRAN_DEVDB_SSH:-sachiel@43.133.148.191}"
+SSH_HOST="${KRAN_DEVDB_SSH:-}"  # wajib dari env: repo ini publik, host produksi tidak ditulis di kode
 SSH_KEY="${KRAN_DEVDB_SSH_KEY:-$HOME/.ssh/id_ed25519}"
 # Berapa lama master koneksi bertahan setelah idle (detik). Naikkan bila menjalankan
 # test integrasi panjang; mesin-lokal, jangan dijadikan nilai di repo.
@@ -30,6 +30,7 @@ load_env() {
   set -a
   . "$ENVFILE"
   set +a
+  [ -n "$SSH_HOST" ] || die "KRAN_DEVDB_SSH belum diisi (lihat docs/runbooks/dev-db.md)"
 }
 
 probe() {
