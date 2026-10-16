@@ -103,3 +103,21 @@ Satu putaran review independen di akhir batch atas diff seluruh batch (pola batc
 | 7 | BPR Pack | belum mulai |
 | 8 | Syariah Pack (BPRS/BMT) | belum mulai |
 | 9 | Integrasi & Hardening + cutover `cbs-core` | belum mulai |
+
+## Pasca-M0 — batch keputusan pemilik 16 Okt 2026 (D-046)
+
+Urutan pengerjaan yang disetujui pemilik: keamanan/kebenaran dulu (T-047 → T-048 → T-049), lalu CI
+supaya gate benar-benar mewakili (T-050), lalu aturan kebijakan (T-051), lalu integritas audit dengan
+review manusia (T-052), lalu batch kecil (T-053). MFA (T-046) sengaja **terakhir**: pemilik menilai
+belum perlu, yang diminta hanya bootstrap tanpa pengaktifan.
+
+| ID | Status | Tujuan | Spec | Deps | Kriteria selesai (dapat diverifikasi mesin) |
+|---|---|---|---|---|---|
+| T-047 | READY | O-036: tutup soket realtime saat sesi/izin dicabut | §19.3 | — | Uji: setelah pencabutan sesi, koneksi yang sudah ter-subscribe ditutup dan klien tidak lagi menerima event; test ada di suite realtime |
+| T-048 | READY | O-057: samakan `missingActiveKeys` dengan aturan resolusi | §10.2 | — | Uji: kasus yang tidak pernah "terlihat" oleh resolusi tidak dihitung aktif, dan sebaliknya; tidak ada kelonggaran tersisa |
+| T-049 | READY | O-035: validasi bentuk input sebelum menyentuh DB (tanggal ISO, uuid, kombinasi scope) → 400/404, bukan 500 | §17 | — | Test: tiap kasus yang dulu 500 kini 400/404 dengan `problem+json`; tidak ada query DB untuk input tak sah |
+| T-050 | READY | O-027 + O-014 + O-023: CI jalankan `db-tests` (Postgres service), `shellcheck -S warning` atas `ops/scripts/*.sh`, ESLint + a11y sebagai error | §21.3 | — | Job CI bertambah dan hijau; `shellcheck`/ESLint dipanggil `./task check`; tidak ada rule a11y yang diturunkan jadi warning |
+| T-051 | READY | O-032 + O-043 + O-050 + O-052: visibilitas params/audit per scope, tolak `effectiveTo` tanpa penerus, audit+batas percobaan kata sandi lama, kebijakan kata sandi (tanpa kedaluwarsa, riwayat 5, kualitas sebagai parameter) | §10, §13 | D-046 | Test izin lintas scope; pengajuan tanpa penerus ditolak 400; percobaan salah tercatat audit; angka kebijakan berasal dari parameter |
+| T-052 | READY | O-009 + O-038: anchor hash audit harian + urutan `seq` vs advisory lock | §18 | — | Anchor tersimpan dan diverifikasi di day-close; alarm palsu `audit_verify` hilang/dijelaskan; **HUMAN-REVIEW-REQUIRED** |
+| T-053 | READY | Batch kecil: O-042 (batas test dari `packs/*/generated`), O-045 (pesan 400 per-field ke i18n), O-018 (watcher parameter masuk pump yang sama), O-030 (batas realtime jadi parameter), O-033 (tautan Masuk di header + DECISIONS urutan Tab), O-006 (rencana `sops`/`age` untuk KEK) | §10, §15, §19 | — | Tiap butir punya test/entri; O-033 disertai entri DECISIONS karena mengubah urutan Tab |
+| T-046 | TODO | O-015: bootstrap MFA **tanpa pengaktifan** — skema, parameter, jalur enrolment/verifikasi; per akun opt-in, default mati | §13 | T-051 | Belum ada alur login yang berubah; bootstrap inert dan ditutup test; diaktifkan hanya lewat keputusan baru |
