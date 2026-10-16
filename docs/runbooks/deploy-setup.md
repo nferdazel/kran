@@ -149,6 +149,8 @@ systemctl --user restart kran-api        # /readyz di 8095 harus 200 sebelum lan
 semanage fcontext -a -t httpd_sys_content_t "/srv/qouver/apps/kran/web(/.*)?"
 restorecon -RF /srv/qouver/apps/kran/web
 caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy
+#    Header CSP sengaja hanya `frame-ancestors 'none'`: kebijakan lengkapnya dari `<meta>` ber-hash
+#    (D-045). Jangan tambahkan `script-src` di header, dua kebijakan CSP diirisan.
 # 4. Verifikasi domain, baru matikan web lama:
 #    / dan /login = 200, /api/v1/auth/session = 401 (galat bergaya KRAN)
 systemctl --user stop cbs-web
