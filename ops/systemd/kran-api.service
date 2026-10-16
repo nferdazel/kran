@@ -31,7 +31,11 @@ Environment=LD_LIBRARY_PATH=/srv/qouver/apps/kran/lib
 # Port/alamat dari EnvironmentFile di atas. Biner **tidak** membaca KRAN_PORT sendiri (hanya flag
 # `--port`/`--address`), jadi tanpa dua argumen ini ia memakai default 8080 — dan 8080 di server ini
 # sudah dipakai container lain (ditemukan di T-045, 16 Okt 2026: app crash-loop "Address already in use").
-ExecStart=/srv/qouver/apps/kran/bin/kran-api --role=api --port=${KRAN_PORT} --address=${KRAN_BIND_HOST}
+#
+# `--root` = checkpoint monorepo untuk probe migrasi `/readyz` (T-041/O-019). WorkingDirectory unit ini
+# (`$APP_DIR`) bukan akar repo — sumber ada di `$MONO_DIR/modules/`. Tanpa `--root`, probe migrasi
+# melaporkan "akar migrasi tidak tersedia" (tetap 200, tidak menggagalkan deploy) alih-alih memverifikasi.
+ExecStart=/srv/qouver/apps/kran/bin/kran-api --role=api --port=${KRAN_PORT} --address=${KRAN_BIND_HOST} --root=/srv/qouver/apps/kran/monorepo
 Restart=always
 # Kesalahan konfigurasi bersifat permanen: restart-loop hanya mengulang galat yang sama. Kebijakan
 # worker (`kran-worker.service`) sudah begitu untuk exit 3 ("belum dikonfigurasi"); di sini exit 2 =

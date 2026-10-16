@@ -460,8 +460,11 @@ proc pumpLoop(svc: EventService) {.thread, gcsafe.} =
       svc.pumpPid.store(parseInt(db.getValue(sql"select pg_backend_pid()")))
       if firstConnect:
         # Backlog lama tidak disemprotkan ke klien baru; klien yang butuh riwayat memintanya lewat
-        # `resumeFrom` atau HTTP.
-        svc.lastEventId = latestEventId(db)
+        # `resumeFrom` atau HTTP. Ditulis di bawah lock supaya `pumpCursor` (readiness) tidak
+        # membaca nilai setengah jadi dari thread lain.
+        let cursor = latestEventId(db)
+        withLock svc.lock:
+          svc.lastEventId = cursor
         firstConnect = false
       svc.ready.store(true)
       svc.pumpLastReadyNs.store(monoNs())
@@ -507,6 +510,13 @@ proc pumpReady*(svc: EventService): bool =
   ## (klien memintanya lewat `resumeFrom`) — jadi uji yang bergantung pada pengiriman langsung
   ## harus menunggu sinyal ini, bukan menebak lewat `sleep`.
   svc.ready.load()
+
+proc pumpCursor*(svc: EventService): string =
+  ## Id peristiwa outbox terakhir yang **sudah diproses** pump ("" sebelum titik mulai ditetapkan).
+  ## Dipakai readiness untuk mengukur lag outbox (O-019). Dibaca di bawah lock yang sama dengan
+  ## penulisnya (`dispatch` dan penetapan titik mulai), jadi aman antar-thread.
+  withLock svc.lock:
+    result = svc.lastEventId
 
 proc stopPump*(svc: EventService) =
   ## Hanya untuk uji: pump berhenti dalam ≤ `pumpPollMs`.

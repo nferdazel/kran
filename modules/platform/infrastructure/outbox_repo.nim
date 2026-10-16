@@ -162,3 +162,22 @@ proc attemptsOf*(db: DbConn, eventId: Id): int =
 proc countByStatus*(db: DbConn, status: EventStatus): int64 =
   parseBiggestInt(db.getValue(
     sql"SELECT count(*) FROM platform.outbox WHERE status = ?", $status))
+
+proc oldestUndeliveredSeconds*(db: DbConn, afterEventId: string): int64 =
+  ## Usia (detik, dibulatkan ke bawah) peristiwa outbox **tertua yang belum diproses konsumen** —
+  ## baris dengan `seq` setelah token — atau `0` bila tidak ada sisa.
+  ##
+  ## Dipakai readiness `/readyz` (O-019) untuk melihat konsumen (pump realtime) tertinggal. Memakai
+  ## `seq` (bukan `occurred_at`) supaya konsisten dengan kursor pump yang berbasis `outbox_id`;
+  ## token kosong/tak dikenal diperlakukan sebagai "mulai dari awal", sama seperti `fetchAfter`.
+  let token =
+    if afterEventId.len == 0:
+      zeroUuid
+    else:
+      let parsed = parseId(afterEventId)
+      if parsed.isOk: $parsed.value else: zeroUuid
+  parseBiggestInt(db.getValue(sql"""SELECT coalesce(
+      (extract(epoch FROM now() - min(o.occurred_at)))::bigint, 0)
+      FROM platform.outbox o
+     WHERE o.seq > coalesce((SELECT seq FROM platform.outbox WHERE outbox_id = ?::uuid), 0)""",
+    token))

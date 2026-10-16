@@ -7,7 +7,7 @@
 ## Test ini **tidak** mengubah schema: hanya menjalankan `select 1` lewat pool yang sama dengan
 ## yang dipakai `/readyz` pada proses `kran-api`.
 
-import std/[httpclient, json, net, os, times, unittest]
+import std/[httpclient, json, net, os, strutils, times, unittest]
 
 import mummy
 
@@ -91,6 +91,26 @@ suite "readiness realtime (O-029)":
     check hasil[0].name == "pertama"
     check hasil[1].status == csFailed
     check hasil[1].detail == "sebab"
+
+suite "readiness migrasi (O-019)":
+  test "expand tertunda -> failed dengan daftar; bersih -> ok":
+    check migrationCheck(@[], verifiable = true).status == csOk
+    let tertunda = migrationCheck(@["platform/0007_x"], verifiable = true)
+    check tertunda.status == csFailed
+    check tertunda.detail.contains("platform/0007_x")
+
+  test "akar migrasi tidak terbaca -> ok + detail eksplisit (tidak membuat deploy rapuh)":
+    let takTerbaca = migrationCheck(@[], verifiable = false)
+    check takTerbaca.status == csOk
+    check takTerbaca.detail.len > 0
+
+suite "readiness lag outbox (O-019)":
+  test "di bawah/tepat ambang -> ok; melewati ambang -> failed":
+    check pumpLagCheck(0, 30).status == csOk
+    check pumpLagCheck(30, 30).status == csOk
+    let telat = pumpLagCheck(31, 30)
+    check telat.status == csFailed
+    check telat.detail.contains("31")
 
 suite "drain saat berhenti (T-032)":
   test "readiness gagal saat proses sedang berhenti, dan tidak sebelum itu":

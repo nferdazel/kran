@@ -201,8 +201,10 @@ Invarian tambahan:
     selama putus, padahal pembacaannya memang dari tabel lewat token yang sama. Keadaan itu juga
     terlihat dari luar: `readiness.realtimeProbe` baru menyatakan `failed` setelah
     `pumpReadyGraceSeconds` (30 detik), supaya sambungan ulang singkat tidak membuat penyeimbang beban
-    membuang proses yang sebenarnya sehat. Saat proses berhenti, pump dihentikan **setelah** permintaan
-    HTTP yang sedang berjalan selesai (drain, T-032).
+    membuang proses yang sebenarnya sehat. Sejak T-041 lag-nya juga terbaca: `readiness.pumpLagProbe`
+    memakai `outbox_repo.oldestUndeliveredSeconds` (usia peristiwa tertua dengan `seq` setelah kursor
+    pump, dibaca lewat `pumpCursor`) dan `failed` di atas `pumpLagSeconds` (30 detik). Saat proses
+    berhenti, pump dihentikan **setelah** permintaan HTTP yang sedang berjalan selesai (drain, T-032).
 13. **Izin diperiksa ulang per klien, bukan sekali saat handshake** (T-030): `sweepSessions` memeriksa
     tiap klien **paling sering** sekali per `sessionRecheckSeconds` (bukan setiap peristiwa) dan
     menutup langganan yang sesi/izinnya sudah tidak sah. Konsekuensi yang diterima: ada jendela
