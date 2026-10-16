@@ -55,6 +55,21 @@ proc tempRoot(name: string): string =
   root
 
 suite "platform: migrasi":
+  test "DB baru (tanpa tabel riwayat): reportStatus read-only, tidak membuat tabelnya sendiri":
+    # Deploy pertama ke DB kosong (D-043/T-045): `--check`/`--up` memanggil reportStatus **sebelum**
+    # menerapkan apa pun, jadi ia harus tahan saat `platform.schema_migration` belum ada. Kalau ia
+    # yang membuat tabelnya, perintah read-only jadi menulis skema — dan itu tidak ketahuan.
+    check db.getValue(
+      sql"SELECT (to_regclass('platform.schema_migration') IS NULL)::text") == "true"
+    let status = reportStatus(db, repoRoot)
+    check status.len > 0
+    var belum = 0
+    for s in status:
+      if not s.applied: inc belum
+    check belum == status.len
+    check db.getValue(
+      sql"SELECT (to_regclass('platform.schema_migration') IS NULL)::text") == "true"
+
   test "menerapkan semua, lalu idempotent (up 2x aman)":
     let jumlahMigrasi = migrationsOf(repoRoot).len
     check jumlahMigrasi > 0

@@ -424,11 +424,20 @@ proc appliedChecksums*(db: DbConn): seq[(string, string)] =
   for row in db.getAllRows(sql"SELECT migration_id, sha256 FROM platform.schema_migration"):
     result.add (row[0], row[1])
 
+proc migrationTableExists*(db: DbConn): bool =
+  ## Apakah tabel riwayat migrasi sudah ada. DB baru (deploy pertama ke database kosong) belum
+  ## memilikinya, dan `reportStatus` sengaja **tidak** membuatnya sendiri: itu tugas
+  ## `ensureBootstrap` di jalur yang benar-benar menerapkan migrasi. Tanpa pemeriksaan ini,
+  ## `--check`/`--up` gagal di DB baru sebelum sempat menerapkan apa pun (ditemukan di latihan
+  ## deploy T-045, 16 Okt 2026).
+  db.getValue(sql"SELECT to_regclass('platform.schema_migration')") != ""
+
 proc reportStatus*(db: DbConn, root: string): seq[MigrationStatus] =
   let migra = migrationsOf(root)
   var known = initTable[string, string]()
-  for (mid, sha) in appliedChecksums(db):
-    known[mid] = sha
+  if migrationTableExists(db):
+    for (mid, sha) in appliedChecksums(db):
+      known[mid] = sha
   for m in migra:
     var s = MigrationStatus(migration: m)
     if known.hasKey(m.id):
