@@ -4,15 +4,18 @@
 #   migrate.sh --check            periksa urutan/drift tanpa menulis
 #   migrate.sh --up               terapkan migrasi expand-only yang belum tercatat
 #   migrate.sh --contract --yes   migrasi contract (drop/rename/ketat); wajib --yes
-#   migrate.sh --down --yes [N]   rollback N migrasi terakhir; wajib --yes
+#   migrate.sh --down --yes N     batalkan N migrasi terakhir; wajib --yes dan N
 #
 # Menjalankan role migrate dari binary multi-role (spec §26.1 #5):
-#   <bin> --role=migrate [--check|--up] [--root=<dir>]
+#   <bin> --role=migrate [--check|--up|--contract|--down N] [--root=<dir>]
 #
-# Kontrak yang **sudah ada di biner** (T-026): `--check` (read-only, kode keluar 1 bila ada migrasi
-# tertunda/berubah isinya) dan `--up` (default: terapkan yang tertunda, idempoten).
-# `--contract` dan `--down` **belum ada** di biner dan ditolak di sini (kode 3) — bukan diam-diam
-# dijalankan sebagai `--up`. Lihat docs/OPEN_ITEMS.md O-048.
+# Kontrak di biner (T-026 untuk `--check`/`--up`, T-035 untuk sisanya): `--check` read-only (kode 1
+# bila ada migrasi expand tertunda atau isinya berubah), `--up` menerapkan yang tertunda (idempoten),
+# `--contract` hanya menerapkan berkas bertanda `-- dbtools:contract <alasan>` dan menolak selama
+# expand masih tertunda, `--down N` butuh berkas pasangan `<nama>.down.sql`.
+#
+# Kode keluar biner diteruskan apa adanya: 1 salah data, 2 salah pakai, 3 dikenali tetapi ditolak pada
+# keadaan itu (mis. pasangan rollback tidak ada). Prosedur + peringatannya di docs/runbooks/migrasi.md.
 #
 # BELUM PERNAH DIJALANKAN DI SERVER (T-013/T-026): skrip ini masih berkas repo saja.
 set -euo pipefail
@@ -26,7 +29,7 @@ pemakaian: migrate.sh <subperintah>
   --check            periksa drift/urutan (read-only)
   --up               terapkan migrasi expand-only
   --contract --yes   migrasi contract (drop/rename), wajib --yes
-  --down --yes [N]   rollback N migrasi terakhir, wajib --yes
+  --down --yes N     batalkan N migrasi terakhir, wajib --yes dan N
 USAGE
   exit 2
 }
@@ -37,6 +40,16 @@ has_yes() {
     [ "$a" = "--yes" ] && return 0
   done
   return 1
+}
+
+only_yes() {
+  # Subperintah yang tidak butuh argumen lain hanya menerima `--yes`; sisa argumen ditolak, tidak
+  # diabaikan diam-diam (argumen yang diabaikan terbaca seperti "sudah dijalankan seperti yang saya
+  # maksud").
+  local a
+  for a in "$@"; do
+    [ "$a" = "--yes" ] || { echo "ERROR: argumen tidak dikenal untuk $mode: $a" >&2; usage; }
+  done
 }
 
 [ "$#" -ge 1 ] || usage
@@ -65,16 +78,29 @@ case "$mode" in
       echo "ERROR: --contract butuh --yes (migrasi destruktif, opt-in manual)" >&2
       exit 2
     fi
-    echo "ERROR: --contract belum ada di biner (Fase 0); lihat docs/OPEN_ITEMS.md O-048" >&2
-    exit 3
+    only_yes "$@"
+    exec "$BIN" --role=migrate --contract
     ;;
   --down)
     if ! has_yes "$@"; then
       echo "ERROR: --down butuh --yes (rollback opt-in manual)" >&2
       exit 2
     fi
-    echo "ERROR: --down belum ada di biner (Fase 0); lihat docs/OPEN_ITEMS.md O-048" >&2
-    exit 3
+    # N wajib dan tunggal: angka yang salah berarti skema mundur terlalu jauh, dan itu tidak bisa
+    # ditebak ulang. Diteruskan apa adanya ke biner, yang juga menolaknya sendiri (kode 3).
+    rollback_n=""
+    for a in "$@"; do
+      case "$a" in
+        --yes) ;;
+        '' | *[!0-9]*) echo "ERROR: jumlah rollback harus angka: $a" >&2; usage ;;
+        *)
+          [ -z "$rollback_n" ] || { echo "ERROR: jumlah rollback hanya boleh satu: $a" >&2; usage; }
+          rollback_n="$a"
+          ;;
+      esac
+    done
+    [ -n "$rollback_n" ] || { echo "ERROR: --down butuh jumlah N (mis. --down --yes 1)" >&2; usage; }
+    exec "$BIN" --role=migrate --down "$rollback_n"
     ;;
   *)
     usage

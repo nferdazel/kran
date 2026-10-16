@@ -616,3 +616,16 @@ masuk.
   `ssh -T github-kran` berhasil dari server; uji bertanda tangan benar -> 200 + `kran got matched` +
   `error in exec ... no such file or directory` (wiring benar, deploy belum mungkin jalan); uji bertanda
   tangan salah -> 500 `invalid payload signatures`. Lima hook lama tidak disentuh.
+
+- **T-035 DONE**: migrasi dua tahap (contract) + rollback skema ada di biner, menutup O-048.
+  Berkas bertanda `-- dbtools:contract <alasan>` dilewati `--up` dan hanya dijalankan `--contract`
+  (yang menolak jalan bila ada migrasi expand tertunda); `--down N` membatalkan N migrasi terakhir
+  yang diterapkan lewat pasangan `<nama>.down.sql`, dengan seluruh pasangan diperiksa **sebelum** satu
+  pun dijalankan, satu berkas = satu transaksi bersama penghapusan baris `platform.schema_migration`.
+  `ops/scripts/migrate.sh` meneruskan keduanya (tetap wajib `--yes`, `--down` wajib N); `--check` tidak
+  menghitung contract sebagai tertunda. Bukti: `./task ci` hijau (479 `[OK]`, e2e 23) + 9 uji unit baru
+  (28), 4 uji integrasi DB baru (itplatform 18), 1 uji kontrak CLI baru (itapi_roles 13); **bukti mutasi
+  13 penjagaan**, masing-masing dilepas dan ada uji yang gagal. Dua temuan soal kualitas bukti:
+  `check` di dalam proc pembantu tidak menggagalkan uji (helper `expectMigrateError`/`expectPlanError`
+  diperbaiki supaya melempar), dan uji atomisitas pertama tidak diskriminatif (diganti: penghapusan
+  barisnya dipaksa gagal). Keputusan D-040 + runbook baru `docs/runbooks/migrasi.md`.

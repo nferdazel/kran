@@ -247,3 +247,126 @@ suite "platform: audit_log":
   test "TRUNCATE ditolak trigger":
     expectDbError(sql"TRUNCATE platform.audit_log", "append-only")
     check countAudit(db) == 4
+
+suite "platform: migrasi dua tahap (contract & rollback, T-035)":
+  ## Migrasi nyata sudah diterapkan suite pertama; yang ditambahkan di sini adalah berkas sintetis
+  ## pada root sementara. Yang diuji bukan hanya kode keluar, tetapi **efeknya di DB**: DDL benar
+  ## dijalankan/dikembalikan, dan baris `schema_migration` mengikuti kenyataan.
+  proc contractRoot(name: string, berkas: seq[(string, string)]): string =
+    let root = tempRoot(name)
+    let migDir = root / "modules" / "platform" / "migrations"
+    for (nama, sql) in berkas:
+      writeFile(migDir / nama, sql)
+    root
+
+  test "contract dilewati jalur expand, diterapkan `--contract`, dikembalikan `--down`":
+    let root = contractRoot("dua-tahap", @[
+      ("0900_probe_dua_tahap.sql",
+       "-- dbtools:contract uji dua tahap (sintetis)\n" &
+       "CREATE TABLE platform.probe_dua_tahap (id int);\n"),
+      ("0900_probe_dua_tahap.down.sql", "DROP TABLE platform.probe_dua_tahap;\n")])
+    let id = "platform/0900_probe_dua_tahap"
+
+    let expand = applyMigrations(db, root)
+    check expand.applied.len == 0
+    check id in expand.contractPending
+    check db.getValue(sql"SELECT (to_regclass('platform.probe_dua_tahap') IS NULL)::text") ==
+      "true"
+
+    let tahapDua = applyMigrations(db, root, contract = true)
+    check tahapDua.applied == @[id]
+    check db.getValue(
+      sql"SELECT (to_regclass('platform.probe_dua_tahap') IS NOT NULL)::text") == "true"
+    # sudah diterapkan: tidak ikut lagi di jalur mana pun (idempoten di kedua mode)
+    check applyMigrations(db, root).applied.len == 0
+    check applyMigrations(db, root, contract = true).applied.len == 0
+
+    let sebelum = parseInt(db.getValue(sql"SELECT count(*) FROM platform.schema_migration"))
+    check rollbackMigrations(db, root, 1) == @[id]
+    check db.getValue(sql"SELECT (to_regclass('platform.probe_dua_tahap') IS NULL)::text") == "true"
+    # barisnya dihapus: `status`/`--check` harus mencerminkan DB, bukan niat
+    check parseInt(db.getValue(sql"SELECT count(*) FROM platform.schema_migration")) == sebelum - 1
+    check db.getValue(
+      sql"SELECT count(*) FROM platform.schema_migration WHERE migration_id = ?", id) == "0"
+
+  test "`--contract` menolak jalan selama migrasi expand masih tertunda":
+    let root = contractRoot("dua-tahap-pending", @[
+      ("0901_probe_pending.sql", "CREATE TABLE platform.probe_pending (id int);\n"),
+      ("0902_probe_pending_contract.sql",
+       "-- dbtools:destructive uji penolakan (sintetis)\n" &
+       "-- dbtools:contract uji penolakan (sintetis)\n" &
+       "DROP TABLE platform.probe_pending;\n")])
+    var raised = false
+    try:
+      discard applyMigrations(db, root, contract = true)
+    except MigrateError as e:
+      raised = true
+      check e.msg.contains("expand masih tertunda")
+    check raised
+    # ditolak berarti tidak menulis apa pun — bukan "sebagian lalu gagal"
+    check db.getValue(sql"SELECT (to_regclass('platform.probe_pending') IS NULL)::text") == "true"
+
+  test "pembatalan yang gagal tidak menghapus barisnya (satu berkas = satu transaksi)":
+    let root = contractRoot("dua-tahap-gagal", @[
+      ("0903_probe_gagal.sql",
+       "-- dbtools:contract uji atomik (sintetis)\n" &
+       "CREATE TABLE platform.probe_gagal (id int);\n"),
+      # pasangan ini sengaja gagal **setelah** satu DDL berhasil
+      ("0903_probe_gagal.down.sql",
+       "CREATE TABLE platform.probe_efek_samping (id int);\n" &
+       "DROP TABLE platform.tidak_ada_tabel_ini;\n")])
+    let id = "platform/0903_probe_gagal"
+    check applyMigrations(db, root, contract = true).applied == @[id]
+
+    var raised = false
+    try:
+      discard rollbackMigrations(db, root, 1)
+    except DbError as e:
+      raised = true
+      check e.msg.contains("0903_probe_gagal.down.sql")
+    check raised
+    # DDL pertama di berkas pasangan ikut dibatalkan, dan barisnya TIDAK dihapus
+    check db.getValue(
+      sql"SELECT (to_regclass('platform.probe_efek_samping') IS NULL)::text") == "true"
+    check db.getValue(
+      sql"SELECT count(*) FROM platform.schema_migration WHERE migration_id = ?", id) == "1"
+
+    # dipulihkan: pasangan diperbaiki, pembatalan berjalan, DB kembali ke keadaan semula
+    writeFile(root / "modules" / "platform" / "migrations" / "0903_probe_gagal.down.sql",
+      "DROP TABLE platform.probe_gagal;\n")
+    check rollbackMigrations(db, root, 1) == @[id]
+    check db.getValue(sql"SELECT (to_regclass('platform.probe_gagal') IS NULL)::text") == "true"
+
+  test "DDL pembatalan se-transaksi dengan penghapusan barisnya":
+    # Berkas multi-pernyataan sudah atomik sendiri di Postgres (satu `PQexec` = satu transaksi
+    # implisit), jadi uji sebelumnya tidak bisa membedakan ada-tidaknya transaksi eksplisit. Di sini
+    # **penghapusan barisnya** yang dibuat gagal: bila DDL pembatalan tidak berada dalam transaksi
+    # yang sama, DDL itu akan tetap tinggal padahal barisnya batal dihapus.
+    let root = contractRoot("dua-tahap-tx", @[
+      ("0904_probe_tx.sql",
+       "-- dbtools:contract uji transaksi (sintetis)\n" &
+       "CREATE TABLE platform.probe_tx (id int);\n"),
+      ("0904_probe_tx.down.sql", "DROP TABLE platform.probe_tx;\n")])
+    let id = "platform/0904_probe_tx"
+    check applyMigrations(db, root, contract = true).applied == @[id]
+
+    execScript(db, """CREATE FUNCTION platform.probe_tolak_hapus() RETURNS trigger AS $$
+                        BEGIN RAISE EXCEPTION 'tolak hapus (uji)'; END; $$ LANGUAGE plpgsql""")
+    execScript(db, """CREATE TRIGGER probe_tolak_hapus BEFORE DELETE ON platform.schema_migration
+                      FOR EACH ROW EXECUTE FUNCTION platform.probe_tolak_hapus()""")
+    var raised = false
+    try:
+      discard rollbackMigrations(db, root, 1)
+    except DbError as e:
+      raised = true
+      check e.msg.contains("tolak hapus")
+    check raised
+    # DDL pembatalan ikut dibatalkan bersama penghapusan barisnya
+    check db.getValue(sql"SELECT (to_regclass('platform.probe_tx') IS NOT NULL)::text") == "true"
+    check db.getValue(
+      sql"SELECT count(*) FROM platform.schema_migration WHERE migration_id = ?", id) == "1"
+
+    execScript(db, "DROP TRIGGER probe_tolak_hapus ON platform.schema_migration")
+    execScript(db, "DROP FUNCTION platform.probe_tolak_hapus()")
+    check rollbackMigrations(db, root, 1) == @[id]
+    check db.getValue(sql"SELECT (to_regclass('platform.probe_tx') IS NULL)::text") == "true"

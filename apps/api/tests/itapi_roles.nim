@@ -123,3 +123,54 @@ suite "kran-api: peran CLI (O-013)":
     check destructivePending(@[]).len == 0
     # Di repo ini belum ada migrasi berpenanda destruktif, jadi `--up` tetap jalan.
     check runMigrate(".", "--up") == 0
+
+  test "migrate --contract/--down: kode keluar 0 / 2 / 3 sesuai kontrak (T-035)":
+    # Root sintetis: seluruh modul disalin seperti root repo, lalu ditambah satu berkas contract.
+    # Migrasi nyata sudah diterapkan test sebelumnya di suite ini, jadi yang baru hanya berkas ini.
+    let root = ".build/itapi-roles/dua-tahap"
+    if dirExists(root):
+      removeDir(root)
+    createDir(root)
+    copyDir("modules", root / "modules")
+
+    let nama = "0900_probe_cli"
+    let id = "platform/" & nama
+    let berkas = root / "modules" / "platform" / "migrations" / (nama & ".sql")
+    let pasangan = root / "modules" / "platform" / "migrations" / (nama & ".down.sql")
+    writeFile(berkas, "-- dbtools:contract uji kode keluar CLI (sintetis)\n" &
+      "CREATE TABLE platform.probe_cli (id int);\n")
+    writeFile(pasangan, "DROP TABLE platform.probe_cli;\n")
+    # Bersihkan sisa nama ini bila ada (uji lain/mutasi bisa meninggalkannya): tanpa ini uji hanya
+    # benar sekali, dan itu membuat hasil ulangnya menyesatkan.
+    execScript(db, "DROP TABLE IF EXISTS platform.probe_cli;")
+    discard db.execAffectedRows(
+      sql"DELETE FROM platform.schema_migration WHERE migration_id = ?", id)
+
+    # Gate `--check` tidak boleh merah hanya karena ada berkas contract menunggu keputusan operator.
+    check runMigrate(root, "--check") == 0
+    # Jalur expand melewatinya: tidak diterapkan, jadi tabelnya belum ada.
+    check runMigrate(root, "--up") == 0
+    check db.getValue(sql"SELECT (to_regclass('platform.probe_cli') IS NULL)::text") == "true"
+
+    check runMigrate(root, "--contract") == 0
+    check db.getValue(sql"SELECT (to_regclass('platform.probe_cli') IS NOT NULL)::text") == "true"
+    check runMigrate(root, "--contract") == 0 # idempoten
+    check runMigrate(root, "--up") == 0 # expand tetap tidak menyentuh berkas contract
+
+    # Keadaan membahayakan → 3 (dikenali tetapi ditolak), salah pakai → 2. Tidak ada yang ditebak.
+    check runMigrate(root, "--down") == 3
+    check runMigrate(root, "--down", "0") == 3
+    check runMigrate(root, "--down", "abc") == 2
+    check runMigrate(root, "--down", "99") == 3
+
+    # Pasangan rollback hilang: ditolak **sebelum** ada tulisan apa pun.
+    removeFile(pasangan)
+    check runMigrate(root, "--down", "1") == 3
+    check db.getValue(sql"SELECT (to_regclass('platform.probe_cli') IS NOT NULL)::text") == "true"
+
+    # Dipulihkan: pasangan dikembalikan, rollback jalan, dan DB kembali seperti sebelum uji.
+    writeFile(pasangan, "DROP TABLE platform.probe_cli;\n")
+    check runMigrate(root, "--down", "1") == 0
+    check db.getValue(sql"SELECT (to_regclass('platform.probe_cli') IS NULL)::text") == "true"
+    check db.getValue(
+      sql"SELECT count(*) FROM platform.schema_migration WHERE migration_id = ?", id) == "0"
