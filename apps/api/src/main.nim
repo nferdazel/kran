@@ -1,7 +1,9 @@
 ## Titik masuk `kran-api` (spec §12.5 konfigurasi bootstrap, §21.4 role proses).
 ##
 ##   kran-api --role=api [--port=8080] [--address=127.0.0.1] [--version=<string>]
-##   kran-api --role=migrate [--check|--up] [--root=<dir>]  migrasi: terapkan, atau periksa saja
+##   kran-api --role=migrate [--check|--up|--contract|--down N] [--root=<dir>]
+##                                              migrasi: terapkan expand, terapkan contract,
+##                                              batalkan N migrasi terakhir, atau periksa saja
 ##   kran-api --role=ctl <perintah> [--root=<dir>] perintah operasional (read-only, kecuali
 ##                                                `bootstrap-admin`)
 ##   kran-api --role=ctl bootstrap-admin --username=<nama>   admin pertama (kata sandi diacak,
@@ -59,7 +61,8 @@ const
 
 const Usage =
   "pemakaian: kran-api --role=api|migrate|ctl|worker [--root=<dir>] [--port=8080] " &
-  "[--address=127.0.0.1] [--version=<string>] [--check|--up] [--username=<nama>] [<perintah ctl>]"
+  "[--address=127.0.0.1] [--version=<string>] [--check|--up|--contract|--down N] " &
+  "[--username=<nama>] [<perintah ctl>]"
 
 type
   CliOptions = object
@@ -69,7 +72,8 @@ type
     version: string
     root: string     ## akar repo untuk `--role=migrate` (letak `modules/*/migrations`)
     cmd: string      ## perintah posisi untuk `--role=ctl`
-    sub: string      ## subperintah `--role=migrate`: --check | --up
+    sub: string      ## subperintah `--role=migrate`: --check | --up | --contract | --down
+    subArg: string   ## angka `N` untuk `--role=migrate --down N`
     username: string ## `--role=ctl bootstrap-admin`: nama admin pertama
 
 proc die(msg: string) =
@@ -101,18 +105,24 @@ proc parseArgs(argv: seq[string]): CliOptions =
       result.username = arg["--username=".len .. ^1]
     elif arg.startsWith("--root="):
       result.root = arg["--root=".len .. ^1]
-    elif arg == "--check" or arg == "--up":
+    elif arg in ["--check", "--up", "--contract", "--down"]:
       result.sub = arg
     elif arg in ["-h", "--help"]:
       echo Usage
       quit(0)
     elif arg.len > 0:
-      if result.cmd.len > 0:
+      if result.cmd.len > 0 or result.subArg.len > 0:
         die("terlalu banyak argumen: " & arg)
-      result.cmd = arg
+      # Angka telanjang hanya punya satu arti di role ini: jumlah rollback `--down N`.
+      if arg[0] in {'0' .. '9'}:
+        result.subArg = arg
+      else:
+        result.cmd = arg
 
   if result.cmd.len > 0 and result.role != roleCtl:
     die("argumen posisi hanya untuk --role=ctl: " & result.cmd)
+  if result.subArg.len > 0 and (result.role != roleMigrate or result.sub != "--down"):
+    die("angka jumlah rollback hanya untuk `--role=migrate --down N`: " & result.subArg)
   if result.sub.len > 0 and result.role != roleMigrate:
     die("subperintah " & result.sub & " hanya untuk --role=migrate")
   if result.username.len > 0 and
@@ -323,46 +333,90 @@ proc runCtl*(command, root: string, username = ""): int =
     stderr.writeLine CtlUsage
     2
 
-proc destructivePending*(status: seq[MigrationStatus]): seq[string] =
-  ## Migrasi yang **belum diterapkan** dan bertanda `-- dbtools:destructive`. `--up` menolaknya:
-  ## menerapkan DDL destruktif secara otomatis bertabrakan dengan kebijakan expand-only (spec §21.7)
-  ## dan dengan janji `ops/scripts/migrate.sh --up` ("migrasi expand-only"). Jalur contract belum ada
-  ## di Fase 0, jadi menolak lebih benar daripada menerapkannya diam-diam (O-048).
-  for s in status:
-    if not s.applied and s.migration.destructive:
-      result.add s.migration.id
-
-proc runMigrate*(root: string, sub = ""): int =
+proc runMigrate*(root: string, sub = "", subArg = ""): int =
   ## Peran `migrate` (kontrak yang dipakai `ops/scripts/migrate.sh` dan gate deploy):
-  ##   tanpa subperintah / `--up` : terapkan migrasi yang tertunda lalu keluar (idempoten)
-  ##   `--check`                  : **read-only** — keluar 1 bila ada migrasi belum diterapkan atau
-  ##                                isi migrasi yang sudah diterapkan berubah (drift)
+  ##   tanpa subperintah / `--up` : terapkan migrasi expand yang tertunda lalu keluar (idempoten)
+  ##   `--check`                  : **read-only** — keluar 1 bila ada migrasi expand belum diterapkan
+  ##                                atau isi migrasi yang sudah diterapkan berubah (drift)
+  ##   `--contract`               : terapkan migrasi bertanda contract (opt-in manual, §21.4)
+  ##   `--down N`                 : batalkan N migrasi yang terakhir diterapkan (butuh pasangan
+  ##                                `<nama>.down.sql`)
   ## Memakai `dbtools/lib`, jalur yang sama dengan `./task dbtools migrate`/`validate`, supaya hanya
-  ## ada satu implementasi migrasi (O-013). Migrasi contract/rollback (`--contract`/`--down`) belum
-  ## ada di Fase 0 dan ditolak skripnya sendiri, bukan diam-diam dianggap `--up`.
+  ## ada satu implementasi migrasi (O-013).
+  ##
+  ## Kode keluar punya arti tetap: 0 berhasil, 1 salah data (mis. isi migrasi berubah), 2 salah pakai,
+  ## 3 = **dikenali tetapi sengaja ditolak pada keadaan itu** (N tidak jelas, expand masih tertunda,
+  ## berkas pasangan rollback tidak ada). Skrip ops membaca bedanya.
   withRoleDb(proc(db: DbConn): int {.closure.} =
     let status = reportStatus(db, root)
-    if sub == "--check":
+    case sub
+    of "--check":
+      # Migrasi contract tidak dihitung sebagai "tertunda": berkas contract memang menunggu operator
+      # memutuskan kapan dijalankan, jadi menghitungnya akan membuat gate deploy gagal selamanya
+      # begitu sebuah berkas contract dirilis.
       var belum = 0
       var drift = 0
+      var contractTertunda = 0
       for s in status:
-        if not s.applied:
+        if s.migration.contract and not s.applied:
+          inc contractTertunda
+        elif not s.applied:
           inc belum
         elif s.checksumChanged:
           inc drift
-      echo "kran-api migrate --check: " & $(status.len - belum) & "/" & $status.len &
-        " diterapkan, " & $drift & " isinya berubah"
+      echo "kran-api migrate --check: " & $(status.len - belum - contractTertunda) & "/" &
+        $status.len & " diterapkan, " & $drift & " isinya berubah"
+      if contractTertunda > 0:
+        echo "  " & $contractTertunda &
+          " migrasi contract menunggu `--contract` (bukan urusan --check)"
       if belum > 0 or drift > 0:
         1
       else:
         0
+    of "--contract":
+      let tertunda = expandPending(status)
+      if tertunda.len > 0:
+        stderr.writeLine "kran-api migrate --contract: " & $tertunda.len &
+          " migrasi expand masih tertunda: " & tertunda.join(", ")
+        stderr.writeLine "  Contract selalu datang setelah expand — jalankan `--up` lebih dulu."
+        return 3
+      try:
+        let report = applyMigrations(db, root, contract = true)
+        echo "kran-api migrate --contract: " & $report.applied.len & " diterapkan, " &
+          $report.skipped.len & " dilewati (sudah ada)"
+        for id in report.applied:
+          echo "  + " & id
+        0
+      except MigrateError as e:
+        stderr.writeLine "kran-api migrate --contract: ditolak — " & e.msg
+        3
+    of "--down":
+      if subArg.len == 0:
+        stderr.writeLine "kran-api migrate --down: butuh jumlah N (mis. `--down 1`)"
+        stderr.writeLine "  N tidak pernah ditebak: angka yang salah = skema mundur terlalu jauh."
+        return 3
+      var n: int
+      try:
+        n = parseInt(subArg)
+      except ValueError:
+        stderr.writeLine "kran-api migrate --down: jumlah bukan angka: '" & subArg & "'"
+        return 2
+      try:
+        let undone = rollbackMigrations(db, root, n)
+        echo "kran-api migrate --down: " & $undone.len & " migrasi dibatalkan"
+        for id in undone:
+          echo "  - " & id
+        0
+      except MigrateError as e:
+        stderr.writeLine "kran-api migrate --down: ditolak — " & e.msg
+        3
     else:
       let blocked = destructivePending(status)
       if blocked.len > 0:
         stderr.writeLine "kran-api migrate: " & $blocked.len &
           " migrasi bertanda destruktif belum diterapkan: " & blocked.join(", ")
-        stderr.writeLine "  Jalur contract/rollback belum ada di Fase 0 (docs/OPEN_ITEMS.md O-048); " &
-          "`--up` sengaja menolaknya."
+        stderr.writeLine "  Jalur expand sengaja menolaknya: berkas seperti itu memakai penanda " &
+          "`-- dbtools:contract <alasan>` dan dijalankan lewat `--contract`."
         3
       else:
         let report = applyMigrations(db, root)
@@ -370,13 +424,16 @@ proc runMigrate*(root: string, sub = ""): int =
           $report.skipped.len & " dilewati (sudah ada)"
         for id in report.applied:
           echo "  + " & id
+        if report.contractPending.len > 0:
+          echo "  " & $report.contractPending.len & " migrasi contract menunggu `--contract` " &
+            "(tidak dijalankan jalur expand)"
         0)
 
 proc main() =
   let opts = parseArgs(commandLineParams())
 
   if opts.role == roleMigrate:
-    quit(runMigrate(opts.root, opts.sub))
+    quit(runMigrate(opts.root, opts.sub, opts.subArg))
   if opts.role == roleCtl:
     quit(runCtl(opts.cmd, opts.root, opts.username))
   if opts.role == roleWorker:

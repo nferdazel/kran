@@ -823,6 +823,38 @@ dokumen hidup. Dokumen hidup (`README.md`, `MODULE.md`, `DECISIONS.md`) diperbar
 
 **Diperbarui (D-039):** daftar "yang tetap `cbs`" di atas tidak berlaku lagi — lihat D-039.
 
+## D-040 — Migrasi dua tahap: penanda `contract`, `--check` yang tidak menghitung contract, dan `--down` yang menghapus barisnya
+
+Konteks: sampai T-035 jalur migrasi hanya expand-only (`--up` menolak berkas destruktif, dan skrip
+menolak `--contract`/`--down`). Aman, tetapi berarti **tidak ada jalan rollback skema sama sekali**
+(O-048) — dicatat sebagai batas yang diterima, bukan dibiarkan tak terlihat. T-035 menutupnya.
+
+Empat keputusan, semuanya mengikuti aturan yang sudah ada:
+
+1. **Penanda di berkasnya sendiri.** Berkas contract ditandai `-- dbtools:contract <alasan>`, mengikuti
+   pola `-- dbtools:destructive <alasan>`: alasan wajib, dan penandanya tinggal di berkas yang sama
+   supaya tidak bisa terpisah dari SQL-nya. Berkas contract yang memuat DDL merusak tetap wajib memuat
+   penanda destruktif juga — satu aturan, tanpa pengecualian tersembunyi.
+2. **`--up` melewati, `--contract` menerapkan** — dan tidak sebaliknya: berkas tanpa penanda contract
+   tidak pernah dijalankan jalur contract. Contract menolak jalan selama masih ada migrasi expand yang
+   belum diterapkan: contract di atas skema yang belum lengkap menghasilkan keadaan yang tidak pernah
+   diuji siapa pun.
+3. **`--check` tidak menghitung contract sebagai tertunda.** Alternatifnya membuat gate deploy gagal
+   selamanya begitu sebuah berkas contract dirilis, padahal berkas seperti itu memang menunggu operator
+   memutuskan kapan (spec §21.4). Yang tetap diperiksa: migrasi expand tertunda, dan isi migrasi yang
+   sudah diterapkan berubah (checksum).
+4. **`--down` menghapus baris `platform.schema_migration` setelah pembatalan berhasil.** Membiarkan
+   barisnya membuat `status`/`--check` berbohong: mengaku diterapkan padahal DDL-nya sudah dibatalkan.
+   Harga yang dibayar: tidak ada riwayat "pernah diterapkan lalu dibatalkan" di DB; jejaknya hanya di
+   log operator dan di kontrol versi berkas pasangannya. Untuk Fase 0 itu diterima, dan ditopang
+   fail-closed: seluruh pasangan diperiksa sebelum satu pun dijalankan, dan satu berkas = satu transaksi.
+
+Menyertainya: berkas pasangan `.down.sql` diperiksa sekeras berkas migrasi (tidak boleh
+`BEGIN`/`COMMIT`/`ROLLBACK`, tidak boleh kosong). Kalau tidak, transaksi yang membungkusnya bisa
+berakhir lebih awal dan janji "satu berkas = satu transaksi" hilang tanpa jejak.
+
+Ditutup: O-048. Prosedur: `docs/runbooks/migrasi.md`. Bukti: `docs/tasks/T-035.md`.
+
 ## D-039 — Seluruh identifier teknis mengikuti KRAN
 
 Keputusan pemilik 15 Okt 2026: batas "nama tampilan saja" (D-036) dan "hanya berkas paket" (D-038)

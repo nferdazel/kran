@@ -18,8 +18,10 @@ repo** (atau dengan `--root=<dir>` yang menunjuk ke sana), karena migrasi dibaca
 | — | argumen salah / perintah tidak dikenal | **2** (bantuan ditulis ke stderr) |
 
 Kode `2` = salah pakai atau konfigurasi (`KRAN_DATABASE_URL` kosong), `1` = perintah berjalan tapi
-hasilnya buruk (mis. rantai audit tidak utuh), `3` = dikenali tapi belum diimplementasikan. Skrip ops
-membedakan ketiganya, jadi jangan "merapikan" kode keluar tanpa memperbarui skrip.
+hasilnya buruk (mis. rantai audit tidak utuh), `3` = dikenali tetapi **sengaja ditolak pada keadaan
+itu** — belum diimplementasikan (`worker`, `daycloser-status`), atau penjagaan yang menolak (mis.
+`--contract` saat expand masih tertunda, `--down` tanpa berkas pasangan). Skrip ops membedakan
+ketiganya, jadi jangan "merapikan" kode keluar tanpa memperbarui skrip.
 
 ## Yang dipakai skrip ops
 
@@ -27,8 +29,9 @@ membedakan ketiganya, jadi jangan "merapikan" kode keluar tanpa memperbarui skri
   freeze gate memanggil `--role=ctl daycloser-status` dan hanya bereaksi pada `RUNNING|CLOSING`
   (Fase 0: kode 3, tidak ada day-close → tidak memblokir deploy, tetapi **belum terbukti** karena
   skripnya belum pernah dijalankan di server — T-013).
-- `ops/scripts/migrate.sh`: `--check` dan `--up` diteruskan apa adanya; `--contract`/`--down` ditolak
-  skripnya (kode 3) karena biner belum mendukungnya — lihat `docs/OPEN_ITEMS.md` O-048.
+- `ops/scripts/migrate.sh`: `--check`/`--up` diteruskan apa adanya; `--contract` dan `--down N` juga
+  diteruskan, tetapi wajib `--yes` (dan `--down` wajib N) — penolakan argumen terjadi di skrip (kode 2),
+  penolakan keadaan terjadi di biner (kode 3). Prosedurnya: `docs/runbooks/migrasi.md` (D-040).
 - `ops/scripts/audit-consistency.sh` & `smoke.sh`: memakai jalur HTTP (`/healthz`, `/readyz`) dan
   `psql`; kontraknya ada di `docs/OPEN_ITEMS.md` O-019.
 

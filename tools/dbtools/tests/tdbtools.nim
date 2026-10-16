@@ -15,13 +15,14 @@ proc writeMigration(caseName, module, filename, sql: string): string =
   root
 
 proc expectMigrateError(root: string, needle: string) =
-  var raised = false
+  ## `check` di dalam proc pembantu **tidak** membuat uji gagal (hanya mencetak "Check failed",
+  ## status uji tetap `[OK]`) — ditemukan saat uji mutasi T-035. Karena itu jalur "tidak menolak"
+  ## melempar pengecualian biasa: unittest melaporkannya sebagai kegagalan uji, bukan diam-diam lolos.
   try:
     discard migrationsOf(root)
+    raise newException(ValueError, "seharusnya ditolak tetapi diterima: " & root)
   except MigrateError as e:
-    raised = true
     check e.msg.contains(needle)
-  check raised
 
 suite "dbtools: penemuan & urutan":
   test "urut global (seq, module, filename)":
@@ -156,3 +157,121 @@ suite "dbtools: penjaga expand-only":
   test "berkas migrasi kosong ditolak":
     let root = writeMigration("empty", "alpha", "0001_kosong.sql", "\n\n")
     expectMigrateError(root, "kosong")
+
+suite "dbtools: dua tahap (contract) & rollback":
+  proc writeCase(caseName, module: string, files: varargs[(string, string)]): string =
+    ## Root sementara dengan beberapa berkas sekaligus (migrasi + pasangan `.down.sql`).
+    let root = workRoot / caseName
+    if dirExists(root):
+      removeDir(root)
+    createDir(root / "modules" / module / "migrations")
+    for (filename, sql) in files:
+      writeFile(root / "modules" / module / "migrations" / filename, sql)
+    root
+
+  proc expectPlanError(root: string, applied: seq[string], n: int, needle: string) =
+    ## Sama seperti `expectMigrateError`: jalur "tidak menolak" harus melempar, supaya ujinya
+    ## benar-benar gagal — bukan sekadar mencetak "Check failed".
+    try:
+      discard downPlan(root, migrationsOf(root), applied, n)
+      raise newException(ValueError, "downPlan seharusnya menolak (n=" & $n & ") tetapi menerima")
+    except MigrateError as e:
+      check e.msg.contains(needle)
+
+  test "penanda contract tercatat, dan penanda tanpa alasan ditolak":
+    let root = writeCase("contract-marked", "alpha",
+      ("0001_a.sql", "-- dbtools:destructive kolom lama dihapus setelah rilis 1.2\n" &
+        "-- dbtools:contract kolom lama dihapus setelah rilis 1.2\n" &
+        "DROP TABLE platform.alpha;\n"),
+      ("0002_b.sql", "SELECT 1;\n"))
+    let m = migrationsOf(root)
+    check m.len == 2
+    check m[0].contract
+    check m[0].contractReason.contains("rilis 1.2")
+    # DDL merusak tetap wajib ditandai destruktif: satu aturan, tanpa pengecualian untuk contract.
+    check m[0].destructive
+    check not m[1].contract
+
+    let bad = writeCase("contract-no-reason", "alpha",
+      ("0001_a.sql", "-- dbtools:contract\nSELECT 1;\n"))
+    expectMigrateError(bad, "tanpa alasan")
+
+  test "contract tanpa penanda destruktif tetap ditolak expand-only":
+    let root = writeCase("contract-drop-unmarked", "alpha",
+      ("0001_a.sql", "-- dbtools:contract bersihkan kolom usang\nDROP TABLE platform.alpha;\n"))
+    expectMigrateError(root, "expand-only")
+
+  test "berkas pasangan `.down.sql` bukan migrasi":
+    let root = writeCase("with-down", "alpha",
+      ("0001_a.sql", "SELECT 1;\n"),
+      ("0001_a.down.sql", "DROP TABLE platform.alpha;\n"))
+    let m = migrationsOf(root)
+    check m.len == 1
+    check m[0].id == "alpha/0001_a"
+    check downFileOf(m[0]) == "modules/alpha/migrations/0001_a.down.sql"
+
+  test "pendingExpand hanya migrasi expand yang belum diterapkan":
+    let a = Migration(id: "a/0001_x", seq: 1, contract: false)
+    let b = Migration(id: "a/0002_y", seq: 2, contract: false)
+    let c = Migration(id: "a/0003_z", seq: 3, contract: true)
+    check pendingExpand(@[a, b, c], @[]) == @["a/0001_x", "a/0002_y"]
+    check pendingExpand(@[a, b, c], @["a/0001_x"]) == @["a/0002_y"]
+    # contract tidak pernah dihitung "expand tertunda", walau belum diterapkan
+    check pendingExpand(@[a, c], @["a/0001_x"]).len == 0
+
+  test "destructivePending melewati berkas contract (bukan urusan `--up`)":
+    let status = @[
+      MigrationStatus(migration: Migration(id: "a/0001_drop", seq: 1, destructive: true),
+        applied: false),
+      MigrationStatus(migration: Migration(id: "a/0002_contract", seq: 2, destructive: true,
+        contract: true), applied: false)]
+    check destructivePending(status) == @["a/0001_drop"]
+    check contractPending(status) == @["a/0002_contract"]
+    check expandPending(status) == @["a/0001_drop"]
+
+  test "downPlan menolak: N tidak sah, belum ada yang diterapkan, N melebihi yang diterapkan":
+    let root = writeCase("down-guards", "alpha",
+      ("0001_a.sql", "SELECT 1;\n"),
+      ("0001_a.down.sql", "SELECT 1;\n"))
+    let applied = @["alpha/0001_a"]
+    expectPlanError(root, applied, 0, "harus >= 1")
+    expectPlanError(root, applied, -1, "harus >= 1")
+    expectPlanError(root, newSeq[string](), 1, "tidak ada migrasi yang diterapkan")
+    expectPlanError(root, applied, 2, "hanya 1 yang diterapkan")
+
+  test "downPlan menolak bila berkas pasangan tidak ada":
+    let root = writeCase("down-no-pair", "alpha", ("0001_a.sql", "SELECT 1;\n"))
+    expectPlanError(root, @["alpha/0001_a"], 1, "tidak ada berkas pasangan")
+
+  test "downPlan menolak bila migrasi tercatat di DB tanpa berkasnya di disk":
+    let root = writeCase("down-ghost", "alpha", ("0001_a.sql", "SELECT 1;\n"))
+    expectPlanError(root, @["alpha/9999_hilang"], 1, "berkasnya tidak ada")
+
+  test "berkas pasangan rollback diperiksa seperti migrasi, bukan SQL bebas":
+    # `COMMIT` di berkas pasangan akan mematahkan janji "satu berkas = satu transaksi".
+    let tx = writeCase("down-tx", "alpha",
+      ("0001_a.sql", "SELECT 1;\n"),
+      ("0001_a.down.sql", "SELECT 1;\nCOMMIT;\n"))
+    expectPlanError(tx, @["alpha/0001_a"], 1, "mengelola transaksi")
+
+    let kosong = writeCase("down-kosong", "alpha",
+      ("0001_a.sql", "SELECT 1;\n"),
+      ("0001_a.down.sql", "\n\n"))
+    expectPlanError(kosong, @["alpha/0001_a"], 1, "kosong")
+
+  test "downPlan mengurutkan pembatalan dari yang terakhir diterapkan":
+    let root = writeCase("down-order", "alpha",
+      ("0001_a.sql", "SELECT 1;\n"),
+      ("0001_a.down.sql", "SELECT 1;\n"),
+      ("0002_b.sql", "SELECT 1;\n"),
+      ("0002_b.down.sql", "SELECT 1;\n"))
+    # `applied` = urutan penerapan terbalik (yang terakhir diterapkan di depan).
+    let applied = @["alpha/0002_b", "alpha/0001_a"]
+    let plan = downPlan(root, migrationsOf(root), applied, 2)
+    check plan.len == 2
+    check plan[0].id == "alpha/0002_b"
+    check plan[1].id == "alpha/0001_a"
+    # hanya yang diminta masuk rencana
+    let satu = downPlan(root, migrationsOf(root), applied, 1)
+    check satu.len == 1
+    check satu[0].id == "alpha/0002_b"

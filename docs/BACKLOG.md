@@ -37,7 +37,7 @@ berkas rencana di `docs/tasks/T-xxx.md`.
 | T-025 | Invarian kursor outbox + test balapan dua koneksi (O-037, O-040) | DONE |
 | T-026 | Kontrak CLI multi-role + jalur skrip ops (O-013) | DONE |
 | T-027 | Bootstrap admin produksi + endpoint ganti kata sandi (O-031) | DONE |
-| T-028 | Kebijakan anti-enumerasi akun (O-034) | READY |
+| T-028 | Kebijakan anti-enumerasi akun (O-034) | DONE |
 
 Nomor T-017 tetap **dipesan** untuk usulan MFA (belum disetujui pemilik) supaya tidak bentrok.
 Keputusan pemilik 15 Okt 2026 (D-034): O-031 (bootstrap: perintah sekali-jalan + wajib ganti, jadi
@@ -56,11 +56,11 @@ DR drill §9, freeze gate `daycloser` fase 3) tidak dipaksakan masuk; ia masuk r
 | T-028 | Kebijakan anti-enumerasi akun (O-034) | P1 | DONE |
 | T-029 | Pump realtime pulih setelah koneksi putus (O-029) | P1 | DONE |
 | T-030 | Izin langganan realtime diperiksa ulang (O-046) | P1 | DONE |
-| T-031 | CI stabil: audit flake + aturan isolasi tes + `ci-repeat` | P1 | READY |
+| T-031 | CI stabil: audit flake + aturan isolasi tes + `ci-repeat` | P1 | DONE |
 | T-032 | Drain permintaan berjalan saat SIGTERM (O-047) | P2 | DONE |
 | T-033 | Pool DB: bukti aman paralel + rapikan klaim (O-011) | P2 | DONE |
 | T-034 | Kurangi ketergantungan pada internal Mummy (O-049) | P2 | DONE |
-| T-035 | Migrasi contract & rollback (O-048) | P3 | READY |
+| T-035 | Migrasi contract & rollback (O-048) | P3 | DONE |
 | T-036 | Semantik scope institusi & `requires_approval` (O-012, O-039) | P3 | READY |
 | T-037 | Register batas Fase 0 + laporan penutup | P3 | DONE |
 | T-039 | Seluruh identifier teknis mengikuti KRAN (D-039) | P2 | DONE |

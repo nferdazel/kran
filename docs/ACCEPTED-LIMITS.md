@@ -23,7 +23,7 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 
 | Batas | Dampak nyata | Cara mendeteksi | Pemilik |
 |---|---|---|---|
-| Tidak ada rollback **skema** (expand-only) | Migrasi bermasalah hanya bisa ditangani lewat backup pra-deploy | `migrate --contract`/`--down` masih ditolak kode 3 | T-035 (O-048) |
+| Migrasi contract/rollback baru terbukti di DB dev, belum di server | Rollback skema belum pernah dilatih pada data nyata; pasangan `.down.sql` belum ada untuk migrasi nyata | jalankan latihan deploy (T-013) sebelum mengandalkannya | T-035, D-040 |
 | Job CI GitHub belum lengkap (`db-tests`/`traceability`) | CI GitHub tidak menjalankan uji integrasi DB; gate yang sebenarnya adalah `./task ci` lokal (butuh DB dev) | lihat `docs/ci-jobs.md` | O-027 |
 | Antrean kirim realtime per koneksi tidak dibatasi | Klien lambat menambah pemakaian memori proses | pantau RSS; peristiwa hilang ditutup resume token | O-028 |
 | Lag outbox tidak diperiksa `/readyz` | `/readyz` tetap hijau walau pump tertinggal memproses outbox | yang diperiksa baru "pump tersambung" (`realtimeProbe`), bukan lag | O-019 (bagian yang tersisa) |
@@ -44,9 +44,17 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
   kapasitas.
 - **Deploy & rollback belum pernah dilatih di server.** `ops/scripts/deploy-vps.sh` belum pernah
   dijalankan (T-013); rehearsal-nya pekerjaan tersendiri dan butuh keputusan pemilik.
-- **Gate hijau bukan jaminan bebas flake.** Ada satu flake e2e yang **belum dijelaskan** (4 test login
-  menggantung di satu putaran gate, tidak berulang saat dijalankan ulang; `docs/tasks/T-031.md`).
-  Dugaan penyebabnya dicatat di sana sebagai dugaan, bukan kesimpulan.
+- **Gate hijau bukan jaminan bebas flake.** Dua kejadian yang **belum dijelaskan**, dicatat apa adanya di
+  `docs/tasks/T-031.md`: (a) e2e login menggantung — 15 Okt (4 test, 7,5 menit) dan **berulang** 16 Okt
+  (1 test, 9,2 menit), log API bersih; (b) 2 dari 200 iterasi stress pool melempar pengecualian, lalu
+  gate ulang gagal karena **tunnel DB dev mati** (`Connection refused`; tunnel hidup lagi setelah dibuka
+  ulang). Yang dikerjakan: uji stress pool kini mencetak nama+pesan galatnya (tanpa melunakkan hitungan
+  yang diuji), bukan menaikkan batas tunggu atau melewatinya.
+- **Test yang dijalankan di luar gate penuh bisa gagal tanpa ada yang salah pada kode.** Dua contoh nyata
+  (16 Okt, saat mengerjakan T-035): `itapi_roles` butuh nilai parameter yang disemai `itapi_auth` yang
+  berjalan lebih dulu; dan `./task e2e` sendirian menumpuk jejak audit sehingga locator `exact` kena
+  *strict mode* — dalam gate, `itplatform` menjatuhkan schema `platform` lebih dulu sehingga e2e mulai
+  bersih. Jadi sebelum menyebut sesuatu "flake kode": periksa dulu apakah keadaannya disiapkan fase lain.
 
 ## 4. Bukti yang ada hari ini
 
@@ -68,4 +76,8 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 - Menemukan batas baru saat mengerjakan task → tambahkan baris (dampak, cara deteksi, pemilik), jangan
   simpan di kepala.
 - Sebelum deploy → baca §1 dan §2. Yang paling langsung menyangkut deploy: freeze gate (fase 3),
-  rollback skema (T-035), latihan deploy (T-013), dan jendela drain 10 detik (T-032).
+  latihan deploy (T-013), prosedur migrasi dua tahap (`docs/runbooks/migrasi.md`), dan jendela drain
+  10 detik (T-032).
+- Batas "tidak ada rollback skema" **dihapus** oleh T-035 (D-040). Yang menggantikannya bukan klaim
+  bebas risiko: rollback tetap butuh berkas pasangan yang sudah di-review, hanya berlaku untuk N
+  migrasi terakhir, dan tidak tahu apa-apa soal data.
