@@ -840,3 +840,80 @@ deploy sehat sekarang tidak terpengaruh). Rotasi KEK tidak bisa independen per t
 index membatalkan indeks lama (perlu reindex); normalisasi Unicode nama/alamat belum ditetapkan. Manajemen
 kunci `sops`/`age` masih rencana (tercatat di O-006 sebagai sisa, bukan blocker). **HUMAN-REVIEW-REQUIRED**:
 kriptografi + manajemen kunci (AGENTS.md §8) — wajib review manusia sebelum dipakai untuk data nyata.
+
+## Pasca-M0 — T-041 (O-019) DONE: `/readyz` memeriksa migrasi & lag outbox (16 Okt 2026)
+
+Baris register O-019 ("`/readyz` belum memeriksa migrasi/outbox lag") ternyata **sebagian** sudah basi:
+handler `/healthz`/`/readyz` sudah ada sejak T-008 (+ DB/realtime T-029 + drain T-032). Yang **belum**
+memang dua probe itu; keduanya dikerjakan sekarang.
+
+Yang dibangun:
+- **Probe migrasi** (`readiness.migrationProbe(pool, root)`): pakai ulang `dbtools` (`migrationsOf` +
+  `pendingExpand`) lewat `appliedMigrationIds` (satu query, tanpa checksum, supaya gate deploy cepat).
+  Migrasi **expand** tertunda → `csFailed`; contract/destructive tidak dihitung (sama `--check`, D-040).
+  Akar repo tidak terbaca → `csOk` + `detail` eksplisit, **bukan** gagal: `/readyz` dipakai health gate
+  deploy **dengan auto-rollback**, jadi fail-closed pada akar tak terkonfigurasi akan membuat deploy
+  mundur tanpa henti.
+- **Probe lag outbox** (`pumpLagProbe(svc, pool)`): usia peristiwa outbox tertua yang belum diproses
+  pump (`outbox_repo.oldestUndeliveredSeconds`, `seq` > kursor) > `pumpLagSeconds` (30 dtk, konstanta
+  teknis) → `csFailed`. `events.nim` menambah `pumpCursor` (getter ber-lock; penetapan titik mulai ikut
+  di-lock). Ini rumusan "lag outbox" yang memang dipakai `docs/ACCEPTED-LIMITS.md` §2 (konsumen =
+  pump; dispatcher/worker belum ada, O-013).
+
+Bukti: `./task check` hijau; `./task test` **526 `[OK]`, 0 `[FAILED]`** (486→488 pada T-048, lalu naik
+lagi oleh tugas lain + 9 uji T-041); `./task ci` **hijau** (e2e 23 lulus / 24.4 dtk). Uji baru: keputusan
+murni `migrationCheck`/`pumpLagCheck` (`itapi.nim`) + probe & `/readyz` 503/200 (`itapi_ws.nim`), termasuk
+lag yang dibuat deterministik (pump dinyalakan lalu dihentikan sebelum peristiwa tua ditulis).
+
+Tindakan: `O-019` ditutup di `docs/OPEN_ITEMS.md` (dengan sisa jujur); `T-041` → DONE di `docs/BACKLOG.md`;
+baris `ACCEPTED-LIMITS.md` §2 diganti residual baru; `ops/systemd/kran-api.service` diberi
+`--root=/srv/qouver/apps/kran/monorepo`. Sisa jujur utama: unit server **belum tersinkron otomatis**
+(deploy hanya sync `ops/scripts/*.sh`) sehingga sampai diperbarui manual, probe migrasi "tidak
+diverifikasi" (tetap 200 — tidak rapuh, tapi juga belum protektif); ambang lag = konstanta teknis, bukan
+parameter DB (alasan di `readiness.nim`); "lag outbox" baru mencakup pump, bukan dispatcher yang belum ada.
+Tidak ada test/gate yang dilonggarkan.
+
+## Pasca-M0 — T-042 (O-025) DONE: teardown in-process Mummy — repro deterministik + urutan aman (16 Okt 2026)
+
+Baris register O-025 menyebut `server.close()` pada Mummy 0.4.8 + ORC pernah SIGSEGV; audit
+menyatakan shutdown produksi sudah beres (T-024/D-031), sisanya teardown in-process untuk uji.
+Gejala itu **berhasil direproduksi deterministik** dan penyebabnya ternyata **thread**, bukan
+pool/pump/WebSocket: `destroy(true)` memanggil `=destroy(server[])` (mummy.nim:1143) di thread
+pelayan, sedangkan closure handler dialokasikan thread lain — ORC menyimpan pembukuan siklus
+per-thread, jadi menghancurkannya lintas-thread membaca state salah → SIGSEGV di
+`orc.nim nimDecRefIsLastCyclicDyn`/`unregisterCycle`. Server minimal tak memicunya karena tak punya
+closure yang dikelola ORC — itu sebabnya probe 15 Okt tidak reput.
+
+Urutan aman: **bangun dan layani server di thread yang sama**, `close()` dari thread lain (ia hanya
+memicu sinyal shutdown; `destroy` tetap di thread pelayan) → aman, termasuk dengan klien WebSocket
+hidup. Uji baru `apps/api/tests/itapi_teardown.nim` menjalankan 2 siklus penuh (server + pool + pump
++ WS) lalu teardown in-process penuh (`stopPump` → `close` → `joinThread` → `pool.close()`) dan
+memeriksa port benar-benar bebas.
+
+Bukti: `./task test itapi_teardown` 2 `[OK]`; `./task check` hijau; `./task test` **528 `[OK]`,
+0 `[FAILED]`**; `./task ci` hijau (e2e 23 lulus). Tindakan: `O-025` ditutup di `docs/OPEN_ITEMS.md`;
+`T-042` → DONE di `docs/BACKLOG.md`; spike + `ACCEPTED-LIMITS.md` diperbarui; komentar di `tapi.nim`
+diluruskan. Sisa jujur: `Server` yang sudah di-`close()` menjadi pointer menggantung; upgrade Mummy
+belum diambil (pin + D-037, tak ada bukti perbaikan hulu). Tidak menyentuh jalur shutdown produksi;
+tidak ada test/gate yang dilonggarkan.
+
+## Catatan lingkungan — kenapa gate saya sempat merah (16 Okt 2026; bahan untuk T-044)
+
+`./task ci` di pohon T-041+T-042 gagal dua kali **bukan karena kode**, dan penyebabnya sama:
+
+1. `itapi_auth` gagal: *"connection to server at 127.0.0.1:55432 failed: server closed the connection
+   unexpectedly"* → tunnel dev-DB putus di tengah run.
+2. Run berikutnya: 3 test e2e timeout `toHaveURL` — `flow.spec.ts:197` (alur login→maker→checker),
+   `password.spec.ts:120` (wajib ganti), `flow.spec.ts:319` (axe `/app` tema dark) — dan **total e2e
+   membengkak jadi 10 menit** dari biasanya 25 detik. Ketiganya test yang butuh login → `/app`
+   (membaca DB); test statis lolos. Run ketiga bahkan menggantung >30 menit di fase `check` karena
+   output ter-buffer saat dialihkan, jadi tidak bisa dipakai untuk menunjuk lokasi masalah.
+
+Setelah tunnel distabilkan (watchdog membuka ulang tiap 20 detik), semuanya kembali normal:
+`./task check` exit 0 (1 m 58 s), `./task e2e` exit 0 **23 lulus dalam 25 detik**, dan unit+integrasi
+dari run ci saya **528 `[OK]`, 0 `[FAILED]`**.
+
+Pelajaran untuk T-044: sebelum menyalahkan Playwright sebagai "flake", **periksa tunnel dev-DB dulu**
+(`nc -z 127.0.0.1 55432` / `./task devdb up`). Tunnel hari itu putus tiga kali; hari ini `devdb up`
+hanya membuka ControlMaster `ControlPersist=7200` dan tidak ada yang membukanya kembali saat koneksi
+mati. Ini juga alasan kenapa jam gate jadi tidak bisa dipegang sebagai bukti apa pun saat tunnel mati.

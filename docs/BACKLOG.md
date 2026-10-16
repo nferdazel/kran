@@ -65,8 +65,8 @@ DR drill §9, freeze gate `daycloser` fase 3) tidak dipaksakan masuk; ia masuk r
 | T-037 | Register batas Fase 0 + laporan penutup | P3 | DONE |
 | T-039 | Seluruh identifier teknis mengikuti KRAN (D-039) | P2 | DONE |
 | T-040 | Setup deploy key + webhook di server (prasyarat deploy) | P2 | DONE |
-| T-041 | `/readyz` memeriksa migrasi & lag outbox (O-019) | P2 | READY |
-| T-042 | Teardown in-process Mummy (O-025) | P3 | READY |
+| T-041 | `/readyz` memeriksa migrasi & lag outbox (O-019) | P2 | DONE |
+| T-042 | Teardown in-process Mummy (O-025) | P3 | DONE |
 | T-043 | Soket realtime ditutup saat sesi dicabut (O-036) | P2 | DONE (duplikat T-023/T-047 — tidak ada pekerjaan tambahan) |
 | T-044 | Flake e2e di dalam gate: diagnosis terbatas (T-031) | P1 | READY |
 | T-045 | Latihan deploy + peralihan di server (D-043) | P2 | BLOCKED (izin push) |
