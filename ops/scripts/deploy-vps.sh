@@ -90,12 +90,12 @@ if [ -d "$MONO_DIR/.git" ]; then
   if [ -n "$OLD_REV" ] && [ "$OLD_REV" != "$NEW_REV" ]; then
     # *.md tidak memicu rebuild (gaya skyward): dokumen bukan input build.
     CHANGED_FILES="$(git diff --name-only "$OLD_REV" "$NEW_REV" -- ':(exclude)*.md' 2>/dev/null \
-      || printf '%s\n' apps/api/ apps/web/ modules/ shared/ migrations/ kran.nimble)"
+      || printf '%s\n' apps/api/ apps/web/ modules/ shared/ tools/ migrations/ kran.nimble)"
   else
     # Satu path per baris: grep per komponen di bawah ber-anchor `^`. (Sebelum ini daftarnya satu
     # baris dipisah spasi, sehingga `^apps/api/` tidak pernah cocok dan build API dilewati di
     # deploy pertama — ditemukan di latihan T-045, 16 Okt 2026.)
-    CHANGED_FILES="$(printf '%s\n' apps/api/ apps/web/ modules/ shared/ migrations/ kran.nimble)"
+    CHANGED_FILES="$(printf '%s\n' apps/api/ apps/web/ modules/ shared/ tools/ migrations/ kran.nimble)"
   fi
 else
   log "Cloning kran -> $MONO_DIR"
@@ -104,7 +104,7 @@ else
   # Satu path per baris: grep per komponen di bawah ber-anchor `^`. (Sebelum ini daftarnya satu
   # baris dipisah spasi, sehingga `^apps/api/` tidak pernah cocok dan build API dilewati di deploy
   # pertama — ditemukan di latihan T-045, 16 Okt 2026.)
-  CHANGED_FILES="$(printf '%s\n' apps/api/ apps/web/ modules/ shared/ migrations/ kran.nimble)"
+  CHANGED_FILES="$(printf '%s\n' apps/api/ apps/web/ modules/ shared/ tools/ migrations/ kran.nimble)"
   IS_FIRST=1
 fi
 
@@ -154,7 +154,7 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE 'migrations/' <<<"$CHANGED_FILES"; then
 fi
 
 # 7. Build + ekstrak binary (spec §21.4 #7). Rebuild hanya bila input build berubah.
-if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|kran\.nimble|kran\.lock)' <<<"$CHANGED_FILES"; then
+if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|tools/|kran\.nimble|kran\.lock)' <<<"$CHANGED_FILES"; then
   log "==> Build API (podman, tag :local + :$REVID)..."
   [ -d "$MONO_DIR/apps/api" ] || die "apps/api tidak ditemukan"
   # Konteks build = root monorepo, bukan apps/api: sumber Nim ada di shared/ + modules/ + tools/
