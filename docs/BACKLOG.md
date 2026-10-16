@@ -115,6 +115,11 @@ Catatan 16 Okt 2026: T-047 ternyata **sudah selesai** lebih dulu lewat T-023 (se
 (izin, O-046); barisnya basi. Diverifikasi ulang dan ditutup tanpa perubahan kode (lihat
 `docs/tasks/T-047.md`). Lanjut ke T-048.
 
+Catatan 16 Okt 2026 (kedua): pemilik memutuskan **enkripsi field-level itu fondasi**, jadi tidak menunggu
+data anggota nyata — menambah enkripsi setelah baris berisi berarti backfill + seremoni kunci di bawah
+tekanan. Karena itu **T-054** (ADR-017/D-048) dikerjakan sekarang dan menutup mekanisme **O-006**;
+`sops`/`age` tetap tercatat sebagai sisa. T-054 tidak mengubah urutan T-050…T-046.
+
 | ID | Status | Tujuan | Spec | Deps | Kriteria selesai (dapat diverifikasi mesin) |
 |---|---|---|---|---|---|
 | T-048 | DONE | O-057: samakan `missingActiveKeys` dengan aturan resolusi | §10.2 | — | Uji: kasus yang tidak pernah "terlihat" oleh resolusi tidak dihitung aktif, dan sebaliknya; tidak ada kelonggaran tersisa (2 uji baru `itparam`: wildcard `scopeId` kosong ditolak, `GLOBAL` tetap memenuhi; uji pembeda GAGAL pada aturan lama) |
@@ -122,5 +127,6 @@ Catatan 16 Okt 2026: T-047 ternyata **sudah selesai** lebih dulu lewat T-023 (se
 | T-050 | READY | O-027 + O-014 + O-023: CI jalankan `db-tests` (Postgres service), `shellcheck -S warning` atas `ops/scripts/*.sh`, ESLint + a11y sebagai error | §21.3 | — | Job CI bertambah dan hijau; `shellcheck`/ESLint dipanggil `./task check`; tidak ada rule a11y yang diturunkan jadi warning |
 | T-051 | READY | O-032 + O-043 + O-050 + O-052: visibilitas params/audit per scope, tolak `effectiveTo` tanpa penerus, audit+batas percobaan kata sandi lama, kebijakan kata sandi (tanpa kedaluwarsa, riwayat 5, kualitas sebagai parameter) | §10, §13 | D-046 | Test izin lintas scope; pengajuan tanpa penerus ditolak 400; percobaan salah tercatat audit; angka kebijakan berasal dari parameter |
 | T-052 | READY | O-009 + O-038: anchor hash audit harian + urutan `seq` vs advisory lock | §18 | — | Anchor tersimpan dan diverifikasi di day-close; alarm palsu `audit_verify` hilang/dijelaskan; **HUMAN-REVIEW-REQUIRED** |
-| T-053 | READY | Batch kecil: O-042 (batas test dari `packs/*/generated`), O-045 (pesan 400 per-field ke i18n), O-018 (watcher parameter masuk pump yang sama), O-030 (batas realtime jadi parameter), O-033 (tautan Masuk di header + DECISIONS urutan Tab), O-006 (rencana `sops`/`age` untuk KEK) | §10, §15, §19 | — | Tiap butir punya test/entri; O-033 disertai entri DECISIONS karena mengubah urutan Tab |
+| T-053 | READY | Batch kecil: O-042 (batas test dari `packs/*/generated`), O-045 (pesan 400 per-field ke i18n), O-018 (watcher parameter masuk pump yang sama), O-030 (batas realtime jadi parameter), O-033 (tautan Masuk di header + DECISIONS urutan Tab) | §10, §15, §19 | — | Tiap butir punya test/entri; O-033 disertai entri DECISIONS karena mengubah urutan Tab |
+| T-054 | DONE | Fondasi enkripsi field-level: KEK (berkas 600) → DEK turunan per tabel + AES-256-GCM + blind index — menutup O-006 mekanismenya | §18.2 | — | `./task test fieldcrypto` 29 `[OK]`; `./task ci` hijau (517 `[OK]`, e2e 23); vektor AES-GCM/KDF independen (Node); uji e2e tabel sementara; ADR-017 + runbook. Sisa: `sops`/`age` sebelum data nyata; `HUMAN-REVIEW-REQUIRED` |
 | T-046 | TODO | O-015: bootstrap MFA **tanpa pengaktifan** — skema, parameter, jalur enrolment/verifikasi; per akun opt-in, default mati | §13 | T-051 | Belum ada alur login yang berubah; bootstrap inert dan ditutup test; diaktifkan hanya lewat keputusan baru |

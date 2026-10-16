@@ -33,6 +33,10 @@ Environment=LD_LIBRARY_PATH=/srv/qouver/apps/kran/lib
 # sudah dipakai container lain (ditemukan di T-045, 16 Okt 2026: app crash-loop "Address already in use").
 ExecStart=/srv/qouver/apps/kran/bin/kran-api --role=api --port=${KRAN_PORT} --address=${KRAN_BIND_HOST}
 Restart=always
+# Kesalahan konfigurasi bersifat permanen: restart-loop hanya mengulang galat yang sama. Kebijakan
+# worker (`kran-worker.service`) sudah begitu untuk exit 3 ("belum dikonfigurasi"); di sini exit 2 =
+# argumen/konfigurasi tidak sah, termasuk berkas KEK yang hilang/rusak/mode bukan 600 (T-054).
+RestartPreventExitStatus=2
 RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true

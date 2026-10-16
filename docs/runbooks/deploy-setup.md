@@ -119,9 +119,18 @@ unit kita saat peralihan (keputusan pemilik 16 Okt 2026, D-043: replace di tempa
 - **Skema peralihan**: **replace** di tempat. `kran-api` mengambil `127.0.0.1:8095`, `kran-web` `3005`,
   yaitu port yang sekarang dipegang `cbs-api`/`cbs-web` (D-043). Karena itu default `8095` di
   `deploy-vps.sh`/`smoke.sh` disengaja.
-- **Sisa sistem lama**: dihentikan, **tidak** dihapus; data (`/srv/qouver/apps/cbs`, DB `cbs`,
-  `cbs_verify*`) tetap sebagai jalan mundur. Penghapusan menunggu perintah eksplisit setelah peralihan
-  terbukti sehat — jadi inventaris `cbs-core` (T-015) masih berlaku.
+- **Sisa sistem lama**: unit lama dihentikan + **di-mask**, tidak dihapus; yang benar-benar **masih ada**
+  sebagai jalan mundur: DB `cbs`, image lama, dan direktori `/srv/qouver/apps/cbs`. Container
+  `cbs-api`/`cbs-web` sudah dihapus dan DB `cbs_verify*` sudah di-drop (O-054 + O-002, 16 Okt 2026), jadi
+  "kembali ke sistem lama seutuhnya" **bukan** pilihan: pemulihan `cbs_verify*` hanya lewat backup harian
+  02:00 hari itu (`/srv/qouver/backups/postgres/daily/*_2026-10-16_02-00-01.dump`) — jalur yang sudah
+  diuji restore, bukan diasumsikan.
+- **Unit systemd TIDAK dipasang oleh `deploy-vps.sh`** — skrip hanya menjalankan `daemon-reload` +
+  restart. Kalau `ops/systemd/*.service` berubah, berkasnya harus **disalin manual** ke
+  `~/.config/systemd/user/` lalu `daemon-reload`, kalau tidak perubahan itu hanya ada di repo.
+  Per 16 Okt 2026 unit **produksi masih versi lama**: `kran-api.service` belum memuat
+  `RestartPreventExitStatus=2` (T-054), jadi berkas KEK yang salah masih akan restart-loop tiap 3 detik
+  sampai unit itu disalin.
 - **Yang masih menunggu manusia**: latihan `deploy-vps.sh` manual di server (T-013) dan izin sebelum
   push pertama ke `main` (push = webhook = deploy).
 

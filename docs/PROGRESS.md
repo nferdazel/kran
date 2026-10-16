@@ -798,3 +798,45 @@ Tindakan: `O-057` dan `O-035` ditutup di `docs/OPEN_ITEMS.md`; `T-048`/`T-049` �
 `docs/BACKLOG.md`; rencana + bukti di `docs/tasks/T-048.md` dan `docs/tasks/T-049.md`. Sisa jujur:
 `missingActiveKeys` belum tersambung ke start biner; resolusi masih di `infrastructure` (D-034 butir 4
 / T-016). Tidak ada test/gate yang dilonggarkan.
+
+## Fondasi enkripsi field-level — T-054 (O-006) DONE (16 Okt 2026)
+
+Register O-006 menyebut "KEK belum ada tempat aman"; kenyataannya mekanisme enkripsi field **belum ada
+sama sekali** — tidak ada `.nim` yang menyebut `KRAN_KEK*`/`encryptField`, `KRAN_KEK_FILE` hanya komentar
+di template env, `pgp_sym_encrypt` nol di migrasi (yang ada cuma masking untuk log). Pemilik memutuskan
+ini bagian **fondasi** → dikerjakan sekarang, bukan menunggu data anggota nyata (menambah enkripsi setelah
+baris berisi = backfill + seremoni kunci di bawah tekanan).
+
+Yang dibangun: `shared/platform-lib/crypto/fieldcrypto.nim` — KEK di berkas terpisah mode 600
+(`KRAN_KEK_FILE`), DEK per tabel **diturunkan** `HMAC-SHA256(KEK, "kran:dek:v1:"||tabel)` (tidak disimpan
+di DB → tidak ada materi kunci di dump), ciphertext self-describing
+`kran:enc:v1:<kid>:<nonce>:<ct||tag>` (AES-256-GCM dari nimcrypto `rijndael`+`bcmode`, **tanpa
+dependensi baru**, AAD = nama tabel, nonce 96-bit CSPRNG), blind index dengan kunci turunan **terpisah**
+(hex) + `normalizeDigits` untuk field angka. Aktivasi tanpa fallback senyap (O-056/D-046 butir 6):
+`KRAN_KEK_FILE` kosong → start apa adanya tetapi enkripsi/dekripsi menolak eksplisit
+(`NotConfiguredError`); diset → fail-fast saat startup `--role=api` (hilang/rusak/mode bukan 600/kid tidak
+sah → `KekError`, exit 2). Keyring disimpan di `AppContext`. Keputusan: **ADR-017**, **D-048**; runbook
+`docs/runbooks/field-encryption.md`; baris ADR-017 ditambahkan ke registri ADR spec §25.
+
+Bukti (dijalankan, bukan diklaim):
+- `./task ci` **exit 0** pada pohon gabungan: **517 `[OK]`, 0 `[FAILED]`**, e2e 23 lulus (axe 2 tema ×
+  2 locale), `== CI hijau` — saya jalankan sendiri.
+- `./task test fieldcrypto`: 29 `[OK]` (26 unit + 3 integrasi) — roundtrip (kosong/multibyte/100 iterasi),
+  tamper 1 bit (ciphertext/tag/nonce/kid/versi), AAD lintas tabel, keyring hilang/rusak/mode, blind index,
+  dan e2e tabel sementara (cari lewat blind index; ciphertext diubah di DB → gagal).
+- Vektor AES-256-GCM + KDF **independen** dari Node `node:crypto` (perintah pembuatnya dicatat di header
+  `tests/tfieldcrypto.nim`; nilai di-hardcode, bukan memanggil Node saat test): nimcrypto dan Node
+  menghasilkan ciphertext/tag identik, termasuk plaintext kosong.
+- Verifikasi saya sendiri atas modulnya: derivasi ber-domain per tabel, AAD = nama tabel, nonce CSPRNG,
+  gagal dekripsi selalu `DecryptError` (tidak pernah mengembalikan plaintext/kosong), `burnMem`/`ctx.clear`,
+  pesan galat tanpa materi kunci/plaintext.
+- Tambahan saya: `ops/systemd/kran-api.service` diberi `RestartPreventExitStatus=2` — tanpa itu KEK yang
+  salah membuat API restart-loop tiap 3 detik (`Restart=always` + exit 2 = galat permanen); worker sudah
+  memakai pola ini untuk exit 3.
+
+Sisa jujur: belum ada kolom PII yang dienkripsi (ini mekanisme; kolomnya mendarat di Fase 1) sehingga belum
+ada jalur enkripsi nyata di produksi, dan `KRAN_KEK_FILE` sengaja belum diset di server (kosong = no-op,
+deploy sehat sekarang tidak terpengaruh). Rotasi KEK tidak bisa independen per tabel; rotasi kunci blind
+index membatalkan indeks lama (perlu reindex); normalisasi Unicode nama/alamat belum ditetapkan. Manajemen
+kunci `sops`/`age` masih rencana (tercatat di O-006 sebagai sisa, bukan blocker). **HUMAN-REVIEW-REQUIRED**:
+kriptografi + manajemen kunci (AGENTS.md §8) — wajib review manusia sebelum dipakai untuk data nyata.
