@@ -18,8 +18,15 @@
 #    cookie `SameSite=Strict` tidak perlu diubah dan tidak ada CORS.
 # ─────────────────────────────────────────────────────────────────────────────
 cbs.qouver.com {
+	# Situs live memakai snippet `log_access`; pertahankan supaya log akses tidak hilang saat ganti blok.
+	log {
+		import log_access
+	}
+
 	encode zstd gzip
 
+	# SELinux: akar ini butuh label httpd_sys_content_t (aturan `semanage fcontext` dipasang sekali di
+	# server; `deploy-vps.sh` menjalankan `restorecon` tiap swap). Tanpa itu Caddy menerima 403/404.
 	root * /srv/qouver/apps/kran/web
 
 	handle /api/* {
@@ -38,7 +45,10 @@ cbs.qouver.com {
 		# CSP awal (spec §21.5 meminta CSP + frame-ancestors). Sesuaikan setelah
 		# T-010 (aset SvelteKit mungkin butuh nonce/hash). frame-ancestors di sini
 		# melengkapi X-Frame-Options.
-		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		# `script-src` masih butuh 'unsafe-inline': build SvelteKit sekarang memuat 2 <script> inline
+		# dan tidak menerbitkan hash/nonce (tidak ada `csp` di svelte.config.js), sedangkan
+		# `script-src 'self'` saja mematikan hidrasi. Celah ini dicatat sebagai O-061.
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 	}
 }
 
