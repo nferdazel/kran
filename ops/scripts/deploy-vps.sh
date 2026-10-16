@@ -39,6 +39,20 @@ mkdir -p "$APP_DIR/logs"
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG"; }
 die() { log "ERROR: $*"; exit 1; }
 
+# Konfigurasi aplikasi (termasuk KRAN_DATABASE_URL/KEK). Unit systemd memuatnya lewat
+# EnvironmentFile, tetapi jalur hook (webhook.service) tidak mewarisi env itu — deploy dari push
+# gagal di migration gate dengan "KRAN_DATABASE_URL kosong" (ditemukan di T-045, 16 Okt 2026).
+# Karena itu skrip ini yang memuatnya; nilai yang tidak ada di berkas (mis. KRAN_HEALTH_URL dari
+# drop-in webhook) tetap dari lingkungan.
+ENV_FILE="${KRAN_ENV_FILE:-$APP_DIR/env/kran-prod.env}"
+if [ -f "$ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
+  log "==> env aplikasi dimuat: $ENV_FILE"
+fi
+
 # Salin lib runtime yang tidak ada di host dari image yang baru dibangun. Nama tujuan = **soname**
 # (bukan nama berkas asli) karena `podman cp` mengikuti symlink: tanpa ini `libpq.so.5` hilang dan
 # biner gagal start dengan `could not load: libpq.so(.5|)`. Rantainya terbukti di Rocky 9
