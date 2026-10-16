@@ -72,7 +72,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install browser Playwright
-        run: pnpm exec playwright install --with-deps chromium
+        # `playwright` adalah devDependency `apps/web`, bukan root: `pnpm exec` di root tidak
+        # menemukannya (ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL: Command "playwright" not found), jadi
+        # eksplisit lewat filter paketnya.
+        run: pnpm --filter @kran/web exec playwright install --with-deps chromium
 
       - name: ./task openapi
         # lint kontrak OpenAPI + klien TS sinkron + typecheck paket klien
