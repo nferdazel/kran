@@ -11,7 +11,7 @@ import std/[json, options, strutils, times, os]
 import db_connector/db_postgres
 import db_connector/postgres
 
-import ../domain/[audit, event, param]
+import ../domain/[audit, event, param, scope]
 import ./audit_repo
 import ./outbox_repo
 import kernel/[auditcontext, clock, ids, paramkey]
@@ -329,17 +329,18 @@ proc paramValueRows*(db: DbConn, status = "", limit = 200): seq[ParamValueRow] =
 
 proc missingActiveKeys*(db: DbConn, keys: openArray[string], scopeType: ParamScopeType,
                         scopeId, asOf: string): seq[string] =
-  ## Startup check (spec §10.4): key yang **tidak** punya nilai aktif untuk scope yang wajib.
-  ## `GLOBAL` selalu dianggap tersedia; key lain butuh nilai pada scope-nya sendiri atau GLOBAL.
+  ## Startup check (spec §10.4): key yang **tidak** punya nilai aktif yang **terlihat oleh
+  ## resolusi** untuk scope yang wajib.
+  ##
+  ## Penilaiannya memakai jalur yang sama dengan pembacaan runtime (`resolveCandidate` +
+  ## `lookupFor`) supaya tidak ada dua definisi "aktif" (O-057). Konsekuensinya:
+  ##   - `GLOBAL` selalu dianggap memenuhi — persis seperti `resolveCandidate` (bukan kelonggaran
+  ##     di sini, melainkan aturan resolusi yang memang selalu mencocokkan `GLOBAL`);
+  ##   - `scopeId` kosong **bukan** wildcard: kandidat di level yang sama dengan id konkret tidak
+  ##     menyelamatkan (dulu lolos, padahal `activeValueJson` akan melempar `ParamNotFound`).
+  let lookup = lookupFor(ScopeRef(scopeType: scopeType, scopeId: scopeId))
   for key in keys:
-    let candidates = candidatesOf(db, key, asOf)
-    var found = false
-    for c in candidates:
-      if c.scopeType == pstGlobal:
-        found = true
-      elif c.scopeType == scopeType and (scopeId.len == 0 or c.scopeId == scopeId):
-        found = true
-    if not found:
+    if resolveCandidate(candidatesOf(db, key, asOf), lookup).isNone:
       result.add key
 
 type

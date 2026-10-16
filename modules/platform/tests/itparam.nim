@@ -369,3 +369,36 @@ suite "param: cache & NOTIFY":
     let aktif = candidatesOf(db, passwordKey, asOf)
     check aktif.len == 1
     check aktif[0].value.getInt == 14
+
+suite "param: startup check = visibilitas resolusi (O-057)":
+  test "nilai ber-id konkret tidak menyelamatkan pemanggil id kosong (bukan wildcard)":
+    # Aturan lama memperlakukan `scopeId` kosong sebagai wildcard: kandidat `INSTITUTION:<id apa
+    # pun>` dianggap memenuhi. Resolusi tidak begitu (`some("")` hanya cocok dengan `scope_id`
+    # NULL), jadi key ini sebenarnya tidak terlihat oleh institusi akar.
+    let key = fiscalKey
+    exec(db, sql"DELETE FROM platform.param_value WHERE key = ?", key)
+    let pvId = $newId(sysClock)
+    execScript(db, "INSERT INTO platform.param_value (param_value_id, key, scope_type, scope_id," &
+      " value, effective_from, status, maker, checker, reason) VALUES ('" & pvId & "', '" & key &
+      "', 'INSTITUTION', 'inst-lain', '2'::jsonb, DATE '2026-01-01', 'ACTIVE', '" & $maker &
+      "', '" & $checker & "', 'uji O-057')")
+    # Resolusi untuk institusi akar (id kosong) tidak melihat nilai ber-id konkret…
+    check resolveCandidate(candidatesOf(db, key, asOf),
+      lookup(@[(pstInstitution, "")])).isNone
+    # …jadi startup check harus setuju. Uji ini GAGAL pada aturan lama (dulu lolos).
+    check missingActiveKeys(db, [key], pstInstitution, "", asOf) == @[key]
+    # Pemanggil dengan id yang sama melihatnya: bedanya "id beda", bukan "tidak ada nilai".
+    check missingActiveKeys(db, [key], pstInstitution, "inst-lain", asOf).len == 0
+
+  test "nilai GLOBAL tetap memenuhi level mana pun (sama dengan resolusi)":
+    let key = fiscalKey
+    exec(db, sql"DELETE FROM platform.param_value WHERE key = ?", key)
+    let pvId = $newId(sysClock)
+    execScript(db, "INSERT INTO platform.param_value (param_value_id, key, scope_type, value," &
+      " effective_from, status, maker, checker, reason) VALUES ('" & pvId & "', '" & key &
+      "', 'GLOBAL', '1'::jsonb, DATE '2026-01-01', 'ACTIVE', '" & $maker & "', '" & $checker &
+      "', 'uji GLOBAL')")
+    # `resolveCandidate` selalu mencocokkan GLOBAL, apa pun scope pemanggil — startup check ikut.
+    check missingActiveKeys(db, [key], pstInstitution, "inst-1", asOf).len == 0
+    check missingActiveKeys(db, [key], pstBranch, "br-1", asOf).len == 0
+    check missingActiveKeys(db, [key], pstInstitution, "", asOf).len == 0
