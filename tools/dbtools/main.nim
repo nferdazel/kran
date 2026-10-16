@@ -5,7 +5,8 @@
 ##   dbtools [--root <dir>] status                # butuh KRAN_DATABASE_URL
 ##   dbtools [--root <dir>] seed [--dev]          # butuh KRAN_DATABASE_URL; --dev = seed dev/test
 ##
-## Keluar: 0 sukses, 1 masalah data/migrasi, 2 kesalahan pemakaian.
+## Keluar: 0 sukses, 1 masalah data/migrasi, 2 kesalahan pemakaian, 3 ditolak pada keadaan itu
+## (mis. `seed --dev` diarahkan ke basis data yang bukan dev/test — lihat O-062).
 
 import std/[os, strutils]
 import db_connector/db_postgres
@@ -98,6 +99,14 @@ proc runMigrate(db: DbConn): int =
 proc runSeed(db: DbConn): int =
   ## Terapkan berkas seed pack (`packs/*/generated/*.sql`) + berkas dev/test bila `--dev`.
   ## Idempotent: seluruh berkas seed memakai `ON CONFLICT`, jadi aman dijalankan berulang.
+  if devSeeds and not devSeedDbAllowed(getEnv("KRAN_DATABASE_URL")):
+    # Fail-closed: nama basis data yang tidak dikenali diperlakukan sama dengan produksi (O-062).
+    let name = databaseNameOf(getEnv("KRAN_DATABASE_URL"))
+    stderr.writeLine("dbtools: --dev ditolak untuk basis data '" &
+      (if name.len > 0: name else: "<tidak dikenali dari KRAN_DATABASE_URL>") &
+      "' — seed dev memuat user contoh dengan kata sandi contoh, hanya basis data berakhiran " &
+      "`_dev` atau `_test` yang diizinkan.")
+    return 3
   let files = seedFiles(root, devSeeds)
   if files.len == 0:
     echo "dbtools seed: tidak ada berkas seed"
