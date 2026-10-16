@@ -73,6 +73,12 @@ KRAN_DEVDB_PERSIST=7200
 
 `./task devdb up` idempotent (tunnel yang sudah jalan tidak dibuka dua kali).
 
+Tunnel juga bisa mati karena **koneksi SSH putus**, bukan hanya karena idle (kejadian 16 Okt 2026:
+`ControlPersist=7200` sudah terpasang dan keepalive aktif, tunnel tetap mati). Jadi: jalankan
+`./task devdb status` sebelum gate panjang, dan bila di tengah gate muncul `Connection refused` atau
+`server closed the connection unexpectedly`, **periksa tunnel lebih dulu** sebelum menuduh kode — lalu
+ulangi gate-nya. Jangan melonggarkan test untuk melewatinya.
+
 ### Migrasi & status
 
 ```sh
