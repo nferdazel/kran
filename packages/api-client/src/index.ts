@@ -14,7 +14,7 @@ import type { paths } from "./generated/schema.d.ts";
 
 export type ApiPaths = paths;
 
-export interface CbsClientOptions {
+export interface KranClientOptions {
   /** Basis URL; default same-origin (BFF). */
   baseUrl?: string;
   /** Dipakai test/observabilitas: menyuntikkan implementasi fetch (mis. dari Playwright). */
@@ -33,12 +33,12 @@ export interface Problem {
   traceId: string;
 }
 
-export type CbsClient = ReturnType<typeof createClient<paths>> & {
+export type KranClient = ReturnType<typeof createClient<paths>> & {
   /** True bila respons terakhir (atau objek mana pun) adalah amplop problem. */
   isProblem: (value: unknown) => value is Problem;
 };
 
-export function createCbsClient(options: CbsClientOptions = {}): CbsClient {
+export function createKranClient(options: KranClientOptions = {}): KranClient {
   const client = createClient<paths>({
     baseUrl: options.baseUrl ?? "",
     ...(options.fetchImpl ? { fetch: options.fetchImpl } : {}),

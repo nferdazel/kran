@@ -1039,7 +1039,12 @@ Langkah skrip (ekstensi kontrak seragam; yang **tebal** = tambahan KRAN):
 | Webhook | Hook `kran` (sha256), secret di `webhook.json` (600) |
 | Database | Database & role Postgres khusus KRAN; role terpisah untuk `app`, `migrate`, `readonly/report` (least privilege) |
 
-> **Catatan nama (transisi)**: `cbs` **menggantikan** `cbs-core` (hook `cbs-core`, image `localhost/kran-*:local`, route `/cbs/*→8095`, site `cbs`→3005). Selama `cbs-core` masih melayani, hook/ image/ unit/ port/ hostname/ direktori KRAN baru **tidak boleh bertabrakan** dengannya (bila `/srv/qouver/apps/kran/` sudah dipakai `cbs-core`, pakai `apps/kran-next/` sementara lalu rename saat cutover). Pengambilalihan nama dilakukan di cutover (§21.9).
+> **Catatan nama**: KRAN **menggantikan** `cbs-core` (nama transisi `cbs` dibatalkan oleh D-039: produk
+> dan seluruh identifier teknis memakai KRAN). Hook/ image/ unit/ port/ hostname/ direktori milik
+> `cbs-core` yang masih melayani — `cbs-core`, image `localhost/kran-*:local`, route `/cbs/*→8095`,
+> site `cbs`→3005 — **tidak boleh bertabrakan** dengan yang baru (bila `/srv/qouver/apps/kran/` sudah
+> dipakai `cbs-core`, pakai `apps/kran-next/` sementara lalu rename saat cutover). Pengambilalihan nama
+> dilakukan di cutover (§21.9).
 
 ### 21.6 Struktur `ops/` di Repo
 
@@ -1170,7 +1175,7 @@ Estimasi waktu sengaja tidak dicantumkan sebelum ada keputusan kapasitas tim; te
 | ADR-012 | SPA `adapter-static` untuk back-office | SSR penuh | Diusulkan |
 | ADR-013 | Mesin PDF/ cetak (HTML→PDF, Typst, dsb.) | — | **Terbuka** — butuh spike |
 | ADR-014 | CI/CD = turunan pola **Skyward** (Actions verifikasi saja → webhook → `deploy-vps.sh`, binary native, health gate + auto-rollback, migrasi expand-only) | Pipeline baru (GHCR/registry, k8s) | Diusulkan (§21) |
-| ADR-015 | `cbs` **menggantikan** `cbs-core` lewat cutover bertahap (referensi, bukan port kode; `cbs-core` hidup sampai UAT pilot lulus) | Big-bang; evolusi `cbs-core` (Go) | Diputuskan oleh pemilik |
+| ADR-015 | KRAN **menggantikan** `cbs-core` lewat cutover bertahap (referensi, bukan port kode; `cbs-core` hidup sampai UAT pilot lulus) | Big-bang; evolusi `cbs-core` (Go) | Diputuskan oleh pemilik |
 
 Format ADR: konteks → keputusan → konsekuensi → alternatif → status. Disimpan di `docs/adr/NNN-judul.md`.
 
