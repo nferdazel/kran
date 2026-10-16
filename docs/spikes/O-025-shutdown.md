@@ -41,6 +41,38 @@ perubahan `server.nim`; itu pekerjaan tersendiri, bukan bagian T-024.
 koneksi yang sudah diterima tetapi belum masuk ke handler, dan soket realtime (ditutup oleh keluarnya
 proses; klien menyambung ulang).
 
+## Diperbarui (T-042, 16 Okt 2026): repro deterministik + urutan aman
+
+Gejala SIGSEGV **berhasil direproduksi deterministik** di tree saat ini (macOS arm64, Nim 2.2.12,
+Mummy 0.4.8, `--mm:orc --threads:on`). Pemicunya bukan pool/pump/WebSocket, melainkan **thread tempat
+`destroy` berjalan**:
+
+| Varian | Bangun server | `serve()` | `close()` dipanggil dari | Hasil |
+|---|---|---|---|---|
+| 1 (pola harness lama) | thread utama | thread lain | thread utama | **SIGSEGV** di `mummy.nim:1143` (`=destroy(server[])`) → `orc.nim nimDecRefIsLastCyclicDyn`/`unregisterCycle` |
+| 5 | thread utama | thread utama | thread lain | aman |
+| 6 | thread lain | thread lain (sama) | thread utama | aman |
+| 7 = 6 + klien WebSocket hidup | thread lain | thread lain (sama) | thread utama | aman (3× berturut) |
+
+**Sebab:** `Server` dialokasikan `allocShared0`, tetapi closure handler-nya (mis. `requestHandler(app)`)
+adalah nilai yang dikelola ORC. `destroy(true)` memanggil `=destroy(server[])` di **thread yang
+melayani**; ORC menyimpan pembukuan siklus **per-thread**, jadi menghancurkan closure yang
+dialokasikan thread lain membaca state yang salah → SIGSEGV. Server minimal (handler tanpa capture)
+tidak memicunya karena tidak ada siklus yang dikelola ORC — itu sebabnya probe 15 Okt tidak reput.
+
+**Urutan aman (dipakai `apps/api/tests/itapi_teardown.nim`):** bangun **dan** layani server di **thread
+yang sama**; `close()` boleh dipanggil dari thread lain (ia hanya memicu sinyal shutdown; `destroy`
+tetap berjalan di thread pelayan). Setelah `joinThread`, baru tutup pool. Shutdown produksi
+(T-024/D-031) tidak memanggil `close()` sama sekali (sinyal → hentikan pump → `quit(0)`), jadi tidak
+terpengaruh.
+
+**Batas yang tetap ada:** `Server` yang ditutup `close()` menjadi `ptr` menggantung — jangan dipakai
+lagi setelahnya. Upgrade Mummy belum diambil: batas versi masih `>= 0.4.8 & < 0.5.0` (D-037) dan
+belum ada bukti perbaikan hulu; mengubahnya butuh keputusan terpisah.
+
+Bukti: `apps/api/tests/itapi_teardown.nim` (2 uji: siklus penuh + siklus kedua) — `[OK]`. Dengan
+urutan lama (bangun di thread uji, layani di thread lain) berkas yang sama `SIGSEGV`.
+
 ## Bukti
 
 - Manual: `.build/bin/cbs-api --role=api --port=8095` lalu `kill -TERM` → `EXIT_CODE=0`, log
