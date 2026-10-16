@@ -39,6 +39,26 @@ export default defineConfig({
     }),
     sveltekit({
       adapter: adapter({ fallback: "index.html" }),
+      /**
+       * CSP (spec §21.5, O-061). Halaman di-prerender (`fallback: index.html`), jadi Kit memakai
+       * **hash** dan menuliskannya ke `<meta http-equiv="content-security-policy">` — nonce tidak
+       * boleh untuk halaman prerender. Header Caddy memuat kebijakan yang sama; browser menerapkan
+       * irisan keduanya, sehingga `script-src 'self'` di header + hash di meta = hanya script milik
+       * aplikasi (tanpa `'unsafe-inline'`) yang boleh jalan.
+       */
+      csp: {
+        mode: "hash",
+        directives: {
+          "default-src": ["self"],
+          "script-src": ["self"],
+          "style-src": ["self", "unsafe-inline"], // Svelte menyuntik <style> saat runtime
+          "img-src": ["self", "data:"],
+          "connect-src": ["self"], // termasuk SSE /api/v1/events/stream (same-origin)
+          "base-uri": ["self"],
+          "form-action": ["self"],
+          "object-src": ["none"],
+        },
+      },
     }),
   ],
   server: { proxy },

@@ -5,26 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>KRAN</title>
     <!--
-      Skrip inline kecil menetapkan tema sebelum render (spec §15.3) untuk mencegah flash.
+      Tema ditetapkan sebelum render (spec §15.3) untuk mencegah flash — skripnya berkas aset
+      `static/theme.js`, **bukan** inline: Kit hanya menghash script buatannya sendiri, sehingga
+      script inline di sini akan diblokir CSP `script-src 'self' 'sha256-…'` (O-061/D-045).
       Nilai disimpan di localStorage kunci `kran-theme`: "light" | "dark" | "system".
     -->
-    <script>
-      (function () {
-        try {
-          var stored = localStorage.getItem("kran-theme");
-          var dark =
-            stored === "dark" ||
-            ((stored === null || stored === "system") &&
-              window.matchMedia("(prefers-color-scheme: dark)").matches);
-          var theme = dark ? "dark" : "light";
-          var root = document.documentElement;
-          root.setAttribute("data-theme", theme);
-          root.style.colorScheme = theme;
-        } catch (e) {
-          /* localStorage bisa diblokir; biarkan tema default. */
-        }
-      })();
-    </script>
+    <script src="%sveltekit.assets%/theme.js"></script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
