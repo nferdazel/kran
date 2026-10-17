@@ -123,6 +123,42 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "platform.security.password_history_count",
+    "module": "platform",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.security.password_history_count",
+    "jsonSchema": {
+      "minimum": 0,
+      "maximum": 24
+    }
+  },
+  {
+    "key": "platform.security.password_min_classes",
+    "module": "platform",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "CRITICAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.security.password_min_classes",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 4
+    }
+  },
+  {
     "key": "platform.security.password_min_length",
     "module": "platform",
     "valueType": "integer",

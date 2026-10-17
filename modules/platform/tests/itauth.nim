@@ -58,6 +58,20 @@ let jamKerja = fakeClock(dateTime(2026, mOct, 13, 9, 0, 0, zone = utc()))
 proc settings(): SecuritySettings =
   settingsOf(db, instScope, asOf)
 
+proc setelanUji(historyCount, iterations: int): SecuritySettings =
+  ## Setelan dari DB dengan dua angka diganti: biaya KDF dan panjang riwayat. Dipakai test yang
+  ## menguji **aturan** (bukan biaya), supaya beberapa penggantian beruntun tetap cepat.
+  let dasar = settings()
+  SecuritySettings(
+    minPasswordLength: dasar.minPasswordLength,
+    minPasswordClasses: dasar.minPasswordClasses,
+    passwordHistoryCount: historyCount,
+    pbkdf2Iterations: iterations,
+    maxFailedLogins: dasar.maxFailedLogins,
+    lockoutMinutes: dasar.lockoutMinutes,
+    sessionIdleMinutes: dasar.sessionIdleMinutes,
+    sessionAbsoluteMinutes: dasar.sessionAbsoluteMinutes)
+
 proc ctxFor(userId: string; branch = branchBandung; reason = "uji otomatis"): AuditContext =
   ## Untuk user tak dikenal tidak ada id: konteks memakai id kosong (audit mencatat actor NULL).
   let id = if userId.len > 0: parseId(userId).value() else: Id("")
@@ -153,6 +167,8 @@ suite "anti-enumerasi akun (O-034)":
     ## KDF mendominasi waktu perjalanan ke DB (dev DB ada di server, bukan lokal).
     let setelan = SecuritySettings(
       minPasswordLength: settings().minPasswordLength,
+      minPasswordClasses: settings().minPasswordClasses,
+      passwordHistoryCount: settings().passwordHistoryCount,
       pbkdf2Iterations: 60_000,
       maxFailedLogins: settings().maxFailedLogins,
       lockoutMinutes: settings().lockoutMinutes,
@@ -314,7 +330,7 @@ suite "ganti password":
     let user = userById(db, uid).get()
     let ctx = ctxFor(uid)
     check not changePassword(db, ctx, jamKerja, instScope, user, settings(),
-      "password-salah", "password-baru-panjang")
+      "password-salah", "Password-Baru-Panjang")
     var raised = false
     try:
       discard changePassword(db, ctx, jamKerja, instScope, user, settings(),
@@ -325,9 +341,9 @@ suite "ganti password":
       raised = true
     check raised
     check changePassword(db, ctx, jamKerja, instScope, user, settings(),
-      passwordAwal, "password-baru-panjang")
+      passwordAwal, "Password-Baru-Panjang")
     check login("ganti-password", passwordAwal).outcome == aoInvalidCredentials
-    check login("ganti-password", "password-baru-panjang").outcome == aoSuccess
+    check login("ganti-password", "Password-Baru-Panjang").outcome == aoSuccess
     # Jejak audit ikut ditulis: tanpa itu penggantian kata sandi tidak bisa
     # dipertanggungjawabkan di kemudian hari (spec §18.2).
     let jejak = auditRows("user.password_change")
@@ -344,11 +360,42 @@ suite "ganti password":
     check sesiKetiga.outcome == aoSuccess
     let user = userById(db, uid).get()
     check changePassword(db, ctxFor(uid), jamKerja, instScope, user, settings(),
-      "kata-sandi-awal-panjang", "kata-sandi-baru-panjang",
+      "kata-sandi-awal-panjang", "Kata-Sandi-Baru-Panjang",
       keepSessionId = sesiKetiga.sessionId)
     check activeSessionCount(db, uid, utcIso(jamKerja.now())) == 1
     check sessionFor(db, jamKerja, sesiKetiga.token).isSome
     check sessionFor(db, jamKerja, sesiKedua.token).isNone
+
+  test "riwayat kata sandi dibatasi N terakhir; yang lebih tua boleh dipakai lagi (O-052)":
+    ## Yang diuji di sini aturan jendelanya, bukan biaya KDF — karena itu iterasinya kecil.
+    let uid = buatUser("riwayat-terbatas", password = "Riwayat-Awal-Panjang")
+    let setelan = setelanUji(historyCount = 2, iterations = 1000)
+    proc ganti(lama, baru: string): bool =
+      changePassword(db, ctxFor(uid), jamKerja, instScope, userById(db, uid).get(), setelan,
+        lama, baru)
+    check ganti("Riwayat-Awal-Panjang", "Riwayat-Kedua-Panjang")
+    check ganti("Riwayat-Kedua-Panjang", "Riwayat-Ketiga-Panjang")
+    check ganti("Riwayat-Ketiga-Panjang", "Riwayat-Keempat-Panjang")
+    # Riwayat sekarang = {Ketiga, Kedua}: yang masih di dalam jendela ditolak…
+    var ditolak = false
+    try:
+      discard ganti("Riwayat-Keempat-Panjang", "Riwayat-Ketiga-Panjang")
+    except PasswordPolicyError:
+      ditolak = true
+    check ditolak
+    # …sementara `Awal`, yang sudah keluar dari jendela, boleh dipakai lagi — bukan dilarang
+    # selamanya (itu arti "riwayat N", bukan "semua kata sandi lama").
+    check ganti("Riwayat-Keempat-Panjang", "Riwayat-Awal-Panjang")
+
+  test "kata sandi tidak kedaluwarsa (D-046 butir 8)":
+    ## D-046 memutuskan **tanpa** kedaluwarsa. Test ini yang menahan godaan menambahkannya
+    ## diam-diam: umurnya dimundurkan lima tahun dan tidak ada yang berubah.
+    let uid = buatUser("kata-sandi-tua")
+    check login("kata-sandi-tua", passwordAwal).outcome == aoSuccess
+    discard db.execAffectedRows(sql"""
+      UPDATE platform.app_user SET password_updated_at = now() - interval '5 years'
+       WHERE user_id = ?::uuid""", uid)
+    check login("kata-sandi-tua", passwordAwal).outcome == aoSuccess
 
 suite "bootstrap admin pertama":
   test "sekali-jalan: admin wajib-ganti, percobaan kedua ditolak":
@@ -367,7 +414,7 @@ suite "bootstrap admin pertama":
 
     # Setelah mengganti kata sandinya, kewajiban ganti hilang dan auditenya lengkap.
     check changePassword(db, ctxFor(admin.userId), jamKerja, instScope, admin, settings(),
-      "kata-sandi-acak-panjang", "kata-sandi-baru-panjang")
+      "kata-sandi-acak-panjang", "Kata-Sandi-Baru-Panjang")
     check not userById(db, admin.userId).get().mustChangePassword
     check auditRows("user.bootstrap").len == 1
 

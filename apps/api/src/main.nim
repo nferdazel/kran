@@ -60,6 +60,11 @@ const
   ## tidak ada spasi — kebijakan kata sandi menolak spasi.
   bootstrapAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
+  ## Kumpulan campuran untuk **menjamin** kelas karakter yang dituntut kebijakan (O-052):
+  ## indeks 0..15 selalu huruf kecil, indeks 23..30 selalu simbol. 32 karakter, jadi pemetaannya
+  ## tetap `and` (tanpa bias) — bukan `mod`.
+  bootstrapMixed = "abcdefghjkmnpqrstuvwxyz!@#%^&*-="
+
 const Usage =
   "pemakaian: kran-api --role=api|migrate|ctl|worker [--root=<dir>] [--port=8080] " &
   "[--address=127.0.0.1] [--version=<string>] [--check|--up|--contract|--down N] " &
@@ -230,14 +235,24 @@ proc auditExitCode*(rows: openArray[AuditChainRow]): int =
       return 1
   0
 
-proc randomPassword(length: int): string =
+proc randomPassword(length, minClasses: int): string =
   ## Kata sandi acak dari `std/sysrand` (CSPRNG sistem operasi) — **bukan** `std/random`, yang
   ## bisa diprediksi dan tidak boleh dipakai untuk kredensial.
+  ##
+  ## Kelas karakter yang dituntut kebijakan (`minClasses`) **dijamin** ada, bukan diharapkan
+  ## kebetulan: dua kelas pertama datang dari `bootstrapAlphabet` (huruf besar + angka), kelas
+  ## ketiga (huruf kecil) dan keempat (simbol) diisi eksplisit dari `bootstrapMixed`. Tanpa
+  ## jaminan itu, kata sandi yang dihasilkan bisa ditolak kebijakan institusi dan perintah
+  ## `bootstrap-admin` gagal di tengah jalan — tepat saat tidak ada cara lain masuk.
   var bytes = newSeq[byte](length)
   if not urandom(bytes):
     return ""
   for b in bytes:
     result.add bootstrapAlphabet[int(b) and 31]
+  if minClasses >= 3:
+    result[1] = bootstrapMixed[int(bytes[1]) and 15] # 0..15 = huruf kecil
+  if minClasses >= 4:
+    result[2] = bootstrapMixed[23 + (int(bytes[2]) and 7)] # 23..30 = simbol
 
 proc runBootstrapAdmin(db: DbConn, username: string, clock: Clock): int =
   ## Admin pertama: buat pengguna, beri role admin, cetak kata sandi awal **sekali**.
@@ -260,15 +275,17 @@ proc runBootstrapAdmin(db: DbConn, username: string, clock: Clock): int =
   let utcDate = utcIso(now)
   let settings = settingsOf(db, instScope, utcDate[0 .. 9])
   # Panjangnya mengikuti kebijakan institusi dengan margin, bukan angka tetap di kode.
-  let password = randomPassword(max(20, settings.minPasswordLength + 8))
+  let password = randomPassword(max(20, settings.minPasswordLength + 8),
+    settings.minPasswordClasses)
   if password.len == 0:
     stderr.writeLine "kran-api: gagal membaca sumber acak sistem (urandom)"
     return 1
-  let problems = passwordProblems(settings.minPasswordLength, username, password)
+  let problems = passwordProblems(settings.minPasswordLength, settings.minPasswordClasses,
+    username, password)
   if problems.len > 0:
-    # Tidak seharusnya terjadi (alfabetnya tanpa spasi). Kalau terjadi, admin akan terjebak dengan
-    # kata sandi yang ditolak kebijakannya sendiri — lebih baik gagal sekarang daripada
-    # menyerahkan kredensial yang tidak bisa dipakai untuk menggantinya.
+    # Tidak seharusnya terjadi (kelas karakternya dijamin dan alfabetnya tanpa spasi). Kalau
+    # terjadi, admin akan terjebak dengan kata sandi yang ditolak kebijakannya sendiri — lebih
+    # baik gagal sekarang daripada menyerahkan kredensial yang tidak bisa dipakai.
     stderr.writeLine "kran-api: kata sandi acak yang dihasilkan tidak lolos kebijakan: " & $problems
     return 1
 

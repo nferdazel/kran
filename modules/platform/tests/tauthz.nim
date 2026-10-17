@@ -174,13 +174,26 @@ suite "kebijakan sesi":
 
 suite "kebijakan password":
   test "panjang minimum dari parameter":
-    check passwordProblems(12, "budi", "pendek").contains(ppTooShort)
-    check passwordProblems(12, "budi", "cukup-panjang-123").len == 0
+    check passwordProblems(12, 1, "budi", "pendek").contains(ppTooShort)
+    check passwordProblems(12, 1, "budi", "cukup-panjang-123").len == 0
 
   test "batas atas & kesamaan dengan username":
-    check passwordProblems(8, "budi", repeat("a", 200)).contains(ppTooLong)
-    check passwordProblems(8, "budi", "budi").contains(ppEqualsUsername)
+    check passwordProblems(8, 1, "budi", repeat("a", 200)).contains(ppTooLong)
+    check passwordProblems(8, 1, "budi", "budi").contains(ppEqualsUsername)
 
   test "spasi di awal/akhir ditolak (mudah salah ketik)":
-    check passwordProblems(8, "budi", " rahasia-panjang").contains(ppHasSpaces)
-    check passwordProblems(8, "budi", "rahasia-panjang ").contains(ppHasSpaces)
+    check passwordProblems(8, 1, "budi", " rahasia-panjang").contains(ppHasSpaces)
+    check passwordProblems(8, 1, "budi", "rahasia-panjang ").contains(ppHasSpaces)
+
+  test "keragaman kelas karakter dari parameter (O-052)":
+    # Kelas: huruf kecil, huruf besar, angka, selain itu (simbol).
+    check passwordClasses("kata-sandi") == 2 # huruf kecil + simbol
+    check passwordClasses("KataSandi1!") == 4
+    check passwordClasses("") == 0
+    check passwordClasses("kata sandi") == 2
+    check passwordProblems(8, 3, "budi", "kata-sandi-baru-panjang").contains(ppTooSimple)
+    check passwordProblems(8, 3, "budi", "Kata-Sandi-Baru").len == 0
+    # `1` berarti hanya panjang yang mengikat: kata sandi satu kelas pun lolos.
+    check passwordProblems(8, 1, "budi", "katasandipanjang").len == 0
+    # Pelanggaran dikumpulkan, bukan berhenti di yang pertama.
+    check passwordProblems(12, 4, "budi", "pendek") == @[ppTooShort, ppTooSimple]

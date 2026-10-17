@@ -22,6 +22,24 @@
   sensitivity: CRITICAL
   default_pack: { base: 12 }
 
+# Kelas karakter yang wajib ada: huruf kecil, huruf besar, angka, simbol (selain itu).
+# `1` berarti hanya panjang yang mengikat; `4` berarti keempatnya wajib.
+- key: platform.security.password_min_classes
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 1, maximum: 4 }
+  sensitivity: CRITICAL
+  default_pack: { base: 3 }
+
+# Berapa kata sandi **yang sudah digantikan** tidak boleh dipakai ulang (O-052, D-046 butir 8:
+# riwayat 5). `0` mematikan riwayat — hanya kata sandi yang sedang berlaku yang tidak boleh sama.
+- key: platform.security.password_history_count
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 0, maximum: 24 }
+  sensitivity: NORMAL
+  default_pack: { base: 5 }
+
 - key: platform.calendar.fiscal_year_start_month
   type: integer
   scopes: [GLOBAL]

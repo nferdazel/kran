@@ -35,7 +35,7 @@ const DEV_PASSWORD = "rahasia-panjang-123";
 const FIRST_LOGIN = { username: "dev.firstlogin", password: DEV_PASSWORD };
 /** User biasa (tanpa kewajiban ganti) — dipakai test axe supaya tidak ada keadaan yang dibagi. */
 const MAKER = { username: "dev.maker", password: DEV_PASSWORD };
-const NEW_PASSWORD = "kata-sandi-e2e-baru-panjang";
+const NEW_PASSWORD = "Kata-Sandi-E2E-Baru-Panjang";
 
 /**
  * Tenggang untuk aksi yang menyentuh kata sandi: PBKDF2 dijalankan **dua kali** per permintaan

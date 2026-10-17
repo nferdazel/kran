@@ -1166,3 +1166,46 @@ bukan query `status = 'ACTIVE'` — query naif itu mengambil baris sembarang saa
 ACTIVE ber-tanggal dan terbaca 7 padahal nilai efektifnya 6.
 
 Sisa T-051: O-052 (parameter kebijakan kata sandi + riwayat hash 5 + kualitas dari parameter).
+
+## Pasca-M0 — T-051 bagian O-052: SELESAI (D-058)
+
+**17 Okt 2026.** Kebijakan kata sandi lanjutan sesuai D-046 butir 8: kualitas **sebagai parameter**,
+riwayat 5, dan **tanpa** kedaluwarsa — yang terakhir itu keputusan pemilik, bukan kekurangan yang
+menunggu dikerjakan.
+
+Yang mendarat:
+
+- Dua parameter lewat `paramgen` (bukan SQL manual): `platform.security.password_min_classes` (base 3,
+  1..4) dan `platform.security.password_history_count` (base 5, 0..24). `min_classes = 1` berarti hanya
+  panjang yang mengikat, jadi institusi yang tidak menginginkan aturan keragaman cukup menurunkan
+  parameternya.
+- Migrasi `0010_platform_password_history.sql` + `auth_repo.supersededPasswordHashes` /
+  `recordSupersededPassword`: tabel menyimpan hash yang **sudah digantikan** saja, dipangkas ke N
+  terakhir di jalur tulis (tanpa tugas terjadwal). Hash yang sedang berlaku tetap tunggal di
+  `app_user.password_hash`.
+- Domain: `passwordClasses` (huruf kecil/besar/angka/simbol) dan `passwordProblems(minLength,
+  minClasses, …)` dengan alasan baru `TOO_SIMPLE`/`REUSED`; `changePassword` memeriksa riwayat
+  **setelah** bentuknya lolos — PBKDF2 tidak dijalankan untuk kata sandi yang toh ditolak.
+- Akun yang belum punya baris riwayat (hasil `ctl bootstrap-admin`) tetap tidak bisa "ganti" ke kata
+  sandi yang sama, karena pemeriksaan selalu menyertakan hash yang berlaku.
+- `ctl bootstrap-admin` kini harus menghasilkan kata sandi yang lolos kebijakan institusi, dan
+  generatornya **menjamin** kelas karakter yang dituntut — tanpa itu, kebijakan baru bisa mematikan
+  perintah penyelamat itu sendiri, persis saat tidak ada jalan masuk lain.
+- Kedaluwarsa tidak dibangun; yang ada justru test yang menahannya (kata sandi berumur lima tahun
+  tetap bisa dipakai, `itauth`).
+
+Bukti (semua `exit=0`): `./task fmt`, `./task check` (format/lint/archcheck/nomagic/paramgen/i18n/
+shellcheck), `./task test tauthz`, `./task test itauth` (**25 OK**), `./task test itapi_auth`
+(**38 OK** — termasuk tiga jalur lewat HTTP: kata sandi yang berlaku, kata sandi yang ada di riwayat,
+dan kontrol yang belum pernah dipakai), `./task test itparam`, `./task test itplatform`. Ditandai
+`HUMAN-REVIEW-REQUIRED` (penyimpanan hash kata sandi, AGENTS.md §8).
+
+**Prasyarat produksi yang belum terpenuhi (butuh pemilik).** Parameter dibaca tanpa fallback
+(D-046 butir 5), dan `ops/scripts/deploy-vps.sh` **tidak** menerapkan seed pack — hanya migrasi. Jadi
+selama `dbtools seed` belum dijalankan pada DB produksi (12 definisi / 12 nilai), kode ini akan
+gagal-cepat di jalur login, dan health gate deploy tidak melihatnya (ia memeriksa `/readyz`, bukan
+login). Jalur manual ini sudah pernah ditempuh untuk O-030 (T-053) dengan persetujuan pemilik; celah
+strukturalnya dicatat sebagai **O-066** dan tidak dikerjakan diam-diam di sini.
+
+Sisa T-051: **tidak ada** — O-032/O-044, O-043, O-050, O-052 selesai. Yang tertinggal hanya tinjauan
+reviewer (dan O-066).

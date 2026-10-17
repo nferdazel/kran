@@ -42,6 +42,8 @@ type
     ppTooLong = "TOO_LONG"
     ppEqualsUsername = "EQUALS_USERNAME"
     ppHasSpaces = "HAS_SPACES"
+    ppTooSimple = "TOO_SIMPLE" ## kelas karakter kurang beragam (`password_min_classes`)
+    ppReused = "REUSED"        ## sama dengan kata sandi yang berlaku atau N sebelumnya (O-052)
 
 const
   permissionSegments* = 3  # nomagic:ok invarian format `modul.resource.action` (spec §13)
@@ -205,8 +207,26 @@ proc clearedCookieAttributes*(): string =
   ## Atribut untuk **menghapus** cookie saat logout (umur 0).
   sessionCookieAttributeList & "; Max-Age=0"
 
-proc passwordProblems*(minLength: int, username, plaintext: string): seq[PasswordProblem] =
-  ## Kebijakan panjang dulu (aturan kompleksitas menyusul bila institusi meminta).
+proc passwordClasses*(plaintext: string): int =
+  ## Jumlah kelas karakter yang ada: huruf kecil, huruf besar, angka, dan sisanya (simbol —
+  ## termasuk aksara non-ASCII, yang dihitung satu kelas "simbol" karena batasnya ASCII).
+  var lower, upper, digit, other = false
+  for c in plaintext:
+    if c in {'a' .. 'z'}:
+      lower = true
+    elif c in {'A' .. 'Z'}:
+      upper = true
+    elif c in {'0' .. '9'}:
+      digit = true
+    else:
+      other = true
+  ord(lower) + ord(upper) + ord(digit) + ord(other)
+
+proc passwordProblems*(minLength, minClasses: int, username,
+                       plaintext: string): seq[PasswordProblem] =
+  ## Kebijakan kata sandi baru (spec §10.4): panjang, keragaman kelas, dan bukan username/spasi.
+  ## Semua angkanya dari parameter — tidak ada default di sini. Semua pelanggaran dikumpulkan,
+  ## bukan berhenti di yang pertama: pemanggil menampilkan daftarnya.
   if plaintext.len < minLength:
     result.add ppTooShort
   if plaintext.len > maxPasswordLength:
@@ -215,3 +235,5 @@ proc passwordProblems*(minLength: int, username, plaintext: string): seq[Passwor
     result.add ppEqualsUsername
   if plaintext.strip() != plaintext:
     result.add ppHasSpaces
+  if minClasses > 0 and passwordClasses(plaintext) < minClasses:
+    result.add ppTooSimple

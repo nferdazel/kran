@@ -46,7 +46,7 @@ const
   CheckerUser = "dev.checker"
   ## User seed yang `must_change_password = true`: dipakai alur wajib-ganti. Passwordnya sama.
   FirstLoginUser = "dev.firstlogin"
-  PasswordBaru = "kata-sandi-baru-panjang"
+  PasswordBaru = "Kata-Sandi-Baru-Panjang"
   DevPassword = "rahasia-panjang-123"
   CookieName = "kran_session"
 
@@ -808,7 +808,7 @@ suite "ganti kata sandi lewat HTTP":
     check sesiB.code == 200
     let tokenA = tokenOf(sesiA)
     let tokenB = tokenOf(sesiB)
-    let baruLagi = "kata-sandi-ketiga-panjang"
+    let baruLagi = "Kata-Sandi-Ketiga-Panjang"
 
     let ganti = postJson(PasswordPath,
       %*{"oldPassword": PasswordBaru, "newPassword": baruLagi}, tokenA)
@@ -830,6 +830,33 @@ suite "ganti kata sandi lewat HTTP":
       if item["action"].getStr() == "user.password_change":
         adaJejak = true
     check adaJejak
+
+  test "kata sandi lama tidak bisa dipakai ulang: yang berlaku maupun yang di riwayat (O-052)":
+    # `dev.firstlogin` sudah melewati dua penggantian di atas, jadi riwayatnya memuat kata sandi
+    # seed; yang diuji di sini dua-duanya: kata sandi yang **sedang berlaku** dan yang **sudah
+    # digantikan**. Keduanya lewat HTTP, bukan pemanggilan lapisan langsung.
+    const Ketiga = "Kata-Sandi-Ketiga-Panjang"
+    let sesi = login(FirstLoginUser, Ketiga)
+    check sesi.code == 200
+    let token = tokenOf(sesi)
+
+    let berlaku = postJson(PasswordPath,
+      %*{"oldPassword": Ketiga, "newPassword": Ketiga}, token)
+    check berlaku.code == 400
+    check berlaku.body["params"]["reason"].getStr() == "password_policy"
+    checkProblem(PasswordPath, "POST", "400", berlaku.body)
+
+    let dariRiwayat = postJson(PasswordPath,
+      %*{"oldPassword": Ketiga, "newPassword": DevPassword}, token)
+    check dariRiwayat.code == 400
+    check dariRiwayat.body["params"]["reason"].getStr() == "password_policy"
+
+    # Kontrol: kata sandi baru yang belum pernah dipakai tetap diterima — supaya 400 di atas
+    # benar-benar karena aturan riwayat, bukan karena tidak ada yang bisa lolos.
+    let segar = "Kata-Sandi-Keempat-Panjang"
+    check postJson(PasswordPath, %*{"oldPassword": Ketiga, "newPassword": segar}, token).code == 204
+    check login(FirstLoginUser, segar).code == 200
+    check login(FirstLoginUser, Ketiga).code == 401
 
 suite "wewenang scope parameter lewat HTTP (O-032, O-044/D-047)":
   const

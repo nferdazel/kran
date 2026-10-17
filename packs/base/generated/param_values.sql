@@ -55,6 +55,20 @@ INSERT INTO platform.param_value
   (param_value_id, key, scope_type, scope_id, value, effective_from, status,
    maker, checker, reason)
 VALUES
+  (md5('platform.security.password_history_count|base')::uuid, 'platform.security.password_history_count', 'GLOBAL', NULL, '5'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+ON CONFLICT (param_value_id) DO NOTHING;
+
+INSERT INTO platform.param_value
+  (param_value_id, key, scope_type, scope_id, value, effective_from, status,
+   maker, checker, reason)
+VALUES
+  (md5('platform.security.password_min_classes|base')::uuid, 'platform.security.password_min_classes', 'GLOBAL', NULL, '3'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+ON CONFLICT (param_value_id) DO NOTHING;
+
+INSERT INTO platform.param_value
+  (param_value_id, key, scope_type, scope_id, value, effective_from, status,
+   maker, checker, reason)
+VALUES
   (md5('platform.security.password_min_length|base')::uuid, 'platform.security.password_min_length', 'GLOBAL', NULL, '12'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
 ON CONFLICT (param_value_id) DO NOTHING;
 

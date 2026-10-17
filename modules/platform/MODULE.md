@@ -163,14 +163,15 @@ Catatan penempatan: `CloseLevel` masih di `domain/calendar.nim`. Saat modul `day
 | Hash password | `infrastructure/password_hasher.nim` — PBKDF2-HMAC-SHA256; hash token sesi (SHA-256) |
 | Repo | `infrastructure/auth_repo.nim` — user/lockout, role/permission/SoD, sesi |
 | Alur | `infrastructure/auth_service.nim` — `authenticate`, `sessionFor`, `touch`, `logout`, `logoutAll`, `authorizeUser`, `changePassword`, `bootstrapFirstAdmin` |
-| Migrasi | `0006_platform_auth.sql` (tabel) + `0008_platform_rbac_catalogue.sql` (katalog izin & role sistem) |
+| Migrasi | `0006_platform_auth.sql` (tabel) + `0008_platform_rbac_catalogue.sql` (katalog izin & role sistem) + `0010_platform_password_history.sql` (riwayat hash kata sandi) |
 
 Invarian tambahan:
 
 12. **Password tidak pernah disimpan/di-log mentah**: DB hanya menyimpan
     `algo$iterasi$salt$digest`; parameter KDF ikut tersimpan supaya hash lama tetap valid.
 13. **Kebijakan dari parameter** (spec §10.4): panjang minimum password, iterasi PBKDF2, batas
-    gagal login, masa lockout, umur sesi idle/absolut. Tidak ada default di kode.
+    gagal login, masa lockout, umur sesi idle/absolut — plus kelas karakter & riwayat kata sandi
+    (invarian 21). Tidak ada default di kode.
 14. **Token sesi hanya ada di memori/klien**: DB menyimpan hash-nya (`session.token_hash`).
 15. **SoD fail-closed**: penugasan role berkonflik ditolak `grantRole`; bila konflik tetap ada di
     data, `authorize` menolak semua aksi.
@@ -200,6 +201,17 @@ Invarian tambahan:
     keadaan penghitung, tidak pernah bahan kata sandi. Batasnya berarti: kunci akun berlaku juga
     untuk login berikutnya (kata sandi benar sekalipun), dan itu disengaja — pelaku yang memegang sesi
     sah tidak boleh bisa menebak kata sandi lama tanpa batas.
+21. **Kata sandi baru: panjang + kelas karakter + riwayat; kedaluwarsa tidak ada** (O-052, D-046
+    butir 8). `passwordProblems` (`domain/authz.nim`) menilai panjang, keragaman kelas
+    (`platform.security.password_min_classes`: huruf kecil/besar/angka/simbol, `1` = hanya panjang),
+    kesamaan dengan username, dan spasi; `changePassword` menambah larangan memakai ulang kata sandi
+    yang **sedang berlaku** atau salah satu dari N terakhir (`password_history_count`) di
+    `platform.user_password_history`. Tabel itu menyimpan hash saja (invarian 12) dan hanya yang
+    **sudah digantikan**: hash aktif tetap tunggal di `app_user.password_hash`, dan barisnya
+    dipangkas ke N terakhir di jalur tulis — tidak ada tabel yang tumbuh tanpa batas dan tidak ada
+    tugas pembersih terpisah. Yang dijaga adalah **jendela** N terakhir, bukan larangan selamanya.
+    **Kedaluwarsa kata sandi tidak dibangun** (D-046 butir 8): tidak ada kolom umur dan tidak ada
+    penolakan karena umur — invarian ini yang menahan penambahannya kembali.
 
 Catatan: alur auth tinggal di `infrastructure` (butuh DB). Saat port/use case lapisan
 `application` lahir (pola T-016), isi `auth_service.nim` pindah ke `application/`.

@@ -12,6 +12,8 @@ const paramKeys*: seq[string] = @[
   "platform.realtime.max_topics",
   "platform.security.lockout_minutes",
   "platform.security.max_failed_logins",
+  "platform.security.password_history_count",
+  "platform.security.password_min_classes",
   "platform.security.password_min_length",
   "platform.security.password_pbkdf2_iterations",
   "platform.security.session_absolute_minutes",
@@ -29,6 +31,10 @@ const P_platform_realtime_max_topics* = ParamKey[int64]("platform.realtime.max_t
 const P_platform_security_lockout_minutes* = ParamKey[int64]("platform.security.lockout_minutes")
 
 const P_platform_security_max_failed_logins* = ParamKey[int64]("platform.security.max_failed_logins")
+
+const P_platform_security_password_history_count* = ParamKey[int64]("platform.security.password_history_count")
+
+const P_platform_security_password_min_classes* = ParamKey[int64]("platform.security.password_min_classes")
 
 const P_platform_security_password_min_length* = ParamKey[int64]("platform.security.password_min_length")
 
@@ -103,6 +109,28 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.platform.security.max_failed_logins",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "platform.security.password_history_count",
+    module: "platform",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.platform.security.password_history_count",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "platform.security.password_min_classes",
+    module: "platform",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psCritical,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.platform.security.password_min_classes",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(
