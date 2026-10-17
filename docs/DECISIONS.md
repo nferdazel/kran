@@ -1207,3 +1207,86 @@ pengajuan, bukan hanya pembacaan.
   dan URL harus bentuk polos (`parseDatabaseUrl` menolak query string). Mesin tanpa shellcheck kini
   merah sampai tool dipasang atau pelepasan sadar dilakukan. ESLint (O-023) **tidak** termasuk di
   sini: butuh dependensi baru → `T-057` menunggu keputusan pemilik.
+
+---
+
+## D-052 — Parameter di proses `api` dibaca per permintaan, tanpa cache lintas-proses (T-055, menutup O-018)
+
+- **Konteks**: O-018 membuka pertanyaan apakah proses `api` perlu cache parameter yang dihangatkan
+  lalu di-invalidasi lintas-proses lewat `NOTIFY platform_param_changed`. `ParamService`/`param_cache`
+  sudah ada di `modules/platform` tetapi nol pemakai di `apps/api` (satu-satunya konsumen kanal itu
+  adalah test `itparamservice`), jadi pertanyaannya bukan "menambahkan `LISTEN`" melainkan "bangun
+  cache atau jangan".
+- **Keputusan**: parameter tetap dibaca dari DB per permintaan. `settingsOf`
+  (`modules/platform/infrastructure/auth_service.nim:50-65`) = 6 pembacaan baris-tunggal dan hanya
+  dipanggil di jalur auth (`apps/api/src/handlers_auth.nim:64`, `:115`, `:179`); `realtimeLimits`
+  sekali saat start. Cache tidak dibangun; ditinjau ulang **hanya** bila salah satu pemicu terukur
+  ini muncul: `settingsOf` > 10% p95 waktu DB api, > 50 permintaan auth/detik per proses, `api`
+  berjalan > 1 replika, atau > 10 parameter per permintaan.
+- **Alasan**: bebannya tidak terukur pada skala pilot (1 koperasi/1 cabang/< 5.000 anggota, satu
+  proses `api`, tabel parameter puluhan baris). Sebaliknya cache lintas-proses bersandar pada `NOTIFY`
+  yang **tidak dijamin sampai** (PostgreSQL tidak memutar ulang notifikasi) sementara `param_cache`
+  sengaja tanpa TTL, sehingga notifikasi yang hilang menghasilkan nilai basi **tanpa error** — kelas
+  bug yang paling berbahaya di jalur keamanan/uang dan bertentangan dengan semangat "tanpa fallback
+  senyap" (D-046 butir 5).
+- **Konsekuensi**: O-018 ditutup sebagai keputusan, bukan sebagai implementasi; tidak ada koneksi
+  `LISTEN` tambahan per replika dan tidak ada kelas bug "basi tanpa error" yang perlu dijaga. Pemicu
+  tinjau ulang dicatat di sini supaya keputusan ini dibatalkan dengan bukti, bukan selera. Catatan
+  jujur: indeks parsial `param_value_lookup_idx` berpredikat `WHERE status='ACTIVE'` tidak menopang
+  query resolusi (`status IN ('ACTIVE','SUPERSEDED')`) — tidak terasa pada tabel puluhan baris, tetapi
+  jadi relevan bila pemicu di atas tercapai.
+
+---
+
+## D-053 — Warning `svelte-check` memblokir; ESLint tidak ditambahkan sekarang (T-057, O-023)
+
+- **Konteks**: O-023 meminta ESLint + `eslint-plugin-svelte` dengan aturan a11y sebagai error.
+  Pemeriksaan ulang: hambatannya bukan tooling (pnpm 11.25.0 jalan, registry terjangkau), melainkan
+  penambahan dependensi baru + ADR + plumbing CI. Celah yang sebenarnya terasa berbeda: `./task e2e`
+  menjalankan `svelte-check` tanpa `--fail-on-warnings`, sehingga diagnostik a11y kompilator
+  (`a11y_*`) hanya jadi warning dan **tidak pernah menggagalkan gate**.
+- **Keputusan**: (a) `./task e2e` memakai `svelte-check --fail-on-warnings` — warning memblokir,
+  termasuk seluruh diagnostik `a11y_*`; (b) ESLint **tidak** ditambahkan sekarang; T-057 tetap ada
+  sebagai task tertunda dengan lingkup dipersempit ke lint statis generik (`svelte/*` non-a11y,
+  `typescript-eslint`) dan dikerjakan bersama T-012 saat komponen bisnis nyata lahir.
+- **Alasan**: aturan a11y `eslint-plugin-svelte` sebagian besar memetakan ulang warning kompilator
+  Svelte yang sudah ada — nilai barunya adalah menjadikannya error, dan itu dicapai tanpa satu pun
+  dependensi baru. Terbukti bersih saat diaktifkan (17 Okt 2026: 0 error, 0 warning), jadi ini
+  penguatan gate. Menambah lima paket + ADR + langkah CI (job `nim-check` tidak menjalankan
+  `pnpm install`) untuk lima komponen Fase 0 adalah abstraksi dini (KISS).
+- **Konsekuensi**: gate web kini memblokir pada warning, jadi komponen dengan CSS tak terpakai atau
+  atribut a11y yang hilang merah lebih awal — itu tujuannya, dan sifatnya satu baris untuk dibatalkan
+  bila terbukti mengganggu saat T-012. Batasan yang tercatat untuk T-057 bila nanti dikerjakan:
+  `minimumReleaseAge` di `pnpm-workspace.yaml`, `typescript-eslint` wajib (semua `<script>`
+  ber-`lang="ts"`), dan `packages/config/eslint.js` masih belum ada. Ambang axe (`serious`/
+  `critical`) **tidak** diubah di sini.
+
+---
+
+## D-054 — Assertion e2e atas audit log append-only memakai `.first()` (T-044)
+
+- **Konteks**: saat memverifikasi D-053, `./task e2e` gagal pada run lokal kedua: strict-mode
+  violation karena `getByText(reason)` menemukan 2 baris. Penyelidikan: `platform.audit_log` bersifat
+  **append-only** (trigger `platform.audit_log_immutable` menolak `DELETE` — dicoba langsung, ditolak
+  dengan pesan spec §9.1(3)), dan tiap run e2e menambah satu baris dengan alasan identik
+  (`TEXT.reason` konstan). Diperiksa atas tiga baris yang ada: `audit_id`, `recorded_at`, dan
+  `request_id` semuanya berbeda → akumulasi antar-run, **bukan** dobel-tulis dalam satu aksi. Karena
+  CI selalu mulai dari DB baru, cacat ini tidak pernah terlihat di CI dan hanya memerahkan mesin dev
+  pada run kedua dan seterusnya.
+- **Keputusan**: `apps/web/tests/e2e/flow.spec.ts:238` memakai `.first()`, konsisten dengan baris
+  berikutnya (`param.submit` sudah `.first()` sejak awal). Assertion tetap menuntut baris itu
+  **terlihat**; yang berubah hanya toleransi terhadap baris kembar yang sah pada log append-only.
+- **Alasan**: alternatif "bersihkan baris lama" justru dilarang skema — dan memang tidak boleh,
+  karena audit log append-only adalah invarian yang sengaja ditegakkan. Jadi yang salah bukan
+  fixture-nya, melainkan assertion yang hanya benar pada DB yang baru direset.
+- **Konsekuensi**: gate e2e bisa dijalankan berulang di mesin dev (dibuktikan: dua run berturut-turut
+  `23 passed`, `exit=0`, dengan baris audit tetap berakumulasi menjadi 5). Ini **bukan** pelonggaran:
+  tidak ada assertion yang dihapus dan tidak ada ambang yang diturunkan. Sisa pekerjaan T-044 (flake
+  yang benar-benar intermiten) tetap terbuka; temuan ini deterministik dan tercatat di
+  `docs/tasks/T-044.md`.
+- **Eskalasi (AGENTS §8)**: kelas gejala ini sudah dikenali T-044/T-031, dan `docs/tasks/T-044.md`
+  melarang melonggarkan assertion. Karena itu perubahan ini **tidak** diputuskan diam-diam: entri ini
+  adalah eskalasinya, dan pemilik dapat membalikkannya (satu commit) bila menilai assertion tersebut
+  memang harus ketat. Alasan tetap dipertahankan: yang salah adalah assertion yang hanya benar pada DB
+  yang baru direset, dan tanpa perbaikan ini `ci-repeat 3` — salah satu kriteria selesai T-044 itu
+  sendiri — tidak akan pernah hijau di mesin dev.
