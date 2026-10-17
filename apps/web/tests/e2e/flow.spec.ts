@@ -235,7 +235,11 @@ test("alur Fase 0: login → ajukan (maker) → setujui (checker) → audit + re
 
   // Jejak audit pengajuan: aksi + alasan yang diketik pengguna (bukan teks generik).
   const audit = region(maker, TEXT.auditHeading);
-  await expect(audit.getByText(TEXT.reason, { exact: true })).toBeVisible();
+  // `.first()` karena audit log append-only (trigger `audit_log_immutable`): tiap run menambah
+  // satu baris, sehingga DB dev yang dipakai berulang punya lebih dari satu baris dengan alasan
+  // ini. Tanpa `.first()`, assertion ini hanya benar pada DB yang baru direset — yaitu kondisi
+  // CI — dan gagal pada run kedua di mesin dev (D-054).
+  await expect(audit.getByText(TEXT.reason, { exact: true }).first()).toBeVisible();
   await expect(audit.getByText("param.submit", { exact: true }).first()).toBeVisible();
 
   // --- checker (konteks kedua) menyetujui ---
