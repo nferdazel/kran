@@ -7,14 +7,14 @@
 ##
 ## Test ini **menghapus schema `platform`** di DB yang ditunjuk `KRAN_DATABASE_URL` (DB dev).
 
-import std/[atomics, unittest, os, json, options, strutils]
+import std/[algorithm, atomics, unittest, os, json, options, strutils]
 import db_connector/db_postgres
 
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
 import dbtools/lib
 import kernel/[clock, ids, auditcontext, paramkey]
-import platform/domain/[event, param]
+import platform/domain/[authz, event, param]
 import platform/infrastructure/[audit_repo, outbox_repo, param_repo]
 
 const
@@ -402,3 +402,67 @@ suite "param: startup check = visibilitas resolusi (O-057)":
     check missingActiveKeys(db, [key], pstInstitution, "inst-1", asOf).len == 0
     check missingActiveKeys(db, [key], pstBranch, "br-1", asOf).len == 0
     check missingActiveKeys(db, [key], pstInstitution, "", asOf).len == 0
+
+suite "param: visibilitas daftar per scope (O-032, D-046 butir 6)":
+  ## Aturan wewenangnya murni ada di `platform/domain/authz` (diuji di `tauthz`); yang dibuktikan di
+  ## sini adalah terjemahannya ke SQL pada `paramValueRows`: baris di luar wewenang tidak muncul dan
+  ## tidak memakan jatah `LIMIT`.
+  const
+    keyCabang = "platform.calendar.weekend_days"  # allowed_scopes: GLOBAL, BRANCH
+    keyInstitusi = "platform.realtime.max_topics" # allowed_scopes: GLOBAL, INSTITUTION
+    izin = "platform.param.read"
+    cabangA = "uji-cabang-a"
+    cabangB = "uji-cabang-b"
+
+  proc baris(key, scope, scopeId, value: string) =
+    let pvId = $newId(sysClock)
+    let scopeIdCol = if scopeId.len == 0: "NULL" else: "'" & scopeId & "'"
+    execScript(db, "INSERT INTO platform.param_value (param_value_id, key, scope_type, scope_id," &
+      " value, effective_from, status, maker, checker, reason) VALUES ('" & pvId & "', '" & key &
+      "', '" & scope & "', " & scopeIdCol & ", '" & value & "'::jsonb, DATE '2026-01-01'," &
+      " 'ACTIVE', '" & $maker & "', '" & $checker & "', 'uji visibilitas')")
+
+  proc itemsFor(key: string, grants: seq[Grant]): seq[string] =
+    ## Bentuk `scopeType:scopeId` yang terlihat pemegang `grants`, terurut supaya assertion-nya
+    ## tidak bergantung urutan baris.
+    for row in paramValueRows(db, "", 200, readableScopeFilter(grants, izin)):
+      if row.key == key:
+        result.add row.scopeType & ":" & row.scopeId
+    result.sort()
+
+  test "GLOBAL selalu ikut; INSTITUTION & BRANCH mengikuti grant pembaca":
+    for key in [keyCabang, keyInstitusi]:
+      exec(db, sql"DELETE FROM platform.param_value WHERE key = ?", key)
+    baris(keyCabang, "GLOBAL", "", "[6, 7]")
+    baris(keyInstitusi, "GLOBAL", "", "5")
+    baris(keyCabang, "BRANCH", cabangA, "[5, 6]")
+    baris(keyCabang, "BRANCH", cabangB, "[4, 5]")
+    baris(keyInstitusi, "INSTITUTION", "uji-inst-1", "7")
+    # Baris yang seharusnya tidak pernah lolos `allowed_scopes`: dibuktikan tetap gagal-tertutup,
+    # supaya scope tanpa model keanggotaan (D-055) tidak bocor lewat jalur data.
+    baris(keyCabang, "PRODUCT", "uji-produk-1", "[6, 0]")
+
+    # Tanpa grant: hanya nilai GLOBAL.
+    check itemsFor(keyCabang, @[]) == @["GLOBAL:"]
+    check itemsFor(keyInstitusi, @[]) == @["GLOBAL:"]
+
+    # Grant khusus cabang A: GLOBAL + cabang A. INSTITUTION butuh grant tanpa batas cabang,
+    # dan PRODUCT tetap tidak terlihat siapa pun.
+    let grantCabang = @[Grant(roleCode: "param_maker", branchId: cabangA, permission: izin)]
+    check itemsFor(keyCabang, grantCabang) == @["BRANCH:" & cabangA, "GLOBAL:"]
+    check itemsFor(keyInstitusi, grantCabang) == @["GLOBAL:"]
+
+    # Grant tanpa batas cabang: semua scope yang punya model keanggotaan.
+    let grantSemua = @[Grant(roleCode: "platform_admin", branchId: "", permission: izin)]
+    check itemsFor(keyCabang, grantSemua) ==
+      @["BRANCH:" & cabangA, "BRANCH:" & cabangB, "GLOBAL:"]
+    check itemsFor(keyInstitusi, grantSemua) == @["GLOBAL:", "INSTITUTION:uji-inst-1"]
+
+  test "baris di luar wewenang tidak memakan jatah LIMIT":
+    # Baris terbaru di tabel adalah nilai PRODUCT di atas (tidak terlihat siapa pun). Kalau
+    # penyaringan dilakukan setelah `LIMIT`, permintaan ber-limit 1 akan menerima halaman kosong.
+    let grantCabang = @[Grant(roleCode: "param_maker", branchId: cabangA, permission: izin)]
+    let terlihat = paramValueRows(db, "", 1, readableScopeFilter(grantCabang, izin))
+    check terlihat.len == 1
+    for row in terlihat:
+      check row.scopeType != "PRODUCT"

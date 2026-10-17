@@ -5,15 +5,15 @@
 ## DB). Handler hanya menambahkan otorisasi (`access`), konteks audit dari permintaan HTTP, dan
 ## penerjemahan hasil/kesalahan ke HTTP.
 
-import std/[json, options, strutils]
+import std/[json, options, sets, strutils]
 
 import mummy
 import db_connector/db_postgres
 
-import kernel/[ids, paramkey, result]
+import kernel/[clock, ids, paramkey, result]
 
-import platform/domain/param
-import platform/infrastructure/[auth_service, param_repo]
+import platform/domain/[audit, authz, param]
+import platform/infrastructure/[audit_repo, auth_repo, auth_service, param_repo]
 
 import ./access
 import ./context
@@ -45,6 +45,22 @@ proc itemJson(row: ParamValueRow): JsonNode =
     "reason": row.reason,
     "requiresApproval": row.requiresApproval}
 
+proc auditCrossBranchReads(db: DbConn, principal: Principal, req: Request, clock: Clock,
+                           rows: openArray[ParamValueRow], grants: seq[Grant]) =
+  ## D-046 butir 6: pembacaan lintas-cabang dicatat audit. Satu entri **per cabang** yang dibaca
+  ## di luar cabang tugas, bukan per baris maupun per permintaan: barisnya tetap kecil dan bisa
+  ## ditelusuri per cabang, dan satu permintaan yang membaca cabang yang sama berulang tidak
+  ## menggandakan entri.
+  var branches: HashSet[string]
+  for row in rows:
+    if row.scopeType == $pstBranch and isCrossBranchRead(grants, permissionParamRead, row.scopeId):
+      branches.incl row.scopeId
+  for branch in branches:
+    discard appendAudit(db, newAuditEntry(
+      auditContextFor(principal, req, clock, "cross_branch_read"),
+      "param.read_cross_branch", "param_branch", branch, clock,
+      businessDate = businessDateIso(clock)))
+
 proc handleListParams*(app: AppContext, req: Request) {.gcsafe.} =
   ## `GET /api/v1/params?status=` — daftar nilai parameter beserta statusnya.
   let principal = requirePrincipal(app, req)
@@ -62,10 +78,17 @@ proc handleListParams*(app: AppContext, req: Request) {.gcsafe.} =
       return
 
   var rows: seq[ParamValueRow]
+  var grants: seq[Grant]
   try:
     withDbConn(app.pool, proc(db: DbConn) {.gcsafe.} =
       dbCalls:
-        rows = paramValueRows(db, status, listLimit))
+        grants = grantsOf(db, principal.get().user.userId)
+        # Visibilitas per scope (D-046 butir 6, D-055): disaring **di query**, dari himpunan scope
+        # yang boleh dibaca — bukan setelah `LIMIT`, supaya halaman tidak terisi baris yang tidak
+        # boleh dilihat. Aturannya di `platform/domain/authz`; lihat `paramValueRows`.
+        rows = paramValueRows(db, status, listLimit,
+          readableScopeFilter(grants, permissionParamRead))
+        auditCrossBranchReads(db, principal.get(), req, app.clock, rows, grants))
   except DbError:
     req.respondProblem(pkInternal, "Internal Server Error", "daftar parameter gagal dibaca")
     return
@@ -159,6 +182,13 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
   try:
     withDbTx(app.pool, proc(db: DbConn) {.gcsafe.} =
       dbCalls:
+        # D-047 (O-044): wewenang mengusulkan tidak boleh melebihi wewenang melihat — pengaju
+        # hanya boleh mengajukan nilai untuk scope yang ia sendiri boleh baca.
+        if not mayReadScope(grantsOf(db, principal.get().user.userId), permissionParamRead,
+                            scope, scopeId):
+          problemCode = "scope_not_readable"
+          raise newException(ValueError,
+            "scope " & scopeType & " di luar wewenang baca pengaju")
         let ctx = auditContextFor(principal.get(), req, app.clock, reason)
         # Aturan lintas-parameter diperiksa lebih dulu: nilai yang sah sendiri bisa tetap ditolak
         # bila digabung nilai lain yang sudah aktif (lihat `sessionPolicyCandidateProblem`).
@@ -184,7 +214,8 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
     # Validasi definisi/scope/schema/tipe nilai — semuanya kesalahan permintaan, bukan kesalahan
     # server (spec §10.4: pesannya menyebut aturan yang dilanggar). `problemCode` sudah diisi
     # untuk pelanggaran lintas-parameter; sisanya = nilai itu sendiri yang tidak sah.
-    status = 400
+    # Wewenang scope berbeda: permintaannya berbentuk sah, yang kurang adalah izinnya → 403.
+    status = if problemCode == "scope_not_readable": 403 else: 400
     problem = e.msg
     if problemCode.len == 0:
       problemCode = "value_invalid"
@@ -195,6 +226,7 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
   case status
   of 201: req.respondJson(201, payload)
   of 400: req.respondParamReason(pkBadRequest, "Bad Request", problemCode, problem)
+  of 403: req.respondParamReason(pkForbidden, "Forbidden", problemCode, problem)
   else: req.respondProblem(pkInternal, "Internal Server Error", problem)
 
 proc handleApproveParamChange*(app: AppContext, req: Request) {.gcsafe.} =

@@ -5,6 +5,8 @@
 
 import std/[sets, strutils, times]
 
+import kernel/paramkey
+
 type
   Grant* = object
     ## Satu izin efektif: peran apa, berlaku di cabang mana, izin apa.
@@ -86,6 +88,61 @@ proc permissionsAt*(grants: openArray[Grant], targetBranch: string): HashSet[str
   for g in grants:
     if branchApplies(g.branchId, targetBranch):
       result.incl g.permission
+
+type
+  ScopeFilter* = object
+    ## Himpunan scope yang boleh dibaca pemegang satu izin (D-046 butir 6), dalam bentuk yang bisa
+    ## diterjemahkan langsung ke SQL: `allBranches` = pemegang punya grant **tanpa batas cabang**,
+    ## `branches` = cabang yang ditutup grant terbatas. Untuk deret audit, baris tanpa cabang
+    ## diwakili string kosong di `branches` (lihat `auditScopeFilter`).
+    allBranches*: bool
+    branches*: HashSet[string]
+
+proc readableScopeFilter*(grants: openArray[Grant], permission: string): ScopeFilter =
+  ## Ringkasan grant untuk satu izin. **Satu-satunya** tempat aturan "grant mana menutupi scope
+  ## mana" didefinisikan: `mayReadScope` menurunkannya dari sini, dan repo hanya menerjemahkan
+  ## hasilnya ke SQL (`paramValueRows`, `listAudit`) — bukan aturan kedua di sisi DB.
+  for g in grants:
+    if g.permission != permission:
+      continue
+    if g.branchId.len == 0:
+      result.allBranches = true
+    else:
+      result.branches.incl g.branchId
+
+proc mayReadScope*(grants: openArray[Grant], permission: string,
+                   scopeType: ParamScopeType, scopeId: string): bool =
+  ## Visibilitas nilai ber-scope bagi pemegang `permission` (D-046 butir 6, D-055).
+  ##
+  ## GLOBAL terlihat oleh siapa pun yang memegang izin bacanya: nilai itu dipakai semua orang dan
+  ## menyembunyikannya tidak melindungi apa pun. INSTITUTION hanya untuk grant tanpa batas cabang,
+  ## BRANCH hanya bila grant menutupi cabang itu. PRODUCT/SEGMENT/ROLE **fail-closed**: belum ada
+  ## model keanggotaan untuk ketiganya di mana pun (`Grant` hanya mengenal cabang), jadi menampilkan
+  ## nilai yang keanggotaannya tidak bisa dievaluasi sama dengan membocorkannya.
+  let filter = readableScopeFilter(grants, permission)
+  case scopeType
+  of pstGlobal:
+    filter.allBranches or filter.branches.len > 0
+  of pstInstitution:
+    filter.allBranches
+  of pstBranch:
+    filter.allBranches or scopeId in filter.branches
+  of pstProduct, pstSegment, pstRole:
+    false
+
+proc auditScopeFilter*(grants: openArray[Grant], permission: string): ScopeFilter =
+  ## Deret audit: aksi tanpa cabang (tingkat institusi) selalu terlihat — sama alasannya dengan
+  ## GLOBAL pada parameter, yaitu tidak ada yang dilindungi dengan menyembunyikannya. Aksi
+  ## bercabang hanya bila grant menutupinya.
+  result = readableScopeFilter(grants, permission)
+  if not result.allBranches:
+    result.branches.incl ""
+
+proc isCrossBranchRead*(grants: openArray[Grant], permission, scopeId: string): bool =
+  ## Apakah membaca nilai bercabang `scopeId` berarti keluar dari cabang tugas pemanggil
+  ## (D-046 butir 6: pembacaan seperti itu dicatat audit). Grant tanpa batas cabang menutupi semua
+  ## cabang tetapi tidak menjadikannya cabang tugas pemanggil — itulah yang terdeteksi di sini.
+  scopeId.len > 0 and scopeId notin readableScopeFilter(grants, permission).branches
 
 proc authorize*(grants: openArray[Grant], targetBranch, required: string,
                 conflictPairs: openArray[RolePair] = []): AuthzDecision =

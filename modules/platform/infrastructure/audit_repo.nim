@@ -3,10 +3,10 @@
 ## Pemisahan tanggung jawab yang disengaja: **hash tidak dihitung di Nim**. Rantai dihitung
 ## trigger `platform.audit_log_chain` di DB supaya tidak ada jalur tulis yang bisa melewatkannya.
 
-import std/[json, strutils]
+import std/[json, sets, strutils]
 import db_connector/db_postgres
 
-import ../domain/audit
+import ../domain/[audit, authz]
 import kernel/[auditcontext, ids]
 
 type
@@ -26,6 +26,7 @@ type
     businessDate*: string
     actorUserId*: string
     actorRole*: string
+    branchId*: string ## "" = aksi tanpa cabang (tingkat institusi)
     action*: string
     resourceType*: string
     resourceId*: string
@@ -73,31 +74,47 @@ proc chainOk*(rows: openArray[AuditChainRow]): bool =
 proc countAudit*(db: DbConn): int64 =
   parseBiggestInt(db.getValue(sql"SELECT count(*) FROM platform.audit_log"))
 
-proc listAudit*(db: DbConn, limit: int, action = ""): seq[AuditListItem] =
+proc listAudit*(db: DbConn, limit: int, action: string,
+                scope: ScopeFilter): seq[AuditListItem] =
   ## Daftar audit terbaru (urut `seq` menurun). `action` kosong = semua action; pencocokan
   ## memakai **awalan** supaya `param.` bisa menyeleksi satu keluarga aksi.
   ##
+  ## `scope` = cabang yang boleh dibaca pemanggil (D-046 butir 6); baris tanpa cabang diwakili
+  ## string kosong, dan `auditScopeFilter` yang memutuskan apakah ia ikut terlihat. Disaring **di
+  ## SQL** supaya `LIMIT` berlaku setelah penyaringan — kalau disaring belakangan, baris cabang lain
+  ## memakan jatah halaman dan daftar bisa tampak kosong.
+  ##
   ## Batas jumlah baris wajib ada: tabel audit tidak pernah dipangkas, jadi daftar tanpa batas
   ## akan tumbuh tanpa kendali. Pemanggil (HTTP) yang menetapkan nilainya.
+  let allBranches = if scope.allBranches: "1" else: "0"
+  var branches: seq[string]
+  for b in scope.branches:
+    branches.add b
+  let readableBranches = $ %* branches
   for row in db.getAllRows(sql"""
     SELECT seq::text,
            to_char(recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
            coalesce(to_char(business_date, 'YYYY-MM-DD'), ''),
            coalesce(actor_user_id::text, ''), coalesce(actor_role, ''),
+           coalesce(branch_id::text, ''),
            action, coalesce(resource_type, ''), coalesce(resource_id, ''),
            coalesce(reason, ''), coalesce(after_value::text, 'null')
       FROM platform.audit_log
      WHERE (?::text = '' OR action LIKE ? || '%')
+       AND (?::int = 1
+            OR coalesce(branch_id::text, '') IN
+               (SELECT value FROM jsonb_array_elements_text(?::jsonb)))
      ORDER BY seq DESC
-     LIMIT ?::int""", action, action, $limit):
+     LIMIT ?::int""", action, action, allBranches, readableBranches, $limit):
     result.add AuditListItem(
       seq: parseBiggestInt(row[0]),
       recordedAt: row[1],
       businessDate: row[2],
       actorUserId: row[3],
       actorRole: row[4],
-      action: row[5],
-      resourceType: row[6],
-      resourceId: row[7],
-      reason: row[8],
-      afterValue: parseJson(row[9]))
+      branchId: row[5],
+      action: row[6],
+      resourceType: row[7],
+      resourceId: row[8],
+      reason: row[9],
+      afterValue: parseJson(row[10]))
