@@ -1300,3 +1300,9 @@ Keputusan: **D-061**; O-038 ditutup.
   tengah jalan (`ControlPersist=600` → master ssh keluar setelah ±10 menit tanpa klien), gejalanya
   "connection refused/closed" pada `127.0.0.1:55432`. Dijalankan ulang dengan
   `KRAN_DEVDB_PERSIST=86400` sesuai `docs/runbooks/dev-db.md` §"Umur tunnel".
+- **CI + produksi (18 Okt 2026)**: CI run `39051572992` untuk `6c0fa71` — 4/4 job hijau (Nim, DB
+  integrasi Postgres 18, Web svelte-check+axe+Playwright, Security/gitleaks). Deploy webhook selesai:
+  `.deployed_rev` = `6c0fa71`, `kran-api` aktif, `/readyz` 200. Bukti migrasi benar-benar jalan di DB
+  produksi: indeks `audit_log_hash_idx` **dan** `audit_log_prev_hash_idx` ada, dan
+  `pg_get_functiondef('platform.audit_verify')` memuat predikat `c.prev_hash = a.prev_hash`;
+  `kran-api --role=ctl verify-audit` → "rantai audit utuh (2 entri)", exit 0.
