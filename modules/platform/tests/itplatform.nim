@@ -282,6 +282,8 @@ suite "platform: audit_log — verifikasi tahan urutan commit (O-038, T-052)":
     {.cast(gcsafe).}:
       try:
         discard args.withTx(proc(d: DbConn): int {.closure.} =
+          # Nama aplikasi khusus supaya penunggu mengenali backend thread ini, bukan sleeper lain.
+          discard getValue(d, sql"SELECT set_config('application_name', 'kran-o038-slow', true)")
           # `true` = setelan lokal transaksi: hilang saat commit, tidak menempel ke koneksi pool.
           discard getValue(d, sql"SELECT set_config('kran_test.chain_delay_ms', '3500', true)")
           discard appendAudit(d, newAuditEntry(ctx, "kran.test.o038.slow", "probe", "o038-slow",
@@ -312,7 +314,7 @@ suite "platform: audit_log — verifikasi tahan urutan commit (O-038, T-052)":
     # di trigger uji (jendela penundaan 3,5 s) sebelum menyisipkan baris cepat.
     var ticks = 0
     while ticks < 60 and db.getValue(sql"""SELECT count(*) FROM pg_stat_activity
-        WHERE wait_event = 'PgSleep' AND pid <> pg_backend_pid()""") == "0":
+        WHERE application_name = 'kran-o038-slow' AND wait_event = 'PgSleep'""") == "0":
       sleep(50)
       inc ticks
     check ticks < 60
