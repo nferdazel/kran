@@ -312,9 +312,13 @@ cmd_e2e() {
   ok "pesan terkompilasi"
 
   log "svelte-check (tipe + diagnostik a11y komponen)"
-  (cd "$ROOT/apps/web" && "$web_bin/svelte-kit" sync >/dev/null && "$web_bin/svelte-check" --tsconfig ./tsconfig.json) \
-    || die "svelte-check menemukan error"
-  ok "0 error"
+  # `--fail-on-warnings` (D-053): warning kompilator — termasuk seluruh diagnostik `a11y_*` —
+  # memblokir. Sebelumnya hanya `error` yang memblokir, sehingga warning a11y bisa menumpuk
+  # tanpa pernah menggagalkan gate. Terbukti bersih saat diaktifkan (17 Okt 2026: 0 error,
+  # 0 warning), jadi ini penguatan gate, bukan pelonggaran.
+  (cd "$ROOT/apps/web" && "$web_bin/svelte-kit" sync >/dev/null && "$web_bin/svelte-check" --tsconfig ./tsconfig.json --fail-on-warnings) \
+    || die "svelte-check menemukan error atau warning"
+  ok "0 error, 0 warning"
 
   # API e2e (spec §17.2): hanya bila ada DB. Migrasi + seed dev idempoten dulu, baru Playwright
   # mengangkat binary hasil build di port 8099 (lihat apps/web/playwright.config.ts).
