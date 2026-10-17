@@ -124,6 +124,9 @@
   <nav class="kran-nav" aria-label={m.common_nav_label()}>
     <ul>
       <li><a class="kran-link" href="/">{m.common_nav_home()}</a></li>
+      <!-- Tautan masuk (O-033). Sesudah masuk, aksi "Keluar" ada di toolbar `/app` (yang punya
+           konteks sesi); header sengaja statis supaya tidak membaca sesi di setiap halaman. -->
+      <li><a class="kran-link" href="/login">{m.common_nav_login()}</a></li>
     </ul>
   </nav>
 

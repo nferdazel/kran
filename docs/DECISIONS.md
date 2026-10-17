@@ -1143,3 +1143,23 @@ pengajuan, bukan hanya pembacaan.
 - **Status**: diterima; **HUMAN-REVIEW-REQUIRED** sebelum dipakai untuk data anggota nyata (area
   kriptografi, AGENTS.md §8). Uji: vektor independen Node + roundtrip/tamper/AAD/keyring/blind index
   (`tfieldcrypto.nim`) dan e2e tabel sementara (`itfieldcrypto.nim`).
+
+---
+
+## D-049 — Tautan "Masuk" di header mengubah urutan Tab shell (O-033)
+
+- **Konteks**: navigasi ke `/login` sebelumnya hanya mungkin lewat URL langsung; header hanya
+  memuat satu tautan ("Beranda"). `keyboard.spec.ts` mengunci urutan Tab shell
+  (skip link → tema → bahasa → tautan navigasi → konten), sehingga menambah tautan mengubah
+  urutan itu. Sesi tidak dipegang layout (`AppContext` bukan urusan header), sedangkan aksi
+  "Keluar" sudah ada di toolbar `/app` yang punya konteks sesi.
+- **Keputusan**: tambahkan satu tautan statis **Masuk → `/login`** sebagai item kedua di
+  `<nav>` header, dan perbarui `keyboard.spec.ts` agar mengunci urutan baru
+  (… → Beranda → Masuk). Tidak ada tautan "Keluar" di header: aksi itu butuh konteks sesi dan
+  tetap di `/app`.
+- **Alasan**: tautan statis tidak memaksa setiap halaman membaca sesi (menghindari permintaan
+  `/auth/session` di header shell) dan tetap memenuhi kebutuhan navigasi ke halaman masuk.
+- **Konsekuensi**: urutan Tab shell bertambah satu langkah; `keyboard.spec.ts` adalah kontrak
+  urutan itu dan ikut diperbarui. Tautan tampak juga saat sudah masuk — dapat diterima di Fase 0
+  (halaman `/login` menangani sesi yang sudah ada); bila kelak header jadi sadar-sesi, tautannya
+  yang disesuaikan, bukan urutannya disembunyikan.
