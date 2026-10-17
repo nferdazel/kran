@@ -5,7 +5,7 @@ import { expect, test, type Page } from "@playwright/test";
  * Tab/Enter/panah, termasuk skip link, grup radio tema, dan select bahasa.
  *
  * Urutan fokus yang diuji adalah urutan DOM yang sebenarnya:
- *   skip link → radio tema (3) → select bahasa → tautan navigasi → konten utama.
+ *   skip link → radio tema (3) → grup radio bahasa → tautan navigasi (Beranda, Masuk) → konten utama.
  */
 
 async function gotoApp(page: Page, locale = "id", theme = "light"): Promise<void> {
@@ -83,12 +83,14 @@ test("setiap kontrol dapat dijangkau keyboard dalam urutan logis", async ({ page
     urutan.push(await activeElement(page));
   }
 
-  // Tiap grup radio punya satu tab stop (radio terpilih), lalu tautan navigasi; setelah itu tidak
-  // ada yang bisa difokus di shell (tidak ada focus trap).
-  expect(urutan.slice(0, 3)).toEqual([
+  // Tiap grup radio punya satu tab stop (radio terpilih), lalu dua tautan navigasi (Beranda,
+  // Masuk); setelah itu tidak ada yang bisa difokus di shell maupun beranda (tidak ada focus trap).
+  expect(urutan).toEqual([
     "input:radio:theme",
     "input:radio:locale",
     expect.stringMatching(/^a:/) as unknown as string,
+    expect.stringMatching(/^a:/) as unknown as string,
   ]);
-  expect(urutan[3]).not.toMatch(/^(input|select|a|button)/);
+  await page.keyboard.press("Tab");
+  expect(await activeElement(page)).not.toMatch(/^(input|select|a|button)/);
 });
