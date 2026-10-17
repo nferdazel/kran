@@ -8,7 +8,7 @@
 # Langkah (spec §21.4): ref-guard -> lock -> fetch/reset -> FREEZE GATE ->
 # rebuild selektif -> pre-migration dump -> build + ekstrak binary ->
 # MIGRATION GATE (expand-only) -> swap web -> restart -> HEALTH GATE +
-# auto-rollback -> .deployed_rev -> self-update.
+# auto-rollback -> .deployed_rev -> self-update (skrip + unit systemd).
 #
 # Tanpa secret di repo: URL repo + kredensial hanya dari env VPS (mode 600),
 # mis. KRAN_GIT_URL=github-kran:<user>/kran.git
@@ -34,6 +34,8 @@ LOG="$APP_DIR/logs/deploy.log"
 LIB_DIR="$APP_DIR/lib"
 export LD_LIBRARY_PATH="$LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 HEALTH_URL="${KRAN_HEALTH_URL:-http://127.0.0.1:8095/readyz}"
+# Unit systemd user; dipasang dari repo oleh `sync_units` di bawah.
+UNIT_DIR="${KRAN_UNIT_DIR:-$HOME/.config/systemd/user}"
 
 mkdir -p "$APP_DIR/logs"
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG"; }
@@ -147,6 +149,49 @@ for src in "$MONO_DIR"/ops/scripts/*.sh; do
   [ -e "$src" ] || continue
   sync_script "$src" "$APP_DIR/scripts/$(basename "$src")"
 done
+
+# Unit systemd: sebelum ini deploy hanya `daemon-reload` + restart, jadi perubahan
+# `ops/systemd/*.service` di repo **tidak pernah** sampai ke server. Akibatnya directive
+# `RestartPreventExitStatus=2` (T-054) harus dipasang tangan; kalau terlewat, kegagalannya
+# muncul sebagai restart-loop yang membingungkan. Pola sama dengan binary/web: salinan lama
+# disimpan sebagai `.prev` supaya health gate bisa mengembalikannya saat rollback.
+sync_units() {
+  mkdir -p "$UNIT_DIR"
+  local src name dst
+  for src in "$MONO_DIR"/ops/systemd/*.service; do
+    [ -e "$src" ] || continue
+    name="$(basename "$src")"
+    dst="$UNIT_DIR/$name"
+    if [ -f "$dst" ] && cmp -s "$src" "$dst"; then continue; fi
+    # Validasi sebelum menimpa: unit yang rusak menggagalkan restart, dan kegagalannya baru
+    # terlihat di HEALTH GATE — jauh dari penyebabnya. `verify` membaca berkasnya, jadi bisa
+    # dijalankan pada berkas di repo sebelum dipasang. (Peringatan unit lain di server normal;
+    # yang dipakai hanya kode keluarnya.)
+    if ! systemd-analyze verify "$src" >/dev/null 2>&1; then
+      log "==> ERROR: $name tidak lolos systemd-analyze verify:"
+      systemd-analyze verify "$src" 2>&1 | head -5 | while read -r l; do log "    $l"; done
+      die "unit $name tidak sah; deploy dibatalkan"
+    fi
+    if [ -f "$dst" ]; then cp -f "$dst" "$dst.prev" || log "==> WARN: gagal mencadangkan $dst"; fi
+    if cp -f "$src" "$dst.new" && mv -f "$dst.new" "$dst"; then
+      log "==> unit $name dipasang dari repo (cadangan: $name.prev)"
+    else
+      log "==> WARN: gagal memasang unit $name"
+    fi
+  done
+}
+
+# Dipanggil di jalur auto-rollback: kembalikan unit yang diganti deploy ini.
+restore_units() {
+  local prev target
+  for prev in "$UNIT_DIR"/*.service.prev; do
+    [ -e "$prev" ] || continue
+    target="${prev%.prev}"
+    if cp -f "$prev" "$target"; then log "==> rollback unit: $(basename "$target")"; fi
+  done
+}
+
+sync_units
 
 # 4. FREEZE GATE (spec §21.4 #4, §11.7): jangan deploy saat day-close berjalan.
 if [ -x "$BIN" ]; then
@@ -282,6 +327,8 @@ if [ "$healthy" -ne 1 ]; then
     rm -rf "$APP_DIR/web"
     mv "$APP_DIR/web.prev" "$APP_DIR/web"
   fi
+  restore_units
+  systemctl --user daemon-reload
   systemctl --user restart kran-api || true
   systemctl --user restart kran-worker || true
   exit 1

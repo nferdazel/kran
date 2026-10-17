@@ -1163,3 +1163,25 @@ pengajuan, bukan hanya pembacaan.
   urutan itu dan ikut diperbarui. Tautan tampak juga saat sudah masuk — dapat diterima di Fase 0
   (halaman `/login` menangani sesi yang sudah ada); bila kelak header jadi sadar-sesi, tautannya
   yang disesuaikan, bukan urutannya disembunyikan.
+
+---
+
+## D-050 — Deploy memasang unit systemd dari repo (T-056)
+
+- **Konteks**: `deploy-vps.sh` menjalankan `daemon-reload` + `restart`, tetapi tidak pernah memasang
+  `ops/systemd/*.service` dari repo. Akibatnya perubahan unit di repo adalah konfigurasi mati sampai
+  ada yang menyalinnya manual — dan itu sudah terjadi: `RestartPreventExitStatus=2` (T-054) harus
+  dipasang tangan di server. Gejalanya menyesatkan: yang tampak bukan deploy gagal, melainkan
+  perilaku restart yang berbeda dari repo.
+- **Keputusan**: tambahkan `sync_units` (plus `restore_units` untuk jalur rollback) ke langkah
+  self-update deploy. Unit dibandingkan dengan `cmp`, divalidasi `systemd-analyze verify` **sebelum**
+  ditimpa (tidak lolos → deploy dibatalkan), dan cadangan lama disimpan sebagai `.prev`. Health gate
+  yang gagal mengembalikan `.prev` lalu `daemon-reload` sebelum restart.
+- **Alasan**: menyamakan perlakuan unit dengan binary/web (`.prev` + rollback) menutup kelas bug
+  "repo dan produksi berbeda tanpa ada yang tahu". `verify` dipakai sebagai gate karena unit rusak
+  baru terlihat jauh dari penyebabnya (restart-loop di health gate). Hanya kode keluar `verify` yang
+  dipakai — peringatan tentang unit lain di server adalah hal normal.
+- **Konsekuensi**: deploy kini menyentuh `$HOME/.config/systemd/user` (dapat diarahkan lewat
+  `KRAN_UNIT_DIR`). Perubahan unit di repo berlaku pada deploy berikutnya tanpa langkah manual.
+  Terverifikasi lokal lewat harness 5/5 + `bash -n` + `shellcheck -S warning`; di produksi jalur ini
+  berjalan sebagai no-op karena unit terpasang sudah identik dengan repo.
