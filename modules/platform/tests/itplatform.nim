@@ -272,6 +272,10 @@ suite "platform: audit_log — verifikasi tahan urutan commit (O-038, T-052)":
 
   let ctx = newAuditContext(newId(sysClock), sysClock)
 
+  # Baris pembuka: kontrol `lag(hash)` di bawah butuh pendahulu — baris pertama tabel memberi lag NULL.
+  discard appendAudit(db, newAuditEntry(ctx, "kran.test.o038.preamble", "probe", "o038-preamble",
+    sysClock))
+
   var slowErr: Atomic[int]
 
   proc slowAppend(args: DbPool) {.thread.} =
@@ -303,7 +307,15 @@ suite "platform: audit_log — verifikasi tahan urutan commit (O-038, T-052)":
     slowErr.store(0)
     var slow: Thread[DbPool]
     createThread(slow, slowAppend, dbPool)
-    sleep(900) # thread "slow" sudah berada di jendela penundaan (3,5 s)
+
+    # Jabat tangan dari server, bukan asumsi waktu: tunggu backend thread benar-benar ber-`pg_sleep`
+    # di trigger uji (jendela penundaan 3,5 s) sebelum menyisipkan baris cepat.
+    var ticks = 0
+    while ticks < 60 and db.getValue(sql"""SELECT count(*) FROM pg_stat_activity
+        WHERE wait_event = 'PgSleep' AND pid <> pg_backend_pid()""") == "0":
+      sleep(50)
+      inc ticks
+    check ticks < 60
     let fastHash = appendAudit(db, newAuditEntry(ctx, "kran.test.o038.fast", "probe", "o038-fast",
       sysClock))
     joinThread(slow)
@@ -334,6 +346,33 @@ suite "platform: audit_log — verifikasi tahan urutan commit (O-038, T-052)":
       ORDER BY seq""", $slowSeq)
     check falseAlarms.len == 2
     check parseBiggestInt(falseAlarms[0][0]) == slowSeq
+
+  test "rantai bercabang (dua baris menunjuk pendahulu yang sama) tetap terdeteksi":
+    ## Cabang tidak bisa lahir dari jalur normal: trigger rantai selalu merantai ke baris terakhir
+    ## yang commit. Keadaan ini ditulis langsung (trigger dilewati) supaya aturan `link_ok` diuji apa
+    ## adanya; hash baris cabang dihitung ulang agar `row_hash_ok` tetap benar.
+    let lastRow = db.getRow(sql"""SELECT seq, prev_hash FROM platform.audit_log
+      ORDER BY seq DESC LIMIT 1""")
+
+    exec(db, sql"ALTER TABLE platform.audit_log DISABLE TRIGGER audit_log_chain_trg")
+    exec(db, sql"ALTER TABLE platform.audit_log DISABLE TRIGGER audit_log_no_change_trg")
+    exec(db, sql"""INSERT INTO platform.audit_log
+      (audit_id, action, resource_type, resource_id, prev_hash, hash)
+      VALUES (gen_random_uuid(), 'kran.test.o038.fork', 'probe', 'o038-fork', ?, repeat('0', 64))""",
+      lastRow[1])
+    discard db.execAffectedRows(sql"""UPDATE platform.audit_log a
+      SET hash = encode(digest(a.prev_hash || '|' ||
+            platform.audit_log_payload(a), 'sha256'), 'hex')
+      WHERE a.action = 'kran.test.o038.fork'""")
+    exec(db, sql"ALTER TABLE platform.audit_log ENABLE TRIGGER audit_log_no_change_trg")
+    exec(db, sql"ALTER TABLE platform.audit_log ENABLE TRIGGER audit_log_chain_trg")
+
+    let rows = verifyChain(db, parseBiggestInt(lastRow[0]))
+    check rows.len == 2
+    check rows[0].rowHashOk and rows[1].rowHashOk # kedua baris konsisten dengan payload-nya
+    check not rows[0].linkOk # baris lama: pendahulunya kini dipakai bersama
+    check not rows[1].linkOk # baris cabang
+    check not chainOk(rows)
 
 suite "platform: daftar audit — visibilitas per cabang (O-032, D-046 butir 6)":
   ## Diuji di lapis repo, bukan lewat HTTP: baris audit dari jalur HTTP selalu tanpa cabang
