@@ -44,6 +44,21 @@ const
 
 let instScope = institutionScope()
 
+proc packSchema(key: string): JsonNode =
+  ## Batas schema sebuah parameter dibaca dari artefak `paramgen`
+  ## (`packs/base/generated/param_definitions.sql`) supaya test tidak menyalin angkanya
+  ## (O-042). Test murni ini tidak menyentuh DB, jadi sumbernya berkas hasil generate.
+  const path = "packs/base/generated/param_definitions.sql"
+  for line in readFile(path).splitLines:
+    if not line.startsWith("VALUES ('" & key & "'"):
+      continue
+    let jsonbPos = line.find("'::jsonb")
+    if jsonbPos < 0:
+      continue
+    let start = line[0 ..< jsonbPos].rfind('\'')
+    return parseJson(line[start + 1 ..< jsonbPos])
+  raise newException(ValueError, "definisi parameter tidak ada di " & path & ": " & key)
+
 suite "cache parameter":
   test "hit/miss terhitung; invalidasi per key & seluruhnya":
     var cache = newParamCache()
@@ -107,8 +122,8 @@ suite "layanan parameter: akses bertipe + cache":
 
   test "nilai melanggar schema → error schema, bukan nilai diam-diam":
     var sumber = sumberPalsu()
-    sumber.tambah(keyString(keyInt), %*0, pvtInteger,
-      %*{"type": "integer", "minimum": 1, "maximum": 1440})
+    # Schema diambil dari definisi pack (bukan disalin) supaya test mengikuti seed (O-042).
+    sumber.tambah(keyString(keyInt), %*0, pvtInteger, packSchema(keyString(keyInt)))
     let service = newParamService(sourceOf(sumber))
     let hasil = service.get(keyInt, asOf, instScope)
     check hasil.isErr

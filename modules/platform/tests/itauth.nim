@@ -451,8 +451,12 @@ suite "kebijakan sesi: aturan lintas-parameter":
     # Aplikasi membaca kebijakan sesi di konteks institusi **tanpa id** (O-012), sehingga baris
     # `INSTITUTION:<id>` tidak pernah dipakai login. Vonis pemeriksaan harus mengikuti konteks itu:
     # kalau baris ini dianggap berlaku, idle 30 > absolut 5 → "melanggar" yang tidak nyata.
-    let ubahScope = submitChange(db, adminCtx, sysClock, absoluteKey, "INSTITUTION", "inst-1", %*5,
-      asOf, "", "uji: batas absolut scope institusi")
+    #
+    # 5 adalah batas **minimum schema** `session_absolute_minutes`, jadi diturunkan dari definisi
+    # (hasil seed pack) alih-alih disalin: kalau seed berubah, test ikut (O-042).
+    let absolutMin = definitionOf(db, absoluteKey).get().schema["minimum"].getInt
+    let ubahScope = submitChange(db, adminCtx, sysClock, absoluteKey, "INSTITUTION", "inst-1",
+      %absolutMin, asOf, "", "uji: batas absolut scope institusi")
     discard approveChange(db, newAuditContext(parseId($newId(sysClock)).value(), sysClock),
       sysClock, ubahScope.paramValueId)
     check sessionPolicyCandidateProblem(db, sessionIdleKey, %*30, asOf, "", asOf) == ""
