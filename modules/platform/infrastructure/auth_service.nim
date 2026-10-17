@@ -19,6 +19,8 @@ import kernel/generated/paramkeys
 type
   SecuritySettings* = object
     minPasswordLength*: int
+    minPasswordClasses*: int
+    passwordHistoryCount*: int
     pbkdf2Iterations*: int
     maxFailedLogins*: int
     lockoutMinutes*: int
@@ -53,6 +55,10 @@ proc settingsOf*(db: DbConn, scope: ScopeRef, asOf: string): SecuritySettings =
   SecuritySettings(
     minPasswordLength: db.activeParamInt(
       keyString(P_platform_security_password_min_length), asOf, lookup),
+    minPasswordClasses: db.activeParamInt(
+      keyString(P_platform_security_password_min_classes), asOf, lookup),
+    passwordHistoryCount: db.activeParamInt(
+      keyString(P_platform_security_password_history_count), asOf, lookup),
     pbkdf2Iterations: db.activeParamInt(
       keyString(P_platform_security_password_pbkdf2_iterations), asOf, lookup),
     maxFailedLogins: db.activeParamInt(
@@ -270,7 +276,12 @@ proc changePassword*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRe
                      user: UserRow, settings: SecuritySettings,
                      oldPassword, newPassword: string, keepSessionId = ""): bool =
   ## Ganti password sendiri: password lama harus benar, password baru harus lolos kebijakan
-  ## (dinilai **sebelum** hash supaya tidak ada hash sia-sia).
+  ## (panjang, kelas karakter, dan riwayat — dinilai **sebelum** hash supaya tidak ada hash
+  ## sia-sia; pemeriksaan riwayat sendiri butuh PBKDF2 dan hanya dijalankan bila bentuknya lolos).
+  ##
+  ## Kata sandi yang baru digantikan masuk riwayat (N terakhir, dari parameter) supaya tidak bisa
+  ## dipakai ulang. Riwayat menyimpan hash, dan **kata sandi tidak pernah kedaluwarsa** (D-046
+  ## butir 8): tidak ada umur yang membuatnya harus diganti.
   ##
   ## Efek sampingnya menyatu di sini supaya pemanggil cukup membungkus satu transaksi: hash diganti,
   ## `must_change_password` dibersihkan (`setPassword`), audit ditulis, dan **sesi lain dicabut**
@@ -288,10 +299,30 @@ proc changePassword*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRe
       %*{"reason": "old_password_mismatch", "failed_attempts": failed.failedAttempts,
          "status": failed.status})
     return false
-  let problems = passwordProblems(settings.minPasswordLength, user.username, newPassword)
+  var problems = passwordProblems(settings.minPasswordLength, settings.minPasswordClasses,
+    user.username, newPassword)
+  if problems.len == 0:
+    # Riwayat (O-052, D-046 butir 8): kata sandi baru tidak boleh sama dengan yang **sedang
+    # berlaku** maupun N yang sudah digantikan. Diperiksa hanya setelah bentuknya lolos —
+    # memverifikasi PBKDF2 terhadap hash lama tidak berguna kalau kata sandinya memang belum
+    # memenuhi kebijakan, dan PBKDF2 itu mahal.
+    #
+    # Termasuk `user.passwordHash` di sini, tidak hanya riwayat: akun yang lahir sebelum kebijakan
+    # ini (atau hasil bootstrap) belum punya baris riwayat, dan "ganti" ke kata sandi yang sama
+    # harus tetap ditolak.
+    if verifyPassword(newPassword, user.passwordHash):
+      problems.add ppReused
+    else:
+      for superseded in supersededPasswordHashes(db, user.userId,
+                                                 settings.passwordHistoryCount):
+        if verifyPassword(newPassword, superseded):
+          problems.add ppReused
+          break
   if problems.len > 0:
     raise (ref PasswordPolicyError)(msg: "password baru tidak memenuhi kebijakan: " & $problems)
   discard setPassword(db, user.userId, $hashPassword(newPassword, settings.pbkdf2Iterations))
+  discard recordSupersededPassword(db, user.userId, user.passwordHash,
+    settings.passwordHistoryCount)
   let revoked = revokeSessionsExcept(db, user.userId, keepSessionId, utcIso(clock.now()),
     "password_change")
   auditAuth(db, ctx, clock, scope, "user.password_change", user.userId,

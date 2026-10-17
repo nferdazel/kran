@@ -115,6 +115,39 @@ proc setUserStatus*(db: DbConn, userId, status: string): bool =
     UPDATE platform.app_user SET status = ?, updated_at = now()
      WHERE user_id = ?::uuid""", status, userId) == 1
 
+# --- riwayat kata sandi (O-052) -------------------------------------------------------
+# **HUMAN-REVIEW-REQUIRED**: hanya hash yang disimpan (tidak pernah kata sandi mentah), tetapi ini
+# tetap area kredensial — D-058, invarian MODULE.md #21.
+
+proc supersededPasswordHashes*(db: DbConn, userId: string, count: int): seq[string] =
+  ## Hash kata sandi yang **sudah digantikan**, terbaru dulu, maksimum `count`.
+  ## `count <= 0` berarti riwayat dimatikan: tidak ada hash yang dibaca (dan bukan berarti
+  ## "semua hash").
+  if count <= 0:
+    return @[]
+  for row in db.getAllRows(sql"""
+    SELECT password_hash FROM platform.user_password_history
+     WHERE user_id = ?::uuid ORDER BY seq DESC LIMIT ?::int""", userId, count):
+    result.add row[0]
+
+proc recordSupersededPassword*(db: DbConn, userId, passwordHash: string,
+                               keep: int): int =
+  ## Mencatat hash yang baru digantikan lalu memangkas riwayat ke `keep` baris terbaru
+  ## (`keep = 0` mengosongkannya). Mengembalikan jumlah baris yang dipangkas.
+  ##
+  ## Pemangkasan ikut di sini, bukan tugas terjadwal terpisah: dengan begitu jumlah baris per
+  ## pengguna selalu = nilai parameter yang berlaku saat perubahan terakhir, dan tidak ada
+  ## tabel yang tumbuh tanpa batas.
+  discard db.execAffectedRows(sql"""
+    INSERT INTO platform.user_password_history (user_id, password_hash)
+    VALUES (?::uuid, ?)""", userId, passwordHash)
+  db.execAffectedRows(sql"""
+    DELETE FROM platform.user_password_history
+     WHERE user_id = ?::uuid AND seq NOT IN (
+       SELECT seq FROM platform.user_password_history
+        WHERE user_id = ?::uuid ORDER BY seq DESC LIMIT ?::int)""",
+    userId, userId, keep)
+
 # --- role & permission -------------------------------------------------------------
 
 proc insertRole*(db: DbConn, roleId, code, nameKey: string, isSystem = false): bool =

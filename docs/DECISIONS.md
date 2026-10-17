@@ -1424,3 +1424,52 @@ pengajuan, bukan hanya pembacaan.
 - **Bukti**: `itapi_auth` (2 test: penghitung + audit `user.password_change.failure`; akun terkunci
   sampai batas parameter, dan login berikutnya ditolak 403 `locked`); `itauth` (23 test lama tetap
   hijau); `./task fmt` + `./task check` hijau.
+
+## D-058 — Kebijakan kata sandi lanjutan: kelas karakter + riwayat sebagai parameter, tanpa kedaluwarsa (O-052)
+
+- **Konteks**: D-046 butir 8 memutuskan tiga hal untuk fase pilot — riwayat 5, kualitas kata sandi
+  **sebagai parameter**, dan **tanpa** kedaluwarsa. Fase 0 baru punya panjang minimum, larangan
+  sama-dengan-username, dan larangan spasi (`domain/authz.nim`).
+- **Keputusan**:
+  1. Dua parameter baru di `modules/platform/seeds/params.yaml` (lewat `paramgen`, tanpa SQL manual):
+     `platform.security.password_min_classes` (base **3**, rentang 1..4) dan
+     `platform.security.password_history_count` (base **5**, rentang 0..24).
+  2. Kelas karakter dihitung ASCII-style: huruf kecil, huruf besar, angka, dan "selain itu" (simbol —
+     termasuk aksara non-ASCII, yang jatuh ke kelas simbol). `min_classes = 1` berarti hanya panjang
+     yang mengikat; institusi yang tidak menginginkan aturan keragaman menurunkannya lewat parameter,
+     bukan lewat perubahan kode.
+  3. Riwayat disimpan di tabel baru `platform.user_password_history` (`0010`), berisi hash kata sandi
+     yang **sudah digantikan** saja. Hash yang sedang berlaku tetap tunggal di
+     `app_user.password_hash` — satu kata sandi tidak pernah punya dua tempat, dan tabel riwayat tidak
+     bisa dipakai memverifikasi kredensial aktif.
+  4. Pemangkasan ke N terakhir terjadi di jalur tulis (`recordSupersededPassword`), bukan tugas
+     terjadwal: jumlah baris per pengguna selalu = nilai parameter saat perubahan terakhir, dan tidak
+     ada tabel yang tumbuh tanpa batas tanpa pembersih yang harus diingat.
+  5. Arti "N" adalah **jendela**, bukan larangan selamanya: kata sandi yang sudah keluar dari N
+     terakhir boleh dipakai lagi. Diuji langsung (`itauth`), supaya tidak diam-diam jadi "semua kata
+     sandi lama terlarang".
+  6. Pemeriksaan riwayat dijalankan **setelah** bentuk kata sandi lolos (PBKDF2 mahal dan tidak
+     berguna untuk kata sandi yang toh ditolak), dan **selalu** menyertakan hash yang sedang berlaku:
+     akun yang lahir sebelum tabel riwayat ada (termasuk hasil `bootstrap-admin`) tidak punya satu pun
+     baris riwayat, jadi tanpa itu "ganti" ke kata sandi yang sama akan lolos.
+  7. **Kedaluwarsa tidak dibangun**: tidak ada kolom umur, tidak ada penolakan karena umur, tidak ada
+     tugas rotasi. D-046 butir 8 memutuskan rotasi berkala tidak diwajibkan; yang diuji adalah
+     ketiadaannya (`itauth`: kata sandi berumur lima tahun tetap bisa dipakai).
+  8. Kata sandi acak yang dibuat `ctl bootstrap-admin` kini harus lolos kebijakan yang sama, dan
+     generatornya **menjamin** kelas karakter yang dituntut (bukan mengandalkan kebetulan) — kalau
+     tidak, perintah penyelamat itu gagal persis saat tidak ada jalan masuk lain.
+  9. **Prasyarat operasional**: parameter baru harus sudah ada di DB sebelum kode yang membacanya
+     berjalan (resolusi parameter tanpa fallback, D-046 butir 5). Seed pack produksi dijalankan
+     pemilik lewat `dbtools seed` — bukan bagian dari `ops/scripts/deploy-vps.sh`; celah itu dicatat
+     sebagai **O-066**.
+- **Alternatif yang ditolak**: (a) aturan keragaman di kode — melanggar §10 (tidak ada nilai bisnis di
+  kode) dan tidak bisa dilonggarkan institusi tanpa rilis ulang; (b) larangan memakai ulang seluruh
+  kata sandi lama (tanpa jendela) — bukan yang diminta, dan tidak bisa dijamin tanpa menyimpan hash
+  selamanya; (c) memangkas riwayat lewat tugas terjadwal — menambah pekerjaan operasional untuk
+  tabel yang bisa dijaga ukurannya di jalur tulis; (d) memangkas berdasarkan `recorded_at` — dua
+  perubahan pada detik yang sama bisa membuat urutan tidak pasti; `seq` (identity) tidak.
+- **Bukti**: `tauthz` (hitung kelas + pelanggaran dikumpulkan, bukan berhenti di yang pertama),
+  `itauth` (jendela riwayat + kematian kedaluwarsa, 25 test), `itapi_auth` (38 test, termasuk tiga
+  penolakan/keberhasilan lewat HTTP: kata sandi yang berlaku, yang di riwayat, dan kontrol yang
+  belum pernah dipakai), `itparam` + `itplatform` hijau, `./task fmt` + `./task check` hijau.
+- **HUMAN-REVIEW-REQUIRED**: menyentuh penyimpanan hash kata sandi (AGENTS.md §8).
