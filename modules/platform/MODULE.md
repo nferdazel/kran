@@ -51,6 +51,10 @@ saat ini belum ada konsumen lintas-modul, jadi belum ada yang perlu diekspor.
   UPDATE/DELETE) baru berlaku saat role produksi dibuat — juga di `docs/OPEN_ITEMS.md`.
 - Lock `pg_advisory_xact_lock` pada rantai menyerialkan transaksi yang menulis audit. Aman
   untuk volume Fase 0; bila jadi leher botol, ganti dengan `seq` + retry (ADR kecil).
+- Verifikasi rantai (migrasi `0011`) mengikuti `prev_hash` dan tidak bergantung urutan `seq`. Yang
+  **tetap tidak** tertangkap: rantai bercabang (dua baris menunjuk pendahulu yang sama) — keadaan itu
+  hanya bisa dibuat dengan menulis langsung ke tabel tanpa trigger, dan penulis seperti itu sudah
+  bisa menulis ulang ekor rantai (batas pertama di atas). D-061 mencatat alasan dan alternatifnya.
 
 ## Invarian: urutan commit == urutan `seq` outbox
 
@@ -61,7 +65,16 @@ terbalik, peristiwa yang commit belakangan akan **terlewat** — bukan sekadar t
 Aturan penulis: **transaksi yang menulis peristiwa outbox wajib menulis entri audit lebih dulu, di
 transaksi yang sama.** Trigger rantai audit memegang `pg_advisory_xact_lock(hashtext(
 'platform.audit_log'))` **sampai commit**, sehingga penulis audit terserialkan dan urutan commit
-mengikuti urutan `seq`.
+outbox mengikuti urutan `seq` outbox-nya.
+
+**Catatan `seq` audit (O-038, T-052)**: yang dijamin lock ini adalah urutan **commit** antar penulis
+audit, **bukan** urutan `seq` audit. `seq` audit dialokasikan identity sebelum trigger mengambil
+lock, jadi baris ber-`seq` lebih besar bisa commit lebih dulu — rantainya tetap linear, hanya
+urutannya tidak mengikuti `seq` (direproduksi deterministik di `tests/itplatform.nim`, suite O-038).
+Karena itu sejak migrasi `0011` verifikasi rantai mengikuti `prev_hash`, bukan
+`lag(hash) OVER (ORDER BY seq)`, dan hasilnya tidak bergantung urutan commit. Untuk outbox tidak ada
+yang berubah: penulis yang menulis audit lebih dulu sudah terserialkan sebelum baris outbox-nya
+dialokasikan.
 
 Ini bukan konvensi gaya. Dua test di `tests/itoutboxcursor.nim` menjaga keduanya: (1) penulis kedua
 benar-benar menunggu commit penulis pertama dan `seq`-nya lebih besar — **GAGAL** bila lock audit

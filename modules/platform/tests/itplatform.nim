@@ -7,7 +7,7 @@
 ## Test ini **menghapus schema `platform`** di database yang ditunjuk `KRAN_DATABASE_URL`.
 ## Itu memang tujuan `kran_dev` (DB dev khusus), jangan arahkan ke DB lain.
 
-import std/[unittest, os, json, strutils]
+import std/[unittest, os, json, strutils, atomics]
 import db_connector/db_postgres
 
 import "platform-lib/db/config"
@@ -262,6 +262,78 @@ suite "platform: audit_log":
   test "TRUNCATE ditolak trigger":
     expectDbError(sql"TRUNCATE platform.audit_log", "append-only")
     check countAudit(db) == 4
+
+suite "platform: audit_log — verifikasi tahan urutan commit (O-038, T-052)":
+  ## `seq` dialokasikan identity sebelum trigger rantai mengambil advisory lock, jadi dua transaksi
+  ## yang bersisipan bisa commit terbalik: baris ber-`seq` kecil merantai ke baris ber-`seq` besar.
+  ## Rantainya tetap linear — yang salah adalah anggapan lama `lag(hash) OVER (ORDER BY seq)`.
+  ## Jendelanya diperlebar sengaja di sini (trigger uji yang menunda **sebelum** trigger rantai)
+  ## supaya keadaannya deterministik; tanpa penundaan, jendela itu hanya beberapa instruksi.
+
+  let ctx = newAuditContext(newId(sysClock), sysClock)
+
+  var slowErr: Atomic[int]
+
+  proc slowAppend(args: DbPool) {.thread.} =
+    {.cast(gcsafe).}:
+      try:
+        discard args.withTx(proc(d: DbConn): int {.closure.} =
+          # `true` = setelan lokal transaksi: hilang saat commit, tidak menempel ke koneksi pool.
+          discard getValue(d, sql"SELECT set_config('kran_test.chain_delay_ms', '3500', true)")
+          discard appendAudit(d, newAuditEntry(ctx, "kran.test.o038.slow", "probe", "o038-slow",
+            sysClock))
+          0)
+      except CatchableError as e:
+        echo "slowAppend gagal: ", e.name, " | ", e.msg
+        discard slowErr.fetchAdd(1)
+
+  test "dua transaksi bersisipan: rantai linear; pola lama memberi alarm palsu":
+    exec(db, sql"""CREATE OR REPLACE FUNCTION platform.kran_test_chain_delay() RETURNS trigger
+      LANGUAGE plpgsql AS $fn$
+      BEGIN
+        IF coalesce(current_setting('kran_test.chain_delay_ms', true), '') <> '' THEN
+          PERFORM pg_sleep(current_setting('kran_test.chain_delay_ms')::int / 1000.0);
+        END IF;
+        RETURN NEW;
+      END
+      $fn$""")
+    exec(db, sql"""CREATE TRIGGER aaa_kran_test_chain_delay BEFORE INSERT ON platform.audit_log
+      FOR EACH ROW EXECUTE FUNCTION platform.kran_test_chain_delay()""")
+
+    slowErr.store(0)
+    var slow: Thread[DbPool]
+    createThread(slow, slowAppend, dbPool)
+    sleep(900) # thread "slow" sudah berada di jendela penundaan (3,5 s)
+    let fastHash = appendAudit(db, newAuditEntry(ctx, "kran.test.o038.fast", "probe", "o038-fast",
+      sysClock))
+    joinThread(slow)
+    exec(db, sql"DROP TRIGGER aaa_kran_test_chain_delay ON platform.audit_log")
+    exec(db, sql"DROP FUNCTION platform.kran_test_chain_delay()")
+
+    check slowErr.load() == 0
+    let slowRow = db.getRow(sql"""SELECT seq, hash, prev_hash FROM platform.audit_log
+      WHERE action = 'kran.test.o038.slow' ORDER BY seq DESC LIMIT 1""")
+    let slowSeq = parseBiggestInt(slowRow[0])
+    let fastSeq = parseBiggestInt(db.getValue(sql"""SELECT seq FROM platform.audit_log
+      WHERE action = 'kran.test.o038.fast' ORDER BY seq DESC LIMIT 1"""))
+
+    # Prasyarat mekanisme: yang lambat dapat `seq` lebih kecil, tetapi yang cepat commit lebih dulu.
+    check slowSeq < fastSeq
+    check slowRow[2] == fastHash
+
+    # Aturan baru: rantai utuh. Inilah yang gagal dengan pola lama.
+    let rows = verifyChain(db, slowSeq)
+    check rows.len == 2
+    check chainOk(rows)
+
+    # Kontrol: pola lama (`lag(hash) OVER (ORDER BY seq)`) menandai **kedua** baris itu.
+    let falseAlarms = db.getAllRows(sql"""SELECT seq FROM (
+        SELECT seq, prev_hash = lag(hash) OVER (ORDER BY seq) AS old_ok
+        FROM platform.audit_log) s
+      WHERE seq >= ? AND NOT old_ok
+      ORDER BY seq""", $slowSeq)
+    check falseAlarms.len == 2
+    check parseBiggestInt(falseAlarms[0][0]) == slowSeq
 
 suite "platform: daftar audit — visibilitas per cabang (O-032, D-046 butir 6)":
   ## Diuji di lapis repo, bukan lewat HTTP: baris audit dari jalur HTTP selalu tanpa cabang
