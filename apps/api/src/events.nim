@@ -34,12 +34,15 @@ import ./identity
 import ./problem
 
 export identity
+export realtime
 
 const
-  ## Batas pesan langganan (pertahanan protokol, bukan parameter bisnis): 32 topik per langganan,
-  ## panjang topik maksimum 128 karakter. Diberikan ke lapisan application lewat
-  ## `SubscriptionLimits` supaya nilainya tidak menjadi literal di sana (spec §10.4).
-  subscriptionLimits* = SubscriptionLimits(maxTopics: 32, maxTopicLen: 128)
+  ## Batas pesan langganan (pertahanan protokol, bukan nilai bisnis — D-021). Sejak O-030 nilai
+  ## sebenarnya datang dari parameter `platform.realtime.max_topics`/`max_topic_len` yang dibaca
+  ## transport saat start; konstanta ini hanya **default protokol** untuk pemanggil yang tidak
+  ## mengonfigurasi (mis. uji transport tanpa DB). Nilai yang diberikan ke lapisan application
+  ## tetap lewat `SubscriptionLimits`, jadi tidak ada literal di sana (spec §10.4, D-030).
+  defaultSubscriptionLimits* = SubscriptionLimits(maxTopics: 32, maxTopicLen: 128)
   ## Jeda tunggu notifikasi per putaran pump (ms); juga interval pemulihan bila notifikasi hilang.
   pumpPollMs* = 250
 
@@ -84,6 +87,7 @@ type
     resumeLimit: int
     maxResumeBatches: int
     sessionRecheckSeconds: int                 ## interval periksa ulang sesi per klien (detik)
+    limits: SubscriptionLimits                 ## batas pesan langganan (dari parameter, O-030)
     running: Atomic[bool]
     ready: Atomic[bool] ## pump sudah LISTEN + menentukan titik mulai (dipakai uji & diagnostik)
     pumpPid: Atomic[int]                       ## pid backend koneksi pump (diagnostik + uji pemutusan koneksi)
@@ -142,10 +146,13 @@ proc hasToken(value, token: string): bool =
 
 proc newEventService*(policy: TopicPolicy, pool: DbPool, resumeLimit = 200,
                       maxResumeBatches = 10,
-                      sessionRecheckSeconds = defaultSessionRecheckSeconds): EventService =
+                      sessionRecheckSeconds = defaultSessionRecheckSeconds,
+                      limits = defaultSubscriptionLimits): EventService =
   ## `resumeLimit` = peristiwa per putaran replay; `maxResumeBatches` = batas putaran sebelum
   ## klien diminta mulai dari awal (lihat `replayTo`); `sessionRecheckSeconds` = interval periksa
-  ## ulang sesi (uji memakai nilai kecil/0 supaya tidak menunggu).
+  ## ulang sesi (uji memakai nilai kecil/0 supaya tidak menunggu); `limits` = batas pesan
+  ## langganan — `main` mengisinya dari parameter `platform.realtime.*` (O-030), default protokol
+  ## dipakai pemanggil tanpa konfigurasi (uji/tanpa DB).
   if policy.sessionValid.isNil:
     # Gagal keras di sini, bukan crash senyap saat pump memeriksa sesi: tipe tidak bisa memaksa
     # closure terisi, dan lupa mengisinya = lubang O-036 kembali terbuka tanpa jejak.
@@ -160,6 +167,7 @@ proc newEventService*(policy: TopicPolicy, pool: DbPool, resumeLimit = 200,
   result.resumeLimit = max(1, resumeLimit)
   result.maxResumeBatches = max(1, maxResumeBatches)
   result.sessionRecheckSeconds = max(0, sessionRecheckSeconds)
+  result.limits = limits
   result.running.store(false)
   result.ready.store(false)
 
@@ -362,7 +370,7 @@ proc onWebSocketEvent(svc: EventService, socket: WebSocket, event: WebSocketEven
       svc.sendMessage(clientId,
                       encodeError("REALTIME_UNSUPPORTED_FRAME", "error_realtime_unsupported_frame"))
       return
-    let parsed = decodeSubscription(message.data, subscriptionLimits)
+    let parsed = decodeSubscription(message.data, svc.limits)
     if parsed.isErr:
       svc.sendMessage(clientId, encodeError(parsed.error.code, parsed.error.i18nKey))
       return

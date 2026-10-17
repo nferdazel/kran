@@ -74,3 +74,21 @@
   schema: { minimum: 5, maximum: 1440 }
   sensitivity: NORMAL
   default_pack: { base: 480 }
+
+# --- Batas protokol realtime (O-030, spec §18.2) -------------------------------------------
+# Pertahanan terhadap klien yang mengirim daftar topik raksasa. **Bukan** ambang bisnis (D-021),
+# tetapi disimpan sebagai parameter supaya bisa diubah per institusi tanpa mengubah kode.
+# Dibaca transport saat start (`apps/api`) dan diteruskan ke lapisan application (D-030).
+- key: platform.realtime.max_topics
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 1, maximum: 1000 }
+  sensitivity: NORMAL
+  default_pack: { base: 32 }
+
+- key: platform.realtime.max_topic_len
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 1, maximum: 4096 }
+  sensitivity: NORMAL
+  default_pack: { base: 128 }

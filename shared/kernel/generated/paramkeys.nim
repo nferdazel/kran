@@ -8,6 +8,8 @@ import std/json
 const paramKeys*: seq[string] = @[
   "platform.calendar.fiscal_year_start_month",
   "platform.calendar.weekend_days",
+  "platform.realtime.max_topic_len",
+  "platform.realtime.max_topics",
   "platform.security.lockout_minutes",
   "platform.security.max_failed_logins",
   "platform.security.password_min_length",
@@ -19,6 +21,10 @@ const paramKeys*: seq[string] = @[
 const P_platform_calendar_fiscal_year_start_month* = ParamKey[int64]("platform.calendar.fiscal_year_start_month")
 
 const P_platform_calendar_weekend_days* = ParamKey[JsonNode]("platform.calendar.weekend_days")
+
+const P_platform_realtime_max_topic_len* = ParamKey[int64]("platform.realtime.max_topic_len")
+
+const P_platform_realtime_max_topics* = ParamKey[int64]("platform.realtime.max_topics")
 
 const P_platform_security_lockout_minutes* = ParamKey[int64]("platform.security.lockout_minutes")
 
@@ -53,6 +59,28 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.platform.calendar.weekend_days",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "platform.realtime.max_topic_len",
+    module: "platform",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.platform.realtime.max_topic_len",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "platform.realtime.max_topics",
+    module: "platform",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.platform.realtime.max_topics",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(
