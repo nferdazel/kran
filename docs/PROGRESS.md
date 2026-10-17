@@ -1273,3 +1273,30 @@ unit user `kran-api`/`kran-worker`, env `…/apps/kran/env/kran-prod.env`.
 
 Keputusan lanjutan dari sesi yang sama: **D-059** (scoping cabang diaktifkan di jalur HTTP → task
 **T-058**) dan **D-060** (O-009 ditunda; **T-052** dipersempit ke O-038).
+
+## T-052 (O-038) — verifikasi rantai audit tahan urutan commit (17 Okt 2026)
+
+Aturan verifikasi rantai dipindahkan dari urutan `seq` ke `prev_hash` (migrasi
+`0011_platform_audit_verify_prev_hash.sql`), sehingga keadaan **sah** yang dulu dilaporkan rusak
+(dua transaksi bersisipan) tidak lagi jadi alarm palsu — tanpa melemahkan deteksi perusakan.
+Keputusan: **D-061**; O-038 ditutup.
+
+- **Reproduksi deterministik** (sebelumnya hanya "potensi"): jendela antara alokasi identity dan
+  advisory lock diperlebar dengan trigger uji (2,5 s) → baris ber-`seq` kecil merantai ke hash baris
+  ber-`seq` besar, sementara 85/85 baris tetap terjangkau dari genesis (rantai **linear**, bukan
+  putus). Suite baru di `modules/platform/tests/itplatform.nim` memakai mekanisme yang sama; jendelanya
+  ditunggu lewat jabat tangan `pg_stat_activity` (`application_name` worker), bukan `sleep` tetap.
+- **Review independen**: putaran 1 **CHANGES-REQUIRED** — MAJOR: versi pertama aturan baru kehilangan
+  deteksi rantai **bercabang** yang dimiliki pola lama. Perbaikan: `link_ok` mensyaratkan juga "tidak
+  ada baris lain ber-`prev_hash` sama" (indeks `audit_log_prev_hash_idx`), dengan test yang **gagal**
+  bila syarat itu dicabut. Putaran 2 **APPROVE**; satu MINOR (race `PgSleep`) ikut diperbaiki.
+- **Bukti**: `./task test itplatform` → 24 `[OK]`, exit 0; `./task test itapi_auth` → 38 `[OK]`, exit 0;
+  `./task test itapi_roles` → 13 `[OK]`, exit 0 (kontrak `ctl verify-audit` vs `verifyChain`);
+  `./task check` hijau. Test perusakan lama **tidak diubah** dan tetap lulus.
+- **Batas yang tetap berlaku** (ditulis di migrasi + `modules/platform/MODULE.md`): siklus tanpa
+  genesis (membuatnya butuh titik tetap fungsi hash) dan penulisan ulang seluruh ekor rantai oleh
+  penyerang ber-hak-tulis-penuh (O-009, ditunda D-060).
+- **Catatan lingkungan (bukan regresi)**: dua kali test terdampak gagal karena tunnel dev mati di
+  tengah jalan (`ControlPersist=600` → master ssh keluar setelah ±10 menit tanpa klien), gejalanya
+  "connection refused/closed" pada `127.0.0.1:55432`. Dijalankan ulang dengan
+  `KRAN_DEVDB_PERSIST=86400` sesuai `docs/runbooks/dev-db.md` §"Umur tunnel".
