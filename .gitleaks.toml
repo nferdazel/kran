@@ -1,0 +1,25 @@
+# Konfigurasi gitleaks — dibaca otomatis oleh job CI "Security (gitleaks)".
+#
+# Repo ini tetap memakai SELURUH aturan bawaan. Yang ditambahkan hanya daftar-putih sempit untuk
+# frasa teknis di dokumentasi register yang terbaca sebagai `generic-api-key` padahal bukan
+# kredensial. Kejadian pertama: `migrasi/outbox` di docs/OPEN_ITEMS.md (commit 9470a4c,
+# 16 Okt 2026) — aturan bawaan memakai ambang entropi 3.5 dan token ber-slash seperti itu
+# melewatinya (entropi temuan: 3.52).
+#
+# Sengaja TIDAK mengecualikan docs/** secara menyeluruh: dokumentasi justru berisi catatan
+# server/log yang bisa memuat kredensial nyata, dan itu harus tetap ketahuan.
+# Kalau muncul temuan palsu baru: tambahkan frasa spesifiknya di sini + alasan, jangan
+# melonggarkan lebih jauh (mis. mengecualikan seluruh docs/) tanpa persetujuan pemilik.
+#
+# Bentuk sintaks: `[allowlist]` (tunggal) — BUKAN `[[allowlists]]` yang lebih baru. Versi di CI
+# (8.24.3) hanya mengenali bentuk tunggal; bentuk baru diabaikan diam-diam sehingga gate tetap
+# merah tanpa pesan kesalahan. Sudah diuji pada 8.24.3 (versi CI) dan 8.30.1: rentang commit
+# di atas bersih, dan rahasia palsu tetap terdeteksi. Kalau versi gitleaks di CI dinaikkan,
+# migrasikan ke `[[allowlists]]` lalu ulangi kedua uji itu.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Frasa jalur teknis di dokumentasi register, bukan kredensial (temuan palsu 16 Okt 2026)"
+regexes = ['''migrasi/outbox''']
