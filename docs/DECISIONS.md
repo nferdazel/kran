@@ -1392,3 +1392,35 @@ pengajuan, bukan hanya pembacaan.
 - **Bukti**: `itparam` ("effectiveTo tanpa penerus", 5 test vonis + kasus pembeda nilai lama terbuka),
   `itapi_auth` ("akhir periode tanpa penerus lewat HTTP", 3 test: 400 menolak, kontrol 201, 409 saat
   penerus hilang sebelum persetujuan). Semua `exit=0`; `./task check` hijau.
+
+## D-057 — Kata sandi lama yang salah dibatasi & diaudit lewat mekanisme yang sudah ada (O-050)
+
+- **Konteks**: O-050 — `/auth/password` menjawab 403 `old_password_mismatch` tanpa menambah penghitung
+  gagal dan tanpa entri audit, berbeda dari `authenticate` yang punya lockout dari parameter (§18.2).
+  D-046 butir 8 memutuskan: audit **dan** batasi percobaannya.
+- **Keputusan**:
+  1. Jalur gagal `changePassword` menaikkan penghitung yang **sama** dengan login
+     (`recordLoginFailure`) dengan angka dari parameter yang sudah ada
+     (`max_failed_logins`, `lockout_minutes`) — bukan parameter baru, bukan kebijakan kedua. Login yang
+     berhasil tetap mengosongkannya (`recordLoginSuccess`), jadi batasnya "N kegagalan beruntun (nilai
+     parameter), apa pun jenisnya".
+  2. Akibatnya penguncian berlaku juga untuk login berikutnya: kata sandi benar sekalipun ditolak 403
+     `locked`. Disengaja — pelaku yang memegang sesi sah tidak boleh menebak kata sandi lama tanpa
+     batas. Dua bantahan yang diperiksa dan ditolak: (a) ini membuka DoS baru untuk mengunci akun
+     korban — **tidak**, karena penguncian akun sudah bisa dipicu siapa pun lewat N login gagal tanpa
+     perlu sesi sama sekali, jadi kemampuan itu tidak bertambah; (b) semantik penghitung jadi
+     tercampur (`Risiko` di `docs/tasks/T-051.md` memperingatkan hal ini) — yang dicampur bukan
+     "kolom yang mirip", melainkan satu definisi yang eksplisit: kegagalan pembuktian kredensial
+     beruntun pada satu akun, apa pun jalurnya. Itu justru definisi yang diinginkan untuk sebuah
+     penguncian; mekanisme kunci kedua hanya menambah permukaan yang bisa salah.
+  3. Audit `user.password_change.failure` memakai namespace `user.password_change` yang sudah ada
+     (satu filter `action` menangkap riwayat ganti kata sandi), berisi `reason`, `failed_attempts`,
+     `status` — tanpa bahan kata sandi (invarian #12).
+  4. Sesi yang sedang dipakai **tidak** dicabut pada percobaan gagal; perilaku 403 yang sudah ada
+     dipertahankan supaya salah ketik tidak jadi pengeluaran paksa.
+- **Alternatif yang ditolak**: (a) parameter + penghitung terpisah khusus ganti kata sandi — dua
+  kebijakan yang harus dijaga selaras tanpa kebutuhan nyata; (b) mencabut sesi setelah N kegagalan
+  (opsi yang disebut O-050) — DoS sepele bagi pemegang sesi sah lainnya.
+- **Bukti**: `itapi_auth` (2 test: penghitung + audit `user.password_change.failure`; akun terkunci
+  sampai batas parameter, dan login berikutnya ditolak 403 `locked`); `itauth` (23 test lama tetap
+  hijau); `./task fmt` + `./task check` hijau.

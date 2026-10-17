@@ -1136,3 +1136,33 @@ diambil dari CI (`db-tests` + `web-e2e` memakai Postgres runner sendiri).
 
 Sisa T-051: O-052 (parameter kata sandi + riwayat hash), O-050 (audit + batas percobaan kata sandi
 lama). Bagian authz ditandai `HUMAN-REVIEW-REQUIRED`.
+
+## Pasca-M0 — T-051 bagian O-050: SELESAI (D-057)
+
+**17 Okt 2026.** Percobaan kata sandi lama yang salah di `POST /api/v1/auth/password` tidak lagi
+senyap (O-050, D-046 butir 8). 403 `old_password_mismatch` tetap, tetapi sekarang **dihitung** dan
+**tercatat**.
+
+Yang mendarat:
+
+- `changePassword` memakai penghitung gagal yang **sama** dengan login (`recordLoginFailure`) dengan
+  angka dari parameter yang sudah ada (`max_failed_logins`, `lockout_minutes`) — tanpa parameter atau
+  kebijakan kedua. Login yang berhasil tetap mengosongkannya, jadi batasnya "N kegagalan beruntun,
+  apa pun jenisnya".
+- Audit `user.password_change.failure`: `reason`, `failed_attempts`, `status` — tidak pernah bahan
+  kata sandi. Sesi yang sedang dipakai tetap tidak dicabut (salah ketik bukan alasan mengeluarkan
+  orang).
+- Dua bantahan yang diperiksa sebelum memilih mekanisme bersama (D-057 butir 2): DoS "kunci akun
+  korban" **tidak** bertambah — itu sudah bisa dipicu siapa pun lewat login gagal tanpa sesi; dan
+  peringatan `Risiko` di `T-051.md` soal mencampur semantik penghitung dijawab dengan definisi
+  eksplisit (kegagalan pembuktian kredensial beruntun), bukan kemiripan kolom.
+
+Bukti (semua `exit=0`): `./task test itapi_auth` (2 test baru: penghitung + audit; akun terkunci
+sampai batas parameter lalu login berikutnya ditolak 403 `locked`), `./task test itauth` (23 test),
+`./task test itplatform` (22 test), `./task fmt`, `./task check`.
+
+Temuan saat uji: batas terkunci harus dibaca lewat `activeParamInt` + `lookupFor` (resolusi server),
+bukan query `status = 'ACTIVE'` — query naif itu mengambil baris sembarang saat ada beberapa baris
+ACTIVE ber-tanggal dan terbaca 7 padahal nilai efektifnya 6.
+
+Sisa T-051: O-052 (parameter kebijakan kata sandi + riwayat hash 5 + kualitas dari parameter).

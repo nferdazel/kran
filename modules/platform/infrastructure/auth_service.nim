@@ -277,6 +277,16 @@ proc changePassword*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRe
   ## kecuali `keepSessionId`. Kalau kata sandi diganti karena diduga bocor, sesi lama tidak boleh
   ## tetap hidup; pemiliknya sendiri tidak perlu login ulang.
   if not verifyPassword(oldPassword, user.passwordHash):
+    # O-050 (D-046 butir 8): percobaan kata sandi lama yang salah tidak boleh senyap. Penghitung dan
+    # pengunciannya memakai mekanisme yang **sama** dengan login (`recordLoginFailure`) supaya tidak
+    # ada kebijakan kedua yang harus dijaga selaras: angkanya dari parameter yang sudah ada
+    # (`max_failed_logins`, `lockout_minutes`), dan login yang berhasil mengosongkannya lagi.
+    # Jejaknya hanya alasan + keadaan penghitung — tidak pernah bahan kata sandi.
+    let failed = recordLoginFailure(db, user.userId, settings.maxFailedLogins,
+      settings.lockoutMinutes, utcIso(clock.now()))
+    auditAuth(db, ctx, clock, scope, "user.password_change.failure", user.userId,
+      %*{"reason": "old_password_mismatch", "failed_attempts": failed.failedAttempts,
+         "status": failed.status})
     return false
   let problems = passwordProblems(settings.minPasswordLength, user.username, newPassword)
   if problems.len > 0:
