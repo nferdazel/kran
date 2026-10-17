@@ -917,3 +917,48 @@ Pelajaran untuk T-044: sebelum menyalahkan Playwright sebagai "flake", **periksa
 (`nc -z 127.0.0.1 55432` / `./task devdb up`). Tunnel hari itu putus tiga kali; hari ini `devdb up`
 hanya membuka ControlMaster `ControlPersist=7200` dan tidak ada yang membukanya kembali saat koneksi
 mati. Ini juga alasan kenapa jam gate jadi tidak bisa dipegang sebagai bukti apa pun saat tunnel mati.
+
+## T-053 — batch kecil O-042/O-045/O-030/O-033 (17 Okt 2026)
+
+Empat butir selesai, satu dikeluarkan. Commit: `b0d33a1` (O-042 test), `3567f11` (O-045 alasan
+berkode), `169a90d` (O-030 batas realtime jadi parameter), `62adb09` (O-033 tautan Masuk + D-049).
+
+Bukti gate: `./task check` hijau; `./task test` **529 `[OK]`, 0 `[FAILED]`**; `./task e2e`
+**23 lulus dalam 24,5 s**. Kelima uji O-045 yang sempat merah ternyata bukan cacat kode: tunnel
+dev-DB putus di tengah run (gejala: handler mengembalikan 500 alih-alih 400/409, lalu `itapi_auth`
+segfault saat teardown — batas O-025 yang sudah diterima). Setelah watchdog tunnel hidup, run ulang
+hijau tanpa mengubah satu baris pun kode uji.
+
+**O-018 dikeluarkan** dari T-053 → `T-055` (BLOCKED). Pemeriksaan menunjukkan `ParamService`/
+`param_cache` tidak dipakai proses `api` sama sekali (`grep ParamService apps/api/src` = nol hasil);
+`api` membaca parameter lewat `param_repo` per permintaan. Menyambungkan cache ke produksi berarti
+memutuskan lebih dulu apakah `api` perlu cache lintas-proses — keputusan arsitektur, bukan batch
+kecil. Menambah `LISTEN` tanpa konsumen hanya akan jadi kode mati, jadi tidak dikerjakan.
+
+**Seed parameter produksi (disetujui pemilik).** O-030 membaca parameter saat start dengan
+gagal-cepat, sementara DB produksi `kran` masih skema-saja (`param_definition=0`, `param_value=0`,
+`app_user=0`) — jadi batch ini tidak boleh mendarat sebelum produksi punya parameter. Dijalankan
+lewat `dbtools seed` (bukan `psql` langsung) karena tool ini **mencatat berkas yang diterapkan di
+`platform.schema_migration`**; melewatinya akan membuat `status`/`--check` salah. Hasil: 10 definisi /
+10 nilai, kedua kunci `platform.realtime.*` aktif GLOBAL sejak `1970-01-01`; seed ulang tetap 10/10
+(idempotent). Gate migrasi deploy aman karena `--check` hanya menanyakan "apakah tiap berkas migrasi
+di disk sudah tercatat", bukan sebaliknya. Catatan: `app_user` masih 0 → produksi belum bisa
+mengautentikasi siapa pun sampai `--role=ctl bootstrap-admin` dijalankan (pekerjaan kesiapan pilot,
+bukan bagian task ini).
+
+**Temuan lingkungan (bahan T-050/T-044):** `./task dbtools ...` **memuat `.local/dev.env` sendiri**
+(`task:36-38`), sehingga `KRAN_DATABASE_URL=... ./task dbtools` tetap menulis ke DB dev. Untuk
+menargetkan DB lain, panggil biner `.build/bin/dbtools` langsung **dan** set
+`DYLD_FALLBACK_LIBRARY_PATH` dari `.local/dev.env` (tanpa itu: `could not load: libpq.dylib`).
+Ini jebakan yang mudah menjatuhkan operasi produksi — layak dipertimbangkan saat mengerjakan T-050.
+
+**CI merah 9470a4c diperbaiki** (`920159c`): gitleaks menandai frasa `migrasi/outbox` di
+`docs/OPEN_ITEMS.md` sebagai `generic-api-key` (entropi 3.52 vs ambang 3.5) — temuan palsu, bukan
+kredensial. Repo belum punya `.gitleaks.toml`, jadi ditambahkan dengan daftar-putih **sempit** untuk
+frasa itu; `docs/**` sengaja tidak dikecualikan menyeluruh agar kredensial nyata di catatan
+server/log tetap ketahuan. Sintaks `[allowlist]` tunggal dipakai karena versi CI (8.24.3) mengabaikan
+`[[allowlists]]` **tanpa pesan kesalahan**. Dibuktikan lokal dengan biner 8.24.3 (versi CI): tanpa
+konfigurasi rentang `0891725^..9470a4c` → `leaks found: 1`; dengan konfigurasi → `no leaks found`;
+rahasia palsu yang ditanam tetap terdeteksi (scanner tidak buta). Run CI `39002990740` setelah push:
+ketiga job `success`, termasuk `Security (gitleaks)`.
+
