@@ -17,7 +17,7 @@
 
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
-  import { problemMessage } from "#lib/app/errors.js";
+  import { paramProblemMessage } from "#lib/app/errors.js";
   import { formatClock, formatDate, formatDateTime } from "#lib/app/format.js";
   import {
     connectRealtime,
@@ -84,7 +84,7 @@
   }
 
   function errorFrom(problem: unknown): string {
-    return api.isProblem(problem) ? problemMessage(problem as Problem) : m.error_generic();
+    return api.isProblem(problem) ? paramProblemMessage(problem as Problem) : m.error_generic();
   }
 
   async function refresh(): Promise<void> {

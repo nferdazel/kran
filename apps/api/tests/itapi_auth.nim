@@ -11,7 +11,7 @@
 ## menyiapkan ulang: migrasi + seed pack `base` + seed pengguna dev
 ## (`packs/base/seed/0001_dev_users.sql`). Data dev murni sintetis.
 
-import std/[httpclient, json, net, os, strutils, times, unittest]
+import std/[httpclient, json, net, options, os, strutils, times, unittest]
 
 import mummy
 import db_connector/db_postgres
@@ -23,7 +23,7 @@ import "platform-lib/db/config"
 import "platform-lib/db/pool"
 
 import kernel/[clock, ids]
-import platform/infrastructure/[auth_repo, password_hasher]
+import platform/infrastructure/[auth_repo, param_repo, password_hasher]
 
 import ../src/[access, context, events, readiness, server]
 import ./wsclient
@@ -66,6 +66,15 @@ block:
   execScript(db, readFile("packs/base/generated/param_definitions.sql"))
   execScript(db, readFile("packs/base/generated/param_values.sql"))
   execScript(db, readFile("packs/base/seed/0001_dev_users.sql"))
+
+proc paramSchemaBound(key, bound: string): int =
+  ## Batas schema sebuah parameter dibaca dari **definisi** yang tersemai (asal
+  ## `packs/base/generated/param_definitions.sql`), bukan angka yang disalin ke test (O-042).
+  let conn = dbPool.acquire()
+  try:
+    result = definitionOf(conn, key).get().schema[bound].getInt
+  finally:
+    dbPool.release(conn)
 
 # --- server dengan pool, jam, dan kebijakan realtime berbasis sesi ----------------------------
 var app = AppContext(version: "itapi-auth-0.0.0", role: "api", startedAt: epochTime(),
@@ -334,12 +343,35 @@ suite "parameter maker-checker lewat HTTP":
       %*{"value": "bukan-angka", "reason": "uji validasi schema"}, tokenOf(maker))
     check reply.code == 400
     check reply.body["code"].getStr() == "BAD_REQUEST"
+    # Alasan berkode stabil supaya UI bisa menerjemahkan per-field (O-045).
+    check reply.body["params"]["reason"].getStr() == "value_invalid"
+
+  test "penolakan tingkat-field menyebut alasan berkode stabil (O-045)":
+    let maker = login(MakerUser)
+    let token = tokenOf(maker)
+    # Field `reason` kosong.
+    let tanpaAlasan = postJson("/api/v1/params/" & ParamKey & "/changes",
+      %*{"value": 1, "reason": ""}, token)
+    check tanpaAlasan.code == 400
+    check tanpaAlasan.body["params"]["reason"].getStr() == "reason_missing"
+    # Tanggal bentuk salah.
+    let tanggalBuruk = postJson("/api/v1/params/" & ParamKey & "/changes",
+      %*{"value": 1, "reason": "uji tanggal", "effectiveFrom": "31-12-2026"}, token)
+    check tanggalBuruk.code == 400
+    check tanggalBuruk.body["params"]["reason"].getStr() == "effective_from_invalid"
+    # Periode terbalik.
+    let periodeTerbalik = postJson("/api/v1/params/" & ParamKey & "/changes",
+      %*{"value": 1, "reason": "uji periode", "effectiveFrom": "2026-12-31",
+        "effectiveTo": "2026-12-01"}, token)
+    check periodeTerbalik.code == 400
+    check periodeTerbalik.body["params"]["reason"].getStr() == "period_invalid"
 
   test "key tak dikenal ditolak 400":
     let maker = login(MakerUser)
     let reply = postJson("/api/v1/params/platform.tidak.ada/changes",
       %*{"value": 1, "reason": "uji key tak dikenal"}, tokenOf(maker))
     check reply.code == 400
+    check reply.body["params"]["reason"].getStr() == "value_invalid"
 
 suite "aturan lintas-parameter kebijakan sesi lewat HTTP":
   test "pengajuan yang membuat idle > absolut ditolak 400, tanpa efek samping":
@@ -348,15 +380,17 @@ suite "aturan lintas-parameter kebijakan sesi lewat HTTP":
     let params = getJson(ParamsPath, makerToken).body
     let idle = activeValueOf(params, SessionIdleKey).getInt()
     let absolute = activeValueOf(params, SessionAbsoluteKey).getInt()
-    # Kombinasi tidak sah: idle di atas absolut, tetapi masih di dalam schema (1..1440).
+    # Kombinasi tidak sah: idle di atas absolut, tetapi masih di dalam batas schema. Batas atas
+    # dibaca dari definisi (1..1440 untuk `session_idle_minutes`) alih-alih disalin (O-042).
     let badIdle = max(absolute + 1, idle + 1)
     check badIdle > absolute
-    check badIdle <= 1440
+    check badIdle <= paramSchemaBound(SessionIdleKey, "maximum")
 
     let reply = postJson("/api/v1/params/" & SessionIdleKey & "/changes",
       %*{"value": badIdle, "reason": "uji otomatis: kombinasi kebijakan sesi tidak sah"},
       makerToken)
     check reply.code == 400
+    check reply.body["params"]["reason"].getStr() == "invalid_combination"
     checkProblem("/api/v1/params/{key}/changes", "POST", "400", reply.body)
 
     # Ditolak berarti tidak ada baris PENDING yang tertinggal, dan konfigurasi lama tetap berlaku:

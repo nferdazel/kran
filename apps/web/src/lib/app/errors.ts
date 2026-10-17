@@ -41,3 +41,29 @@ export function passwordProblemMessage(problem: Problem): string {
   if (reason === "password_policy") return m.password_error_policy();
   return problemMessage(problem);
 }
+
+/**
+ * Pesan untuk penolakan perubahan parameter (T-053, O-045).
+ *
+ * Server kini menyertakan `params.reason` berkode stabil untuk tiap penolakan tingkat-field
+ * (mis. `value_missing`, `period_invalid`, `invalid_combination`). Tanpa pemetaan ini, operator
+ * hanya melihat "permintaan tidak sah" generik dan tidak tahu bagian mana yang harus diperbaiki;
+ * kode yang tidak dikenal jatuh kembali ke pesan amplop (`problemMessage`).
+ */
+const PARAM_REASON_MESSAGES: Record<string, () => string> = {
+  value_missing: () => m.param_error_value_missing(),
+  reason_missing: () => m.param_error_reason_missing(),
+  effective_from_invalid: () => m.param_error_effective_from_invalid(),
+  effective_to_invalid: () => m.param_error_effective_to_invalid(),
+  period_invalid: () => m.param_error_period_invalid(),
+  scope_id_required: () => m.param_error_scope_id_required(),
+  scope_id_forbidden: () => m.param_error_scope_id_forbidden(),
+  invalid_combination: () => m.param_error_invalid_combination(),
+  value_invalid: () => m.param_error_value_invalid(),
+};
+
+export function paramProblemMessage(problem: Problem): string {
+  const reason = problem.params?.reason;
+  const template = reason === undefined ? undefined : PARAM_REASON_MESSAGES[reason];
+  return template === undefined ? problemMessage(problem) : template();
+}

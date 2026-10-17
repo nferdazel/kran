@@ -75,6 +75,12 @@ proc handleListParams*(app: AppContext, req: Request) {.gcsafe.} =
     items.add itemJson(row)
   req.respondJson(200, %*{"items": items})
 
+proc respondParamReason(req: Request, kind: ProblemKind, title, reason, detail: string) =
+  ## 400/409 yang menyebut **alasan berkode stabil** di `params.reason`, sehingga UI bisa
+  ## menerjemahkannya per-field (O-045). `detail` tetap untuk log/diagnostik (spec §16.1).
+  req.respondProblem(newProblem(kind, title, detail, traceId = traceIdFrom(req),
+    params = @[("reason", reason)]))
+
 proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
   ## `POST /api/v1/params/{key}/changes` — pengajuan perubahan (maker) → status PENDING.
   let principal = requirePrincipal(app, req)
@@ -94,7 +100,7 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
     return
   let node = body.get()
   if node.kind != JObject or not node.hasKey("value"):
-    req.respondProblem(pkBadRequest, "Bad Request", "field value wajib ada")
+    req.respondParamReason(pkBadRequest, "Bad Request", "value_missing", "field value wajib ada")
     return
 
   var scopeType = node.jsonField("scopeType")
@@ -108,24 +114,25 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
   let reason = node.jsonField("reason")
   if reason.len == 0:
     # Alasan wajib: audit perubahan parameter harus bisa menjelaskan "mengapa" (spec §10.2, §11.7).
-    req.respondProblem(pkBadRequest, "Bad Request", "field reason wajib diisi")
+    req.respondParamReason(pkBadRequest, "Bad Request", "reason_missing",
+      "field reason wajib diisi")
     return
 
   # Validasi bentuk permintaan **sebelum** menyentuh DB: cast `?::date`/`?::uuid` dan CHECK skema
   # melempar `DbError` yang tidak bisa dibedakan dari gangguan server, jadi tanpa pemeriksaan ini
   # kesalahan pemanggil dijawab 500 (O-035). Semua di sini 400 menurut kontrak.
   if not isIsoDate(effectiveFrom):
-    req.respondProblem(pkBadRequest, "Bad Request",
+    req.respondParamReason(pkBadRequest, "Bad Request", "effective_from_invalid",
       "effectiveFrom harus tanggal YYYY-MM-DD yang sah")
     return
   if effectiveTo.len > 0:
     if not isIsoDate(effectiveTo):
-      req.respondProblem(pkBadRequest, "Bad Request",
+      req.respondParamReason(pkBadRequest, "Bad Request", "effective_to_invalid",
         "effectiveTo harus tanggal YYYY-MM-DD yang sah")
       return
     if effectiveTo <= effectiveFrom:
       # CHECK skema `param_value_period_chk`: periode harus punya lebar positif.
-      req.respondProblem(pkBadRequest, "Bad Request",
+      req.respondParamReason(pkBadRequest, "Bad Request", "period_invalid",
         "effectiveTo harus setelah effectiveFrom")
       return
 
@@ -137,15 +144,18 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
     return
   # CHECK skema `param_value_global_scope_chk`: GLOBAL ⇔ `scope_id` kosong (NULL).
   if scope == pstGlobal and scopeId.len > 0:
-    req.respondProblem(pkBadRequest, "Bad Request", "scope GLOBAL tidak boleh punya scopeId")
+    req.respondParamReason(pkBadRequest, "Bad Request", "scope_id_forbidden",
+      "scope GLOBAL tidak boleh punya scopeId")
     return
   if scope != pstGlobal and scopeId.len == 0:
-    req.respondProblem(pkBadRequest, "Bad Request", "scope " & scopeType & " wajib punya scopeId")
+    req.respondParamReason(pkBadRequest, "Bad Request", "scope_id_required",
+      "scope " & scopeType & " wajib punya scopeId")
     return
 
   var status = 0
   var payload = newJObject()
   var problem = ""
+  var problemCode = ""
   try:
     withDbTx(app.pool, proc(db: DbConn) {.gcsafe.} =
       dbCalls:
@@ -155,6 +165,7 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
         let combinationProblem = sessionPolicyCandidateProblem(db, key, node["value"],
           effectiveFrom, effectiveTo, businessDateIso(app.clock))
         if combinationProblem.len > 0:
+          problemCode = "invalid_combination"
           raise newException(ValueError, combinationProblem)
         let outcome = submitChange(db, ctx, app.clock, key, scopeType, scopeId, node["value"],
           effectiveFrom, effectiveTo, reason)
@@ -171,16 +182,19 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
           "reason": reason})
   except ValueError as e:
     # Validasi definisi/scope/schema/tipe nilai — semuanya kesalahan permintaan, bukan kesalahan
-    # server (spec §10.4: pesannya menyebut aturan yang dilanggar).
+    # server (spec §10.4: pesannya menyebut aturan yang dilanggar). `problemCode` sudah diisi
+    # untuk pelanggaran lintas-parameter; sisanya = nilai itu sendiri yang tidak sah.
     status = 400
     problem = e.msg
+    if problemCode.len == 0:
+      problemCode = "value_invalid"
   except DbError:
     status = 500
     problem = "perubahan parameter gagal disimpan"
 
   case status
   of 201: req.respondJson(201, payload)
-  of 400: req.respondProblem(pkBadRequest, "Bad Request", problem)
+  of 400: req.respondParamReason(pkBadRequest, "Bad Request", problemCode, problem)
   else: req.respondProblem(pkInternal, "Internal Server Error", problem)
 
 proc handleApproveParamChange*(app: AppContext, req: Request) {.gcsafe.} =
