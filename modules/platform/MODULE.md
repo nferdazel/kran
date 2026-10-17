@@ -111,6 +111,19 @@ Invarian tambahan:
    yang ia boleh baca) → `403 scope_not_readable`. Pembacaan cabang di luar cabang tugas menulis
    `param.read_cross_branch` — satu entri per cabang — dan bila pencatatan itu gagal, permintaannya
    ikut gagal (jangan menyajikan tanpa jejak).
+11. **`effectiveTo` hanya sah bila ada penerus** (O-043, D-046 butir 8): nilai ber-`effective_to` tidak
+   boleh diaktifkan kalau tanggal berakhirnya tidak ditutup baris lain pada (key, scope) yang sama —
+   kalau lolos, tanggal setelahnya tidak punya nilai berlaku (aplikasi gagal-cepat, spec §10.6) dan
+   pemeriksaan lintas-parameter melewati tanggal itu (temuan review D-029). Vonisnya satu fungsi
+   (`effectiveToGapProblem`) dan dipanggil dari **dua** pintu HTTP: pengajuan (400
+   `effective_to_without_successor`) dan persetujuan (409, alasan sama) — persetujuan ikut memeriksa
+   karena penerus bisa hilang di antara keduanya. Penerus = baris (key, scope) sama yang berlaku pada
+   tanggal `effectiveTo` **dan** mulai pada atau setelah `effective_from` kandidat; batas kedua itu
+   yang membuat kasus jahat ketahuan: persetujuan **memangkas** nilai ACTIVE yang mulai lebih awal
+   (`supersedePreviousValues`), jadi nilai lama yang masih terbuka bukan penerus. Status yang
+   dihitung: `ACTIVE`, `SUPERSEDED` (masih menjawab tanggal di dalam rentangnya, D-008), `PENDING`
+   (penerus memang belum bisa disetujui lebih dulu — EXCLUDE membuatnya bersinggungan dengan nilai
+   lama yang terbuka); `DRAFT` tidak.
 
 Jebakan yang sudah ditemukan (jangan diulang):
 

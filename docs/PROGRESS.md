@@ -1101,3 +1101,38 @@ Sisa T-051: O-043 (`effectiveTo` tanpa penerus), O-052 (parameter kata sandi + r
 (audit + batas percobaan kata sandi lama). Bagian authz ditandai `HUMAN-REVIEW-REQUIRED` sampai
 reviewer menyatakan APPROVE.
 
+
+## Pasca-M0 — T-051 bagian O-043: SELESAI (D-056)
+
+**17 Okt 2026.** `effectiveTo` tanpa penerus sekarang **ditolak**, bukan diterima apa adanya
+(O-043, keputusan pemilik D-046 butir 8).
+
+Yang mendarat:
+
+- `param_repo.effectiveToGapProblem` — satu vonis: penerus harus baris (key, scope) sama, berstatus
+  `ACTIVE`/`SUPERSEDED`/`PENDING`, mulai pada atau setelah `effective_from` kandidat, dan berlaku pada
+  tanggal `effectiveTo`. Batas `effective_from` itu disengaja: persetujuan memangkas nilai ACTIVE yang
+  mulai lebih awal, jadi nilai lama yang masih terbuka **bukan** penerus (kasus pembeda yang dikunci
+  test).
+- Ditegakkan di dua pintu, pola yang sama dengan pemeriksaan lintas-parameter: pengajuan → 400
+  `effective_to_without_successor`; persetujuan → 409 alasan sama (penerus bisa hilang di antara
+  keduanya).
+
+Bukti (semua `exit=0`): `./task test itparam` (suite "effectiveTo tanpa penerus", 5 test) dan
+`./task test itapi_auth` (suite "akhir periode tanpa penerus lewat HTTP": 400 menolak, kontrol 201
+dengan penerus yang sudah diajukan, 409 saat penerus hilang sebelum persetujuan); `./task check` hijau.
+
+Sisa yang tidak dianggap selesai: penanda eksplisit "nilai ini memang berakhir" belum dibuat (O-064),
+dan tidak ada endpoint HTTP untuk menolak pengajuan (O-065) — karena itu jendela sisa "penerus ditolak
+setelah persetujuan" hanya bisa datang dari operasi DB langsung, dengan startup check O-057 sebagai
+backstop. Invarian di `MODULE.md` param #11, batas di `ACCEPTED-LIMITS.md`.
+
+**Gate penuh tidak hijau di laptop, dan itu bukan kode ini.** `./task test` gagal di `itpool`
+(`PoolError: timeout menunggu koneksi DB`) dan `./task e2e` gagal 2 spec (timeout UI). **Kontrol**:
+perubahan ini di-`git stash` → pada pohon bersih `itpool` gagal dengan pola sama dan `e2e` lebih buruk
+(4 gagal). Penyebab terukur: RTT ke VPS ~150 ms, tiap pemanggilan `psql` lewat tunnel ~0,8 s, sedangkan
+`itpool` menunggu 15 s dan Playwright 10–30 s. Dicatat di `ACCEPTED-LIMITS.md`; bukti gate penuh
+diambil dari CI (`db-tests` + `web-e2e` memakai Postgres runner sendiri).
+
+Sisa T-051: O-052 (parameter kata sandi + riwayat hash), O-050 (audit + batas percobaan kata sandi
+lama). Bagian authz ditandai `HUMAN-REVIEW-REQUIRED`.

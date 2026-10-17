@@ -198,6 +198,43 @@ type
     paramValueId*: string
     status*: ParamStatus ## selalu PENDING: aktivasi butuh orang kedua (checker ≠ maker)
 
+proc effectiveToGapProblem*(db: DbConn, key, scopeType, scopeId,
+                            effectiveFrom, effectiveTo: string): string =
+  ## `""` bila periode ber-`effective_to` punya penerus; pesan pelanggaran bila tidak
+  ## (O-043, D-046 butir 8: `effectiveTo` ditolak saat pengajuan). Dipanggil saat pengajuan
+  ## **dan** saat persetujuan — pola yang sama dengan pemeriksaan lintas-parameter
+  ## (`sessionPolicyCandidateProblem`), karena kelengkapan periode juga berubah di antara keduanya.
+  ##
+  ## Yang dicari: baris lain pada (key, scope) yang **masih berlaku** pada tanggal `effectiveTo`
+  ## setelah kandidat ini aktif. Tanpa itu, tanggal setelah `effectiveTo` tidak punya nilai berlaku —
+  ## aplikasi gagal-cepat (spec §10.6) dan pemeriksaan lintas-parameter melewati tanggal tersebut
+  ## (temuan review D-029). Karena `supersedePreviousValues` memangkas baris ACTIVE yang mulai
+  ## **lebih awal** dari kandidat, baris seperti itu tidak dihitung: persetujuan kandidat justru
+  ## menghapus cakupannya (ini yang membuat `effectiveTo` tanpa penerus selalu ketahuan, bukan lolos
+  ## karena nilai lama yang kebetulan masih terbuka).
+  ##
+  ## Status penerus: `ACTIVE` dan `SUPERSEDED` (keduanya masih menjawab tanggal di dalam rentangnya,
+  ## D-008), plus `PENDING` — penerus memang **tidak bisa** disetujui lebih dulu, sebab nilai lama
+  ## yang masih terbuka akan bersinggungan dengannya (EXCLUDE); urutan yang sah adalah pengajuan
+  ## penerus → setujui nilai terbatas → setujui penerus. `DRAFT` tidak dihitung: tidak ada jalur kode
+  ## yang membuatnya dan draf belum tentu diajukan.
+  if effectiveTo.len == 0:
+    return ""
+  # Kandidat sendiri tidak bisa "menutupi" tanggal berakhirnya: `param_value_period_chk` mewajibkan
+  # lebar positif, jadi `effective_to > effectiveTo` selalu salah untuk dirinya.
+  let covering = parseBiggestInt(db.getValue(sql"""
+    SELECT count(*) FROM platform.param_value
+     WHERE key = ? AND scope_type = ? AND coalesce(scope_id, '') = ?
+       AND status IN ('ACTIVE', 'SUPERSEDED', 'PENDING')
+       AND effective_from >= ?::date AND effective_from <= ?::date
+       AND (effective_to IS NULL OR effective_to > ?::date)""",
+    key, scopeType, scopeId, effectiveFrom, effectiveTo, effectiveTo))
+  if covering > 0:
+    return ""
+  "effectiveTo " & effectiveTo & " tidak punya penerus: tidak ada nilai " & key & " (" &
+    scopeType & (if scopeId.len > 0: ":" & scopeId else: "") &
+    ") yang mulai berlaku pada atau setelah " & effectiveFrom & " dan masih berlaku pada tanggal itu"
+
 proc submitValue*(db: DbConn, paramValueId, key, scopeType, scopeId: string,
                   value: JsonNode, effectiveFrom: string, effectiveTo: string,
                   maker: Id, reason: string): SubmitResult =

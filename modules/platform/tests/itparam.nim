@@ -466,3 +466,59 @@ suite "param: visibilitas daftar per scope (O-032, D-046 butir 6)":
     check terlihat.len == 1
     for row in terlihat:
       check row.scopeType != "PRODUCT"
+
+suite "param: effectiveTo tanpa penerus (O-043, D-046 butir 8)":
+  ## Vonis `effectiveToGapProblem` atas keadaan DB. Yang paling penting di sini adalah kasus yang
+  ## **akan** berubah saat persetujuan: nilai ACTIVE yang masih terbuka tidak menolong, sebab
+  ## persetujuan kandidat justru memangkas nilai itu (`supersedePreviousValues`) dan meninggalkan
+  ## tanggal setelah `effectiveTo` tanpa nilai. Kalau batas `effective_from >= kandidat` dilepas,
+  ## test "nilai lama yang masih terbuka" di bawah ini gagal.
+  const
+    keyAkhir = "platform.calendar.weekend_days" # allowed_scopes: GLOBAL, BRANCH
+
+  proc sisip(cabang, status, fromDate: string, toDate = ""): string =
+    ## Baris langsung lewat SQL: yang diuji adalah vonis periode atas keadaan tertentu, bukan alur
+    ## pengajuan (alur itu diuji lewat HTTP — `itapi_auth`).
+    let pvId = $newId(sysClock)
+    let toCol = if toDate.len == 0: "NULL" else: "DATE '" & toDate & "'"
+    # Baris ACTIVE/SUPERSEDED wajib punya `checker` (4-eyes, `param_value_checker_chk`).
+    let checkerCol = if status == "ACTIVE" or status == "SUPERSEDED": "'" & $checker & "'"
+                     else: "NULL"
+    execScript(db, "INSERT INTO platform.param_value (param_value_id, key, scope_type, scope_id," &
+      " value, effective_from, effective_to, status, maker, checker, reason) VALUES ('" & pvId &
+      "', '" & keyAkhir & "', 'BRANCH', '" & cabang & "', '[6, 7]'::jsonb, DATE '" & fromDate &
+      "', " & toCol & ", '" & status & "', '" & $maker & "', " & checkerCol & ", 'uji periode')")
+    pvId
+
+  test "periode terbuka (tanpa effectiveTo) tidak pernah butuh penerus":
+    check effectiveToGapProblem(db, keyAkhir, "BRANCH", "uji-akhir-terbuka", "2026-03-01",
+      "").len == 0
+
+  test "nilai lama yang masih terbuka bukan penerus — persetujuan justru memangkasnya":
+    discard sisip("uji-akhir-pangkas", "ACTIVE", "2026-01-01")
+    let problem = effectiveToGapProblem(db, keyAkhir, "BRANCH", "uji-akhir-pangkas", "2026-03-01",
+      "2026-04-01")
+    check problem.len > 0
+    check "tidak punya penerus" in problem
+
+  test "penerus PENDING yang mulai tepat di effectiveTo menutup periode":
+    # Inilah urutan yang sah: penerus diajukan lebih dulu (ia belum bisa disetujui, sebab nilai
+    # lama yang terbuka akan bersinggungan dengannya), lalu nilai terbatas, lalu keduanya.
+    discard sisip("uji-akhir-penerus", "ACTIVE", "2026-01-01")
+    discard sisip("uji-akhir-penerus", "PENDING", "2026-04-01")
+    check effectiveToGapProblem(db, keyAkhir, "BRANCH", "uji-akhir-penerus", "2026-03-01",
+      "2026-04-01").len == 0
+
+  test "penerus yang mulai setelah effectiveTo tidak menutup periode":
+    discard sisip("uji-akhir-celah", "ACTIVE", "2026-01-01")
+    discard sisip("uji-akhir-celah", "PENDING", "2026-05-01")
+    let problem = effectiveToGapProblem(db, keyAkhir, "BRANCH", "uji-akhir-celah", "2026-03-01",
+      "2026-04-01")
+    check problem.len > 0
+
+  test "penerus harus di (key, scope) yang sama":
+    discard sisip("uji-akhir-lain", "PENDING", "2026-04-01")
+    let problem = effectiveToGapProblem(db, keyAkhir, "BRANCH", "uji-akhir-scope-lain",
+      "2026-03-01",
+      "2026-04-01")
+    check problem.len > 0

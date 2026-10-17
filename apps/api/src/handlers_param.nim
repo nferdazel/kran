@@ -197,6 +197,13 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
         if combinationProblem.len > 0:
           problemCode = "invalid_combination"
           raise newException(ValueError, combinationProblem)
+        # O-043 (D-046 butir 8): `effectiveTo` hanya boleh bila ada penerus yang menutup tanggal
+        # berakhirnya — diperiksa sebelum menulis apa pun, dan diperiksa lagi saat persetujuan.
+        let gapProblem = effectiveToGapProblem(db, key, scopeType, scopeId, effectiveFrom,
+          effectiveTo)
+        if gapProblem.len > 0:
+          problemCode = "effective_to_without_successor"
+          raise newException(ValueError, gapProblem)
         let outcome = submitChange(db, ctx, app.clock, key, scopeType, scopeId, node["value"],
           effectiveFrom, effectiveTo, reason)
         status = 201
@@ -274,7 +281,19 @@ proc handleApproveParamChange*(app: AppContext, req: Request) {.gcsafe.} =
                 businessDateIso(app.clock))
             else:
               ""
-          if combinationProblem.len > 0:
+          # O-043: nilai ber-`effective_to` yang penerusnya hilang (mis. ditolak) tidak boleh
+          # diaktifkan — kalau lolos, tanggal setelahnya tidak punya nilai berlaku.
+          let gapProblem =
+            if pending.isSome:
+              effectiveToGapProblem(db, pending.get().key, pending.get().scopeType,
+                pending.get().scopeId, pending.get().effectiveFrom, pending.get().effectiveTo)
+            else:
+              ""
+          if gapProblem.len > 0:
+            status = 409
+            reasonParam = "effective_to_without_successor"
+            problem = gapProblem
+          elif combinationProblem.len > 0:
             status = 409
             reasonParam = reasonCombination
             problem = combinationProblem
