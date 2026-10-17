@@ -931,8 +931,10 @@ suite "akhir periode tanpa penerus lewat HTTP (O-043, D-046 butir 8)":
 
   test "penerus yang sudah diajukan membuat nilai terbatas diterima":
     let makerToken = tokenOf(login(MakerUser))
-    # Urutan yang sah: penerus diajukan lebih dulu. Ia belum bisa disetujui, sebab nilai GLOBAL
-    # yang masih terbuka akan bersinggungan dengannya (EXCLUDE) sampai nilai terbatas diaktifkan.
+    # Urutan yang sah: penerus diajukan lebih dulu (masih PENDING). Menyetujui penerus lebih dulu
+    # bukan buntu, tetapi memangkas nilai GLOBAL terbuka sampai `effective_from` penerus, sehingga
+    # nilai terbatas di dalam rentang itu tidak bisa lagi diaktifkan (bertabrakan dengan riwayat
+    # pangkasan itu, EXCLUDE).
     let penerus = ajukan(makerToken, "2027-02-01", "")
     check penerus.code == 201
 

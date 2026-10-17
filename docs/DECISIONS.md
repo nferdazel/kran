@@ -1370,10 +1370,17 @@ pengajuan, bukan hanya pembacaan.
      yang mulai lebih awal (`supersedePreviousValues`), jadi nilai lama yang kebetulan masih terbuka
      **bukan** penerus. Tanpa batas itu, pengajuan ber-`effectiveTo` lolos dan celahnya baru muncul
      saat pengaktifan — persis yang harus dicegah. Ini kasus pembeda yang dikunci test.
-  3. `PENDING` dihitung sebagai penerus karena penerus **tidak bisa** disetujui lebih dulu: selama
-     nilai lama masih terbuka, ia bersinggungan dengan periode penerus (EXCLUDE). Urutan sahnya:
-     ajukan penerus → setujui nilai terbatas → setujui penerus. Konsekuensinya ada jeda sementara yang
-     tidak terbaca di antara kedua persetujuan itu; itu bagian alur maker-checker, bukan celah
+  3. `PENDING` dihitung sebagai penerus karena saat nilai terbatas diajukan, penerusnya memang masih
+     PENDING — urutan sahnya: ajukan penerus → setujui nilai terbatas → setujui penerus.
+     **Koreksi 17 Okt 2026 (temuan review ronde 1, MINOR):** alasan yang ditulis di sini semula
+     ("penerus tidak bisa disetujui lebih dulu karena bersinggungan dengan nilai lama yang terbuka,
+     EXCLUDE") **tidak benar**: EXCLUDE hanya berlaku untuk `ACTIVE`/`SUPERSEDED`, dan
+     `supersedePreviousValues` berjalan sebelum `activatePending`, jadi penerus *bisa* disetujui lebih
+     dulu — nilai lama lalu dipangkas sampai `effective_from` penerus. Urutannya tetap seperti di atas
+     karena sebab lain: setelah pangkasan itu, nilai terbatas di dalam rentang sebelumnya selalu
+     bertabrakan dengan baris riwayat hasil pangkasan (EXCLUDE), jadi "penerus dulu" bukan buntu
+     urutan melainkan membuat nilai terbatas tidak bisa diaktifkan. Konsekuensinya ada jeda sementara
+     yang tidak terbaca di antara kedua persetujuan itu; itu bagian alur maker-checker, bukan celah
      permanen (dan tetap terdeteksi startup check O-057).
   4. Penegakan **di dua pintu**, pola yang sama dengan `sessionPolicyCandidateProblem`: pengajuan
      (400 `effective_to_without_successor`) dan persetujuan (409 alasan sama), karena penerus bisa

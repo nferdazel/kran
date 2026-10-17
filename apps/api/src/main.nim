@@ -235,24 +235,31 @@ proc auditExitCode*(rows: openArray[AuditChainRow]): int =
       return 1
   0
 
-proc randomPassword(length, minClasses: int): string =
+proc randomPassword*(length, minClasses: int): string =
   ## Kata sandi acak dari `std/sysrand` (CSPRNG sistem operasi) — **bukan** `std/random`, yang
   ## bisa diprediksi dan tidak boleh dipakai untuk kredensial.
   ##
-  ## Kelas karakter yang dituntut kebijakan (`minClasses`) **dijamin** ada, bukan diharapkan
-  ## kebetulan: dua kelas pertama datang dari `bootstrapAlphabet` (huruf besar + angka), kelas
-  ## ketiga (huruf kecil) dan keempat (simbol) diisi eksplisit dari `bootstrapMixed`. Tanpa
-  ## jaminan itu, kata sandi yang dihasilkan bisa ditolak kebijakan institusi dan perintah
-  ## `bootstrap-admin` gagal di tengah jalan — tepat saat tidak ada cara lain masuk.
+  ## Kelas karakter yang dituntut kebijakan (`minClasses`) **dijamin**, bukan diharapkan
+  ## kebetulan: satu wakil tiap kelas ditaruh di posisi tetap (0 angka, 1 huruf besar, 2 huruf
+  ## kecil, 3 simbol), sisanya diundi dari `bootstrapAlphabet`. Mengandalkan undian tidak cukup —
+  ## alfabet dasarnya 24 huruf besar + 8 angka, jadi kata sandi panjang 20 bisa keluar tanpa angka
+  ## sama sekali (~0,4%) dan langsung ditolak kebijakan institusi; `bootstrap-admin` lalu gagal di
+  ## tengah jalan, tepat saat tidak ada cara lain masuk.
+  ##
+  ## Syarat pemanggil: `length >= 4` (dipakai `max(20, …)` di `runBootstrapAdmin`) dan
+  ## `minClasses` 0..4.
   var bytes = newSeq[byte](length)
   if not urandom(bytes):
     return ""
   for b in bytes:
     result.add bootstrapAlphabet[int(b) and 31]
+  if minClasses >= 2:
+    result[0] = bootstrapAlphabet[24 + (int(bytes[0]) and 7)] # 24..31 = angka
+    result[1] = bootstrapAlphabet[int(bytes[1]) and 23] # 0..23 = huruf besar
   if minClasses >= 3:
-    result[1] = bootstrapMixed[int(bytes[1]) and 15] # 0..15 = huruf kecil
+    result[2] = bootstrapMixed[int(bytes[2]) and 15] # 0..15 = huruf kecil
   if minClasses >= 4:
-    result[2] = bootstrapMixed[23 + (int(bytes[2]) and 7)] # 23..30 = simbol
+    result[3] = bootstrapMixed[23 + (int(bytes[3]) and 7)] # 23..30 = simbol
 
 proc runBootstrapAdmin(db: DbConn, username: string, clock: Clock): int =
   ## Admin pertama: buat pengguna, beri role admin, cetak kata sandi awal **sekali**.

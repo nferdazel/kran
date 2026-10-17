@@ -4,7 +4,9 @@ import openapi/lib
 
 import mummy
 
-import ../src/[access, health, server]
+import platform/domain/authz
+
+import ../src/[access, health, main, server]
 
 ## Test server HTTP tanpa layanan eksternal (tanpa DB): aman dijalankan di CI mana pun, jadi
 ## dinamai `t*` (unit) dan bukan `it*`. Yang diuji: respons nyata **sesuai kontrak** (spec §13) —
@@ -237,3 +239,19 @@ suite "pola rute & pemetaan topik (murni)":
     check knownTopics().len == topicPermissions.len
     for topic in knownTopics():
       check permissionForTopic(topic).len > 0
+
+suite "bootstrap: kata sandi acak (murni, tanpa DB)":
+  ## `randomPassword` hidup di `main.nim` (peran CLI) tetapi murni: hanya `std/sysrand` +
+  ## `domain/authz.passwordClasses`. Diuji di suite `t*` supaya jaminan kelas karakternya tidak
+  ## bergantung pada DB dev.
+  test "jumlah kelas karakter yang dituntut kebijakan selalu terpenuhi":
+    ## Tanpa jaminan ini, kata sandi panjang 20 bisa keluar tanpa angka (~0,4% untuk
+    ## `minClasses = 3`) dan `bootstrap-admin` gagal saat tidak ada cara lain masuk.
+    for _ in 1 .. 250:
+      let terkuat = randomPassword(20, 4)
+      check terkuat.len == 20
+      check passwordClasses(terkuat) >= 4
+      check passwordClasses(randomPassword(20, 3)) >= 3
+      check passwordClasses(randomPassword(20, 2)) >= 2
+    # `minClasses = 1` hanya menuntut panjang; alfabetnya sendiri sudah memberi >= 1 kelas.
+    check passwordClasses(randomPassword(20, 1)) >= 1

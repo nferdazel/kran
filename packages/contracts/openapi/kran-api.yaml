@@ -386,6 +386,13 @@ paths:
 
         `reason` wajib: audit perubahan parameter harus bisa menjelaskan alasannya (spec §11.7).
         `effectiveFrom` kosong = tanggal buku hari ini.
+
+        Penolakan tingkat-field datang sebagai 400/403 dengan `params.reason` berkode stabil
+        (dipetakan UI, O-045): `value_missing`, `reason_missing`, `effective_from_invalid`,
+        `effective_to_invalid`, `period_invalid`, `scope_id_required`, `scope_id_forbidden`,
+        `value_invalid`, `invalid_combination` (bertentangan dengan parameter lain yang aktif),
+        `effective_to_without_successor` (tanggal berakhir tidak ditutup nilai penerus, O-043), dan
+        403 `scope_not_readable` (scope di luar wewenang **baca** pengaju, D-047).
       security:
         - sessionCookie: []
       parameters:
@@ -461,9 +468,11 @@ paths:
         "409":
           description: |
             Tidak bisa disetujui: bukan `PENDING` (`params.reason` = `not_pending`), pengesahan
-            sendiri (`self_approval`), periode bertabrakan (`period_conflict`), atau nilai itu
+            sendiri (`self_approval`), periode bertabrakan (`period_conflict`), nilai itu
             melanggar aturan lintas-parameter saat digabung nilai lain yang aktif
-            (`invalid_combination`, mis. `session_idle_minutes` > `session_absolute_minutes`).
+            (`invalid_combination`, mis. `session_idle_minutes` > `session_absolute_minutes`),
+            atau penerusnya hilang lagi sebelum persetujuan (`effective_to_without_successor`,
+            O-043).
           content:
             application/problem+json:
               schema:
