@@ -987,3 +987,37 @@ Sisa jujur: jalur "unit benar-benar berubah" dibuktikan harness, belum oleh depl
 **Catatan lingkungan:** `shellcheck` kini terpasang di mesin ini (`brew`), jadi gate `./task check`
 tidak lagi turun ke `bash -n` saja — relevan untuk T-050(b).
 
+## T-050 — CI `db-tests` + shellcheck jadi gate sungguhan (17 Okt 2026)
+
+Bagian yang bisa dibuktikan hari ini dikerjakan; bagian yang butuh dependensi baru dipisah.
+
+**(a) Job `db-tests`** ditambahkan ke `ci.yml`: `services: postgres:18`, `KRAN_DATABASE_URL` ke
+`kran_test`, langkah `dbtools migrate` → `dbtools seed --dev` → `./task test`. Sebelum ini test
+integrasi melewati dirinya sendiri di CI, jadi CI hijau tidak pernah membuktikan jalur DB.
+
+Dua jebakan yang ditemukan saat menyusunnya (sudah didokumentasikan di `docs/ci-jobs.md`):
+`dbtools seed --dev` **fail-closed** — hanya DB berakhiran `_test`/`_dev` yang diizinkan (O-062),
+jadi nama `kran_ci` akan langsung gagal exit 3; dan `parseDatabaseUrl` menolak URL berquery string
+(`?sslmode=require`), jadi URL harus bentuk polos. YAML divalidasi dengan ruby (empat job terbaca).
+
+**(b) `shellcheck` level warning jadi gate** (`O-014` ditutup). Sebelumnya hanya level `error` yang
+memblokir, dengan alasan "tool tidak terpasang di mesin pengembang" — alasan itu tidak berlaku lagi:
+`shellcheck -S warning ops/scripts/*.sh` bersih untuk ketujuh skrip (exit 0, 0 temuan). Gate kini
+juga **fail-closed**: tanpa shellcheck, `./task check` merah kecuali `KRAN_SKIP_SHELLCHECK=1`
+(pelepasan sadar, bukan senyap). CI memasang shellcheck eksplisit di job `nim-check`.
+
+Bukti harness `cmd_shlint` (fungsi diekstrak dari `./task`, cara yang sama dengan harness T-056):
+tanpa tool → DIE; `KRAN_SKIP_SHELLCHECK=1` → lolos dengan pesan; skrip pemicu `SC2034` → DIE (dulu
+hanya dilaporkan — inilah perubahan perilakunya); skrip ops asli → OK. `./task check` exit=0 dengan
+baris `ok: 7 skrip lolos bash -n + shellcheck (level warning)`.
+
+**(c) ESLint (`O-023`) tidak dikerjakan** → `T-057` (BLOCKED, butuh keputusan pemilik). Koreksi
+catatan lama: hambatannya **bukan** tooling — `pnpm` berjalan di mesin ini. Faktanya `eslint` dan
+`eslint-plugin-svelte` tidak ada di `pnpm-lock.yaml` (empat kemunculan "eslint" di sana hanya
+metadata peer `@typescript-eslint/types`), dan `packages/config/package.json` sudah mengekspor
+`./eslint` → `eslint.js` yang belum pernah ditulis. Menambahkannya berarti dependensi baru + ADR
+(AGENTS §1.6), jadi dipisah, bukan diselundupkan ke task ini.
+
+Sisa `O-027`: job `traceability` (requirement ↔ kontrol/test) masih belum ada — dicatat di barisnya
+sendiri supaya tidak terlihat selesai.
+

@@ -1185,3 +1185,25 @@ pengajuan, bukan hanya pembacaan.
   `KRAN_UNIT_DIR`). Perubahan unit di repo berlaku pada deploy berikutnya tanpa langkah manual.
   Terverifikasi lokal lewat harness 5/5 + `bash -n` + `shellcheck -S warning`; di produksi jalur ini
   berjalan sebagai no-op karena unit terpasang sudah identik dengan repo.
+
+---
+
+## D-051 — `shellcheck` level warning memblokir, dan job CI `db-tests` (T-050)
+
+- **Konteks**: gate `./task check` hanya memblokir pada `shellcheck -S error`; temuan `warning`
+  sekadar dilaporkan, dengan alasan eksplisit "shellcheck tidak terpasang di mesin pengembang".
+  Test integrasi juga hanya berjalan di mesin dev: tanpa `KRAN_DATABASE_URL` mereka melewati
+  dirinya sendiri, jadi CI hijau tidak membuktikan apa pun tentang jalur DB.
+- **Keputusan**: (a) tambahkan job `db-tests` di `ci.yml` (`services: postgres:18`,
+  `KRAN_DATABASE_URL` → `kran_test`, `dbtools migrate` + `seed --dev`, lalu `./task test`);
+  (b) naikkan gate shellcheck ke level `warning` dan jadikan **fail-closed** bila tool tidak ada —
+  pelepasan sadar lewat `KRAN_SKIP_SHELLCHECK=1`; CI memasang shellcheck eksplisit di job
+  `nim-check`.
+- **Alasan**: (a) jalur integrasi yang tidak pernah berjalan adalah "hijau palsu" dengan bentuk yang
+  sama seperti job kosong; (b) gate yang hilang diam-diam saat toolnya tidak ada juga hijau palsu.
+  Kenaikan ke `warning` sudah punya bukti: `shellcheck -S warning ops/scripts/*.sh` bersih untuk
+  ketujuh skrip (17 Okt 2026).
+- **Konsekuensi**: nama basis data CI wajib berakhiran `_test`/`_dev` (seed dev fail-closed, O-062)
+  dan URL harus bentuk polos (`parseDatabaseUrl` menolak query string). Mesin tanpa shellcheck kini
+  merah sampai tool dipasang atau pelepasan sadar dilakukan. ESLint (O-023) **tidak** termasuk di
+  sini: butuh dependensi baru → `T-057` menunggu keputusan pemilik.
