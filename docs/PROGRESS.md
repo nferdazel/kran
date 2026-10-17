@@ -1248,3 +1248,28 @@ Ditunda dengan catatan: **O-067** (penerus wajib satu scope — lebih ketat dari
 (PBKDF2 kini 1+N+1 derivasi; klaim lama "dua kali per permintaan" tidak lagi utuh). Insiden kecil hari
 ini: kata sandi peran DB produksi terbaca saat operasi seed karena redaksi `sed` gagal — dilaporkan ke
 pemilik dengan saran rotasi; nilainya tidak ditulis di repo.
+
+## Ops produksi 17 Okt 2026 — rotasi sandi peran DB + bootstrap admin (blocker pilot ditutup)
+
+Diminta langsung oleh pemilik ("jalankan semua"), di luar daftar task Fase 0. Host `43.133.148.191`,
+unit user `kran-api`/`kran-worker`, env `…/apps/kran/env/kran-prod.env`.
+
+1. **Rotasi sandi peran `kran_app`** (sandi lamanya terbaca di sesi 17 Okt karena redaksi `sed` gagal):
+   `ALTER ROLE … PASSWORD` dikirim lewat **stdin** `podman exec -i` (tidak lewat argv), URL di berkas
+   env diganti di tempat, unit di-restart. Bukti setelah perbaikan: `kran-api=active`, `/readyz` **200**,
+   `pg_stat_activity` → `kran_app`, `kran-api --role=migrate --check` → `11/11 diterapkan, 0 isinya
+   berubah` (exit 0). `.local/prod.env` ikut diperbarui (URL tunnel `127.0.0.1:55432`).
+   **Insiden (jujur)**: percobaan pertama menggandakan prefix `KRAN_DATABASE_URL=` di berkas env
+   (kesalahan saya: `${OLD_URL}` sudah memuat nama kunci), API gagal start **±1 menit** (`/readyz` 000).
+   Diperbaiki di langkah berikutnya; cadangan berisi sandi lama dihapus setelah `readyz` 200. Celah
+   prosedurnya dicatat sebagai **O-069**.
+2. **Bootstrap admin produksi**: `kran-api --role=ctl bootstrap-admin --username=admin` → exit 0. Kata
+   sandi awal **tidak** masuk catatan ini; tertulis di berkas mode 600
+   `/srv/qouver/apps/kran/bootstrap-admin.txt`. Uji masuk dari server (sandi dibaca dari berkas, tidak
+   pernah dicetak): `POST /api/v1/auth/login` → **200**. Tindak lanjut pemilik: masuk sebagai `admin`,
+   ganti sandi saat diminta, lalu **hapus berkas itu**.
+3. **Bukan insiden**: `kran-worker` berstatus `failed` memang begitu di Fase 0 (`--role=worker` keluar 3,
+   `RestartPreventExitStatus=3`, O-013) — diperiksa, jurnal bersih, tidak ada banjir restart.
+
+Keputusan lanjutan dari sesi yang sama: **D-059** (scoping cabang diaktifkan di jalur HTTP → task
+**T-058**) dan **D-060** (O-009 ditunda; **T-052** dipersempit ke O-038).
