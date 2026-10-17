@@ -1021,3 +1021,10 @@ metadata peer `@typescript-eslint/types`), dan `packages/config/package.json` su
 Sisa `O-027`: job `traceability` (requirement ↔ kontrol/test) masih belum ada — dicatat di barisnya
 sendiri supaya tidak terlihat selesai.
 
+**Bukti CI (17 Okt 2026).** Run `39004290391` (commit `9b35fe5`) **sukses keempat job**, termasuk
+`DB (integrasi, Postgres 18)` — jadi test integrasi benar-benar berjalan di CI untuk pertama kalinya,
+bukan hanya di mesin dev. Sekaligus deploy `9b35fe5` mendarat: `.deployed_rev=9b35fe5f22dc`, unit
+`active`, `/healthz` 200, `/readyz` semua `ok`; log deploy memperlihatkan `sync_units` berjalan tanpa
+satu pun baris perubahan unit — no-op yang memang diharapkan karena unit terpasang identik dengan
+repo. Itu jejak pertama kode T-056 di produksi.
+
