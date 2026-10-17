@@ -193,6 +193,13 @@ Invarian tambahan:
 19. **Katalog izin & role sistem tinggal di migrasi**, bukan di seed dev: `dbtools seed` hanya
     menerapkan `packs/*/seed/*.sql` dengan `--dev`, sehingga katalog di sana berarti admin pertama di
     produksi dibuat tanpa satu pun izin (`0008_platform_rbac_catalogue.sql`).
+20. **Kata sandi lama yang salah dihitung dan diaudit** (O-050, D-046 butir 8): `changePassword`
+    memakai penghitung gagal yang **sama** dengan login (`recordLoginFailure` — angka dari parameter
+    `max_failed_logins`/`lockout_minutes`), jadi tidak ada kebijakan kedua yang harus dijaga selaras;
+    login yang berhasil mengosongkannya lagi. Jejaknya `user.password_change.failure` berisi alasan +
+    keadaan penghitung, tidak pernah bahan kata sandi. Batasnya berarti: kunci akun berlaku juga
+    untuk login berikutnya (kata sandi benar sekalipun), dan itu disengaja — pelaku yang memegang sesi
+    sah tidak boleh bisa menebak kata sandi lama tanpa batas.
 
 Catatan: alur auth tinggal di `infrastructure` (butuh DB). Saat port/use case lapisan
 `application` lahir (pola T-016), isi `auth_service.nim` pindah ke `application/`.

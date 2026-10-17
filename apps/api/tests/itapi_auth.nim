@@ -23,6 +23,7 @@ import "platform-lib/db/config"
 import "platform-lib/db/pool"
 
 import kernel/[clock, ids]
+import platform/domain/scope
 import platform/infrastructure/[auth_repo, param_repo, password_hasher]
 
 import ../src/[access, context, events, readiness, server]
@@ -73,6 +74,18 @@ proc paramSchemaBound(key, bound: string): int =
   let conn = dbPool.acquire()
   try:
     result = definitionOf(conn, key).get().schema[bound].getInt
+  finally:
+    dbPool.release(conn)
+
+proc maxFailedLoginsValue(): int =
+  ## Dibaca lewat **resolusi parameter yang sama dengan server** (`activeParamInt` + `lookupFor`),
+  ## bukan query tulis-sendiri: begitu ada lebih dari satu baris `ACTIVE` ber-tanggal, query naif
+  ## mengambil baris sembarang — dan test lain di berkas ini memang mengubah parameter ini (pernah
+  ## terbaca 7 padahal nilai efektifnya 6).
+  let conn = dbPool.acquire()
+  try:
+    result = conn.activeParamInt("platform.security.max_failed_logins",
+      businessDateIso(systemClock()), lookupFor(institutionScope()))
   finally:
     dbPool.release(conn)
 
@@ -689,6 +702,66 @@ suite "ganti kata sandi lewat HTTP":
     # Sengaja 403, bukan 401: klien yang memperlakukan 401 sebagai "sesi berakhir" tidak boleh
     # mengeluarkan pengguna hanya karena salah mengetik kata sandi lama.
     check getJson(SessionPath, token).code == 200
+
+  test "kata sandi lama salah dicatat: penghitung naik + audit `user.password_change.failure`":
+    # Login yang berhasil mengosongkan penghitung, jadi angka di bawah pasti dari percobaan ini.
+    let sesi = login(MakerUser)
+    let token = tokenOf(sesi)
+    let salah = postJson(PasswordPath,
+      %*{"oldPassword": "kata-sandi-salah-panjang", "newPassword": PasswordBaru}, token)
+    check salah.code == 403
+    check salah.body["params"]["reason"].getStr() == "old_password_mismatch"
+
+    let db = dbPool.acquire()
+    try:
+      check db.getValue(sql"""SELECT failed_attempts FROM platform.app_user
+                               WHERE username = ?""", MakerUser) == "1"
+      # `reason` di kolom adalah alasan sesi; alasan percobaan ada di muatan auditnya (`after_value`).
+      let muatan = parseJson(db.getValue(sql"""SELECT after_value::text FROM platform.audit_log
+                                                WHERE action = 'user.password_change.failure'
+                                                ORDER BY seq DESC LIMIT 1"""))
+      check muatan["reason"].getStr() == "old_password_mismatch"
+      check muatan["failed_attempts"].getInt() == 1
+      check muatan["status"].getStr() == "ACTIVE"
+    finally:
+      dbPool.release(db)
+
+  test "kata sandi lama salah sampai batas parameter mengunci akun":
+    # Pengguna sintetis: akunnya memang akan terkunci, jadi user seed yang masih dipakai test lain
+    # tidak boleh jadi korban. Hash-nya disalin supaya kata sandinya diketahui.
+    block:
+      let db = dbPool.acquire()
+      try:
+        execScript(db, """INSERT INTO platform.app_user
+            (user_id, username, full_name, password_algo, password_hash)
+          SELECT gen_random_uuid(), 'itapi-lockout', 'Uji Lockout', password_algo, password_hash
+            FROM platform.app_user WHERE username = 'dev.maker'""")
+      finally:
+        dbPool.release(db)
+
+    let sesi = login("itapi-lockout")
+    check sesi.code == 200
+    let token = tokenOf(sesi)
+    for i in 1 .. maxFailedLoginsValue():
+      let salah = postJson(PasswordPath,
+        %*{"oldPassword": "kata-sandi-salah-panjang", "newPassword": PasswordBaru}, token)
+      check salah.code == 403
+
+    block:
+      let db = dbPool.acquire()
+      try:
+        check db.getValue(sql"""SELECT status FROM platform.app_user
+                                 WHERE username = ?""", "itapi-lockout") == "LOCKED"
+        check db.getValue(sql"""SELECT failed_attempts::text FROM platform.app_user
+                                 WHERE username = ?""", "itapi-lockout") ==
+          $maxFailedLoginsValue()
+      finally:
+        dbPool.release(db)
+
+    # Kuncinya nyata: login dengan kata sandi yang benar sekalipun ditolak (`locked`, 403).
+    let masuk = login("itapi-lockout")
+    check masuk.code == 403
+    check masuk.body["params"]["reason"].getStr() == "locked"
 
   test "kata sandi baru melanggar kebijakan → 400 `password_policy`":
     let sesi = login(MakerUser)
