@@ -51,10 +51,12 @@ saat ini belum ada konsumen lintas-modul, jadi belum ada yang perlu diekspor.
   UPDATE/DELETE) baru berlaku saat role produksi dibuat — juga di `docs/OPEN_ITEMS.md`.
 - Lock `pg_advisory_xact_lock` pada rantai menyerialkan transaksi yang menulis audit. Aman
   untuk volume Fase 0; bila jadi leher botol, ganti dengan `seq` + retry (ADR kecil).
-- Verifikasi rantai (migrasi `0011`) mengikuti `prev_hash` dan tidak bergantung urutan `seq`. Yang
-  **tetap tidak** tertangkap: rantai bercabang (dua baris menunjuk pendahulu yang sama) — keadaan itu
-  hanya bisa dibuat dengan menulis langsung ke tabel tanpa trigger, dan penulis seperti itu sudah
-  bisa menulis ulang ekor rantai (batas pertama di atas). D-061 mencatat alasan dan alternatifnya.
+- Verifikasi rantai (migrasi `0011`) mengikuti `prev_hash` dan tidak bergantung urutan `seq`, tetapi
+  tetap menolak **cabang** (dua baris menunjuk pendahulu yang sama) — cabang hanya bisa dibuat dengan
+  menulis langsung ke tabel tanpa trigger, dan penulis seperti itu sudah bisa menulis ulang ekor
+  rantai (batas pertama di atas). Siklus tanpa genesis tidak terdeteksi, tetapi membuatnya butuh titik
+  tetap fungsi hash, dan hash yang ditulis tangan tetap ketahuan lewat `row_hash_ok`. D-061 mencatat
+  alasan dan alternatifnya.
 
 ## Invarian: urutan commit == urutan `seq` outbox
 

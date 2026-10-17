@@ -1546,4 +1546,15 @@ pengajuan, bukan hanya pembacaan.
 - **Bukti**: suite baru di `modules/platform/tests/itplatform.nim` (prasyarat mekanisme `seq` terbalik
   + aturan baru menyatakan rantai utuh + **kontrol** pola lama menandai dua baris); `./task test
   itplatform` hijau; `./task check` hijau.
+- **Temuan review independen (17 Okt 2026)**: versi pertama aturan baru **melemahkan** deteksi —
+  pola lama (lewat `lag(seq)`) menolak rantai **bercabang** (dua baris menunjuk pendahulu yang sama),
+  aturan berbasis keanggotaan `hash` saja menerimanya. Diperbaiki di migrasi `0011` yang sama:
+  `link_ok` juga mensyaratkan **tidak ada baris lain ber-`prev_hash` sama** (indeks
+  `audit_log_prev_hash_idx`), jadi deteksi cabang kembali ada dan tetap tidak bergantung urutan `seq`.
+  Perbaikan ini menandai **kedua** sisi cabang (baris sah yang pendahulunya kini dirampas ikut
+  ditandai — itu memang konsekuensinya), sedangkan kasus urutan-terbalik yang sah tetap utuh karena
+  `prev_hash` baris-barisnya berbeda. Diuji eksplisit di suite yang sama (baris cabang ditulis dengan
+  hash yang benar agar yang dinilai murni `link_ok`). Siklus tanpa genesis tetap tidak terdeteksi:
+  membuatnya butuh titik tetap fungsi hash, dan hash yang ditulis tangan sudah ketahuan lewat
+  `row_hash_ok`.
 - **HUMAN-REVIEW-REQUIRED (integritas audit)** — AGENTS.md §8.
