@@ -1480,3 +1480,70 @@ pengajuan, bukan hanya pembacaan.
   penolakan/keberhasilan lewat HTTP: kata sandi yang berlaku, yang di riwayat, dan kontrol yang
   belum pernah dipakai), `itparam` + `itplatform` hijau, `./task fmt` + `./task check` hijau.
 - **HUMAN-REVIEW-REQUIRED**: menyentuh penyimpanan hash kata sandi (AGENTS.md §8).
+
+## D-059 — Scoping cabang diaktifkan di jalur HTTP (temuan D-055 ditindaklanjuti)
+
+- **Konteks**: D-055 mencatat dua temuan yang membuat aturan visibilitas per scope belum berefek di
+  produksi: (a) `authorized` memeriksa dengan `targetBranch = ""` (`apps/api/src/access.nim:82-90`),
+  sehingga grant yang **hanya** ber-cabang tidak pernah cocok dengan endpoint HTTP mana pun; (b)
+  `auditContextFor` (`apps/api/src/access.nim:92`) tidak mengisi `branchIds`, jadi setiap baris audit
+  yang ditulis dari jalur HTTP punya `branch_id` NULL dan terbaca sebagai tingkat institusi.
+- **Keputusan pemilik (17 Okt 2026)**: **kerjakan sekarang**, bukan dicatat sebagai batas diterima.
+  Alasan: pilot memang 1 koperasi/1 cabang sehingga efeknya belum terasa, tetapi menyalakannya nanti
+  berarti mengubah perilaku authz setelah ada data dan kebiasaan pemakaian; sekarang permukaan HTTP
+  masih kecil dan teruji.
+- **Konsekuensi**:
+  1. Menjadi task tersendiri **T-058**, bukan diselipkan ke task lain (rencana T-051 sudah menandai
+     opsi ini sebagai di luar lingkupnya).
+  2. Perubahan perilaku yang harus dinyatakan terang: grant yang **hanya** ber-cabang mulai berlaku
+     (sebelumnya selalu ditolak karena tidak pernah cocok), dan baris audit dari jalur HTTP mulai
+     ber-`branch_id` sehingga pembacaan daftar audit mulai tersaring per cabang.
+  3. Dua hal **belum** diputuskan di sini dan wajib ditulis di rencana T-058 sebelum kode: cabang mana
+     yang menjadi "cabang target" untuk tiap endpoint, dan dari mana atribusi cabang baris audit
+     diambil (cabang tugas pemanggil vs cabang yang disentuh permintaan).
+- **HUMAN-REVIEW-REQUIRED (authz)** — AGENTS.md §8.
+
+## D-060 — O-009 ditunda; T-052 dipersempit ke O-038
+
+- **Konteks**: O-009 meminta anchor hash audit harian disimpan di tempat terpisah **dan diverifikasi di
+  day-close** (spec §18.2). Kriteria itu tidak bisa dipenuhi di Fase 0: framework `daycloser` belum ada
+  (`apps/api/src/main.nim:349` → `ctl daycloser-status` sengaja mengembalikan 3; AGENTS.md §1.7
+  melarang batch/cron di luar framework itu). Anchor tanpa jalur verifikasi day-close hanya memindahkan
+  masalah, dan membangun `daycloser` sekarang berarti melompat ke pekerjaan Fase 3.
+- **Keputusan pemilik (17 Okt 2026)**: **kerjakan O-038 saja**; O-009 tetap terbuka menunggu
+  `daycloser`. T-052 dipersempit: kriteria "anchor tersimpan dan diverifikasi di day-close" dihapus.
+- **Konsekuensi**: rantai audit masih bisa ditulis ulang oleh penyerang ber-hak-tulis-penuh — batas yang
+  sudah dinyatakan jujur di kepala migrasi `0002_platform_audit_log.sql` dan di O-009, jadi tidak ada
+  klaim keamanan yang berubah. Alternatif yang ditolak: anchor lewat `ctl` tanpa hook day-close —
+  menambah jalur tulis kedua untuk audit dan hanya menutup separuh O-009 (verifikasi otomatis tetap
+  tidak ada).
+- **Rujukan**: T-052 (dipersempit), O-009, O-038, spec §18.2.
+
+## D-061 — Verifikasi rantai audit mengikuti `prev_hash`, bukan urutan `seq` (O-038/T-052)
+
+- **Konteks**: `seq` audit dialokasikan identity **sebelum** BEFORE-trigger rantai mengambil advisory
+  lock (`modules/platform/migrations/0002_platform_audit_log.sql:74-76`), jadi baris ber-`seq` lebih
+  besar bisa commit lebih dulu dan baris berikutnya merantai ke hash baris itu. Rantainya tetap
+  **linear**; yang salah adalah anggapan lama bahwa urutan `seq` = urutan rantai. `audit_verify()`
+  lama memverifikasi tautan dengan `lag(hash) OVER (ORDER BY seq)`, sehingga keadaan yang sah itu
+  dilaporkan `link_ok=false`. Direproduksi deterministik di DB dev 17 Okt 2026 (jendela diperlebar
+  dengan trigger uji 2,5 s): `seq` 84 menunjuk hash `seq` 85, 85/85 baris tercapai dengan mengikuti
+  `prev_hash` dari genesis, dan pola lama menandai kedua baris itu.
+- **Keputusan**: `link_ok` = `prev_hash` adalah sentinel genesis (`repeat('0',64)`) **atau** ada baris
+  lain ber-`hash` sama — migrasi `0011_platform_audit_verify_prev_hash.sql`, plus indeks
+  `audit_log_hash_idx (hash)` supaya pemeriksaan tidak O(n²). Tanda tangan fungsi dan kolom hasil
+  **tidak berubah**, jadi `verifyChain` (`audit_repo.nim:56`) dan `ctl verify-audit` tidak disentuh.
+  Alternatif yang ditolak: (a) menetapkan `seq` di dalam trigger setelah lock — butuh mengubah kolom
+  identity, bukan expand-only, dan urutan commit tetap tidak bisa dipaksakan; (b) verifikasi rekursif
+  dari genesis dengan menandai baris di luar rantai — mengubah arti hasil (baris hilir ikut dinyatakan
+  rusak saat satu baris hulu dirusak) dan memaksa test lama diubah tanpa kebutuhan.
+- **Deteksi tidak melemah**: test perusakan lama lulus **tanpa diubah** — payload diubah →
+  `row_hash_ok=false`; hash dihitung ulang → baris berikutnya kehilangan pendahulunya (`EXISTS` gagal);
+  `TRUNCATE`/`UPDATE`/`DELETE` tetap ditolak trigger.
+- **Yang tetap tidak terdeteksi**: rantai bercabang (dua baris menunjuk pendahulu yang sama — hanya
+  bisa dibuat dengan menulis langsung tanpa trigger) dan penulisan ulang seluruh ekor rantai
+  (O-009, ditunda oleh D-060). Keduanya dicatat di `modules/platform/MODULE.md`.
+- **Bukti**: suite baru di `modules/platform/tests/itplatform.nim` (prasyarat mekanisme `seq` terbalik
+  + aturan baru menyatakan rantai utuh + **kontrol** pola lama menandai dua baris); `./task test
+  itplatform` hijau; `./task check` hijau.
+- **HUMAN-REVIEW-REQUIRED (integritas audit)** — AGENTS.md §8.
