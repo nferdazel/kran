@@ -1067,3 +1067,37 @@ Catatan lingkungan jujur: run lokal pertama bahkan tidak sampai ke Playwright ka
 (patok keras di `apps/web/playwright.config.ts:12`) dipegang `vite preview` dari repo lain; setelah
 proses itu dihentikan atas izin pemilik, barulah cacat D-054 terlihat.
 
+## Pasca-M0 — T-051 bagian authz (O-032 + O-044/D-047): SELESAI, T-051 belum DONE (D-055)
+
+Keputusan pemilik D-046 butir 6 dan D-047 dijalankan pada jalur baca/tulis parameter. Aturan "grant
+mana menutupi scope mana" sekarang hidup satu kali (`readableScopeFilter` di
+`modules/platform/domain/authz.nim`); `mayReadScope` diturunkan dari padanya dan repo hanya
+menerjemahkan hasilnya ke SQL. `paramValueRows`/`listAudit` menerima `ScopeFilter` dan menyaring **di
+query** — bukan setelah `LIMIT`, supaya halaman tidak terisi baris yang tidak boleh dilihat. Pengajuan
+nilai memeriksa wewenang baca scope pengaju lebih dulu → `403 scope_not_readable` (PRODUCT/SEGMENT/ROLE
+gagal-tertutup: belum ada model keanggotaannya). Pembacaan cabang di luar cabang tugas pemanggil
+meninggalkan entri audit `param.read_cross_branch` per cabang.
+
+Bukti (semua `exit=0`): `./task test tauthz` (10 test murni baru), `itparam` (suite "visibilitas daftar
+per scope", termasuk baris PRODUCT yang tetap gagal-tertutup dan bukti bahwa `LIMIT` berlaku setelah
+penyaringan), `itplatform` (suite "daftar audit — visibilitas per cabang", 3 test), `itapi_auth` (403
+`scope_not_readable` + nilai BRANCH lewat maker-checker + jejak `param.read_cross_branch` di DB);
+`./task check` hijau (setelah `./task fmt`), dan `./task test` penuh hijau — 542 `[OK]`, 0 FAILED.
+Invariannya masuk `modules/platform/MODULE.md` (param #10); dua batasan jujurnya masuk
+`docs/ACCEPTED-LIMITS.md`.
+
+Dua temuan yang tidak boleh disamarkan, keduanya dicatat di D-055 dan OPEN_ITEMS O-032:
+
+1. **Penyaringan audit belum berefek hari ini.** `auditContextFor` tidak mengisi `branchIds`, jadi
+   setiap baris audit dari jalur HTTP `branch_id` NULL (diperiksa di DB dev: 54 baris, 0 bercabang) dan
+   terbaca sebagai tingkat institusi. Aturannya diuji di lapis repo dengan konteks yang memang membawa
+   cabang — satu-satunya cara mengujinya sekarang.
+2. **Grant khusus cabang belum bisa memakai endpoint HTTP mana pun.** `authorized` memeriksa dengan
+   `targetBranch = ""` (`access.nim:82-90`), sehingga aturan visibilitas yang benar ini belum punya
+   efek di produksi. Menyalakan scoping cabang mengubah perilaku secara luas → keputusan pemilik, bukan
+   diselipkan ke T-051.
+
+Sisa T-051: O-043 (`effectiveTo` tanpa penerus), O-052 (parameter kata sandi + riwayat hash), O-050
+(audit + batas percobaan kata sandi lama). Bagian authz ditandai `HUMAN-REVIEW-REQUIRED` sampai
+reviewer menyatakan APPROVE.
+

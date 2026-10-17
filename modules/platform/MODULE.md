@@ -101,6 +101,16 @@ Invarian tambahan:
 9. **Lookup scope bertipe eksplisit** (D-041): `ScopeValueLookup` mengembalikan `Option[string]` —
    `some(id)` berarti tipe itu diminta, dan `some("")` **sah** (institusi akar, `scope_id` NULL);
    `none` berarti tidak diminta. Id kosong bukan wildcard, dan tidak ada fallback antar level.
+10. **Visibilitas daftar mengikuti wewenang baca, dan disaring di query** (D-046 butir 6, D-047/D-055):
+   aturan "grant mana menutupi scope mana" hidup satu kali di `domain/authz` (`readableScopeFilter`;
+   `mayReadScope` diturunkan dari padanya). `paramValueRows`/`listAudit` hanya menerjemahkannya ke SQL,
+   **bukan** menyaring setelah `LIMIT` — kalau disaring belakangan, baris yang tidak boleh dibaca
+   memakan jatah halaman. `GLOBAL` selalu terlihat; `INSTITUTION` hanya untuk grant tanpa batas cabang;
+   `BRANCH` per cabang yang ditutup grant; `PRODUCT`/`SEGMENT`/`ROLE` gagal-tertutup (belum ada model
+   keanggotaan). Pengajuan nilai memakai predikat yang sama (pengaju tidak boleh mengusulkan lebih dari
+   yang ia boleh baca) → `403 scope_not_readable`. Pembacaan cabang di luar cabang tugas menulis
+   `param.read_cross_branch` — satu entri per cabang — dan bila pencatatan itu gagal, permintaannya
+   ikut gagal (jangan menyajikan tanpa jejak).
 
 Jebakan yang sudah ditemukan (jangan diulang):
 

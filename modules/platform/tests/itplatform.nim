@@ -14,7 +14,7 @@ import "platform-lib/db/config"
 import "platform-lib/db/pool"
 import dbtools/lib
 import kernel/[clock, ids, auditcontext]
-import platform/domain/[audit, event]
+import platform/domain/[audit, authz, event]
 import platform/infrastructure/[audit_repo, inbox_repo, outbox_repo]
 
 const
@@ -262,6 +262,52 @@ suite "platform: audit_log":
   test "TRUNCATE ditolak trigger":
     expectDbError(sql"TRUNCATE platform.audit_log", "append-only")
     check countAudit(db) == 4
+
+suite "platform: daftar audit — visibilitas per cabang (O-032, D-046 butir 6)":
+  ## Diuji di lapis repo, bukan lewat HTTP: baris audit dari jalur HTTP selalu tanpa cabang
+  ## (`auditContextFor` tidak mengisi `branchIds`), jadi cabang hanya bisa diuji dengan konteks
+  ## yang memang membawanya. Cabang pada audit_log bertipe uuid, bukan teks bebas.
+  const
+    cabangA = "11111111-1111-7111-8111-111111111111"
+    cabangB = "22222222-2222-7222-8222-222222222222"
+    izin = "platform.audit.read"
+
+  proc catat(cabang: string) =
+    let ctx = if cabang.len == 0: newAuditContext(newId(sysClock), sysClock)
+              else: newAuditContext(newId(sysClock), sysClock, branchIds = @[Id(cabang)])
+    discard appendAudit(db, newAuditEntry(ctx, "uji.visibilitas.cabang", "param_value",
+      "uji-" & cabang, sysClock, businessDate = "2026-10-13"))
+
+  test "baris tanpa cabang selalu terlihat; baris cabang lain tidak":
+    catat("") # tingkat institusi
+    catat(cabangA)
+    catat(cabangB)
+
+    let grantCabang = @[Grant(roleCode: "param_maker", branchId: cabangA, permission: izin)]
+    let terlihat = listAudit(db, 50, "uji.visibilitas.", auditScopeFilter(grantCabang, izin))
+    check terlihat.len == 2
+    var adaTanpaCabang = false
+    var adaCabangA = false
+    for item in terlihat:
+      check item.branchId != cabangB
+      if item.branchId.len == 0: adaTanpaCabang = true
+      if item.branchId == cabangA: adaCabangA = true
+    check adaTanpaCabang
+    check adaCabangA
+
+  test "grant tanpa batas cabang melihat semuanya":
+    let grantSemua = @[Grant(roleCode: "platform_admin", branchId: "", permission: izin)]
+    let terlihat = listAudit(db, 50, "uji.visibilitas.", auditScopeFilter(grantSemua, izin))
+    check terlihat.len == 3
+
+  test "batas baris berlaku setelah penyaringan, bukan sebelum":
+    # Tanpa penyaringan di SQL, tiga baris uji ini (baru ditulis) akan memakan jatah `limit`
+    # dan pembaca ber-cabang bisa menerima halaman kosong.
+    let grantCabang = @[Grant(roleCode: "param_maker", branchId: cabangA, permission: izin)]
+    let terlihat = listAudit(db, 1, "uji.visibilitas.", auditScopeFilter(grantCabang, izin))
+    check terlihat.len == 1
+    for row in terlihat:
+      check row.branchId != cabangB
 
 suite "platform: migrasi dua tahap (contract & rollback, T-035)":
   ## Migrasi nyata sudah diterapkan suite pertama; yang ditambahkan di sini adalah berkas sintetis

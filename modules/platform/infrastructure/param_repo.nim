@@ -7,11 +7,11 @@
 ## `db_connector` tidak membungkus `LISTEN/NOTIFY`, jadi bagian itu memakai libpq langsung
 ## (`pqconsumeInput`/`pqnotifies`) — terkurung di berkas ini.
 
-import std/[json, options, strutils, times, os]
+import std/[json, options, sets, strutils, times, os]
 import db_connector/db_postgres
 import db_connector/postgres
 
-import ../domain/[audit, event, param, scope]
+import ../domain/[audit, authz, event, param, scope]
 import ./audit_repo
 import ./outbox_repo
 import kernel/[auditcontext, clock, ids, paramkey]
@@ -298,9 +298,20 @@ type
     reason*: string
     requiresApproval*: bool
 
-proc paramValueRows*(db: DbConn, status = "", limit = 200): seq[ParamValueRow] =
+proc paramValueRows*(db: DbConn, status: string, limit: int,
+                     scope: ScopeFilter): seq[ParamValueRow] =
   ## Daftar nilai parameter (semua scope) untuk UI. `status` kosong = semua status; disaring
   ## memakai nama status kanonik (`ACTIVE`, `PENDING`, …). Batas jumlah baris wajib.
+  ##
+  ## `scope` = himpunan scope yang boleh dibaca pemanggil (D-046 butir 6). Disaring **di SQL**, bukan
+  ## setelah `LIMIT`: kalau disaring belakangan, baris yang tidak boleh dibaca memakan jatah halaman
+  ## dan daftar bisa tampak kosong padahal masih ada baris yang boleh dibaca. Terjemahannya mekanis;
+  ## aturannya ada di `platform/domain/authz.mayReadScope`.
+  let allBranches = if scope.allBranches: "1" else: "0"
+  var branches: seq[string]
+  for b in scope.branches:
+    branches.add b
+  let readableBranches = $ %* branches
   for row in db.getAllRows(sql"""
     SELECT v.param_value_id::text, v.key, v.scope_type, coalesce(v.scope_id::text, ''),
            v.status, v.value::text,
@@ -311,8 +322,14 @@ proc paramValueRows*(db: DbConn, status = "", limit = 200): seq[ParamValueRow] =
       FROM platform.param_value v
       JOIN platform.param_definition d ON d.key = v.key
      WHERE (?::text = '' OR v.status = ?)
+       AND (v.scope_type = 'GLOBAL'
+            OR (v.scope_type = 'INSTITUTION' AND ?::int = 1)
+            OR (v.scope_type = 'BRANCH'
+                AND (?::int = 1
+                     OR v.scope_id::text IN
+                        (SELECT value FROM jsonb_array_elements_text(?::jsonb)))))
      ORDER BY v.key, v.recorded_at DESC
-     LIMIT ?::int""", status, status, $limit):
+     LIMIT ?::int""", status, status, allBranches, allBranches, readableBranches, $limit):
     result.add ParamValueRow(
       paramValueId: row[0],
       key: row[1],

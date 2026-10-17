@@ -9,7 +9,8 @@ import std/[json, options, strutils]
 import mummy
 import db_connector/db_postgres
 
-import platform/infrastructure/audit_repo
+import platform/domain/authz
+import platform/infrastructure/[audit_repo, auth_repo]
 
 import ./access
 import ./context
@@ -61,7 +62,10 @@ proc handleListAudit*(app: AppContext, req: Request) {.gcsafe.} =
   try:
     withDbConn(app.pool, proc(db: DbConn) {.gcsafe.} =
       dbCalls:
-        items = listAudit(db, limit, action))
+        # Visibilitas per cabang (D-046 butir 6, D-055): aksi tanpa cabang selalu terlihat, aksi
+        # bercabang hanya bila grant menutupinya. Disaring di query; lihat `listAudit`.
+        items = listAudit(db, limit, action,
+          auditScopeFilter(grantsOf(db, principal.get().user.userId), permissionAuditRead)))
   except DbError:
     req.respondProblem(pkInternal, "Internal Server Error", "daftar audit gagal dibaca")
     return

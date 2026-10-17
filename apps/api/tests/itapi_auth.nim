@@ -757,3 +757,55 @@ suite "ganti kata sandi lewat HTTP":
       if item["action"].getStr() == "user.password_change":
         adaJejak = true
     check adaJejak
+
+suite "wewenang scope parameter lewat HTTP (O-032, O-044/D-047)":
+  const
+    WeekEndKey = "platform.calendar.weekend_days" # allowed_scopes: GLOBAL, BRANCH
+    CabangB = "itapi-cabang-b"
+
+  test "scope tanpa model keanggotaan ditolak 403 `scope_not_readable` (gagal-tertutup)":
+    # D-055: PRODUCT/SEGMENT/ROLE belum punya model keanggotaan, jadi setiap pengajuan ke sana
+    # ditolak sebagai **tidak berwenang** — dan penolakannya terjadi sebelum validasi definisi,
+    # supaya tidak membocorkan (key, scope) mana yang didukung.
+    let maker = login(MakerUser)
+    let reply = postJson(ParamsPath & "/" & WeekEndKey & "/changes",
+      %*{"value": [5, 6], "scopeType": "PRODUCT", "scopeId": "itapi-produk-1",
+         "reason": "uji otomatis: scope tanpa model keanggotaan"}, tokenOf(maker))
+    check reply.code == 403
+    check reply.body["params"]["reason"].getStr() == "scope_not_readable"
+    checkProblem(ParamsPath & "/{key}/changes", "POST", "403", reply.body)
+
+  test "nilai bercabang: maker-checker, lalu pembacaannya tercatat sebagai lintas-cabang":
+    let makerToken = tokenOf(login(MakerUser))
+    let checkerToken = tokenOf(login(CheckerUser))
+
+    let submitted = postJson(ParamsPath & "/" & WeekEndKey & "/changes",
+      %*{"value": [5, 6], "scopeType": "BRANCH", "scopeId": CabangB,
+         "reason": "uji otomatis: nilai khusus satu cabang"}, makerToken)
+    check submitted.code == 201
+    checkJson(ParamsPath & "/{key}/changes", "POST", "201", submitted.body)
+    let paramValueId = submitted.body["paramValueId"].getStr()
+
+    let approved = postJson("/api/v1/params/changes/" & paramValueId & "/approve",
+      newJObject(), checkerToken)
+    check approved.code == 200
+    check approved.body["status"].getStr() == "ACTIVE"
+
+    # Grant tanpa batas cabang menutupi semua cabang: nilai GLOBAL + nilai cabang itu terlihat.
+    let body = getJson(ParamsPath, makerToken).body
+    check itemWith(body, WeekEndKey).len == 2
+
+    # D-046 butir 6: pembacaan cabang di luar cabang tugas pemanggil meninggalkan jejak audit —
+    # diperiksa di DB, bukan dari respons, karena daftar audit tidak memuat kolom cabang.
+    let db = dbPool.acquire()
+    try:
+      let jejak = db.getValue(sql"""
+        SELECT count(*) FROM platform.audit_log
+         WHERE action = 'param.read_cross_branch' AND resource_id = ?""", CabangB)
+      check jejak != "0"
+      check db.getValue(sql"""
+        SELECT reason FROM platform.audit_log
+         WHERE action = 'param.read_cross_branch' AND resource_id = ?
+         ORDER BY seq DESC LIMIT 1""", CabangB) == "cross_branch_read"
+    finally:
+      dbPool.release(db)

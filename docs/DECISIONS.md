@@ -1290,3 +1290,67 @@ pengajuan, bukan hanya pembacaan.
   memang harus ketat. Alasan tetap dipertahankan: yang salah adalah assertion yang hanya benar pada DB
   yang baru direset, dan tanpa perbaikan ini `ci-repeat 3` — salah satu kriteria selesai T-044 itu
   sendiri — tidak akan pernah hijau di mesin dev.
+
+---
+
+## D-055 — Visibilitas parameter per scope, wewenang pengajuan, dan pembacaan lintas-cabang (T-051: O-032 + O-044/D-047)
+
+- **Konteks**: D-046 butir 6 menetapkan "GLOBAL selalu terlihat, scope lain sesuai wewenang, pembacaan
+  lintas-cabang diaudit"; D-047 (O-044) menetapkan pengaju hanya boleh mengusulkan nilai untuk scope
+  yang **ia sendiri** boleh baca. Sebelum ini `GET /api/v1/params` (`handlers_param.nim:48`) dan
+  `GET /api/v1/audit` (`handlers_audit.nim:38`) menyaring `status`/`action` saja, dan pengajuan hanya
+  memeriksa `allowed_scopes` definisi — bukan wewenang pengaju.
+- **Keputusan**:
+  1. Aturan "grant mana menutupi scope mana" hidup **satu kali**: `platform/domain/authz.
+     readableScopeFilter` (ringkasan grant → `allBranches` + himpunan cabang), dan `mayReadScope`
+     diturunkan dari padanya. Repo hanya **menerjemahkan** hasilnya ke SQL (`paramValueRows`,
+     `listAudit`) — bukan tempat kedua aturannya.
+  2. Penyaringan dilakukan **di query**, bukan setelah `LIMIT`: kalau disaring belakangan, baris yang
+     tidak boleh dibaca memakan jatah halaman dan daftar bisa tampak kosong padahal masih ada baris
+     yang boleh dibaca. Dikunci dua test (`itparam`/`itplatform`: dengan `limit = 1` hasilnya bukan
+     halaman kosong).
+  3. GLOBAL terlihat oleh siapa pun yang memegang izin bacanya. INSTITUTION hanya untuk grant **tanpa
+     batas cabang**. BRANCH hanya cabang yang ditutup grant. PRODUCT/SEGMENT/ROLE **gagal-tertutup**
+     (tidak terlihat siapa pun) karena `Grant` hanya mengenal cabang — tidak ada model keanggotaan
+     untuk ketiganya, jadi menampilkannya = membocorkan nilai yang keanggotaannya tidak bisa
+     dievaluasi.
+  4. Pengajuan: `mayReadScope` diperiksa **sebelum** validasi definisi → `403 scope_not_readable`.
+     Dipilih 403, bukan 400, supaya penolakan tidak membocorkan (key, scope) mana yang didukung;
+     wewenang yang kurang adalah 403 sepanjang aplikasi ini.
+  5. Pembacaan lintas-cabang dicatat audit: **satu entri per (permintaan, cabang)** yang dibaca di luar
+     cabang tugas pemanggil — `action=param.read_cross_branch`, `resource_type=param_branch`,
+     `resource_id=<scopeId>`, `reason=cross_branch_read`. "Cabang tugas" = cabang yang benar-benar
+     ditutup grant berizin-baca (grant tanpa batas cabang tidak menjadikannya cabang tugas).
+     Tanpa de-duplikasi: audit append-only, dan granularitas per-cabang menjaga barisnya kecil.
+     Penulisannya di jalur baca dan **tidak** dimaafkan: bila pencatatan audit gagal, permintaan
+     daftar ikut gagal (500) — "menyajikan tanpa jejak" adalah persis yang dilarang butir ini.
+  6. Daftar audit disaring dengan aturan yang sama; aksi **tanpa** cabang selalu terlihat (tidak ada
+     yang dilindungi dengan menyembunyikannya). Pembacaan daftar audit **tidak** menulis audit baru:
+     kalau ya, setiap pembacaan mengubah isi daftar yang sedang dibaca — dan butir 5 di atas sengaja
+     dibatasi hanya pada **pembacaan nilai parameter**, bukan pada pembacaan jejaknya.
+- **Alasan**: keputusan pemilik (D-046 butir 6/D-047) dijalankan apa adanya untuk GLOBAL/INSTITUTION/
+  BRANCH; satu-satunya titik yang benar-benar tidak bisa dijawab dari grant adalah keanggotaan
+  PRODUCT/SEGMENT/ROLE, dan untuk itu gagal-tertutup adalah pilihan paling aman (dan paling mudah
+  dibalik: begitu model keanggotaannya ada, predikatnya tinggal diisi).
+- **Konsekuensi & dua temuan yang harus dibaca sebagai bagian keputusan ini**:
+  - **Penyaringan audit belum berefek hari ini.** Setiap baris `platform.audit_log` yang ditulis dari
+    jalur HTTP punya `branch_id` NULL — `auditContextFor` (`access.nim:92`) tidak mengisi `branchIds`,
+    jadi semuanya terbaca sebagai tingkat institusi dan terlihat oleh semua pemegang
+    `platform.audit.read` (diperiksa langsung di DB dev: 54 baris, 0 bercabang). Aturan penyaringannya
+    diuji di lapis repo dengan konteks yang memang membawa cabang (`itplatform.nim`), bukan lewat HTTP
+    — dan itu memang satu-satunya cara mengujinya sekarang. Atribusi cabang per permintaan HTTP adalah
+    bagian **kedua** O-032 yang belum diputuskan.
+  - **Grant ber-cabang belum bisa memakai endpoint HTTP mana pun.** `authorized` memeriksa dengan
+    `targetBranch = ""` (`access.nim:82-90`), sehingga grant khusus cabang tidak pernah cocok. Jadi
+    aturan visibilitas ini benar dan teruji (`tauthz` murni + `itparam` di lapis repo), tetapi efeknya
+    di produksi masih **nol** sampai scoping cabang diaktifkan. Menyalakannya mengubah perilaku
+    secara luas (permintaan yang lolos bisa mulai ditolak) → keputusan pemilik, bukan diselipkan di
+    T-051 (rencana T-051 sudah menandai opsi ini sebagai di luar lingkup).
+- **Bukti**: `tauthz` (10 test murni: matriks mayReadScope + deteksi lintas-cabang),
+  `itparam` ("visibilitas daftar per scope", termasuk baris `PRODUCT` yang tetap gagal-tertutup),
+  `itplatform` ("daftar audit — visibilitas per cabang", 3 test), `itapi_auth` (403
+  `scope_not_readable` untuk PRODUCT; nilai BRANCH lewat maker-checker + jejak
+  `param.read_cross_branch` di DB). Semua `exit=0`.
+- **HUMAN-REVIEW-REQUIRED (authz)**: keputusan gagal-tertutup PRODUCT/SEGMENT/ROLE dan granularitas
+  audit lintas-cabang (tanpa de-duplikasi) diminta ditinjau manusia; keduanya dapat dibalik dalam satu
+  commit tanpa menyentuh jalur data lain.

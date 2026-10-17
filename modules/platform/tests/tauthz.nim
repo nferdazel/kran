@@ -3,6 +3,7 @@
 
 import std/[unittest, sets, strutils, times]
 
+import kernel/paramkey
 import platform/domain/authz
 
 proc grant(role, branch, permission: string): Grant =
@@ -54,6 +55,46 @@ suite "otorisasi: branch scoping":
     let g = @[grant("admin", "", "platform.param.approve")]
     check not authorize(g, "", "platform.*.*").allowed
     check not authorize(g, "", "platform.param").allowed
+
+suite "visibilitas scope parameter (D-046 butir 6, D-055)":
+  const baca = "platform.param.read"
+  let cabang = @[grant("teller", "br-bandung", baca)]
+  let institusi = @[grant("param.admin", "", baca)]
+  let tanpaIzin = @[grant("teller", "br-bandung", "teller.session.open")]
+
+  test "GLOBAL terlihat oleh siapa pun yang memegang izin bacanya":
+    check mayReadScope(cabang, baca, pstGlobal, "")
+    check mayReadScope(institusi, baca, pstGlobal, "")
+
+  test "GLOBAL tidak terlihat tanpa izin baca":
+    check not mayReadScope(tanpaIzin, baca, pstGlobal, "")
+
+  test "BRANCH hanya untuk cabang yang ditutup grant":
+    check mayReadScope(cabang, baca, pstBranch, "br-bandung")
+    check not mayReadScope(cabang, baca, pstBranch, "br-surabaya")
+    # grant tanpa batas cabang menutup semua cabang
+    check mayReadScope(institusi, baca, pstBranch, "br-surabaya")
+
+  test "INSTITUTION butuh grant tanpa batas cabang":
+    check mayReadScope(institusi, baca, pstInstitution, "")
+    check not mayReadScope(cabang, baca, pstInstitution, "")
+
+  test "PRODUCT/SEGMENT/ROLE fail-closed sampai model keanggotaannya ada":
+    check not mayReadScope(institusi, baca, pstProduct, "prod-1")
+    check not mayReadScope(institusi, baca, pstSegment, "seg-1")
+    check not mayReadScope(institusi, baca, pstRole, "teller")
+
+  test "pembacaan cabang di luar cabang tugas terdeteksi (D-046 butir 6)":
+    # grant tanpa batas cabang: setiap nilai cabang yang dibaca = lintas-cabang
+    check isCrossBranchRead(institusi, baca, "br-surabaya")
+    check isCrossBranchRead(institusi, baca, "br-bandung")
+    # cabang tugas sendiri bukan lintas-cabang, juga saat grant tanpa batas ikut dipegang
+    check not isCrossBranchRead(cabang, baca, "br-bandung")
+    let gabungan = @[grant("param.admin", "", baca), grant("teller", "br-bandung", baca)]
+    check not isCrossBranchRead(gabungan, baca, "br-bandung")
+    check isCrossBranchRead(gabungan, baca, "br-surabaya")
+    # scope non-cabang (GLOBAL/institusi) bukan pembacaan cabang
+    check not isCrossBranchRead(institusi, baca, "")
 
 suite "otorisasi: pemisahan tugas (SoD)":
   let semua = @[grant("maker", "", "platform.param.submit"),
