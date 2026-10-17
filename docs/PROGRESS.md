@@ -1028,3 +1028,42 @@ bukan hanya di mesin dev. Sekaligus deploy `9b35fe5` mendarat: `.deployed_rev=9b
 satu pun baris perubahan unit — no-op yang memang diharapkan karena unit terpasang identik dengan
 repo. Itu jejak pertama kode T-056 di produksi.
 
+## Dua keputusan tertunda + satu cacat gate yang ditemukan sekalian (17 Okt 2026)
+
+Dua baris `BLOCKED` yang menunggu keputusan pemilik diselesaikan dengan analisis ahli (dua subagent
+read-only: tooling/a11y dan arsitektur platform) yang klaim kuncinya saya periksa sendiri di kode —
+satu klaim bahkan **salah** (`i18ncheck` ternyata juga memeriksa string hardcode yang jelas di
+komponen, `tools/i18ncheck/lib.nim:2`), jadi tidak ada item palsu yang tercatat.
+
+**T-055 / O-018 — parameter: cache atau baca per permintaan? → dibaca per permintaan (D-052).**
+Bukti yang mengubah sifat pertanyaan: `settingsOf` (`auth_service.nim:50-65`) = 6 pembacaan
+baris-tunggal dan hanya di jalur auth (`handlers_auth.nim:64/115/179`), bukan per permintaan umum;
+tabel parameter puluhan baris (10 definisi di DB dev); indeks parsial `param_value_lookup_idx`
+memang tidak menopang query resolusi (`status IN ('ACTIVE','SUPERSEDED')` vs predikat
+`WHERE status='ACTIVE'`) tetapi tak terasa pada skala itu. Opsi cache diberatkan `param_cache` tanpa
+TTL + `NOTIFY` yang tak dijamin sampai → kelas bug "nilai basi tanpa error" di jalur keamanan.
+Pemicu tinjau ulang terukur dicatat di D-052 supaya keputusan ini bisa dibatalkan dengan bukti.
+
+**T-057 / O-023 — ESLint → tidak sekarang; celah a11y ditutup tanpa dependensi baru (D-053).**
+Celah nyatanya bukan "tidak ada ESLint", melainkan "warning a11y tidak pernah memblokir". Buktinya
+empiris: dengan `<img src="/x.png">` tanpa `alt` yang ditanam sementara, `svelte-check` **tanpa**
+`--fail-on-warnings` → `exit=0` (warning lolos), **dengan** flag itu → `exit=1` dengan pesan
+`a11y_missing_attribute` yang sama. Probe dihapus, `git status` bersih. Setelah diaktifkan: `0 error,
+0 warning` (baris gate: `ok: 0 error, 0 warning`). Sisa O-023 dipersempit ke lint statis generik (`svelte/*` non-a11y, `typescript-eslint`)
+dan dijadwalkan bersama T-012; batasannya (minimumReleaseAge, `typescript-eslint` wajib, job
+`nim-check` tanpa `pnpm install`) sudah dicatat di `docs/tasks/T-057.md` supaya tidak ditemukan ulang.
+
+**Cacat gate yang ditemukan saat verifikasi (D-054).** `./task e2e` merah pada run lokal kedua:
+assertion audit di `flow.spec.ts:238` tanpa `.first()` menemukan 2 baris. Penyebabnya deterministik,
+bukan flake: `platform.audit_log` append-only (terbukti — `DELETE` ditolak trigger
+`audit_log_immutable`), jadi tiap run menambah satu baris beralasan identik; tiga baris yang diperiksa
+punya `audit_id`/`recorded_at`/`request_id` berbeda semua → akumulasi antar-run, bukan dobel-tulis.
+CI tidak pernah melihatnya karena selalu mulai dari DB kosong. Diperbaiki dengan `.first()`
+(konsisten dengan baris 239 di berkas yang sama) — **bukan** pelonggaran: tidak ada assertion yang
+dihapus, tidak ada ambang diturunkan. Bukti: `./task e2e` **dua run berturut-turut** `23 passed`,
+`exit=0` (25,2 s dan 29,9 s), sementara baris audit tetap berakumulasi (5).
+
+Catatan lingkungan jujur: run lokal pertama bahkan tidak sampai ke Playwright karena port 4173
+(patok keras di `apps/web/playwright.config.ts:12`) dipegang `vite preview` dari repo lain; setelah
+proses itu dihentikan atas izin pemilik, barulah cacat D-054 terlihat.
+
