@@ -122,8 +122,10 @@ Invarian tambahan:
    yang membuat kasus jahat ketahuan: persetujuan **memangkas** nilai ACTIVE yang mulai lebih awal
    (`supersedePreviousValues`), jadi nilai lama yang masih terbuka bukan penerus. Status yang
    dihitung: `ACTIVE`, `SUPERSEDED` (masih menjawab tanggal di dalam rentangnya, D-008), `PENDING`
-   (penerus memang belum bisa disetujui lebih dulu — EXCLUDE membuatnya bersinggungan dengan nilai
-   lama yang terbuka); `DRAFT` tidak.
+   (saat nilai terbatas diajukan, penerusnya memang masih PENDING — urutan yang sah: ajukan penerus →
+   setujui nilai terbatas → setujui penerus; menyetujui penerus lebih dulu memangkas nilai lama sampai
+   `effective_from` penerus, sehingga rentang sebelumnya tidak bisa diisi lagi oleh baris baru karena
+   bertabrakan dengan riwayat pangkasan itu, EXCLUDE); `DRAFT` tidak.
 
 Jebakan yang sudah ditemukan (jangan diulang):
 

@@ -214,10 +214,13 @@ proc effectiveToGapProblem*(db: DbConn, key, scopeType, scopeId,
   ## karena nilai lama yang kebetulan masih terbuka).
   ##
   ## Status penerus: `ACTIVE` dan `SUPERSEDED` (keduanya masih menjawab tanggal di dalam rentangnya,
-  ## D-008), plus `PENDING` — penerus memang **tidak bisa** disetujui lebih dulu, sebab nilai lama
-  ## yang masih terbuka akan bersinggungan dengannya (EXCLUDE); urutan yang sah adalah pengajuan
-  ## penerus → setujui nilai terbatas → setujui penerus. `DRAFT` tidak dihitung: tidak ada jalur kode
-  ## yang membuatnya dan draf belum tentu diajukan.
+  ## D-008), plus `PENDING` — saat nilai terbatas diajukan, penerusnya memang **masih** PENDING,
+  ## sebab urutan yang sah adalah pengajuan penerus → setujui nilai terbatas → setujui penerus.
+  ## Penerusnya sendiri *bisa* disetujui lebih dulu (EXCLUDE hanya berlaku untuk ACTIVE/SUPERSEDED dan
+  ## `supersedePreviousValues` berjalan lebih dulu), tetapi urutan itu memangkas nilai lama sampai
+  ## `effective_from` penerus sehingga tidak ada nilai terbatas yang boleh diaktifkan di dalam rentang
+  ## itu lagi. `DRAFT` tidak dihitung: tidak ada jalur kode yang membuatnya dan draf belum tentu
+  ## diajukan.
   if effectiveTo.len == 0:
     return ""
   # Kandidat sendiri tidak bisa "menutupi" tanggal berakhirnya: `param_value_period_chk` mewajibkan

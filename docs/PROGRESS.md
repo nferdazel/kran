@@ -1209,3 +1209,42 @@ strukturalnya dicatat sebagai **O-066** dan tidak dikerjakan diam-diam di sini.
 
 Sisa T-051: **tidak ada** — O-032/O-044, O-043, O-050, O-052 selesai. Yang tertinggal hanya tinjauan
 reviewer (dan O-066).
+
+## T-051 mendarat di produksi + review independen ronde 1 (17 Okt 2026)
+
+**Yang berubah sejak catatan di atas:** seed produksi **sudah dijalankan** (persetujuan pemilik) —
+`dbtools --root . seed` → 2 berkas diterapkan, 10 → **12 definisi / 12 nilai**; `password_min_classes = 3`
+dan `password_history_count = 5` aktif. Kode lalu dipush (`784e8da..9e08370` → `main`, D-044) dan
+deploy terverifikasi di server: `.deployed_rev = 9e08370…`, unit `kran-api` `active`, migrasi
+`0010_platform_password_history` diterapkan (tabel `platform.user_password_history` ada,
+`platform.schema_migration` 10 → 11 baris). CI `main` run **39036108214 hijau** (Nim, DB integrasi,
+Web svelte-check+axe+Playwright, Security/gitleaks). Smoke produksi: `/` 200, `/readyz` 200,
+`/api/v1/params` 401. Jadi kalimat "selama seed belum dijalankan…" di atas sudah tidak berlaku; yang
+tetap terbuka adalah **O-066** (seed pack bukan bagian jalur deploy → parameter berikutnya butuh langkah
+manual lagi).
+
+**Review independen ronde 1 (konteks bersih, diff `56a988b..9e08370`): APPROVE**, tanpa BLOCKER/MAJOR,
+5 MINOR + 2 pertanyaan. Reviewer memverifikasi sendiri hal yang saya minta: test O-050/O-052 **gagal**
+bila logikanya dihapus (bukan test yang selalu lolos).
+
+Perbaikan yang dikerjakan dari temuan itu (bukti di `docs/tasks/T-051.md`):
+
+- `randomPassword` kini **menjamin** kelas karakter yang dituntut (satu wakil per kelas di posisi tetap)
+  — sebelumnya ~0,4% kata sandi panjang 20 keluar tanpa angka saat `minClasses = 3`, dan `bootstrap-admin`
+  gagal tepat saat tidak ada jalan masuk lain. Ada test unit baru di `apps/api/tests/tapi.nim`.
+- Rasional `PENDING`/EXCLUDE yang **salah** dikoreksi di empat tempat (`param_repo.nim`, `MODULE.md`,
+  D-056 butir 3, komentar test `itapi_auth`): menyetujui penerus lebih dulu memang **bisa**; yang benar,
+  urutan itu memangkas nilai lama sampai `effective_from` penerus sehingga nilai terbatas di rentang itu
+  tidak bisa lagi diaktifkan.
+- Dua kode alasan baru (`effective_to_without_successor`, `scope_not_readable`) masuk deskripsi OpenAPI,
+  klien TS di-regenerate, dan dipetakan ke pesan i18n id+en lewat `errors.ts`.
+
+Gate lokal yang dijalankan untuk commit ini: `./task check` hijau, `./task test tapi` (tapi + itapi*,
+tunnel dev DB) `exit=0`, `./task openapi` hijau, `./task i18n` hijau (115 key/locale), paraglide +
+`svelte-check --fail-on-warnings` 0 error/0 warning. Playwright lokal tidak dijalankan (alasan sama
+seperti `ACCEPTED-LIMITS.md`); CI yang jadi sinyalnya.
+
+Ditunda dengan catatan: **O-067** (penerus wajib satu scope — lebih ketat dari kebutuhan) dan **O-068**
+(PBKDF2 kini 1+N+1 derivasi; klaim lama "dua kali per permintaan" tidak lagi utuh). Insiden kecil hari
+ini: kata sandi peran DB produksi terbaca saat operasi seed karena redaksi `sed` gagal — dilaporkan ke
+pemilik dengan saran rotasi; nilainya tidak ditulis di repo.
