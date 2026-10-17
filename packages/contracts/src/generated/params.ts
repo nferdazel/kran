@@ -51,6 +51,42 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "platform.realtime.max_topic_len",
+    "module": "platform",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.realtime.max_topic_len",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 4096
+    }
+  },
+  {
+    "key": "platform.realtime.max_topics",
+    "module": "platform",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.realtime.max_topics",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 1000
+    }
+  },
+  {
     "key": "platform.security.lockout_minutes",
     "module": "platform",
     "valueType": "integer",

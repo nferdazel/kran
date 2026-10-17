@@ -34,7 +34,7 @@ import dbtools/lib
 
 import kernel/[auditcontext, clock, ids]
 import platform/domain/[authz, event, scope]
-import platform/infrastructure/[audit_repo, auth_service, outbox_repo]
+import platform/infrastructure/[audit_repo, auth_service, outbox_repo, realtime_config]
 
 import ./access
 import ./context
@@ -472,10 +472,16 @@ proc main() =
   if pool.isNil:
     discard logger.warn("KRAN_DATABASE_URL kosong: basis data & realtime tidak aktif", [])
   else:
-    app.events = newEventService(realtimePolicy(app), pool)
+    # Batas langganan realtime dari parameter (O-030): dibaca di konteks institusi akar, sama
+    # seperti pembacaan parameter wajib lain. Gagal-cepat bila parameter belum tersemai — lebih
+    # baik menolak start daripada memakai angka yang bukan konfigurasi institusi.
+    let limits = pool.withConn(proc(db: DbConn): SubscriptionLimits =
+      realtimeLimits(db, institutionScope(), businessDateIso(app.clock)))
+    app.events = newEventService(realtimePolicy(app), pool, limits = limits)
     startPump(app.events)
     discard logger.info("realtime hub aktif",
-      [("policy", "sesi cookie + izin per topik (T-012)")])
+      [("policy", "sesi cookie + izin per topik (T-012)"),
+        ("maxTopics", $limits.maxTopics), ("maxTopicLen", $limits.maxTopicLen)])
 
   # Readiness = dependensi bootstrap (DB) + skema (O-019) + realtime (O-029) + lag outbox (O-019):
   # pump yang mati berlarut harus terlihat dari `/readyz`, tetapi penyambungan ulang sekejap tidak
