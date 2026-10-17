@@ -962,3 +962,28 @@ konfigurasi rentang `0891725^..9470a4c` → `leaks found: 1`; dengan konfigurasi
 rahasia palsu yang ditanam tetap terdeteksi (scanner tidak buta). Run CI `39002990740` setelah push:
 ketiga job `success`, termasuk `Security (gitleaks)`.
 
+## T-053 mendarat di produksi (17 Okt 2026)
+
+Push `581dc60` → deploy otomatis: `.deployed_rev=581dc605b60f`, unit `active`, `/healthz` 200,
+`/readyz` `{"database":"ok","migrations":"ok","realtime":"ok"}`, log deploy berakhir
+"Deployment completed successfully". Ini sekaligus **bukti O-030 di produksi**: API start dengan
+batas langganan dari parameter `platform.realtime.*` — tanpa seed parameter yang disetujui pemilik,
+start-nya akan gagal-cepat dan health gate memundurkan deploy.
+
+## T-056 — deploy memasang unit systemd dari repo (17 Okt 2026)
+
+Disetujui pemilik. `sync_units()` + `restore_units()` ditambahkan ke `ops/scripts/deploy-vps.sh`
+(D-050): bandingkan `cmp` → validasi `systemd-analyze verify` sebelum menimpa → cadangkan `.prev` →
+pasang; jalur rollback mengembalikan `.prev` + `daemon-reload` sebelum restart.
+
+Bukti: `bash -n` ✓, `shellcheck -S warning` bersih ✓, dan harness lokal 5/5 — pasang unit baru;
+identik → tanpa aksi; berubah → `.prev` berisi isi lama; rollback → unit lama pulih; unit tidak sah →
+deploy dibatalkan **dan** unit lama tetap utuh. `systemd-analyze verify` diperiksa langsung di server
+(exit 0 untuk kedua unit; peringatan yang muncul berasal dari unit lain). Unit terpasang saat ini
+identik dengan repo → jalur ini no-op di deploy berikutnya.
+
+Sisa jujur: jalur "unit benar-benar berubah" dibuktikan harness, belum oleh deploy nyata.
+
+**Catatan lingkungan:** `shellcheck` kini terpasang di mesin ini (`brew`), jadi gate `./task check`
+tidak lagi turun ke `bash -n` saja — relevan untuk T-050(b).
+
