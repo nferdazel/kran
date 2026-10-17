@@ -8,16 +8,31 @@ job kosong yang selalu hijau adalah "hijau palsu". Per tanggal T-001 hanya ada
 |---|---|
 | `nim-check` | T-001 |
 | `security` (gitleaks) | T-001 |
-| `db-tests` (services: postgres:18) | T-004 |
+| `db-tests` (services: postgres:18) | T-050 — **ada** (17 Okt 2026) |
 | `traceability` (requirement ↔ kontrol/test) | T-005 |
 | `contract` (OpenAPI ↔ implementasi) | T-008 — digabung ke job `web-e2e` (`./task openapi`) dan ke `./task test` (test Nim `tcontract`/`tapi`/`itapi`) |
 | `web` (svelte-check/vitest/i18n) | T-010 — job `web-e2e` |
 | `e2e-a11y` (Playwright + axe ×2 tema ×2 locale) | T-010 — dalam job `web-e2e` |
-| `traceability`, `db-tests` | **belum** dibuat — jangan dianggap ada (lihat O-027) |
+| `traceability` | **belum** dibuat — jangan dianggap ada (lihat O-027) |
 
-Catatan status (2026-10-14): job yang benar-benar ada di `ci.yml` baru `nim-check`, `web-e2e`,
-dan `security`. Baris di atas adalah rencana spec §21.3, bukan kenyataan; selisihnya dicatat
-sebagai item terbuka supaya tidak terlihat seperti sudah lengkap.
+Catatan status (17 Okt 2026, T-050): job yang benar-benar ada di `ci.yml` sekarang `nim-check`,
+`db-tests`, `web-e2e`, dan `security`. Yang masih selisih dari spec §21.3: `traceability`
+(requirement ↔ kontrol/test) — dicatat sebagai item terbuka (`O-027`) supaya tidak terlihat
+seperti sudah lengkap.
+
+## Job `db-tests` (T-050, 17 Okt 2026)
+
+`services: postgres:18` + `KRAN_DATABASE_URL` menunjuk basis data `kran_test`; langkahnya
+`./task dbtools migrate`, `./task dbtools seed --dev`, lalu `./task test` (test integrasi ikut
+berjalan karena URL terisi).
+
+Dua batasan yang mudah menjatuhkannya:
+- Nama basis data **harus** berakhiran `_test`/`_dev`: `dbtools seed --dev` fail-closed (O-062)
+  karena seed dev memuat user contoh dengan kata sandi contoh.
+- URL harus bentuk polos: `parseDatabaseUrl` menolak query string seperti `?sslmode=require`.
+
+`itplatform` menghapus schema `platform` di DB yang ditunjuk, jadi tiap run menyiapkan ulang
+dari nol — bukan mengandalkan keadaan DB yang tersisa.
 
 ## Gate kestabilan: `./task ci-repeat [N]` (T-031)
 

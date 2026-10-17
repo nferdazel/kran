@@ -212,17 +212,19 @@ cmd_shlint() {
   fi
   for f in $files; do bash -n "$f" || die "sintaks bash salah: $f"; done
   if have shellcheck; then
-    # Level `error` memblokir (bug nyata). Temuan level `warning`/`info` dilaporkan saja:
-    # kualitas lint penuh belum diverifikasi di mesin pengembang (shellcheck tidak terpasang),
-    # jadi belum pantas dijadikan gate yang bisa memblokir tanpa bukti.
+    # Level `warning` memblokir sejak T-050(b)/O-014: `shellcheck -S warning ops/scripts/*.sh`
+    # sudah dijalankan di mesin pengembang dan bersih untuk ketujuh skrip (17 Okt 2026). Sebelum
+    # itu hanya level `error` yang memblokir karena kelayakan lint penuh belum pernah diuji.
     for f in $files; do
-      shellcheck -S error "$f" || die "shellcheck (level error): $f"
-      shellcheck -S warning -f gcc "$f" 2>/dev/null | head -10 || true
+      shellcheck -S warning "$f" || die "shellcheck (level warning): $f"
     done
+  elif [ "${KRAN_SKIP_SHELLCHECK:-0}" = "1" ]; then
+    # Pelepasan sadar, bukan senyap: gate ini pernah "hijau" semata karena toolnya tidak ada.
+    info "shellcheck dilewati (KRAN_SKIP_SHELLCHECK=1) — hanya bash -n"
   else
-    info "shellcheck tidak ada di PATH — hanya bash -n"
+    die "shellcheck tidak ada di PATH (pasang: brew install shellcheck / apt-get install shellcheck); set KRAN_SKIP_SHELLCHECK=1 untuk melewatinya dengan sadar"
   fi
-  ok "$(printf '%s\n' "$files" | wc -l | tr -d ' ') skrip lolos bash -n"
+  ok "$(printf '%s\n' "$files" | wc -l | tr -d ' ') skrip lolos bash -n + shellcheck (level warning)"
 }
 
 cmd_check() {
