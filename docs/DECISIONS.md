@@ -1354,3 +1354,41 @@ pengajuan, bukan hanya pembacaan.
 - **HUMAN-REVIEW-REQUIRED (authz)**: keputusan gagal-tertutup PRODUCT/SEGMENT/ROLE dan granularitas
   audit lintas-cabang (tanpa de-duplikasi) diminta ditinjau manusia; keduanya dapat dibalik dalam satu
   commit tanpa menyentuh jalur data lain.
+
+## D-056 — `effectiveTo` tanpa penerus ditolak di dua pintu (O-043)
+
+- **Konteks**: O-043 — baris `ACTIVE` ber-`effective_to` tanpa pengganti meninggalkan celah nilai di
+  masa depan; CHECK/EXCLUDE hanya mencegah periode **tumpang tindih**, bukan periode yang berakhir
+  tanpa penerus. D-046 butir 8 memutuskan: **ditolak saat pengajuan**, dengan opsi penanda eksplisit
+  bahwa nilai itu memang berakhir. Pelaksanaannya butuh satu keputusan teknis: apa itu "penerus".
+- **Keputusan**:
+  1. **Penerus** = baris lain pada (key, scope) yang sama, `status` di `{ACTIVE, SUPERSEDED, PENDING}`,
+     mulai pada atau setelah `effective_from` kandidat, dan **berlaku** pada tanggal `effective_to`
+     kandidat (`effective_from <= effectiveTo` dan `effective_to IS NULL OR > effectiveTo`).
+     `DRAFT` tidak dihitung (tidak ada jalur kode yang membuatnya; draf belum tentu diajukan).
+  2. Batas `effective_from >= effective_from kandidat` disengaja: persetujuan memangkas nilai `ACTIVE`
+     yang mulai lebih awal (`supersedePreviousValues`), jadi nilai lama yang kebetulan masih terbuka
+     **bukan** penerus. Tanpa batas itu, pengajuan ber-`effectiveTo` lolos dan celahnya baru muncul
+     saat pengaktifan — persis yang harus dicegah. Ini kasus pembeda yang dikunci test.
+  3. `PENDING` dihitung sebagai penerus karena penerus **tidak bisa** disetujui lebih dulu: selama
+     nilai lama masih terbuka, ia bersinggungan dengan periode penerus (EXCLUDE). Urutan sahnya:
+     ajukan penerus → setujui nilai terbatas → setujui penerus. Konsekuensinya ada jeda sementara yang
+     tidak terbaca di antara kedua persetujuan itu; itu bagian alur maker-checker, bukan celah
+     permanen (dan tetap terdeteksi startup check O-057).
+  4. Penegakan **di dua pintu**, pola yang sama dengan `sessionPolicyCandidateProblem`: pengajuan
+     (400 `effective_to_without_successor`) dan persetujuan (409 alasan sama), karena penerus bisa
+     hilang di antara keduanya. Vonisnya satu fungsi (`effectiveToGapProblem`) di lapis repo.
+  5. Penanda eksplisit "nilai ini memang berakhir" dari D-046 butir 8 **belum dibuat** (belum ada field
+     permintaannya di kontrak). Karena itu hari ini nilai tidak bisa diakhiri tanpa penerus —
+     dicatat sebagai open item, bukan dianggap selesai.
+- **Jendela sisa (jujur)**: penerus yang ditolak **setelah** nilai terbatas disetujui tetap
+  meninggalkan celah. Hari ini keadaan itu hanya bisa datang dari operasi DB langsung, karena **tidak
+  ada endpoint HTTP untuk menolak pengajuan** (hanya `rejectValue` di repo) — juga dicatat sebagai open
+  item. Backstop-nya startup check O-057.
+- **Alternatif yang ditolak**: (a) memeriksa hanya saat pengajuan — penerus bisa hilang sebelum
+  persetujuan; (b) hanya `ACTIVE` yang dihitung sebagai penerus — buntu urutan (lihat butir 3);
+  (c) trigger DB — butuh pembacaan lintas baris di dalam trigger dan pesan errornya tidak bisa
+  diterjemahkan UI menjadi alasan berkode.
+- **Bukti**: `itparam` ("effectiveTo tanpa penerus", 5 test vonis + kasus pembeda nilai lama terbuka),
+  `itapi_auth` ("akhir periode tanpa penerus lewat HTTP", 3 test: 400 menolak, kontrol 201, 409 saat
+  penerus hilang sebelum persetujuan). Semua `exit=0`; `./task check` hijau.

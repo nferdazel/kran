@@ -809,3 +809,59 @@ suite "wewenang scope parameter lewat HTTP (O-032, O-044/D-047)":
          ORDER BY seq DESC LIMIT 1""", CabangB) == "cross_branch_read"
     finally:
       dbPool.release(db)
+
+suite "akhir periode tanpa penerus lewat HTTP (O-043, D-046 butir 8)":
+  const
+    AkhirKey = "platform.calendar.weekend_days" # allowed_scopes: GLOBAL, BRANCH
+
+  proc ajukan(makerToken, mulai, sampai: string): Reply =
+    var body = %*{"value": [5, 6], "effectiveFrom": mulai,
+      "reason": "uji otomatis: akhir periode"}
+    if sampai.len > 0:
+      body["effectiveTo"] = %sampai
+    postJson(ParamsPath & "/" & AkhirKey & "/changes", body, makerToken)
+
+  test "effectiveTo tanpa penerus ditolak 400":
+    # Nilai GLOBAL yang masih terbuka **tidak** menolong: persetujuan nilai ini justru memangkasnya
+    # di `effectiveFrom`, sehingga tanggal setelah `effectiveTo` tidak punya nilai berlaku.
+    let reply = ajukan(tokenOf(login(MakerUser)), "2026-12-01", "2026-12-31")
+    check reply.code == 400
+    check reply.body["params"]["reason"].getStr() == "effective_to_without_successor"
+    checkProblem(ParamsPath & "/{key}/changes", "POST", "400", reply.body)
+
+  test "penerus yang sudah diajukan membuat nilai terbatas diterima":
+    let makerToken = tokenOf(login(MakerUser))
+    # Urutan yang sah: penerus diajukan lebih dulu. Ia belum bisa disetujui, sebab nilai GLOBAL
+    # yang masih terbuka akan bersinggungan dengannya (EXCLUDE) sampai nilai terbatas diaktifkan.
+    let penerus = ajukan(makerToken, "2027-02-01", "")
+    check penerus.code == 201
+
+    let terbatas = ajukan(makerToken, "2027-01-01", "2027-02-01")
+    check terbatas.code == 201
+    checkJson(ParamsPath & "/{key}/changes", "POST", "201", terbatas.body)
+
+  test "penerus yang hilang sebelum persetujuan ditolak 409":
+    let makerToken = tokenOf(login(MakerUser))
+    let checkerToken = tokenOf(login(CheckerUser))
+
+    let penerus = ajukan(makerToken, "2027-04-01", "")
+    check penerus.code == 201
+    let terbatas = ajukan(makerToken, "2027-03-01", "2027-04-01")
+    check terbatas.code == 201
+    let terbatasId = terbatas.body["paramValueId"].getStr()
+
+    # Kehilangan penerus disimulasikan langsung di DB: belum ada endpoint HTTP untuk menolak
+    # pengajuan (`rejectValue` hanya ada di repo), sedangkan keadaan inilah yang dijaga oleh
+    # pemeriksaan ulang saat persetujuan.
+    let db = dbPool.acquire()
+    try:
+      execScript(db, "UPDATE platform.param_value SET status = 'REJECTED' WHERE param_value_id = '" &
+        penerus.body["paramValueId"].getStr() & "'")
+    finally:
+      dbPool.release(db)
+
+    let approve = postJson("/api/v1/params/changes/" & terbatasId & "/approve",
+      newJObject(), checkerToken)
+    check approve.code == 409
+    check approve.body["params"]["reason"].getStr() == "effective_to_without_successor"
+    checkProblem("/api/v1/params/changes/{paramValueId}/approve", "POST", "409", approve.body)

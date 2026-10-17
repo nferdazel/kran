@@ -35,6 +35,7 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 | Percobaan kata sandi lama di `/auth/password` belum dibatasi/diaudit | Tidak ada perlindungan brute-force pada endpoint itu | belum ada penghitung percobaan di sana | O-050 |
 | Penyaringan daftar audit per cabang belum berefek: setiap baris audit dari jalur HTTP punya `branch_id` NULL | Pembaca dengan izin `platform.audit.read` melihat seluruh jejak; aturan per-cabang baru berlaku bila atribusi cabang per permintaan ada | `auditContextFor` tidak mengisi `branchIds`; diuji di lapis repo (`itplatform`) dengan konteks yang membawa cabang | D-055; O-032 (sisa) |
 | Grant ber-cabang tidak bisa memakai endpoint HTTP mana pun (`authorized` memakai `targetBranch = ""`) | Visibilitas per scope benar dan teruji, tetapi di produksi masih dorman sampai scoping cabang dinyalakan | grant khusus cabang ditolak 403 di semua endpoint; aturan diuji murni (`tauthz`) + di lapis repo (`itparam`) | D-055; O-032 (sisa) |
+| Penerus yang ditolak **setelah** nilai ber-`effective_to` disetujui meninggalkan celah (tidak ada nilai berlaku setelah tanggal itu) | Aplikasi gagal-cepat saat startup (`missingActiveKeys`); pemulihannya dengan mengajukan + menyetujui penerus baru | pemeriksaan ulang saat persetujuan menutup kasus penerus hilang **sebelum** persetujuan (`itapi_auth`: 409); celah yang lolos tetap terdeteksi startup check O-057 | D-056; O-043/O-065 |
 | Regulasi spec §4 bertanda `V?`/`V!` belum terverifikasi | Pasal/angka bisa berubah; yang bergantung padanya belum final | penanda `NEEDS-COMPLIANCE-REVIEW` di kode/seed/docs | O-001 |
 | Belum ada kontrak-fuzzing (`schemathesis`) dan visual regression | Cakupan uji kontrak/visual lebih sempit daripada rencana spec | lihat daftar uji; parity kontrak diuji lewat `tcontract`/`itapi` | O-026, O-022 |
 | Lint statis generik (ESLint) belum ada — bagian a11y **sudah tertutup** | Aturan `svelte/*` non-a11y dan `typescript-eslint` belum menegakkan apa pun; diagnostik a11y kompilator kini memblokir lewat `svelte-check --fail-on-warnings` | diputuskan 17 Okt 2026 (D-053) untuk dikerjakan bersama T-012 | O-023, T-057 |
@@ -54,6 +55,14 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
   gate ulang gagal karena **tunnel DB dev mati** (`Connection refused`; tunnel hidup lagi setelah dibuka
   ulang). Yang dikerjakan: uji stress pool kini mencetak nama+pesan galatnya (tanpa melunakkan hitungan
   yang diuji), bukan menaikkan batas tunggu atau melewatinya.
+- **Gate lokal lewat tunnel sensitif latensi; gate yang otoritatif adalah CI.** 17 Okt 2026 (saat
+  mengerjakan O-043): `./task test` gagal di `itpool` dan `./task e2e` gagal 2 spec, sementara CI hijau
+  pada commit yang berjalan. Terukur saat itu: RTT ke VPS ~150 ms dan tiap pemanggilan `psql` lewat
+  tunnel ~0,8 s (10 pemanggilan ≈ 8,0 s) — sedangkan `itpool` menunggu koneksi maksimum 15 s dengan
+  8 thread / poolSize 3, dan Playwright menunggu 10–30 s. **Kontrol yang dijalankan**: perubahan O-043
+  di-`git stash`, lalu pada pohon bersih `itpool` **gagal dengan pola sama** dan `e2e` malah **lebih
+  buruk** (4 gagal vs 2) → bukan regresi kode. Karena itu bukti gate penuh diambil dari CI: job
+  `db-tests` dan `web-e2e` memakai Postgres/browser di runner sendiri, bukan tunnel.
 - **Test yang dijalankan di luar gate penuh bisa gagal tanpa ada yang salah pada kode.** Dua contoh nyata
   (16 Okt, saat mengerjakan T-035): `itapi_roles` butuh nilai parameter yang disemai `itapi_auth` yang
   berjalan lebih dulu; dan `./task e2e` sendirian menumpuk jejak audit sehingga locator `exact` kena
