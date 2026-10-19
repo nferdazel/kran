@@ -1846,3 +1846,34 @@ repo (`sync_units` no-op); berkas native hanya tersisa sebagai `*.disabled`/`*.r
 Rollback: harness 4/4 (tag `:prev`→`:local`, unit `.prev` pulih, tolak `:prev` hilang, tolak unit
 native, health gate gagal → exit 1); skrip lama pada keadaan `:prev` hilang **exit 0** tanpa
 memanggil `podman tag` (bukti sukses palsu).
+
+---
+
+## D-067 — CIF `party`: pola = parameter, algoritme check digit = kode (T-070)
+
+**Konteks.** Spec §10.5 menyebut "Format nomor (…), check digit" sebagai wajib database-driven,
+sementara T-070 harus menghasilkan nomor CIF. Menaruh **algoritme** check digit di parameter berarti
+menyimpan kode program di DB (tak bisa diuji tipe, rawan salah tulis, dan tidak ada jalur migrasi
+untuk mengubahnya kelak).
+
+**Keputusan.**
+1. Yang **data** (parameter `party.cif.format`, GLOBAL/INSTITUTION, tipe string): pola lengkap —
+   prefix/suffix literal, token `{seq:N}` (satu, wajib, lebar dari data), dan token `{check}` yang
+   hanya boleh di akhir. Rentang panjang pola juga dibatasi schema parameter (`minLength`/
+   `maxLength`), bukan kode.
+2. Yang **kode** (invarian matematis, bukan nilai bisnis): algoritme check digit **Luhn mod 10**
+   (`domain/cif.nim`), sama kelasnya dengan aritmetika `Money`/`Rate` di §1.3 — tidak punya
+   "nilai bisnis" yang bisa disetel operator.
+3. Batas 32 karakter hasil adalah **batas kolom** `party.party.cif`, dinyatakan sekali di kode
+   sebagai konstanta teknis (`# nomagic:ok`) dan sekali di CHECK migrasi; bukan ambang bisnis.
+4. Kegagalan konfigurasi (parameter hilang/salah, nomor urut melewati lebar `{seq:N}`) dijawab
+   **500** dengan pesan non-internal, bukan 400 — permintaannya sah, server yang belum siap
+   (spec §10.6, §13). Diimplementasi lewat tipe `CifConfigError`.
+
+**Konsekuensi.** Kalau kelak perlu algoritme check digit lain (mis. modulus 11) atau Luhn dengan
+varian, itu perubahan kode + ADR baru — **bukan** perubahan nilai parameter. Nomor CIF boleh
+berlubang (sequence, bukan counter tabel) karena transaksi batal tidak boleh memakai ulang nomor.
+
+**Bukti.** `tparty` (Luhn vektor klasik, format dari pola, token salah ditolak), `itparty`
+(sequence naik, CIF unik, audit+outbox satu transaksi), `itapi_party` (jalur HTTP + kontrak; CIF
+diverifikasi dengan fungsi produksi, bukan regex).
