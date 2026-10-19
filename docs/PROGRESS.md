@@ -1347,3 +1347,34 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   `ctl bootstrap-admin` keluar 1 (bukan 3) karena `platform.security.password_min_length` tidak punya
   nilai aktif. Urutan yang benar: `./task dbtools seed --dev` → `itapi_roles`.
 
+## Pasca-M0 — T-046 kerangka MFA TOTP tanpa pengaktifan (O-015 dikerjakan, D-063)
+
+- **Lingkup**: spec §13/§18.2 meminta MFA TOTP, repo belum punya satu baris pun. D-046 butir 9
+  (pemilik): MFA **belum perlu diaktifkan** — jadi T-046 mengerjakan kerangkanya saja (skema,
+  parameter, jalur enrolment/verifikasi teruji), dengan **alur login tidak berubah**.
+- **Yang dibangun**: primitif TOTP RFC 6238 + HOTP RFC 4226 + base32 RFC 4648 di
+  `shared/platform-lib/crypto/totp.nim` (di atas `nimcrypto` yang sudah dipakai → tanpa dependensi
+  baru); migrasi expand-only `0012` (tabel `platform.user_mfa`, PK `user_id`, status
+  `PENDING`/`ACTIVE`, `last_used_step`); 5 parameter GLOBAL `platform.security.mfa.*` (`enabled`
+  default `false`); repo + layanan + 3 rute self-service (`GET /api/v1/auth/mfa`,
+  `POST …/mfa/enrolment`, `POST …/mfa/verify`).
+- **Invarian yang dijaga**: rahasia 160-bit CSPRNG disimpan **terenkripsi** (field crypto T-054,
+  AAD = `user_mfa`) dan tidak pernah bisa dibaca ulang lewat API; `digits`/`periode` per baris
+  (parameter berubah tidak membatalkan rahasia terdaftar); audit `auth.mfa.*` tanpa rahasia/kode/URI;
+  `mfaSettingsOf` terpisah dari `settingsOf` sehingga seed MFA yang belum jalan hanya mematikan rute
+  MFA (403 `mfa_disabled`), bukan login.
+- **Bukti**: `./task test ttotp` → 12 `[OK]` (vektor dari **teks RFC**, bukan angka karangan);
+  `./task test itapi_mfa` → 15 `[OK]` (gerbang 403 default **dan urutannya vs keyring**, rahasia
+  sekali-kembali, ciphertext `kran:enc:v1` di DB, bentuk kode dari parameter tapi dibekukan di baris,
+  kode salah 403 tetap `PENDING`, kode benar → `ACTIVE`, 409 saat sudah aktif, penjagaan anti-replay
+  di lapisan repo, audit bebas rahasia, login tanpa penanda MFA);
+  `./task test itapi_auth` → 43 `[OK]` (tanpa regresi jalur login/sesi/kata sandi);
+  `./task test tcontract`/`tapi` hijau; `./task openapi` hijau; `./task check` exit 0.
+- **Review**: putaran 1 dengan konteks bersih → **APPROVE** tanpa BLOCKER/MAJOR; 4 temuan MINOR
+  ditindaklanjuti (urutan gerbang fitur vs keyring — dokumen tadinya menjanjikan 403 tapi kode
+  menjawab 501; respons ditulis setelah transaksi selesai; `Cache-Control: no-store` pada respons
+  rahasia; batas `mfa.digits` dipersempit ke 6–8 sesuai RFC 4226 §5.3).
+- **Sisa (O-071)**: aktivasi (tantangan kode saat login + `recordUsedStep`), kode pemulihan,
+  pembatasan percobaan verifikasi, UI + kunci i18n-nya, alur hapus/ganti faktor.
+- **HUMAN-REVIEW-REQUIRED** (autentikasi/kripto, AGENTS.md §8).
+

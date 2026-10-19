@@ -26,6 +26,7 @@ saat ini belum ada konsumen lintas-modul, jadi belum ada yang perlu diekspor.
 - `platform.holiday`, `platform.business_date` — kalender & tanggal buku (T-007).
 - `platform.app_user`, `platform.role`, `platform.permission`, `platform.role_permission`,
   `platform.user_role`, `platform.role_conflict`, `platform.session` — identitas, akses, sesi (T-006).
+- `platform.user_mfa` — faktor kedua per akun (TOTP); rahasia **terenkripsi** (T-046).
 
 ## Invarian yang tidak boleh dilanggar
 
@@ -252,6 +253,44 @@ Invarian tambahan:
 
 Catatan: alur auth tinggal di `infrastructure` (butuh DB). Saat port/use case lapisan
 `application` lahir (pola T-016), isi `auth_service.nim` pindah ke `application/`.
+
+## MFA TOTP (T-046, spec §13/§18.2)
+
+| Bagian | Berkas | Catatan |
+|---|---|---|
+| Primitif | `shared/platform-lib/crypto/totp.nim` | base32 RFC 4648, HOTP RFC 4226, TOTP RFC 6238, `otpauthUri`; tanpa I/O dan tanpa waktu implisit |
+| Repo | `infrastructure/mfa_repo.nim` | `mfaOf`, `upsertPending`, `activateMfa`, `recordUsedStep`; ciphertext diperlakukan buram (tidak mendekripsi) |
+| Layanan | `infrastructure/mfa_service.nim` | `mfaSettingsOf` (kebijakan), `mfaStatusOf`, `startEnrolment`, `confirmEnrolment` + audit |
+| Skema | `migrations/0012_platform_user_mfa.sql` | satu baris per akun, status `PENDING`/`ACTIVE`, `last_used_step` |
+| HTTP | `apps/api/src/handlers_mfa.nim` | `GET /api/v1/auth/mfa`, `POST …/mfa/enrolment`, `POST …/mfa/verify` — self-service, tanpa izin baru |
+
+Invarian tambahan:
+
+15. **Rahasia TOTP tidak pernah disimpan sebagai plaintext** dan tidak pernah bisa dibaca ulang lewat
+    API: `encryptField` (AAD = nama tabel `user_mfa`) saat pendaftaran, `decryptField` hanya untuk
+    memverifikasi. Tanpa `KRAN_KEK_FILE` rutenya menolak (501) alih-alih menulis apa pun.
+16. **Digit dan periode tersimpan per baris** dan dipakai saat verifikasi — parameter yang berubah
+    hanya memengaruhi pendaftaran **baru**. `drift_steps` tetap parameter: itu toleransi jam, bukan
+    bentuk rahasia.
+17. **Enrolment tidak mengganti faktor `ACTIVE`** (409 `mfa_already_active`); hanya `PENDING` yang
+    bisa ditimpa. Faktor yang sudah aktif adalah keadaan yang pemulihannya butuh alur sendiri —
+    lihat O-071.
+18. **`mfa.enabled` default `false`**, dan gerbang itu diputuskan **sebelum** apa pun menyentuh
+    kripto/data: selama mati, ketiga rute menjawab 403 `mfa_disabled` dan tidak ada baris yang lahir —
+    termasuk di instalasi tanpa `KRAN_KEK_FILE`, sehingga pemanggil tidak bisa menyimpulkan status
+    konfigurasi enkripsi server dari beda 403/501 (periksa keyring **setelah** gerbang fitur).
+    Parameter MFA dibaca lewat `mfaSettingsOf` saja — jalur login (`settingsOf`) tidak bergantung
+    padanya, jadi seed MFA yang belum dijalankan tidak bisa mematikan login.
+19. **Rahasia, kode, dan URI tidak pernah masuk audit**: hanya `auth.mfa.enrol`,
+    `auth.mfa.verify`, `auth.mfa.verify_failure` beserta bentuk pendaftaran (status, digit, periode).
+20. **Respons ditulis setelah transaksi selesai**, tidak dari dalam closure `withDbTx`: COMMIT yang
+    gagal setelah respons terkirim akan mengirim respons kedua di koneksi yang sama. Respons yang
+    memuat rahasia (201 pendaftaran) memakai `Cache-Control: no-store` — rahasia TOTP adalah
+    kredensial berumur panjang.
+
+Catatan: tugas wajib-ganti-kata-sandi dan MFA keduanya **tidak** memakai `requirePermission` —
+alasan yang sama (pengguna harus bisa menyelesaikan keadaan akunnya sendiri, termasuk saat ia belum
+boleh memakai rute ber-izin).
 
 ## Realtime (T-009, spec §19.1/§19.2)
 
