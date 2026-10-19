@@ -123,6 +123,90 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "platform.security.mfa.digits",
+    "module": "platform",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.security.mfa.digits",
+    "jsonSchema": {
+      "minimum": 6,
+      "maximum": 8
+    }
+  },
+  {
+    "key": "platform.security.mfa.drift_steps",
+    "module": "platform",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.security.mfa.drift_steps",
+    "jsonSchema": {
+      "minimum": 0,
+      "maximum": 5
+    }
+  },
+  {
+    "key": "platform.security.mfa.enabled",
+    "module": "platform",
+    "valueType": "bool",
+    "tsType": "boolean",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.security.mfa.enabled",
+    "jsonSchema": null
+  },
+  {
+    "key": "platform.security.mfa.issuer",
+    "module": "platform",
+    "valueType": "string",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.security.mfa.issuer",
+    "jsonSchema": {
+      "minLength": 1,
+      "maxLength": 64
+    }
+  },
+  {
+    "key": "platform.security.mfa.period_seconds",
+    "module": "platform",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.security.mfa.period_seconds",
+    "jsonSchema": {
+      "minimum": 15,
+      "maximum": 300
+    }
+  },
+  {
     "key": "platform.security.password_history_count",
     "module": "platform",
     "valueType": "integer",

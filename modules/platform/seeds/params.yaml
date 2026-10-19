@@ -93,6 +93,50 @@
   sensitivity: NORMAL
   default_pack: { base: 480 }
 
+# --- MFA TOTP (T-046, spec §13) -------------------------------------------------------------
+# Saklar fitur: **default mati** (D-046 butir 9). Selama `false`, rute MFA menolak dengan
+# `mfa_disabled`; alur login tidak berubah sama sekali. Mengaktifkan MFA adalah keputusan
+# institusi terpisah, bukan efek samping nilai parameter ini.
+- key: platform.security.mfa.enabled
+  type: bool
+  scopes: [GLOBAL, INSTITUTION]
+  sensitivity: NORMAL
+  default_pack: { base: false }
+
+# Nama penerbit yang tampil di aplikasi authenticator (`otpauth://` label & issuer).
+- key: platform.security.mfa.issuer
+  type: string
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minLength: 1, maxLength: 64 }
+  sensitivity: NORMAL
+  default_pack: { base: "KRAN" }
+
+# Bentuk kode disimpan per pendaftaran saat rahasia dibuat, jadi mengubah nilai ini hanya
+# memengaruhi pendaftaran **baru** — rahasia lama tetap diverifikasi dengan bentuk lamanya.
+# Batas 6..8 mengikuti RFC 4226 §5.3: "Implementations MUST extract a 6-digit code at a minimum and
+# possibly 7 and 8-digit code" — di atas 8 tidak ada aplikasi authenticator yang bisa menampilkannya.
+- key: platform.security.mfa.digits
+  type: integer
+  scopes: [GLOBAL]
+  schema: { minimum: 6, maximum: 8 }
+  sensitivity: NORMAL
+  default_pack: { base: 6 }
+
+- key: platform.security.mfa.period_seconds
+  type: integer
+  scopes: [GLOBAL]
+  schema: { minimum: 15, maximum: 300 }
+  sensitivity: NORMAL
+  default_pack: { base: 30 }
+
+# Toleransi jam perangkat vs server, dalam jumlah langkah (0 = hanya langkah saat ini).
+- key: platform.security.mfa.drift_steps
+  type: integer
+  scopes: [GLOBAL]
+  schema: { minimum: 0, maximum: 5 }
+  sensitivity: NORMAL
+  default_pack: { base: 1 }
+
 # --- Batas protokol realtime (O-030, spec §18.2) -------------------------------------------
 # Pertahanan terhadap klien yang mengirim daftar topik raksasa. **Bukan** ambang bisnis (D-021),
 # tetapi disimpan sebagai parameter supaya bisa diubah per institusi tanpa mengubah kode.

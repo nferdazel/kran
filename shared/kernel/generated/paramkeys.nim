@@ -12,6 +12,11 @@ const paramKeys*: seq[string] = @[
   "platform.realtime.max_topics",
   "platform.security.lockout_minutes",
   "platform.security.max_failed_logins",
+  "platform.security.mfa.digits",
+  "platform.security.mfa.drift_steps",
+  "platform.security.mfa.enabled",
+  "platform.security.mfa.issuer",
+  "platform.security.mfa.period_seconds",
   "platform.security.password_history_count",
   "platform.security.password_min_classes",
   "platform.security.password_min_length",
@@ -31,6 +36,16 @@ const P_platform_realtime_max_topics* = ParamKey[int64]("platform.realtime.max_t
 const P_platform_security_lockout_minutes* = ParamKey[int64]("platform.security.lockout_minutes")
 
 const P_platform_security_max_failed_logins* = ParamKey[int64]("platform.security.max_failed_logins")
+
+const P_platform_security_mfa_digits* = ParamKey[int64]("platform.security.mfa.digits")
+
+const P_platform_security_mfa_drift_steps* = ParamKey[int64]("platform.security.mfa.drift_steps")
+
+const P_platform_security_mfa_enabled* = ParamKey[bool]("platform.security.mfa.enabled")
+
+const P_platform_security_mfa_issuer* = ParamKey[string]("platform.security.mfa.issuer")
+
+const P_platform_security_mfa_period_seconds* = ParamKey[int64]("platform.security.mfa.period_seconds")
 
 const P_platform_security_password_history_count* = ParamKey[int64]("platform.security.password_history_count")
 
@@ -109,6 +124,61 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.platform.security.max_failed_logins",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "platform.security.mfa.digits",
+    module: "platform",
+    valueType: pvtInteger,
+    scopes: {pstGlobal},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.platform.security.mfa.digits",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "platform.security.mfa.drift_steps",
+    module: "platform",
+    valueType: pvtInteger,
+    scopes: {pstGlobal},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.platform.security.mfa.drift_steps",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "platform.security.mfa.enabled",
+    module: "platform",
+    valueType: pvtBool,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.platform.security.mfa.enabled",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "platform.security.mfa.issuer",
+    module: "platform",
+    valueType: pvtString,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.platform.security.mfa.issuer",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "platform.security.mfa.period_seconds",
+    module: "platform",
+    valueType: pvtInteger,
+    scopes: {pstGlobal},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.platform.security.mfa.period_seconds",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(

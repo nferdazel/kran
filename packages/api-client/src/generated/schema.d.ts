@@ -180,6 +180,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/mfa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Status MFA akun sendiri
+         * @description Status pendaftaran faktor kedua (TOTP) milik pemanggil: `NONE` (belum pernah mendaftar),
+         *     `PENDING` (rahasia ada, belum dikonfirmasi kode), `ACTIVE` (terkonfirmasi).
+         *
+         *     `featureEnabled` mencerminkan parameter institusi `platform.security.mfa.enabled`, yang
+         *     **default `false`**. Selama `false`, ketiga rute MFA menjawab 403 dengan `params.reason` =
+         *     `mfa_disabled`. **Alur login belum meminta MFA** (D-046 butir 9): faktor terdaftar pun tidak
+         *     mengubah proses masuk pada tahap ini.
+         */
+        get: operations["getMfaStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/mfa/enrolment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mulai pendaftaran TOTP (rahasia dikembalikan sekali)
+         * @description Membuat pendaftaran baru berstatus `PENDING` dan mengembalikan rahasia base32 + URI
+         *     `otpauth://` untuk dimasukkan ke aplikasi authenticator. Rahasia **hanya** ada di respons
+         *     ini; di DB tersimpan sebagai ciphertext (field crypto, AAD `user_mfa`) dan tidak pernah bisa
+         *     dibaca lagi lewat API.
+         *
+         *     Memanggil ulang saat masih `PENDING` mengganti rahasia lama (belum pernah dikonfirmasi).
+         *     Bila faktor sudah `ACTIVE`, rute ini menjawab 409 dengan `params.reason` =
+         *     `mfa_already_active` — mengganti faktor aktif adalah operasi pemulihan yang belum punya
+         *     alurnya (O-071), bukan efek samping pendaftaran.
+         *
+         *     Butuh `KRAN_KEK_FILE` terkonfigurasi; tanpa itu rute menjawab 501 alih-alih menulis
+         *     rahasia tanpa enkripsi.
+         */
+        post: operations["startMfaEnrolment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/mfa/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Konfirmasi kode TOTP untuk mengaktifkan pendaftaran
+         * @description Memverifikasi satu kode terhadap pendaftaran `PENDING` akun pemanggil. Kode benar →
+         *     status menjadi `ACTIVE` dan langkah waktunya dicatat (menolak pemakaian ulang kode yang
+         *     sama). Digit/periode yang dipakai adalah bentuk yang **tercatat saat pendaftaran**, bukan
+         *     nilai parameter saat ini: mengubah parameter tidak membatalkan rahasia yang sudah ada.
+         *
+         *     Kode salah menjawab 403 dengan `params.reason` = `mfa_code_invalid` (bukan 401: sesinya
+         *     sah, yang salah hanya kodenya) dan tetap dicatat di audit
+         *     (`auth.mfa.verify_failure`) tanpa memuat kode.
+         */
+        post: operations["verifyMfaEnrolment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/params": {
         parameters: {
             query?: never;
@@ -348,6 +432,26 @@ export interface components {
         ChangePasswordRequest: {
             oldPassword: string;
             newPassword: string;
+        };
+        MfaStatusResponse: {
+            /** @description Nilai parameter `platform.security.mfa.enabled` (default `false`) — bukan status akun. */
+            featureEnabled: boolean;
+            /** @enum {string} */
+            status: "NONE" | "PENDING" | "ACTIVE";
+        };
+        MfaEnrolmentResponse: {
+            /**
+             * @description Rahasia TOTP base32 (RFC 4648, tanpa padding), 160 bit. **Hanya dikembalikan sekali**;
+             *     setelahnya tidak ada endpoint yang bisa membacanya kembali.
+             */
+            secret: string;
+            /** @description URI `otpauth://totp/...` untuk dimasukkan ke aplikasi authenticator. */
+            otpauthUri: string;
+            digits: number;
+            periodSeconds: number;
+        };
+        MfaVerifyRequest: {
+            code: string;
         };
         LoginResponse: {
             /** Format: uuid */
@@ -760,6 +864,161 @@ export interface operations {
                 };
             };
             405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+        };
+    };
+    getMfaStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Status pendaftaran MFA */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MfaStatusResponse"];
+                };
+            };
+            /** @description Tidak ada sesi sah */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description MFA belum diaktifkan (`params.reason` = `mfa_disabled`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+        };
+    };
+    startMfaEnrolment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pendaftaran dibuat; rahasia hanya dikembalikan di sini */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MfaEnrolmentResponse"];
+                };
+            };
+            /** @description Tidak ada sesi sah */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description MFA belum diaktifkan (`params.reason` = `mfa_disabled`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            405: components["responses"]["Problem"];
+            /** @description MFA sudah aktif untuk akun ini (`params.reason` = `mfa_already_active`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+        };
+    };
+    verifyMfaEnrolment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Kode benar; pendaftaran menjadi ACTIVE */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Badan permintaan tidak lengkap */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Tidak ada sesi sah */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /**
+             * @description MFA belum diaktifkan (`params.reason` = `mfa_disabled`) atau kode tidak cocok
+             *     (`params.reason` = `mfa_code_invalid`)
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            405: components["responses"]["Problem"];
+            /** @description Tidak ada pendaftaran menunggu (`params.reason` = `mfa_no_pending_enrolment`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
         };
