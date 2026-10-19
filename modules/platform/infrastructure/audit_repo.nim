@@ -104,7 +104,7 @@ proc listAudit*(db: DbConn, limit: int, action: string,
        AND (?::int = 1
             OR coalesce(branch_id::text, '') IN
                (SELECT value FROM jsonb_array_elements_text(?::jsonb)))
-     ORDER BY seq DESC
+     ORDER BY audit_log.seq DESC
      LIMIT ?::int""", action, action, allBranches, readableBranches, $limit):
     result.add AuditListItem(
       seq: parseBiggestInt(row[0]),
