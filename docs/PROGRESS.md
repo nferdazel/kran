@@ -1336,6 +1336,12 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   APPROVE** (reviewer memverifikasi sendiri dengan menjalankan `./task openapi`, `itapi_auth`,
   `tauthz`, `check`, `i18n`, dan menelusuri seluruh pemanggil `requirePermission`). Satu MINOR
   bookkeeping putaran 2 (status BACKLOG vs berkas task) diselaraskan ke `VERIFIKASI (menunggu CI)`.
+- **CI + produksi (19 Okt 2026)**: CI run `39186325331` untuk `47af256` — 4/4 job hijau (Nim, DB
+  integrasi Postgres 18, Web svelte-check+axe+Playwright, Security/gitleaks). Deploy webhook selesai:
+  `.deployed_rev` = `47af256`, `kran-api` aktif, `/readyz` 200, `migrate --check` 0/0,
+  `ctl verify-audit` → "rantai audit utuh (2 entri)" exit 0. Tugas ini **tanpa migrasi**, dan
+  produksi tidak punya grant ber-cabang (seed menulis `branch_id = NULL`), jadi perilakunya di
+  produksi inert — yang berubah adalah kemampuan sistem + test.
 - **Catatan temuan sampingan (bukan regresi)**: `itapi_roles` bergantung pada nilai parameter hasil
   seed — kalau dijalankan setelah test yang membuat ulang schema `platform` (mis. `itplatform`),
   `ctl bootstrap-admin` keluar 1 (bukan 3) karena `platform.security.password_min_length` tidak punya
