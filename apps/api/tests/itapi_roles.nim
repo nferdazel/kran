@@ -17,7 +17,8 @@ import "platform-lib/db/config"
 import "platform-lib/db/pool"
 import dbtools/lib
 import kernel/[clock, ids]
-import platform/infrastructure/[audit_repo, auth_repo]
+import platform/domain/scope
+import platform/infrastructure/[audit_repo, auth_repo, auth_service]
 
 import ../src/main
 
@@ -28,6 +29,25 @@ if not databaseUrlSet(envT):
 
 let dbPool = newDbPool(dbConfigFromEnv(envT))
 let db = dbPool.acquire()
+
+# --- prasyarat parameter (T-059) -----------------------------------------------------------------
+# `ctl bootstrap-admin` membaca kebijakan keamanan dari parameter DB (`settingsOf`). Bila suite
+# lain (mis. `itplatform`) baru membuat ulang schema `platform` tanpa menyemai nilai, perintah
+# keluar 1 ("parameter … tidak punya nilai aktif") alih-alih kontrak 3 (ditolak karena admin sudah
+# ada) — test gagal tanpa sebab yang terbaca. Harness menyiapkan prasyaratnya sendiri: migrasi +
+# seed pack `generated/` yang idempoten (`ON CONFLICT`), jadi aman dijalankan walau nilainya sudah
+# ada. Bila tetap tidak bisa, sebut sebabnya dan berhenti — jangan lanjut ke assertion yang
+# membingungkan.
+block:
+  try:
+    discard applyMigrations(db, ".")
+    for rel in seedFiles("."):
+      execScript(db, readFile(rel))
+    # Buktikan prasyaratnya benar-benar terpenuhi lewat pembaca yang sama dengan produksi.
+    discard settingsOf(db, institutionScope(), utcIso(systemClock().now())[0 .. 9])
+  except CatchableError as e:
+    echo "itapi_roles: prasyarat T-059 (parameter keamanan) tidak siap: " & e.msg
+    quit(1)
 
 suite "kran-api: peran CLI (O-013)":
   test "ctl tanpa perintah / help → 0; perintah tak dikenal → 2":
