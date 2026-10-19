@@ -1,0 +1,14 @@
+# Definisi parameter modul `party` (spec §10.3).
+#
+# Nilai di `default_pack` adalah nilai awal pack, BUKAN fallback kode: aplikasi tetap
+# gagal-cepat bila nilai aktif tidak ada (spec §10.6).
+#
+# Format CIF adalah kebijakan institusi (spec §10.5: "format nomor (rekening, anggota, kontrak),
+# check digit"), jadi bentuknya parameter — bukan konstanta di kode. Token yang dipahami:
+# `{seq}` / `{seq:N}` (nomor urut, N = lebar nol) dan `{check}` (digit Luhn, wajib di akhir).
+- key: party.cif.format
+  type: string
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minLength: 5, maxLength: 24 }
+  sensitivity: NORMAL
+  default_pack: { base: "{seq:6}{check}" }

@@ -14,6 +14,7 @@ import ./handlers_audit
 import ./handlers_auth
 import ./handlers_mfa
 import ./handlers_param
+import ./handlers_party
 import ./health
 import ./problem
 
@@ -104,5 +105,15 @@ proc auditRoutes*(): seq[RouteSpec] =
               handler: handleListAudit),
   ]
 
+proc partyRoutes*(): seq[RouteSpec] =
+  ## party: CIF + identitas dasar (T-070).
+  @[
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/parties", operationId: "createParty",
+              handler: handleCreateParty),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/parties/{partyId}",
+              operationId: "getParty", handler: handleGetParty),
+  ]
+
 proc allRoutes*(): seq[RouteSpec] =
-  systemRoutes() & authRoutes() & mfaRoutes() & paramRoutes() & auditRoutes() & eventRoutes()
+  systemRoutes() & authRoutes() & mfaRoutes() & paramRoutes() & auditRoutes() &
+    partyRoutes() & eventRoutes()

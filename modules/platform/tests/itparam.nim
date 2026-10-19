@@ -35,6 +35,7 @@ let talker = dbPool.acquire() # koneksi kedua: untuk NOTIFY
 let sysClock = systemClock()
 
 execScript(db, "DROP SCHEMA IF EXISTS platform CASCADE")
+execScript(db, "DROP SCHEMA IF EXISTS party CASCADE")
 discard applyMigrations(db, repoRoot)
 # Ikut menguji artefak hasil paramgen: seed SQL harus benar-benar valid.
 execScript(db, readFile(repoRoot / "packs/base/generated/param_definitions.sql"))
