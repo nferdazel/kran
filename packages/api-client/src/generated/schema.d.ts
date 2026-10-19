@@ -413,6 +413,99 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/parties/{partyId}/identity-docs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Registrasi dokumen identitas party
+         * @description Nomor dokumen disimpan **terenkripsi** (field-level, AAD = nama tabel) dengan *blind index*
+         *     untuk deteksi duplikat; respons ini hanya memuat dua karakter terakhir. Butuh izin
+         *     `party.kyc.manage` di cabang party. Nomor ganda (lintas party) ditolak 409.
+         *     Bila `KRAN_KEK_FILE` belum diatur, endpoint menjawab 501 (fail-closed) — tidak pernah
+         *     menyimpan plaintext.
+         */
+        post: operations["addIdentityDoc"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/parties/{partyId}/kyc": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Profil KYC party
+         * @description Profil KYC, rating risiko berjalan, riwayat penilaian, dan daftar dokumen identitas
+         *     **tanpa nomor** (hanya bentuk tersamar). Membuka nomor dokumen punya endpoint sendiri
+         *     (`unmask`) yang butuh izin tambahan + alasan + audit. Butuh `party.party.read` di cabang
+         *     party; party atau profil yang tidak ada dijawab 404.
+         */
+        get: operations["getPartyKyc"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/parties/{partyId}/risk-rating": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Penilaian risiko party (riwayat bertambah)
+         * @description Menambah satu baris riwayat penilaian risiko (append-only), memperbarui rating berjalan di
+         *     profil KYC, dan menghitung jadwal re-KYC dari parameter `party.kyc.review_months`. Menulis
+         *     audit `party.risk.change` dan event `party.risk_changed` dalam transaksi yang sama.
+         *     Butuh izin `party.kyc.manage` di cabang party.
+         */
+        post: operations["ratePartyRisk"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/parties/{partyId}/identity-docs/{docId}/unmask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Buka nomor dokumen identitas (unmask)
+         * @description Mengembalikan nomor dokumen dalam bentuk asli. Butuh izin `party.identity_doc.read` di
+         *     cabang party **dan** alasan pada badan permintaan; setiap pembukaan menulis audit
+         *     `party.identity.unmask` (tanpa nomor). Dokumen milik party lain dijawab 404, bukan 403,
+         *     supaya id dokumen tidak menjadi alat menghitung keberadaan data (spec §18.2).
+         */
+        post: operations["unmaskIdentityDoc"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -621,6 +714,90 @@ export interface components {
             /** @description ISO-8601 UTC. */
             createdAt: string;
         };
+        IdentityDocCreate: {
+            /** @description Harus termasuk daftar parameter `party.identity.doc_types`. */
+            docType: string;
+            /**
+             * @description Nomor dokumen apa adanya; server menormalkan (huruf besar, hanya A-Z0-9) sebelum
+             *     dienkripsi. Nilai ini tidak pernah dikembalikan utuh kecuali lewat *unmask*.
+             */
+            number: string;
+            /**
+             * @description Tanggal terbit `YYYY-MM-DD` (opsional; `null`/absen bila tidak dicatat). Bentuk
+             *     tanggal tidak sah dijawab 400, bukan 500.
+             */
+            issuedAt?: string | null;
+            /**
+             * @description Tanggal kedaluwarsa `YYYY-MM-DD` (opsional). Tidak boleh lebih awal dari `issuedAt`
+             *     (dijawab 400).
+             */
+            expiresAt?: string | null;
+        };
+        IdentityDoc: {
+            /** Format: uuid */
+            docId: string;
+            docType: string;
+            /** @description Dua karakter terakhir nomor (bentuk tersamar untuk UI). */
+            numberLast2: string;
+            issuedAt: string | null;
+            expiresAt: string | null;
+            /** @description ISO-8601 UTC. */
+            createdAt: string;
+        };
+        IdentityDocUnmasked: {
+            /** Format: uuid */
+            docId: string;
+            docType: string;
+            /** @description Nomor asli (ternormalisasi). Setiap pembacaan diaudit. */
+            number: string;
+            expiresAt: string | null;
+        };
+        UnmaskRequest: {
+            /** @description Alasan pembukaan data (masuk jejak audit, bukan opsional). */
+            reason: string;
+        };
+        KycProfileView: {
+            /** Format: uuid */
+            partyId: string;
+            /** @enum {string} */
+            status: "PENDING" | "VERIFIED" | "REJECTED";
+            /** @description Tingkat risiko berjalan (anggota `party.kyc.risk_levels`). */
+            riskLevel: string;
+            /** @description ISO-8601 UTC; `null` bila belum pernah dinilai. */
+            riskAssessedAt: string | null;
+            /** @description Tanggal re-KYC berikutnya (`YYYY-MM-DD`). */
+            nextReviewDue: string | null;
+            /** @description Maksimum 50 dokumen pertama menurut `createdAt` (batas teknis respons). */
+            documents: components["schemas"]["IdentityDoc"][];
+            /** @description Maksimum 50 penilaian terbaru (batas teknis respons, bukan aturan bisnis). */
+            riskHistory: components["schemas"]["RiskRatingItem"][];
+        };
+        RiskRatingItem: {
+            /** Format: uuid */
+            ratingId: string;
+            level: string;
+            reason: string;
+            /** @description ISO-8601 UTC. */
+            assessedAt: string;
+            /** Format: uuid */
+            assessedBy: string;
+        };
+        RiskRatingCreate: {
+            /** @description Harus termasuk daftar parameter `party.kyc.risk_levels`. */
+            level: string;
+            reason: string;
+        };
+        RiskRatingView: {
+            /** Format: uuid */
+            ratingId: string;
+            /** Format: uuid */
+            partyId: string;
+            level: string;
+            reason: string;
+            /** @description ISO-8601 UTC. */
+            assessedAt: string;
+            nextReviewDue: string | null;
+        };
     };
     responses: {
         /** @description Error dengan amplop RFC 9457 (`application/problem+json`) */
@@ -633,7 +810,10 @@ export interface components {
             };
         };
     };
-    parameters: never;
+    parameters: {
+        /** @description Id party (UUID). */
+        PartyId: string;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -1290,6 +1470,133 @@ export interface operations {
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+        };
+    };
+    addIdentityDoc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Id party (UUID). */
+                partyId: components["parameters"]["PartyId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IdentityDocCreate"];
+            };
+        };
+        responses: {
+            /** @description Dokumen terdaftar */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityDoc"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+        };
+    };
+    getPartyKyc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Id party (UUID). */
+                partyId: components["parameters"]["PartyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Profil KYC */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KycProfileView"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    ratePartyRisk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Id party (UUID). */
+                partyId: components["parameters"]["PartyId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RiskRatingCreate"];
+            };
+        };
+        responses: {
+            /** @description Penilaian tersimpan */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RiskRatingView"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    unmaskIdentityDoc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Id party (UUID). */
+                partyId: components["parameters"]["PartyId"];
+                docId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnmaskRequest"];
+            };
+        };
+        responses: {
+            /** @description Nomor dokumen */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityDocUnmasked"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
         };
     };
 }

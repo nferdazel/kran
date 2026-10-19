@@ -12,3 +12,59 @@
   schema: { minLength: 5, maxLength: 24 }
   sensitivity: NORMAL
   default_pack: { base: "{seq:6}{check}" }
+
+# --- Identitas & KYC (T-071, spec §9.2/§10.5/§18.2) ---------------------------------------
+# Semua nilai di bawah ini adalah **struktur/kebijakan institusi**, bukan kutipan pasal.
+# Register regulasi §4 belum diverifikasi compliance (O-001), jadi setiap nilai yang menyangkut
+# kewajiban KYC/dokumen bertanda NEEDS-COMPLIANCE-REVIEW — jangan diperlakukan sebagai angka final.
+
+# Jenis dokumen identitas yang diterima. Nomor dokumen selalu disimpan terenkripsi (§18.2);
+# daftar ini hanya menentukan mana yang boleh didaftarkan.
+- key: party.identity.doc_types
+  type: json
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { type: array }
+  sensitivity: NORMAL
+  default_pack: { base: ["KTP", "NPWP", "PASSPORT"] } # NEEDS-COMPLIANCE-REVIEW
+
+# Panjang nomor **tepat** per jenis dokumen (setelah normalisasi: huruf besar, hanya A-Z0-9).
+# Jenis yang tidak terdaftar di sini memakai batas `party.identity.number_max_length`.
+- key: party.identity.doc_lengths
+  type: json
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { type: object }
+  sensitivity: NORMAL
+  default_pack: { base: { "KTP": 16, "NPWP": 15, "PASSPORT": 9 } } # NEEDS-COMPLIANCE-REVIEW
+
+# Batas panjang nomor untuk jenis dokumen yang tidak punya panjang tetap.
+- key: party.identity.number_max_length
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 4, maximum: 64 }
+  sensitivity: NORMAL
+  default_pack: { base: 32 }
+
+# Tingkat risiko yang dikenal sistem (rating manual oleh petugas; urutan = ringan → berat).
+- key: party.kyc.risk_levels
+  type: json
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { type: array }
+  sensitivity: NORMAL
+  default_pack: { base: ["LOW", "MEDIUM", "HIGH"] } # NEEDS-COMPLIANCE-REVIEW
+
+# Tingkat risiko awal saat party dibuat tanpa penilaian.
+- key: party.kyc.default_risk_level
+  type: string
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minLength: 1, maxLength: 32 }
+  sensitivity: NORMAL
+  default_pack: { base: "LOW" } # NEEDS-COMPLIANCE-REVIEW
+
+# Jeda re-KYC (bulan) per tingkat risiko — dipakai menghitung `next_review_due`; eksekusinya
+# menyusul lewat framework `daycloser` (Fase 5), bukan batch buatan modul ini.
+- key: party.kyc.review_months
+  type: json
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { type: object }
+  sensitivity: NORMAL
+  default_pack: { base: { "LOW": 36, "MEDIUM": 12, "HIGH": 6 } } # NEEDS-COMPLIANCE-REVIEW

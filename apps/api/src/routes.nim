@@ -12,6 +12,7 @@ import mummy
 import ./events
 import ./handlers_audit
 import ./handlers_auth
+import ./handlers_kyc
 import ./handlers_mfa
 import ./handlers_param
 import ./handlers_party
@@ -114,6 +115,20 @@ proc partyRoutes*(): seq[RouteSpec] =
               operationId: "getParty", handler: handleGetParty),
   ]
 
+proc kycRoutes*(): seq[RouteSpec] =
+  ## KYC & dokumen identitas (T-071). Nomor dokumen hanya keluar lewat *unmask* (izin + audit).
+  @[
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/parties/{partyId}/identity-docs",
+              operationId: "addIdentityDoc", handler: handleAddIdentityDoc),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/parties/{partyId}/kyc",
+              operationId: "getPartyKyc", handler: handleGetKyc),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/parties/{partyId}/risk-rating",
+              operationId: "ratePartyRisk", handler: handleRiskRating),
+    RouteSpec(httpMethod: hmPost,
+              path: "/api/v1/parties/{partyId}/identity-docs/{docId}/unmask",
+              operationId: "unmaskIdentityDoc", handler: handleUnmask),
+  ]
+
 proc allRoutes*(): seq[RouteSpec] =
   systemRoutes() & authRoutes() & mfaRoutes() & paramRoutes() & auditRoutes() &
-    partyRoutes() & eventRoutes()
+    partyRoutes() & kycRoutes() & eventRoutes()

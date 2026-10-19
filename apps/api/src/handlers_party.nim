@@ -13,8 +13,8 @@ import kernel/[ids, paramkey, result]
 import kernel/generated/paramkeys
 import platform/domain/[audit, event, scope]
 import platform/infrastructure/[audit_repo, auth_service, outbox_repo, param_repo]
-import party/domain/[cif, party]
-import party/infrastructure/party_repo
+import party/domain/[cif, jsonparam, kyc, party]
+import party/infrastructure/[kyc_repo, party_repo]
 
 import ./access
 import ./context
@@ -27,10 +27,10 @@ const
   permissionPartyRead* = "party.party.read"
 
 type
-  ## Kegagalan **konfigurasi/operasional** CIF (parameter hilang/salah, nomor urut tidak muat di
-  ## lebar pola). Ini bukan kesalahan pemanggil: jawabannya 500 dengan pesan yang tidak membocorkan
-  ## internal (spec §10.6, §13) — bukan 400 yang menyalahkan permintaan.
-  CifConfigError = object of ValueError
+  ## Kegagalan **konfigurasi/operasional** party (parameter CIF/KYC hilang atau salah bentuk,
+  ## nomor urut tidak muat di lebar pola). Ini bukan kesalahan pemanggil: jawabannya 500 dengan
+  ## pesan yang tidak membocorkan internal (spec §10.6, §13) — bukan 400.
+  PartyConfigError = object of ValueError
 
 proc partyJson(row: PartyRow): JsonNode =
   %*{
@@ -92,9 +92,9 @@ proc handleCreateParty*(app: AppContext, req: Request) {.gcsafe.} =
             activeValueJson(db, keyString(P_party_cif_format), asOf,
               lookupFor(institutionScope()))
           except ValueError:
-            raise newException(CifConfigError, "parameter party.cif.format tidak terbaca")
+            raise newException(PartyConfigError, "parameter party.cif.format tidak terbaca")
         if patternNode.kind != JString:
-          raise newException(CifConfigError, "parameter party.cif.format bukan string")
+          raise newException(PartyConfigError, "parameter party.cif.format bukan string")
         let pattern = patternNode.getStr()
 
         # Pola divalidasi **sebelum** nomor urut dipakai supaya salah konfigurasi tidak
@@ -102,7 +102,7 @@ proc handleCreateParty*(app: AppContext, req: Request) {.gcsafe.} =
         try:
           discard formatCif(pattern, 1)
         except ValueError:
-          raise newException(CifConfigError, "parameter party.cif.format tidak sah")
+          raise newException(PartyConfigError, "parameter party.cif.format tidak sah")
 
         # Nama sudah divalidasi sebelum transaksi, jadi `ValueError` dari sini hanya bisa datang
         # dari pola/lebar sequence (mis. nomor urut melewati `{seq:N}`) — kondisi operator.
@@ -111,9 +111,38 @@ proc handleCreateParty*(app: AppContext, req: Request) {.gcsafe.} =
             newParty(newId(app.clock), kind.get(), displayName, branchId.value(),
               pattern, nextCifSeq(db))
           except ValueError:
-            raise newException(CifConfigError,
+            raise newException(PartyConfigError,
               "nomor CIF tidak bisa dibentuk dari pola parameter")
-        let createdAt = insertParty(db, party, parseId(principal.get().user.userId).value())
+        let userId = parseId(principal.get().user.userId).value()
+        let createdAt = insertParty(db, party, userId)
+
+        # Profil KYC lahir bersama party (T-071): status PENDING, rating awal + jadwal re-KYC
+        # dari parameter. Parameter rusak = kondisi operator (500), bukan permintaan salah.
+        var riskLevel = ""
+        var reviewMonths = 0
+        try:
+          let levelNode = activeValueJson(db, keyString(P_party_kyc_default_risk_level), asOf,
+            lookupFor(institutionScope()))
+          if levelNode.kind != JString:
+            raise newException(PartyConfigError,
+              "parameter party.kyc.default_risk_level bukan teks")
+          let levels = stringList(activeValueJson(db, keyString(P_party_kyc_risk_levels), asOf,
+            lookupFor(institutionScope())), "party.kyc.risk_levels")
+          # Tingkat awal **wajib** anggota daftar tingkat; kalau tidak, profil KYC akan memuat
+          # nilai yang tidak dikenal validasi lain (salah konfigurasi, bukan permintaan salah).
+          let canonical = parseRiskLevel(levelNode.getStr(), levels)
+          if canonical.isNone:
+            raise newException(PartyConfigError,
+              "party.kyc.default_risk_level tidak termasuk party.kyc.risk_levels")
+          riskLevel = canonical.get()
+          reviewMonths = reviewMonthsOf(activeValueJson(db, keyString(P_party_kyc_review_months),
+            asOf, lookupFor(institutionScope())), riskLevel)
+        except PartyConfigError:
+          raise
+        except ValueError as e:
+          raise newException(PartyConfigError, e.msg)
+        discard insertKycProfile(db, party.partyId, riskLevel, reviewDueDate(asOf, reviewMonths),
+          userId)
         let ctx = auditContextFor(principal.get(), req, app.clock, "buat party", branchRaw)
         discard appendAudit(db, newAuditEntry(
           ctx, "party.create", "party", $party.partyId, app.clock,
@@ -143,9 +172,11 @@ proc handleCreateParty*(app: AppContext, req: Request) {.gcsafe.} =
           "branchId": $party.branchId,
           "createdAt": createdAt,
         })
-  except CifConfigError:
+  except PartyConfigError:
     status = 500
-    problem = "konfigurasi nomor CIF di server tidak sah — hubungi administrator"
+    # Pesan tidak memuat nilai parameter maupun data party; menyebut modulnya supaya operator tahu
+    # ke mana harus melihat (detail teknis ada di jejak server saat start/gate).
+    problem = "konfigurasi parameter modul party tidak sah (CIF/KYC) — hubungi administrator"
   except ValueError as e:
     if status == 0:
       status = 400

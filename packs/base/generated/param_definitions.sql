@@ -19,6 +19,72 @@ ON CONFLICT (key) DO UPDATE SET
 INSERT INTO platform.param_definition
   (key, module, value_type, json_schema, allowed_scopes, description_key,
    regulatory_refs, sensitivity, requires_approval, since_version)
+VALUES ('party.identity.doc_lengths', 'party', 'json', '{"type":"object"}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.party.identity.doc_lengths', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
+ON CONFLICT (key) DO UPDATE SET
+  module = EXCLUDED.module, value_type = EXCLUDED.value_type,
+  json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,
+  description_key = EXCLUDED.description_key, regulatory_refs = EXCLUDED.regulatory_refs,
+  sensitivity = EXCLUDED.sensitivity, requires_approval = EXCLUDED.requires_approval,
+  since_version = EXCLUDED.since_version;
+
+INSERT INTO platform.param_definition
+  (key, module, value_type, json_schema, allowed_scopes, description_key,
+   regulatory_refs, sensitivity, requires_approval, since_version)
+VALUES ('party.identity.doc_types', 'party', 'json', '{"type":"array"}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.party.identity.doc_types', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
+ON CONFLICT (key) DO UPDATE SET
+  module = EXCLUDED.module, value_type = EXCLUDED.value_type,
+  json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,
+  description_key = EXCLUDED.description_key, regulatory_refs = EXCLUDED.regulatory_refs,
+  sensitivity = EXCLUDED.sensitivity, requires_approval = EXCLUDED.requires_approval,
+  since_version = EXCLUDED.since_version;
+
+INSERT INTO platform.param_definition
+  (key, module, value_type, json_schema, allowed_scopes, description_key,
+   regulatory_refs, sensitivity, requires_approval, since_version)
+VALUES ('party.identity.number_max_length', 'party', 'integer', '{"minimum":4,"maximum":64}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.party.identity.number_max_length', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
+ON CONFLICT (key) DO UPDATE SET
+  module = EXCLUDED.module, value_type = EXCLUDED.value_type,
+  json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,
+  description_key = EXCLUDED.description_key, regulatory_refs = EXCLUDED.regulatory_refs,
+  sensitivity = EXCLUDED.sensitivity, requires_approval = EXCLUDED.requires_approval,
+  since_version = EXCLUDED.since_version;
+
+INSERT INTO platform.param_definition
+  (key, module, value_type, json_schema, allowed_scopes, description_key,
+   regulatory_refs, sensitivity, requires_approval, since_version)
+VALUES ('party.kyc.default_risk_level', 'party', 'string', '{"minLength":1,"maxLength":32}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.party.kyc.default_risk_level', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
+ON CONFLICT (key) DO UPDATE SET
+  module = EXCLUDED.module, value_type = EXCLUDED.value_type,
+  json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,
+  description_key = EXCLUDED.description_key, regulatory_refs = EXCLUDED.regulatory_refs,
+  sensitivity = EXCLUDED.sensitivity, requires_approval = EXCLUDED.requires_approval,
+  since_version = EXCLUDED.since_version;
+
+INSERT INTO platform.param_definition
+  (key, module, value_type, json_schema, allowed_scopes, description_key,
+   regulatory_refs, sensitivity, requires_approval, since_version)
+VALUES ('party.kyc.review_months', 'party', 'json', '{"type":"object"}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.party.kyc.review_months', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
+ON CONFLICT (key) DO UPDATE SET
+  module = EXCLUDED.module, value_type = EXCLUDED.value_type,
+  json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,
+  description_key = EXCLUDED.description_key, regulatory_refs = EXCLUDED.regulatory_refs,
+  sensitivity = EXCLUDED.sensitivity, requires_approval = EXCLUDED.requires_approval,
+  since_version = EXCLUDED.since_version;
+
+INSERT INTO platform.param_definition
+  (key, module, value_type, json_schema, allowed_scopes, description_key,
+   regulatory_refs, sensitivity, requires_approval, since_version)
+VALUES ('party.kyc.risk_levels', 'party', 'json', '{"type":"array"}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.party.kyc.risk_levels', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
+ON CONFLICT (key) DO UPDATE SET
+  module = EXCLUDED.module, value_type = EXCLUDED.value_type,
+  json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,
+  description_key = EXCLUDED.description_key, regulatory_refs = EXCLUDED.regulatory_refs,
+  sensitivity = EXCLUDED.sensitivity, requires_approval = EXCLUDED.requires_approval,
+  since_version = EXCLUDED.since_version;
+
+INSERT INTO platform.param_definition
+  (key, module, value_type, json_schema, allowed_scopes, description_key,
+   regulatory_refs, sensitivity, requires_approval, since_version)
 VALUES ('platform.calendar.fiscal_year_start_month', 'platform', 'integer', '{"minimum":1,"maximum":12}'::jsonb, ARRAY['GLOBAL'], 'param.platform.calendar.fiscal_year_start_month', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
 ON CONFLICT (key) DO UPDATE SET
   module = EXCLUDED.module, value_type = EXCLUDED.value_type,
