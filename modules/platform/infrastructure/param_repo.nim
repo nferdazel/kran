@@ -97,14 +97,25 @@ proc committedFromDates*(db: DbConn, key, sinceIso: string): seq[string] =
      ORDER BY 1""", key, sinceIso):
     result.add row[0]
 
+proc activeValueOpt*(db: DbConn, key, asOf: string, lookup: ScopeValueLookup): Option[JsonNode] =
+  ## Sama seperti `activeValueJson`, tetapi `none` bila belum ada nilai berlaku — **tanpa** jatuh ke
+  ## level scope lain (spec §10.6 tetap berlaku: levelnya disebut pemanggil).
+  ##
+  ## Dipakai saklar keamanan yang harus fail-closed ke posisi **mati** saat kebijakannya belum
+  ## tersemai (mis. `mfa.enabled` di instalasi baru), bukan sebagai jalan pintas menghindari galat.
+  let picked = resolveCandidate(candidatesOf(db, key, asOf), lookup)
+  if picked.isNone:
+    return none(JsonNode)
+  some(picked.get().value)
+
 proc activeValueJson*(db: DbConn, key, asOf: string, lookup: ScopeValueLookup): JsonNode =
   ## Nilai aktif paling spesifik untuk `key` pada `asOf`. Raise `ValueError` bila tidak ada —
   ## satu-satunya tempat aturan "tanpa fallback diam-diam" (spec §10.6) diterapkan.
-  let picked = resolveCandidate(candidatesOf(db, key, asOf), lookup)
+  let picked = db.activeValueOpt(key, asOf, lookup)
   if picked.isNone:
     raise newException(ValueError,
       "parameter " & key & " tidak punya nilai aktif pada " & asOf)
-  picked.get().value
+  picked.get()
 
 proc activeParamInt*(db: DbConn, key, asOf: string, lookup: ScopeValueLookup): int =
   let value = db.activeValueJson(key, asOf, lookup)
