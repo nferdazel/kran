@@ -1,5 +1,10 @@
 # kran-worker.service — unit systemd USER untuk worker KRAN (--role=worker).
 #
+# ⚠️ TERSUSPERSEDED (2026-10-19): worker kini container lewat quadlet
+# `ops/systemd/kran-worker.container`. Unit ini tidak dipasang lagi oleh deploy
+# (sync_units hanya memasang *.container); isinya dipertahankan sebagai rujukan
+# dan riwayat keputusan.
+#
 # Spec: §21.4 (#10), §21.5 (Unit), §9 (outbox/worker), §22.
 #
 # Binary & env sama dengan kran-api (satu binary multi-role, §26.1 #5); bedanya

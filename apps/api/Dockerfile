@@ -1,8 +1,10 @@
 # syntax=docker/dockerfile:1
 #
-# Image build kran-api (spec §21.4 #7). `deploy-vps.sh` tidak menjalankan image ini sebagai
-# kontainer: ia `podman create` lalu `podman cp /usr/local/bin/kran-api` untuk mengambil biner
-# native-nya, lalu menjalankannya sebagai unit systemd.
+# Image build kran-api (spec §21.4 #7). Image ini DIJALANKAN sebagai container oleh quadlet
+# `ops/systemd/kran-api.container` (dan `kran-worker.container`). Selain itu `deploy-vps.sh` masih
+# `podman create` + `podman cp /usr/local/bin/kran-api` untuk mengambil biner native yang dipakai
+# gate-nya sendiri (FREEZE GATE, MIGRATION GATE) — gate itu berjalan di host, sebelum layanan
+# di-restart.
 #
 # KONTEKS BUILD = **ROOT repo**, bukan `apps/api/`. Beda dari pola Skyward (modul Go-nya mandiri di
 # `apps/api`), monorepo Nim ini menyebar di root: `shared/`, `modules/`, `apps/`, `tools/`. Karena itu

@@ -1,0 +1,53 @@
+# Quadlet unit — kran-api (Nim, --role=api), rootless podman + systemd user.
+# Pasang di VPS: ~/.config/containers/systemd/kran-api.container
+#   systemctl --user daemon-reload && systemctl --user restart kran-api
+#
+# Sebelum ini API dijalankan dari biner native hasil ekstraksi image
+# (`podman create` + `podman cp` ke /srv/qouver/apps/kran/bin) plus lib runtime
+# yang di-vendor ke $APP_DIR/lib. Biner + lib itu kini hanya dipakai oleh gate
+# di skrip deploy (FREEZE GATE, MIGRATION GATE) yang memang berjalan di host;
+# layanan API-nya sendiri jalan dari image.
+#
+# Catatan yang sengaja eksplisit:
+#   - Image-nya sudah memuat libpq5 + libpcre3 (runtime debian:bookworm-slim),
+#     jadi LD_LIBRARY_PATH milik unit lama tidak diperlukan lagi di sini.
+#   - `--root=/monorepo` + mount di bawah: yang dibaca runtime hanya
+#     `modules/<mod>/migrations` untuk probe `/readyz`. Karena itu yang di-mount
+#     hanya `modules/` (61 berkas) dan bukan seluruh monorepo (18rb berkas): mount
+#     `:z` me-relabel isinya, dan relabel 399 MB di setiap restart container itu
+#     ongkos yang tidak perlu. Tanpa mount ini probe melaporkan "akar migrasi
+#     tidak tersedia; skema tidak diverifikasi" — tetap 200, jadi gagalnya senyap.
+#     Label host `var_t` ditolak untuk `container_t` (terbukti saat cutover),
+#     itulah kenapa `:z` bukan opsional.
+#   - `--address=0.0.0.0`: port rootless di-forward ke IP bridge (10.89.0.x),
+#     jadi bind loopback membuat container hidup tapi tak terjangkau.
+#   - KRAN_KEK_FILE belum diisi di env prod. Kalau kelak diaktifkan, berkas KEK
+#     (mode 600 milik sachiel) perlu di-mount, dan unit ini butuh
+#     `UserNS=keep-id:uid=10001,gid=10001` seperti skyward-api.
+[Unit]
+Description=KRAN API (Nim, --role=api)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/kran-api:local
+ContainerName=kran-api
+Network=qouver
+PublishPort=127.0.0.1:8095:8095
+Pull=never
+AutoUpdate=local
+EnvironmentFile=/srv/qouver/apps/kran/env/kran-prod.env
+Volume=/srv/qouver/apps/kran/monorepo/modules:/monorepo/modules:z,ro
+Exec=--role=api --port=8095 --address=0.0.0.0 --root=/monorepo
+NoNewPrivileges=true
+DropCapability=ALL
+
+[Service]
+Restart=always
+# Argumen/konfigurasi tidak sah bersifat permanen: restart hanya mengulang galat
+# yang sama (paritas dengan unit native sebelumnya, termasuk KEK hilang/rusak).
+RestartPreventExitStatus=2
+RestartSec=3
+
+[Install]
+WantedBy=default.target
