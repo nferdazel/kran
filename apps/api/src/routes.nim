@@ -12,6 +12,7 @@ import mummy
 import ./events
 import ./handlers_audit
 import ./handlers_auth
+import ./handlers_mfa
 import ./handlers_param
 import ./health
 import ./problem
@@ -74,6 +75,18 @@ proc authRoutes*(): seq[RouteSpec] =
               handler: handleChangePassword),
   ]
 
+proc mfaRoutes*(): seq[RouteSpec] =
+  ## MFA TOTP self-service (T-046, spec §13). Semua butuh sesi; saklar fitur
+  ## `platform.security.mfa.enabled` (default mati) diputuskan di handler, bukan di tabel rute.
+  @[
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/auth/mfa", operationId: "getMfaStatus",
+              handler: handleMfaStatus),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/auth/mfa/enrolment",
+              operationId: "startMfaEnrolment", handler: handleMfaEnrolment),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/auth/mfa/verify",
+              operationId: "verifyMfaEnrolment", handler: handleMfaVerify),
+  ]
+
 proc paramRoutes*(): seq[RouteSpec] =
   ## Parameter: daftar, pengajuan (maker), persetujuan (checker) — spec §10.2/§10.7.
   @[
@@ -92,4 +105,4 @@ proc auditRoutes*(): seq[RouteSpec] =
   ]
 
 proc allRoutes*(): seq[RouteSpec] =
-  systemRoutes() & authRoutes() & paramRoutes() & auditRoutes() & eventRoutes()
+  systemRoutes() & authRoutes() & mfaRoutes() & paramRoutes() & auditRoutes() & eventRoutes()

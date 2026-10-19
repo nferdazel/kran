@@ -149,8 +149,11 @@ proc sessionPolicyCandidateProblem*(db: DbConn, key: string, candidate: JsonNode
       return "pada " & date & ": " & e.msg
   ""
 
-proc businessDateFor(db: DbConn, scope: ScopeRef, nowIso: string): string =
+proc businessDateFor*(db: DbConn, scope: ScopeRef, nowIso: string): string =
   ## Tanggal buku institusi bila sudah ada; kalau belum, tanggal UTC hari ini.
+  ##
+  ## Diekspor supaya penulisan audit di jalur lain (mis. MFA, T-046) memakai definisi yang sama —
+  ## bukan salinan yang bisa menyimpang.
   let row = businessDateOf(db, scope)
   if row.isSome:
     row.get().currentDate

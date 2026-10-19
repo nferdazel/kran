@@ -336,6 +336,157 @@ paths:
         "501":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/auth/mfa:
+    get:
+      operationId: getMfaStatus
+      tags: [auth]
+      summary: Status MFA akun sendiri
+      description: |
+        Status pendaftaran faktor kedua (TOTP) milik pemanggil: `NONE` (belum pernah mendaftar),
+        `PENDING` (rahasia ada, belum dikonfirmasi kode), `ACTIVE` (terkonfirmasi).
+
+        `featureEnabled` mencerminkan parameter institusi `platform.security.mfa.enabled`, yang
+        **default `false`**. Selama `false`, ketiga rute MFA menjawab 403 dengan `params.reason` =
+        `mfa_disabled`. **Alur login belum meminta MFA** (D-046 butir 9): faktor terdaftar pun tidak
+        mengubah proses masuk pada tahap ini.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Status pendaftaran MFA
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MfaStatusResponse"
+        "401":
+          description: Tidak ada sesi sah
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: MFA belum diaktifkan (`params.reason` = `mfa_disabled`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/auth/mfa/enrolment:
+    post:
+      operationId: startMfaEnrolment
+      tags: [auth]
+      summary: Mulai pendaftaran TOTP (rahasia dikembalikan sekali)
+      description: |
+        Membuat pendaftaran baru berstatus `PENDING` dan mengembalikan rahasia base32 + URI
+        `otpauth://` untuk dimasukkan ke aplikasi authenticator. Rahasia **hanya** ada di respons
+        ini; di DB tersimpan sebagai ciphertext (field crypto, AAD `user_mfa`) dan tidak pernah bisa
+        dibaca lagi lewat API.
+
+        Memanggil ulang saat masih `PENDING` mengganti rahasia lama (belum pernah dikonfirmasi).
+        Bila faktor sudah `ACTIVE`, rute ini menjawab 409 dengan `params.reason` =
+        `mfa_already_active` — mengganti faktor aktif adalah operasi pemulihan yang belum punya
+        alurnya (O-071), bukan efek samping pendaftaran.
+
+        Butuh `KRAN_KEK_FILE` terkonfigurasi; tanpa itu rute menjawab 501 alih-alih menulis
+        rahasia tanpa enkripsi.
+      security:
+        - sessionCookie: []
+      responses:
+        "201":
+          description: Pendaftaran dibuat; rahasia hanya dikembalikan di sini
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MfaEnrolmentResponse"
+        "401":
+          description: Tidak ada sesi sah
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: MFA belum diaktifkan (`params.reason` = `mfa_disabled`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: MFA sudah aktif untuk akun ini (`params.reason` = `mfa_already_active`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/auth/mfa/verify:
+    post:
+      operationId: verifyMfaEnrolment
+      tags: [auth]
+      summary: Konfirmasi kode TOTP untuk mengaktifkan pendaftaran
+      description: |
+        Memverifikasi satu kode terhadap pendaftaran `PENDING` akun pemanggil. Kode benar →
+        status menjadi `ACTIVE` dan langkah waktunya dicatat (menolak pemakaian ulang kode yang
+        sama). Digit/periode yang dipakai adalah bentuk yang **tercatat saat pendaftaran**, bukan
+        nilai parameter saat ini: mengubah parameter tidak membatalkan rahasia yang sudah ada.
+
+        Kode salah menjawab 403 dengan `params.reason` = `mfa_code_invalid` (bukan 401: sesinya
+        sah, yang salah hanya kodenya) dan tetap dicatat di audit
+        (`auth.mfa.verify_failure`) tanpa memuat kode.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaVerifyRequest"
+      responses:
+        "204":
+          description: Kode benar; pendaftaran menjadi ACTIVE
+        "400":
+          description: Badan permintaan tidak lengkap
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Tidak ada sesi sah
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: |
+            MFA belum diaktifkan (`params.reason` = `mfa_disabled`) atau kode tidak cocok
+            (`params.reason` = `mfa_code_invalid`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Tidak ada pendaftaran menunggu (`params.reason` = `mfa_no_pending_enrolment`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
   /api/v1/params:
     get:
       operationId: listParams
@@ -662,6 +813,51 @@ components:
           minLength: 1
           writeOnly: true
         newPassword:
+          type: string
+          minLength: 1
+          writeOnly: true
+
+    MfaStatusResponse:
+      type: object
+      additionalProperties: false
+      required: [featureEnabled, status]
+      properties:
+        featureEnabled:
+          type: boolean
+          description: |
+            Nilai parameter `platform.security.mfa.enabled` (default `false`) — bukan status akun.
+        status:
+          type: string
+          enum: [NONE, PENDING, ACTIVE]
+
+    MfaEnrolmentResponse:
+      type: object
+      additionalProperties: false
+      required: [secret, otpauthUri, digits, periodSeconds]
+      properties:
+        secret:
+          type: string
+          description: |
+            Rahasia TOTP base32 (RFC 4648, tanpa padding), 160 bit. **Hanya dikembalikan sekali**;
+            setelahnya tidak ada endpoint yang bisa membacanya kembali.
+        otpauthUri:
+          type: string
+          description: URI `otpauth://totp/...` untuk dimasukkan ke aplikasi authenticator.
+        digits:
+          type: integer
+          minimum: 6
+          maximum: 10
+        periodSeconds:
+          type: integer
+          minimum: 15
+          maximum: 300
+
+    MfaVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
           type: string
           minLength: 1
           writeOnly: true
