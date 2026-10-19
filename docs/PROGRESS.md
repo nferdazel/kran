@@ -1388,3 +1388,70 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   Permintaan ber-sesi ke rute MFA di produksi tidak dilakukan (butuh kata sandi admin produksi).
 - **HUMAN-REVIEW-REQUIRED** (autentikasi/kripto, AGENTS.md §8).
 
+
+## T-059 — harness `itapi_roles` menyiapkan prasyarat parameternya sendiri — DONE (19 Okt 2026)
+
+- **Lingkup**: temuan sampingan T-058. `itapi_roles` bergantung pada nilai parameter hasil
+  `dbtools seed --dev`; setelah suite yang membuat ulang schema `platform` (mis. `itplatform`),
+  `ctl bootstrap-admin` keluar 1 (parameter tidak punya nilai aktif) alih-alih 3 → test gagal tanpa
+  sebab yang terbaca.
+- **Perubahan** (`apps/api/tests/itapi_roles.nim`): blok prasyarat idempoten sebelum `suite` —
+  `applyMigrations(db, ".")` + `seedFiles(".")` (pack `generated/`, semua `ON CONFLICT`) + verifikasi
+  lewat `settingsOf(db, institutionScope(), …)` (pembaca yang sama dengan produksi). Bila prasyarat
+  tidak siap: cetak `itapi_roles: prasyarat T-059 (parameter keamanan) tidak siap: <pesan>` lalu
+  `quit(1)`. Tidak ada assertion yang dilemahkan; tidak ada jalur produksi yang diubah.
+- **Bukti** (orkestrator, DB dev): tanpa patch `./task test itplatform` → `./task test itapi_roles`
+  **GAGAL**; dengan patch urutan yang sama → **exit 0**, **13 `[OK]`**, 0 `[FAILED]`, tanpa seed
+  manual. `./task fmt` + `./task check` exit 0.
+- **Batas jujur**: jalur "prasyarat tidak bisa disiapkan" tidak dipicu sengaja (butuh merusak DB);
+  pesannya dibaca dari kode. Verifikasi DB hanya pada urutan terburuk (`itplatform` → `itapi_roles`).
+
+## T-044 — flake e2e: diagnosis 19 Okt 2026 (task tetap READY untuk magnitudo)
+
+- **Kelas "menggantung" terbukti** (H1): jalur DB tidak punya batas waktu klien —
+  `shared/platform-lib/db/pool.nim:54` memakai `pqsetdbLogin` (tanpa `connect_timeout`);
+  `statement_timeout` berlaku server-side; `pingConn` (`pool.nim:118`) berjalan **sebelum**
+  pemeriksaan deadline `acquire` (`:135`). Eksperimen: listener TCP accept-tapi-diam di 55432 →
+  `ctl verify-audit` menggantung > 20 s tanpa keluaran; port tertutup → selesai 0,52 s. Klaim ini
+  diperiksa ulang langsung di tree utama (bukan hanya laporan agen).
+- **Artefak run gagal 17 Okt** (4/4 test login/DB, tanpa pesan galat DB) cocok dengan pola "tidak
+  pernah selesai", termasuk `1 permintaan masih berjalan setelah 10.0 detik (O-047)`.
+- **Magnitudo 9–12 menit belum tertutup**: hipotesis berperingkat (a) mesin suspend — `pmset`:
+  100 `Entering Sleep`/16 Okt + `Clamshell Sleep`; (b) runner Playwright menunggu worker
+  (5 menit/worker). Tidak ada klaim yang dinaikkan jadi fakta.
+- **Tindak lanjut** (dipisah): T-061 (timeout koneksi DB), T-062 (proses bocor `shutdown.spec.ts`),
+  T-063 (`globalTimeout` + eksperimen `caffeinate`).
+- **Batas jujur**: tunnel DB mati saat diagnosis → `./task e2e` penuh tidak dijalankan.
+
+## T-060 — alat ukur + anggaran biaya PBKDF2 ganti kata sandi (O-068) — DONE (19 Okt 2026)
+
+- **Lingkup**: O-068 (temuan review T-051 ronde 1). Klaim lama "PBKDF2 dua kali per permintaan"
+  (`docs/tasks/T-027.md`) dan model "batas 5 s" (`docs/ci-jobs.md`) tidak lagi menggambarkan biaya
+  setelah O-052 menambah verifikasi N hash riwayat. Belum ada alat ukur maupun anggaran.
+- **Model yang benar**: `changePassword` menjalankan **N+3** derivasi PBKDF2 — verifikasi kata sandi
+  lama (1) + kata sandi baru terhadap hash berlaku (1) + N hash riwayat + hash kata sandi baru (1);
+  N = `platform.security.password_history_count` (basis 5) → **8 derivasi** terburuk.
+  Formula O-068 (1+N+1) kurang satu (langkah "kata sandi baru vs hash berlaku" tidak dihitung).
+- **Yang dibangun**: `tools/bench-password/main.nim` + `./task bench-password` (dibangun
+  `-d:release`, fungsi kripto nyata `password_hasher`, tanpa dependensi baru; `--iterations`,
+  `--history-count`, `--reps`). Tanpa DB — jalur kode nyata untuk komponen CPU yang berlipat
+  bersama N.
+- **Anggaran**: `< 2 s` wall untuk ganti kata sandi terburuk (N=5) pada biner release di dev/CI
+  2 vCPU. Dasar: ukur Apple M2 release → N=0 239 ms, N=5 **637 ms** (reps=5), ≈80 ms/derivasi
+  (build debug ≈1,7 s/derivasi, ~20x lebih lambat — biner e2e memakai debug). Tidak dipasang
+  sebagai gerbang latency CI (terlalu dekat batas → flaky). Rincian + batas jujur: `docs/tasks/T-060.md`.
+- **Koreksi dokumen**: `docs/ci-jobs.md` (aturan isolasi test), `docs/tasks/T-027.md` (catatan
+  kegagalan e2e pertama), komentar `apps/web/tests/e2e/password.spec.ts`, `docs/OPEN_ITEMS.md`
+  (O-068), `docs/BACKLOG.md` (baris T-060).
+- **Bukti sejauh ini**: `./task fmt` + `./task check` hijau; `./task bench-password --iterations
+  600000 --reps 5` (release) → tabel di `docs/tasks/T-060.md`.
+- **Ukur orkestrator** (19 Okt 2026, mesin dev, `./task bench-password --iterations 600000
+  --reps 5`): release `N=0` **250 ms**, `N=5` **671 ms** → anggaran `< 2 s` lolos; biner debug yang
+  dipakai e2e `N=0` **5,05 s**, `N=5` **13,61 s** (≈20x) → tenggang e2e tidak diubah. `./task check`
+  exit 0.
+- **Review independen: APPROVE** (tanpa BLOCKER/MAJOR; 4 MINOR diperbaiki): baris T-061…T-063
+  dipindah ke tabel BACKLOG 6 kolom; `bench-password` kini keluar **2** untuk argumen non-numerik
+  (parsing di `benchlib.nim` + `tests/tbench.nim` 7 `[OK]`); angka "1+N+1" di `docs/tasks/T-051.md`
+  dikoreksi; rujukan baris H3 di T-044 diperbaiki. `./task check` + `./task test tbench` exit 0.
+- **HUMAN-REVIEW-REQUIRED** hanya bila parameter kripto harus diubah untuk memenuhi anggaran
+  (tidak terjadi; AGENTS.md §8).
