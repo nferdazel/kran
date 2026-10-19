@@ -1455,3 +1455,55 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   dikoreksi; rujukan baris H3 di T-044 diperbaiki. `./task check` + `./task test tbench` exit 0.
 - **HUMAN-REVIEW-REQUIRED** hanya bila parameter kripto harus diubah untuk memenuhi anggaran
   (tidak terjadi; AGENTS.md §8).
+
+## T-061 — jalur DB punya batas waktu klien (T-044 H1) — DONE (19 Okt 2026)
+
+- **Masalah**: `pqsetdbLogin` tidak menerima `connect_timeout`; peer yang menerima TCP lalu diam
+  membuat `acquire`/`dbtools`/`/readyz` menunggu **tanpa batas** (`statement_timeout` server-side
+  tidak menolong: koneksi belum hidup).
+- **Perubahan** (D-064): `pqconnectdb(connInfo)` menggantikan `pqsetdbLogin`; `connect_timeout` dari
+  `KRAN_DB_CONNECT_TIMEOUT_MS` (default 5000, minimum libpq 2 s — `0` = tanpa batas, karena itu
+  ditolak parser), nilai conninfo di-*quote* (escape `\` dan `'`), plus keepalive 5/5/2 supaya
+  koneksi yang **sudah** hidup lalu membeku (tunnel mati tanpa RST) terdeteksi kernel ±15 s.
+- **Bukti**: `./task test tdbconnect` 6 `[OK]` — listener black-hole (listen tanpa `accept`) gagal
+  dalam **2,01 s** dengan `PoolError` "gagal menyambung" (tanpa fix: menggantung), kontrol port
+  tertutup tetap gagal cepat; `./task test tconfig` hijau; `./task test itpool` 10 `[OK]`;
+  `./task test itapi_auth` 43 `[OK]`; `./task check` exit 0.
+- **Sisa jujur**: deadline **per-query** belum ada — koneksi yang membeku di tengah kueri dibatasi
+  keepalive (±15 s), bukan batas milidetik. Itu butuh libpq nonblocking + `PQsocket`; dicatat di
+  D-064, tidak diklaim selesai.
+- **HUMAN-REVIEW-REQUIRED** (jalur koneksi produksi, AGENTS.md §8).
+
+## T-062 — `startApi()` tidak lagi membocorkan proses `kran-api` — DONE (19 Okt 2026)
+
+- **Masalah**: `shutdown.spec.ts` memanggil `startApi()` **sebelum** `try`; bila readiness gagal
+  (API tidak siap dalam 20 s), `finally` tidak pernah terpasang dan proses `kran-api` tetap hidup di
+  port bebas — persis kelas "sisa proses" yang membuat T-044 sulit dibaca.
+- **Perubahan**: helper membunuh anaknya sendiri (`SIGKILL` + tunggu `exit`) sebelum melempar galat
+  yang membawa `pid`; opsi `healthPath`/`readyTimeoutMs` ditambahkan (default sama).
+- **Bukti**: test baru "kesiapan gagal → proses anak tidak ditinggalkan" (rute 404, batas 1,5 s,
+  memeriksa `process.kill(pid, 0)` gagal). `playwright test shutdown.spec.ts` → **3 passed** (9,1 s);
+  `pgrep -fl kran-api` kosong setelah run; `tsc --noEmit` tanpa galat di berkas ini (satu galat
+  lama `src/routes/app/+layout.ts` bukan dari perubahan ini).
+
+## T-064 — daftar audit terurut leksikografis (temuan e2e, 19 Okt 2026)
+
+- **Gejala**: e2e `flow.spec.ts` merah pada assertion "alasan pengajuan terlihat di Jejak audit"
+  walau barisnya ada di DB. `GET /api/v1/audit?limit=20` mengembalikan `99,98,…,90,9,89,…,81`
+  padahal `max(seq)=231`.
+- **Akar**: `ORDER BY seq DESC` di `listAudit` menunjuk kolom **keluaran** `seq::text` (PostgreSQL
+  memprioritaskan nama keluaran), jadi urutannya leksikografis — `'99' > '100'`. Bug laten; baru
+  muncul setelah ledger dev melewati 100 baris.
+- **Perbaikan**: `ORDER BY audit_log.seq DESC` (kolom tabel). Tanpa perubahan kontrak.
+- **Bukti**: test baru `itplatform` "urutan daftar = seq numerik, bukan teks (melewati 100)"
+  **FAILED** dengan SQL lama (uji mutasi) dan `[OK]` dengan SQL baru; `./task test itplatform`
+  25 `[OK]`, exit 0; `playwright test flow.spec.ts` 6 passed.
+
+## T-063 — run e2e macet menjadi gagal terbaca (19 Okt 2026)
+
+- `apps/web/playwright.config.ts`: `globalTimeout: 8 * 60_000` — run normal ±25 s, jadi batas ini
+  tidak memotong run sehat tetapi mengubah macet menjadi kegagalan yang menyebut global timeout.
+- **Eksperimen H2/H3 (hasil nol, dicatat di T-044)**: `caffeinate -i ./task e2e` → 24 passed
+  (Playwright 25,0 s, total 33 s, tanpa `Entering Sleep`); `PWTEST_CHILD_PROCESS_TIMEOUT=20000
+  ./task e2e` → 24 passed (26,2 s, nol "did not exit within"). Tidak ada run yang macet, jadi H2
+  (~65%) vs H3 (~40%) tidak terpisah oleh data ini — tidak diklaim terbukti.
