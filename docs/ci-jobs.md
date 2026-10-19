@@ -47,10 +47,17 @@ itu perubahan `ci.yml`, dan belum dilakukan.
 Dua kelas flake sudah benar-benar menggigit di repo ini, dan keduanya sudah pernah membuat CI merah
 untuk kode yang benar:
 
-1. **Batas waktu 5 s untuk aksi mahal.** Login/ganti kata sandi menjalankan PBKDF2 600.000 iterasi
-   (parameter dev) sementara DB ada di server lain lewat tunnel, dan 4 worker e2e berjalan serentak.
-   Karena itu: aksi mahal memakai batas waktu **eksplisit**, dan `expect.timeout` bawaan e2e kini
-   10 s. Batas waktu dinaikkan **tanpa** melonggarkan assertion.
+1. **Batas waktu untuk aksi mahal.** Login memverifikasi PBKDF2 600.000 iterasi **sekali**. Ganti
+   kata sandi menjalankan **N+3** derivasi: verifikasi kata sandi lama + kata sandi baru terhadap
+   hash yang berlaku + N hash riwayat + hash kata sandi baru (N =
+   `platform.security.password_history_count`, basis 5 → **8 derivasi**). Klaim lama "dua kali per
+   permintaan" salah sejak O-052; angka + anggarannya di `docs/tasks/T-060.md` (T-060/O-068).
+   DB dev ada di server lain lewat tunnel, dan 4 worker e2e berjalan serentak. Yang penting untuk
+   suite ini: **biner e2e dibangun `./task build` = debug**, sehingga kriptonya ~20x lebih lambat
+   daripada biner produksi (release, `apps/api/Dockerfile`) — itulah yang benar-benar diukur di
+   sini, bukan biaya produksi. Karena itu: aksi mahal memakai batas waktu **eksplisit**
+   (`password.spec.ts` → 20 s), dan `expect.timeout` bawaan e2e 10 s. Batas waktu dinaikkan
+   **tanpa** melonggarkan assertion.
 2. **Keadaan yang dibagi antar berkas test.** Test e2e berjalan paralel antar berkas (4 worker), jadi:
    - satu baris seed (`dev.maker`, `dev.checker`, `dev.firstlogin`, …) hanya boleh **diubah** oleh
      satu berkas test. Saat ini: `dev.firstlogin` (alur wajib-ganti kata sandi) hanya di
