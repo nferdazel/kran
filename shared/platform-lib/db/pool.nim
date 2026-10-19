@@ -19,7 +19,7 @@
 ##
 ## Nested `withTx` ditolak (raise) — satu use case = satu transaksi (spec §12.2).
 
-import std/[os, times, locks]
+import std/[os, strutils, times, locks]
 import db_connector/db_postgres
 import db_connector/postgres
 
@@ -48,11 +48,44 @@ proc newDbPool*(cfg: DbConfig): DbPool =
   result.cfg = cfg
   result.idle = @[]
 
+proc quoteConninfo(v: string): string =
+  ## Nilai conninfo libpq: diapit kutip tunggal; `\` dan `'` di dalamnya di-escape backslash.
+  result = "'"
+  for ch in v:
+    if ch == '\\' or ch == '\'':
+      result.add '\\'
+    result.add ch
+  result.add '\''
+
+proc connInfo*(cfg: DbConfig): string =
+  ## Conninfo untuk `PQconnectdb` — **memuat kata sandi**: jangan dicatat ke log atau pesan galat.
+  ##
+  ## `PQsetdbLogin` (dipakai sebelumnya) tidak bisa menyatakan `connect_timeout`, sehingga peer
+  ## yang menerima TCP lalu diam membuat `acquire` menunggu **tanpa batas** (T-044 H1).
+  ## Keepalive membuat koneksi idle yang membeku (tunnel/jaringan mati tanpa RST) terdeteksi
+  ## kernel dalam ±15 s, bukan menunggu berjam-jam.
+  let t = cfg.target
+  var parts: seq[string]
+  if t.host.len > 0:
+    parts.add "host=" & quoteConninfo(t.host)
+  if t.port.len > 0:
+    parts.add "port=" & quoteConninfo(t.port)
+  parts.add "dbname=" & quoteConninfo(t.database)
+  if t.user.len > 0:
+    parts.add "user=" & quoteConninfo(t.user)
+  if t.password.len > 0:
+    parts.add "password=" & quoteConninfo(t.password)
+  if t.options.len > 0:
+    parts.add "options=" & quoteConninfo(t.options)
+  # libpq: nilai < 2 detik ditafsirkan 2 detik; 0 = tanpa batas — jadi jangan pernah 0.
+  let secs = max(2, (cfg.connectTimeoutMs + 999) div 1000)
+  parts.add "connect_timeout=" & $secs
+  parts.add "keepalives=1 keepalives_idle=5 keepalives_interval=5 keepalives_count=2"
+  parts.join(" ")
+
 proc openRaw(cfg: DbConfig): DbConn =
   let t = cfg.target
-  let opts = if t.options.len > 0: t.options.cstring else: nil
-  result = pqsetdbLogin(t.host.cstring, t.port.cstring, opts, nil, t.database.cstring,
-                        t.user.cstring, t.password.cstring)
+  result = pqconnectdb(connInfo(cfg).cstring)
   if pqstatus(result) != CONNECTION_OK:
     let msg = $pqerrorMessage(result)
     pqfinish(result)

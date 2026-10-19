@@ -55,6 +55,7 @@ suite "config: env":
     let c = dbConfigFromEnv(env({"KRAN_DATABASE_URL": "postgres://u:p@h:5432/db"}))
     check c.poolSize == defaultPoolSize
     check c.acquireTimeoutMs == defaultAcquireTimeoutMs
+    check c.connectTimeoutMs == defaultConnectTimeoutMs
     check c.statementTimeoutMs == defaultStatementTimeoutMs
     check c.validateOnAcquire
     check c.target.options.contains("statement_timeout=15000")
@@ -65,12 +66,14 @@ suite "config: env":
       "KRAN_DATABASE_URL": "postgres://u:p@h:5432/db",
       "KRAN_DB_POOL_SIZE": "3",
       "KRAN_DB_ACQUIRE_TIMEOUT_MS": "250",
+      "KRAN_DB_CONNECT_TIMEOUT_MS": "2000",
       "KRAN_DB_STATEMENT_TIMEOUT_MS": "1000",
       "KRAN_DB_VALIDATE_ON_ACQUIRE": "0",
       "KRAN_APP_NAME": "kran-api",
     }))
     check c.poolSize == 3
     check c.acquireTimeoutMs == 250
+    check c.connectTimeoutMs == 2000
     check c.statementTimeoutMs == 1000
     check not c.validateOnAcquire
     check c.target.options.contains("statement_timeout=1000")
@@ -79,6 +82,7 @@ suite "config: env":
   test "angka/bool tidak valid ditolak (gagal-cepat, bukan diam-diam default)":
     for bad in [("KRAN_DB_POOL_SIZE", "banyak"), ("KRAN_DB_POOL_SIZE", "0"),
                 ("KRAN_DB_ACQUIRE_TIMEOUT_MS", "-5"),
+                ("KRAN_DB_CONNECT_TIMEOUT_MS", "0"),
                 ("KRAN_DB_VALIDATE_ON_ACQUIRE", "mungkin")]:
       var raised = false
       var t = env({"KRAN_DATABASE_URL": "postgres://u:p@h:5432/db"})

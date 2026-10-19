@@ -9,13 +9,15 @@
 ##   KRAN_DATABASE_URL              URL `postgres://user:pass@host:port/db`   (wajib untuk fitur DB)
 ##   KRAN_DB_POOL_SIZE              jumlah maksimum koneksi (default 8)
 ##   KRAN_DB_ACQUIRE_TIMEOUT_MS     batas tunggu ambil koneksi (default 5000)
+##   KRAN_DB_CONNECT_TIMEOUT_MS     batas membuka koneksi baru (default 5000; libpq minimum 2 s)
 ##   KRAN_DB_STATEMENT_TIMEOUT_MS   statement_timeout libpq (default 15000)
 ##   KRAN_DB_VALIDATE_ON_ACQUIRE    `1`/`0` — cek `PQstatus` saat ambil koneksi (default 1)
 ##
 ## Batas yang diketahui (jujur): parser URL hanya menerima bentuk di atas, **tanpa parameter
-## kueri** dan **tanpa sslmode** — `db_connector` menyambung via `PQsetdbLogin`, yang tidak
-## menerima `sslmode`. Deployment Fase 0 berjalan di host yang sama (koneksi lokal). Bila
-## kebutuhan TLS/mTLS muncul, itu keputusan ADR tersendiri, bukan tambalan di sini.
+## kueri** dan **tanpa sslmode**. Koneksi dibuka lewat `PQconnectdb(conninfo)` (`pool.nim`), jadi
+## `sslmode` sebenarnya bisa ditambahkan nanti lewat conninfo — sampai sekarang belum dibutuhkan
+## karena deployment Fase 0 berjalan di host yang sama (koneksi lokal). Bila kebutuhan TLS/mTLS
+## muncul, itu keputusan ADR tersendiri, bukan tambalan di sini.
 
 import std/[os, strutils, tables, uri]
 
@@ -34,12 +36,14 @@ type
     target*: DbTarget
     poolSize*: int
     acquireTimeoutMs*: int
+    connectTimeoutMs*: int
     statementTimeoutMs*: int
     validateOnAcquire*: bool
 
 const
   defaultPoolSize* = 8
   defaultAcquireTimeoutMs* = 5_000
+  defaultConnectTimeoutMs* = 5_000
   defaultStatementTimeoutMs* = 15_000
 
 proc fail(msg: string) {.noreturn.} =
@@ -124,6 +128,8 @@ proc dbConfigFromEnv*(env: Table[string, string]): DbConfig =
   result.poolSize = parsePositiveInt(env, "KRAN_DB_POOL_SIZE", defaultPoolSize)
   result.acquireTimeoutMs =
     parsePositiveInt(env, "KRAN_DB_ACQUIRE_TIMEOUT_MS", defaultAcquireTimeoutMs)
+  result.connectTimeoutMs =
+    parsePositiveInt(env, "KRAN_DB_CONNECT_TIMEOUT_MS", defaultConnectTimeoutMs)
   result.statementTimeoutMs =
     parsePositiveInt(env, "KRAN_DB_STATEMENT_TIMEOUT_MS", defaultStatementTimeoutMs)
   result.validateOnAcquire = parseBool(env, "KRAN_DB_VALIDATE_ON_ACQUIRE", true)
@@ -135,6 +141,7 @@ const knownEnvKeys* = [
   "KRAN_DATABASE_URL",
   "KRAN_DB_POOL_SIZE",
   "KRAN_DB_ACQUIRE_TIMEOUT_MS",
+  "KRAN_DB_CONNECT_TIMEOUT_MS",
   "KRAN_DB_STATEMENT_TIMEOUT_MS",
   "KRAN_DB_VALIDATE_ON_ACQUIRE",
 ]
