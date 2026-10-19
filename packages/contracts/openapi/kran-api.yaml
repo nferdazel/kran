@@ -757,6 +757,163 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/parties/{partyId}/identity-docs:
+    post:
+      operationId: addIdentityDoc
+      tags: [party]
+      summary: Registrasi dokumen identitas party
+      description: |
+        Nomor dokumen disimpan **terenkripsi** (field-level, AAD = nama tabel) dengan *blind index*
+        untuk deteksi duplikat; respons ini hanya memuat dua karakter terakhir. Butuh izin
+        `party.kyc.manage` di cabang party. Nomor ganda (lintas party) ditolak 409.
+        Bila `KRAN_KEK_FILE` belum diatur, endpoint menjawab 501 (fail-closed) — tidak pernah
+        menyimpan plaintext.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/PartyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentityDocCreate"
+      responses:
+        "201":
+          description: Dokumen terdaftar
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityDoc"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/parties/{partyId}/kyc:
+    get:
+      operationId: getPartyKyc
+      tags: [party]
+      summary: Profil KYC party
+      description: |
+        Profil KYC, rating risiko berjalan, riwayat penilaian, dan daftar dokumen identitas
+        **tanpa nomor** (hanya bentuk tersamar). Membuka nomor dokumen punya endpoint sendiri
+        (`unmask`) yang butuh izin tambahan + alasan + audit. Butuh `party.party.read` di cabang
+        party; party atau profil yang tidak ada dijawab 404.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/PartyId"
+      responses:
+        "200":
+          description: Profil KYC
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KycProfileView"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/parties/{partyId}/risk-rating:
+    post:
+      operationId: ratePartyRisk
+      tags: [party]
+      summary: Penilaian risiko party (riwayat bertambah)
+      description: |
+        Menambah satu baris riwayat penilaian risiko (append-only), memperbarui rating berjalan di
+        profil KYC, dan menghitung jadwal re-KYC dari parameter `party.kyc.review_months`. Menulis
+        audit `party.risk.change` dan event `party.risk_changed` dalam transaksi yang sama.
+        Butuh izin `party.kyc.manage` di cabang party.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/PartyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RiskRatingCreate"
+      responses:
+        "201":
+          description: Penilaian tersimpan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RiskRatingView"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/parties/{partyId}/identity-docs/{docId}/unmask:
+    post:
+      operationId: unmaskIdentityDoc
+      tags: [party]
+      summary: Buka nomor dokumen identitas (unmask)
+      description: |
+        Mengembalikan nomor dokumen dalam bentuk asli. Butuh izin `party.identity_doc.read` di
+        cabang party **dan** alasan pada badan permintaan; setiap pembukaan menulis audit
+        `party.identity.unmask` (tanpa nomor). Dokumen milik party lain dijawab 404, bukan 403,
+        supaya id dokumen tidak menjadi alat menghitung keberadaan data (spec §18.2).
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/PartyId"
+        - name: docId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnmaskRequest"
+      responses:
+        "200":
+          description: Nomor dokumen
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityDocUnmasked"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -766,6 +923,16 @@ components:
       description: |
         Sesi login (spec §13): cookie `HttpOnly`, `Secure`, `SameSite=Lax`. Header
         `Authorization: Bearer <token>` juga diterima untuk klien non-browser.
+
+  parameters:
+    PartyId:
+      name: partyId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Id party (UUID).
 
   responses:
     Problem:
@@ -1167,3 +1334,160 @@ components:
         createdAt:
           type: string
           description: ISO-8601 UTC.
+
+    IdentityDocCreate:
+      type: object
+      additionalProperties: false
+      required: [docType, number]
+      properties:
+        docType:
+          type: string
+          description: Harus termasuk daftar parameter `party.identity.doc_types`.
+        number:
+          type: string
+          maxLength: 64
+          description: |
+            Nomor dokumen apa adanya; server menormalkan (huruf besar, hanya A-Z0-9) sebelum
+            dienkripsi. Nilai ini tidak pernah dikembalikan utuh kecuali lewat *unmask*.
+        issuedAt:
+          type: ["string", "null"]
+          description: |
+            Tanggal terbit `YYYY-MM-DD` (opsional; `null`/absen bila tidak dicatat). Bentuk
+            tanggal tidak sah dijawab 400, bukan 500.
+        expiresAt:
+          type: ["string", "null"]
+          description: |
+            Tanggal kedaluwarsa `YYYY-MM-DD` (opsional). Tidak boleh lebih awal dari `issuedAt`
+            (dijawab 400).
+
+    IdentityDoc:
+      type: object
+      additionalProperties: false
+      required: [docId, docType, numberLast2, issuedAt, expiresAt, createdAt]
+      properties:
+        docId:
+          type: string
+          format: uuid
+        docType:
+          type: string
+        numberLast2:
+          type: string
+          description: Dua karakter terakhir nomor (bentuk tersamar untuk UI).
+        issuedAt:
+          type: ["string", "null"]
+        expiresAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          description: ISO-8601 UTC.
+
+    IdentityDocUnmasked:
+      type: object
+      additionalProperties: false
+      required: [docId, docType, number, expiresAt]
+      properties:
+        docId:
+          type: string
+          format: uuid
+        docType:
+          type: string
+        number:
+          type: string
+          description: Nomor asli (ternormalisasi). Setiap pembacaan diaudit.
+        expiresAt:
+          type: ["string", "null"]
+
+    UnmaskRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Alasan pembukaan data (masuk jejak audit, bukan opsional).
+
+    KycProfileView:
+      type: object
+      additionalProperties: false
+      required: [partyId, status, riskLevel, riskAssessedAt, nextReviewDue, documents, riskHistory]
+      properties:
+        partyId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, VERIFIED, REJECTED]
+        riskLevel:
+          type: string
+          description: Tingkat risiko berjalan (anggota `party.kyc.risk_levels`).
+        riskAssessedAt:
+          type: ["string", "null"]
+          description: ISO-8601 UTC; `null` bila belum pernah dinilai.
+        nextReviewDue:
+          type: ["string", "null"]
+          description: Tanggal re-KYC berikutnya (`YYYY-MM-DD`).
+        documents:
+          type: array
+          description: Maksimum 50 dokumen pertama menurut `createdAt` (batas teknis respons).
+          items:
+            $ref: "#/components/schemas/IdentityDoc"
+        riskHistory:
+          type: array
+          description: Maksimum 50 penilaian terbaru (batas teknis respons, bukan aturan bisnis).
+          items:
+            $ref: "#/components/schemas/RiskRatingItem"
+
+    RiskRatingItem:
+      type: object
+      additionalProperties: false
+      required: [ratingId, level, reason, assessedAt, assessedBy]
+      properties:
+        ratingId:
+          type: string
+          format: uuid
+        level:
+          type: string
+        reason:
+          type: string
+        assessedAt:
+          type: string
+          description: ISO-8601 UTC.
+        assessedBy:
+          type: string
+          format: uuid
+
+    RiskRatingCreate:
+      type: object
+      additionalProperties: false
+      required: [level, reason]
+      properties:
+        level:
+          type: string
+          description: Harus termasuk daftar parameter `party.kyc.risk_levels`.
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    RiskRatingView:
+      type: object
+      additionalProperties: false
+      required: [ratingId, partyId, level, reason, assessedAt, nextReviewDue]
+      properties:
+        ratingId:
+          type: string
+          format: uuid
+        partyId:
+          type: string
+          format: uuid
+        level:
+          type: string
+        reason:
+          type: string
+        assessedAt:
+          type: string
+          description: ISO-8601 UTC.
+        nextReviewDue:
+          type: ["string", "null"]

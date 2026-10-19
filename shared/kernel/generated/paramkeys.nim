@@ -7,6 +7,12 @@ import std/json
 
 const paramKeys*: seq[string] = @[
   "party.cif.format",
+  "party.identity.doc_lengths",
+  "party.identity.doc_types",
+  "party.identity.number_max_length",
+  "party.kyc.default_risk_level",
+  "party.kyc.review_months",
+  "party.kyc.risk_levels",
   "platform.calendar.fiscal_year_start_month",
   "platform.calendar.weekend_days",
   "platform.realtime.max_topic_len",
@@ -27,6 +33,18 @@ const paramKeys*: seq[string] = @[
 ]
 
 const P_party_cif_format* = ParamKey[string]("party.cif.format")
+
+const P_party_identity_doc_lengths* = ParamKey[JsonNode]("party.identity.doc_lengths")
+
+const P_party_identity_doc_types* = ParamKey[JsonNode]("party.identity.doc_types")
+
+const P_party_identity_number_max_length* = ParamKey[int64]("party.identity.number_max_length")
+
+const P_party_kyc_default_risk_level* = ParamKey[string]("party.kyc.default_risk_level")
+
+const P_party_kyc_review_months* = ParamKey[JsonNode]("party.kyc.review_months")
+
+const P_party_kyc_risk_levels* = ParamKey[JsonNode]("party.kyc.risk_levels")
 
 const P_platform_calendar_fiscal_year_start_month* = ParamKey[int64]("platform.calendar.fiscal_year_start_month")
 
@@ -72,6 +90,72 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.party.cif.format",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "party.identity.doc_lengths",
+    module: "party",
+    valueType: pvtJson,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.party.identity.doc_lengths",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "party.identity.doc_types",
+    module: "party",
+    valueType: pvtJson,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.party.identity.doc_types",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "party.identity.number_max_length",
+    module: "party",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.party.identity.number_max_length",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "party.kyc.default_risk_level",
+    module: "party",
+    valueType: pvtString,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.party.kyc.default_risk_level",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "party.kyc.review_months",
+    module: "party",
+    valueType: pvtJson,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.party.kyc.review_months",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "party.kyc.risk_levels",
+    module: "party",
+    valueType: pvtJson,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.party.kyc.risk_levels",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(

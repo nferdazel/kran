@@ -124,6 +124,12 @@ for (const theme of THEMES) {
 test("wajib ganti: /app dialihkan sampai diganti, lalu sesi yang sama bisa bekerja", async ({
   page,
 }) => {
+  // Alur ini memuat dua verifikasi kata sandi + satu ganti dengan riwayat N=5 (≈8 derivasi
+  // PBKDF2), sementara biner **debug** yang dipakai e2e ±20x lebih lambat dari release
+  // (T-060/O-068: N=5 ≈ 13,6 s hanya untuk langkah ganti). Timeout global 30 s karena itu
+  // terlalu ketat di mesin yang sibuk → `slow()` (3x) tanpa melonggarkan assertion apa pun.
+  test.slow();
+
   await prepare(page);
   await signIn(page, FIRST_LOGIN);
 

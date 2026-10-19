@@ -35,6 +35,110 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "party.identity.doc_lengths",
+    "module": "party",
+    "valueType": "json",
+    "tsType": "unknown",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.party.identity.doc_lengths",
+    "jsonSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "key": "party.identity.doc_types",
+    "module": "party",
+    "valueType": "json",
+    "tsType": "unknown",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.party.identity.doc_types",
+    "jsonSchema": {
+      "type": "array"
+    }
+  },
+  {
+    "key": "party.identity.number_max_length",
+    "module": "party",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.party.identity.number_max_length",
+    "jsonSchema": {
+      "minimum": 4,
+      "maximum": 64
+    }
+  },
+  {
+    "key": "party.kyc.default_risk_level",
+    "module": "party",
+    "valueType": "string",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.party.kyc.default_risk_level",
+    "jsonSchema": {
+      "minLength": 1,
+      "maxLength": 32
+    }
+  },
+  {
+    "key": "party.kyc.review_months",
+    "module": "party",
+    "valueType": "json",
+    "tsType": "unknown",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.party.kyc.review_months",
+    "jsonSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "key": "party.kyc.risk_levels",
+    "module": "party",
+    "valueType": "json",
+    "tsType": "unknown",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.party.kyc.risk_levels",
+    "jsonSchema": {
+      "type": "array"
+    }
+  },
+  {
     "key": "platform.calendar.fiscal_year_start_month",
     "module": "platform",
     "valueType": "integer",
