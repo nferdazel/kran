@@ -1558,3 +1558,68 @@ pengajuan, bukan hanya pembacaan.
   membuatnya butuh titik tetap fungsi hash, dan hash yang ditulis tangan sudah ketahuan lewat
   `row_hash_ok`.
 - **HUMAN-REVIEW-REQUIRED (integritas audit)** — AGENTS.md §8.
+
+## D-062 — Dua tingkat gerbang izin HTTP + atribusi cabang pada audit (T-058, O-032 ditutup)
+
+**Konteks.** D-055 menyisakan dua temuan: (1) setiap baris audit dari jalur HTTP punya `branch_id`
+NULL — `auditContextFor` tidak mengisi `branchIds`, jadi penyaringan audit per cabang tak berefek;
+(2) `authorized` memakai `targetBranch = ""` sehingga grant khusus cabang tidak pernah cocok di
+endpoint mana pun. D-059 memutuskan keduanya dibereskan sebagai task sendiri (T-058), dengan syarat
+**rencananya menyebut lebih dulu** dari mana cabang target dan atribusi audit per endpoint diambil.
+Rencana itu ada di `docs/tasks/T-058.md` (endpoint × cabang target, sumber atribusi, pilihan yang
+ditolak). Keputusan di bawah adalah isi rencana tersebut; pemilik menjawab "lanjut" tanpa menjawab
+tiga pertanyaan detailnya, jadi keputusan ini berlaku sebagai **keputusan implementasi** dan T-058
+tetap ditandai `HUMAN-REVIEW-REQUIRED` (authz, AGENTS.md §8) sampai ditinjau manusia.
+
+**Keputusan.**
+
+1. **Gerbang izin punya dua tingkat; yang berbeda hanya dimensi cabangnya.**
+   - Rute ber-izin memakai gerbang **tanpa dimensi cabang** (`authorizeAnyBranch` di
+     `modules/platform/domain/authz.nim`, dipakai `requirePermission` D-055). 403 di situ berarti
+     "izin tidak dipegang di cabang mana pun". Untuk permintaan **daftar**
+     (`GET /api/v1/params`, `GET /api/v1/audit`) inilah gerbang yang benar: hasilnya disaring
+     **per baris** (`readableScopeFilter`/`auditScopeFilter`), tidak ada satu cabang target, dan
+     menuntutnya akan menolak pembacaan sah yang seharusnya cuma tersaring.
+   - Rute yang menyentuh **satu** objek ber-cabang menambah gerbang **per cabang**
+     (`authorizedAtBranch`) begitu cabang objeknya diketahui:
+     `POST /api/v1/params/{key}/changes` (cabang = `scopeId` bila `scopeType = BRANCH`, selain itu
+     `""`) dan `POST /api/v1/params/changes/{paramValueId}/approve` (cabang = cabang baris PENDING
+     yang diaktifkan). `targetBranch = ""` = aksi **tingkat institusi**: hanya grant tanpa batas
+     cabang yang berlaku, jadi grant khusus cabang tidak diam-diam menjadi izin institusi.
+   - Perubahan perilaku yang disengaja (dinyatakan D-059): grant khusus cabang kini **bekerja** di
+     HTTP, dan pengajuan/persetujuan atas nilai cabang di luar wewenang kini dibalas 403
+     `branch_not_allowed` (kode stabil baru, masuk daftar `params.reason` kontrak).
+2. **Di persetujuan, wewenang cabang diperiksa lebih dulu daripada alasan 409.** Penolakan wewenang
+   tidak boleh bergantung pada keadaan barisnya (dan tidak membocorkan masalah kombinasi/periode
+   kepada yang memang tidak berwenang).
+3. **Atribusi cabang audit berasal dari objek yang disentuh, bukan cabang tugas pelaku.** Sumbernya:
+   nilai parameter yang diajukan/disetujui, dan **cabang yang dibaca** untuk
+   `param.read_cross_branch` (satu entri per cabang, tetap digagalkan bila pencatatannya gagal).
+   Alasannya semantik: yang berkepentingan atas baris itu adalah auditor cabang tersebut — termasuk
+   ketika pusat yang membacanya.
+4. **Pengenal non-uuid tidak dipaksa masuk kolom uuid.** `platform.audit_log.branch_id` bertipe uuid
+   dan ditulis lewat `NULLIF(?, '')::uuid`; pengenal cabang di tempat lain bertipe teks
+   (`param_value.scope_id`, `user_role.branch_id`). Pengenal non-uuid membuat `parseId` gagal →
+   baris auditnya tetap tanpa cabang, dan pengenalnya tetap utuh di `resource_id`/payload. Tidak ada
+   cast paksa: itu akan melempar `DbError` → 500 untuk permintaan yang sebenarnya sah. Kesenjangan
+   tipe ini sudah tercatat **O-017** dan **tidak** ditutup di sini.
+5. **Langganan realtime tetap tingkat institusi (fail-closed).** `topicsAllowedFor` masih memakai
+   `authorized` (`targetBranch = ""`): topik `param.changed` tidak disaring per baris, jadi
+   membukanya bagi grant khusus cabang berarti mengirim **seluruh** peristiwa parameter lintas cabang.
+   Sisa pekerjaan dicatat **O-070**.
+
+**Pilihan yang ditolak.** (a) `targetBranch`/`branchIds` dari **cabang tugas pelaku** — salah secara
+semantik (pusat yang sah membaca cabang lain akan tercatat tanpa cabang, dan auditor cabang tidak
+melihatnya); (b) gerbang per-baris di `requirePermission` — tidak mungkin, satu permintaan daftar
+tidak punya satu cabang; (c) **tanpa** gerbang cabang di pengajuan/persetujuan (hanya mengandalkan
+`mayReadScope` D-047) — izin baca bukan izin tulis, dan satu grant memuat keduanya untuk cabang yang
+sama, jadi menolak di gerbang tulis adalah satu-satunya tempat yang membedakannya.
+
+**Konsekuensi.** Kontrak `packages/contracts/openapi/kran-api.yaml` menyebut `branch_not_allowed`
+pada 403 pengajuan + persetujuan, dan prosa `GET /api/v1/params` yang masih berbunyi "belum disaring
+per scope/cabang" diperbarui (sudah tidak benar sejak D-047/T-052). Dua baris
+`docs/ACCEPTED-LIMITS.md` §2 yang menyatakan scoping cabang dorman dan atribusi audit selalu NULL
+diganti dengan batas yang sebenarnya tersisa (O-017, O-070). Tanpa migrasi: tidak ada kolom/tabel
+baru.
+
+**HUMAN-REVIEW-REQUIRED (authz)** — AGENTS.md §8.

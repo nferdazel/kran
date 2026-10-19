@@ -1306,3 +1306,38 @@ Keputusan: **D-061**; O-038 ditutup.
   produksi: indeks `audit_log_hash_idx` **dan** `audit_log_prev_hash_idx` ada, dan
   `pg_get_functiondef('platform.audit_verify')` memuat predikat `c.prev_hash = a.prev_hash`;
   `kran-api --role=ctl verify-audit` → "rantai audit utuh (2 entri)", exit 0.
+
+## T-058 — scoping cabang di jalur HTTP (O-032 ditutup, 19 Okt 2026)
+
+Menutup dua sisa temuan D-055: baris audit dari jalur HTTP tak pernah ber-cabang
+(`auditContextFor` tidak mengisi `branchIds`) dan grant khusus cabang tak pernah cocok
+(`authorized` memakai `targetBranch = ""`). Keputusan: **D-062** (ditulis agen sesuai mandat D-059,
+pemilik menjawab "lanjut" tanpa menjawab tiga pertanyaan detailnya → task tetap
+`HUMAN-REVIEW-REQUIRED (authz)`); O-032 ditutup, sisa yang jujur dipisah ke O-017 (pengenal cabang
+non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per cabang).
+
+- **Bentuk perbaikannya: gerbang izin dua tingkat.** Rute daftar memakai `authorizeAnyBranch`
+  (`requirePermission`) — izin cukup dipegang di suatu cabang, penyaringan **per baris** yang
+  menentukan apa yang terlihat; rute yang menyentuh **satu** objek menambah `authorizedAtBranch`
+  dengan cabang objek itu (pengajuan: `scopeId` ber-scope `BRANCH`; persetujuan: cabang baris PENDING,
+  diperiksa **sebelum** alasan 409). `targetBranch = ""` selalu berarti institusi, jadi grant khusus
+  cabang tidak diam-diam jadi izin institusi. Atribusi audit mengikuti **objek** yang disentuh (nilai
+  parameter; cabang yang dibaca untuk `param.read_cross_branch`) — bukan cabang tugas pelaku: auditor
+  cabang itulah yang berkepentingan, termasuk saat pusat yang membaca. Realtime sengaja **tetap**
+  institusi (fail-closed) sampai peristiwanya disaring per cabang → O-070.
+- **Bukti**: `./task test tauthz` 29 `[OK]`, `itapi_auth` **43** `[OK]` (5 test suite baru, dari 38),
+  `itparam` 34, `itplatform` 24, `itapi_roles` 13 (butuh `./task dbtools seed --dev` lebih dulu),
+  `./task check` exit 0, `./task openapi` exit 0 (klien TS diregenerasi), svelte-check 0 error/0 warning.
+- **Review independen**: putaran 1 `CHANGES-REQUIRED` — BLOCKER: klien TS tidak diregenerasi setelah
+  prosa kontrak berubah (`./task openapi` merah → CI merah); MAJOR: test HTTP atribusi
+  `param.read_cross_branch` belum ada, jadi klaim atribusi tak terbukti (uji lama memakai cabang
+  non-uuid sehingga jalur baru tak pernah dieksekusi); tiga MINOR (pesan 403 cabang kosong untuk aksi
+  institusi, kode alasan tanpa entri i18n, status task/PROGRESS). Semuanya diperbaiki; **putaran 2
+  APPROVE** (reviewer memverifikasi sendiri dengan menjalankan `./task openapi`, `itapi_auth`,
+  `tauthz`, `check`, `i18n`, dan menelusuri seluruh pemanggil `requirePermission`). Satu MINOR
+  bookkeeping putaran 2 (status BACKLOG vs berkas task) diselaraskan ke `VERIFIKASI (menunggu CI)`.
+- **Catatan temuan sampingan (bukan regresi)**: `itapi_roles` bergantung pada nilai parameter hasil
+  seed — kalau dijalankan setelah test yang membuat ulang schema `platform` (mis. `itplatform`),
+  `ctl bootstrap-admin` keluar 1 (bukan 3) karena `platform.security.password_min_length` tidak punya
+  nilai aktif. Urutan yang benar: `./task dbtools seed --dev` → `itapi_roles`.
+
