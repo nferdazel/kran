@@ -1516,6 +1516,22 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   manual) tanpa galat. `statement_timeout` tidak berlaku karena kueri tak sampai server.
 - **Kendala**: target "≤ 5 s" bertabrakan dengan `statement_timeout` 15 s (kueri sah bisa 15 s).
   Deadline klien harus > statement_timeout (usul 20 s), atau statement_timeout juga diturunkan.
-- **Status**: `docs/tasks/T-065.md` memuat opsi A (watchdog pool — rekomendasi), B (libpq
-  nonblocking penuh), C (terima + dokumentasi). Task **BLOCKED** menunggu keputusan pemilik;
-  `docs/ACCEPTED-LIMITS.md` sudah dikoreksi dengan bukti di atas.
+- **Keputusan pemilik**: opsi A (watchdog di pool). **Selesai** (D-065): modul `db/deadline.nim`
+  (satu thread pemantau, `shutdown(fd)` saat batas lewat), `withConn`/`withTx`/`acquire(ping)`
+  memasang batas `KRAN_DB_QUERY_DEADLINE_MS` (default `statement_timeout + 5000`, wajib di atas
+  statement_timeout), koneksi yang kena batas dibuang dan blok gagal dengan `PoolError`.
+- **Bukti**: `tdeadline` 3 `[OK]`; `itpool` suite "koneksi beku" OK (< 2 s dengan deadline 700 ms,
+  `created == 0`); mutasi deadline 3 s → uji gagal (`elapsed 3,03 s`); `tconfig` OK; `./task check`
+  exit 0. Baris "tidak ada deadline per-query" dihapus dari `ACCEPTED-LIMITS` dan masuk daftar bukti
+  mutasi. **HUMAN-REVIEW-REQUIRED** (jalur koneksi).
+- **Review independen** (konteks bersih, 2 putaran): putaran 1 CHANGES-REQUIRED — 1 MAJOR race
+  `shutdown` di luar lock (fd bisa sudah di-`pqfinish`), 1 MAJOR semantik anggaran per blok vs
+  `statement_timeout` per statement (termasuk `COMMIT` yang sudah sukses bisa dilaporkan gagal),
+  MINOR lain. Diperbaiki: `shutdown` di dalam lock, penanda pemantau diset setelah thread benar-benar
+  ada, blok yang selesai mengembalikan hasil (hanya koneksi dibuang), `withTx` gagal tetap ROLLBACK
+  eksplisit (di bawah anggaran) sehingga `leakedTx` tidak naik, jam monotonik, uji gagal-cepat bila
+  mekanisme mati. **Putaran 2: kode T-065 APPROVE**; satu-satunya MAJOR yang tersisa adalah *scope*
+  (perombakan deploy quadlet milik sesi lain ada di worktree yang sama) — **tidak** ikut di-commit.
+  MINOR ditunda: log/metrik saat pemantau terdegradasi → **T-066**.
+- **Mutasi**: deadline 3 s → uji gagal (`elapsed 3,06 s`); deadline 60 s (mekanisme mati) → uji gagal
+  dalam ~5 s, bukan menggantung. `./task test` 614 `[OK]`, exit 0.

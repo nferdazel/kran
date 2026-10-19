@@ -31,7 +31,9 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 | SIGTERM: koneksi yang belum masuk handler tetap terpotong; soket realtime ditutup oleh keluarnya proses | Permintaan yang belum masuk handler bisa gagal saat deploy; klien WS menyambung ulang | log `permintaan berjalan selesai (drain)` / `N permintaan masih berjalan` | T-032, T-042 (diterima; `close()` tidak dipanggil jalur produksi — teardown in-process butuh server dibangun+disajikan di thread yang sama, lihat O-025) |
 | Jendela staleness izin realtime | Setelah izin dicabut, data masih bisa terkirim sampai satu interval pemeriksaan berakhir | parameter `sessionRecheckSeconds` (0 = setiap putaran pump) | T-030 |
 | Validasi koneksi pool menambah satu perjalanan bolak-balik per peminjaman dari idle | Latensi per permintaan naik sedikit | `KRAN_DB_VALIDATE_ON_ACQUIRE` (matikan = koneksi mati di server tidak diganti otomatis) | T-033 |
-| Tidak ada deadline **per-query**: `connect_timeout` hanya membatasi pembukaan koneksi. Koneksi membeku diputus keepalive TCP ±15–20 detik **hanya bila peer TCP berhenti menjawab probe**; bila ada perantara yang tetap meng-ACK (tunnel hidup, jalur remote mati) kueri menggantung **tanpa batas** (terbukti > 30 s dengan perantara TCP yang membeku) | Satu permintaan bisa menggantung tanpa batas, bukan gagal dalam milidetik | kueri tidak kembali; keepalive tidak memicu; `statement_timeout` tidak berlaku karena kueri tak sampai server | T-065 (BLOCKED: pilih opsi A/B/C di `docs/tasks/T-065.md`) |
+| Deadline DB berlaku per **blok kerja** (default 20 s), bukan per kueri: blok `withTx` dengan banyak statement yang totalnya melebihi anggaran akan gagal (server me-ROLLBACK) | Use case panjang (rekap/import) harus muat dalam anggaran atau menaikkan `KRAN_DB_QUERY_DEADLINE_MS` | `PoolError` "blok kerja DB melewati batas …"; log galat menyebut batas | T-065, D-065 |
+| Jalur `pool.acquire()` langsung (pump `LISTEN` yang hidup selama proses) tidak memakai deadline blok | Bila perantara membeku saat pump menunggu, pump bisa menggantung sampai keepalive | pump tidak mengirim heartbeat; `pumpLastReadyNs` tidak maju, readiness realtime melaporkan degraded | T-065; pump T-029 (desain koneksi panjang) |
+| Batas DB memakai satu koneksi dari pool setiap kali terpicu (dibuat ulang saat dibutuhkan) | Sesaat setelah kejadian, kapasitas pool berkurang satu | `statsOf().created` turun; koneksi baru dibuat pada peminjaman berikutnya | T-065 |
 | Biaya KDF tiruan mengikuti parameter iterasi **saat ini** | Akun lama dengan jumlah iterasi berbeda tidak setara biayanya | bandingkan waktu respons login akun tak dikenal vs akun wajar | T-028 |
 | Percobaan kata sandi lama di `/auth/password` belum dibatasi/diaudit | Tidak ada perlindungan brute-force pada endpoint itu | belum ada penghitung percobaan di sana | O-050 |
 | Hanya pengenal cabang berbentuk **uuid** yang bisa diatribusi ke `platform.audit_log.branch_id` | Entri audit untuk cabang ber-id teks (id warisan/seeder) tetap `branch_id` NULL, jadi pemisahan audit per cabang tidak berlaku untuknya; pengenalnya tetap utuh di `resource_id`/payload | `SELECT branch_id FROM platform.audit_log WHERE action = 'param.submit' AND resource_id = ...` → NULL; diuji eksplisit di `itapi_auth` (suite scoping cabang, test pengenal non-uuid) | O-017; T-058, D-062 |
@@ -75,13 +77,14 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 - `./task ci-repeat 3` (gate kestabilan, T-031): hijau **3 putaran berturut-turut** atas tree final
   T-037 — 464 `[OK]` per putaran (1392 total) dan 23 uji e2e per putaran. Satu flake e2e sebelumnya
   (4 test login menggantung; tidak berulang) tercatat jujur di `docs/tasks/T-031.md`.
-- Enam perbaikan terbukti **diskriminatif** lewat mutasi (uji gagal saat perbaikan dibalik):
+- Tujuh perbaikan terbukti **diskriminatif** lewat mutasi (uji gagal saat perbaikan dibalik):
   1. T-028 — hash tiruan PBKDF2 dimatikan;
   2. T-029 — penyambungan ulang pump dihapus;
   3. T-029 — titik mulai (`lastEventId`) di-reset saat menyambung ulang;
   4. T-030 — penutupan langganan saat izin dicabut dihapus;
   5. T-032 — drain dimatikan;
-  6. T-033 — validasi nyata koneksi pool dimatikan.
+  6. T-033 — validasi nyata koneksi pool dimatikan;
+  7. T-065 — batas blok kerja DB dinaikkan 700 ms → 3000 ms (uji gagal: `elapsed 3,03 s`).
 - Uji yang **bukan** bermutasi dinyatakan apa adanya di task-nya sendiri (T-033 paralel pool,
   T-034 penjaga regresi Mummy).
 
