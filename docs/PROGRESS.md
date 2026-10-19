@@ -1560,3 +1560,43 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   disimpan** — termasuk image yang sedang dipakai dan `:prev`.
 - **Sisa**: KEK belum di-mount (butuh mount + `UserNS` saat fitur diaktifkan), latihan rollback di
   server belum dilakukan (T-013).
+
+## T-070 — modul `party`: CIF + identitas dasar (19 Okt 2026)
+
+- **Rencana/scope**: `docs/tasks/T-070.md` (Fase 1 dibuka pemilik; task T-070…T-077).
+- **Keputusan**: **D-067** — pola CIF (`{seq:N}`, `{check}`, prefix/suffix, lebar) = parameter
+  `party.cif.format`; algoritme check digit Luhn mod 10 = kode (invarian matematis); salah
+  konfigurasi → **500**, bukan 400. PII/KYC + audit pembacaan ditunda ke T-071 (tidak ada kolom
+  sensitif yang lahir plaintext). `Idempotency-Key` untuk POST master data dicatat **O-072**.
+- **Kode**: modul `party` (`domain/cif.nim`, `domain/party.nim`, `infrastructure/party_repo.nim`,
+  `api.nim`, `migrations/0001_party_init.sql` — schema `party`, sequence `cif_seq`, tabel `party`),
+  parameter `party.cif.format` (+ seed/paramgen, 4 artefak), izin `party.party.create`/`read`
+  (`modules/platform/migrations/0013_platform_rbac_party.sql`), handler `handlers_party.nim`
+  (`POST /api/v1/parties`, `GET /api/v1/parties/{partyId}`) + rute + OpenAPI + klien TS.
+- **Bukti `./task ci`** (log `.build`…/`/tmp/ci-t070b.log`, dijalankan setelah semua perbaikan):
+  `check` hijau (termasuk archcheck "batas modul bersih", lint-nomagic "tidak ada magic number
+  bisnis", paramgen sinkron, i18n 116 key/locale, shellcheck 7 skrip), `openapi` sinkron +
+  typecheck klien lolos, `./task test` **643 `[OK]`, 0 `[FAILED]`**, e2e **24 passed**
+  (axe 2 tema × 2 locale + alur keyboard-only + maker-checker).
+- **Test baru**: `tparty` (Luhn vektor klasik `7992739871`→`3`, format dari pola, token salah
+  ditolak, batas 32 karakter), `itparty` (sequence naik, CIF unik ditolak DB, party+audit+outbox
+  satu transaksi, rollback tanpa jejak), `itapi_party` (401/403/404/400/500/201 lewat HTTP,
+  CIF diverifikasi dengan fungsi produksi, audit/outbox tanpa nama, pola rusak → 500 **dan** nomor
+  urut tidak terbakar).
+- **Test diskriminatif (bukan hijau palsu)**: saat literal Luhn diganti konstanta bernama,
+  `tparty` langsung menangkap salah (`luhnCheckDigit("7992739871") was 5`) dan diperbaiki sebelum
+  lanjut. e2e `flow.spec.ts` menolak hijau karena `party.cif.format` (parameter teks) menggeser
+  urutan daftar → `pickTarget` diubah memilih baris **bernilai angka** dan menyasar form ke baris
+  itu, alur maker→checker→realtime tetap utuh.
+- **Perbaikan test harness**: 7 berkas integration test yang men-`DROP SCHEMA platform` kini juga
+  men-`DROP SCHEMA party` — tanpa itu, migrasi `party` dijalankan ulang tanpa baris ledger dan
+  bertabrakan dengan objek yang masih ada (isolasi test, bukan menutupi cacat migrasi).
+- **Review independen** (konteks bersih, 1 putaran): **APPROVE** — tanpa BLOCKER/MAJOR; 4 MINOR
+  semuanya diperbaiki sebelum commit: (1) deskripsi kontrak `GET` disamakan dengan perilaku
+  (tidak ada/bukan UUID → 404, cabang lain → 403, konsisten `branch_not_allowed`), (2) `400`
+  yang tak mungkin di `GET` dihapus dari kontrak, (3) `ValueError` konfigurasi CIF dipisah jadi
+  `CifConfigError` → 500 dengan pesan non-internal + test baru, (4) test "> 32 karakter" memakai
+  pola yang benar-benar menguji batas panjang.
+- **Sisa**: PII/KYC + audit pembacaan → T-071 (`HUMAN-REVIEW-REQUIRED`); O-072 (idempotency POST
+  master data) menunggu keputusan lingkup; parameter `party.cif.format` harus ikut seed produksi
+  (O-066) sebelum deploy yang memakainya.
