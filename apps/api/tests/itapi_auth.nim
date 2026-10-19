@@ -910,6 +910,177 @@ suite "wewenang scope parameter lewat HTTP (O-032, O-044/D-047)":
     finally:
       dbPool.release(db)
 
+suite "scoping cabang di jalur HTTP (T-058, D-062)":
+  const
+    BranchKey = "platform.calendar.weekend_days" # allowed_scopes: GLOBAL, BRANCH
+    SandiUji = "Kata-Sandi-Uji-Cabang1"
+
+  proc buatUser(username: string): string =
+    ## Pengguna uji + kata sandi yang diketahui. Iterasi PBKDF2 kecil: ini test, bukan produksi.
+    let uid = $newId(systemClock())
+    let db = dbPool.acquire()
+    try:
+      doAssert insertUser(db, NewUser(userId: uid, username: username,
+        fullName: "Uji " & username, passwordHash: $hashPassword(SandiUji, 1000)))
+    finally:
+      dbPool.release(db)
+    uid
+
+  proc beriRole(uid, role, cabang: string) =
+    let db = dbPool.acquire()
+    try:
+      doAssert grantRole(db, uid, role, cabang, "")
+    finally:
+      dbPool.release(db)
+
+  proc ajukanCabang(token, cabang: string): Reply =
+    postJson(ParamsPath & "/" & BranchKey & "/changes",
+      %*{"value": [5, 6], "scopeType": "BRANCH", "scopeId": cabang,
+         "reason": "uji otomatis: scoping cabang"}, token)
+
+  proc adaSeq(body: JsonNode, seq: int64): bool =
+    for item in body["items"]:
+      if item["seq"].getBiggestInt == seq:
+        return true
+
+  proc seqAudit(action, cabang: string): int64 =
+    ## `seq` baris audit yang benar-benar bercabang itu — dibaca dari DB: daftar audit tidak
+    ## memuat kolom cabang, jadi atribusinya hanya bisa dibuktikan di sini.
+    let db = dbPool.acquire()
+    try:
+      result = parseBiggestInt(db.getValue(sql"""
+        SELECT coalesce(max(seq), 0)::text FROM platform.audit_log
+         WHERE action = ? AND branch_id = ?::uuid""", action, cabang))
+    finally:
+      dbPool.release(db)
+
+  test "grant khusus cabang: boleh di cabangnya, 403 `branch_not_allowed` di cabang lain":
+    let cabangA = $newId(systemClock())
+    let cabangB = $newId(systemClock())
+    # Maker di A, checker di B. Izin **baca** ada di kedua cabang, jadi pemeriksaan D-047
+    # (`mayReadScope`) lolos dan 403 di bawah benar-benar datang dari gerbang cabang pengajuan —
+    # bukan dari aturan scope.
+    let uid = buatUser("itapi-cabang-dua")
+    beriRole(uid, "param_maker", cabangA)
+    beriRole(uid, "param_checker", cabangB)
+    let token = tokenOf(login("itapi-cabang-dua", SandiUji))
+    check token.len > 0
+
+    let diA = ajukanCabang(token, cabangA)
+    check diA.code == 201
+    check diA.body["scopeId"].getStr() == cabangA
+    checkJson(ParamsPath & "/{key}/changes", "POST", "201", diA.body)
+
+    let diB = ajukanCabang(token, cabangB)
+    check diB.code == 403
+    check diB.body["params"]["reason"].getStr() == "branch_not_allowed"
+    checkProblem(ParamsPath & "/{key}/changes", "POST", "403", diB.body)
+
+    # Aksi tingkat institusi ("") tetap menuntut grant **tanpa** batas cabang — grant khusus cabang
+    # tidak boleh diam-diam menjadi izin institusi.
+    let institusi = postJson(ParamsPath & "/" & BranchKey & "/changes",
+      %*{"value": [5, 6], "reason": "uji otomatis: aksi tingkat institusi"}, token)
+    check institusi.code == 403
+    check institusi.body["params"]["reason"].getStr() == "branch_not_allowed"
+
+  test "menyetujui nilai cabang lain ditolak 403; barisnya tetap ber-branch_id cabangnya":
+    let cabangA = $newId(systemClock())
+    let cabangB = $newId(systemClock())
+    let pengaju = ajukanCabang(tokenOf(login(MakerUser)), cabangA)
+    check pengaju.code == 201
+    let pvId = pengaju.body["paramValueId"].getStr()
+
+    # Penyetuju ber-cabang B (dan maker di A): gerbang izin lolos, gerbang cabang menolak.
+    let uid = buatUser("itapi-cabang-penyetuju")
+    beriRole(uid, "param_checker", cabangB)
+    beriRole(uid, "param_maker", cabangA)
+    let tokenB = tokenOf(login("itapi-cabang-penyetuju", SandiUji))
+    let tolak = postJson("/api/v1/params/changes/" & pvId & "/approve", newJObject(), tokenB)
+    check tolak.code == 403
+    check tolak.body["params"]["reason"].getStr() == "branch_not_allowed"
+    checkProblem("/api/v1/params/changes/{paramValueId}/approve", "POST", "403", tolak.body)
+
+    # Kontrol: penyetuju tanpa batas cabang menyetujui nilai yang sama → 200. Tanpa kontrol ini,
+    # 403 di atas tidak membedakan "gerbang cabang" dari "apa pun tidak boleh".
+    let setuju = postJson("/api/v1/params/changes/" & pvId & "/approve", newJObject(),
+      tokenOf(login(CheckerUser)))
+    check setuju.code == 200
+    check seqAudit("param.approve", cabangA) > 0
+
+  test "jejak audit bercabang terbaca hanya oleh pembaca cabang itu (D-055 temuan 1)":
+    let cabangA = $newId(systemClock())
+    let cabangB = $newId(systemClock())
+    # Pengenal cabang berbentuk uuid: `audit_log.branch_id` bertipe uuid, jadi hanya pengenal
+    # seperti ini yang bisa tercatat sebagai cabang (O-017 mencatat kesenjangan tipe ini).
+    check ajukanCabang(tokenOf(login(MakerUser)), cabangA).code == 201
+    check ajukanCabang(tokenOf(login(MakerUser)), cabangB).code == 201
+    let seqA = seqAudit("param.submit", cabangA)
+    let seqB = seqAudit("param.submit", cabangB)
+    check seqA > 0
+    check seqB > 0
+
+    let hanyaA = buatUser("itapi-hanya-a")
+    beriRole(hanyaA, "param_maker", cabangA)
+    let hanyaB = buatUser("itapi-hanya-b")
+    beriRole(hanyaB, "param_maker", cabangB)
+
+    let daftarA = getJson(AuditPath & "?limit=200", tokenOf(login("itapi-hanya-a", SandiUji)))
+    check daftarA.code == 200
+    check adaSeq(daftarA.body, seqA)
+    check not adaSeq(daftarA.body, seqB)
+
+    let daftarB = getJson(AuditPath & "?limit=200", tokenOf(login("itapi-hanya-b", SandiUji)))
+    check daftarB.code == 200
+    check adaSeq(daftarB.body, seqB)
+    check not adaSeq(daftarB.body, seqA)
+
+  test "pembacaan lintas-cabang tercatat di cabang yang dibaca (D-055 butir 5)":
+    let cabangA = $newId(systemClock())
+    let cabangB = $newId(systemClock())
+    let pengaju = ajukanCabang(tokenOf(login(MakerUser)), cabangA)
+    check pengaju.code == 201
+    check postJson("/api/v1/params/changes/" & pengaju.body["paramValueId"].getStr() &
+      "/approve", newJObject(), tokenOf(login(CheckerUser))).code == 200
+
+    # Pembaca **tanpa** batas cabang membaca daftar: baris cabang A dibaca dari luar cabang tugasnya.
+    let daftar = getJson(ParamsPath & "?status=ACTIVE", tokenOf(login(MakerUser)))
+    check daftar.code == 200
+    let seqBaca = seqAudit("param.read_cross_branch", cabangA)
+    check seqBaca > 0
+    check seqAudit("param.read_cross_branch", cabangB) == 0
+
+    # Jejak itu milik cabang **yang dibaca**, bukan cabang tugas pembacanya: cabang lain tidak
+    # melihatnya, walaupun pembacanya pengguna pusat.
+    let uidA = buatUser("itapi-lintas-a")
+    beriRole(uidA, "param_maker", cabangA)
+    let uidB = buatUser("itapi-lintas-b")
+    beriRole(uidB, "param_maker", cabangB)
+    let lihatA = getJson(AuditPath & "?limit=200", tokenOf(login("itapi-lintas-a", SandiUji)))
+    check lihatA.code == 200
+    check adaSeq(lihatA.body, seqBaca)
+    let lihatB = getJson(AuditPath & "?limit=200", tokenOf(login("itapi-lintas-b", SandiUji)))
+    check lihatB.code == 200
+    check not adaSeq(lihatB.body, seqBaca)
+
+  test "pengenal cabang non-uuid tidak dipaksa ke kolom uuid (O-017)":
+    # Pengenal cabang di tempat lain bertipe teks (`param_value.scope_id`, `user_role.branch_id`).
+    # Otorisasi tetap bekerja dengan teks; yang tidak bisa hanyalah kolom audit yang bertipe uuid —
+    # jadi barisnya tetap tanpa cabang, dan pengenalnya tetap utuh di payload (tidak ada cast paksa
+    # yang membuat permintaan sah berakhir 500).
+    let pengaju = ajukanCabang(tokenOf(login(MakerUser)), "itapi-cabang-teks")
+    check pengaju.code == 201
+    let pvId = pengaju.body["paramValueId"].getStr()
+    let db = dbPool.acquire()
+    try:
+      check db.getValue(sql"""
+        SELECT coalesce(branch_id::text, 'NULL') FROM platform.audit_log
+         WHERE action = 'param.submit' AND resource_id = ?""", pvId) == "NULL"
+      check db.getValue(sql"""
+        SELECT after_value->>'scope_id' FROM platform.audit_log
+         WHERE action = 'param.submit' AND resource_id = ?""", pvId) == "itapi-cabang-teks"
+    finally:
+      dbPool.release(db)
+
 suite "akhir periode tanpa penerus lewat HTTP (O-043, D-046 butir 8)":
   const
     AkhirKey = "platform.calendar.weekend_days" # allowed_scopes: GLOBAL, BRANCH

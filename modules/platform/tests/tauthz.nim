@@ -56,6 +56,35 @@ suite "otorisasi: branch scoping":
     check not authorize(g, "", "platform.*.*").allowed
     check not authorize(g, "", "platform.param").allowed
 
+suite "otorisasi tanpa dimensi cabang (T-058, D-062)":
+  const baca = "platform.param.read"
+
+  test "izin yang dipegang di cabang mana pun = dipegang":
+    # Gerbang untuk daftar (hasilnya disaring per baris) tidak boleh menuntut satu cabang: kalau
+    # menuntut, grant khusus cabang ditolak di pintu masuk dan penyaringan per baris tak terpakai.
+    let cabang = @[grant("teller", "br-bandung", baca)]
+    check authorizeAnyBranch(cabang, baca).allowed
+    # Kontrol: aturan satu-cabang tidak ikut longgar — gerbang daftar dan gerbang cabang berbeda.
+    check not authorize(cabang, "", baca).allowed
+    check authorize(cabang, "br-bandung", baca).allowed
+    check not authorize(cabang, "br-surabaya", baca).allowed
+
+  test "izin yang tidak dimiliki tetap ditolak":
+    let lain = @[grant("teller", "br-bandung", "teller.session.open")]
+    let d = authorizeAnyBranch(lain, baca)
+    check not d.allowed
+    check d.reason == arNoPermission
+
+  test "SoD dan bentuk kode izin tetap ditegakkan":
+    # Yang dilonggarkan hanya dimensi cabang.
+    let semua = @[grant("maker", "br-bandung", "platform.param.submit"),
+                  grant("checker", "br-bandung", "platform.param.submit")]
+    check authorizeAnyBranch(semua, "platform.param.submit",
+      @[("checker", "maker")]).reason == arRoleConflict
+    let admin = @[grant("admin", "", "platform.param.submit")]
+    check authorizeAnyBranch(admin, "platform.*.*").reason == arNoPermission
+    check authorizeAnyBranch(admin, "platform.param").reason == arNoPermission
+
 suite "visibilitas scope parameter (D-046 butir 6, D-055)":
   const baca = "platform.param.read"
   let cabang = @[grant("teller", "br-bandung", baca)]

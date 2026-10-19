@@ -59,6 +59,7 @@ const PARAM_REASON_MESSAGES: Record<string, () => string> = {
   scope_id_required: () => m.param_error_scope_id_required(),
   scope_id_forbidden: () => m.param_error_scope_id_forbidden(),
   scope_not_readable: () => m.param_error_scope_not_readable(),
+  branch_not_allowed: () => m.param_error_branch_not_allowed(),
   effective_to_without_successor: () => m.param_error_effective_to_without_successor(),
   invalid_combination: () => m.param_error_invalid_combination(),
   value_invalid: () => m.param_error_value_invalid(),
