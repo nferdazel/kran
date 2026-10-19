@@ -320,6 +320,37 @@ suite "MFA: gerbang fitur":
     check mfaStatusOf(MakerUser) == "NONE"
     check auditRows("auth.mfa.enrol", MakerUser) == 0
 
+  test "kebijakan MFA belum tersemai sama sekali → 403 mfa_disabled, bukan 500":
+    # Keadaan nyata di produksi saat deploy ini: `dbtools seed` bukan bagian dari deploy (O-066), jadi
+    # lima nilai `platform.security.mfa.*` belum ada. Saklar keamanan harus fail-closed ke **mati**,
+    # bukan gagal 500 — dan yang diuji adalah keadaan itu sendiri, bukan asumsinya.
+    let conn = dbPool.acquire()
+    try:
+      discard conn.execAffectedRows(sql"""
+        DELETE FROM platform.param_value WHERE key LIKE 'platform.security.mfa.%'""")
+    finally:
+      dbPool.release(conn)
+
+    let maker = login(MakerUser)
+    let token = tokenOf(maker)
+    let status = getJson(StatusPath, token)
+    check status.code == 403
+    checkProblem(StatusPath, "GET", "403", status.body, reason = "mfa_disabled")
+    let enrol = postJson(EnrolmentPath, newJObject(), token)
+    check enrol.code == 403
+    checkProblem(EnrolmentPath, "POST", "403", enrol.body, reason = "mfa_disabled")
+    check mfaStatusOf(MakerUser) == "NONE"
+
+    # Kembalikan nilai seed (berkasnya idempotent) supaya test berikutnya menguji jalur normal.
+    let restore = dbPool.acquire()
+    try:
+      execScript(restore, readFile("packs/base/generated/param_values.sql"))
+    finally:
+      dbPool.release(restore)
+    let setelahPulih = getJson(StatusPath, token)
+    check setelahPulih.code == 403 # nilai seed `enabled` = false
+    checkProblem(StatusPath, "GET", "403", setelahPulih.body, reason = "mfa_disabled")
+
   test "fitur mati + server tanpa keyring → tetap 403 mfa_disabled (gerbang fitur lebih dulu)":
     # Urutan ini disengaja: fitur yang belum diaktifkan tidak boleh menjawab 501 hanya karena
     # instalasi ini belum punya KEK — dan pemanggil tidak bisa menyimpulkan status konfigurasi

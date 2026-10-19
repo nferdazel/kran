@@ -59,16 +59,26 @@ type
 
 proc mfaSettingsOf*(db: DbConn, scope: ScopeRef, asOf: string): MfaSettings =
   ## Kebijakan MFA institusi. Dipisahkan dari `settingsOf` (login) supaya login tidak ikut
-  ## bergantung pada nilai parameter MFA: bila nilai ini belum tersemai, hanya rute MFA yang gagal.
+  ## bergantung pada nilai parameter MFA: bila nilai ini belum tersemai, hanya rute MFA yang menolak.
+  ##
+  ## Saklarnya fail-closed ke **mati** bila nilainya belum ada (`activeValueOpt`, bukan
+  ## `activeValueJson`): instalasi baru — atau produksi yang seed parameter MFA-nya belum dijalankan
+  ## — harus menjawab 403 `mfa_disabled`, bukan galat 500. Nilai lain dibaca **hanya** saat saklarnya
+  ## hidup, sehingga kebijakan yang setengah tersemai tetap gagal keras alih-alih memakai bentuk kode
+  ## yang tak pernah diputuskan siapa pun.
   let lookup = lookupFor(scope)
-  let enabled = db.activeValueJson(keyString(P_platform_security_mfa_enabled), asOf, lookup)
-  if enabled.kind != JBool:
-    raise newException(ValueError, "parameter mfa.enabled bukan boolean: " & $enabled)
+  let enabled = db.activeValueOpt(keyString(P_platform_security_mfa_enabled), asOf, lookup)
+  if enabled.isNone:
+    return MfaSettings(enabled: false)
+  if enabled.get().kind != JBool:
+    raise newException(ValueError, "parameter mfa.enabled bukan boolean: " & $enabled.get())
+  if not enabled.get().getBool:
+    return MfaSettings(enabled: false)
   let issuer = db.activeValueJson(keyString(P_platform_security_mfa_issuer), asOf, lookup)
   if issuer.kind != JString:
     raise newException(ValueError, "parameter mfa.issuer bukan string: " & $issuer)
   MfaSettings(
-    enabled: enabled.getBool,
+    enabled: true,
     issuer: issuer.getStr,
     digits: db.activeParamInt(keyString(P_platform_security_mfa_digits), asOf, lookup),
     periodSeconds: db.activeParamInt(
