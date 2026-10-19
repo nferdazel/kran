@@ -13,6 +13,11 @@
 ## tidak menyediakan `wait` bertimeout. Untuk ukuran pool kecil dan trafik Fase 0 ini memadai; bila
 ## nanti jadi leher botol, ganti dengan antrean bertimeout (ADR kecil).
 ##
+## **Batas satu blok kerja** (`cfg.queryDeadlineMs`, T-065): `withConn`/`withTx` mendaftarkan socket
+## ke pemantau `deadline.nim`. Bila batas lewat (koneksi membeku di tengah kueri — kasus yang tidak
+## ditolong `connect_timeout`, `statement_timeout`, maupun keepalive), socket di-`shutdown` sehingga
+## blok gagal dengan `PoolError` dan **koneksi dibuang** (status protokolnya tidak bisa dipercaya).
+##
 ## `validateOnAcquire` berarti **validasi nyata**: satu `select 1` untuk koneksi yang diambil dari
 ## daftar idle (koneksi baru tidak perlu). Harganya satu perjalanan bolak-balik; imbalannya koneksi
 ## yang sudah mati di server tidak lagi diserahkan ke pemanggil (T-033).
@@ -24,6 +29,7 @@ import db_connector/db_postgres
 import db_connector/postgres
 
 import ./config
+import ./deadline
 
 type
   PoolError* = object of IOError
@@ -148,10 +154,23 @@ proc acquire*(p: DbPool): DbConn =
         openNew = true
 
     if not kandidat.isNil:
-      if not p.cfg.validateOnAcquire or pingConn(kandidat):
+      # Ping juga dibatasi: koneksi idle yang membeku tidak boleh menahan `acquire` tanpa batas.
+      let guard = armDeadline(pqsocket(kandidat), p.cfg.queryDeadlineMs)
+      var ok = false
+      var expired = false
+      try:
+        ok = not p.cfg.validateOnAcquire or pingConn(kandidat)
+        expired = disarmDeadline(guard)
+      except CatchableError:
+        discard disarmDeadline(guard)
+        withLock p.lock:
+          dec p.created
+        pqfinish(kandidat)
+        raise
+      if ok and not expired:
         return kandidat
-      # Hidup menurut libpq, tetapi sudah mati di server: buang supaya pemanggil tidak menerima
-      # koneksi yang pasti gagal, lalu ambil/buat yang lain.
+      # Hidup menurut libpq, tetapi sudah mati di server (atau ping melewati batas): buang supaya
+      # pemanggil tidak menerima koneksi yang pasti gagal, lalu ambil/buat yang lain.
       withLock p.lock:
         dec p.created
       pqfinish(kandidat)
@@ -195,13 +214,62 @@ proc release*(p: DbPool, db: DbConn) =
     else:
       p.idle.add db
 
+proc dropConn(p: DbPool, db: DbConn) =
+  ## Buang koneksi yang status protokolnya tidak bisa dipercaya (mis. setelah batas waktu).
+  if db == nil:
+    return
+  pqfinish(db)
+  withLock p.lock:
+    dec p.created
+
+proc finishWork(p: DbPool, db: DbConn, guard: DeadlineGuard): bool =
+  ## Lepas batas waktu lalu kembalikan/buang koneksi. `true` = batas terlanjur lewat.
+  result = disarmDeadline(guard)
+  if result:
+    p.dropConn(db)
+  else:
+    p.release(db)
+
+proc finishTxFailure(p: DbPool, db: DbConn, guard: DeadlineGuard): bool =
+  ## Jalur gagal `withTx`: kalau koneksi masih hidup, ROLLBACK eksplisit **sebelum** release supaya
+  ## `stats.leakedTx` tetap berarti "pemanggil mengembalikan koneksi dalam transaksi terbuka",
+  ## bukan "transaksi ini gagal". ROLLBACK tetap di bawah anggaran: bila socket sudah membeku,
+  ## batas yang sama memutusnya (galatnya ditelan di sini) alih-alih menggantung tanpa batas.
+  if pqtransactionStatus(db) != PQTRANS_IDLE:
+    try:
+      rollbackIfOpen(db)
+    except CatchableError:
+      discard
+  result = disarmDeadline(guard)
+  if result:
+    p.dropConn(db)
+  else:
+    p.release(db)
+
+proc deadlineMessage(p: DbPool, sebab: string): string =
+  result = "blok kerja DB melewati batas " & $p.cfg.queryDeadlineMs &
+    " ms; koneksi dibuang (KRAN_DB_QUERY_DEADLINE_MS)"
+  if sebab.len > 0:
+    result.add "; galat asli: " & sebab
+
 proc withConn*[T](p: DbPool, body: proc(db: DbConn): T): T =
   ## Pinjam koneksi untuk satu blok kerja. Koneksi selalu dikembalikan.
   let db = p.acquire()
+  let guard = armDeadline(pqsocket(db), p.cfg.queryDeadlineMs)
+  var expired = false
   try:
     result = body(db)
-  finally:
-    p.release(db)
+  except CatchableError as e:
+    expired = p.finishWork(db, guard)
+    if expired:
+      raise newException(PoolError, p.deadlineMessage(e.msg))
+    raise
+  except Defect:
+    discard p.finishWork(db, guard)
+    raise
+  # Blok selesai: hasilnya sah walau batas terlanjur lewat (mis. tepat setelah kueri terakhir).
+  # Yang dibuang hanya koneksinya — jangan laporkan gagal untuk pekerjaan yang sudah berhasil.
+  discard p.finishWork(db, guard)
 
 proc withTx*[T](p: DbPool, body: proc(db: DbConn): T): T =
   ## Satu blok kerja = satu transaksi DB (spec §12.2).
@@ -209,20 +277,23 @@ proc withTx*[T](p: DbPool, body: proc(db: DbConn): T): T =
   if pqtransactionStatus(db) != PQTRANS_IDLE:
     p.release(db)
     raise newException(PoolError, "koneksi dipinjam dalam keadaan transaksi terbuka")
-  var committed = false
+  let guard = armDeadline(pqsocket(db), p.cfg.queryDeadlineMs)
+  var expired = false
   try:
     exec(db, sql"BEGIN")
-    try:
-      result = body(db)
-      exec(db, sql"COMMIT")
-      committed = true
-    except CatchableError, Defect:
-      exec(db, sql"ROLLBACK")
-      raise
-  finally:
-    if not committed and pqtransactionStatus(db) != PQTRANS_IDLE:
-      rollbackIfOpen(db)
-    p.release(db)
+    result = body(db)
+    exec(db, sql"COMMIT")
+  except CatchableError as e:
+    expired = p.finishTxFailure(db, guard)
+    if expired:
+      raise newException(PoolError, p.deadlineMessage(e.msg))
+    raise
+  except Defect:
+    discard p.finishTxFailure(db, guard)
+    raise
+  # COMMIT sudah selesai: hasilnya sah walau batas terlanjur lewat. Jangan laporkan gagal —
+  # pemanggil bisa mengulang dan menggandakan efek. Koneksinya saja yang dibuang.
+  discard p.finishWork(db, guard)
 
 proc statsOf*(p: DbPool): PoolStats =
   withLock p.lock:
