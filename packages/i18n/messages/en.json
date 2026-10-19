@@ -60,6 +60,7 @@
   "login_submitting": "Signing in…",
   "login_title": "Sign in",
   "login_username_label": "Username",
+  "param_error_branch_not_allowed": "Your permissions do not cover this value's branch (or this action is not allowed at institution level).",
   "param_error_effective_from_invalid": "Effective-from date is invalid. Use the YYYY-MM-DD format.",
   "param_error_effective_to_invalid": "Effective-to date is invalid. Use the YYYY-MM-DD format.",
   "param_error_effective_to_without_successor": "An effective-to date requires a replacement value that is valid on that date.",

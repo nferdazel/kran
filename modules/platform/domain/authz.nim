@@ -148,7 +148,7 @@ proc isCrossBranchRead*(grants: openArray[Grant], permission, scopeId: string): 
 
 proc authorize*(grants: openArray[Grant], targetBranch, required: string,
                 conflictPairs: openArray[RolePair] = []): AuthzDecision =
-  ## Keputusan otorisasi. Fail-closed:
+  ## Keputusan otorisasi untuk **satu** cabang target. Fail-closed:
   ##   1. pengguna yang memegang pasangan SoD ditolak **apa pun** izinnya (pertahanan berlapis;
   ##      penjagaan utamanya ada saat pemberian role),
   ##   2. izin harus ada **dan** berlaku di cabang target,
@@ -168,6 +168,28 @@ proc authorize*(grants: openArray[Grant], targetBranch, required: string,
     denied(arBranchNotAllowed)
   else:
     denied(arNoPermission)
+
+proc authorizeAnyBranch*(grants: openArray[Grant], required: string,
+                         conflictPairs: openArray[RolePair] = []): AuthzDecision =
+  ## Keputusan otorisasi **tanpa dimensi cabang**: izin dianggap dipegang bila ada minimal satu
+  ## grant yang memberikannya, apa pun batas cabangnya (T-058).
+  ##
+  ## Dipakai hanya untuk permintaan yang hasilnya disaring **per baris** (daftar parameter, daftar
+  ## audit). Di sana satu cabang target tidak bisa menyatakan "sebagian hasil boleh dilihat", dan
+  ## menuntutnya akan menolak pembacaan yang sah. Penjagaan sebenarnya ada di
+  ## `readableScopeFilter`/`auditScopeFilter`. Permintaan yang menyentuh **satu** objek ber-cabang
+  ## tetap memakai `authorize` dengan cabang objek itu.
+  ##
+  ## SoD dan bentuk kode izin ditegakkan sama seperti `authorize` — yang dilonggarkan hanya dimensi
+  ## cabang, bukan syarat lainnya.
+  if not validPermissionCode(required):
+    return denied(arNoPermission)
+  if conflictingPairs(roleCodesOf(grants), conflictPairs).len > 0:
+    return denied(arRoleConflict)
+  for g in grants:
+    if g.permission == required:
+      return allowed()
+  denied(arNoPermission)
 
 proc sessionPolicy*(idleMinutes, absoluteMinutes: int): SessionPolicy =
   ## Validasi kebijakan: idle <= absolut (spec §18.2 "sesi pendek").

@@ -28,6 +28,16 @@ const
   ## Alasan 409 ketika nilai yang akan diaktifkan melanggar aturan lintas-parameter
   ## (lihat `sessionPolicyCandidateProblem`). Kontrak menyebut nilai ini di deskripsi 409.
   reasonCombination* = "invalid_combination"
+  ## Alasan 403 ketika cabang objek di luar wewenang pemanggil (T-058, D-062). `targetBranch = ""`
+  ## berarti aksi **tingkat institusi**, dan itu punya kalimatnya sendiri: menuliskan "cabang  di luar
+  ## wewenang" (cabang kosong) akan menyesatkan operator.
+  reasonBranchNotAllowed* = "branch_not_allowed"
+
+proc branchNotAllowedProblem(targetBranch, aksi: string): string =
+  if targetBranch.len == 0:
+    "aksi tingkat institusi butuh wewenang tanpa batas cabang (" & aksi & ")"
+  else:
+    "cabang " & targetBranch & " di luar wewenang " & aksi
 
 proc itemJson(row: ParamValueRow): JsonNode =
   ## Bentuk satu item daftar (kontrak `ParamValue`). Nama field = kontrak, bukan nama kolom.
@@ -56,8 +66,10 @@ proc auditCrossBranchReads(db: DbConn, principal: Principal, req: Request, clock
     if row.scopeType == $pstBranch and isCrossBranchRead(grants, permissionParamRead, row.scopeId):
       branches.incl row.scopeId
   for branch in branches:
+    # Cabang entri ini = cabang yang **dibaca** (T-058, D-062), bukan cabang tugas pelaku: auditor
+    # cabang itu yang berkepentingan tahu siapa membaca datanya — termasuk pembacaan dari pusat.
     discard appendAudit(db, newAuditEntry(
-      auditContextFor(principal, req, clock, "cross_branch_read"),
+      auditContextFor(principal, req, clock, "cross_branch_read", branch),
       "param.read_cross_branch", "param_branch", branch, clock,
       businessDate = businessDateIso(clock)))
 
@@ -175,6 +187,11 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
       "scope " & scopeType & " wajib punya scopeId")
     return
 
+  # Cabang target (T-058, D-062): nilai ber-scope `BRANCH` menyentuh **satu** cabang, jadi izin
+  # pengaju harus menutupinya. Aksi tingkat institusi (`""`) — termasuk scope GLOBAL/INSTITUTION —
+  # tetap menuntut grant tanpa batas cabang, sama seperti sebelum T-058.
+  let targetBranch = if scope == pstBranch: scopeId else: ""
+
   var status = 0
   var payload = newJObject()
   var problem = ""
@@ -189,7 +206,10 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
           problemCode = "scope_not_readable"
           raise newException(ValueError,
             "scope " & scopeType & " di luar wewenang baca pengaju")
-        let ctx = auditContextFor(principal.get(), req, app.clock, reason)
+        if not authorizedAtBranch(db, principal.get(), targetBranch, permissionParamSubmit):
+          problemCode = reasonBranchNotAllowed
+          raise newException(ValueError, branchNotAllowedProblem(targetBranch, "pengaju"))
+        let ctx = auditContextFor(principal.get(), req, app.clock, reason, targetBranch)
         # Aturan lintas-parameter diperiksa lebih dulu: nilai yang sah sendiri bisa tetap ditolak
         # bila digabung nilai lain yang sudah aktif (lihat `sessionPolicyCandidateProblem`).
         let combinationProblem = sessionPolicyCandidateProblem(db, key, node["value"],
@@ -221,8 +241,9 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
     # Validasi definisi/scope/schema/tipe nilai — semuanya kesalahan permintaan, bukan kesalahan
     # server (spec §10.4: pesannya menyebut aturan yang dilanggar). `problemCode` sudah diisi
     # untuk pelanggaran lintas-parameter; sisanya = nilai itu sendiri yang tidak sah.
-    # Wewenang scope berbeda: permintaannya berbentuk sah, yang kurang adalah izinnya → 403.
-    status = if problemCode == "scope_not_readable": 403 else: 400
+    # Wewenang scope dan cabang berbeda: permintaannya berbentuk sah, yang kurang adalah izinnya →
+    # 403 (T-058 menambahkan `branch_not_allowed` dengan alasan yang sama).
+    status = if problemCode in ["scope_not_readable", reasonBranchNotAllowed]: 403 else: 400
     problem = e.msg
     if problemCode.len == 0:
       problemCode = "value_invalid"
@@ -274,35 +295,50 @@ proc handleApproveParamChange*(app: AppContext, req: Request) {.gcsafe.} =
           # Persetujuan adalah pintu terakhir: dua pengajuan yang masing-masing sah bisa
           # bertabrakan setelah salah satunya aktif, jadi kombinasi diperiksa lagi di sini.
           let pending = pendingValueOf(db, paramValueId)
-          let combinationProblem =
-            if pending.isSome:
-              sessionPolicyCandidateProblem(db, pending.get().key, pending.get().value,
-                pending.get().effectiveFrom, pending.get().effectiveTo,
-                businessDateIso(app.clock))
+          # Cabang target (T-058, D-062): yang disentuh adalah cabang **baris yang diaktifkan**.
+          # Diperiksa lebih dulu daripada alasan 409 lain supaya penolakan wewenang tidak bergantung
+          # pada keadaan barisnya (dan tidak membocorkan masalah kombinasi/periodenya).
+          let targetBranch =
+            if pending.isSome and pending.get().scopeType == $pstBranch:
+              pending.get().scopeId
             else:
               ""
-          # O-043: nilai ber-`effective_to` yang penerusnya hilang (mis. ditolak) tidak boleh
-          # diaktifkan — kalau lolos, tanggal setelahnya tidak punya nilai berlaku.
-          let gapProblem =
-            if pending.isSome:
-              effectiveToGapProblem(db, pending.get().key, pending.get().scopeType,
-                pending.get().scopeId, pending.get().effectiveFrom, pending.get().effectiveTo)
-            else:
-              ""
-          if gapProblem.len > 0:
-            status = 409
-            reasonParam = "effective_to_without_successor"
-            problem = gapProblem
-          elif combinationProblem.len > 0:
-            status = 409
-            reasonParam = reasonCombination
-            problem = combinationProblem
+          if not authorizedAtBranch(db, principal.get(), targetBranch,
+                                    permissionParamApprove):
+            status = 403
+            reasonParam = reasonBranchNotAllowed
+            problem = branchNotAllowedProblem(targetBranch, "penyetuju")
           else:
-            let ctx = auditContextFor(principal.get(), req, app.clock,
-              "persetujuan perubahan parameter")
-            let outcome = approveChange(db, ctx, app.clock, paramValueId)
-            status = 200
-            payload = %*{"paramValueId": outcome.paramValueId, "status": $pvActive})
+            let combinationProblem =
+              if pending.isSome:
+                sessionPolicyCandidateProblem(db, pending.get().key, pending.get().value,
+                  pending.get().effectiveFrom, pending.get().effectiveTo,
+                  businessDateIso(app.clock))
+              else:
+                ""
+            # O-043: nilai ber-`effective_to` yang penerusnya hilang (mis. ditolak) tidak boleh
+            # diaktifkan — kalau lolos, tanggal setelahnya tidak punya nilai berlaku.
+            let gapProblem =
+              if pending.isSome:
+                effectiveToGapProblem(db, pending.get().key, pending.get().scopeType,
+                  pending.get().scopeId, pending.get().effectiveFrom,
+                  pending.get().effectiveTo)
+              else:
+                ""
+            if gapProblem.len > 0:
+              status = 409
+              reasonParam = "effective_to_without_successor"
+              problem = gapProblem
+            elif combinationProblem.len > 0:
+              status = 409
+              reasonParam = reasonCombination
+              problem = combinationProblem
+            else:
+              let ctx = auditContextFor(principal.get(), req, app.clock,
+                "persetujuan perubahan parameter", targetBranch)
+              let outcome = approveChange(db, ctx, app.clock, paramValueId)
+              status = 200
+              payload = %*{"paramValueId": outcome.paramValueId, "status": $pvActive})
   except ValueError as e:
     status = 409
     reasonParam = "not_pending"
@@ -325,6 +361,7 @@ proc handleApproveParamChange*(app: AppContext, req: Request) {.gcsafe.} =
 
   case status
   of 200: req.respondJson(200, payload)
+  of 403: req.respondParamReason(pkForbidden, "Forbidden", reasonParam, problem)
   of 404: req.respondProblem(pkNotFound, "Not Found", problem)
   of 409: req.respondProblem(newProblem(pkConflict, "Conflict", problem,
            traceId = traceIdFrom(req), params = @[("reason", reasonParam)]))

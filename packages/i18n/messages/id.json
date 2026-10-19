@@ -60,6 +60,7 @@
   "login_submitting": "Memproses…",
   "login_title": "Masuk",
   "login_username_label": "Nama pengguna",
+  "param_error_branch_not_allowed": "Wewenang Anda tidak mencakup cabang nilai ini (atau aksi ini tidak boleh dilakukan di tingkat institusi).",
   "param_error_effective_from_invalid": "Tanggal berlaku dari tidak sah. Gunakan format YYYY-MM-DD.",
   "param_error_effective_to_invalid": "Tanggal berlaku sampai tidak sah. Gunakan format YYYY-MM-DD.",
   "param_error_effective_to_without_successor": "Tanggal berlaku sampai hanya boleh dipakai bila ada nilai pengganti yang berlaku pada tanggal itu.",

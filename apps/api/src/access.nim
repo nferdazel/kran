@@ -84,19 +84,56 @@ proc authorized*(db: DbConn, principal: Principal, permission: string): bool =
   ## pemanggil dan `Clock` tanpa state bersama. Sama alasannya dengan `db_bridge`:
   ## asumsi ditegaskan sekali di sini, bukan di setiap pemanggil.
   {.cast(gcsafe).}:
-    ## Endpoint T-012 berjalan di **tingkat institusi** (`targetBranch = ""`), jadi hanya grant tanpa
-    ## batas cabang yang berlaku. Parameter ber-scope `BRANCH`/`PRODUCT` belum punya konteks cabang
-    ## di API ini — batasannya dicatat di `docs/tasks/T-012.md`.
+    ## Izin di **tingkat institusi** (`targetBranch = ""`): hanya grant tanpa batas cabang yang
+    ## berlaku.
+    ##
+    ## Dipakai jalur yang memang institusi — khususnya langganan realtime (`topicsAllowedFor`),
+    ## yang **tidak** disaring per baris: membukanya untuk grant khusus cabang berarti mengirim
+    ## seluruh peristiwa `param.changed` lintas cabang. Rute HTTP tidak memakai fungsi ini; ia
+    ## memakai `authorizedAnyBranch` (daftar, disaring per baris) atau `authorizedAtBranch` (satu
+    ## objek ber-cabang). Sisa pekerjaan realtime: O-070.
     authorizeUser(db, principal.user.userId, "", permission).allowed
 
+proc authorizedAnyBranch*(db: DbConn, principal: Principal, permission: string): bool =
+  ## Izin dipegang untuk **setidaknya satu** cabang (T-058, D-062): gerbang untuk permintaan yang
+  ## hasilnya disaring per baris (`readableScopeFilter`/`auditScopeFilter`). Bukan gerbang akhir —
+  ## yang menentukan apa yang terlihat adalah penyaringan itu sendiri.
+  {.cast(gcsafe).}:
+    authorizeUserAnyBranch(db, principal.user.userId, permission).allowed
+
+proc authorizedAtBranch*(db: DbConn, principal: Principal, targetBranch,
+                         permission: string): bool =
+  ## Izin untuk **satu** cabang target (T-058, D-062) — dipakai begitu cabang objek yang disentuh
+  ## permintaan diketahui (nilai parameter ber-scope `BRANCH`). `targetBranch = ""` = aksi tingkat
+  ## institusi, dan hanya grant tanpa batas cabang yang berlaku.
+  {.cast(gcsafe).}:
+    authorizeUser(db, principal.user.userId, targetBranch, permission).allowed
+
 proc auditContextFor*(principal: Principal, req: Request, clock: Clock,
-                      reason: string): AuditContext =
+                      reason: string, branch = ""): AuditContext =
   ## Pemanggilan repo platform dari konteks HTTP: query pada koneksi milik thread
   ## pemanggil dan `Clock` tanpa state bersama. Sama alasannya dengan `db_bridge`:
   ## asumsi ditegaskan sekali di sini, bukan di setiap pemanggil.
   {.cast(gcsafe).}:
-    ## Konteks audit dari permintaan HTTP: aktor, IP, perangkat, alasan, korelasi trace.
+    ## Konteks audit dari permintaan HTTP: aktor, IP, perangkat, alasan, korelasi trace, dan
+    ## **cabang yang disentuh** permintaan (T-058, D-062) bila ada.
+    ##
+    ## Cabangnya berasal dari objek (nilai parameter ber-scope `BRANCH`, cabang yang dibaca pada
+    ## jejak lintas-cabang), bukan dari cabang tugas pelaku: auditor cabang harus melihat tindakan
+    ## siapa pun atas data cabangnya — termasuk pembacaan dari pusat.
+    ##
+    ## `platform.audit_log.branch_id` bertipe uuid dan ditulis lewat `NULLIF(?, '')::uuid`
+    ## (`audit_repo.appendAudit`), jadi cabang hanya bisa ikut tercatat bila pengenalnya berbentuk
+    ## uuid (`parseId`). Pengenal lain (mis. `"itapi-cabang-b"`) tidak dipaksa: pengenalnya tetap
+    ## utuh di `resource_id`/payload, barisnya tetap tanpa cabang, dan kesenjangan representasi itu
+    ## dicatat sebagai O-017.
+    var branchIds: seq[Id]
+    if branch.len > 0:
+      let cabang = parseId(branch)
+      if cabang.isOk:
+        branchIds = @[cabang.value()]
     newAuditContext(parseId(principal.user.userId).value(),
+      branchIds = branchIds,
       ip = clientIp(req), device = deviceOf(req), reason = reason,
       correlationId = traceIdFrom(req), startedAt = clock.now())
 
@@ -131,7 +168,13 @@ proc requirePrincipal*(ctx: AppContext, req: Request): Option[Principal] =
 
 proc requirePermission*(ctx: AppContext, req: Request, principal: Principal,
                         permission: string): bool =
-  ## Penjaga izin: membalas 403 dan mengembalikan `false` bila permintaan tidak boleh lanjut.
+  ## Penjaga izin tingkat rute: membalas 403 dan mengembalikan `false` bila permintaan tidak boleh
+  ## lanjut.
+  ##
+  ## Gerbangnya **tanpa dimensi cabang** (T-058, D-062): permintaan daftar tidak punya satu cabang
+  ## target (hasilnya disaring per baris), dan permintaan yang menyentuh satu objek ber-cabang belum
+  ## tahu cabangnya di titik ini. Karena itu 403 di sini berarti "izin tidak dipegang di cabang mana
+  ## pun"; cabang objek diperiksa `authorizedAtBranch` begitu objeknya dibaca.
   if ctx.pool.isNil:
     req.respondProblem(pkNotImplemented, "Not Implemented",
       "layanan basis data tidak dikonfigurasi")
@@ -146,7 +189,7 @@ proc requirePermission*(ctx: AppContext, req: Request, principal: Principal,
       traceId = traceIdFrom(req), params = @[("reason", "password_change_required")]))
     return false
   let allowed = withDbConn(ctx.pool, proc(db: DbConn): bool {.gcsafe.} =
-    authorized(db, principal, permission))
+    authorizedAnyBranch(db, principal, permission))
   if not allowed:
     req.respondProblem(newProblem(pkForbidden, "Forbidden", "tidak punya izin " & permission,
       traceId = traceIdFrom(req), params = @[("permission", permission)]))

@@ -191,7 +191,9 @@ export interface paths {
          * Daftar nilai parameter
          * @description Nilai parameter beserta statusnya (`ACTIVE`, `PENDING`, `SUPERSEDED`, `REJECTED`) untuk UI
          *     Parameter Admin (spec §10.7). Filter `status=PENDING` = daftar yang menunggu checker.
-         *     Daftar belum disaring per scope/cabang (lihat batasan di `docs/tasks/T-012.md`).
+         *     Hasilnya **disaring per scope** menurut wewenang pembaca (D-046 butir 6, D-055): nilai
+         *     ber-scope `BRANCH`/`PRODUCT`/`SEGMENT`/`ROLE` hanya terlihat bila grant-nya menutupinya.
+         *     Pembacaan lintas cabang tetap boleh, tetapi dicatat (`param.read_cross_branch`).
          */
         get: operations["listParams"];
         put?: never;
@@ -225,7 +227,9 @@ export interface paths {
          *     `effective_to_invalid`, `period_invalid`, `scope_id_required`, `scope_id_forbidden`,
          *     `value_invalid`, `invalid_combination` (bertentangan dengan parameter lain yang aktif),
          *     `effective_to_without_successor` (tanggal berakhir tidak ditutup nilai penerus, O-043), dan
-         *     403 `scope_not_readable` (scope di luar wewenang **baca** pengaju, D-047).
+         *     dua penolakan wewenang 403: `scope_not_readable` (scope di luar wewenang **baca** pengaju,
+         *     D-047) serta `branch_not_allowed` (nilai ber-scope `BRANCH` di cabang di luar wewenang
+         *     **pengajuan**, T-058 — aksi tingkat institusi juga menuntut grant tanpa batas cabang).
          */
         post: operations["submitParamChange"];
         delete?: never;
@@ -248,6 +252,10 @@ export interface paths {
          * @description Mengaktifkan nilai `PENDING` menjadi `ACTIVE` dan memangkas nilai aktif sebelumnya
          *     (`SUPERSEDED`). Penyetuju **wajib berbeda** dari pengaju — ditegakkan skema DB
          *     (`self_approval`), bukan hanya kode. Konflik periode (EXCLUDE) juga ditolak.
+         *     Menyetujui berarti bertindak di cabang nilai itu, jadi izin penyetuju harus menutupi cabang
+         *     tersebut: bila tidak, dibalas 403 dengan `params.reason = branch_not_allowed` (T-058)
+         *     **sebelum** alasan 409 diperiksa. Nilai tingkat institusi (`scopeType` selain `BRANCH`)
+         *     menuntut grant **tanpa** batas cabang — grant khusus cabang tidak cukup.
          */
         post: operations["approveParamChange"];
         delete?: never;

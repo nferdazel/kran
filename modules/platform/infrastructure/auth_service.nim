@@ -272,6 +272,11 @@ proc authorizeUser*(db: DbConn, userId, targetBranch, permission: string): Authz
   ## Keputusan otorisasi untuk pengguna: izin efektif dari role + branch scoping + SoD.
   authorize(grantsOf(db, userId), targetBranch, permission, conflictPairs(db))
 
+proc authorizeUserAnyBranch*(db: DbConn, userId, permission: string): AuthzDecision =
+  ## Otorisasi pengguna **tanpa dimensi cabang** (T-058): izin dipegang atau tidak. Dipakai
+  ## permintaan yang hasilnya disaring per baris; lihat `authorizeAnyBranch` untuk alasannya.
+  authorizeAnyBranch(grantsOf(db, userId), permission, conflictPairs(db))
+
 proc changePassword*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
                      user: UserRow, settings: SecuritySettings,
                      oldPassword, newPassword: string, keepSessionId = ""): bool =

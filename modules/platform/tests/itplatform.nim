@@ -377,9 +377,10 @@ suite "platform: audit_log — verifikasi tahan urutan commit (O-038, T-052)":
     check not chainOk(rows)
 
 suite "platform: daftar audit — visibilitas per cabang (O-032, D-046 butir 6)":
-  ## Diuji di lapis repo, bukan lewat HTTP: baris audit dari jalur HTTP selalu tanpa cabang
-  ## (`auditContextFor` tidak mengisi `branchIds`), jadi cabang hanya bisa diuji dengan konteks
-  ## yang memang membawanya. Cabang pada audit_log bertipe uuid, bukan teks bebas.
+  ## Diuji di lapis repo (aturan penyaringan) — pasangan HTTP-nya ada di `itapi_auth` (suite
+  ## "scoping cabang di jalur HTTP"), yang membuktikan `auditContextFor` benar-benar mengisi cabang
+  ## sejak T-058. Di sini konteksnya dibuat langsung supaya aturan `listAudit` bisa diuji tanpa
+  ## melewati handler. Cabang pada `audit_log` bertipe uuid, bukan teks bebas (O-017).
   const
     cabangA = "11111111-1111-7111-8111-111111111111"
     cabangB = "22222222-2222-7222-8222-222222222222"
