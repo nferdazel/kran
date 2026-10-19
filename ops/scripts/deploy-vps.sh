@@ -172,6 +172,12 @@ done
 # Yang dipakai: kehadiran seksi `[Container]` sebagai penjaga murah terhadap berkas terpotong —
 # selebihnya divalidasi podman-user-generator saat `daemon-reload`, dan kegagalannya muncul di
 # HEALTH GATE (bukan diam-diam).
+#
+# Unit `*.service` lama sengaja dipindah ke `ops/systemd/superseded/`, bukan sekadar ditandai di
+# tempatnya: deploy yang masih memakai versi skrip lama (yang glob-nya `ops/systemd/*.service`)
+# akan memasangnya kembali ke ~/.config/systemd/user, unit native menutupi quadlet bernama sama,
+# dan API mati — persis yang terjadi 2026-10-19 saat deploy pertama setelah cutover. Di dalam
+# subdirektori, tak ada glob yang bisa mengambilnya.
 sync_units() {
   mkdir -p "$UNIT_DIR"
   local src name dst
