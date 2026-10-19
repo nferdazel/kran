@@ -423,6 +423,21 @@ suite "platform: daftar audit — visibilitas per cabang (O-032, D-046 butir 6)"
     for row in terlihat:
       check row.branchId != cabangB
 
+  test "urutan daftar = seq numerik, bukan teks (melewati 100)":
+    # `seq::text` di SELECT membuat `ORDER BY seq` menunjuk kolom keluaran (teks), dan '99' > '100'
+    # secara leksikografis: begitu ledger melewati 100 baris, baris terbaru hilang dari halaman.
+    # Ditemukan lewat e2e flow yang merah setelah DB dev mengumpulkan >100 baris audit.
+    let grantSemua = @[Grant(roleCode: "platform_admin", branchId: "", permission: izin)]
+    let scope = auditScopeFilter(grantSemua, izin)
+    while countAudit(db) < 105:
+      catat("")
+    catat("")
+    let teratas = listAudit(db, 1, "", scope)
+    check teratas.len == 1
+    check teratas[0].seq > 100
+    check teratas[0].seq == parseBiggestInt(db.getValue(
+        sql"SELECT max(seq) FROM platform.audit_log"))
+
 suite "platform: migrasi dua tahap (contract & rollback, T-035)":
   ## Migrasi nyata sudah diterapkan suite pertama; yang ditambahkan di sini adalah berkas sintetis
   ## pada root sementara. Yang diuji bukan hanya kode keluar, tetapi **efeknya di DB**: DDL benar
