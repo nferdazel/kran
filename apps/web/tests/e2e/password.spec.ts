@@ -38,9 +38,13 @@ const MAKER = { username: "dev.maker", password: DEV_PASSWORD };
 const NEW_PASSWORD = "Kata-Sandi-E2E-Baru-Panjang";
 
 /**
- * Tenggang untuk aksi yang menyentuh kata sandi: PBKDF2 dijalankan **dua kali** per permintaan
- * (verifikasi + hash baru) dan sisa suite berjalan paralel di 4 worker terhadap DB yang diakses
- * lewat tunnel SSH. Tenggang bawaan 5 detik pernah membuat test ini gagal secara palsu di CI.
+ * Tenggang untuk aksi yang menyentuh kata sandi: ganti kata sandi menjalankan **N+3** derivasi
+ * PBKDF2 (verifikasi kata sandi lama + kata sandi baru terhadap hash berlaku + N hash riwayat +
+ * hash kata sandi baru; N=5 terburuk → 8). `dev.firstlogin` di suite ini belum punya riwayat, jadi
+ * di sini 3 derivasi. Sisa suite berjalan paralel di 4 worker terhadap DB yang diakses lewat tunnel
+ * SSH, dan biner e2e dibangun **debug** (`./task build`) sehingga kriptonya ~20x lebih lambat
+ * daripada produksi (release). Tenggang bawaan 5 detik pernah membuat test ini gagal secara palsu di
+ * CI — biaya + anggarannya di `docs/tasks/T-060.md` (T-060/O-068).
  */
 const PASSWORD_TIMEOUT = { timeout: 20_000 } as const;
 

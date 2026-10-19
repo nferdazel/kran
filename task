@@ -14,6 +14,7 @@
 #   ./task devdb   kelola DB dev di server (tunnel) - lihat tools/devdb.sh
 #   ./task dbtools migrate|status|validate   migrasi SQL (butuh KRAN_DATABASE_URL)
 #   ./task scaffold <nama> [--dry-run]       buat kerangka modul baru (spec §5.5)
+#   ./task bench-password [--iterations N]   ukur biaya ganti kata sandi (T-060)
 #   ./task help
 #
 # Skrip POSIX sengaja dipilih alih-alih Taskfile/just: tanpa dependensi tooling baru,
@@ -387,7 +388,9 @@ cmd_ci_repeat() { # cmd_ci_repeat [jumlah-putaran]
 }
 
 cmd_help() {
-  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+  # Cetak blok komentar kepala berkas: dari baris 2 sampai baris pertama yang bukan komentar.
+  # Tidak memakai nomor baris tetap supaya menambah perintah tidak memotong bantuan diam-diam.
+  sed -n '2,/^[^#]/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'
 }
 
 case "${1:-help}" in
@@ -409,6 +412,15 @@ case "${1:-help}" in
   devdb) shift; exec "$ROOT/tools/devdb.sh" "$@" ;;
   dbtools) shift; mkdir -p "$BUILD"; tool=$(build_tool "$ROOT/tools/dbtools"); "$tool" --root "$ROOT" "$@" ;;
   scaffold) shift; mkdir -p "$BUILD"; cmd_scaffold "$@" ;;
+  bench-password)
+    # `-d:release` disengaja: biner produksi juga release (`apps/api/Dockerfile:41`). Dengan build
+    # bawaan (debug) PBKDF2 ~20x lebih lambat dan angkanya tidak menggambarkan apa pun yang nyata.
+    shift
+    mkdir -p "$BIN"
+    nim c -d:release $NIMFLAGS --out:"$BIN/bench-password" "$ROOT/tools/bench-password/main.nim" >/dev/null \
+      || die "gagal build tool bench-password"
+    exec "$BIN/bench-password" "$@"
+    ;;
   help | -h | --help) cmd_help ;;
   *) die "perintah tidak dikenal: $1 (coba ./task help)" ;;
 esac
