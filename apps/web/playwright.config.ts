@@ -83,6 +83,11 @@ servers.push({
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
+  // Batas tingkat-run (T-044/T-063): tanpanya, runner/worker yang macet membuat run menunggu
+  // 9–12 menit tanpa pesan yang menerangkan sebabnya. Run penuh terukur di mesin ini 25–33 detik
+  // (Playwright 25,0 s), jadi 8 menit tidak memotong run sehat tetapi mengubah macet menjadi
+  // kegagalan terbaca — bahkan bila runner 10x lebih lambat.
+  globalTimeout: 8 * 60_000,
   // Batas tunggu bawaan 10 s (dari 5 s) — bukan untuk menutupi perilaku yang salah, melainkan karena
   // lingkungan ini memang lambat: setiap login memverifikasi PBKDF2 600.000 iterasi (parameter dev
   // `platform.security.password_pbkdf2_iterations`), DB dev ada di server lain lewat tunnel SSH, dan
