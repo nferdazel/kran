@@ -40,8 +40,25 @@ async function freePort(): Promise<number> {
   });
 }
 
+type StartOptions = {
+  /** Rute yang dipakai untuk menunggu kesiapan (default `/healthz`). */
+  healthPath?: string;
+  /** Batas tunggu kesiapan dalam milidetik (default 20 detik). */
+  readyTimeoutMs?: number;
+};
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Jalankan satu instance API di port bebas dan tunggu sampai `/healthz` menjawab. */
-async function startApi(): Promise<ApiInstance> {
+async function startApi(options: StartOptions = {}): Promise<ApiInstance> {
+  const { healthPath = "/healthz", readyTimeoutMs = 20_000 } = options;
   const port = await freePort();
   // `exec` supaya PID yang dikirimi sinyal adalah proses API-nya, bukan shell-nya. `.local/dev.env`
   // di-source di dalam shell karena `DYLD_*` tidak diwarisi lewat spawner (D-026).
@@ -62,18 +79,32 @@ async function startApi(): Promise<ApiInstance> {
     child.once("exit", (code, signal) => resolve({ code, signal }));
   });
 
-  const deadline = Date.now() + 20_000;
+  const deadline = Date.now() + readyTimeoutMs;
   let ready = false;
   while (Date.now() < deadline && !ready) {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/healthz`);
+      // Abort per percobaan: `fetch` tanpa batas bisa menggantung bila peer menerima TCP tetapi
+      // tidak menjawab, sehingga loop kesiapan tidak pernah memeriksa `deadline` (T-044 H1).
+      const remaining = Math.max(1, deadline - Date.now());
+      const response = await fetch(`http://127.0.0.1:${port}${healthPath}`, {
+        signal: AbortSignal.timeout(Math.min(remaining, 1_000)),
+      });
       ready = response.status === 200;
     } catch {
       ready = false; // belum menerima koneksi
     }
     if (!ready) await sleep(200);
   }
-  expect(ready, `API tidak siap pada port ${port}; keluaran:\n${output}`).toBe(true);
+  if (!ready) {
+    // T-062: pemanggil belum memegang handle anak saat helper ini melempar, jadi `finally` di test
+    // tidak akan membunuhnya. Bersihkan di sini, lalu lempar galat yang membawa PID untuk diperiksa.
+    child.kill("SIGKILL");
+    await exited;
+    throw Object.assign(
+      new Error(`API tidak siap pada port ${port}; keluaran:\n${output}`),
+      { pid: child.pid },
+    );
+  }
 
   return { child, port, output: () => output, exited };
 }
@@ -122,4 +153,16 @@ test("SIGTERM menunggu permintaan yang sedang berjalan selesai (drain)", async (
   } finally {
     api.child.kill("SIGKILL");
   }
+});
+
+test("kesiapan gagal → proses anak tidak ditinggalkan (T-062)", async () => {
+  // Rute 404 membuat readiness tidak pernah tercapai; batas 1,5 s supaya test tetap cepat.
+  const failure = (await startApi({ healthPath: "/rute-tidak-ada", readyTimeoutMs: 1_500 }).catch(
+    (error: unknown) => error,
+  )) as Error & { pid?: number };
+
+  expect(failure).toBeInstanceOf(Error);
+  expect(failure.message).toContain("API tidak siap");
+  expect(failure.pid, "helper gagal tanpa menyebut PID anak").toBeGreaterThan(0);
+  expect(isAlive(failure.pid as number), "proses kran-api yatim tertinggal").toBe(false);
 });
