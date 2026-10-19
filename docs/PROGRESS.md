@@ -1555,6 +1555,8 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
 - **T-069**: `prune_images` di `deploy-vps.sh` — setelah health gate sukses, simpan 5 tag SHA
   terbaru (`KRAN_IMAGE_KEEP`, minimal 1), hapus sisanya; `:local`/`:prev` tidak disentuh.
   Bukti harness 5/5 (keep=3, default, `rmi` gagal, keep=0, keep bukan angka); `bash -n` +
-  `shellcheck -S warning` bersih.
+  `shellcheck -S warning` bersih. Deploy `3f55dad` sukses (CI `39225977717` 4/4); skrip baru
+  berlaku pada deploy berikutnya. Seleksi pada daftar nyata (24 tag SHA): **19 dipangkas, 5
+  disimpan** — termasuk image yang sedang dipakai dan `:prev`.
 - **Sisa**: KEK belum di-mount (butuh mount + `UserNS` saat fitur diaktifkan), latihan rollback di
   server belum dilakukan (T-013).
