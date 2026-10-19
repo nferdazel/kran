@@ -1507,3 +1507,15 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   (Playwright 25,0 s, total 33 s, tanpa `Entering Sleep`); `PWTEST_CHILD_PROCESS_TIMEOUT=20000
   ./task e2e` → 24 passed (26,2 s, nol "did not exit within"). Tidak ada run yang macet, jadi H2
   (~65%) vs H3 (~40%) tidak terpisah oleh data ini — tidak diklaim terbukti.
+
+## T-065 — deadline per-query: spike, keputusan dibutuhkan (19 Okt 2026)
+
+- **Temuan**: klaim D-064 bahwa keepalive membatasi koneksi beku ±15 s **tidak lengkap**. Dengan
+  perantara TCP yang meneruskan lalu berhenti (socket tetap terbuka, kernel tetap meng-ACK — pola
+  tunnel hidup dengan jalur remote mati), `psql ... -c "select 1"` **menggantung > 30 s** (dibunuh
+  manual) tanpa galat. `statement_timeout` tidak berlaku karena kueri tak sampai server.
+- **Kendala**: target "≤ 5 s" bertabrakan dengan `statement_timeout` 15 s (kueri sah bisa 15 s).
+  Deadline klien harus > statement_timeout (usul 20 s), atau statement_timeout juga diturunkan.
+- **Status**: `docs/tasks/T-065.md` memuat opsi A (watchdog pool — rekomendasi), B (libpq
+  nonblocking penuh), C (terima + dokumentasi). Task **BLOCKED** menunggu keputusan pemilik;
+  `docs/ACCEPTED-LIMITS.md` sudah dikoreksi dengan bukti di atas.

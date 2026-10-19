@@ -1733,6 +1733,11 @@ koneksi yang membeku masih bergantung pada keepalive (±15 s), bukan batas milid
 nonblocking + `PQsocket` (dan loop `PQconsumeInput`) — perubahan tersendiri, tidak diklaim di sini.
 Dicatat di register `docs/ACCEPTED-LIMITS.md` dan dijadwalkan sebagai **T-065**.
 
+**Koreksi (19 Okt 2026, T-065).** Klaim "keepalive ±15 s" di atas hanya berlaku bila **peer TCP**
+berhenti menjawab probe. Bila ada perantara yang tetap meng-ACK (tunnel SSH hidup tetapi jalur
+remote mati), kueri pada koneksi hidup menggantung **tanpa batas** — terbukti > 30 s dengan
+perantara TCP yang membeku. Keputusan perbaikannya (A/B/C) menunggu pemilik di `docs/tasks/T-065.md`.
+
 **Bukti.** `shared/platform-lib/tests/tdbconnect.nim`: listener black-hole (listen tanpa `accept`)
 → `PoolError` jauh di bawah 10 detik; kontrol port tertutup tetap gagal cepat; regresi tanpa fix
 adalah menggantung, bukan gagal. `./task test itpool` 10 `[OK]`, `./task check` exit 0.
