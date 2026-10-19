@@ -126,6 +126,13 @@ Invarian tambahan:
    yang ia boleh baca) → `403 scope_not_readable`. Pembacaan cabang di luar cabang tugas menulis
    `param.read_cross_branch` — satu entri per cabang — dan bila pencatatan itu gagal, permintaannya
    ikut gagal (jangan menyajikan tanpa jejak).
+   Gerbang HTTP-nya dua tingkat (T-058, D-062): rute **daftar** memakai `authorizeAnyBranch` — izin
+   cukup dipegang di suatu cabang, penyaringan per baris yang menentukan apa yang terlihat — dan rute
+   yang menyentuh **satu** objek ber-cabang menambah `authorizedAtBranch` dengan cabang objeknya
+   (pengajuan: `scopeId` ber-scope `BRANCH`; persetujuan: cabang baris yang diaktifkan, diperiksa
+   sebelum alasan 409). `targetBranch = ""` selalu berarti institusi. Atribusi baris audit mengikuti
+   **objek** yang disentuh, bukan cabang tugas pelaku, dan hanya terisi bila pengenalnya berbentuk
+   uuid (O-017).
 11. **`effectiveTo` hanya sah bila ada penerus** (O-043, D-046 butir 8): nilai ber-`effective_to` tidak
    boleh diaktifkan kalau tanggal berakhirnya tidak ditutup baris lain pada (key, scope) yang sama —
    kalau lolos, tanggal setelahnya tidak punya nilai berlaku (aplikasi gagal-cepat, spec §10.6) dan
@@ -175,7 +182,7 @@ Catatan penempatan: `CloseLevel` masih di `domain/calendar.nim`. Saat modul `day
 
 | Bagian | Berkas |
 |---|---|
-| Domain otorisasi | `domain/authz.nim` — kode izin `modul.resource.action`, branch scoping, `authorize` (SoD fail-closed), kebijakan sesi & password |
+| Domain otorisasi | `domain/authz.nim` — kode izin `modul.resource.action`, branch scoping, `authorize` (satu cabang) + `authorizeAnyBranch` (set-level, T-058), SoD fail-closed, kebijakan sesi & password |
 | Domain scope | `domain/scope.nim` — `ScopeRef` + konvensi lookup parameter (dipakai kalender & auth) |
 | Hash password | `infrastructure/password_hasher.nim` — PBKDF2-HMAC-SHA256; hash token sesi (SHA-256) |
 | Repo | `infrastructure/auth_repo.nim` — user/lockout, role/permission/SoD, sesi |
@@ -229,6 +236,19 @@ Invarian tambahan:
     tugas pembersih terpisah. Yang dijaga adalah **jendela** N terakhir, bukan larangan selamanya.
     **Kedaluwarsa kata sandi tidak dibangun** (D-046 butir 8): tidak ada kolom umur dan tidak ada
     penolakan karena umur — invarian ini yang menahan penambahannya kembali.
+22. **Dua tingkat gerbang izin; atribusi cabang mengikuti objek yang disentuh** (T-058, D-062).
+    `authorizeAnyBranch` menjawab "izin dipegang di suatu cabang" dan dipakai rute daftar
+    (`GET /api/v1/params`, `GET /api/v1/audit`) yang hasilnya disaring per baris — menuntut satu
+    cabang di situ akan menolak pembacaan yang sah. Aksi atas **satu** objek tetap memakai
+    `authorize(targetBranch)` yang dipanggil begitu cabang objeknya diketahui. `targetBranch = ""`
+    selalu berarti institusi, jadi grant khusus cabang tidak pernah diam-diam menjadi izin institusi
+    (dan sebaliknya, grant institusi tidak menjadi izin cabang). `auditContextFor` mengisi
+    `branchIds` dari objek itu — nilai parameter yang diajukan/disetujui, atau cabang yang dibaca
+    untuk `param.read_cross_branch` — bukan dari cabang tugas pelaku: auditor cabang itu yang perlu
+    melihat tindakan atas datanya, termasuk pembacaan dari pusat. Pengenal non-uuid membuat barisnya
+    tetap tanpa cabang (kolomnya bertipe uuid, O-017) tanpa cast paksa — cast akan melempar dan
+    mengubah permintaan sah menjadi 500. Langganan realtime sengaja **tetap** tingkat institusi
+    (fail-closed) sampai peristiwanya disaring per cabang (O-070).
 
 Catatan: alur auth tinggal di `infrastructure` (butuh DB). Saat port/use case lapisan
 `application` lahir (pola T-016), isi `auth_service.nim` pindah ke `application/`.
