@@ -6,9 +6,9 @@
 #   $2 = ref             (mis. "refs/heads/main")
 #
 # Langkah (spec §21.4): ref-guard -> lock -> fetch/reset -> FREEZE GATE ->
-# rebuild selektif -> pre-migration dump -> build + ekstrak binary ->
-# MIGRATION GATE (expand-only) -> swap web -> restart -> HEALTH GATE +
-# auto-rollback -> .deployed_rev -> self-update (skrip + unit systemd).
+# rebuild selektif -> pre-migration dump -> build + ekstrak binary (untuk gate) ->
+# MIGRATION GATE (expand-only) -> swap web -> restart container -> HEALTH GATE +
+# auto-rollback -> .deployed_rev -> self-update (skrip + unit quadlet).
 #
 # Tanpa secret di repo: URL repo + kredensial hanya dari env VPS (mode 600),
 # mis. KRAN_GIT_URL=github-kran:<user>/kran.git
@@ -22,20 +22,24 @@ REF="${2:-}"
 
 APP_DIR="${KRAN_APP_DIR:-/srv/qouver/apps/kran}"
 MONO_DIR="$APP_DIR/monorepo"
+# Biner native: DIPAKAI HANYA OLEH GATE DI SKRIP INI (FREEZE GATE & MIGRATION GATE), yang memang
+# berjalan di host sebelum layanan di-restart. Layanan `--role=api` sendiri jalan dari image lewat
+# quadlet `ops/systemd/kran-api.container`.
 BIN="$APP_DIR/bin/kran-api"
 BIN_NEW="$APP_DIR/bin/kran-api.new"
 BIN_PREV="$APP_DIR/bin/kran-api.prev"
 STATE_FILE="$APP_DIR/.deployed_rev"
 LOG="$APP_DIR/logs/deploy.log"
 
-# Runtime lib untuk biner native. Host (Rocky 9) tidak punya libpq, sedangkan biner dibangun di image
-# Debian; karena itu lib di-vendor ke $APP_DIR/lib dan dipakai lewat LD_LIBRARY_PATH. Kalau kelak
+# Runtime lib untuk biner GATE. Host (Rocky 9) tidak punya libpq, sedangkan biner dibangun di image
+# Debian; karena itu lib di-vendor ke $APP_DIR/lib dan dipakai lewat LD_LIBRARY_PATH. Container
+# `kran-api` tidak memakai jalur ini — image-nya sudah memuat libpq5 + libpcre3. Kalau kelak
 # `libpq` dipasang di host, blok vendor di bawah boleh dihapus.
 LIB_DIR="$APP_DIR/lib"
 export LD_LIBRARY_PATH="$LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 HEALTH_URL="${KRAN_HEALTH_URL:-http://127.0.0.1:8095/readyz}"
-# Unit systemd user; dipasang dari repo oleh `sync_units` di bawah.
-UNIT_DIR="${KRAN_UNIT_DIR:-$HOME/.config/systemd/user}"
+# Unit quadlet user (podman); dipasang dari repo oleh `sync_units` di bawah.
+UNIT_DIR="${KRAN_UNIT_DIR:-$HOME/.config/containers/systemd}"
 
 mkdir -p "$APP_DIR/logs"
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG"; }
@@ -55,10 +59,19 @@ if [ -f "$ENV_FILE" ]; then
   log "==> env aplikasi dimuat: $ENV_FILE"
 fi
 
-# Unit systemd meneruskan ${KRAN_PORT}/${KRAN_BIND_HOST} ke biner; kalau kosong, systemd mengirim
-# argumen kosong dan `--port=` gagal dengan galat parse yang membingungkan. Lebih baik berhenti di sini.
-[ -n "${KRAN_PORT:-}" ] || die "KRAN_PORT kosong di $ENV_FILE — unit systemd memakainya untuk --port"
-[ -n "${KRAN_BIND_HOST:-}" ] || die "KRAN_BIND_HOST kosong di $ENV_FILE — unit systemd memakainya untuk --address"
+# Container dijalankan quadlet `kran-api.container`, dan di sana `--port`/`--address`/`--root`
+# ditulis eksplisit (quadlet tidak melakukan interpolasi env yang bisa diandalkan). Karena itu
+# KRAN_PORT/KRAN_BIND_HOST tidak lagi diteruskan unit — dulu baris ini memvalidasinya supaya
+# systemd tidak mengirim argumen kosong.
+#
+# Yang sekarang perlu dijembatani: env prod memakai nama service network podman
+# (`@qouver-postgres:5432`) karena itu yang bisa di-resolve container, sedangkan FREEZE GATE dan
+# MIGRATION GATE menjalankan biner di HOST — dari host, nama itu tidak ada, dan postgres
+# dipublikasikan di 127.0.0.1:5432. Satu berkas env, dua dunia.
+GATE_DB_URL="${KRAN_DATABASE_URL//@qouver-postgres:/@127.0.0.1:}"
+if [ "${KRAN_DATABASE_URL:-}" = "$GATE_DB_URL" ]; then
+  log "==> WARN: KRAN_DATABASE_URL tidak memakai @qouver-postgres: — gate host memakai nilai apa adanya"
+fi
 
 # Salin lib runtime yang tidak ada di host dari image yang baru dibangun. Nama tujuan = **soname**
 # (bukan nama berkas asli) karena `podman cp` mengikuti symlink: tanpa ini `libpq.so.5` hilang dan
@@ -150,27 +163,25 @@ for src in "$MONO_DIR"/ops/scripts/*.sh; do
   sync_script "$src" "$APP_DIR/scripts/$(basename "$src")"
 done
 
-# Unit systemd: sebelum ini deploy hanya `daemon-reload` + restart, jadi perubahan
-# `ops/systemd/*.service` di repo **tidak pernah** sampai ke server. Akibatnya directive
-# `RestartPreventExitStatus=2` (T-054) harus dipasang tangan; kalau terlewat, kegagalannya
-# muncul sebagai restart-loop yang membingungkan. Pola sama dengan binary/web: salinan lama
-# disimpan sebagai `.prev` supaya health gate bisa mengembalikannya saat rollback.
+# Unit quadlet: sebelumnya deploy hanya `daemon-reload` + restart, jadi perubahan
+# `ops/systemd/*.service` di repo **tidak pernah** sampai ke server. Sekarang unit yang dipasang
+# adalah `*.container` (quadlet di ~/.config/containers/systemd, bukan ~/.config/systemd/user), dan
+# salinan lama disimpan sebagai `.prev` supaya rollback bisa mengembalikannya.
+#
+# Validasi: `systemd-analyze verify` tidak bisa membaca berkas quadlet (itu bukan unit systemd).
+# Yang dipakai: kehadiran seksi `[Container]` sebagai penjaga murah terhadap berkas terpotong —
+# selebihnya divalidasi podman-user-generator saat `daemon-reload`, dan kegagalannya muncul di
+# HEALTH GATE (bukan diam-diam).
 sync_units() {
   mkdir -p "$UNIT_DIR"
   local src name dst
-  for src in "$MONO_DIR"/ops/systemd/*.service; do
+  for src in "$MONO_DIR"/ops/systemd/*.container; do
     [ -e "$src" ] || continue
     name="$(basename "$src")"
     dst="$UNIT_DIR/$name"
     if [ -f "$dst" ] && cmp -s "$src" "$dst"; then continue; fi
-    # Validasi sebelum menimpa: unit yang rusak menggagalkan restart, dan kegagalannya baru
-    # terlihat di HEALTH GATE — jauh dari penyebabnya. `verify` membaca berkasnya, jadi bisa
-    # dijalankan pada berkas di repo sebelum dipasang. (Peringatan unit lain di server normal;
-    # yang dipakai hanya kode keluarnya.)
-    if ! systemd-analyze verify "$src" >/dev/null 2>&1; then
-      log "==> ERROR: $name tidak lolos systemd-analyze verify:"
-      systemd-analyze verify "$src" 2>&1 | head -5 | while read -r l; do log "    $l"; done
-      die "unit $name tidak sah; deploy dibatalkan"
+    if ! grep -q '^\[Container\]' "$src"; then
+      die "unit $name tidak punya seksi [Container]; deploy dibatalkan"
     fi
     if [ -f "$dst" ]; then cp -f "$dst" "$dst.prev" || log "==> WARN: gagal mencadangkan $dst"; fi
     if cp -f "$src" "$dst.new" && mv -f "$dst.new" "$dst"; then
@@ -184,7 +195,7 @@ sync_units() {
 # Dipanggil di jalur auto-rollback: kembalikan unit yang diganti deploy ini.
 restore_units() {
   local prev target
-  for prev in "$UNIT_DIR"/*.service.prev; do
+  for prev in "$UNIT_DIR"/*.container.prev; do
     [ -e "$prev" ] || continue
     target="${prev%.prev}"
     if cp -f "$prev" "$target"; then log "==> rollback unit: $(basename "$target")"; fi
@@ -193,9 +204,23 @@ restore_units() {
 
 sync_units
 
+# ── Gate unit: layanan kini container (quadlet), bukan unit native ──
+# Unit native ~/.config/systemd/user/kran-api.service dan unit hasil generator quadlet bernama
+# sama, dan yang native MENANG. Kalau file itu masih ada, `systemctl --user restart kran-api`
+# me-restart biner lama sementara health gate tetap hijau (dibaca dari biner itu juga) — deploy
+# melaporkan sukses tanpa ada yang berubah. Fail-closed.
+for native in kran-api.service kran-worker.service; do
+  if [ -e "$HOME/.config/systemd/user/$native" ]; then
+    log "==> ERROR: ~/.config/systemd/user/$native masih ada — unit native menutupi quadlet."
+    log "    Pindahkan dulu (mis. mv ke $native.disabled), lalu: systemctl --user daemon-reload"
+    exit 1
+  fi
+done
+
 # 4. FREEZE GATE (spec §21.4 #4, §11.7): jangan deploy saat day-close berjalan.
+# Biner gate jalan di host => pakai URL host (GATE_DB_URL), bukan nama service podman.
 if [ -x "$BIN" ]; then
-  freeze_out="$("$BIN" --role=ctl daycloser-status 2>&1 || true)"
+  freeze_out="$(KRAN_DATABASE_URL="$GATE_DB_URL" "$BIN" --role=ctl daycloser-status 2>&1 || true)"
   if grep -qE '(^|[^A-Z])(RUNNING|CLOSING)([^A-Z]|$)' <<<"$freeze_out"; then
     log "==> FREEZE: day-close RUNNING/CLOSING; deploy dibatalkan (coba lagi setelah selesai)"
     log "    status: $freeze_out"
@@ -224,6 +249,11 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|tools/|kran\.
   # Konteks build = root monorepo, bukan apps/api: sumber Nim ada di shared/ + modules/ + tools/
   # (beda dari pola Skyward yang modulnya mandiri). Dockerfile-nya di apps/api/Dockerfile.
   cd "$MONO_DIR" || die "gagal masuk $MONO_DIR"
+  # Simpan image sebelumnya: rollback LAYANAN memakai tag image. Biner di bawah bukan untuk
+  # layanan, hanya supaya gate (FREEZE/MIGRATION) bisa menjalankan versi yang baru dibangun.
+  if podman image exists localhost/kran-api:local; then
+    podman tag localhost/kran-api:local localhost/kran-api:prev 2>/dev/null || true
+  fi
   podman build -f apps/api/Dockerfile -t localhost/kran-api:local -t "localhost/kran-api:$REVID" .
   mkdir -p "$APP_DIR/bin"
   build_cid="$(podman create "localhost/kran-api:$REVID")"
@@ -246,7 +276,7 @@ if [ "$MIGRATIONS_CHANGED" -eq 1 ]; then
   # justru itu yang mau diterapkan) dan migrasi yang **isinya berubah** (drift: berkas yang sudah
   # diterapkan diubah, berarti DB dan repo tidak lagi sinkron). Hanya yang kedua membatalkan deploy.
   # Skrip membaca angka drift dari keluarannya; keluaran yang tidak dikenal = fail-closed.
-  if check_out="$("$MIGRATE_BIN" --role=migrate --check 2>&1)"; then
+  if check_out="$(KRAN_DATABASE_URL="$GATE_DB_URL" "$MIGRATE_BIN" --role=migrate --check 2>&1)"; then
     log "    migrasi --check bersih"
   else
     drift="$(sed -nE 's/.*, ([0-9]+) isinya berubah.*/\1/p' <<<"$check_out" | head -1)"
@@ -262,12 +292,12 @@ if [ "$MIGRATIONS_CHANGED" -eq 1 ]; then
     esac
   fi
   log "==> MIGRATION GATE: --up"
-  "$MIGRATE_BIN" --role=migrate --up || die "migrasi --up gagal"
+  KRAN_DATABASE_URL="$GATE_DB_URL" "$MIGRATE_BIN" --role=migrate --up || die "migrasi --up gagal"
 else
   log "==> migrasi tidak berubah; gate dilewati"
 fi
 
-# Tukar binary (lama -> .prev) hanya setelah gate lolos.
+# Tukar biner gate (lama -> .prev) hanya setelah gate lolos. Layanan tidak memakai biner ini lagi.
 if [ -f "$BIN_NEW" ]; then
   if [ -f "$BIN" ]; then cp -f "$BIN" "$BIN_PREV"; fi
   mv -f "$BIN_NEW" "$BIN"
@@ -319,6 +349,11 @@ done
 
 if [ "$healthy" -ne 1 ]; then
   log "==> ERROR: $HEALTH_URL tidak sehat setelah restart; auto-rollback"
+  # Layanan = container: kembalikan image sebelumnya, lalu restart.
+  if podman image exists localhost/kran-api:prev; then
+    log "==> rollback image: tag localhost/kran-api:prev -> :local"
+    podman tag localhost/kran-api:prev localhost/kran-api:local
+  fi
   if [ -f "$BIN_PREV" ]; then
     cp -f "$BIN_PREV" "$BIN"
     chmod +x "$BIN"

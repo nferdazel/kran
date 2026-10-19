@@ -1,0 +1,33 @@
+# Quadlet unit — kran-worker (Nim, --role=worker), rootless podman + systemd user.
+# Pasang di VPS: ~/.config/containers/systemd/kran-worker.container
+#
+# Satu image, dua peran (API + worker): worker hanya beda argumen, sama seperti
+# unit native sebelumnya.
+#
+# SENGAJA TANPA [Install]: unit native sebelumnya berstatus `disabled` — peran
+# worker belum punya pekerjaan (Fase 0, O-013/O-060), jadi ia tidak boleh ikut
+# boot. Skrip deploy tetap me-restart-nya secara eksplisit, dan ia keluar dengan
+# status 3 "belum dikonfigurasi" yang ditahan oleh RestartPreventExitStatus.
+[Unit]
+Description=KRAN Worker (Nim, --role=worker)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/kran-api:local
+ContainerName=kran-worker
+Network=qouver
+Pull=never
+AutoUpdate=local
+EnvironmentFile=/srv/qouver/apps/kran/env/kran-prod.env
+Volume=/srv/qouver/apps/kran/monorepo/modules:/monorepo/modules:z,ro
+Exec=--role=worker --root=/monorepo
+NoNewPrivileges=true
+DropCapability=ALL
+
+[Service]
+Restart=always
+# Paritas dengan unit native: status 3 = "dikenali tetapi belum bisa dijalankan",
+# bukan crash. Tanpa baris ini systemd mengulang start tiap 3 detik.
+RestartPreventExitStatus=3
+RestartSec=3
