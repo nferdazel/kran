@@ -1365,8 +1365,8 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   MFA (403 `mfa_disabled`), bukan login.
 - **Bukti**: `./task test ttotp` → 12 `[OK]` (vektor dari **teks RFC**, bukan angka karangan);
   `./task test itapi_mfa` → 16 `[OK]` (gerbang 403 default **dan urutannya vs keyring maupun
-  kebijakan yang belum tersemai**, rahasia
-  sekali-kembali, ciphertext `kran:enc:v1` di DB, bentuk kode dari parameter tapi dibekukan di baris,
+  kebijakan yang belum tersemai**, rahasia sekali-kembali, ciphertext `kran:enc:v1` di DB,
+  bentuk kode dari parameter tapi dibekukan di baris,
   kode salah 403 tetap `PENDING`, kode benar → `ACTIVE`, 409 saat sudah aktif, penjagaan anti-replay
   di lapisan repo, audit bebas rahasia, login tanpa penanda MFA);
   `./task test itapi_auth` → 43 `[OK]` (tanpa regresi jalur login/sesi/kata sandi);
@@ -1379,5 +1379,12 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   403 — saklar kini dibaca lewat `param_repo.activeValueOpt` sehingga tidak ada nilai = fitur mati.
 - **Sisa (O-071)**: aktivasi (tantangan kode saat login + `recordUsedStep`), kode pemulihan,
   pembatasan percobaan verifikasi, UI + kunci i18n-nya, alur hapus/ganti faktor.
+- **CI + deploy**: run `39193819169` (sha `d17e5eb`) → **4/4 job hijau** (gitleaks, web
+  svelte-check+axe+Playwright, Nim check+unit/property, DB integrasi Postgres 18).
+  `.deployed_rev` = `d17e5ebac6e1400b3d872762f5b676eeff704d73`, `kran-api` active,
+  `smoke.sh` `/healthz` + `/readyz` OK, `migrate --check` → `0/0`, `ctl verify-audit` → rantai
+  utuh. DB produksi: `platform.schema_migration` terbaru `0012_platform_user_mfa.sql`, tabel
+  `platform.user_mfa` ada, **0** nilai `platform.security.mfa.*` → rute MFA inert (403).
+  Permintaan ber-sesi ke rute MFA di produksi tidak dilakukan (butuh kata sandi admin produksi).
 - **HUMAN-REVIEW-REQUIRED** (autentikasi/kripto, AGENTS.md §8).
 
