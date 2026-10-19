@@ -1364,7 +1364,8 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   `mfaSettingsOf` terpisah dari `settingsOf` sehingga seed MFA yang belum jalan hanya mematikan rute
   MFA (403 `mfa_disabled`), bukan login.
 - **Bukti**: `./task test ttotp` → 12 `[OK]` (vektor dari **teks RFC**, bukan angka karangan);
-  `./task test itapi_mfa` → 15 `[OK]` (gerbang 403 default **dan urutannya vs keyring**, rahasia
+  `./task test itapi_mfa` → 16 `[OK]` (gerbang 403 default **dan urutannya vs keyring maupun
+  kebijakan yang belum tersemai**, rahasia
   sekali-kembali, ciphertext `kran:enc:v1` di DB, bentuk kode dari parameter tapi dibekukan di baris,
   kode salah 403 tetap `PENDING`, kode benar → `ACTIVE`, 409 saat sudah aktif, penjagaan anti-replay
   di lapisan repo, audit bebas rahasia, login tanpa penanda MFA);
@@ -1373,7 +1374,9 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
 - **Review**: putaran 1 dengan konteks bersih → **APPROVE** tanpa BLOCKER/MAJOR; 4 temuan MINOR
   ditindaklanjuti (urutan gerbang fitur vs keyring — dokumen tadinya menjanjikan 403 tapi kode
   menjawab 501; respons ditulis setelah transaksi selesai; `Cache-Control: no-store` pada respons
-  rahasia; batas `mfa.digits` dipersempit ke 6–8 sesuai RFC 4226 §5.3).
+  rahasia; batas `mfa.digits` dipersempit ke 6–8 sesuai RFC 4226 §5.3). Satu temuan lagi ditemukan
+  sebelum deploy: kebijakan MFA yang **belum tersemai** (keadaan produksi, O-066) menjawab 500, bukan
+  403 — saklar kini dibaca lewat `param_repo.activeValueOpt` sehingga tidak ada nilai = fitur mati.
 - **Sisa (O-071)**: aktivasi (tantangan kode saat login + `recordUsedStep`), kode pemulihan,
   pembatasan percobaan verifikasi, UI + kunci i18n-nya, alur hapus/ganti faktor.
 - **HUMAN-REVIEW-REQUIRED** (autentikasi/kripto, AGENTS.md §8).

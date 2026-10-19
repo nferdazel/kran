@@ -277,10 +277,13 @@ Invarian tambahan:
     lihat O-071.
 18. **`mfa.enabled` default `false`**, dan gerbang itu diputuskan **sebelum** apa pun menyentuh
     kripto/data: selama mati, ketiga rute menjawab 403 `mfa_disabled` dan tidak ada baris yang lahir —
-    termasuk di instalasi tanpa `KRAN_KEK_FILE`, sehingga pemanggil tidak bisa menyimpulkan status
-    konfigurasi enkripsi server dari beda 403/501 (periksa keyring **setelah** gerbang fitur).
-    Parameter MFA dibaca lewat `mfaSettingsOf` saja — jalur login (`settingsOf`) tidak bergantung
-    padanya, jadi seed MFA yang belum dijalankan tidak bisa mematikan login.
+    termasuk di instalasi tanpa `KRAN_KEK_FILE` (periksa keyring **setelah** gerbang fitur) maupun di
+    instalasi yang nilai `platform.security.mfa.*`-nya belum tersemai (saklar dibaca lewat
+    `activeValueOpt`: tidak ada nilai → fitur mati, bukan 500). Pemanggil karena itu tidak bisa
+    menyimpulkan status konfigurasi server dari beda 403/501/500 pada rute ini. Nilai kebijakan lain
+    hanya dibaca setelah saklarnya hidup. Parameter MFA dibaca lewat `mfaSettingsOf` saja — jalur
+    login (`settingsOf`) tidak bergantung padanya, jadi seed MFA yang belum dijalankan tidak bisa
+    mematikan login.
 19. **Rahasia, kode, dan URI tidak pernah masuk audit**: hanya `auth.mfa.enrol`,
     `auth.mfa.verify`, `auth.mfa.verify_failure` beserta bentuk pendaftaran (status, digit, periode).
 20. **Respons ditulis setelah transaksi selesai**, tidak dari dalam closure `withDbTx`: COMMIT yang

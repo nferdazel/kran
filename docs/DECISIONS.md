@@ -1696,3 +1696,16 @@ dengan 4 temuan MINOR; semuanya ditindaklanjuti dan dua di antaranya menyentuh p
    "MUST extract a 6-digit code at a minimum and possibly 7 and 8-digit code", dan tidak ada aplikasi
    authenticator yang menampilkan kode di atas 8 digit. Parameter yang bisa diisi nilai tak terpakai
    adalah jebakan konfigurasi, bukan keluwesan.
+
+**Fail-closed saat kebijakan belum tersemai (ditemukan sebelum deploy, 19 Okt 2026).** `mfaSettingsOf`
+semula membaca saklar dengan `activeValueJson`, yang **melempar** bila belum ada nilai aktif. Karena
+`dbtools seed` bukan bagian dari deploy (O-066), produksi tepat setelah deploy ini tidak punya lima
+nilai `platform.security.mfa.*` — akibatnya ketiga rute akan menjawab **500**, bukan 403, bertentangan
+dengan dokumen ini dan dengan dugaan "inline inert". Perbaikannya: saklar dibaca lewat `activeValueOpt`
+(`param_repo`, ditambahkan untuk kasus ini) — nilai tidak ada → fitur **mati** (403 `mfa_disabled`);
+nilai ada tetapi bukan boolean → tetap galat (konfigurasi rusak tidak disembunyikan); nilai lain
+(issuer/digits/periode/drift) hanya dibaca **setelah** saklarnya hidup, jadi kebijakan setengah
+tersemai tetap gagal keras alih-alih memakai bentuk kode yang tak diputuskan siapa pun. Aturan "tanpa
+fallback diam-diam" (spec §10.6) tidak dilanggar: level scope tetap disebut pemanggil; yang berubah
+hanya pengartian "tidak ada nilai" untuk saklar keamanan. Dikunci test `itapi_mfa` "kebijakan MFA
+belum tersemai sama sekali → 403 mfa_disabled, bukan 500".
