@@ -57,6 +57,7 @@ suite "config: env":
     check c.acquireTimeoutMs == defaultAcquireTimeoutMs
     check c.connectTimeoutMs == defaultConnectTimeoutMs
     check c.statementTimeoutMs == defaultStatementTimeoutMs
+    check c.queryDeadlineMs == defaultStatementTimeoutMs + defaultQueryDeadlineMarginMs
     check c.validateOnAcquire
     check c.target.options.contains("statement_timeout=15000")
     check c.target.options.contains("application_name=kran")
@@ -68,6 +69,7 @@ suite "config: env":
       "KRAN_DB_ACQUIRE_TIMEOUT_MS": "250",
       "KRAN_DB_CONNECT_TIMEOUT_MS": "2000",
       "KRAN_DB_STATEMENT_TIMEOUT_MS": "1000",
+      "KRAN_DB_QUERY_DEADLINE_MS": "3000",
       "KRAN_DB_VALIDATE_ON_ACQUIRE": "0",
       "KRAN_APP_NAME": "kran-api",
     }))
@@ -75,6 +77,7 @@ suite "config: env":
     check c.acquireTimeoutMs == 250
     check c.connectTimeoutMs == 2000
     check c.statementTimeoutMs == 1000
+    check c.queryDeadlineMs == 3000
     check not c.validateOnAcquire
     check c.target.options.contains("statement_timeout=1000")
     check c.target.options.contains("application_name=kran-api")
@@ -83,6 +86,8 @@ suite "config: env":
     for bad in [("KRAN_DB_POOL_SIZE", "banyak"), ("KRAN_DB_POOL_SIZE", "0"),
                 ("KRAN_DB_ACQUIRE_TIMEOUT_MS", "-5"),
                 ("KRAN_DB_CONNECT_TIMEOUT_MS", "0"),
+                ("KRAN_DB_QUERY_DEADLINE_MS", "0"),
+                ("KRAN_DB_QUERY_DEADLINE_MS", "1000"),
                 ("KRAN_DB_VALIDATE_ON_ACQUIRE", "mungkin")]:
       var raised = false
       var t = env({"KRAN_DATABASE_URL": "postgres://u:p@h:5432/db"})

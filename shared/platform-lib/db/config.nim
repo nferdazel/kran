@@ -11,7 +11,17 @@
 ##   KRAN_DB_ACQUIRE_TIMEOUT_MS     batas tunggu ambil koneksi (default 5000)
 ##   KRAN_DB_CONNECT_TIMEOUT_MS     batas membuka koneksi baru (default 5000; libpq minimum 2 s)
 ##   KRAN_DB_STATEMENT_TIMEOUT_MS   statement_timeout libpq (default 15000)
+##   KRAN_DB_QUERY_DEADLINE_MS      batas satu blok kerja `withConn`/`withTx` (default
+##                                  statement_timeout + 5000; wajib > statement_timeout)
 ##   KRAN_DB_VALIDATE_ON_ACQUIRE    `1`/`0` — cek `PQstatus` saat ambil koneksi (default 1)
+##
+## `KRAN_DB_QUERY_DEADLINE_MS` menutup kasus koneksi yang membeku di tengah kueri (perantara yang
+## tetap meng-ACK, jadi keepalive tidak memicu). Satuannya **blok kerja**, sedangkan
+## `statement_timeout` berlaku **per statement**: blok `withTx` yang berisi banyak statement bisa
+## memakai seluruh anggaran (mis. 20 s), jadi blok sah yang totalnya melebihi anggaran akan gagal.
+## Nilai eksplisit wajib > `statement_timeout` supaya satu statement sah tidak dibunuh lebih dulu.
+## Koneksi yang diambil langsung lewat `pool.acquire()` (mis. pump LISTEN yang hidup lama) tidak
+## memakai anggaran ini — lihat `docs/ACCEPTED-LIMITS.md`.
 ##
 ## Batas yang diketahui (jujur): parser URL hanya menerima bentuk di atas, **tanpa parameter
 ## kueri** dan **tanpa sslmode**. Koneksi dibuka lewat `PQconnectdb(conninfo)` (`pool.nim`), jadi
@@ -38,6 +48,7 @@ type
     acquireTimeoutMs*: int
     connectTimeoutMs*: int
     statementTimeoutMs*: int
+    queryDeadlineMs*: int
     validateOnAcquire*: bool
 
 const
@@ -45,6 +56,7 @@ const
   defaultAcquireTimeoutMs* = 5_000
   defaultConnectTimeoutMs* = 5_000
   defaultStatementTimeoutMs* = 15_000
+  defaultQueryDeadlineMarginMs* = 5_000
 
 proc fail(msg: string) {.noreturn.} =
   raise newException(ConfigError, msg)
@@ -132,6 +144,16 @@ proc dbConfigFromEnv*(env: Table[string, string]): DbConfig =
     parsePositiveInt(env, "KRAN_DB_CONNECT_TIMEOUT_MS", defaultConnectTimeoutMs)
   result.statementTimeoutMs =
     parsePositiveInt(env, "KRAN_DB_STATEMENT_TIMEOUT_MS", defaultStatementTimeoutMs)
+  let deadlineRaw = env.getOrDefault("KRAN_DB_QUERY_DEADLINE_MS", "").strip()
+  if deadlineRaw.len == 0:
+    result.queryDeadlineMs = result.statementTimeoutMs + defaultQueryDeadlineMarginMs
+  else:
+    result.queryDeadlineMs =
+      parsePositiveInt(env, "KRAN_DB_QUERY_DEADLINE_MS", result.queryDeadlineMs)
+    if result.queryDeadlineMs <= result.statementTimeoutMs:
+      fail("KRAN_DB_QUERY_DEADLINE_MS (" & $result.queryDeadlineMs &
+        ") harus > KRAN_DB_STATEMENT_TIMEOUT_MS (" & $result.statementTimeoutMs &
+        ") supaya kueri yang sah tidak dibunuh lebih dulu")
   result.validateOnAcquire = parseBool(env, "KRAN_DB_VALIDATE_ON_ACQUIRE", true)
   let appName = env.getOrDefault("KRAN_APP_NAME", "").strip()
   result.target.options = "-c statement_timeout=" & $result.statementTimeoutMs &
@@ -143,6 +165,7 @@ const knownEnvKeys* = [
   "KRAN_DB_ACQUIRE_TIMEOUT_MS",
   "KRAN_DB_CONNECT_TIMEOUT_MS",
   "KRAN_DB_STATEMENT_TIMEOUT_MS",
+  "KRAN_DB_QUERY_DEADLINE_MS",
   "KRAN_DB_VALIDATE_ON_ACQUIRE",
 ]
 

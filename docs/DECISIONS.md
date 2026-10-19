@@ -1728,17 +1728,58 @@ menolong karena berlaku server-side, setelah koneksi hidup.
 3. **Bentuk galat dipertahankan** (`PoolError` "gagal menyambung ke host:port/db: …") supaya
    pemanggil dan test yang ada tidak berubah.
 
-**Sisa yang diterima (jujur).** Deadline **per-query** belum ada: kueri yang sedang berjalan pada
-koneksi yang membeku masih bergantung pada keepalive (±15 s), bukan batas milidetik. Itu butuh libpq
-nonblocking + `PQsocket` (dan loop `PQconsumeInput`) — perubahan tersendiri, tidak diklaim di sini.
-Dicatat di register `docs/ACCEPTED-LIMITS.md` dan dijadwalkan sebagai **T-065**.
-
-**Koreksi (19 Okt 2026, T-065).** Klaim "keepalive ±15 s" di atas hanya berlaku bila **peer TCP**
-berhenti menjawab probe. Bila ada perantara yang tetap meng-ACK (tunnel SSH hidup tetapi jalur
-remote mati), kueri pada koneksi hidup menggantung **tanpa batas** — terbukti > 30 s dengan
-perantara TCP yang membeku. Keputusan perbaikannya (A/B/C) menunggu pemilik di `docs/tasks/T-065.md`.
+**Sisa yang diterima saat itu.** Deadline **per-query** belum ada: kueri yang sedang berjalan pada
+koneksi yang membeku masih bergantung pada keepalive (±15 s), bukan batas milidetik. Dicatat di
+register `docs/ACCEPTED-LIMITS.md` dan dijadwalkan sebagai **T-065** — lihat koreksi di bawah.
 
 **Bukti.** `shared/platform-lib/tests/tdbconnect.nim`: listener black-hole (listen tanpa `accept`)
 → `PoolError` jauh di bawah 10 detik; kontrol port tertutup tetap gagal cepat; regresi tanpa fix
 adalah menggantung, bukan gagal. `./task test itpool` 10 `[OK]`, `./task check` exit 0.
 **HUMAN-REVIEW-REQUIRED** (jalur koneksi produksi, AGENTS.md §8).
+
+**Koreksi (19 Okt 2026, T-065 → D-065).** Klaim "keepalive ±15 s" di atas hanya berlaku bila **peer
+TCP** berhenti menjawab probe. Bila ada perantara yang tetap meng-ACK (tunnel SSH hidup tetapi jalur
+remote mati), kueri pada koneksi hidup menggantung **tanpa batas** — terbukti > 30 s dengan
+perantara TCP yang membeku (`psql` lewat proxy yang berhenti meneruskan). `statement_timeout` tidak
+menolong karena kueri tidak pernah sampai server. Perbaikannya di D-065.
+
+## D-065 — Batas waktu blok kerja DB lewat pemantau socket (T-065, sisa D-064)
+
+**Konteks.** Batas waktu klien yang ada hanya mencakup pembukaan koneksi (`connect_timeout`) dan
+keepalive TCP. Kueri pada koneksi hidup bisa menggantung tanpa batas bila ada perantara yang tetap
+meng-ACK (tunnel hidup, jalur remote mati) — dibuktikan > 30 s, lihat koreksi D-064. Target
+"≤ 5 detik" tidak bisa dipakai apa adanya: `statement_timeout` default 15 s, jadi kueri sah boleh
+berjalan sampai 15 s; deadline klien 5 s akan membunuhnya.
+
+**Keputusan (opsi A dari `docs/tasks/T-065.md`, dipilih pemilik).**
+
+1. **Pemantau socket, bukan libpq nonblocking.** Modul baru `db/deadline.nim`: satu thread pemantau
+   per proses, tabel slot `(fd, batas)`, tick 50 ms. Saat batas lewat → `shutdown(fd, SHUT_RDWR)`;
+   I/O libpq yang sedang menunggu gagal seketika. Tidak ada perubahan pada jalur kueri/konversi baris.
+2. **Cakupan = satu blok kerja**, bukan per kueri: `withConn`/`withTx` mendaftar sekali; semua kueri
+   dalam blok berbagi anggaran. `acquire` juga membungkus `pingConn` dengan batas yang sama.
+3. **Koneksi yang kena batas dibuang**, tidak dikembalikan ke idle (status protokolnya tidak bisa
+   dipercaya). Blok gagal dengan `PoolError` yang menyebut batas + galat asli.
+4. **`KRAN_DB_QUERY_DEADLINE_MS`**: default `statement_timeout + 5000` (= 20000), dan nilai eksplisit
+   **harus** > `statement_timeout` (ditolak saat config dibangun, bukan dibetulkan diam-diam).
+5. **Batas memakai jam monotonik** (`getMonoTime`), bukan jam dinding.
+6. **Blok yang panggilan terakhirnya sudah kembali tetap dianggap sukses** walau batas terlanjur
+   lewat tepat setelah kueri terakhir/`COMMIT` mengembalikan jawaban: hasilnya dikembalikan, hanya
+   koneksinya yang dibuang. Menggagalkan pekerjaan yang sudah commit akan mendorong pemanggil
+   mengulang dan menggandakan efek. Batas ini **tidak** menyelamatkan jawaban `COMMIT` yang hilang:
+   bila `exec(COMMIT)` melempar, hasilnya tetap tidak pasti dan dilaporkan gagal — pemanggil wajib
+   memperlakukan galat itu sebagai "status tidak diketahui", bukan "pasti rollback".
+
+**Konsekuensi jujur.** Batas efektif ±20 s, bukan ≤5 s — konsekuensi langsung dari `statement_timeout`
+15 s. Anggarannya **per blok**, sedangkan `statement_timeout` per statement: `withTx` dengan banyak
+statement yang totalnya >20 s akan gagal (server rollback), jadi use case panjang harus muat dalam
+anggaran atau menaikkan nilainya. Koneksi yang kena batas hilang dari pool (satu koneksi per
+kejadian). Jalur `pool.acquire()` langsung — pump `LISTEN` yang hidup selama proses — **tidak**
+memakai anggaran ini (desain koneksi panjang, dicatat di `docs/ACCEPTED-LIMITS.md`). Bila kelak
+butuh batas per kueri presisi ≤5 s, itu tetap pekerjaan nonblocking (opsi B), bukan tambalan di sini.
+
+**Bukti.** Uji unit `tdeadline` (socket diputus, `disarm` melaporkan fired, tanpa batas = guard kosong);
+uji integrasi `itpool` "kueri pada koneksi beku gagal <= batas" memakai perantara TCP yang berhenti
+meneruskan → `PoolError` dalam < 2 s dengan deadline 700 ms, `created == 0` (koneksi dibuang).
+**Mutasi**: deadline dinaikkan ke 3 s → uji gagal (`elapsed 3,03 s`), jadi uji benar-benar menjaga
+batas. **HUMAN-REVIEW-REQUIRED** (jalur koneksi produksi, AGENTS.md §8).

@@ -6,7 +6,7 @@
 ## Cakupan T-033: peminjaman koneksi paralel dari banyak thread (dengan kontensi pool kecil), dan
 ## penggantian koneksi yang sudah mati di server. Sebelumnya yang pertama hanya berupa asumsi.
 
-import std/[atomics, strutils, tables, times, unittest]
+import std/[atomics, net, os, posix, strutils, tables, times, unittest]
 import db_connector/db_postgres
 
 import "platform-lib/db/config"
@@ -224,6 +224,18 @@ suite "pool: transaksi":
       db.getValue(sql"SELECT (to_regclass('pg_temp.itpool_rollback') IS NULL)::text"))
     check sisa == "true"
 
+  test "withTx yang gagal tidak dihitung sebagai transaksi bocor":
+    let pool = newDbPool(cfgWith(poolSize = 1, acquireTimeoutMs = 1_000))
+    defer: pool.close()
+    var raised = false
+    try:
+      discard pool.withTx(proc(db: DbConn): string =
+        raise newException(ValueError, "gagal di tengah transaksi"))
+    except ValueError:
+      raised = true
+    check raised
+    check pool.statsOf().leakedTx == 0
+
   test "koneksi dikembalikan saat masih bertransaksi -> di-ROLLBACK & tercatat":
     let pool = newDbPool(cfgWith(poolSize = 1, acquireTimeoutMs = 1_000))
     defer: pool.close()
@@ -236,3 +248,119 @@ suite "pool: transaksi":
     let sisa = pool.withConn(proc(db: DbConn): string =
       db.getValue(sql"SELECT (to_regclass('pg_temp.itpool_leak') IS NULL)::text"))
     check sisa == "true"
+
+# --- T-065: koneksi membeku di tengah kueri ---------------------------------
+#
+# Perantara TCP yang meneruskan trafik lalu berhenti meneruskan, sementara socket tetap terbuka dan
+# kernel tetap meng-ACK. Ini pola tunnel SSH yang prosesnya hidup tetapi jalur datanya mati:
+# keepalive TCP **tidak** memicu (peer masih menjawab probe) dan `statement_timeout` tidak berlaku
+# (kueri tidak pernah sampai server). Yang diuji: `queryDeadlineMs` memutusnya.
+
+const freezeDeadlineMs = 700
+
+var proxyFrozen: Atomic[bool]
+
+type
+  ProxyArgs = object
+    ## Hanya fd (nilai biasa) yang menyeberang thread — objek `Socket` tetap milik satu thread.
+    listenerFd: int32
+    upHost: string
+    upPort: int
+
+proc proxyLoop(args: ProxyArgs) {.thread.} =
+  ## Perantara TCP: teruskan dua arah sampai `proxyFrozen` menyala, lalu **tetap membaca** (supaya
+  ## buffer klien tidak penuh) tetapi berhenti meneruskan.
+  let cfd = posix.accept(SocketHandle(args.listenerFd), nil, nil)
+  if int(cfd) < 0:
+    return
+  let up = newSocket()
+  up.connect(args.upHost, Port(args.upPort))
+  let ufd = up.getFd()
+  var buf: array[16_384, char]
+  var fds: array[2, posix.TPollfd]
+  fds[0] = posix.TPollfd(fd: cint(cfd), events: posix.POLLIN)
+  fds[1] = posix.TPollfd(fd: cint(ufd), events: posix.POLLIN)
+  while true:
+    if posix.poll(addr fds[0], 2, 200) < 0:
+      break
+    for i in 0 ..< 2:
+      if (fds[i].revents and posix.POLLIN) != 0:
+        let got = posix.recv(SocketHandle(fds[i].fd), addr buf[0], buf.len, 0)
+        if got <= 0:
+          up.close()
+          discard posix.close(cint(cfd))
+          return
+        if proxyFrozen.load():
+          continue
+        var off = 0
+        while off < got:
+          let sent = posix.send(SocketHandle(fds[1 - i].fd), addr buf[off], got - off, 0)
+          if sent <= 0:
+            up.close()
+            discard posix.close(cint(cfd))
+            return
+          off += sent
+
+type ProbeArgs = object
+  pool: DbPool
+
+var
+  probeDone: Atomic[bool]
+  probeRaised: Atomic[bool]
+  probeMsg: string
+
+proc freezeProbe(args: ProbeArgs) {.thread.} =
+  ## Satu-satunya penulis `probeMsg`; pembaca menunggu `probeDone` (atomics, urutan seq_cst).
+  try:
+    {.cast(gcsafe).}:
+      discard args.pool.withConn(proc(db: DbConn): string = db.getValue(sql"SELECT 1::text"))
+  except CatchableError as e:
+    probeRaised.store(true)
+    {.cast(gcsafe).}:
+      probeMsg = e.msg
+  probeDone.store(true)
+
+suite "pool: batas blok kerja (T-065)":
+  test "kueri pada koneksi beku gagal <= batas, koneksi dibuang":
+    let listener = newSocket()
+    listener.setSockOpt(OptReuseAddr, true)
+    listener.bindAddr(Port(0), "127.0.0.1")
+    listener.listen()
+    let proxyPort = listener.getLocalAddr()[1]
+    proxyFrozen.store(false)
+    var proxyThread: Thread[ProxyArgs]
+    createThread(proxyThread, proxyLoop,
+      ProxyArgs(listenerFd: int32(listener.getFd()), upHost: baseCfg.target.host,
+                upPort: parseInt(baseCfg.target.port)))
+
+    var viaProxy = baseCfg
+    viaProxy.target.host = "127.0.0.1"
+    viaProxy.target.port = $proxyPort
+    # Ping saat acquire dimatikan: yang diuji adalah kueri di dalam blok kerja.
+    viaProxy.validateOnAcquire = false
+    viaProxy.queryDeadlineMs = freezeDeadlineMs
+    let pool = newDbPool(viaProxy)
+    defer: pool.close()
+
+    check pool.withConn(proc(db: DbConn): string = db.getValue(sql"SELECT 'ok'::text")) == "ok"
+
+    proxyFrozen.store(true)
+    probeDone.store(false)
+    probeRaised.store(false)
+    probeMsg = ""
+    let start = epochTime()
+    var worker: Thread[ProbeArgs]
+    createThread(worker, freezeProbe, ProbeArgs(pool: pool))
+    # Jangan menggantung bila mekanismenya rusak: batas 5 detik untuk seluruh uji.
+    while not probeDone.load() and epochTime() - start < 5.0:
+      sleep(20)
+    let elapsed = epochTime() - start
+
+    check probeDone.load()
+    check probeRaised.load()
+    check probeMsg.contains("batas")
+    check elapsed >= float(freezeDeadlineMs) / 1000.0 * 0.8
+    check elapsed < 2.0
+    # Koneksi yang kena batas **dibuang**, bukan dikembalikan ke daftar idle.
+    check pool.statsOf().created == 0
+    check pool.statsOf().inUse == 0
