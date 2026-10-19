@@ -17,6 +17,24 @@ export interface ParamDefinition {
 
 export const paramDefinitions: readonly ParamDefinition[] = [
   {
+    "key": "party.cif.format",
+    "module": "party",
+    "valueType": "string",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.party.cif.format",
+    "jsonSchema": {
+      "minLength": 5,
+      "maxLength": 24
+    }
+  },
+  {
     "key": "platform.calendar.fiscal_year_start_month",
     "module": "platform",
     "valueType": "integer",

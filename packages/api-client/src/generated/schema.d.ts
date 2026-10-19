@@ -370,6 +370,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/parties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Buat party baru (CIF)
+         * @description Membuat party dengan CIF dari parameter `party.cif.format` dan nomor urut DB. Audit
+         *     `party.create` dan event `party.onboarded` ditulis dalam transaksi yang sama.
+         */
+        post: operations["createParty"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/parties/{partyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Baca satu party
+         * @description Mengembalikan party bila pemanggil memegang izin `party.party.read` di cabang party.
+         *     Party yang tidak ada → 404; party yang ada di cabang lain → 403 (izin cabang, sama seperti
+         *     jalur parameter `branch_not_allowed`). Id yang bukan UUID juga dijawab 404.
+         */
+        get: operations["getParty"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -548,6 +591,35 @@ export interface components {
         };
         AuditList: {
             items: components["schemas"]["AuditItem"][];
+        };
+        PartyCreate: {
+            /**
+             * @description Jenis party. Detail orang/lembaga menyusul di T-071.
+             * @enum {string}
+             */
+            kind: "PERSON" | "ORG";
+            /** @description Nama tampil party (PII; tidak diterbitkan ke event). */
+            displayName: string;
+            /**
+             * Format: uuid
+             * @description Cabang pemilik party (izin dan audit mengikuti cabang ini).
+             */
+            branchId: string;
+        };
+        Party: {
+            /** Format: uuid */
+            partyId: string;
+            /** @description Nomor CIF dari parameter `party.cif.format` + sequence. */
+            cif: string;
+            /** @enum {string} */
+            kind: "PERSON" | "ORG";
+            displayName: string;
+            /** @enum {string} */
+            status: "ACTIVE" | "SUSPENDED" | "CLOSED";
+            /** Format: uuid */
+            branchId: string;
+            /** @description ISO-8601 UTC. */
+            createdAt: string;
         };
     };
     responses: {
@@ -1164,6 +1236,60 @@ export interface operations {
             405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+        };
+    };
+    createParty: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartyCreate"];
+            };
+        };
+        responses: {
+            /** @description Party dibuat */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Party"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    getParty: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                partyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Party */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Party"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
         };
     };
 }

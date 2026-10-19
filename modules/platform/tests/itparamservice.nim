@@ -31,6 +31,7 @@ let listener = dbPool.acquire() # koneksi kedua: penerima NOTIFY
 let sysClock = systemClock()
 
 execScript(db, "DROP SCHEMA IF EXISTS platform CASCADE")
+execScript(db, "DROP SCHEMA IF EXISTS party CASCADE")
 discard applyMigrations(db, repoRoot)
 execScript(db, readFile(repoRoot / "packs/base/generated/param_definitions.sql"))
 execScript(db, readFile(repoRoot / "packs/base/generated/param_values.sql"))

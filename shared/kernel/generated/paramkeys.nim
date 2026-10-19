@@ -6,6 +6,7 @@ import ../paramkey
 import std/json
 
 const paramKeys*: seq[string] = @[
+  "party.cif.format",
   "platform.calendar.fiscal_year_start_month",
   "platform.calendar.weekend_days",
   "platform.realtime.max_topic_len",
@@ -24,6 +25,8 @@ const paramKeys*: seq[string] = @[
   "platform.security.session_absolute_minutes",
   "platform.security.session_idle_minutes",
 ]
+
+const P_party_cif_format* = ParamKey[string]("party.cif.format")
 
 const P_platform_calendar_fiscal_year_start_month* = ParamKey[int64]("platform.calendar.fiscal_year_start_month")
 
@@ -60,6 +63,17 @@ const P_platform_security_session_absolute_minutes* = ParamKey[int64]("platform.
 const P_platform_security_session_idle_minutes* = ParamKey[int64]("platform.security.session_idle_minutes")
 
 const paramDefinitions*: seq[ParamDefinition] = @[
+  ParamDefinition(
+    key: "party.cif.format",
+    module: "party",
+    valueType: pvtString,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.party.cif.format",
+    sinceVersion: "0.1.0",
+  ),
   ParamDefinition(
     key: "platform.calendar.fiscal_year_start_month",
     module: "platform",
