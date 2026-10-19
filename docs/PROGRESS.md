@@ -1552,5 +1552,9 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   pulihkan web/unit `.prev`/biner gate, tolak unit native, poll `/readyz` (gagal = exit 1).
   Bukti harness 4/4; skrip lama pada keadaan `:prev` hilang **exit 0** tanpa `podman tag`
   (sukses palsu) → perilaku baru diskriminatif. `bash -n` + `shellcheck -S warning` bersih.
-- **Sisa**: T-069 (retensi tag image), KEK belum di-mount (butuh mount + `UserNS`), latihan rollback
-  di server belum dilakukan (T-013).
+- **T-069**: `prune_images` di `deploy-vps.sh` — setelah health gate sukses, simpan 5 tag SHA
+  terbaru (`KRAN_IMAGE_KEEP`, minimal 1), hapus sisanya; `:local`/`:prev` tidak disentuh.
+  Bukti harness 5/5 (keep=3, default, `rmi` gagal, keep=0, keep bukan angka); `bash -n` +
+  `shellcheck -S warning` bersih.
+- **Sisa**: KEK belum di-mount (butuh mount + `UserNS` saat fitur diaktifkan), latihan rollback di
+  server belum dilakukan (T-013).

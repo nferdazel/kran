@@ -42,7 +42,7 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 | Regulasi spec §4 bertanda `V?`/`V!` belum terverifikasi | Pasal/angka bisa berubah; yang bergantung padanya belum final | penanda `NEEDS-COMPLIANCE-REVIEW` di kode/seed/docs | O-001 |
 | Belum ada kontrak-fuzzing (`schemathesis`) dan visual regression | Cakupan uji kontrak/visual lebih sempit daripada rencana spec | lihat daftar uji; parity kontrak diuji lewat `tcontract`/`itapi` | O-026, O-022 |
 | Lint statis generik (ESLint) belum ada — bagian a11y **sudah tertutup** | Aturan `svelte/*` non-a11y dan `typescript-eslint` belum menegakkan apa pun; diagnostik a11y kompilator kini memblokir lewat `svelte-check --fail-on-warnings` | diputuskan 17 Okt 2026 (D-053) untuk dikerjakan bersama T-012 | O-023, T-057 |
-| Tag image menumpuk satu per deploy (`localhost/kran-api:<sha>`), belum ada pemangkasan | Pemakaian disk bertambah tiap deploy (≈92 MB apparent per image; layer dibagi). 19 Okt 2026: 26 tag, `/srv` 30% (54 G bebas) — belum mendesak | `podman images \| grep kran`; `df -h /srv` | T-069 |
+| Tag image lama yang masih direferensikan container berhenti tidak bisa dihapus `podman rmi` | Tag itu tetap ada sampai container berhenti dibersihkan; pertumbuhan disk tertahan, bukan nol | baris `WARN: gagal menghapus …` di `deploy.log`; `podman ps -a` | T-069 |
 | `KRAN_KEK_FILE` belum di-mount ke container | Fitur yang membutuhkan KEK (field crypto/MFA) tidak bisa aktif di produksi; dengan env kosong fitur itu inert, bukan rusak diam-diam | `podman inspect kran-api` tidak memuat mount KEK; startup check parameter MFA | D-066; O-071 |
 
 ## 3. Yang **tidak** diklaim

@@ -337,6 +337,31 @@ else
   log "==> web tidak berubah; dilewati"
 fi
 
+# Retensi tag image (T-069): satu tag SHA per build, tanpa pemangkasan berarti disk tumbuh terus.
+# Yang dipangkas hanya tag SHA 12-hex; `:local` dan `:prev` tidak pernah disentuh, dan pemangkasan
+# berjalan SETELAH health gate sukses supaya target rollback tidak hilang lebih dulu. `podman images`
+# mengurutkan terbaru dulu. Gagal `rmi` (mis. image masih dipakai container berhenti) = WARN, bukan
+# deploy gagal.
+prune_images() {
+  local keep="${KRAN_IMAGE_KEEP:-5}" tag n=0
+  local -a shas=()
+  case "$keep" in ''|*[!0-9]*) keep=5 ;; esac
+  [ "$keep" -ge 1 ] || keep=1
+  while IFS= read -r tag; do
+    shas+=("$tag")
+  done < <(podman images --format '{{.Repository}}:{{.Tag}}' | grep -E '^localhost/kran-api:[0-9a-f]{12}$' || true)
+  [ "${#shas[@]}" -gt 0 ] || return 0
+  for tag in "${shas[@]}"; do
+    n=$((n + 1))
+    [ "$n" -le "$keep" ] && continue
+    if podman rmi "$tag" >/dev/null 2>&1; then
+      log "==> image lama dihapus: ${tag#localhost/kran-api:}"
+    else
+      log "==> WARN: gagal menghapus $tag (dipakai container?)"
+    fi
+  done
+}
+
 # 10. Restart unit (spec §21.4 #10).
 log "==> restart kran-api & kran-worker"
 systemctl --user daemon-reload
@@ -375,6 +400,7 @@ if [ "$healthy" -ne 1 ]; then
   exit 1
 fi
 log "==> API sehat ($HEALTH_URL OK)"
+prune_images
 
 # 12. State + log (spec §21.4 #12). Journal menerima stdout via systemd webhook.
 if [ -n "${NEW_REV:-}" ]; then printf '%s\n' "$NEW_REV" > "$STATE_FILE"; fi
