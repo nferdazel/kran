@@ -1535,3 +1535,22 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   MINOR ditunda: log/metrik saat pemantau terdegradasi → **T-066**.
 - **Mutasi**: deadline 3 s → uji gagal (`elapsed 3,06 s`); deadline 60 s (mekanisme mati) → uji gagal
   dalam ~5 s, bukan menggantung. `./task test` 614 `[OK]`, exit 0.
+
+## T-067/T-068 — layanan container + rollback sadar container (19 Okt 2026)
+
+- **T-067 (D-066)**: API/worker kini container quadlet (`ops/systemd/kran-{api,worker}.container`,
+  image `localhost/kran-api`), dipasang deploy dari repo (`sync_units` + `.prev` + `restore_units`).
+  Dikerjakan lewat sesi lain atas permintaan pemilik; sesi ini mengaudit hasilnya dan menutup
+  dokumen yang hilang (D-066, T-067, §21.5/§21.6 spec, runbook §D2, `ACCEPTED-LIMITS`).
+- **Fakta produksi** (read-only): `kran-api` active, `kran-worker` failed exit 3 by design,
+  `127.0.0.1:8095->8095/tcp`, network `qouver` (10.89.0.31), `/readyz` `{"status":"ok"}` dengan
+  `database`/`migrations`/`realtime` ok; deploy `aafc715` "API sehat"; unit terpasang identik repo.
+- **Insiden cutover** (tercatat di komentar deploy + D-066): unit native bernama sama menang atas
+  unit generator; deploy pertama me-restart biner lama dan health gate membaca biner itu juga.
+  Perbaikan: unit lama ke `ops/systemd/superseded/` + penjaga fail-closed di deploy.
+- **T-068**: `ops/scripts/rollback.sh` disamakan dengan model container — tag `:prev` → `:local`,
+  pulihkan web/unit `.prev`/biner gate, tolak unit native, poll `/readyz` (gagal = exit 1).
+  Bukti harness 4/4; skrip lama pada keadaan `:prev` hilang **exit 0** tanpa `podman tag`
+  (sukses palsu) → perilaku baru diskriminatif. `bash -n` + `shellcheck -S warning` bersih.
+- **Sisa**: T-069 (retensi tag image), KEK belum di-mount (butuh mount + `UserNS`), latihan rollback
+  di server belum dilakukan (T-013).

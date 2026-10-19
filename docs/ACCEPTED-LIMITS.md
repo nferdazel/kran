@@ -27,7 +27,7 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 | Job CI GitHub belum lengkap (`db-tests`/`traceability`) | CI GitHub tidak menjalankan uji integrasi DB; gate yang sebenarnya adalah `./task ci` lokal (butuh DB dev) | lihat `docs/ci-jobs.md` | O-027 |
 | Antrean kirim realtime per koneksi tidak dibatasi | Klien lambat menambah pemakaian memori proses | pantau RSS; peristiwa hilang ditutup resume token | O-028 |
 | Peristiwa outbox yang membuat `oldestUndeliveredSeconds` kehilangan kursor (baris kursor dihapus) diperlakukan "dari awal" | Usia lag bisa terbaca besar sesaat walau konsumen sebenarnya tidak tertinggal | baris outbox tidak pernah dihapus jalur produksi; reset kursor hanya di uji | T-041 |
-| Probe migrasi `/readyz` memerlukan `--root` yang diarahkan unit systemd (belum tersinkron otomatis — deploy hanya sync `ops/scripts/*.sh`) | Tanpa itu `/readyz` melaporkan "akar migrasi tidak tersedia" dan skema tidak diverifikasi (tetap 200, bukan rollback) | `checks[]` di `/readyz` memuat `migrations` dengan `detail` "akar migrasi tidak tersedia"; unit di `ops/systemd/kran-api.service` | T-041; O-019 |
+| Probe migrasi `/readyz` bergantung pada mount `modules/` di container (`--root=/monorepo`); bila mount hilang, probe melaporkan "akar migrasi tidak tersedia" dan **tetap 200** | Skema tidak terverifikasi walau health gate hijau | `checks[]` di `/readyz` memuat `migrations` dengan `detail` "akar migrasi tidak tersedia"; volume di `ops/systemd/kran-api.container` | T-041/O-019; T-067/D-066 |
 | SIGTERM: koneksi yang belum masuk handler tetap terpotong; soket realtime ditutup oleh keluarnya proses | Permintaan yang belum masuk handler bisa gagal saat deploy; klien WS menyambung ulang | log `permintaan berjalan selesai (drain)` / `N permintaan masih berjalan` | T-032, T-042 (diterima; `close()` tidak dipanggil jalur produksi — teardown in-process butuh server dibangun+disajikan di thread yang sama, lihat O-025) |
 | Jendela staleness izin realtime | Setelah izin dicabut, data masih bisa terkirim sampai satu interval pemeriksaan berakhir | parameter `sessionRecheckSeconds` (0 = setiap putaran pump) | T-030 |
 | Validasi koneksi pool menambah satu perjalanan bolak-balik per peminjaman dari idle | Latensi per permintaan naik sedikit | `KRAN_DB_VALIDATE_ON_ACQUIRE` (matikan = koneksi mati di server tidak diganti otomatis) | T-033 |
@@ -42,6 +42,8 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 | Regulasi spec §4 bertanda `V?`/`V!` belum terverifikasi | Pasal/angka bisa berubah; yang bergantung padanya belum final | penanda `NEEDS-COMPLIANCE-REVIEW` di kode/seed/docs | O-001 |
 | Belum ada kontrak-fuzzing (`schemathesis`) dan visual regression | Cakupan uji kontrak/visual lebih sempit daripada rencana spec | lihat daftar uji; parity kontrak diuji lewat `tcontract`/`itapi` | O-026, O-022 |
 | Lint statis generik (ESLint) belum ada — bagian a11y **sudah tertutup** | Aturan `svelte/*` non-a11y dan `typescript-eslint` belum menegakkan apa pun; diagnostik a11y kompilator kini memblokir lewat `svelte-check --fail-on-warnings` | diputuskan 17 Okt 2026 (D-053) untuk dikerjakan bersama T-012 | O-023, T-057 |
+| Tag image menumpuk satu per deploy (`localhost/kran-api:<sha>`), belum ada pemangkasan | Pemakaian disk bertambah tiap deploy (≈92 MB apparent per image; layer dibagi). 19 Okt 2026: 26 tag, `/srv` 30% (54 G bebas) — belum mendesak | `podman images \| grep kran`; `df -h /srv` | T-069 |
+| `KRAN_KEK_FILE` belum di-mount ke container | Fitur yang membutuhkan KEK (field crypto/MFA) tidak bisa aktif di produksi; dengan env kosong fitur itu inert, bukan rusak diam-diam | `podman inspect kran-api` tidak memuat mount KEK; startup check parameter MFA | D-066; O-071 |
 
 ## 3. Yang **tidak** diklaim
 
@@ -50,8 +52,9 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 - **Stabilitas belum diuji pada beban produksi.** Gate ini menjalankan permintaan serial/rendah;
   uji paralel yang ada (8 thread pada pool kecil, 8 klien realtime) membuktikan kebenaran, bukan
   kapasitas.
-- **Deploy & rollback belum pernah dilatih di server.** `ops/scripts/deploy-vps.sh` belum pernah
-  dijalankan (T-013); rehearsal-nya pekerjaan tersendiri dan butuh keputusan pemilik.
+- **Rollback belum pernah dilatih di server.** Deploy sudah berjalan berulang di produksi
+  (`deploy.log`, 19 Okt 2026); jalur auto-rollback dan `ops/scripts/rollback.sh` baru dibuktikan
+  lewat harness (T-068), belum pada layanan nyata. Rehearsal-nya pekerjaan tersendiri (T-013).
 - **Gate hijau bukan jaminan bebas flake.** Dua kejadian yang **belum dijelaskan**, dicatat apa adanya di
   `docs/tasks/T-031.md`: (a) e2e login menggantung — 15 Okt (4 test, 7,5 menit) dan **berulang** 16 Okt
   (1 test, 9,2 menit), log API bersih; (b) 2 dari 200 iterasi stress pool melempar pengecualian, lalu

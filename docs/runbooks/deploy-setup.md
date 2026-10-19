@@ -126,14 +126,21 @@ unit kita saat peralihan (keputusan pemilik 16 Okt 2026, D-043: replace di tempa
   "kembali ke sistem lama seutuhnya" **bukan** pilihan: pemulihan `cbs_verify*` hanya lewat backup harian
   02:00 hari itu (`/srv/qouver/backups/postgres/daily/*_2026-10-16_02-00-01.dump`) — jalur yang sudah
   diuji restore, bukan diasumsikan.
-- **Unit systemd TIDAK dipasang oleh `deploy-vps.sh`** — skrip hanya menjalankan `daemon-reload` +
-  restart. Kalau `ops/systemd/*.service` berubah, berkasnya harus **disalin manual** ke
-  `~/.config/systemd/user/` lalu `daemon-reload`, kalau tidak perubahan itu hanya ada di repo.
-  Per 16 Okt 2026 unit **produksi masih versi lama**: `kran-api.service` belum memuat
-  `RestartPreventExitStatus=2` (T-054), jadi berkas KEK yang salah masih akan restart-loop tiap 3 detik
-  sampai unit itu disalin.
-- **Yang masih menunggu manusia**: latihan `deploy-vps.sh` manual di server (T-013) dan izin sebelum
-  push pertama ke `main` (push = webhook = deploy).
+- **Unit layanan kini dipasang oleh `deploy-vps.sh`** (amandemen 19 Okt 2026, D-066): `sync_units`
+  menyalin `ops/systemd/*.container` ke `~/.config/containers/systemd`, mencadangkan versi lama ke
+  `.prev`, dan `restore_units` mengembalikannya saat auto-rollback. Sebelum itu (16 Okt) unit systemd
+  tidak pernah dipasang otomatis, sehingga perubahan seperti `RestartPreventExitStatus=2` (T-054)
+  harus disalin tangan.
+- **Unit native bernama sama menutupi quadlet.** `~/.config/systemd/user/kran-api.service` menang
+  atas unit hasil generator; deploy kini **menolak** jalan bila berkas itu ada. Kejadian 19 Okt 2026:
+  deploy pertama setelah cutover me-restart biner lama sementara health gate membaca biner lama itu
+  juga — "sukses" tanpa perubahan. Setelah unit native di-rename/dihapus, jalankan
+  `systemctl --user daemon-reload` sekali. `is-enabled` = `generated` itu normal untuk quadlet.
+- **Rollback layanan = tag image**, bukan salin biner: `ops/scripts/rollback.sh` mengembalikan
+  `localhost/kran-api:prev` → `:local`, memulihkan `web.prev` + unit `.prev` + biner gate, lalu
+  memeriksa `/readyz` dan gagal bila tidak sehat (D-066 butir 9).
+- **Yang masih menunggu manusia**: latihan **rollback** di server (T-013/T-068); deploy sendiri sudah
+  berjalan berulang lewat push ke `main` (webhook → health gate).
 
 ## E. Verifikasi setelah terpasang
 
