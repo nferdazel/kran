@@ -89,8 +89,8 @@ Verifikasi tanpa memicu deploy: `gh api repos/nferdazel/kran/hooks` untuk meliha
 
 Salin dari `ops/env/kran-prod.env.example` ke `/srv/qouver/apps/kran/env/kran-prod.env`, isi nilai
 nyata. Variabel yang dibaca kode: `KRAN_DATABASE_URL`, `KRAN_DB_POOL_SIZE`,
-`KRAN_DB_ACQUIRE_TIMEOUT_MS`, `KRAN_DB_STATEMENT_TIMEOUT_MS`, `KRAN_DB_VALIDATE_ON_ACQUIRE`,
-`KRAN_APP_NAME`. Variabel untuk skrip deploy: `KRAN_GIT_URL`, `KRAN_APP_DIR`, `KRAN_HEALTH_URL`,
+`KRAN_DB_ACQUIRE_TIMEOUT_MS`, `KRAN_DB_CONNECT_TIMEOUT_MS` (minimum 2 detik), `KRAN_DB_STATEMENT_TIMEOUT_MS`,
+`KRAN_DB_VALIDATE_ON_ACQUIRE`, `KRAN_APP_NAME`. Variabel untuk skrip deploy: `KRAN_GIT_URL`, `KRAN_APP_DIR`, `KRAN_HEALTH_URL`,
 `KRAN_ENV_FILE` (opsional, default `$KRAN_APP_DIR/env/kran-prod.env`).
 **`KRAN_PORT` dan `KRAN_BIND_HOST` wajib ada**: biner tidak membacanya sendiri, unit systemd yang
 meneruskannya ke flag `--port`/`--address` (lihat T-045 temuan 8).

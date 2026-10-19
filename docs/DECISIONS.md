@@ -1709,3 +1709,31 @@ tersemai tetap gagal keras alih-alih memakai bentuk kode yang tak diputuskan sia
 fallback diam-diam" (spec §10.6) tidak dilanggar: level scope tetap disebut pemanggil; yang berubah
 hanya pengartian "tidak ada nilai" untuk saklar keamanan. Dikunci test `itapi_mfa` "kebijakan MFA
 belum tersemai sama sekali → 403 mfa_disabled, bukan 500".
+
+## D-064 — Koneksi DB dibuka lewat conninfo: `connect_timeout` + keepalive (T-061, T-044 H1)
+
+**Konteks.** T-044 membuktikan `pqsetdbLogin` tidak punya batas waktu klien: peer yang menerima TCP
+lalu diam membuat `acquire`/`/readyz`/`ctl` menunggu **tanpa batas**. `statement_timeout` tidak
+menolong karena berlaku server-side, setelah koneksi hidup.
+
+**Keputusan.**
+
+1. **`pqconnectdb(conninfo)`** menggantikan `pqsetdbLogin`; `connect_timeout` diambil dari
+   `KRAN_DB_CONNECT_TIMEOUT_MS` (default 5000; libpq menafsirkan < 2 detik sebagai 2 detik, dan 0
+   berarti tanpa batas — jadi nilai minimum dipaksa 2). Nilai conninfo di-*quote* (escape `\` dan `'`),
+   sehingga password berkutip/backslash tetap valid — diuji unit, bukan diasumsikan.
+2. **TCP keepalive eksplisit** (`keepalives=1 keepalives_idle=5 keepalives_interval=5
+   keepalives_count=2`). Koneksi yang **sudah** hidup lalu membeku (tunnel mati tanpa RST) terdeteksi
+   kernel dalam ±15–20 detik alih-alih menunggu berjam-jam.
+3. **Bentuk galat dipertahankan** (`PoolError` "gagal menyambung ke host:port/db: …") supaya
+   pemanggil dan test yang ada tidak berubah.
+
+**Sisa yang diterima (jujur).** Deadline **per-query** belum ada: kueri yang sedang berjalan pada
+koneksi yang membeku masih bergantung pada keepalive (±15 s), bukan batas milidetik. Itu butuh libpq
+nonblocking + `PQsocket` (dan loop `PQconsumeInput`) — perubahan tersendiri, tidak diklaim di sini.
+Dicatat di register `docs/ACCEPTED-LIMITS.md` dan dijadwalkan sebagai **T-065**.
+
+**Bukti.** `shared/platform-lib/tests/tdbconnect.nim`: listener black-hole (listen tanpa `accept`)
+→ `PoolError` jauh di bawah 10 detik; kontrol port tertutup tetap gagal cepat; regresi tanpa fix
+adalah menggantung, bukan gagal. `./task test itpool` 10 `[OK]`, `./task check` exit 0.
+**HUMAN-REVIEW-REQUIRED** (jalur koneksi produksi, AGENTS.md §8).
