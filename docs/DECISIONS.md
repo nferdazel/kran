@@ -1877,3 +1877,53 @@ berlubang (sequence, bukan counter tabel) karena transaksi batal tidak boleh mem
 **Bukti.** `tparty` (Luhn vektor klasik, format dari pola, token salah ditolak), `itparty`
 (sequence naik, CIF unik, audit+outbox satu transaksi), `itapi_party` (jalur HTTP + kontrak; CIF
 diverifikasi dengan fungsi produksi, bukan regex).
+
+---
+
+## D-069 — Dokumen identitas terenkripsi: ciphertext + blind index + bentuk tersamar (T-071)
+
+**Konteks.** Spec §18.2 mewajibkan *field-level encryption* untuk NIK/NPWP/no. HP/alamat dengan
+**blind index** untuk pencarian, dan *masking* sebagai tampilan default. T-071 adalah pemakaian
+pertama kolom PII yang nyata; format penyimpanannya diputuskan di sini supaya tidak berubah lagi
+setelah ada data.
+
+**Keputusan.**
+1. `party.identity_doc` menyimpan tiga turunan nomor, tidak pernah nomornya:
+   - `number_enc` = ciphertext field crypto (`kran:enc:v1:…`, AAD = nama tabel `identity_doc`);
+   - `number_bidx` = blind index HMAC-SHA256 ber-domain (hex 64) untuk pencarian & duplikat;
+   - `number_last2` = dua karakter terakhir untuk tampilan tersamar tanpa dekripsi.
+2. Nomor dinormalkan lebih dulu (huruf besar, hanya `A-Z 0-9`) sehingga blind index deterministik
+   dan spasi/tanda hubung tidak memecah identitas yang sama.
+3. Duplikat dicek antar party lewat `UNIQUE (doc_type, number_bidx)`: **satu nomor = satu baris per
+   jenis dokumen**. Jenis dokumen berbeda punya ruang nomor sendiri (KTP 16 digit vs NPWP 15 vs
+   paspor alfanumerik), jadi nomor yang sama di jenis berbeda **tidak** dianggap duplikat — batas
+   yang disengaja, diuji di `itkyc` dan disebut di `MODULE.md`. API menjawab 409; pengecekan di
+   handler hanya untuk pesan yang jelas, constraint DB tetap jaring terakhir terhadap balapan.
+4. Membuka nomor = *unmask*: endpoint terpisah, izin `party.identity_doc.read` (bukan izin baca
+   biasa), **alasan wajib**, dan audit `party.identity.unmask` tanpa nomor. Daftar dokumen/profil
+   KYC tidak pernah memuat nomor.
+5. Tanpa KEK (`KRAN_KEK_FILE` kosong) endpoint yang butuh enkripsi/dekripsi menjawab **501**
+   (fail-closed, pola MFA T-046) — bukan menyimpan plaintext, bukan 500 yang menyesatkan.
+6. CHECK `number_enc LIKE 'kran:enc:v1:%'` dan `number_bidx ~ '^[0-9a-f]{64}$'` membuat
+   penyimpanan bentuk salah **gagal di DB**, bukan hanya di kode.
+
+**Konsekuensi. Rotasi KEK wajib mendahului reindex blind index.** `number_bidx` diturunkan dari
+kunci KEK **aktif**, jadi setelah rotasi baris lama tidak lagi cocok dengan indeks yang dihitung
+kunci baru: deteksi duplikat gagal-terbuka (409 berhenti muncul, dan constraint unik pun tidak
+menolong karena nilainya sudah berbeda). Sampai ada jalur reindex, langkah rotasi harus mencakup
+"hitung ulang `number_bidx` dengan kunci baru" — dicatat sebagai **O-073**.
+
+CHECK bentuk ciphertext mengikat versi format: kenaikan versi crypto (v2) butuh
+migrasi expand baru yang memperbarui CHECK — disengaja, supaya perubahan format tidak lewat tanpa
+keputusan. `number_last2` adalah bentuk tersamar, bukan rahasia: dua karakter terakhir bisa
+memperkecil ruang tebak bila DB bocor, dan itu dinilai sebanding dengan manfaatnya (UI bisa
+menampilkan petunjuk tanpa membuka nomor). Nama resmi/tanggal lahir/alamat **belum** ada di sini →
+task turunan **T-078** (mereka butuh kolom terenkripsi sendiri).
+
+**Bukti.** `tkyc` (normalisasi/validasi/aritmetika re-KYC), `itkyc` (ciphertext berawalan
+`kran:enc:v1`, plaintext tidak ada di kolom, blind index deterministik, duplikat ditolak DB,
+riwayat risiko append-only, rollback bersih), `itapi_kyc` (jalur HTTP penuh: 401/403/404/400/409,
+audit tanpa nomor, event `party.risk_changed`, 501 tanpa KEK, nomor tidak muncul di badan respons).
+
+**HUMAN-REVIEW-REQUIRED**: area kriptografi/PII (AGENTS.md §8) — perlu review manusia sebelum data
+nyata masuk.

@@ -1600,3 +1600,46 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
 - **Sisa**: PII/KYC + audit pembacaan → T-071 (`HUMAN-REVIEW-REQUIRED`); O-072 (idempotency POST
   master data) menunggu keputusan lingkup; parameter `party.cif.format` harus ikut seed produksi
   (O-066) sebelum deploy yang memakainya.
+
+## T-071 — `party` KYC & risiko: identitas terenkripsi + rating risiko (19 Okt 2026)
+
+- **Rencana/scope**: `docs/tasks/T-071.md`. **HUMAN-REVIEW-REQUIRED** (kriptografi/PII, AGENTS §8).
+- **Keputusan**: **D-069** — nomor dokumen disimpan sebagai ciphertext (`kran:enc:v1:`, AAD
+  `identity_doc`) + blind index HMAC hex 64 + dua karakter terakhir; unik per
+  `(doc_type, number_bidx)`; duplikat global per jenis dokumen; *unmask* = izin
+  `party.identity_doc.read` + alasan + audit tanpa nomor; tanpa KEK → 501 fail-closed.
+  Batas baru dicatat: **O-073** (rotasi KEK membuat blind index lama tidak cocok → wajib reindex;
+  sampai ada jalur, rotasi atas data identitas dilarang).
+- **Kode**: migrasi `party/0002_party_kyc.sql` (identity_doc, kyc_profile, risk_rating
+  append-only lewat trigger) + `0014_platform_rbac_party_pii.sql`; domain `identity`/`kyc`/
+  `jsonparam`; `kyc_repo`; `handlers_kyc.nim` (4 endpoint) + rute + kontrak + klien TS; profil KYC
+  dibuat dalam transaksi yang sama saat party dibuat (`kyc_profile` PENDING, rating & jadwal re-KYC
+  dari parameter); 6 parameter baru (`party.identity.*`, `party.kyc.*`) lewat `paramgen`,
+  ditandai `NEEDS-COMPLIANCE-REVIEW`.
+- **Bukti `./task ci`** (log `/tmp/ci-t071d.log`, setelah perbaikan reviewer): `check` hijau,
+  `openapi` sinkron + typecheck, **681 `[OK]`, 0 `[FAILED]`**, e2e **24 passed**.
+  `./task dbtools validate` 14 migrasi OK.
+- **Test baru**: `tkyc` (17 unit: normalisasi, panjang per jenis, mask dua karakter, status/level,
+  aritmetika re-KYC termasuk 31 Jan → akhir Feb & kabisat), `itkyc` (ciphertext di kolom DB &
+  plaintext tidak ada, blind index deterministik, duplikat per jenis dokumen, riwayat risiko
+  append-only — UPDATE/DELETE ditolak trigger, rollback bersih), `itapi_kyc` (13 test: 401/403/404/
+  400/409/501, audit tanpa nomor, event `party.risk_changed`, *unmask* menulis audit + alasan
+  tersimpan, dokumen party lain → 404 **tanpa** audit, tanggal salah → 400 bukan 500, `null`
+  untuk tanggal kosong, tanpa KEK → 501 dan tidak ada baris setengah tersimpan).
+- **Review independen** (konteks bersih, 2 putaran). Putaran 1 **CHANGES-REQUIRED**: 1 MAJOR —
+  `issuedAt`/`expiresAt` tidak divalidasi sehingga tanggal salah jadi **500** (dibuktikan reviewer
+  langsung ke API); 8 MINOR. Diperbaiki: validasi tanggal + urutan sebelum transaksi → 400,
+  tanggal kosong → `null` (bukan `""`), daftar parameter dicocokkan case-insensitive, `doc_type`
+  dan `risk_level` **selalu disimpan huruf besar** (kunci unik tidak pecah bila operator merapikan
+  ejaan parameter), `default_risk_level` wajib anggota `risk_levels`, pesan 500 menyebut CIF/KYC,
+  kapasitas 50 baris dinyatakan di kontrak (bukan pemotongan senyap), komentar `maskNumber`
+  diperbaiki, dan test 404 kepemilikan dokumen + nol baris audit. Putaran 2: **APPROVE** —
+  tiga MINOR baru (dua di antaranya juga ditutup: `riskAssessedAt`/`nextReviewDue` kini `null`;
+  deskripsi urutan 50 dokumen disamakan dengan query).
+- **Catatan gate**: `./task ci` sempat merah karena klien TS belum di-generate ulang setelah
+  deskripsi kontrak berubah — gate `openapi` menangkapnya, `./task openapi-gen` dijalankan, lalu
+  hijau. Satu e2e (`password.spec.ts`) memakai `test.slow()` (3×) dengan komentar: alur itu ±8
+  derivasi PBKDF2 dan biner debug ±20x release (T-060/O-068); assertion tidak dilonggarkan.
+- **Sisa**: T-078 (nama resmi/tanggal lahir/alamat + PII lengkap); O-073 (reindex blind index saat
+  rotasi KEK); O-072 (idempotency POST master data); O-066 (seed produksi — 6 parameter baru ikut),
+  dan deploy Fase 1 menunggu keputusan pemilik.
