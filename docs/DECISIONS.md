@@ -1623,3 +1623,76 @@ diganti dengan batas yang sebenarnya tersisa (O-017, O-070). Tanpa migrasi: tida
 baru.
 
 **HUMAN-REVIEW-REQUIRED (authz)** — AGENTS.md §8.
+
+## D-063 — MFA TOTP: kerangka tanpa pengaktifan (T-046, O-015 dikerjakan)
+
+**Konteks.** Spec §13/§18.2 menyebut MFA TOTP, tetapi repo tidak punya satu baris pun kode MFA.
+D-046 butir 9 (pemilik): MFA **belum perlu diaktifkan** sekarang. T-046 karena itu dikerjakan
+sebagai **kerangka**: skema, parameter, dan jalur enrolment/verifikasi yang nyata diuji — dengan
+**alur login tidak berubah**. Mengaktifkan (meminta kode saat masuk) adalah keputusan terpisah.
+
+**Keputusan.**
+
+1. **TOTP RFC 6238** (HMAC-SHA-1, 6 digit, 30 detik) di atas HOTP RFC 4226 + base32 RFC 4648,
+   memakai `nimcrypto` yang **sudah** jadi dependensi lewat field crypto (T-054) → tanpa dependensi
+   baru, tidak butuh ADR. Vektor ujinya diambil dari **teks RFC** (4226 App D, 6238 App B, 4648 §10),
+   bukan angka karangan; primitifnya punya test unit sendiri (`shared/platform-lib/tests/ttotp.nim`).
+2. **Rahasia 160-bit dari CSPRNG OS, disimpan terenkripsi** lewat `encryptField`/`decryptField`
+   (AAD = nama tabel `user_mfa`). Bentuk teksnya base32 tanpa padding supaya sama dengan yang
+   diminta `otpauth://`. Rahasia TOTP setara kata sandi: menyimpannya plaintext akan membuat
+   bocoran DB langsung berarti bocornya faktor kedua.
+3. **Satu baris per akun** (`platform.user_mfa`, PK `user_id`) dengan status `PENDING`/`ACTIVE`.
+   `digits`/`period_seconds` disimpan **per baris** dan dipakai saat verifikasi — pola yang sama
+   dengan `password_algo`/`password_hash`: nilai parameter yang berubah tidak boleh diam-diam
+   membatalkan rahasia yang sudah terdaftar. `last_used_step` (anti-replay) ikut disiapkan.
+4. **Parameter baru** `platform.security.mfa.{enabled,issuer,digits,period_seconds,drift_steps}`,
+   scope GLOBAL, `enabled` **default `false`**. Dibaca lewat `mfaSettingsOf` **hanya di jalur MFA**;
+   `settingsOf` (login) tidak disentuh, sehingga parameter MFA yang belum tersemai hanya mematikan
+   rute MFA (fail-closed), bukan login.
+5. **Tiga rute self-service** tanpa izin baru (pola `/api/v1/auth/password`, D-057):
+   `GET /api/v1/auth/mfa` → `{featureEnabled, status}`; `POST …/mfa/enrolment` → 201 dengan rahasia
+   **sekali saja** (409 `mfa_already_active` bila sudah `ACTIVE`); `POST …/mfa/verify {code}` → 204
+   saat kode cocok (status → `ACTIVE`), 403 `mfa_code_invalid`, 409 `mfa_no_pending_enrolment`.
+   Fitur mati → 403 `mfa_disabled` untuk ketiganya, diputuskan **sebelum** apa pun menyentuh kripto.
+6. **Kode salah dibalas 403, bukan 401.** Sesi pemanggil sah; yang salah hanya kodenya. 401 akan
+   membuat klien memperlakukan pengguna sebagai "sesi berakhir" di tengah pendaftaran — preseden yang
+   sama dengan `old_password_mismatch` (D-057).
+7. **Audit** `auth.mfa.enrol`, `auth.mfa.verify`, `auth.mfa.verify_failure` — tanpa kode, rahasia,
+   atau URI (spec §18.2). Test memeriksa isi audit, bukan hanya jumlahnya.
+8. **Mengganti faktor `ACTIVE` tidak lewat jalur enrolment** (409): penghapusan/penonaktifan faktor
+   adalah operasi pemulihan yang butuh alur sendiri (keputusan pemilik, izin, audit) → **O-071**.
+
+**Pilihan yang ditolak.** (a) menyimpan rahasia plaintext atau menurunkannya dari kata sandi —
+bocoran DB lalu sama dengan bocornya faktor kedua; (b) membaca `digits`/periode dari parameter saat
+verifikasi — mengubah parameter akan membatalkan rahasia terdaftar tanpa sebab yang terlihat;
+(c) mengaktifkan tantangan MFA di login sekarang — keputusan pemilik terpisah (D-046 butir 9) dan
+akan mengunci pengguna yang belum mendaftar; (d) WebAuthn — butuh dependensi dan kebijakan perangkat
+yang belum diminta; (e) rute dengan izin baru — faktor itu milik pemilik sesi, bukan wewenang role.
+
+**Konsekuensi.** Migrasi `0012` (expand-only; tidak menyentuh tabel lain). Parameter baru tetap butuh
+seed di produksi (O-066), tetapi ketiga rute menjawab 403 selama `mfa.enabled` default mati — deploy
+tanpa seed pun inert dan tidak merusak apa pun. Login, sesi, izin, kontrak lama, dan UI **tidak
+berubah**. Sisa pekerjaan MFA dipisahkan ke **O-071** (aktivasi login, kode pemulihan, pembatasan
+percobaan verifikasi, UI, penghapusan faktor) dan **O-015 ditutup** sebagai kerangka.
+
+**HUMAN-REVIEW-REQUIRED (autentikasi/kripto)** — AGENTS.md §8: ini faktor kedua, dan test hijau
+tidak membuktikan implementasi TOTP benar dengan sendirinya (yang membuktikannya adalah vektor RFC
+yang diambil dari teksnya, bukan dari kode sendiri).
+
+**Tambahan putaran review (19 Okt 2026).** Reviewer independen (konteks bersih) menyatakan APPROVE
+dengan 4 temuan MINOR; semuanya ditindaklanjuti dan dua di antaranya menyentuh perilaku:
+
+1. **Urutan gerbang fitur vs keyring.** `KRAN_KEK_FILE` diperiksa **setelah** `mfa.enabled`. Kalau
+   dibalik, instalasi tanpa KEK menjawab 501 saat fiturnya mati — kontradiksi dengan janji dokumen
+   ("403 `mfa_disabled`") sekaligus membocorkan status konfigurasi enkripsi server ke pemanggil tak
+   terautentikasi-status. Dikunci dua test (403 saat fitur mati tanpa keyring; 501 fail-closed saat
+   fitur hidup tanpa keyring).
+2. **Respons hanya ditulis setelah transaksi selesai.** Respons di dalam closure `withDbTx` bisa
+   terkirim dua kali di koneksi yang sama bila COMMIT gagal (klien menerima 403/201 palsu padahal
+   tulisannya batal). Semua cabang sekarang mengumpulkan hasil dulu, menjawab kemudian.
+3. **Respons berisi rahasia memakai `Cache-Control: no-store`.** Rahasia TOTP adalah kredensial
+   berumur panjang; cache perantara/peramban tidak boleh menyimpannya.
+4. **`platform.security.mfa.digits` dibatasi 6–8**, bukan 6–10: RFC 4226 §5.3 hanya menyebut
+   "MUST extract a 6-digit code at a minimum and possibly 7 and 8-digit code", dan tidak ada aplikasi
+   authenticator yang menampilkan kode di atas 8 digit. Parameter yang bisa diisi nilai tak terpakai
+   adalah jebakan konfigurasi, bukan keluwesan.
