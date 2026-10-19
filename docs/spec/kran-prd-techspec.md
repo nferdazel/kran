@@ -1016,13 +1016,18 @@ Langkah skrip (ekstensi kontrak seragam; yang **tebal** = tambahan KRAN):
 | 4 | **FREEZE GATE**: cek state `daycloser` (read-only: `kran-api --role=ctl daycloser-status` atau query). Bila `CLOSING/RUNNING` → exit tanpa mengubah apa pun, tulis log, jadwalkan retry | Tambahan (§11.7) |
 | 5 | Rebuild selektif berdasar diff (`apps/api`, `modules/`, `shared/`, `apps/web`, `migrations/`) | Seragam |
 | 6 | **Pre-migration dump** bila ada migrasi baru: `pg_dump -Fc` → `/srv/qouver/backups/pre-deploy/<sha>.dump`, verifikasi `pg_restore --list` | Tambahan |
-| 7 | Build image `podman build`; **tag `:<sha>` + `:local`; simpan tag sebelumnya sebagai `:prev`**; ekstrak binary → `bin/kran-api` (lama → `bin/kran-api.prev`) | Pola Skyward; menutup celah "satu tag" |
+| 7 | Build image `podman build`; **tag `:<sha>` + `:local`; simpan tag sebelumnya sebagai `:prev`**; ekstrak binary → `bin/kran-api` (lama → `bin/kran-api.prev`) — **hanya untuk gate host**, layanan berjalan dari image (D-066) | Pola Skyward; menutup celah "satu tag" |
 | 8 | **MIGRATION GATE**: `kran-api --role=migrate --check` lalu `--up` (**expand-only**). Gagal ⇒ **deploy dibatalkan sebelum binary diganti** | Pola Skyward |
 | 9 | Web: build ke `web.new` → swap → `web.prev` disimpan | Seragam (pola Skyward/Fond) |
 | 10 | `systemctl --user daemon-reload` + restart `kran-api` & `kran-worker` | Seragam |
-| 11 | **HEALTH GATE**: poll `/readyz` ×15 (cek DB, versi migrasi, **startup param check**, drift paramgen). Gagal ⇒ **auto-rollback** (`bin/kran-api.prev`, `web.prev`), exit 1 | Pola Skyward; **bukan** `is-active` + curl yang diabaikan |
+| 11 | **HEALTH GATE**: poll `/readyz` ×15 (cek DB, versi migrasi, **startup param check**, drift paramgen). Gagal ⇒ **auto-rollback** (tag image `:prev` → `:local`, unit `.prev`, `bin/kran-api.prev`, `web.prev`), exit 1 | Pola Skyward; **bukan** `is-active` + curl yang diabaikan |
 | 12 | Tulis `.deployed_rev`; log ke `deploy.log` **dan** journal; skrip self-update via `mv` | Pola Skyward |
 | 13 | **Evidence rilis**: simpan SBOM, daftar migrasi, ringkasan test (dari CI), hash binary di `/srv/qouver/apps/kran/releases/<sha>/` | Tambahan (jejak audit; log GitHub Actions hanya ±90 hari) |
+
+> **Amandemen 19 Okt 2026 (D-066):** layanan `--role=api` dan `--role=worker` berjalan sebagai
+> **container quadlet** (`ops/systemd/kran-{api,worker}.container`, image `localhost/kran-api`),
+> dipasang dan di-rollback oleh `deploy-vps.sh`. `bin/kran-api` dipertahankan hanya karena FREEZE
+> dan MIGRATION gate berjalan di host. §21.5 diperbarui; §21.6 menampilkan struktur `ops/` terbaru.
 
 **Aturan migrasi**: hanya **expand** (additive, kompatibel dengan binary lama) yang otomatis. Migrasi **contract** (drop/rename/ketat) ada di `migrations/contract/` dan hanya dijalankan manual via `scripts/migrate.sh --contract --yes` *setelah* rilis berikutnya stabil. Konsekuensi: auto-rollback binary selalu aman terhadap skema. Tidak ada `--down` otomatis; koreksi = migrasi maju, atau restore dari dump pra-migrasi bila terpaksa.
 
@@ -1031,7 +1036,7 @@ Langkah skrip (ekstensi kontrak seragam; yang **tebal** = tambahan KRAN):
 | Komponen | Spesifikasi |
 |---|---|
 | Direktori | `/srv/qouver/apps/kran/{scripts,bin,web,env,logs,releases}` |
-| Unit | `kran-api.service` (`--role=api`), `kran-worker.service` (`--role=worker`) — systemd **user** unit, binary `bin/kran-api` |
+| Unit | `kran-api.service` (`--role=api`), `kran-worker.service` (`--role=worker`) — systemd **user** unit, binary `bin/kran-api`. **Digantikan D-066 (19 Okt 2026):** container quadlet `kran-api.container`/`kran-worker.container`, image `localhost/kran-api`; biner host hanya untuk gate deploy |
 | Env | `env/kran-prod.env` (mode 600, owner sachiel) berisi **bootstrap config saja** (DB URL, port, role, referensi kunci) — nilai bisnis tetap di DB (§10) |
 | Port | `127.0.0.1:<port-baru>` selama transisi; 8095 baru dilepas/ diambil alih saat cutover (§21.9) |
 | Caddy | Site/hostname **terpisah** untuk KRAN dengan header keamanan lengkap (CSP, HSTS, X-Content-Type-Options, frame-ancestors, Referrer-Policy). Jangan menumpang `api.qouver.com` yang saat ini tanpa header keamanan |
@@ -1054,9 +1059,9 @@ ops/
 │  ├─ deploy-vps.sh          # kontrak §21.4 (md5 repo == server; masuk audit-consistency.sh)
 │  ├─ migrate.sh             # --up | --check | --contract --yes | --down --yes [N] (manual, opt-in)
 │  ├─ backup-pre-deploy.sh
-│  ├─ rollback.sh            # manual: kembali ke bin/*.prev & web.prev (tanpa menyentuh DB)
+│  ├─ rollback.sh            # manual: image :prev -> :local, web.prev, unit .prev (tanpa DB)
 │  └─ smoke.sh               # /healthz, /readyz, versi == .deployed_rev
-├─ systemd/                  # kran-api.service, kran-worker.service
+├─ systemd/                  # kran-api.container, kran-worker.container (+ superseded/*.service)
 ├─ caddy/                    # Caddyfile.kran.example  (+ mulai versi-kan Caddyfile asli)
 ├─ webhook/                  # hook.kran.json.example (sha256)
 └─ env/                      # kran-prod.env.example   (*.env di-gitignore)

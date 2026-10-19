@@ -1783,3 +1783,66 @@ uji integrasi `itpool` "kueri pada koneksi beku gagal <= batas" memakai perantar
 meneruskan → `PoolError` dalam < 2 s dengan deadline 700 ms, `created == 0` (koneksi dibuang).
 **Mutasi**: deadline dinaikkan ke 3 s → uji gagal (`elapsed 3,03 s`), jadi uji benar-benar menjaga
 batas. **HUMAN-REVIEW-REQUIRED** (jalur koneksi produksi, AGENTS.md §8).
+
+## D-066 — Layanan API/worker KRAN berjalan sebagai container quadlet (T-067, permintaan pemilik)
+
+**Konteks.** Sampai 19 Okt 2026 layanan berjalan sebagai **biner native**: dua systemd user unit
+(`kran-api.service`, `kran-worker.service`) menjalankan `$APP_DIR/bin/kran-api`, dan deploy hanya
+mengekstrak biner itu dari image untuk dipakai unit. Aplikasi lain di VPS yang sama sudah berjalan
+sebagai container quadlet; pemilik meminta KRAN mengikuti pola yang sama supaya operasinya seragam
+(permintaan pemilik, 19 Okt 2026 — dikerjakan di sesi terpisah, dicatat di sini karena mengubah
+§21.5 spec).
+
+**Keputusan.**
+
+1. **Satu image, dua peran.** `apps/api/Dockerfile` (multi-stage, Debian bookworm, user `kran`
+   uid 10001) menghasilkan `localhost/kran-api`; peran ditentukan argumen (`Exec=--role=api|worker`)
+   persis seperti unit native sebelumnya. Tag: `:local` (dipakai quadlet), `:<12-hex sha>` (jejak
+   deploy), `:prev` (cadangan sebelum build berikutnya).
+2. **Unit ada di repo, dipasang deploy.** `ops/systemd/kran-api.container` dan
+   `kran-worker.container`; `sync_units` menyalin ke `~/.config/containers/systemd` dengan `cmp`
+   (identik = no-op), penjaga seksi `[Container]`, cadangan `.prev`, dan `restore_units` saat
+   auto-rollback. `systemd-analyze verify` tidak berlaku untuk berkas quadlet; validasi sebenarnya
+   adalah `daemon-reload` + HEALTH GATE.
+3. **Fail-closed terhadap unit native bernama sama.** `~/.config/systemd/user/kran-api.service`
+   **menang** atas unit hasil generator quadlet. Deploy menolak jalan bila berkas itu ada. Kejadian
+   nyata 19 Okt 2026: deploy pertama setelah cutover me-restart biner lama sementara health gate
+   membaca biner lama itu juga — deploy "sukses" tanpa ada yang berubah. Karena itu berkas lama
+   dipindah ke `ops/systemd/superseded/` (tidak ada glob `*.service` yang bisa memasangnya kembali).
+4. **Biner host tinggal untuk gate.** FREEZE GATE dan MIGRATION GATE berjalan di host sebelum
+   layanan di-restart, jadi `bin/kran-api` (+ `bin/kran-api.prev`, lib runtime vendored) tetap
+   diekstrak dari image. Layanan sendiri tidak lagi memakai jalur itu.
+5. **Mount minimal, bukan seluruh monorepo.** `--root=/monorepo` hanya butuh
+   `modules/<mod>/migrations` untuk probe `/readyz`; yang di-mount hanya `modules/` (`:z,ro`).
+   `:z` wajib (label `var_t` ditolak untuk `container_t`), dan me-relabel 399 MB setiap restart
+   bukan ongkos yang perlu dibayar.
+6. **Bind `0.0.0.0`.** Port rootless di-forward ke IP bridge `qouver` (10.89.0.0/24); bind loopback
+   membuat container hidup tapi tidak terjangkau dari host. Publikasi tetap
+   `127.0.0.1:8095:8095`.
+7. **Worker tidak ikut boot.** `kran-worker.container` sengaja tanpa `[Install]` (paritas unit
+   native yang `disabled`): perannya belum ada sampai `daycloser` (O-013/O-060). Ia keluar status 3
+   "belum dikonfigurasi" dan `RestartPreventExitStatus=3` menahan restart-loop. Deploy tetap
+   me-restart-nya secara eksplisit.
+8. **KEK belum di-mount.** `KRAN_KEK_FILE` kosong di produksi, jadi fitur yang membutuhkannya
+   (field crypto/MFA) inert. Saat diaktifkan: mount berkas (600, milik sachiel) **dan**
+   `UserNS=keep-id:uid=10001,gid=10001` — dicatat di komentar unit + `ACCEPTED-LIMITS`.
+9. **Rollback mengikuti model yang sama.** `ops/scripts/rollback.sh` mengembalikan
+   `:prev` → `:local`, memulihkan `web.prev`, unit `.prev`, dan biner gate; lalu memeriksa
+   `/readyz` dan **gagal** bila tidak sehat. Versi lama menyalin biner dan mencetak "selesai" tanpa
+   menyentuh image — pada layanan container itu sukses palsu (T-068).
+
+**Konsekuensi.** Spec §21.5 (unit native + `bin/kran-api`) **digantikan** butir 1–9 ini; §21.6
+(struktur `ops/`) diperbarui. Deploy menulis `~/.config/containers/systemd` (bukan
+`~/.config/systemd/user`). Nama unit tetap sama, jadi `systemctl --user restart kran-api` masih
+berlaku; `is-enabled` melaporkan `generated` — normal untuk quadlet, dan boot tetap jalan karena
+generator membuat symlink `default.target.wants` sendiri. Tag image menumpuk per deploy (T-069).
+Tidak ada perubahan pada DB, port, domain, maupun Caddy (D-043/D-045 tetap).
+
+**Bukti.** Produksi 19 Okt 2026: `systemctl --user is-active kran-api` = `active`,
+`kran-worker` = `failed` (exit 3, by design), `podman ps` → `127.0.0.1:8095->8095/tcp`, network
+`qouver`, `/readyz` → `{"status":"ok"}` dengan `database`/`migrations`/`realtime` ok; deploy
+`aafc715` berakhir `API sehat` + `Deployment completed successfully`; unit terpasang identik dengan
+repo (`sync_units` no-op); berkas native hanya tersisa sebagai `*.disabled`/`*.reinstalled-*`.
+Rollback: harness 4/4 (tag `:prev`→`:local`, unit `.prev` pulih, tolak `:prev` hilang, tolak unit
+native, health gate gagal → exit 1); skrip lama pada keadaan `:prev` hilang **exit 0** tanpa
+memanggil `podman tag` (bukti sukses palsu).
