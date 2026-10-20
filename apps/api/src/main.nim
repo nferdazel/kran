@@ -6,7 +6,7 @@
 ##                                              seed parameter base, batalkan N migrasi terakhir,
 ##                                              atau periksa saja
 ##   kran-api --role=ctl <perintah> [--root=<dir>] perintah operasional (read-only, kecuali
-##                                                `bootstrap-admin`)
+##                                                `bootstrap-admin` dan `reset-password`)
 ##   kran-api --role=ctl bootstrap-admin --username=<nama>   admin pertama (kata sandi diacak,
 ##                                                          wajib ganti saat login pertama)
 ##   kran-api --role=worker                        belum ada pekerjaan di Fase 0 → gagal cepat
@@ -20,7 +20,7 @@
 ## Yang dibaca dari lingkungan hanyalah konfigurasi bootstrap (koneksi DB, port) — bukan nilai
 ## bisnis; nilai bisnis selalu dari parameter DB (spec §10, §12.5).
 
-import std/[atomics, os, strutils, sysrand, times]
+import std/[atomics, json, options, os, strutils, sysrand, times]
 # Hanya yang dipakai dari `std/posix`: modul itu juga mengekspor `Clock`/`Id`, yang bertabrakan
 # dengan `kernel/clock`/`kernel/ids` (dipakai perintah bootstrap admin).
 from std/posix import signal, SIGINT, SIGTERM
@@ -30,12 +30,13 @@ import db_connector/db_postgres
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
 import "platform-lib/crypto/fieldcrypto"
+import "platform/infrastructure/password_hasher"
 import "platform-lib/log"
 import dbtools/lib
 
 import kernel/[auditcontext, clock, ids]
-import platform/domain/[authz, event, scope]
-import platform/infrastructure/[audit_repo, auth_service, outbox_repo, realtime_config]
+import platform/domain/[audit, authz, event, scope]
+import platform/infrastructure/[audit_repo, auth_repo, auth_service, outbox_repo, realtime_config]
 
 import ./access
 import ./context
@@ -51,6 +52,10 @@ const
   ## Nama perintah `ctl` yang membuat admin pertama; disebut di bantuan, penjagaan argumen, dan
   ## pengujian kontrak peran CLI.
   bootstrapAdminCmd* = "bootstrap-admin"
+
+  ## Perintah `ctl` reset kata sandi (O-071/O-090 tindak lanjut): operator yang lupa kata sandi
+  ## awal tidak punya jalur lain — hash tidak boleh diubah langsung lewat SQL (melewati audit).
+  resetPasswordCmd* = "reset-password"
 
   ## Role yang diberikan `bootstrap-admin`. `platform_admin` diisi migrasi
   ## `0008_platform_rbac_catalogue.sql` beserta seluruh izin yang dikenal, jadi admin pertama
@@ -134,8 +139,9 @@ proc parseArgs(argv: seq[string]): CliOptions =
   if result.sub.len > 0 and result.role != roleMigrate:
     die("subperintah " & result.sub & " hanya untuk --role=migrate")
   if result.username.len > 0 and
-     not (result.role == roleCtl and result.cmd == bootstrapAdminCmd):
-    die("--username hanya untuk `--role=ctl " & bootstrapAdminCmd & "`")
+     not (result.role == roleCtl and result.cmd in [bootstrapAdminCmd, resetPasswordCmd]):
+    die("--username hanya untuk `--role=ctl " & bootstrapAdminCmd & "` atau `" &
+      resetPasswordCmd & "`")
 
 var shutdownRequested: Atomic[bool]
 
@@ -192,6 +198,8 @@ const CtlUsage* =
   "  outbox-status   : jumlah peristiwa outbox per status\n" &
   "  bootstrap-admin : buat admin pertama (butuh --username=<nama>; kata sandi dicetak sekali,\n" &
   "                    wajib diganti saat login pertama; menolak bila admin sudah ada)\n" &
+  "  reset-password  : setel kata sandi baru acak untuk pengguna yang ada (butuh --username=<nama>;\n" &
+  "                    dicetak sekali, wajib diganti, semua sesi dicabut, audit user.password_reset)\n" &
   "  daycloser-status: (belum ada di Fase 0 → kode 3)\n" &
   "  help            : tampilkan bantuan ini"
 
@@ -313,10 +321,72 @@ proc runBootstrapAdmin(db: DbConn, username: string, clock: Clock): int =
   echo "bisa memakai /auth/session, /auth/password, dan /auth/logout."
   0
 
+proc resetUserPassword*(db: DbConn, username: string, clock: Clock): tuple[code: int,
+    password: string] =
+  ## Setel kata sandi acak baru untuk pengguna yang **sudah ada**.
+  ##
+  ## Kenapa bukan SQL manual: hash langsung lewat SQL melewati audit dan pencabutan sesi. Jalur ini
+  ## menulis hash + `must_change_password` + mencabut sesi + audit dalam **satu transaksi** (pemanggil
+  ## wajib `withRoleDb(..., useTx = true)`), dan mengembalikan kata sandi hanya di memori untuk
+  ## dicetak sekali oleh `ctl`.
+  ##
+  ## Kode: 0 berhasil, 1 gagal menulis/acak, 2 argumen kurang, 3 pengguna tidak ada.
+  if username.len == 0:
+    stderr.writeLine "kran-api: `ctl " & resetPasswordCmd & "` butuh --username=<nama>"
+    return (2, "")
+
+  let instScope = institutionScope()
+  let now = clock.now()
+  let nowIso = utcIso(now)
+  let settings = settingsOf(db, instScope, nowIso[0 .. 9])
+  let found = userByUsername(db, username)
+  if found.isNone:
+    stderr.writeLine "kran-api: tidak ada pengguna '" & username & "'"
+    return (3, "")
+  let user = found.get()
+
+  let password = randomPassword(max(20, settings.minPasswordLength + 8),
+    settings.minPasswordClasses)
+  if password.len == 0:
+    stderr.writeLine "kran-api: gagal membaca sumber acak sistem (urandom)"
+    return (1, "")
+  let problems = passwordProblems(settings.minPasswordLength, settings.minPasswordClasses,
+    username, password)
+  if problems.len > 0:
+    stderr.writeLine "kran-api: kata sandi acak tidak lolos kebijakan: " & $problems
+    return (1, "")
+
+  if not setPassword(db, user.userId, $hashPassword(password, settings.pbkdf2Iterations),
+                     mustChange = true):
+    stderr.writeLine "kran-api: gagal menyetel kata sandi untuk '" & username & "'"
+    return (1, "")
+
+  # Riwayat ditulis **setelah** hash berhasil diganti (urutan sama dengan `changePassword`), supaya
+  # jalur gagal tidak meninggalkan baris riwayat tanpa perubahan sandi.
+  discard recordSupersededPassword(db, user.userId, user.passwordHash,
+    settings.passwordHistoryCount)
+
+  # Lockout dipulihkan dengan UPDATE **atomik**, bukan dari snapshot `user.status` yang bisa basi:
+  # login gagal bersamaan dapat commit `LOCKED` setelah baris pengguna dibaca tetapi sebelum titik
+  # ini. Hanya LOCKED → ACTIVE; INACTIVE/SUSPENDED sengaja tidak disentuh (reset bukan cara
+  # mengaktifkan kembali akun yang dinonaktifkan).
+  discard db.execAffectedRows(sql"""
+    UPDATE platform.app_user SET status = 'ACTIVE', updated_at = now()
+     WHERE user_id = ?::uuid AND status = 'LOCKED'""", user.userId)
+
+  let revoked = revokeSessionsOfUser(db, user.userId, nowIso, "reset kata sandi oleh operator")
+  let ctx = newAuditContext(Id(""), device = "kran-api ctl",
+    reason = "reset kata sandi oleh operator", startedAt = now)
+  discard appendAudit(db, newAuditEntry(ctx, "user.password_reset", "app_user", user.userId,
+    clock, businessDate = businessDateFor(db, instScope, nowIso),
+    after = %*{"username": user.username, "must_change_password": true,
+               "sessions_revoked": revoked}))
+  (0, password)
+
 proc runCtl*(command, root: string, username = ""): int =
   ## Peran `ctl`: perintah operasional yang aman (read-only), dipakai skrip ops dan freeze gate.
-  ## Satu-satunya pengecualian adalah `bootstrap-admin`, yang memang harus menulis dan sengaja
-  ## sekali-jalan.
+  ## Dua pengecualian yang memang menulis: `bootstrap-admin` (sekali-jalan) dan `reset-password`
+  ## (pemulihan darurat, dengan audit + pencabutan sesi + wajib ganti).
   if command.len == 0 or command == "help":
     echo CtlUsage
     return 0
@@ -325,6 +395,19 @@ proc runCtl*(command, root: string, username = ""): int =
     # `useTx = true`: pengguna, role, dan audit harus lahir bersama — lihat `bootstrapFirstAdmin`.
     withRoleDb(proc(db: DbConn): int {.closure.} =
       runBootstrapAdmin(db, username, systemClock()), useTx = true)
+  of resetPasswordCmd:
+    # Kata sandi dicetak **setelah** transaksi selesai: kalau COMMIT/audit gagal, operator tidak
+    # boleh menerima kredensial yang sebenarnya tidak berlaku.
+    var password = ""
+    let code = withRoleDb(proc(db: DbConn): int {.closure.} =
+      let r = resetUserPassword(db, username, systemClock())
+      password = r.password
+      r.code, useTx = true)
+    if code == 0:
+      echo "kata sandi baru untuk '" & username & "' (ditampilkan sekali, tidak disimpan):"
+      echo password
+      echo "Masuk dengan kata sandi itu, lalu ganti saat diminta."
+    code
   of "verify-audit":
     withRoleDb(proc(db: DbConn): int {.closure.} =
       let rows = verifyChain(db)

@@ -4,6 +4,7 @@
 
 import ../money
 import ../paramkey
+import ../rate
 import std/json
 
 const paramKeys*: seq[string] = @[
@@ -38,8 +39,13 @@ const paramKeys*: seq[string] = @[
   "platform.security.session_absolute_minutes",
   "platform.security.session_idle_minutes",
   "product.savings.admin_fee",
+  "product.savings.day_count_basis",
   "product.savings.grace_period_days",
+  "product.savings.interest_posting",
+  "product.savings.interest_rate",
   "product.savings.min_balance",
+  "product.savings.rounding_mode",
+  "product.savings.rounding_scale",
 ]
 
 const P_ledger_coa_code_pattern* = ParamKey[string]("ledger.coa.code_pattern")
@@ -104,9 +110,19 @@ const P_platform_security_session_idle_minutes* = ParamKey[int64]("platform.secu
 
 const P_product_savings_admin_fee* = ParamKey[Money]("product.savings.admin_fee")
 
+const P_product_savings_day_count_basis* = ParamKey[string]("product.savings.day_count_basis")
+
 const P_product_savings_grace_period_days* = ParamKey[int64]("product.savings.grace_period_days")
 
+const P_product_savings_interest_posting* = ParamKey[string]("product.savings.interest_posting")
+
+const P_product_savings_interest_rate* = ParamKey[Rate]("product.savings.interest_rate")
+
 const P_product_savings_min_balance* = ParamKey[Money]("product.savings.min_balance")
+
+const P_product_savings_rounding_mode* = ParamKey[string]("product.savings.rounding_mode")
+
+const P_product_savings_rounding_scale* = ParamKey[int64]("product.savings.rounding_scale")
 
 const paramDefinitions*: seq[ParamDefinition] = @[
   ParamDefinition(
@@ -451,6 +467,17 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(
+    key: "product.savings.day_count_basis",
+    module: "product",
+    valueType: pvtEnum,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.product.savings.day_count_basis",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
     key: "product.savings.grace_period_days",
     module: "product",
     valueType: pvtInteger,
@@ -462,6 +489,28 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(
+    key: "product.savings.interest_posting",
+    module: "product",
+    valueType: pvtEnum,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.product.savings.interest_posting",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "product.savings.interest_rate",
+    module: "product",
+    valueType: pvtRate,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.product.savings.interest_rate",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
     key: "product.savings.min_balance",
     module: "product",
     valueType: pvtMoney,
@@ -470,6 +519,28 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.product.savings.min_balance",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "product.savings.rounding_mode",
+    module: "product",
+    valueType: pvtEnum,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.product.savings.rounding_mode",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "product.savings.rounding_scale",
+    module: "product",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.product.savings.rounding_scale",
     sinceVersion: "0.1.0",
   ),
 ]
