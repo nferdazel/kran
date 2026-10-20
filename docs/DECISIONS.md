@@ -2008,6 +2008,12 @@ untuk hal yang sudah jelas.
 **Konsekuensi.** Review independen tetap wajib sebelum `DONE` (AGENTS §4.5–4.7) dengan konteks
 bersih; yang berubah hanya izin operasional (migrasi/push) dan pengizinan paralelisasi.
 
+**Ditegaskan ulang (20 Okt 2026).** Pemilik meminta paralelisasi dijalankan agresif untuk pekerjaan
+yang **tidak berbagi berkas**: jangan menunggu review task sebelumnya selesai untuk memulai task
+berikutnya. Review tetap berjalan di commit yang sudah jadi; perbaikan temuan masuk commit susulan.
+Yang tetap berurutan hanya: task yang mengedit berkas sama (`routes.nim`, kontrak OpenAPI, modul
+yang sama), dan langkah yang butuh verdict review sebelum menandai `DONE`.
+
 ---
 
 ## D-072 — Jurnal T-073 tanpa partisi pada Fase 1 (spec §9.3 = acuan, bukan final)
@@ -2104,8 +2110,16 @@ direkonstruksi. Laporan tidak boleh bergantung pada cache yang basi.
 masalah, laporan boleh membaca `balance_snapshot` **setelah** rekonsiliasi day-close (Fase 5) —
 bukan sebelum. Rekonstruksi cache adalah langkah eksplisit, bukan efek samping posting.
 
-**Bukti.** `ittb` (4 integrasi: TB seimbang, sama dengan agregasi SQL langsung, snapshot rekonstruksi
-== TB, periode tidak ada = error) + `itapi_journal` (3 HTTP: kontrak/total seimbang, 400/404, 403).
+**Tambahan (review putaran 1).** `balance_snapshot` bersifat **kumulatif** sampai `as_of`, sedangkan
+TB adalah **pergerakan periode**; keduanya hanya sama bila tidak ada periode sebelumnya — diuji
+dengan jurnal bulan sebelumnya. Akun yang punya saldo awal tetapi tidak bergerak di periode ini
+**tidak muncul** di TB (laporan saldo awal/neraca menunggu task laporan; **O-083**). "Tidak ada jalur
+tulis saldo selain jurnal" dipertegas: posting jurnal tidak menulis cache sama sekali; satu-satunya
+penulis cache adalah `rebuild_balance_snapshot`.
+
+**Bukti.** `ittb` (TB seimbang dengan total independen, sama dengan agregasi SQL, snapshot kumulatif
+vs TB periode, periode tidak ada = `none`) + `itapi_journal` (kontrak/total, batas periode inklusif,
+400/404, 403).
 
 ---
 
@@ -2137,3 +2151,33 @@ tetap berlaku.
 **Konsekuensi.** Menambah token/komponen UI tanpa memperbarui matriks kontras dan `DESIGN.md` =
 temuan review. Font baru adalah aset self-host (bukan dependency runtime); lisensi OFL diverifikasi
 saat T-079.
+
+---
+
+## D-076 — Bentuk tabel `product` & semantik versi (T-076)
+
+**Konteks.** Spec hanya menyebut nama tabel (`product`, `product_version`,
+`product_param_binding`) dan aturan effective-dated (§9.1(5)); tidak ada daftar kolom. T-076 harus
+menurunkan bentuknya sendiri.
+
+**Keputusan.**
+1. **Identitas stabil di `product`** (`code` unik, `name`, `product_type`), hanya nama yang boleh
+   diubah. Atribut bisnis tidak ada di sini.
+2. **Versi di `product_version`**: `version_no` unik per produk, `effective_from`/`effective_to`
+   dengan rentang **inklusif** `[from, to]` — konsisten dengan `ledger.period` (T-072) — dan
+   `EXCLUDE USING gist (product_id WITH =, daterange(...) WITH &&)` menolak tumpang tindih, termasuk
+   versi terbuka (`to` NULL).
+3. **Versi immutable**: hanya `effective_to` yang boleh diisi, sekali (trigger). Versi baru menutup
+   versi terbuka sehari sebelum tanggal mulai. Koreksi = versi baru, bukan edit.
+4. **Atribut = binding parameter**: `product_param_binding(version_id, param_key, value jsonb)`,
+   kunci wajib berawalan `product.`, minimal satu binding per versi (deferred), binding immutable.
+   Tipe/enum/batas divalidasi composition root terhadap `platform.param_definition`; kunci tak
+   terdaftar = 400.
+5. **Izin** `product.catalog.read|manage` (migrasi platform `0017` + grant `0018`), aksi institusi
+   dua gerbang.
+6. **Event** `ProductPublished` per versi (payload productId/code/productType/versionNo/effectiveFrom),
+   dedup per `versionId`.
+
+**Konsekuensi.** Belum ada maker-checker (**O-085**), belum ada status DRAFT/RETIRED, dan atribut
+rate/day-count belum dimodelkan (**O-084**) karena butuh keputusan akad/produk. Perubahan bentuk
+tabel setelah deploy harus lewat migrasi expand/contract, bukan edit migrasi lama.

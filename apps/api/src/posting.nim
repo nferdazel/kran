@@ -117,6 +117,15 @@ proc processBatch*(app: AppContext, workerId: string, batchSize, maxAttempts,
     claimBatch(db, workerId, batchSize, leaseSeconds))
   for i in 0 ..< events.len:
     let ev = events[i]
+    if ev.attempts > maxAttempts:
+      # Klaim berulang tanpa pernah selesai (mis. fault non-Catchable/OOM). Paksa DEAD supaya
+      # tidak menahan event sesudahnya selamanya (review T-074 putaran 2).
+      discard app.pool.withConn(proc(db: DbConn): int {.gcsafe.} =
+        markFailed(db, ev.eventId, "percobaan klaim melebihi batas; event tidak selesai",
+                   backoffSeconds, maxAttempts)
+        1)
+      stderr.writeLine "kran-worker: event " & $ev.eventId & " melewati batas percobaan"
+      continue
     try:
       let outcome = app.pool.withTx(proc(db: DbConn): PostingOutcome {.gcsafe.} =
         let outcome = processEvent(db, app.clock, ev)
@@ -160,11 +169,17 @@ proc runWorker*(): int =
       pollMs = paramInt(db, P_ledger_posting_poll_interval_ms, asOf)
       leaseSeconds = paramInt(db, P_ledger_posting_lease_seconds, asOf)
       1)
-  except CatchableError as e:
+  except DbError as e:
+    # DB belum siap/jaringan: transien. Keluar 1 supaya systemd mengulang.
+    stderr.writeLine "kran-worker: database tidak terbaca: " & e.msg
+    return 1
+  except ValueError as e:
+    # Parameter belum tersemai / salah tipe: permanen sampai diperbaiki. Keluar 2 (tidak di-restart).
     stderr.writeLine "kran-worker: parameter posting tidak terbaca: " & e.msg
     return 2
 
-  # Identitas per proses: reclaim lease tidak boleh mencuri event milik worker lain yang hidup.
+  # Identitas per proses hanya untuk jejak (`locked_by`). Jaminan anti-rebut datang dari **lease**,
+  # bukan dari identitas ini: di container pid selalu 1, jadi replika tidak bisa dibedakan.
   let workerId = "kran-worker:" & $getCurrentProcessId()
   stderr.writeLine "kran-worker: mulai (" & workerId & ", batch=" & $batchSize &
     ", maxAttempts=" & $maxAttempts & ", backoff=" & $backoffSeconds & "s, lease=" &

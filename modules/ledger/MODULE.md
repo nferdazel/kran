@@ -63,8 +63,10 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 
 - `GET /api/v1/ledger/trial-balance?periodId=` — agregat debit/kredit per akun untuk rentang
   periode, **dihitung dari `journal_line`**, bukan cache. Total debit = total kredit (invarian DB).
-- `ledger.balance_snapshot` adalah **cache** `(account_code, as_of)` yang hanya diisi
-  `ledger.rebuild_balance_snapshot(as_of)`; tidak ada jalur tulis saldo selain jurnal (**D-074**).
+- `ledger.balance_snapshot` adalah **cache kumulatif** `(account_code, as_of)`: berisi semua jurnal
+  dengan `business_date <= as_of`. Satu-satunya penulisnya `ledger.rebuild_balance_snapshot(as_of)`;
+  posting jurnal **tidak** menyentuhnya (**D-074**). Trial balance adalah **pergerakan periode**
+  (bukan saldo kumulatif), jadi angka snapshot dan TB hanya sama bila tidak ada periode sebelumnya.
 - Izin baca laporan memakai `ledger.journal.read` (tingkat institusi).
 
 ## Public API (`api.nim`)

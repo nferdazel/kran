@@ -329,6 +329,9 @@ suite "journal: grant bercabang":
         %*{"reason": "cabang"}, makerToken, nextKey())
       check reverse.code == 403
       checkProblem(ReversalPath, "POST", "403", reverse.body)
+      let tb = getJson(TrialBalancePath & "?periodId=" & $mainPeriodId, makerToken)
+      check tb.code == 403
+      check tb.body["params"]["reason"].getStr() == "branch_not_allowed"
     finally:
       conn.exec(sql"""
         UPDATE platform.user_role ur SET branch_id = NULL
@@ -365,3 +368,12 @@ suite "trial balance":
     let reply = getJson(TrialBalancePath & "?periodId=" & $mainPeriodId, checkerToken)
     check reply.code == 403
     checkProblem(TrialBalancePath, "GET", "403", reply.body)
+
+  test "batas periode inklusif: tanggal pertama & terakhir ikut, luar tidak bisa dibuat":
+    let before = moneyOf(getJson(TrialBalancePath & "?periodId=" & $mainPeriodId,
+      makerToken).body["totalDebit"].getStr())
+    discard seedJournal(businessDate = "2026-10-01", amount = 11_0000)
+    discard seedJournal(businessDate = "2026-10-31", amount = 13_0000)
+    let after = moneyOf(getJson(TrialBalancePath & "?periodId=" & $mainPeriodId,
+      makerToken).body["totalDebit"].getStr())
+    check after == before + money(24_0000)

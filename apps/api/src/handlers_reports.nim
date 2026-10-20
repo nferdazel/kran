@@ -62,18 +62,27 @@ proc handleTrialBalance*(app: AppContext, req: Request) {.gcsafe.} =
           status = 403
           return
         let tb = trialBalance(db, periodId.value())
-        payload = trialBalanceJson(tb)
+        if tb.isNone:
+          status = 404
+          problem = "periode tidak ditemukan"
+          return
+        payload = trialBalanceJson(tb.get())
         status = 200)
-  except ValueError as e:
-    status = 404
-    problem = e.msg
+  except ValueError:
+    # Data ledger tidak konsisten (mis. account_type tak dikenal): bukan 404, dan jangan
+    # membocorkan nilai DB ke respons.
+    status = 500
+    problem = "trial balance tidak dapat dihitung karena data tidak konsisten"
   except DbError:
     status = 500
     problem = "trial balance gagal dihitung"
 
   case status
   of 200: req.respondJson(200, payload)
-  of 403: req.respondProblem(pkForbidden, "Forbidden",
-    "aksi tingkat institusi ledger.journal.read hanya boleh dengan grant tanpa batas cabang")
+  of 403: req.respondProblem(newProblem(pkForbidden, "Forbidden",
+    "aksi tingkat institusi ledger.journal.read hanya boleh dengan grant tanpa batas cabang",
+    traceId = traceIdFrom(req),
+    params = @[("reason", "branch_not_allowed"),
+               ("permission", permissionJournalRead)]))
   of 404: req.respondProblem(pkNotFound, "Not Found", problem)
   else: req.respondProblem(pkInternal, "Internal Server Error", problem)
