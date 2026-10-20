@@ -1720,8 +1720,10 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   immutability, effective_to sekali, H+1 satu hari, versi berlaku), `itapi_product` 14 HTTP
   (401/403/400/404/409/201/200, audit+event, grant bercabang, H+1, overflow/batas); migrasi DB
   kosong diverifikasi pada cluster PG sementara (32 migrasi, `btree_gist` + EXCLUDE + `sealed`).
+- **Review**: r1 CHANGES-REQUIRED (btree_gist/H+1/sealed) → `4930514`; r2 CHANGES-REQUIRED
+  (batas `rate` 100× salah skala) → `534221b`; **r3 APPROVE** (tanpa BLOCKER/MAJOR).
 - **Keputusan**: **D-076** (bentuk tabel & semantik versi). Sisa: maker-checker produk (**O-085**),
-  atribut rate/day-count (**O-084**), review independen.
+  atribut rate/day-count (**O-084**), jalur DB kosong otomatis (**O-088**).
 
 ## Tindak lanjut review T-074 & T-075 (20 Okt 2026)
 

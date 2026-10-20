@@ -18,7 +18,7 @@ menunggu verdict review independen** (DoD §6), jadi milestone ini belum ditutup
 | T-073 | Jurnal immutable + pembalik: satu pembalik per jurnal, header+baris satu transaksi, periode tertutup ditolak, idempotency | `d7374db`, `bac5970` | APPROVE (BLOCKER r1 diperbaiki) |
 | T-074 | Posting rule sebagai data + konsumen outbox (`platform.inbox`), lease claim, `journal.posted`, worker long-running | `b1de872`, `bac5970`, `8b48e51` | APPROVE (r2) |
 | T-075 | Trial balance dari `journal_line`; `balance_snapshot` cache kumulatif yang dapat direkonstruksi | `bac5970`, `8b48e51` | APPROVE |
-| T-076 | `product` factory: `product`/`product_version`/`product_param_binding`, versi inklusif tanpa tumpang tindih, binding = parameter, `ProductPublished` | `997fafd`, `4930514` | review r2 berjalan |
+| T-076 | `product` factory: `product`/`product_version`/`product_param_binding`, versi inklusif tanpa tumpang tindih, binding = parameter, `ProductPublished` | `997fafd`, `4930514`, `534221b` | APPROVE (r3) |
 | T-077 | Alur end-to-end Fase 1 + laporan ini | `9a04d50` | review menyusul |
 | — | Arah UI "buku besar, kulit hangat" + memo SME (bahan Fase 2) | `1111948` | D-075 |
 
@@ -87,8 +87,9 @@ O-027 (sisa butuh tabel Fase 6), O-065, O-076…O-079 (catatan review sebelumnya
    sampai worker dijalankan; monitoring belum ada.
 4. **Tanpa maker-checker produk** — perubahan biaya/limit berlaku langsung. Untuk pilot dengan
    satu operator dapat diterima; sebelum multi-operator, O-085 wajib.
-5. **Beban migrasi DB kosong** — sudah diuji, tetapi job CI `db-tests` harus tetap menjadi
-   syarat merge agar regresi urutan migrasi tertangkap.
+5. **Beban migrasi DB kosong** — sudah diuji manual pada cluster PG sementara, tetapi **belum ada
+   job CI `db-tests`** yang menerapkan migrasi ke DB benar-benar kosong; ini harus ditambahkan
+   sebagai syarat merge (**O-088**) agar regresi urutan migrasi tertangkap otomatis.
 
 ## 6. Rekomendasi langkah berikut
 

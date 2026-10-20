@@ -302,13 +302,20 @@ suite "product: validasi & konflik":
     let below = postJson(ProductsPath, productBody("SAV-R1", "Rate Bawah",
       bindings = %*{"product.savings.__rate_test": "0.5"}), makerToken)
     check below.code == 400
+    checkProblem(ProductsPath, "POST", "400", below.body)
     let above = postJson(ProductsPath, productBody("SAV-R2", "Rate Atas",
       bindings = %*{"product.savings.__rate_test": "12.5"}), makerToken)
     check above.code == 400
+    checkProblem(ProductsPath, "POST", "400", above.body)
+    let atMin = postJson(ProductsPath, productBody("SAV-R4", "Rate Minimum",
+      bindings = %*{"product.savings.__rate_test": "1"}), makerToken)
+    check atMin.code == 201
     let ok = postJson(ProductsPath, productBody("SAV-R3", "Rate Pas",
       bindings = %*{"product.savings.__rate_test": "12"}), makerToken)
     check ok.code == 201
     check ok.body["versions"][0]["bindings"][0]["value"].getStr() == "12"
+    execDb(sql"""DELETE FROM platform.param_definition
+                  WHERE key = 'product.savings.__rate_test'""")
 
   test "kode duplikat → 409":
     let reply = postJson(ProductsPath, productBody("SAV01", "Duplikat"), makerToken)
