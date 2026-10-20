@@ -1716,9 +1716,10 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   terdaftar, tidak deprecated, tipe/enum/batas divalidasi tanpa float; versi baru menutup versi
   terbuka sehari sebelum tanggal mulai; event `ProductPublished` + audit `product.publish` satu
   transaksi.
-- **Gate**: `tproduct` 8 unit, `itproduct` 6 integrasi (binding deferred, overlap, immutability,
-  effective_to sekali, versi berlaku), `itapi_product` 11 HTTP (401/403/400/404/409/201/200,
-  audit+event, grant bercabang); `./task ci` hijau — **804 `[OK]`**, e2e 24 passed.
+- **Gate**: `tproduct` 8 unit, `itproduct` 8 integrasi (binding deferred + sealed, overlap,
+  immutability, effective_to sekali, H+1 satu hari, versi berlaku), `itapi_product` 13 HTTP
+  (401/403/400/404/409/201/200, audit+event, grant bercabang, H+1, overflow/batas); migrasi DB
+  kosong diverifikasi pada cluster PG sementara (32 migrasi, `btree_gist` + EXCLUDE + `sealed`).
 - **Keputusan**: **D-076** (bentuk tabel & semantik versi). Sisa: maker-checker produk (**O-085**),
   atribut rate/day-count (**O-084**), review independen.
 
@@ -1732,3 +1733,23 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   didokumentasikan + diuji dengan jurnal bulan sebelumnya, 403 memuat `branch_not_allowed`, indeks
   `(as_of)` ditambahkan, unit test `totalDebit`/`isBalanced`; saldo awal di luar TB dicatat
   **O-083**.
+
+## T-077 — Fase 1 end-to-end + laporan milestone (20 Okt 2026)
+
+- **Alur** (`apps/api/tests/itapi_fase1.nim`, 7 test): login → party (CIF parameter) → produk
+  (versi 1 + binding) → event `DepositPosted` dikonsumsi worker → jurnal seimbang → TB cocok →
+  `ProductPublished` + `journal.posted` → pembalik menetralkan saldo per akun tanpa mengubah
+  jurnal asal.
+- **Laporan**: `docs/milestones/M1-report.md` (bukti, deviasi, open items, risiko, rekomendasi).
+- **Gate**: `./task ci` hijau; migrasi DB kosong diverifikasi pada cluster PG sementara.
+- **Status**: STOP menunggu pemilik (AGENTS §7).
+
+## Tooling — lane cepat pengembangan (D-077, 20 Okt 2026)
+
+- `./task check-fast` (tanpa `nim check` penuh) dan `./task verify [filter]` (`check-fast` +
+  openapi + build + test modul) untuk loop harian; `./task ci` tetap DoD.
+- `nim check` di-shard paralel (`KRAN_LINT_JOBS`, default 4): **52 detik** untuk 175 berkas
+  (sebelumnya `task check` saja >15 menit di bawah beban).
+- Filter test memakai nama berkas persis lebih dulu: `./task verify tproduct` = 14 detik, hanya
+  `tproduct`; filter lebar `./task test product` tetap menjalankan semua test modul.
+- `./task ci` penuh dengan lint paralel: **694 detik**, hijau, 815 `[OK]`, e2e 24 passed.

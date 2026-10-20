@@ -2178,6 +2178,45 @@ menurunkan bentuknya sendiri.
 6. **Event** `ProductPublished` per versi (payload productId/code/productType/versionNo/effectiveFrom),
    dedup per `versionId`.
 
+**Tambahan (review putaran 1, 20 Okt 2026).** Empat perbaikan wajib:
+1. `CREATE EXTENSION IF NOT EXISTS btree_gist` **di dalam `0002`** — urutan migrasi global menjalankan
+   `product/0002` sebelum `platform/0004`, jadi DB kosong gagal tanpa ini (diverifikasi pada cluster
+   PG kosong: 32 migrasi diterapkan, `btree_gist` + EXCLUDE ada).
+2. CHECK jendela menjadi `effective_to >= effective_from` supaya versi baru H+1 (versi lama menjadi
+   satu hari) sah; sebelumnya menghasilkan 500.
+3. Binding **di-seal**: constraint trigger deferred memverifikasi minimal satu binding lalu
+   `UPDATE product_version SET sealed = true`; trigger `BEFORE INSERT` menolak binding baru ke versi
+   terbit. Guard versi hanya mengizinkan transisi `sealed` false→true.
+4. Penutupan versi memakai `version_id` yang sudah dibaca (`closeVersion`), bukan "apa pun yang
+   terbuka", sehingga balapan dua permintaan berakhir 409, bukan menutup versi lain.
+Parser desimal memakai kernel (`moneyFromString`, `rateFromPercentString`) — checked, tanpa float;
+batas schema non-integer ditolak fail-closed.
+
 **Konsekuensi.** Belum ada maker-checker (**O-085**), belum ada status DRAFT/RETIRED, dan atribut
 rate/day-count belum dimodelkan (**O-084**) karena butuh keputusan akad/produk. Perubahan bentuk
 tabel setelah deploy harus lewat migrasi expand/contract, bukan edit migrasi lama.
+
+---
+
+## D-077 — Lane cepat untuk loop pengembangan (tanpa melemahkan gate)
+
+**Konteks.** `./task ci` memakan waktu terutama karena `nim check` dijalankan **sekuensial** untuk
+174 berkas; e2e Playwright hanya ~27 detik dan suite integrasi per modul hitungan detik. Loop
+harian jadi lambat, sementara gate akhir task tetap harus utuh (AGENTS §6).
+
+**Keputusan (disetujui pemilik, 20 Okt 2026).**
+1. **`./task verify [filter]`** = `check-fast` + OpenAPI (sinkron + lint + typecheck klien) +
+   `build` + (bila filter diberikan) test modul itu. Dipakai selama implementasi.
+2. **`./task check-fast`** = format + archcheck + lint-nomagic + paramgen `--check` + i18n +
+   shellcheck — **tanpa** `nim check` penuh.
+3. **`./task check`** tetap seperti sekarang (termasuk `nim check` penuh) dan tetap menjadi bagian
+   `./task ci`. **DoD tidak berubah**: `./task ci` hijau sebelum task ditandai `DONE`.
+4. **`nim check` di-shard paralel** (`xargs -P`, default 4, bisa diatur `KRAN_LINT_JOBS`) dengan log
+   per berkas; kegagalan tetap menampilkan log berkas yang gagal dan exit non-zero. Ini hanya
+   mengubah cara menjalankan, bukan cakupan gate.
+5. **Filter test** memakai kecocokan **nama berkas persis** lebih dulu (`tproduct` tidak lagi ikut
+   menjalankan `itproduct`); bila tidak ada yang persis, baru jatuh ke substring seperti sebelumnya.
+
+**Konsekuensi.** Loop harian tidak lagi menunggu lint penuh; regresi lint tetap tertangkap di
+`task ci` sebelum `DONE`. `KRAN_LINT_JOBS` dinaikkan/diturunkan sesuai memori mesin (tiap `nim
+check` memuat graf impor; 4 dipilih agar tidak menekan mesin 8–10 core).
