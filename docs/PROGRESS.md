@@ -1743,7 +1743,7 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   `ProductPublished` + `journal.posted` → pembalik menetralkan saldo per akun tanpa mengubah
   jurnal asal.
 - **Laporan**: `docs/milestones/M1-report.md` (bukti, deviasi, open items, risiko, rekomendasi).
-- **Gate**: `./task ci` hijau; migrasi DB kosong diverifikasi pada cluster PG sementara.
+- **Gate**: `./task ci` hijau pada `b3f3f98` — 816 `[OK]`, e2e 24, 671 detik (`/tmp/ci-b3f.log`); migrasi DB kosong diverifikasi pada cluster PG sementara.
 - **Status**: STOP menunggu pemilik (AGENTS §7).
 
 ## Tooling — lane cepat pengembangan (D-077, 20 Okt 2026)
