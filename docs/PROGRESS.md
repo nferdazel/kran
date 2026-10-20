@@ -1780,3 +1780,38 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
 - **Temuan operasional**: (a) deploy me-restart worker **sebelum** seed parameter → worker exit 2
   pada deploy pertama (dicatat **O-090**); (b) unit quadlet tidak bisa `systemctl enable` karena
   unit generated → symlink manual (didokumentasikan); (c) backup KEK offline (`sops`/`age`) belum.
+
+## T-080 — O-089: tutup periode tidak bisa ditembus jurnal (20 Okt 2026)
+
+- **Masalah**: trigger periode hanya membaca status; penutupan yang belum commit tidak terlihat
+  oleh insert jurnal → jurnal bisa mendarat di periode CLOSED.
+- **Perbaikan**: `0011_ledger_period_lock.sql` — `SELECT ... FOR SHARE` pada baris periode.
+  `CREATE OR REPLACE`, expand-only; tidak ada perubahan API/parameter.
+- **Bukti**: dua test `itjournal` — (1) insert menunggu lock (`lock_timeout` 200 ms) saat close
+  belum commit; (2) thread menahan close 800 ms lalu COMMIT → insert ditolak `tidak ada periode
+  OPEN`, tidak ada baris jurnal. Mutation check: test (1) **FAILED** tanpa `FOR SHARE`.
+- **Gate**: `./task verify ledger` hijau; `./task ci` hijau (818 `[OK]`, e2e 24). Reviewer
+  independen APPROVE (MINOR diperbaiki: mekanisme lock di-pin di assertion, cell O-089, status
+  belum "selesai" sebelum CI, rentang migrasi MODULE.md).
+- **Catatan**: urutan lock `period → audit` sekarang berlaku; penambahan lock baru di ledger harus
+  sadar urutan ini (D-091). Penutupan menunggu jurnal berjalan — disengaja.
+
+## T-081 — O-090: seed parameter ikut jalur migrasi/deploy (20 Okt 2026)
+
+- **Masalah**: deploy me-restart worker sebelum parameter tersemai → worker exit 2; seed hanya
+  manual setelah deploy.
+- **Perbaikan**: `kran-api --role=migrate --seed` (memakai `dbtools/lib`; `packs/*/generated/*.sql`
+  saja, `dev=false`), dipanggil `deploy-vps.sh` **setelah** swap biner dan **sebelum** restart unit;
+  gagal seed → `die` (fail-closed). `migrate.sh --seed` untuk jalur manual. Root eksplisit
+  (`--root="$MONO_DIR"`); nol berkas seed = kode 3, bukan sukses.
+- **Bukti**: test `itapi_roles` menghapus baris seed deterministik lalu membuktikan `--seed`
+  mengembalikannya (`ACTIVE`, `50`), tidak menggandakan ACTIVE, dan selektor hanya generated
+  (tanpa `packs/*/seed/`). Mutation check: cabang `--seed` dihapus → **FAILED**; `dev` diubah ke
+  `true` → **FAILED** (3 berkas, termasuk seed dev).
+- **Gate**: `./task verify api` hijau; `./task ci` hijau (`819 [OK]`, e2e 24).
+- **Review**: r1 CHANGES REQUESTED (1 MAJOR: test bisa hijau tanpa fitur) → test diperkuat +
+  mutation check; r2 **APPROVE** (sisa MINOR diperbaiki: helper `seedBaseFiles`, `defer` pemulihan,
+  URL host di runbook, arti kode 3).
+- **Belum selesai**: bukti deploy. `sync_script` memasang skrip untuk deploy **berikutnya**, jadi
+  langkah seed baru aktif pada deploy setelah merge; O-090 tetap terbuka sampai log deploy
+  menunjukkan `==> seed parameter base` dan worker langsung `active`.
