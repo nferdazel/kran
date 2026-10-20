@@ -77,6 +77,11 @@ proc validateCode*(code: string, rx: Regex): string =
   # yang sah tetapi bisa cocok kosong seperti `[0-9]*`, sehingga request akan jatuh sebagai 500
   # generik alih-alih ditolak 400. `matchLen` mengembalikan -1 (tidak cocok di awal) atau panjang
   # kecocokan, jadi kecocokan penuh = panjang kode.
+  #
+  # Catatan semantik: `matchLen` memakai alternatif **paling kiri**, bukan pencarian kecocokan
+  # penuh. Pola seperti `1|101` akan menilai kode `101` sebagai panjang 1 → ditolak 400. Itu
+  # gagal-tertutup, bukan lubang; pola parameter karena itu harus ditulis ber-anchor/greedy
+  # (default `ledger.coa.code_pattern` sudah `^...$`).
   if matchLen(c, rx) != c.len:
     raise newException(ValueError, "kode COA tidak cocok dengan pola parameter")
   c

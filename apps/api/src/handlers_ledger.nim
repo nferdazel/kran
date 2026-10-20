@@ -1,8 +1,9 @@
 ## Handler REST modul `ledger` (T-072, spec §8.1/§13).
 ##
 ## Composition root: audit/outbox ditulis di sini dalam transaksi yang sama. COA & periode milik
-## **institusi** (tanpa cabang), jadi tidak ada `authorizedAtBranch` — izin diperiksa pada tingkat
-## institusi seperti jalur parameter.
+## **institusi**, jadi dijaga **dua gerbang**: `requirePermission` (izin dipegang di cabang mana pun)
+## dan `authorizedAtBranch(db, principal, "", permission)` di dalam transaksi. Grant yang dibatasi
+## cabang ditolak 403 `branch_not_allowed` (D-062/D-070).
 ##
 ## **HUMAN-REVIEW-REQUIRED**: fondasi jurnal double-entry (AGENTS.md §8).
 
@@ -328,7 +329,7 @@ proc handleOpenPeriod*(app: AppContext, req: Request) {.gcsafe.} =
   case status
   of 201: req.respondJson(201, payload)
   of 400: req.respondProblem(pkBadRequest, "Bad Request", problem)
-  of 403: req.respondInstitutionOnly(permissionCoaManage)
+  of 403: req.respondInstitutionOnly(permissionPeriodManage)
   of 409: req.respondProblem(pkConflict, "Conflict", problem)
   else: req.respondProblem(pkInternal, "Internal Server Error", problem)
 

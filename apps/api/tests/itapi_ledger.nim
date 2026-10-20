@@ -4,7 +4,8 @@
 ## parameter (bukan konstanta), duplikat & tumpang tindih periode → 409, tutup periode menulis
 ## audit + event, dan konfigurasi pola yang rusak dijawab 500 (bukan 400).
 ##
-## Test ini menghapus schema `platform` dan `ledger` di DB dev lalu menyiapkan ulang migrasi,
+## Test ini menghapus **semua schema modul** di DB dev (`resetTestSchemas`) lalu menyiapkan ulang
+## migrasi,
 ## seed pack, seed pengguna dev, dan satu pemberian `platform_admin` untuk `dev.maker`.
 
 import std/[httpclient, json, net, os, strutils, times, unittest]
@@ -342,6 +343,13 @@ suite "ledger: periode":
     let again = postJson(path, %*{"reason": "ulang"}, makerToken)
     check again.code == 409
     checkProblem(ClosePath, "POST", "409", again.body)
+    # Percobaan yang kalah **tidak** boleh menambah audit/event kedua.
+    check dbValue(sql"""
+      SELECT count(*)::text FROM platform.audit_log
+       WHERE action = 'ledger.period.close' AND resource_id = ?""", periodId) == "1"
+    check dbValue(sql"""
+      SELECT count(*)::text FROM platform.outbox
+       WHERE event_type = 'period.closed' AND aggregate_id = ?""", periodId) == "1"
 
     let missing = postJson(ClosePath.replace("{periodId}", "88888888-8888-7888-8888-888888888888"),
       %*{"reason": "tidak ada"}, makerToken)
@@ -378,6 +386,10 @@ suite "ledger: grant bercabang tidak boleh aksi institusi":
         makerToken)
       check open.code == 403
       checkProblem(PeriodsPath, "POST", "403", open.body)
+      check open.body["params"]["permission"].getStr() == "ledger.period.manage"
+
+      let listPeriods = getJson(PeriodsPath, makerToken)
+      check listPeriods.code == 403
     finally:
       conn.exec(sql"""
         UPDATE platform.user_role ur SET branch_id = NULL

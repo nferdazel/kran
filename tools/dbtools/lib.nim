@@ -475,6 +475,9 @@ proc resetTestSchemas*(db: DbConn, root: string) =
     schemaSeen.add m.module
     # Nama modul berasal dari nama direktori repo (identifier terkontrol), bukan input pengguna.
     db.exec(sql("DROP SCHEMA IF EXISTS " & m.module & " CASCADE"))
+  # `migrationsOf` mengembalikan kosong bila `root/modules` tidak ada (mis. cwd salah). Tanpa
+  # pemeriksaan ini test bisa berjalan di atas schema basi tanpa peringatan.
+  doAssert schemaSeen.len > 0, "resetTestSchemas: tidak ada migrasi ditemukan (root/cwd salah?)"
 
 proc applyMigrations*(db: DbConn, root: string, dryRun = false,
                       contract = false): MigrateReport =
