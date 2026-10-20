@@ -25,11 +25,12 @@ permintaan pemilik).
 
 ## 2. Bukti gate
 
-- `./task ci` pada **HEAD `abc3ec8`** (format, lint, archcheck, lint-nomagic, paramgen --check,
+- `./task ci` pada **HEAD `b3f3f98`** (format, lint, archcheck, lint-nomagic, paramgen --check,
   i18n, OpenAPI + klien TS, unit + property + integrasi Postgres, e2e Playwright/axe):
-  **hijau — 816 `[OK]`, e2e 24 passed, 627 detik** (log: `/tmp/ci-head2.log`; angka juga di
-  `docs/PROGRESS.md`). Run sebelumnya gagal karena **tunnel SSH DB dev putus** di tengah jalan,
-  bukan regresi kode; watchdog menyambung ulang dan run diulang pada commit yang sama.
+  **hijau — 816 `[OK]`, e2e 24 passed, 671 detik** (log: `/tmp/ci-b3f.log`, baris pertama
+  `== commit b3f3f98`; angka juga di `docs/PROGRESS.md`). Run sebelumnya sempat gagal karena
+  **tunnel SSH DB dev putus** di tengah jalan, bukan regresi kode; watchdog menyambung ulang dan
+  run diulang.
 - **Migrasi dari DB kosong** diverifikasi pada cluster PostgreSQL sementara (bukan DB dev yang
   sudah berisi): 32 migrasi diterapkan berurutan, `btree_gist`, EXCLUDE versi produk, dan kolom
   `sealed` ada. Ini menutup BLOCKER review T-076 (urutan migrasi `product/0002` vs
