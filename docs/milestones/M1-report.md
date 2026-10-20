@@ -4,9 +4,10 @@ Tanggal: **20 Oktober 2026**. Branch: `feat/fase1-party` di atas `3f55dad` (depl
 **belum di-merge ke `main`** — push ke `main` = deploy, merge hanya oleh manusia (AGENTS §3).
 
 Fase 1 = deliverable spec §23: "Jurnal immutable, TB, produk parametrik" dengan bukti
-"property test double-entry lulus". Implementasi T-070…T-077 selesai; **T-076 dan T-077 masih
-menunggu verdict review independen** (DoD §6), jadi milestone ini belum ditutup. Tidak ada task
-`READY` tersisa selain T-079 (UI, sengaja menunggu ratifikasi D-075 dan permintaan pemilik).
+"property test double-entry lulus". Implementasi T-070…T-077 selesai. **T-073 menunggu review
+ulang setelah perbaikan r1, dan T-077 menunggu verdict review** (DoD §6), jadi milestone ini belum
+ditutup. Tidak ada task `READY` tersisa selain T-079 (UI, sengaja menunggu ratifikasi D-075 dan
+permintaan pemilik).
 
 ## 1. Yang selesai
 
@@ -15,7 +16,7 @@ menunggu verdict review independen** (DoD §6), jadi milestone ini belum ditutup
 | T-070 | `party` inti: CIF dari parameter (pola + Luhn di kode), identitas dasar, dua gerbang institusi/cabang | `5d6e84b`, `3aaa687` | APPROVE |
 | T-071 | KYC/risiko: dokumen identitas terenkripsi (ciphertext + blind index + `number_last2`), unmask beralasan + audit, rating risiko | `c4aa8d4`, `f264e96` | APPROVE, **HUMAN-REVIEW-REQUIRED** |
 | T-072 | COA (pola dari parameter, sisi normal dari tipe akun via CHECK) + periode (inklusif, `EXCLUDE`) | `e5f7688`, `62bf45f` | APPROVE (r2) |
-| T-073 | Jurnal immutable + pembalik: satu pembalik per jurnal, header+baris satu transaksi, periode tertutup ditolak, idempotency | `d7374db`, `bac5970` | APPROVE (BLOCKER r1 diperbaiki) |
+| T-073 | Jurnal immutable + pembalik: satu pembalik per jurnal, header+baris satu transaksi, periode tertutup ditolak, idempotency | `d7374db`, `bac5970` | r1 CHANGES-REQUIRED; review r2 menyusul |
 | T-074 | Posting rule sebagai data + konsumen outbox (`platform.inbox`), lease claim, `journal.posted`, worker long-running | `b1de872`, `bac5970`, `8b48e51` | APPROVE (r2) |
 | T-075 | Trial balance dari `journal_line`; `balance_snapshot` cache kumulatif yang dapat direkonstruksi | `bac5970`, `8b48e51` | APPROVE |
 | T-076 | `product` factory: `product`/`product_version`/`product_param_binding`, versi inklusif tanpa tumpang tindih, binding = parameter, `ProductPublished` | `997fafd`, `4930514`, `534221b` | APPROVE (r3) |
