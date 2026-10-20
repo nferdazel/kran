@@ -32,6 +32,8 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
   deferred** → diperiksa saat `COMMIT`. Karena itu header + baris **wajib satu transaksi**;
   menyisipkan baris dengan autocommit akan ditolak.
 - Tanggal bisnis harus berada di periode **OPEN** (trigger). Belum ada periode = tidak bisa posting.
+  Trigger memakai `FOR SHARE` pada baris periode: penutupan periode yang belum `COMMIT` **tidak
+  bisa ditembus** jurnal — insert menunggu lock, lalu melihat status `CLOSED` (O-089/D-091).
 - Akun GL harus `postable` dan `ACTIVE` (trigger).
 - `idempotency_key` unik; endpoint pembalik memakai header `Idempotency-Key` dan **idempoten**
   (permintaan ulang → 200 dengan jurnal yang sama). Jurnal yang sudah dibalik tidak bisa dibalik
@@ -100,7 +102,7 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 | `ledger.posting.retry_backoff_seconds` | integer | GLOBAL, INSTITUTION | 30 | NORMAL |
 | `ledger.posting.poll_interval_ms` | integer | GLOBAL, INSTITUTION | 500 | NORMAL |
 
-## Tabel & schema (migrasi `0001`–`0008`)
+## Tabel & schema (migrasi `0001`–`0011`)
 
 - `ledger.coa_account` — kode unik, tipe, sisi normal (CHECK konsisten), `postable`, status.
   Tidak ber-cabang: GL milik institusi (spec §9).

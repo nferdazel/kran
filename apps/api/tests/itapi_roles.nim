@@ -128,6 +128,40 @@ suite "kran-api: peran CLI (O-013)":
     check runMigrate(".", "--up") == 0
     check applyMigrations(db, ".").applied.len == 0
 
+  test "migrate --seed: menulis ulang nilai hilang, tanpa seed dev (O-090)":
+    # Selektor: hanya pack generated; seed dev/test (`packs/*/seed/`) tidak boleh ikut.
+    # Dipaku pada fungsi yang dipakai `--seed` (bukan `seedFiles` langsung), supaya mutasi
+    # `dev = true` di jalur produksi membuat test ini gagal.
+    for f in seedBaseFiles("."):
+      check "/seed/" notin f
+    var adaDev = false
+    for f in seedFiles(".", dev = true):
+      if "/seed/" in f:
+        adaDev = true
+    check adaDev
+
+    # Bukti menulis: hapus satu nilai seed deterministik, lalu `--seed` harus mengembalikannya.
+    # (Tanpa langkah ini, test bisa hijau walau subperintah `--seed` tidak melakukan apa pun.)
+    let seedId = db.getValue(sql"select md5('ledger.posting.batch_size|base')")
+    discard db.execAffectedRows(
+      sql"DELETE FROM platform.param_value WHERE param_value_id = ?::uuid", seedId)
+    # Kembalikan baris apa pun hasil assertion berikut (mis. EXCLUDE karena DB dev punya ACTIVE
+    # non-seed untuk key ini), supaya kegagalan tidak meninggalkan DB tanpa nilai posting.
+    defer: discard runMigrate(".", "--seed")
+    check db.getValue(
+      sql"select count(*) from platform.param_value where param_value_id = ?::uuid", seedId) == "0"
+    check runMigrate(".", "--seed") == 0
+    check db.getValue(
+      sql"select value::text from platform.param_value where param_value_id = ?::uuid", seedId) == "50"
+    check db.getValue(
+      sql"select status from platform.param_value where param_value_id = ?::uuid", seedId) == "ACTIVE"
+    check db.getValue(
+      sql"select count(*) from platform.param_value where key = 'ledger.posting.batch_size' and status = 'ACTIVE'") == "1"
+    # Idempoten: jalan kedua tidak menggandakan baris ACTIVE.
+    check runMigrate(".", "--seed") == 0
+    check db.getValue(
+      sql"select count(*) from platform.param_value where key = 'ledger.posting.batch_size' and status = 'ACTIVE'") == "1"
+
   test "migrate --check (read-only): 0 saat tidak ada yang tertunda atau berubah isinya":
     check runMigrate(".", "--check") == 0
 

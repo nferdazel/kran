@@ -2253,3 +2253,81 @@ deploy mendahului seed (**O-090**).
 
 **Konsekuensi.** Tanggung jawab operasional atas deploy ini ada pada pemilik yang memberi override;
 catatan ini yang membuat tindakan agen dapat diaudit. Aturan §3 tetap berlaku untuk task lain.
+
+---
+
+## D-091 — Tutup periode mengunci baris periode (`FOR SHARE`), bukan hanya membaca status
+
+**Konteks.** O-089: trigger `ledger.assert_journal_period_open()` hanya membaca status periode.
+Sesi A yang menutup periode (belum `COMMIT`) dan sesi B yang memposting jurnal pada tanggal itu
+tidak saling melihat: B membaca versi lama `OPEN`, insert berhasil, lalu A commit — jurnal berada
+di periode `CLOSED`. Invarian "tidak ada posting ke periode tertutup" bocor tanpa galat apa pun.
+
+**Opsi.** (A) kunci baris periode di trigger; (B) dokumentasikan bahwa jaminan hanya untuk periode
+yang sudah commit `CLOSED`; (C) A + B.
+
+**Keputusan.** **A** (sekaligus B: sisa jendela operasional dicatat). Fungsi trigger diganti
+`CREATE OR REPLACE` dengan `SELECT ... FOR SHARE` pada baris periode. `UPDATE` penutupan memakai
+lock `FOR NO KEY UPDATE` yang berkonflik dengan `FOR SHARE`, sehingga:
+- B menunggu sampai A selesai, lalu mengevaluasi versi **setelah** commit (`CLOSED`) → ditolak;
+- bila B memegang lock lebih dulu, penutupan menunggu jurnal commit → jurnal tetap di periode OPEN.
+
+**Ditolak.** B saja: membiarkan jalur posting normal (bukan hanya `daycloser`) menembus invarian
+akuntansi; "didokumentasikan" tidak cukup untuk buku besar. `daycloser` (Fase 5) tetap menjadi
+pemilik urutan EOD, tetapi penegakan tidak boleh bergantung padanya.
+
+**Konsekuensi.** Lock baris periode dipegang sampai transaksi jurnal selesai (satu lock per jurnal);
+penutupan periode menunggu jurnal yang sedang berjalan. Volume pilot kecil (D-072) sehingga
+memadai; bila throughput jadi masalah, alternatifnya advisory lock per periode — bukan menurunkan
+invarian. Migrasi `0011_ledger_period_lock.sql` expand-only.
+
+**Urutan penguncian.** Jalur yang ada: tutup periode `period` → advisory `platform.audit_log`;
+pembalik `period` (via `insertJournal`) → advisory; worker `inbox` → `period` → `outbox` (tanpa
+audit). Tidak ada siklus hari ini. Konsekuensinya: penambahan lock baru di ledger harus sadar urutan
+`period → audit`; jalur yang menulis audit **sebelum** posting berpotensi membuat siklus dengan
+penutupan periode.
+
+**Bukti.** Dua test `itjournal`: (1) dua koneksi, `lock_timeout` 200 ms — insert **gagal** karena
+menunggu lock saat penutupan belum commit; (2) thread menahan penutupan 800 ms lalu COMMIT — insert
+yang menunggu **ditolak** (`tidak ada periode OPEN`), bukan timeout, dan tidak ada baris jurnal.
+Test (1) **FAILED** bila `FOR SHARE` dilepas (mutation check), lalu hijau setelah dipulihkan.
+`./task verify ledger` hijau; `./task ci` hijau (lihat PROGRESS).
+
+---
+
+## D-092 — Seed parameter base dijalankan oleh jalur migrasi, sebelum unit di-restart
+
+**Konteks.** O-090: `deploy-vps.sh` me-restart unit (termasuk worker) sebelum parameter posting
+tersemai. Worker menolak start (exit 2) bila `ledger.posting.*` belum ada, dan deploy tidak pernah
+menjalankan seed — deploy pertama setiap rilis yang menambah parameter meninggalkan worker mati
+tanpa kegagalan deploy yang terlihat.
+
+**Opsi.** (A) seed di jalur migrasi/deploy; (B) preflight gate yang menolak deploy bila parameter
+wajib belum ada; (C) worker menunggu/retry sampai parameter muncul.
+
+**Keputusan.** **A**: subperintah `kran-api --role=migrate --seed` menerapkan
+`packs/*/generated/*.sql` memakai `dbtools/lib` (jalur yang sama dengan `dbtools seed`, sudah
+diimpor aplikasi). Deploy memanggilnya **setelah** biner ditukar dan **sebelum** restart unit,
+dengan `die` bila gagal. Berkas seed idempoten: `param_definitions` `DO UPDATE` metadata,
+`param_values` `DO NOTHING`; `dev = false` sehingga seed dev/test tidak pernah ikut.
+
+**Ditolak.** B saja: mendeteksi tetapi tetap menyisakan langkah manual yang mudah terlewat, dan
+gate baru harus tahu daftar parameter wajib per rilis. C: menyembunyikan salah konfigurasi dan
+membuat worker "hidup" tanpa posting yang benar.
+
+**Konsekuensi.** Setiap deploy (termasuk docs-only) menerapkan dua berkas SQL generated — murah dan
+aman. Bila kelak ada berkas generated yang tidak idempoten, deploy akan gagal keras; itu disengaja
+(sumber kebenaran parameter = repo, bukan langkah manual).
+
+**Risiko yang diterima.** Seed berjalan otomatis tiap deploy, jadi dua keadaan bisa membuat deploy
+berhenti (fail-closed): (a) pack lain menyemai key yang sama dengan `param_value_id` berbeda, atau
+(b) key sudah punya baris ACTIVE non-seed tanpa baris seed — keduanya melanggar `EXCLUDE` ACTIVE →
+seed keluar 1 → deploy batal, bukan diam-diam menimpa. Seed juga **tidak** memverifikasi bahwa
+parameter posting benar-benar resolvable; health gate hanya memeriksa API. Sampai ada gate worker,
+pastikan log deploy memuat `==> seed parameter base` dan worker `active`.
+
+**Bukti.** Test `itapi_roles` menghapus baris seed deterministik (`md5('ledger.posting.batch_size|base')`)
+lalu membuktikan `--seed` mengembalikannya (`ACTIVE`, nilai `50`), tidak menggandakan baris ACTIVE,
+dan tidak menyertakan berkas `packs/*/seed/` (dev). Mutation check: tanpa cabang `--seed` test
+**FAILED**. Catatan urutan: `sync_script` memasang skrip deploy untuk deploy **berikutnya**, jadi
+langkah seed baru aktif pada deploy setelah merge — bukan pada deploy yang membawa commit ini.

@@ -4,7 +4,7 @@
 ## saat COMMIT, periode harus OPEN, akun harus postable & ACTIVE, idempotency unik, dan pembalik
 ## menukar sisi.
 
-import std/[options, os, random, times, unittest]
+import std/[atomics, options, os, random, strutils, times, unittest]
 
 import db_connector/db_postgres
 
@@ -75,6 +75,22 @@ proc expectDbError(body: proc()) =
   except DbError:
     raised = true
   check raised
+
+var periodClosed: Atomic[bool]
+
+type CloseArgs = tuple[pool: DbPool, periodId: string, actorId: string]
+
+proc closePeriodSlowly(args: CloseArgs) {.thread.} =
+  ## Menutup periode dalam transaksi yang ditahan `800 ms` setelah UPDATE, supaya insert jurnal
+  ## dari koneksi lain benar-benar menunggu lock lalu melihat versi CLOSED setelah COMMIT.
+  {.cast(gcsafe).}:
+    discard args.pool.withTx(proc(d: DbConn): int {.closure.} =
+      exec(d,
+        sql"UPDATE ledger.period SET status = 'CLOSED', closed_at = now(), closed_by = ? WHERE period_id = ?",
+        args.actorId, args.periodId)
+      periodClosed.store(true)
+      sleep(800)
+      1)
 
 suite "journal: penyimpanan & immutability":
   test "jurnal seimbang tersimpan dan terbaca utuh":
@@ -158,6 +174,82 @@ suite "journal: aturan akuntansi di DB":
   test "periode CLOSED dan tanggal tanpa periode ditolak":
     expectDbError(proc() = discard save(newJournal(businessDate = "2026-11-15")))
     expectDbError(proc() = discard save(newJournal(businessDate = "2027-01-05")))
+
+  test "tutup periode bersamaan tidak bisa ditembus jurnal (O-089)":
+    ## Sesi A menutup Oktober tetapi belum COMMIT; sesi B memposting jurnal Oktober. Trigger
+    ## harus MENUNGGU lock baris periode (FOR SHARE) sampai A selesai, bukan membaca versi lama
+    ## OPEN. Tanpa perbaikan, insert B lolos dan `blocked` tetap false.
+    let sesiA = dbPool.acquire()
+    let sesiB = dbPool.acquire()
+    let jid = newId(testClock)
+    let idem = nextKey()
+    try:
+      exec(sesiA, sql"BEGIN")
+      exec(sesiA,
+        sql"UPDATE ledger.period SET status = 'CLOSED', closed_at = now(), closed_by = ? WHERE period_id = ?",
+        $actor, $octId)
+      exec(sesiB, sql"BEGIN")
+      exec(sesiB, sql"SET LOCAL lock_timeout = '200ms'")
+      var blocked = false
+      try:
+        exec(sesiB,
+          sql"INSERT INTO ledger.journal (journal_id, business_date, value_date, source_event, source_ref, idempotency_key, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          $jid, "2026-10-15", "2026-10-15", "DepositPosted", $jid, idem, $actor)
+      except DbError as e:
+        blocked = true
+        # Mekanisme: menunggu lock baris periode, bukan galat lain (mis. tabel/kolom salah).
+        check "lock timeout" in e.msg
+      check blocked
+      exec(sesiB, sql"ROLLBACK")
+      exec(sesiA, sql"ROLLBACK")
+    finally:
+      # Aman walau transaksi sudah di-rollback (Postgres hanya memberi peringatan).
+      exec(sesiA, sql"ROLLBACK")
+      exec(sesiB, sql"ROLLBACK")
+      dbPool.release(sesiA)
+      dbPool.release(sesiB)
+
+    # Setelah A rollback, periode OPEN lagi dan posting normal tetap berjalan.
+    check periodById(db, octId).get().status == psOpen
+    let j = newJournal()
+    discard save(j)
+    check journalById(db, j.journalId).isSome
+
+  test "insert yang menunggu penutupan ditolak setelah close COMMIT (O-089)":
+    ## Melengkapi test di atas: yang dibuktikan bukan hanya "menunggu", tetapi bahwa setelah
+    ## penutupan COMMIT, insert dievaluasi ulang dan **ditolak** — jurnal tidak pernah masuk ke
+    ## periode CLOSED. Thread menahan transaksi 800 ms; insert memakai `lock_timeout` 5 s supaya
+    ## kegagalan yang diharapkan adalah pelanggaran periode, bukan timeout.
+    periodClosed.store(false)
+    var closer: Thread[CloseArgs]
+    createThread(closer, closePeriodSlowly, (pool: dbPool, periodId: $octId, actorId: $actor))
+    while not periodClosed.load():
+      sleep(5)
+    let sesiB = dbPool.acquire()
+    let jid = newId(testClock)
+    let idem = nextKey()
+    var pesan = ""
+    try:
+      exec(sesiB, sql"BEGIN")
+      exec(sesiB, sql"SET LOCAL lock_timeout = '5s'")
+      try:
+        exec(sesiB,
+          sql"INSERT INTO ledger.journal (journal_id, business_date, value_date, source_event, source_ref, idempotency_key, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          $jid, "2026-10-15", "2026-10-15", "DepositPosted", $jid, idem, $actor)
+      except DbError as e:
+        pesan = e.msg
+      check pesan.len > 0
+      check "periode OPEN" in pesan # bukan "lock timeout"
+      exec(sesiB, sql"ROLLBACK")
+    finally:
+      exec(sesiB, sql"ROLLBACK")
+      dbPool.release(sesiB)
+    joinThread(closer)
+
+    check journalById(db, jid).isNone
+    # Kembalikan periode ke OPEN supaya suite berikutnya tetap bisa posting.
+    db.exec(sql"UPDATE ledger.period SET status = 'OPEN', closed_at = NULL, closed_by = NULL WHERE period_id = ?", $octId)
+    check periodById(db, octId).get().status == psOpen
 
 suite "journal: pembalik & daftar":
   test "pembalik menukar sisi dan ditandai reversal_of":
