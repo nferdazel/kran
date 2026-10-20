@@ -4,8 +4,9 @@ Tanggal: **20 Oktober 2026**. Branch: `feat/fase1-party` di atas `3f55dad` (depl
 **belum di-merge ke `main`** — push ke `main` = deploy, merge hanya oleh manusia (AGENTS §3).
 
 Fase 1 = deliverable spec §23: "Jurnal immutable, TB, produk parametrik" dengan bukti
-"property test double-entry lulus". Task T-070…T-077 selesai; tidak ada task `READY` tersisa
-selain T-079 (UI, sengaja menunggu ratifikasi D-075 dan permintaan pemilik).
+"property test double-entry lulus". Implementasi T-070…T-077 selesai; **T-076 dan T-077 masih
+menunggu verdict review independen** (DoD §6), jadi milestone ini belum ditutup. Tidak ada task
+`READY` tersisa selain T-079 (UI, sengaja menunggu ratifikasi D-075 dan permintaan pemilik).
 
 ## 1. Yang selesai
 
@@ -17,8 +18,8 @@ selain T-079 (UI, sengaja menunggu ratifikasi D-075 dan permintaan pemilik).
 | T-073 | Jurnal immutable + pembalik: satu pembalik per jurnal, header+baris satu transaksi, periode tertutup ditolak, idempotency | `d7374db`, `bac5970` | APPROVE (BLOCKER r1 diperbaiki) |
 | T-074 | Posting rule sebagai data + konsumen outbox (`platform.inbox`), lease claim, `journal.posted`, worker long-running | `b1de872`, `bac5970`, `8b48e51` | APPROVE (r2) |
 | T-075 | Trial balance dari `journal_line`; `balance_snapshot` cache kumulatif yang dapat direkonstruksi | `bac5970`, `8b48e51` | APPROVE |
-| T-076 | `product` factory: `product`/`product_version`/`product_param_binding`, versi inklusif tanpa tumpang tindih, binding = parameter, `ProductPublished` | `997fafd` + perbaikan review | APPROVE (r2) |
-| T-077 | Alur end-to-end Fase 1 + laporan ini | commit terakhir milestone | — |
+| T-076 | `product` factory: `product`/`product_version`/`product_param_binding`, versi inklusif tanpa tumpang tindih, binding = parameter, `ProductPublished` | `997fafd`, `4930514` | review r2 berjalan |
+| T-077 | Alur end-to-end Fase 1 + laporan ini | `9a04d50` | review menyusul |
 | — | Arah UI "buku besar, kulit hangat" + memo SME (bahan Fase 2) | `1111948` | D-075 |
 
 ## 2. Bukti gate
