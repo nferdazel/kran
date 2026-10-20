@@ -1815,3 +1815,11 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
 - **Belum selesai**: bukti deploy. `sync_script` memasang skrip untuk deploy **berikutnya**, jadi
   langkah seed baru aktif pada deploy setelah merge; O-090 tetap terbuka sampai log deploy
   menunjukkan `==> seed parameter base` dan worker langsung `active`.
+
+### Deploy 20 Okt 2026 — `70bd2fc` (T-080 + T-081)
+
+- Merge `feat/fase1-party` → `main`, deploy sukses: **34 migrasi** (termasuk
+  `ledger/0011_ledger_period_lock`), `/readyz` 200, `kran-api` + `kran-worker` **active**.
+- Fungsi `assert_journal_period_open` di produksi memuat `FOR SHARE` (diverifikasi dari `pg_proc`).
+- **Langkah seed belum muncul** di log deploy ini (0 baris) — sesuai dugaan: `sync_script` memasang
+  skrip deploy baru untuk deploy **berikutnya**. Bukti O-090 menyusul di deploy setelah commit ini.
