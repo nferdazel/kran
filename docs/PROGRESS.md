@@ -1754,4 +1754,5 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   (sebelumnya `task check` saja >15 menit di bawah beban).
 - Filter test memakai nama berkas persis lebih dulu: `./task verify tproduct` = 14 detik, hanya
   `tproduct`; filter lebar `./task test product` tetap menjalankan semua test modul.
-- `./task ci` penuh dengan lint paralel: **694 detik**, hijau, 816 `[OK]`, e2e 24 passed.
+- `./task ci` penuh dengan lint paralel: **627 detik** pada `abc3ec8`, hijau, 816 `[OK]`, e2e 24
+  passed (log `/tmp/ci-head2.log`).
