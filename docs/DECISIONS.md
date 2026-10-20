@@ -2007,3 +2007,26 @@ untuk hal yang sudah jelas.
 
 **Konsekuensi.** Review independen tetap wajib sebelum `DONE` (AGENTS §4.5–4.7) dengan konteks
 bersih; yang berubah hanya izin operasional (migrasi/push) dan pengizinan paralelisasi.
+
+---
+
+## D-072 — Jurnal T-073 tanpa partisi pada Fase 1 (spec §9.3 = acuan, bukan final)
+
+**Konteks.** Spec §9.3 memberi contoh DDL `ledger.journal … PARTITION BY RANGE (business_date)`.
+T-073 harus memilih: ikuti partisi sejak awal, atau tunda.
+
+**Keputusan.** Fase 1 memakai tabel **tanpa partisi**. Alasan:
+1. Volume pilot (1 koperasi, <5.000 anggota) tidak membutuhkan partisi; biaya operasionalnya
+   (partisi default, pemeliharaan bulanan, `ATTACH`/`DETACH` untuk arsip) lebih besar dari manfaat.
+2. FK `journal_line → journal` dan **constraint trigger deferred** (keseimbangan per jurnal) jauh
+   lebih sederhana tanpa partisi; kombinasi partisi + constraint trigger + FK menambah risiko yang
+   tidak bisa dibuktikan dengan test di T-073.
+3. Spec sendiri menyebut blok DDL itu *acuan, bukan final*.
+
+**Konsekuensi.** Sebelum go-live bervolume besar (multi-cabang), partisi/arsip per `business_date`
+harus ditinjau ulang — konversi ke tabel terpartisi adalah migrasi tersendiri (expand/contract,
+bukan edit migrasi lama). Indeks `journal_business_date_idx` sudah mendukung query per tanggal.
+Retensi/arsip mengikuti parameter retensi platform (belum aktif di Fase 1).
+
+**Bukti.** `itledger`/`itjournal`/`itapi_journal` menguji immutability, keseimbangan deferred,
+periode OPEN, akun postable/ACTIVE, idempotency, dan pembalik pada tabel tanpa partisi.

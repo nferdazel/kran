@@ -584,6 +584,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ledger/journals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daftar jurnal
+         * @description Header jurnal (tanpa baris), urut tanggal bisnis terbaru, dibatasi **200**. Jurnal tidak
+         *     bisa dibuat/diubah/dihapus lewat HTTP: pembuatan berasal dari posting rule/event (T-074),
+         *     koreksi lewat jurnal pembalik.
+         */
+        get: operations["listJournals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ledger/journals/{journalId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detail jurnal + baris
+         * @description Header jurnal beserta seluruh barisnya. Jurnal immutable: tidak ada endpoint edit/hapus;
+         *     koreksi dilakukan lewat jurnal pembalik.
+         */
+        get: operations["getJournal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ledger/journals/{journalId}/reversal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Jurnal pembalik
+         * @description Membuat jurnal baru dengan `reversalOf` = jurnal asal dan debit/kredit **ditukar**, pada
+         *     tanggal bisnis asal. Hanya jika periode tanggal itu masih OPEN dan jurnal belum pernah
+         *     dibalik. **Idempoten**: permintaan ulang dengan `Idempotency-Key` yang sama mengembalikan
+         *     jurnal pembalik yang sudah ada (200); kunci sama untuk jurnal asal lain → 409.
+         *     Tidak ada endpoint edit/hapus — DB menolak UPDATE/DELETE pada jurnal.
+         */
+        post: operations["reverseJournal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -940,6 +1007,55 @@ export interface components {
         };
         PeriodCloseRequest: {
             /** @description Alasan penutupan; masuk jejak audit. */
+            reason: string;
+        };
+        JournalLine: {
+            lineNo: number;
+            glAccount: string;
+            /** Format: uuid */
+            branchId: string;
+            /** @description Desimal 4 angka di belakang koma, mis. `1500.0000`. */
+            debit: string;
+            /** @description Desimal 4 angka di belakang koma; tepat satu dari debit/credit > 0. */
+            credit: string;
+        };
+        JournalHeader: {
+            /** Format: uuid */
+            journalId: string;
+            /** Format: date */
+            businessDate: string;
+            /** Format: date */
+            valueDate: string;
+            sourceEvent: string;
+            /** Format: uuid */
+            sourceRef: string;
+            idempotencyKey: string;
+            /** @description UUID jurnal asal bila jurnal ini pembalik; `null` bila bukan. */
+            reversalOf: string | null;
+            /** @description ISO-8601 UTC. */
+            recordedAt: string;
+        };
+        Journal: {
+            /** Format: uuid */
+            journalId: string;
+            /** Format: date */
+            businessDate: string;
+            /** Format: date */
+            valueDate: string;
+            sourceEvent: string;
+            /** Format: uuid */
+            sourceRef: string;
+            idempotencyKey: string;
+            reversalOf: string | null;
+            recordedAt: string;
+            lines: components["schemas"]["JournalLine"][];
+            totalDebit: string;
+            totalCredit: string;
+        };
+        JournalList: {
+            items: components["schemas"]["JournalHeader"][];
+        };
+        JournalReversalRequest: {
             reason: string;
         };
     };
@@ -1873,6 +1989,102 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Period"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    listJournals: {
+        parameters: {
+            query?: {
+                businessDate?: string;
+                sourceEvent?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar jurnal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JournalList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    getJournal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                journalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Jurnal beserta baris */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Journal"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    reverseJournal: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                journalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JournalReversalRequest"];
+            };
+        };
+        responses: {
+            /** @description Permintaan ulang dengan kunci yang sama (idempoten) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Journal"];
+                };
+            };
+            /** @description Jurnal pembalik dibuat */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Journal"];
                 };
             };
             400: components["responses"]["Problem"];

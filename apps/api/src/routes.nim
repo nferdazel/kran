@@ -12,6 +12,7 @@ import mummy
 import ./events
 import ./handlers_audit
 import ./handlers_auth
+import ./handlers_journals
 import ./handlers_kyc
 import ./handlers_ledger
 import ./handlers_mfa
@@ -145,6 +146,17 @@ proc ledgerRoutes*(): seq[RouteSpec] =
               operationId: "closePeriod", handler: handleClosePeriod),
   ]
 
+proc journalRoutes*(): seq[RouteSpec] =
+  ## `ledger` jurnal: baca + pembalik (T-073). Tidak ada endpoint buat/edit/hapus.
+  @[
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/ledger/journals",
+              operationId: "listJournals", handler: handleListJournals),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/ledger/journals/{journalId}",
+              operationId: "getJournal", handler: handleGetJournal),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/ledger/journals/{journalId}/reversal",
+              operationId: "reverseJournal", handler: handleReverseJournal),
+  ]
+
 proc allRoutes*(): seq[RouteSpec] =
   systemRoutes() & authRoutes() & mfaRoutes() & paramRoutes() & auditRoutes() &
-    partyRoutes() & kycRoutes() & ledgerRoutes() & eventRoutes()
+    partyRoutes() & kycRoutes() & ledgerRoutes() & journalRoutes() & eventRoutes()

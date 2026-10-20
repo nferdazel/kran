@@ -1671,3 +1671,24 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   modul baru tidak lagi membuat test lama gagal karena migrasi modul dijalankan ulang.
 - **Sisa**: **O-075** (akun kontra tidak bisa dimodelkan), T-073 (jurnal; wajib menegakkan
   `postable`/`ACTIVE`), deploy Fase 1 (seed parameter) menunggu keputusan pemilik.
+
+## T-073 — `ledger` jurnal immutable + jurnal pembalik (20 Okt 2026)
+
+- **Kode**: migrasi `0003_ledger_journal.sql` (`journal`/`journal_line`, trigger immutability
+  UPDATE/DELETE/TRUNCATE, constraint trigger keseimbangan **deferred**, periode harus OPEN, akun
+  harus `postable` & `ACTIVE`, `idempotency_key` unik); domain `journal.nim`; repo `journal_repo`;
+  handler `handlers_journals` (daftar, detail, pembalik); izin `ledger.journal.read|reverse`
+  (migrasi platform `0016`); kontrak OpenAPI + klien TS.
+- **Prinsip**: tidak ada endpoint buat/edit/hapus — pembuatan dari posting rule/event (T-074),
+  koreksi lewat pembalik. Header + baris **wajib satu transaksi** (trigger deferred memeriksa saat
+  COMMIT). Pembalik idempoten via header `Idempotency-Key`: ulangan → 200 jurnal yang sama,
+  key sama untuk jurnal lain → 409, jurnal sudah dibalik → 409, pembalik tidak bisa dibalik.
+- **Gate**: `./task check` hijau; `tjournal` 11 (termasuk **property 1.000 jurnal acak seimbang** +
+  mutasi satu unit selalu ditolak), `itjournal` 12 (immutability, keseimbangan deferred, periode
+  CLOSED, akun non-postable/non-ACTIVE, idempotency, pembalik, 30 jurnal acak satu transaksi),
+  `itapi_journal` 8 HTTP (401/403/400/404/409/201/200, audit + event `journal.posted`, grant
+  bercabang); `./task ci` hijau — **742 `[OK]`**, e2e 24 passed.
+- **Keputusan**: **D-072** — jurnal tanpa partisi `business_date` pada Fase 1 (spec §9.3 acuan,
+  bukan final); ditinjau ulang sebelum go-live bervolume besar.
+- **Sisa**: review independen putaran 1; **O-077** (kebijakan pembalik lintas periode), T-074
+  (posting rule).

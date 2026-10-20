@@ -4,6 +4,6 @@
 ## (dijaga `tools/archcheck`). Repositori DB sengaja **tidak** diekspor: yang boleh menyentuhnya
 ## hanya composition root (`apps/api`) dan test modul.
 
-import ./domain/[coa, period]
+import ./domain/[coa, period, journal]
 
-export coa, period
+export coa, period, journal
