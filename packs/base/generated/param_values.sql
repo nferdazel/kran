@@ -27,6 +27,13 @@ INSERT INTO platform.param_value
   (param_value_id, key, scope_type, scope_id, value, effective_from, status,
    maker, checker, reason)
 VALUES
+  (md5('ledger.posting.lease_seconds|base')::uuid, 'ledger.posting.lease_seconds', 'GLOBAL', NULL, '300'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+ON CONFLICT (param_value_id) DO NOTHING;
+
+INSERT INTO platform.param_value
+  (param_value_id, key, scope_type, scope_id, value, effective_from, status,
+   maker, checker, reason)
+VALUES
   (md5('ledger.posting.max_attempts|base')::uuid, 'ledger.posting.max_attempts', 'GLOBAL', NULL, '10'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
 ON CONFLICT (param_value_id) DO NOTHING;
 

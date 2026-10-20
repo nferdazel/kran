@@ -24,6 +24,7 @@ const
   JournalsPath = "/api/v1/ledger/journals"
   DetailPath = "/api/v1/ledger/journals/{journalId}"
   ReversalPath = "/api/v1/ledger/journals/{journalId}/reversal"
+  TrialBalancePath = "/api/v1/ledger/trial-balance"
   LoginPath = "/api/v1/auth/login"
   MakerUser = "dev.maker"
   CheckerUser = "dev.checker"
@@ -43,6 +44,8 @@ let
   testClock = fakeClock(dateTime(2026, mOct, 20, 9, 0, 0))
   actor = Id("77777777-7777-7777-8777-777777777777")
 
+var mainPeriodId: Id
+
 block:
   let db = dbPool.acquire()
   resetTestSchemas(db, ".")
@@ -57,8 +60,9 @@ block:
      WHERE u.username = 'dev.maker' AND r.code = 'platform_admin'
     ON CONFLICT DO NOTHING
   """)
+  mainPeriodId = newId(testClock)
   discard insertPeriod(db,
-    Period(periodId: newId(testClock), startsOn: "2026-10-01", endsOn: "2026-10-31"), actor)
+    Period(periodId: mainPeriodId, startsOn: "2026-10-01", endsOn: "2026-10-31"), actor)
 
 var app = AppContext(version: "itapi-journal-0.0.0", role: "api", startedAt: epochTime(),
                      pool: dbPool, clock: systemClock(), readiness: databaseProbe())
@@ -333,3 +337,31 @@ suite "journal: grant bercabang":
            AND u.username = 'dev.maker' AND r.code = 'platform_admin'""")
       dbPool.release(conn)
     check getJson(JournalsPath, makerToken).code == 200
+
+suite "trial balance":
+  test "TB sesuai kontrak dan seimbang":
+    discard seedJournal(amount = 320_0000)
+    let reply = getJson(TrialBalancePath & "?periodId=" & $mainPeriodId, makerToken)
+    check reply.code == 200
+    checkJson(TrialBalancePath, "GET", "200", reply.body)
+    check reply.body["periodId"].getStr() == $mainPeriodId
+    check reply.body["startsOn"].getStr() == "2026-10-01"
+    check reply.body["endsOn"].getStr() == "2026-10-31"
+    check reply.body["totalDebit"].getStr() == reply.body["totalCredit"].getStr()
+    check reply.body["lines"].len >= 2
+
+  test "periodId tidak sah → 400, periode tidak ada → 404":
+    let bad = getJson(TrialBalancePath & "?periodId=bukan-uuid", makerToken)
+    check bad.code == 400
+    checkProblem(TrialBalancePath, "GET", "400", bad.body)
+    let missing = getJson(TrialBalancePath, makerToken)
+    check missing.code == 400
+    let unknown = getJson(TrialBalancePath &
+      "?periodId=88888888-8888-7888-8888-888888888888", makerToken)
+    check unknown.code == 404
+    checkProblem(TrialBalancePath, "GET", "404", unknown.body)
+
+  test "pemegang izin lain → 403":
+    let reply = getJson(TrialBalancePath & "?periodId=" & $mainPeriodId, checkerToken)
+    check reply.code == 403
+    checkProblem(TrialBalancePath, "GET", "403", reply.body)

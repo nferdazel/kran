@@ -43,3 +43,12 @@
   schema: { minimum: 50, maximum: 60000 }
   sensitivity: NORMAL
   default_pack: { base: 500 }
+
+# Lease klaim outbox: event IN_FLIGHT yang lebih lama dari ini dianggap terdampar (worker mati) dan
+# boleh diklaim ulang. Nilai > 0; jangan lebih kecil dari waktu proses satu event.
+- key: ledger.posting.lease_seconds
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 30, maximum: 3600 }
+  sensitivity: NORMAL
+  default_pack: { base: 300 }

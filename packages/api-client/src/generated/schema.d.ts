@@ -651,6 +651,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ledger/trial-balance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Trial balance per periode
+         * @description Agregat debit/kredit per akun untuk periode yang diberikan, dihitung **langsung dari
+         *     `journal_line`** (bukan cache `balance_snapshot`). Total debit dan total kredit harus sama;
+         *     akun tanpa pergerakan tidak muncul. Izin: `ledger.journal.read` (tingkat institusi).
+         */
+        get: operations["getTrialBalance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1057,6 +1079,25 @@ export interface components {
         };
         JournalReversalRequest: {
             reason: string;
+        };
+        TrialBalanceLine: {
+            accountCode: string;
+            accountName: string;
+            /** @enum {string} */
+            accountType: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE";
+            debit: string;
+            credit: string;
+        };
+        TrialBalance: {
+            /** Format: uuid */
+            periodId: string;
+            /** Format: date */
+            startsOn: string;
+            /** Format: date */
+            endsOn: string;
+            totalDebit: string;
+            totalCredit: string;
+            lines: components["schemas"]["TrialBalanceLine"][];
         };
     };
     responses: {
@@ -2092,6 +2133,33 @@ export interface operations {
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    getTrialBalance: {
+        parameters: {
+            query: {
+                periodId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Trial balance */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrialBalance"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
         };
     };

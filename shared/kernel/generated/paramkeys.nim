@@ -8,6 +8,7 @@ import std/json
 const paramKeys*: seq[string] = @[
   "ledger.coa.code_pattern",
   "ledger.posting.batch_size",
+  "ledger.posting.lease_seconds",
   "ledger.posting.max_attempts",
   "ledger.posting.poll_interval_ms",
   "ledger.posting.retry_backoff_seconds",
@@ -40,6 +41,8 @@ const paramKeys*: seq[string] = @[
 const P_ledger_coa_code_pattern* = ParamKey[string]("ledger.coa.code_pattern")
 
 const P_ledger_posting_batch_size* = ParamKey[int64]("ledger.posting.batch_size")
+
+const P_ledger_posting_lease_seconds* = ParamKey[int64]("ledger.posting.lease_seconds")
 
 const P_ledger_posting_max_attempts* = ParamKey[int64]("ledger.posting.max_attempts")
 
@@ -116,6 +119,17 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.ledger.posting.batch_size",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "ledger.posting.lease_seconds",
+    module: "ledger",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.ledger.posting.lease_seconds",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(

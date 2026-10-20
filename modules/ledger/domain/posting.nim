@@ -46,6 +46,11 @@ proc conditionCount*(node: JsonNode): int =
     return 0
   node.len
 
+proc specificityOf*(rule: PostingRule): int =
+  ## Kekhususan rule = jumlah kondisi + 1 bila rule dibatasi produk. Tanpa ini, rule produk dengan
+  ## kondisi kosong akan seri dengan rule generik dan membuat event produk itu ambigu.
+  conditionCount(rule.conditions) + (if rule.productCode.len > 0: 1 else: 0)
+
 proc ruleMatches*(rule: PostingRule, eventType: string, payload: JsonNode): bool =
   if rule.eventType != eventType:
     return false
@@ -68,7 +73,7 @@ proc selectRule*(rules: openArray[PostingRule], eventType: string,
   for rule in rules:
     if not ruleMatches(rule, eventType, payload):
       continue
-    let spec = conditionCount(rule.conditions)
+    let spec = specificityOf(rule)
     if spec > bestSpecificity or (spec == bestSpecificity and rule.priority < bestPriority):
       bestSpecificity = spec
       bestPriority = rule.priority
@@ -103,8 +108,8 @@ proc validateTemplate*(lines: openArray[PostingRuleLine]): seq[PostingRuleLine] 
 
 proc buildLines*(rule: PostingRule, amount: Money, branchId: Id): seq[JournalLine] =
   ## Baris jurnal dari template; nominal sama untuk sisi debit dan kredit.
-  if amount.isZero:
-    raise newException(ValueError, "nominal event nol tidak boleh diposting")
+  if not (amount > zero()):
+    raise newException(ValueError, "nominal event harus lebih besar dari nol")
   let lines = validateTemplate(rule.lines)
   for i, l in lines:
     result.add JournalLine(

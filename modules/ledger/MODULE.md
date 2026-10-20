@@ -59,12 +59,21 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
   `ledger.posting.batch_size`, `max_attempts`, `retry_backoff_seconds`, `poll_interval_ms`.
 - Pengelolaan rule lewat migrasi sampai ada API/UI (**O-080**).
 
+## Saldo turunan & trial balance (T-075)
+
+- `GET /api/v1/ledger/trial-balance?periodId=` — agregat debit/kredit per akun untuk rentang
+  periode, **dihitung dari `journal_line`**, bukan cache. Total debit = total kredit (invarian DB).
+- `ledger.balance_snapshot` adalah **cache** `(account_code, as_of)` yang hanya diisi
+  `ledger.rebuild_balance_snapshot(as_of)`; tidak ada jalur tulis saldo selain jurnal (**D-074**).
+- Izin baca laporan memakai `ledger.journal.read` (tingkat institusi).
+
 ## Public API (`api.nim`)
 
 - `coa` — `AccountType`, `NormalSide`, `AccountStatus`, `CoaAccount`, `parseAccountType`,
   `parseAccountStatus`, `normalSideOf`, `compileCodePattern`, `validateCode`, `validateName`.
 - `period` — `PeriodStatus`, `Period`, `parsePeriodStatus`, `parseIsoDate`, `validateRange`,
   `validateCloseReason`.
+- `report` — `TrialBalance`, `TrialBalanceLine`, `totalDebit`, `totalCredit`, `isBalanced`.
 - `posting` — `PostingRule`, `PostingRuleLine`, `jsonContains`, `selectRule`,
   `validateTemplate`, `buildLines`.
 - `journal` — `Journal`, `JournalLine`, `totalDebit`, `totalCredit`, `isBalanced`,
@@ -76,7 +85,8 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 - Publish: `period.closed` v1, aggregate `period`, payload `{periodId, startsOn, endsOn}`.
 - Publish: `journal.posted` v1, aggregate `journal`, payload
   `{journalId, businessDate, reversalOf, totalDebit}` (dipakai untuk rekonsiliasi/real-time).
-- Konsumsi: belum ada (event bisnis via posting rule menyusul di T-074).
+- Konsumsi: accounting event dari outbox (header `{"accounting": true}`) lewat konsumen
+  `ledger-postings`, dipetakan posting rule → jurnal (T-074).
 
 ## Parameter key (+ sensitivitas, regulatory_refs)
 
@@ -88,13 +98,17 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 | `ledger.posting.retry_backoff_seconds` | integer | GLOBAL, INSTITUTION | 30 | NORMAL |
 | `ledger.posting.poll_interval_ms` | integer | GLOBAL, INSTITUTION | 500 | NORMAL |
 
-## Tabel & schema (migrasi `0001`, `0002`, `0003`)
+## Tabel & schema (migrasi `0001`–`0008`)
 
 - `ledger.coa_account` — kode unik, tipe, sisi normal (CHECK konsisten), `postable`, status.
   Tidak ber-cabang: GL milik institusi (spec §9).
 - `ledger.period` — rentang inklusif, status, `closed_at`/`closed_by`, EXCLUDE tumpang tindih.
 - `ledger.journal` / `ledger.journal_line` — jurnal immutable + pembalik, trigger keseimbangan
-  deferred, periode OPEN, akun postable/ACTIVE (lihat bagian Jurnal di atas).
+  deferred, periode OPEN, akun postable/ACTIVE, dan baris hanya boleh masuk dalam **transaksi yang
+  sama** dengan header (lihat bagian Jurnal di atas).
+- `ledger.posting_rule` / `posting_rule_line` — mapping event → template jurnal (T-074).
+- `ledger.balance_snapshot` — cache saldo per `(account_code, as_of)`; sumber kebenaran tetap jurnal
+  (T-075).
 - COA awal (`0002_ledger_coa_base.sql`) adalah **contoh struktur** untuk pilot, bertanda
   `NEEDS-COMPLIANCE-REVIEW` (REG-011 `V!`): jangan dijadikan dasar laporan final sebelum review
   compliance. Ditaruh di migrasi (bukan `packs/*/seed/`) karena seed pack hanya untuk `--dev`.

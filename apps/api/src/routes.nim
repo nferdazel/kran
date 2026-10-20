@@ -16,6 +16,7 @@ import ./handlers_journals
 import ./handlers_kyc
 import ./handlers_ledger
 import ./handlers_mfa
+import ./handlers_reports
 import ./handlers_param
 import ./handlers_party
 import ./health
@@ -155,6 +156,8 @@ proc journalRoutes*(): seq[RouteSpec] =
               operationId: "getJournal", handler: handleGetJournal),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/ledger/journals/{journalId}/reversal",
               operationId: "reverseJournal", handler: handleReverseJournal),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/ledger/trial-balance",
+              operationId: "getTrialBalance", handler: handleTrialBalance),
   ]
 
 proc allRoutes*(): seq[RouteSpec] =

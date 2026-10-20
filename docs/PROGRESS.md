@@ -1692,3 +1692,14 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   bukan final); ditinjau ulang sebelum go-live bervolume besar.
 - **Sisa**: review independen putaran 1; **O-077** (kebijakan pembalik lintas periode), T-074
   (posting rule).
+
+## T-075 — `ledger` saldo turunan + trial balance (20 Okt 2026)
+
+- **Kode**: migrasi `0007` (`balance_snapshot` cache + `rebuild_balance_snapshot`), domain
+  `report.nim`, repo `report_repo.nim`, handler `handlers_reports` (`GET /ledger/trial-balance`),
+  kontrak + klien TS.
+- **Prinsip (D-074)**: TB dihitung **langsung dari `journal_line`**; `balance_snapshot` hanya cache
+  yang direkonstruksi eksplisit, tidak ada jalur tulis saldo selain jurnal.
+- **Gate**: `ittb` 4 integrasi (TB seimbang, sama dengan agregasi SQL, snapshot == TB, periode tidak
+  ada = error), `itapi_journal` +3 HTTP (kontrak & total seimbang, 400/404, 403); `./task ci` hijau.
+- **Sisa**: review independen; T-076 (product), T-077 (end-to-end Fase 1).

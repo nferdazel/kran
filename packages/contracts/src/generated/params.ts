@@ -53,6 +53,24 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "ledger.posting.lease_seconds",
+    "module": "ledger",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.ledger.posting.lease_seconds",
+    "jsonSchema": {
+      "minimum": 30,
+      "maximum": 3600
+    }
+  },
+  {
     "key": "ledger.posting.max_attempts",
     "module": "ledger",
     "valueType": "integer",
