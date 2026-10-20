@@ -16,6 +16,9 @@ Wants=network-online.target
 
 [Container]
 Image=localhost/kran-api:local
+# Env-file yang sama memuat KRAN_KEK_FILE; mount + pemetaan uid harus sama dengan API.
+UserNS=keep-id:uid=10001,gid=10001
+Volume=/srv/qouver/apps/kran/env/kran-kek.key:/run/secrets/kran-kek.key:ro,z
 ContainerName=kran-worker
 Network=qouver
 Pull=never

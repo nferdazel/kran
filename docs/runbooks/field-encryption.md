@@ -38,9 +38,20 @@ chmod 600 /srv/qouver/apps/kran/env/kran-kek.key
 
 Setel di env proses API/worker, lalu **restart**:
 
+Di host, berkas tetap di `/srv/qouver/apps/kran/env/kran-kek.key` (mode 600). Unit quadlet
+me-mount-nya ke dalam container dan **wajib** memetakan uid container ke pemilik berkas:
+
 ```
-KRAN_KEK_FILE=/srv/qouver/apps/kran/env/kran-kek.key
+# kran-api.container / kran-worker.container
+UserNS=keep-id:uid=10001,gid=10001
+Volume=/srv/qouver/apps/kran/env/kran-kek.key:/run/secrets/kran-kek.key:ro,z
+
+# env (kran-prod.env) — path **di dalam container**
+KRAN_KEK_FILE=/run/secrets/kran-kek.key
 ```
+
+Tanpa `UserNS=keep-id`, container berjalan sebagai uid 10001 yang dipetakan ke subuid host →
+berkas 600 tidak terbaca dan API menolak start (terbukti saat go-live Fase 1).
 
 Perilaku (tanpa fallback diam-diam, O-056/D-046 butir 6):
 

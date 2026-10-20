@@ -21,9 +21,10 @@
 #     itulah kenapa `:z` bukan opsional.
 #   - `--address=0.0.0.0`: port rootless di-forward ke IP bridge (10.89.0.x),
 #     jadi bind loopback membuat container hidup tapi tak terjangkau.
-#   - KRAN_KEK_FILE belum diisi di env prod. Kalau kelak diaktifkan, berkas KEK
-#     (mode 600 milik sachiel) perlu di-mount, dan unit ini butuh
-#     `UserNS=keep-id:uid=10001,gid=10001` seperti skyward-api.
+#   - KEK aktif di produksi (O-071): berkas mode 600 milik sachiel di-mount ke
+#     `/run/secrets/kran-kek.key`. Container berjalan sebagai uid 10001, jadi unit ini **wajib**
+#     `UserNS=keep-id:uid=10001,gid=10001` — tanpa itu berkas 600 tidak terbaca dan API menolak
+#     start (terbukti saat go-live Fase 1).
 [Unit]
 Description=KRAN API (Nim, --role=api)
 After=network-online.target
@@ -31,6 +32,8 @@ Wants=network-online.target
 
 [Container]
 Image=localhost/kran-api:local
+UserNS=keep-id:uid=10001,gid=10001
+Volume=/srv/qouver/apps/kran/env/kran-kek.key:/run/secrets/kran-kek.key:ro,z
 ContainerName=kran-api
 Network=qouver
 PublishPort=127.0.0.1:8095:8095
