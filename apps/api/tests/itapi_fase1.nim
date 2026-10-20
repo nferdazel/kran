@@ -14,6 +14,7 @@ import kernel/[clock, ids, money]
 import ledger/domain/period
 import ledger/infrastructure/[journal_repo, ledger_repo]
 import openapi/lib
+import party/domain/cif
 import platform/domain/event
 import platform/infrastructure/outbox_repo
 import "platform-lib/db/config"
@@ -163,6 +164,13 @@ proc checkProblem(path, verb, status: string, body: JsonNode) =
     "application/problem+json"), body, "$")
   check problems.len == 0
 
+proc withDbValue(query: SqlQuery, args: varargs[string, `$`]): string =
+  let db = dbPool.acquire()
+  try:
+    db.getValue(query, args)
+  finally:
+    dbPool.release(db)
+
 proc withDb(body: proc(db: DbConn)) =
   let db = dbPool.acquire()
   try:
@@ -175,6 +183,7 @@ proc withDb(body: proc(db: DbConn)) =
 var
   partyToken = ""
   partyId = ""
+  productId = ""
   productCode = "SAV01"
   journalId = ""
   accountingEventId: Id
@@ -188,15 +197,23 @@ suite "Fase 1 end-to-end":
     check partyToken.len > 0
 
   test "party: CIF dibentuk dari parameter":
+    require partyToken.len > 0
     let created = postJson(PartyPath,
       %*{"kind": "PERSON", "displayName": "Siti Aminah", "branchId": BranchId}, partyToken)
     check created.code == 201
     checkJson(PartyPath, "POST", "201", created.body)
     partyId = created.body["partyId"].getStr()
     let cif = created.body["cif"].getStr()
-    check cif.len == 7
+    # Bandingkan dengan pola parameter + nomor urut DB, bukan sekadar panjangnya: handler yang
+    # meng-hardcode 7 digit akan gagal di sini.
+    let pattern = withDbValue(sql"""SELECT value #>> '{}' FROM platform.param_value
+      WHERE key = 'party.cif.format' AND status = 'ACTIVE' AND scope_type = 'GLOBAL'
+      ORDER BY effective_from DESC LIMIT 1""")
+    let seq = parseBiggestInt(withDbValue(sql"SELECT last_value::text FROM party.cif_seq"))
+    check cif == formatCif(pattern, seq)
 
   test "product: katalog parametrik + versi 1":
+    require partyToken.len > 0
     let created = postJson(ProductsPath, %*{
       "code": productCode, "name": "Simpanan Sukarela", "productType": "SAVINGS",
       "effectiveFrom": "2026-10-01",
@@ -205,10 +222,12 @@ suite "Fase 1 end-to-end":
     check created.code == 201
     checkJson(ProductsPath, "POST", "201", created.body)
     check created.body["versions"].len == 1
+    productId = created.body["productId"].getStr()
     let detail = getJson(ProductsDetailPath.replace("{code}", productCode), partyToken)
     check detail.code == 200
 
   test "event akuntansi diposting menjadi jurnal seimbang":
+    require partyToken.len > 0
     accountingEventId = newId(testClock)
     withDb(proc(db: DbConn) =
       let ev = newOutboxEvent(accountingEventId, "DepositPosted", "deposit",
@@ -218,12 +237,15 @@ suite "Fase 1 end-to-end":
            "product": productCode},
         headers = %*{"accounting": true})
       check appendEvent(db, ev))
-    check processBatch(app, "fase1-worker", 10, 3, 0) >= 1
+    # Batch juga mengklaim event non-akuntansi (party.onboarded, ProductPublished) yang sudah
+    # menunggu; yang dikunci adalah hasilnya: tepat satu jurnal dari event ini.
+    discard processBatch(app, "fase1-worker", 10, 3, 0)
 
     withDb(proc(db: DbConn) =
       check db.getValue(sql"""
         SELECT status FROM platform.outbox WHERE outbox_id = ?""",
-        $accountingEventId) == "DONE")
+        $accountingEventId) == "DONE"
+      check db.getValue(sql"SELECT count(*)::text FROM ledger.journal") == "1")
 
     let list = getJson(JournalsPath & "?businessDate=2026-10-15", partyToken)
     check list.code == 200
@@ -235,10 +257,13 @@ suite "Fase 1 end-to-end":
     check detail.code == 200
     checkJson(JournalDetailPath, "GET", "200", detail.body)
     check detail.body["lines"].len == 2
+    check detail.body["sourceEvent"].getStr() == "DepositPosted"
+    check detail.body["sourceRef"].getStr() == "aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa"
     check moneyOf(detail.body["totalDebit"].getStr()) == money(amount)
     check detail.body["totalDebit"].getStr() == detail.body["totalCredit"].getStr()
 
   test "trial balance cocok dan seimbang":
+    require partyToken.len > 0
     let tb = getJson(TrialBalancePath & "?periodId=" & $periodId, partyToken)
     check tb.code == 200
     checkJson(TrialBalancePath, "GET", "200", tb.body)
@@ -257,12 +282,17 @@ suite "Fase 1 end-to-end":
     withDb(proc(db: DbConn) =
       check db.getValue(sql"""
         SELECT count(*)::text FROM platform.outbox
-         WHERE event_type = 'ProductPublished'""") == "1"
+         WHERE event_type = 'ProductPublished' AND aggregate_id = ?""", productId) == "1"
       check db.getValue(sql"""
         SELECT count(*)::text FROM platform.outbox
          WHERE event_type = 'journal.posted' AND aggregate_id = ?""", journalId) == "1")
 
   test "pembalik menetralkan TB dan tidak mengubah jurnal asal":
+    require partyToken.len > 0
+    require journalId.len > 0
+    let before = getJson(JournalDetailPath.replace("{journalId}", journalId), partyToken)
+    let beforeDebit = before.body["totalDebit"].getStr()
+    let beforeCredit = before.body["totalCredit"].getStr()
     let reversal = postJson(ReversalPath.replace("{journalId}", journalId),
       %*{"reason": "uji end-to-end Fase 1"}, partyToken,
       "fase1-reversal:" & journalId)
@@ -272,6 +302,8 @@ suite "Fase 1 end-to-end":
 
     let original = getJson(JournalDetailPath.replace("{journalId}", journalId), partyToken)
     check original.body["lines"].len == 2
+    check original.body["totalDebit"].getStr() == beforeDebit
+    check original.body["totalCredit"].getStr() == beforeCredit
 
     let tb = getJson(TrialBalancePath & "?periodId=" & $periodId, partyToken)
     check tb.code == 200
