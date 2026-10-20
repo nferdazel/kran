@@ -1859,9 +1859,12 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
 - **D-099/O-085** — maker-checker versi produk DRAFT→ACTIVE (T-086); sampai itu perubahan produk
   dibekukan.
 
-**Sisa operasional (butuh pemilik):** password admin (`admin`, `must_change_password=t` sejak
-17 Okt), salinan offline KEK (`age`/`sops` tidak terpasang di laptop/server), verifikasi autostart
-lewat reboot, alert backlog worker (O-081).
+**Password admin — SELESAI (20 Okt 2026, 21:44 WIB).** `ctl reset-password --username=admin`
+dijalankan pemilik di server; bukti produksi: audit `user.password_reset` lalu `user.password_change`,
+baris `admin` = `ACTIVE` + `must_change_password=f`, `password_updated_at` terisi, sesi lama dicabut.
+
+**Sisa operasional (butuh pemilik):** salinan offline KEK (`age`/`sops` tidak terpasang di
+laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
 
 ### `ctl reset-password` (D-100, 20 Okt 2026)
 
