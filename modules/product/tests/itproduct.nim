@@ -4,7 +4,7 @@
 ## (deferred), versi tidak tumpang tindih, hanya `effective_to` yang boleh diisi sekali, dan binding
 ## immutable.
 
-import std/[json, options, os, times, unittest]
+import std/[json, options, times, unittest]
 
 import db_connector/db_postgres
 
@@ -101,8 +101,9 @@ suite "product: penyimpanan & versi":
         insertVersion(d, v2, actor)
         insertBinding(d, v2.versionId, binding())
         1))
-    check closeOpenVersion(db, created.productId, "2026-11-01")
-    check not closeOpenVersion(db, created.productId, "2026-11-01")
+    let openV1 = openVersion(db, created.productId).get()
+    check closeVersion(db, openV1.versionId, "2026-11-01")
+    check not closeVersion(db, openV1.versionId, "2026-11-01")
     discard saveVersion(created, 2, "2026-11-01",
       @[binding("product.savings.min_balance", "10000.0000")])
     check versionsOf(db, created.productId).len == 2
@@ -122,6 +123,25 @@ suite "product: penyimpanan & versi":
       sql"UPDATE product.product_version SET effective_to = '2026-12-01' WHERE version_id = ?",
       $v1.versionId))
     check versionsOf(db, created.productId)[0].effectiveTo == "2026-10-31"
+
+  test "versi mulai besok (H+1) sah: versi lama menjadi satu hari":
+    let p = newProduct("SAV-H1")
+    discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+      insertProduct(d, p, actor)
+      1)
+    let v1 = saveVersion(p, 1, "2026-10-01")
+    check closeVersion(db, v1.versionId, "2026-10-02")
+    discard saveVersion(p, 2, "2026-10-02")
+    check versionsOf(db, p.productId)[0].effectiveTo == "2026-10-01"
+    check currentVersion(db, p.productId, "2026-10-01").get().versionNo == 1
+    check currentVersion(db, p.productId, "2026-10-02").get().versionNo == 2
+
+  test "binding ke versi yang sudah terbit ditolak (sealed)":
+    let sealedV1 = versionsOf(db, created.productId)[0]
+    expectDbError(proc() = db.exec(
+      sql"""INSERT INTO product.product_param_binding (version_id, param_key, value)
+             VALUES (?, 'product.savings.grace_period_days', '0'::jsonb)""",
+      $sealedV1.versionId))
 
   test "binding immutable":
     let v2 = versionsOf(db, created.productId)[1]

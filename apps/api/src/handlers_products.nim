@@ -13,7 +13,7 @@ import db_connector/db_postgres
 
 import "platform-lib/db/pool"
 
-import kernel/[businessdate, clock, ids, money, paramkey, result]
+import kernel/[businessdate, clock, ids, money, paramkey, rate, result]
 import platform/domain/[audit, event, param, scope]
 import platform/infrastructure/[audit_repo, auth_service, outbox_repo, param_repo]
 import product/domain/product
@@ -65,59 +65,36 @@ proc parseBindings(body: JsonNode): seq[ParamBinding] =
   for key, value in body["bindings"]:
     result.add ParamBinding(paramKey: key, value: value)
 
+const
+  maxStringBindingLength = 200 # nomagic:ok batas teknis nilai parameter teks
+  maxJsonBindingBytes = 16_384 # nomagic:ok batas teknis payload JSON binding
+  rateScale = 6                # nomagic:ok Rate = 10^-6 (shared/kernel/rate)
+
 proc pow10(n: int): int64 =
-  ## Pengali desimal tanpa float (`^` di Nim adalah BackwardsIndex, bukan pangkat).
   result = 1
   for _ in 0 ..< n:
     result *= 10
 
-proc scaledDecimal(raw: string, scale: int): Option[int64] =
-  ## Parse desimal tanpa float, maksimum `scale` angka di belakang koma. `none` = bentuk salah.
-  let s = raw.strip
-  if s.len == 0:
-    return none(int64)
-  var negative = false
-  var digits = s
-  if digits[0] in {'+', '-'}:
-    negative = digits[0] == '-'
-    digits = digits[1 .. ^1]
-  if digits.len == 0:
-    return none(int64)
-  let parts = digits.split('.')
-  if parts.len > 2:
-    return none(int64)
-  for ch in parts[0]:
-    if ch notin {'0' .. '9'}:
-      return none(int64)
-  var frac = if parts.len == 2: parts[1] else: ""
-  if frac.len > scale:
-    return none(int64)
-  for ch in frac:
-    if ch notin {'0' .. '9'}:
-      return none(int64)
-  while frac.len < scale:
-    frac.add '0'
-  var units: int64
+proc boundUnits(bound: int64, scale: int): Option[int64] =
+  ## `bound * 10^scale` dengan pemeriksaan overflow; `none` = di luar rentang int64.
   try:
-    units = parseBiggestInt(if parts[0].len == 0: "0" else: parts[0]) * pow10(scale)
-    units += parseBiggestInt(if frac.len == 0: "0" else: frac)
-  except ValueError:
-    return none(int64)
-  if negative:
-    units = -units
-  some(units)
+    some(checkedMul(bound, pow10(scale)))
+  except MoneyOverflowError:
+    none(int64)
 
-proc schemaBound(schema: JsonNode, key: string): Option[int64] =
-  ## Batas schema yang bisa dibandingkan tanpa float: hanya bilangan bulat.
+proc schemaBound(schema: JsonNode, key: string): tuple[value: Option[int64], error: string] =
+  ## Batas schema hanya bisa dibandingkan tanpa float bila berupa bilangan bulat. Batas pecahan
+  ## **ditolak** (fail-closed), bukan diabaikan diam-diam.
   if schema.isNil or schema.kind != JObject or not schema.hasKey(key):
-    return none(int64)
-  if schema[key].kind == JInt:
-    return some(schema[key].getBiggestInt())
-  none(int64)
+    return (none(int64), "")
+  if schema[key].kind != JInt:
+    return (none(int64), "batas schema `" & key & "` harus bilangan bulat")
+  (some(schema[key].getBiggestInt()), "")
 
 proc definitionError(db: DbConn, bindings: seq[ParamBinding]): string =
   ## Validasi binding terhadap definisi parameter: terdaftar, tidak deprecated, tipe cocok,
-  ## enum dikenal, dan batas numerik dipatuhi. Kunci yang tidak terdaftar **ditolak** (fail-closed).
+  ## enum dikenal, dan batas numerik dipatuhi. Parser uang/rate memakai kernel (checked, tanpa
+  ## float), bukan duplikasi aturan desimal.
   for b in bindings:
     let defOpt = definitionOf(db, b.paramKey)
     if defOpt.isNone:
@@ -125,50 +102,85 @@ proc definitionError(db: DbConn, bindings: seq[ParamBinding]): string =
     let def = defOpt.get()
     if def.deprecated:
       return "parameter sudah deprecated: " & b.paramKey
+    let minB = schemaBound(def.schema, "minimum")
+    let maxB = schemaBound(def.schema, "maximum")
+    if minB.error.len > 0:
+      return b.paramKey & ": " & minB.error
+    if maxB.error.len > 0:
+      return b.paramKey & ": " & maxB.error
+
     case def.valueType
     of pvtInteger:
       if b.value.kind != JInt:
         return b.paramKey & " harus bilangan bulat"
-      let lo = schemaBound(def.schema, "minimum")
-      let hi = schemaBound(def.schema, "maximum")
       let v = b.value.getBiggestInt()
-      if lo.isSome and v < lo.get(): return b.paramKey & " di bawah minimum"
-      if hi.isSome and v > hi.get(): return b.paramKey & " di atas maximum"
+      if minB.value.isSome and v < minB.value.get():
+        return b.paramKey & " di bawah minimum"
+      if maxB.value.isSome and v > maxB.value.get():
+        return b.paramKey & " di atas maximum"
     of pvtBool:
       if b.value.kind != JBool:
         return b.paramKey & " harus boolean"
     of pvtJson:
-      discard # bentuk bebas; schema JSON divalidasi pemilik parameter saat ditulis
+      if ($b.value).len > maxJsonBindingBytes:
+        return b.paramKey & " melebihi batas ukuran JSON"
     of pvtString:
       if b.value.kind != JString:
         return b.paramKey & " harus teks"
+      let text = b.value.getStr()
+      if def.schema != nil and def.schema.kind == JObject:
+        if def.schema.hasKey("minLength") and def.schema["minLength"].kind == JInt and
+            text.len < def.schema["minLength"].getInt():
+          return b.paramKey & " lebih pendek dari minLength"
+        if def.schema.hasKey("maxLength") and def.schema["maxLength"].kind == JInt and
+            text.len > def.schema["maxLength"].getInt():
+          return b.paramKey & " lebih panjang dari maxLength"
+      if text.len > maxStringBindingLength:
+        return b.paramKey & " melebihi batas panjang teks"
     of pvtEnum:
       if b.value.kind != JString:
         return b.paramKey & " harus teks (enum)"
-      if def.schema != nil and def.schema.kind == JObject and def.schema.hasKey("enum"):
-        var known = false
-        for item in def.schema["enum"]:
-          if item.kind == JString and item.getStr() == b.value.getStr():
-            known = true
-        if not known:
-          return b.paramKey & " tidak termasuk nilai yang diizinkan"
+      if def.schema.isNil or def.schema.kind != JObject or not def.schema.hasKey("enum") or
+          def.schema["enum"].len == 0:
+        return b.paramKey & " tidak punya daftar enum"
+      var known = false
+      for item in def.schema["enum"]:
+        if item.kind == JString and item.getStr() == b.value.getStr():
+          known = true
+      if not known:
+        return b.paramKey & " tidak termasuk nilai yang diizinkan"
     of pvtMoney, pvtDecimal, pvtRate:
       if b.value.kind != JString:
         return b.paramKey & " harus teks desimal"
-      let scale = if def.valueType == pvtRate: 6 else: moneyScale
-      let parsed = scaledDecimal(b.value.getStr(), scale)
-      if parsed.isNone:
-        return b.paramKey & " bukan desimal yang sah"
-      let lo = schemaBound(def.schema, "minimum")
-      let hi = schemaBound(def.schema, "maximum")
-      if lo.isSome and parsed.get() < lo.get() * pow10(scale):
-        return b.paramKey & " di bawah minimum"
-      if hi.isSome and parsed.get() > hi.get() * pow10(scale):
-        return b.paramKey & " di atas maximum"
+      var units: int64
+      var scale: int
+      if def.valueType == pvtRate:
+        let parsed = rateFromPercentString(b.value.getStr())
+        if parsed.isErr:
+          return b.paramKey & " bukan rate persen yang sah"
+        units = parsed.value().microUnits
+        scale = rateScale
+      else:
+        let parsed = moneyFromString(b.value.getStr())
+        if parsed.isErr:
+          return b.paramKey & " bukan desimal 4 angka di belakang koma yang sah"
+        units = parsed.value().minorUnits
+        scale = moneyScale
+      if minB.value.isSome:
+        let lo = boundUnits(minB.value.get(), scale)
+        if lo.isNone:
+          return b.paramKey & ": batas minimum di luar rentang"
+        if units < lo.get():
+          return b.paramKey & " di bawah minimum"
+      if maxB.value.isSome:
+        let hi = boundUnits(maxB.value.get(), scale)
+        if hi.isNone:
+          return b.paramKey & ": batas maximum di luar rentang"
+        if units > hi.get():
+          return b.paramKey & " di atas maximum"
     of pvtDate:
       if b.value.kind != JString or parseBusinessDate(b.value.getStr()).isErr:
         return b.paramKey & " bukan tanggal ISO"
-  ""
 
 proc detailJson(db: DbConn, p: Product): JsonNode =
   var versions = newJArray()
@@ -341,6 +353,9 @@ proc handleCreateProduct*(app: AppContext, req: Request) {.gcsafe.} =
     elif "product_version_no_overlap" in e.msg or "conflicting key" in e.msg:
       status = 409
       problemText = "versi produk bertumpang tindih"
+    elif "product_version_window_chk" in e.msg:
+      status = 409
+      problemText = "jendela versi tidak sah"
     else:
       status = 500
       problemText = "produk gagal disimpan"
@@ -403,7 +418,7 @@ proc handleCreateVersion*(app: AppContext, req: Request) {.gcsafe.} =
             problemText = "effectiveFrom harus setelah versi berjalan (" &
               open.get().effectiveFrom & ")"
             raise newException(ValueError, problemText)
-          if not closeOpenVersion(db, p.get().productId, window.fromIso):
+          if not closeVersion(db, open.get().versionId, window.fromIso):
             status = 409
             problemText = "versi berjalan sudah ditutup permintaan lain"
             raise newException(ValueError, problemText)
@@ -441,6 +456,9 @@ proc handleCreateVersion*(app: AppContext, req: Request) {.gcsafe.} =
     elif "effective_to sudah pernah diisi" in e.msg:
       status = 409
       problemText = "versi berjalan sudah ditutup permintaan lain"
+    elif "product_version_window_chk" in e.msg:
+      status = 409
+      problemText = "jendela versi tidak sah"
     else:
       status = 500
       problemText = "versi produk gagal disimpan"

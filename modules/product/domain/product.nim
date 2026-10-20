@@ -83,8 +83,8 @@ proc validateWindow*(effectiveFrom, effectiveTo: string): tuple[fromIso, toIso: 
   if effectiveTo.strip.len == 0:
     return (result.fromIso, "")
   let finish = isoDate(effectiveTo, "effectiveTo")
-  if not (start < finish):
-    raise newException(ValueError, "effectiveTo harus setelah effectiveFrom")
+  if not (start <= finish):
+    raise newException(ValueError, "effectiveTo tidak boleh sebelum effectiveFrom")
   result.toIso = toIso(finish)
 
 proc validateBindings*(bindings: openArray[ParamBinding]): seq[ParamBinding] =
