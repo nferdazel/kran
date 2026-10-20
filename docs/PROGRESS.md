@@ -1560,3 +1560,199 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   disimpan** — termasuk image yang sedang dipakai dan `:prev`.
 - **Sisa**: KEK belum di-mount (butuh mount + `UserNS` saat fitur diaktifkan), latihan rollback di
   server belum dilakukan (T-013).
+
+## T-070 — modul `party`: CIF + identitas dasar (19 Okt 2026)
+
+- **Rencana/scope**: `docs/tasks/T-070.md` (Fase 1 dibuka pemilik; task T-070…T-077).
+- **Keputusan**: **D-067** — pola CIF (`{seq:N}`, `{check}`, prefix/suffix, lebar) = parameter
+  `party.cif.format`; algoritme check digit Luhn mod 10 = kode (invarian matematis); salah
+  konfigurasi → **500**, bukan 400. PII/KYC + audit pembacaan ditunda ke T-071 (tidak ada kolom
+  sensitif yang lahir plaintext). `Idempotency-Key` untuk POST master data dicatat **O-072**.
+- **Kode**: modul `party` (`domain/cif.nim`, `domain/party.nim`, `infrastructure/party_repo.nim`,
+  `api.nim`, `migrations/0001_party_init.sql` — schema `party`, sequence `cif_seq`, tabel `party`),
+  parameter `party.cif.format` (+ seed/paramgen, 4 artefak), izin `party.party.create`/`read`
+  (`modules/platform/migrations/0013_platform_rbac_party.sql`), handler `handlers_party.nim`
+  (`POST /api/v1/parties`, `GET /api/v1/parties/{partyId}`) + rute + OpenAPI + klien TS.
+- **Bukti `./task ci`** (log `.build`…/`/tmp/ci-t070b.log`, dijalankan setelah semua perbaikan):
+  `check` hijau (termasuk archcheck "batas modul bersih", lint-nomagic "tidak ada magic number
+  bisnis", paramgen sinkron, i18n 116 key/locale, shellcheck 7 skrip), `openapi` sinkron +
+  typecheck klien lolos, `./task test` **643 `[OK]`, 0 `[FAILED]`**, e2e **24 passed**
+  (axe 2 tema × 2 locale + alur keyboard-only + maker-checker).
+- **Test baru**: `tparty` (Luhn vektor klasik `7992739871`→`3`, format dari pola, token salah
+  ditolak, batas 32 karakter), `itparty` (sequence naik, CIF unik ditolak DB, party+audit+outbox
+  satu transaksi, rollback tanpa jejak), `itapi_party` (401/403/404/400/500/201 lewat HTTP,
+  CIF diverifikasi dengan fungsi produksi, audit/outbox tanpa nama, pola rusak → 500 **dan** nomor
+  urut tidak terbakar).
+- **Test diskriminatif (bukan hijau palsu)**: saat literal Luhn diganti konstanta bernama,
+  `tparty` langsung menangkap salah (`luhnCheckDigit("7992739871") was 5`) dan diperbaiki sebelum
+  lanjut. e2e `flow.spec.ts` menolak hijau karena `party.cif.format` (parameter teks) menggeser
+  urutan daftar → `pickTarget` diubah memilih baris **bernilai angka** dan menyasar form ke baris
+  itu, alur maker→checker→realtime tetap utuh.
+- **Perbaikan test harness**: 7 berkas integration test yang men-`DROP SCHEMA platform` kini juga
+  men-`DROP SCHEMA party` — tanpa itu, migrasi `party` dijalankan ulang tanpa baris ledger dan
+  bertabrakan dengan objek yang masih ada (isolasi test, bukan menutupi cacat migrasi).
+- **Review independen** (konteks bersih, 1 putaran): **APPROVE** — tanpa BLOCKER/MAJOR; 4 MINOR
+  semuanya diperbaiki sebelum commit: (1) deskripsi kontrak `GET` disamakan dengan perilaku
+  (tidak ada/bukan UUID → 404, cabang lain → 403, konsisten `branch_not_allowed`), (2) `400`
+  yang tak mungkin di `GET` dihapus dari kontrak, (3) `ValueError` konfigurasi CIF dipisah jadi
+  `CifConfigError` → 500 dengan pesan non-internal + test baru, (4) test "> 32 karakter" memakai
+  pola yang benar-benar menguji batas panjang.
+- **Sisa**: PII/KYC + audit pembacaan → T-071 (`HUMAN-REVIEW-REQUIRED`); O-072 (idempotency POST
+  master data) menunggu keputusan lingkup; parameter `party.cif.format` harus ikut seed produksi
+  (O-066) sebelum deploy yang memakainya.
+
+## T-071 — `party` KYC & risiko: identitas terenkripsi + rating risiko (19 Okt 2026)
+
+- **Rencana/scope**: `docs/tasks/T-071.md`. **HUMAN-REVIEW-REQUIRED** (kriptografi/PII, AGENTS §8).
+- **Keputusan**: **D-069** — nomor dokumen disimpan sebagai ciphertext (`kran:enc:v1:`, AAD
+  `identity_doc`) + blind index HMAC hex 64 + dua karakter terakhir; unik per
+  `(doc_type, number_bidx)`; duplikat global per jenis dokumen; *unmask* = izin
+  `party.identity_doc.read` + alasan + audit tanpa nomor; tanpa KEK → 501 fail-closed.
+  Batas baru dicatat: **O-073** (rotasi KEK membuat blind index lama tidak cocok → wajib reindex;
+  sampai ada jalur, rotasi atas data identitas dilarang).
+- **Kode**: migrasi `party/0002_party_kyc.sql` (identity_doc, kyc_profile, risk_rating
+  append-only lewat trigger) + `0014_platform_rbac_party_pii.sql`; domain `identity`/`kyc`/
+  `jsonparam`; `kyc_repo`; `handlers_kyc.nim` (4 endpoint) + rute + kontrak + klien TS; profil KYC
+  dibuat dalam transaksi yang sama saat party dibuat (`kyc_profile` PENDING, rating & jadwal re-KYC
+  dari parameter); 6 parameter baru (`party.identity.*`, `party.kyc.*`) lewat `paramgen`,
+  ditandai `NEEDS-COMPLIANCE-REVIEW`.
+- **Bukti `./task ci`** (log `/tmp/ci-t071d.log`, setelah perbaikan reviewer): `check` hijau,
+  `openapi` sinkron + typecheck, **681 `[OK]`, 0 `[FAILED]`**, e2e **24 passed**.
+  `./task dbtools validate` 14 migrasi OK.
+- **Test baru**: `tkyc` (17 unit: normalisasi, panjang per jenis, mask dua karakter, status/level,
+  aritmetika re-KYC termasuk 31 Jan → akhir Feb & kabisat), `itkyc` (ciphertext di kolom DB &
+  plaintext tidak ada, blind index deterministik, duplikat per jenis dokumen, riwayat risiko
+  append-only — UPDATE/DELETE ditolak trigger, rollback bersih), `itapi_kyc` (13 test: 401/403/404/
+  400/409/501, audit tanpa nomor, event `party.risk_changed`, *unmask* menulis audit + alasan
+  tersimpan, dokumen party lain → 404 **tanpa** audit, tanggal salah → 400 bukan 500, `null`
+  untuk tanggal kosong, tanpa KEK → 501 dan tidak ada baris setengah tersimpan).
+- **Review independen** (konteks bersih, 2 putaran). Putaran 1 **CHANGES-REQUIRED**: 1 MAJOR —
+  `issuedAt`/`expiresAt` tidak divalidasi sehingga tanggal salah jadi **500** (dibuktikan reviewer
+  langsung ke API); 8 MINOR. Diperbaiki: validasi tanggal + urutan sebelum transaksi → 400,
+  tanggal kosong → `null` (bukan `""`), daftar parameter dicocokkan case-insensitive, `doc_type`
+  dan `risk_level` **selalu disimpan huruf besar** (kunci unik tidak pecah bila operator merapikan
+  ejaan parameter), `default_risk_level` wajib anggota `risk_levels`, pesan 500 menyebut CIF/KYC,
+  kapasitas 50 baris dinyatakan di kontrak (bukan pemotongan senyap), komentar `maskNumber`
+  diperbaiki, dan test 404 kepemilikan dokumen + nol baris audit. Putaran 2: **APPROVE** —
+  tiga MINOR baru (dua di antaranya juga ditutup: `riskAssessedAt`/`nextReviewDue` kini `null`;
+  deskripsi urutan 50 dokumen disamakan dengan query).
+- **Catatan gate**: `./task ci` sempat merah karena klien TS belum di-generate ulang setelah
+  deskripsi kontrak berubah — gate `openapi` menangkapnya, `./task openapi-gen` dijalankan, lalu
+  hijau. Satu e2e (`password.spec.ts`) memakai `test.slow()` (3×) dengan komentar: alur itu ±8
+  derivasi PBKDF2 dan biner debug ±20x release (T-060/O-068); assertion tidak dilonggarkan.
+- **Sisa**: T-078 (nama resmi/tanggal lahir/alamat + PII lengkap); O-073 (reindex blind index saat
+  rotasi KEK); O-072 (idempotency POST master data); O-066 (seed produksi — 6 parameter baru ikut),
+  dan deploy Fase 1 menunggu keputusan pemilik.
+
+## T-072 — `ledger` COA + periode: fondasi jurnal double-entry (20 Okt 2026)
+
+- **Kode**: modul baru `ledger` — migrasi `0001` (`coa_account`, `period`) + `0002` COA awal
+  idempoten bertanda `NEEDS-COMPLIANCE-REVIEW`; domain `coa`/`period`; repo `ledger_repo`; handler
+  `handlers_ledger` (5 endpoint: daftar/buat COA, daftar/buka/tutup periode); parameter
+  `ledger.coa.code_pattern`; izin `ledger.coa.read|manage` + `ledger.period.read|manage`
+  (migrasi platform `0015`); kontrak OpenAPI + klien TS.
+- **Invarian**: sisi normal diturunkan dari tipe akun dan dijaga CHECK DB; periode inklusif dengan
+  `EXCLUDE` menolak tumpang tindih (persis, sebagian, satu hari) dan mengizinkan periode
+  bersambung; tutup periode wajib alasan + audit + event `period.closed` dalam satu transaksi;
+  balapan tutup periode → 409 tanpa audit kedua. Aksi institusi dijaga dua gerbang
+  (`authorizedAtBranch(..., "")`), grant yang dibatasi cabang → 403 `branch_not_allowed`.
+- **Gate**: `./task check` hijau; `tledger` 13 unit, `itledger` 8 integrasi, `itapi_ledger` 9 HTTP;
+  `./task ci` hijau — **711 `[OK]`**, e2e 24 passed; `./task openapi` sinkron.
+- **Review independen** putaran 1: **CHANGES-REQUIRED** — 2 MAJOR (grant bercabang bisa melakukan
+  aksi institusi; balapan tutup periode menghasilkan 200 palsu + audit ganda) + 8 MINOR. Semua
+  ditindaklanjuti (tabel di `docs/tasks/T-072.md`). Putaran 2: **APPROVE** tanpa BLOCKER/MAJOR;
+  enam MINOR baru ditutup (izin yang salah pada 403 buka periode, komentar kepala handler, klaim
+  `btree_gist` di dokumen task, semantik `matchLen` didokumentasikan, `resetTestSchemas` gagal keras
+  bila daftar migrasi kosong, audit/event duplikat diuji) dan dua dicatat: **O-076** (cabang
+  balapan tutup periode belum punya test khusus) + **O-077** (kebijakan pembalik lintas periode).
+- **Catatan jujur**: satu run CI sempat merah karena `itpool` (stress 8 thread) timeout 15 s di
+  bawah beban mesin — lolos standalone dan pada run berikutnya (**O-074**). `resetTestSchemas` di
+  `tools/dbtools/lib.nim` menggantikan `DROP SCHEMA` tulis-tangan di 10 harness, supaya menambah
+  modul baru tidak lagi membuat test lama gagal karena migrasi modul dijalankan ulang.
+- **Sisa**: **O-075** (akun kontra tidak bisa dimodelkan), T-073 (jurnal; wajib menegakkan
+  `postable`/`ACTIVE`), deploy Fase 1 (seed parameter) menunggu keputusan pemilik.
+
+## T-073 — `ledger` jurnal immutable + jurnal pembalik (20 Okt 2026)
+
+- **Kode**: migrasi `0003_ledger_journal.sql` (`journal`/`journal_line`, trigger immutability
+  UPDATE/DELETE/TRUNCATE, constraint trigger keseimbangan **deferred**, periode harus OPEN, akun
+  harus `postable` & `ACTIVE`, `idempotency_key` unik); domain `journal.nim`; repo `journal_repo`;
+  handler `handlers_journals` (daftar, detail, pembalik); izin `ledger.journal.read|reverse`
+  (migrasi platform `0016`); kontrak OpenAPI + klien TS.
+- **Prinsip**: tidak ada endpoint buat/edit/hapus — pembuatan dari posting rule/event (T-074),
+  koreksi lewat pembalik. Header + baris **wajib satu transaksi** (trigger deferred memeriksa saat
+  COMMIT). Pembalik idempoten via header `Idempotency-Key`: ulangan → 200 jurnal yang sama,
+  key sama untuk jurnal lain → 409, jurnal sudah dibalik → 409, pembalik tidak bisa dibalik.
+- **Gate**: `./task check` hijau; `tjournal` 11 (termasuk **property 1.000 jurnal acak seimbang** +
+  mutasi satu unit selalu ditolak), `itjournal` 12 (immutability, keseimbangan deferred, periode
+  CLOSED, akun non-postable/non-ACTIVE, idempotency, pembalik, 30 jurnal acak satu transaksi),
+  `itapi_journal` 8 HTTP (401/403/400/404/409/201/200, audit + event `journal.posted`, grant
+  bercabang); `./task ci` hijau — **742 `[OK]`**, e2e 24 passed.
+- **Keputusan**: **D-072** — jurnal tanpa partisi `business_date` pada Fase 1 (spec §9.3 acuan,
+  bukan final); ditinjau ulang sebelum go-live bervolume besar.
+- **Sisa**: review independen putaran 1; **O-077** (kebijakan pembalik lintas periode), T-074
+  (posting rule).
+
+## T-075 — `ledger` saldo turunan + trial balance (20 Okt 2026)
+
+- **Kode**: migrasi `0007` (`balance_snapshot` cache + `rebuild_balance_snapshot`), domain
+  `report.nim`, repo `report_repo.nim`, handler `handlers_reports` (`GET /ledger/trial-balance`),
+  kontrak + klien TS.
+- **Prinsip (D-074)**: TB dihitung **langsung dari `journal_line`**; `balance_snapshot` hanya cache
+  yang direkonstruksi eksplisit, tidak ada jalur tulis saldo selain jurnal.
+- **Gate**: `ittb` 4 integrasi (TB seimbang, sama dengan agregasi SQL, snapshot == TB, periode tidak
+  ada = error), `itapi_journal` +3 HTTP (kontrak & total seimbang, 400/404, 403); `./task ci` hijau.
+- **Sisa**: review independen; T-076 (product), T-077 (end-to-end Fase 1).
+
+## T-076 — `product` factory parametrik & effective-dated (20 Okt 2026)
+
+- **Kode**: modul `product` (`product`/`product_version`/`product_param_binding`, migrasi
+  `0001`–`0002`), EXCLUDE anti-tumpang-tindih dengan rentang **inklusif**, versi immutable
+  (hanya `effective_to` sekali), binding wajib minimal satu (deferred) dan immutable; domain
+  `product.nim`; repo `product_repo`; handler `handlers_products` (daftar/detail/buat/versi baru);
+  izin `product.catalog.read|manage` (platform `0017` + grant `0018`); kontrak + klien TS; katalog
+  parameter pilot `product.savings.*`.
+- **Prinsip**: atribut produk **hanya** dari binding parameter; kunci wajib `product.`,
+  terdaftar, tidak deprecated, tipe/enum/batas divalidasi tanpa float; versi baru menutup versi
+  terbuka sehari sebelum tanggal mulai; event `ProductPublished` + audit `product.publish` satu
+  transaksi.
+- **Gate**: `tproduct` 8 unit, `itproduct` 8 integrasi (binding deferred + sealed, overlap,
+  immutability, effective_to sekali, H+1 satu hari, versi berlaku), `itapi_product` 14 HTTP
+  (401/403/400/404/409/201/200, audit+event, grant bercabang, H+1, overflow/batas); migrasi DB
+  kosong diverifikasi pada cluster PG sementara (32 migrasi, `btree_gist` + EXCLUDE + `sealed`).
+- **Review**: r1 CHANGES-REQUIRED (btree_gist/H+1/sealed) → `4930514`; r2 CHANGES-REQUIRED
+  (batas `rate` 100× salah skala) → `534221b`; **r3 APPROVE** (tanpa BLOCKER/MAJOR).
+- **Keputusan**: **D-076** (bentuk tabel & semantik versi). Sisa: maker-checker produk (**O-085**),
+  atribut rate/day-count (**O-084**), cakupan migrasi DB kosong di `task ci` lokal (**O-088**; job CI `db-tests` sudah ada).
+
+## Tindak lanjut review T-074 & T-075 (20 Okt 2026)
+
+- T-074 putaran 2 **APPROVE**: lease reclaim terbukti; ditambahkan batas percobaan klaim, pemisahan
+  exit code worker (1 = DB transien → restart, 2 = konfigurasi), test "IN_FLIGHT segar tidak
+  direbut" dan "inbox hilang tetapi jurnal ada → DONE", catatan epoch xid/savepoint (**O-086**).
+- T-075 putaran 1 **APPROVE**: TB kini mengembalikan `Option` (periode hilang = 404, data rusak =
+  500), total TB diuji terhadap angka independen, batas periode inklusif diuji, snapshot kumulatif
+  didokumentasikan + diuji dengan jurnal bulan sebelumnya, 403 memuat `branch_not_allowed`, indeks
+  `(as_of)` ditambahkan, unit test `totalDebit`/`isBalanced`; saldo awal di luar TB dicatat
+  **O-083**.
+
+## T-077 — Fase 1 end-to-end + laporan milestone (20 Okt 2026)
+
+- **Alur** (`apps/api/tests/itapi_fase1.nim`, 7 test): login → party (CIF parameter) → produk
+  (versi 1 + binding) → event `DepositPosted` dikonsumsi worker → jurnal seimbang → TB cocok →
+  `ProductPublished` + `journal.posted` → pembalik menetralkan saldo per akun tanpa mengubah
+  jurnal asal.
+- **Laporan**: `docs/milestones/M1-report.md` (bukti, deviasi, open items, risiko, rekomendasi).
+- **Gate**: `./task ci` hijau pada `b3f3f98` — 816 `[OK]`, e2e 24, 671 detik (`/tmp/ci-b3f.log`); migrasi DB kosong diverifikasi pada cluster PG sementara.
+- **Status**: STOP menunggu pemilik (AGENTS §7).
+
+## Tooling — lane cepat pengembangan (D-077, 20 Okt 2026)
+
+- `./task check-fast` (tanpa `nim check` penuh) dan `./task verify [filter]` (`check-fast` +
+  openapi + build + test modul) untuk loop harian; `./task ci` tetap DoD.
+- `nim check` di-shard paralel (`KRAN_LINT_JOBS`, default 4): **52 detik** untuk 175 berkas
+  (sebelumnya `task check` saja >15 menit di bawah beban).
+- Filter test memakai nama berkas persis lebih dulu: `./task verify tproduct` = 14 detik, hanya
+  `tproduct`; filter lebar `./task test product` tetap menjalankan semua test modul.
+- `./task ci` penuh dengan lint paralel: **627 detik** pada `abc3ec8`, hijau, 816 `[OK]`, e2e 24
+  passed (log `/tmp/ci-head2.log`).

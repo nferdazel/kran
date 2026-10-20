@@ -460,6 +460,25 @@ proc reportStatus*(db: DbConn, root: string): seq[MigrationStatus] =
       s.checksumChanged = s.appliedSha256 != sha256Of(db, m.sql)
     result.add s
 
+proc resetTestSchemas*(db: DbConn, root: string) =
+  ## Menghapus **semua** schema modul yang punya migrasi (termasuk `platform` beserta ledger
+  ## migrasinya) supaya integration test bisa menerapkan seluruh migrasi dari nol.
+  ##
+  ## Hanya untuk DB dev/test: pemanggil adalah test yang sudah dijaga `KRAN_DATABASE_URL`
+  ## (pola yang sama dengan `DROP SCHEMA platform` yang dulu ditulis tangan di tiap test).
+  ## Tanpa ini, menambah modul baru membuat test lama gagal karena migrasi modul itu dijalankan
+  ## ulang tanpa ledger-nya sementara objeknya masih ada.
+  var schemaSeen: seq[string]
+  for m in migrationsOf(root):
+    if m.module in schemaSeen:
+      continue
+    schemaSeen.add m.module
+    # Nama modul berasal dari nama direktori repo (identifier terkontrol), bukan input pengguna.
+    db.exec(sql("DROP SCHEMA IF EXISTS " & m.module & " CASCADE"))
+  # `migrationsOf` mengembalikan kosong bila `root/modules` tidak ada (mis. cwd salah). Tanpa
+  # pemeriksaan ini test bisa berjalan di atas schema basi tanpa peringatan.
+  doAssert schemaSeen.len > 0, "resetTestSchemas: tidak ada migrasi ditemukan (root/cwd salah?)"
+
 proc applyMigrations*(db: DbConn, root: string, dryRun = false,
                       contract = false): MigrateReport =
   ## Terapkan migrasi yang belum tercatat, pada mode yang dipilih. Raise `MigrateError` bila ada

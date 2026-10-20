@@ -1846,3 +1846,404 @@ repo (`sync_units` no-op); berkas native hanya tersisa sebagai `*.disabled`/`*.r
 Rollback: harness 4/4 (tag `:prev`→`:local`, unit `.prev` pulih, tolak `:prev` hilang, tolak unit
 native, health gate gagal → exit 1); skrip lama pada keadaan `:prev` hilang **exit 0** tanpa
 memanggil `podman tag` (bukti sukses palsu).
+
+---
+
+## D-067 — CIF `party`: pola = parameter, algoritme check digit = kode (T-070)
+
+**Konteks.** Spec §10.5 menyebut "Format nomor (…), check digit" sebagai wajib database-driven,
+sementara T-070 harus menghasilkan nomor CIF. Menaruh **algoritme** check digit di parameter berarti
+menyimpan kode program di DB (tak bisa diuji tipe, rawan salah tulis, dan tidak ada jalur migrasi
+untuk mengubahnya kelak).
+
+**Keputusan.**
+1. Yang **data** (parameter `party.cif.format`, GLOBAL/INSTITUTION, tipe string): pola lengkap —
+   prefix/suffix literal, token `{seq:N}` (satu, wajib, lebar dari data), dan token `{check}` yang
+   hanya boleh di akhir. Rentang panjang pola juga dibatasi schema parameter (`minLength`/
+   `maxLength`), bukan kode.
+2. Yang **kode** (invarian matematis, bukan nilai bisnis): algoritme check digit **Luhn mod 10**
+   (`domain/cif.nim`), sama kelasnya dengan aritmetika `Money`/`Rate` di §1.3 — tidak punya
+   "nilai bisnis" yang bisa disetel operator.
+3. Batas 32 karakter hasil adalah **batas kolom** `party.party.cif`, dinyatakan sekali di kode
+   sebagai konstanta teknis (`# nomagic:ok`) dan sekali di CHECK migrasi; bukan ambang bisnis.
+4. Kegagalan konfigurasi (parameter hilang/salah, nomor urut melewati lebar `{seq:N}`) dijawab
+   **500** dengan pesan non-internal, bukan 400 — permintaannya sah, server yang belum siap
+   (spec §10.6, §13). Diimplementasi lewat tipe `CifConfigError`.
+
+**Konsekuensi.** Kalau kelak perlu algoritme check digit lain (mis. modulus 11) atau Luhn dengan
+varian, itu perubahan kode + ADR baru — **bukan** perubahan nilai parameter. Nomor CIF boleh
+berlubang (sequence, bukan counter tabel) karena transaksi batal tidak boleh memakai ulang nomor.
+
+**Bukti.** `tparty` (Luhn vektor klasik, format dari pola, token salah ditolak), `itparty`
+(sequence naik, CIF unik, audit+outbox satu transaksi), `itapi_party` (jalur HTTP + kontrak; CIF
+diverifikasi dengan fungsi produksi, bukan regex).
+
+---
+
+## D-069 — Dokumen identitas terenkripsi: ciphertext + blind index + bentuk tersamar (T-071)
+
+**Konteks.** Spec §18.2 mewajibkan *field-level encryption* untuk NIK/NPWP/no. HP/alamat dengan
+**blind index** untuk pencarian, dan *masking* sebagai tampilan default. T-071 adalah pemakaian
+pertama kolom PII yang nyata; format penyimpanannya diputuskan di sini supaya tidak berubah lagi
+setelah ada data.
+
+**Keputusan.**
+1. `party.identity_doc` menyimpan tiga turunan nomor, tidak pernah nomornya:
+   - `number_enc` = ciphertext field crypto (`kran:enc:v1:…`, AAD = nama tabel `identity_doc`);
+   - `number_bidx` = blind index HMAC-SHA256 ber-domain (hex 64) untuk pencarian & duplikat;
+   - `number_last2` = dua karakter terakhir untuk tampilan tersamar tanpa dekripsi.
+2. Nomor dinormalkan lebih dulu (huruf besar, hanya `A-Z 0-9`) sehingga blind index deterministik
+   dan spasi/tanda hubung tidak memecah identitas yang sama.
+3. Duplikat dicek antar party lewat `UNIQUE (doc_type, number_bidx)`: **satu nomor = satu baris per
+   jenis dokumen**. Jenis dokumen berbeda punya ruang nomor sendiri (KTP 16 digit vs NPWP 15 vs
+   paspor alfanumerik), jadi nomor yang sama di jenis berbeda **tidak** dianggap duplikat — batas
+   yang disengaja, diuji di `itkyc` dan disebut di `MODULE.md`. API menjawab 409; pengecekan di
+   handler hanya untuk pesan yang jelas, constraint DB tetap jaring terakhir terhadap balapan.
+4. Membuka nomor = *unmask*: endpoint terpisah, izin `party.identity_doc.read` (bukan izin baca
+   biasa), **alasan wajib**, dan audit `party.identity.unmask` tanpa nomor. Daftar dokumen/profil
+   KYC tidak pernah memuat nomor.
+5. Tanpa KEK (`KRAN_KEK_FILE` kosong) endpoint yang butuh enkripsi/dekripsi menjawab **501**
+   (fail-closed, pola MFA T-046) — bukan menyimpan plaintext, bukan 500 yang menyesatkan.
+6. CHECK `number_enc LIKE 'kran:enc:v1:%'` dan `number_bidx ~ '^[0-9a-f]{64}$'` membuat
+   penyimpanan bentuk salah **gagal di DB**, bukan hanya di kode.
+
+**Konsekuensi. Rotasi KEK wajib mendahului reindex blind index.** `number_bidx` diturunkan dari
+kunci KEK **aktif**, jadi setelah rotasi baris lama tidak lagi cocok dengan indeks yang dihitung
+kunci baru: deteksi duplikat gagal-terbuka (409 berhenti muncul, dan constraint unik pun tidak
+menolong karena nilainya sudah berbeda). Sampai ada jalur reindex, langkah rotasi harus mencakup
+"hitung ulang `number_bidx` dengan kunci baru" — dicatat sebagai **O-073**.
+
+CHECK bentuk ciphertext mengikat versi format: kenaikan versi crypto (v2) butuh
+migrasi expand baru yang memperbarui CHECK — disengaja, supaya perubahan format tidak lewat tanpa
+keputusan. `number_last2` adalah bentuk tersamar, bukan rahasia: dua karakter terakhir bisa
+memperkecil ruang tebak bila DB bocor, dan itu dinilai sebanding dengan manfaatnya (UI bisa
+menampilkan petunjuk tanpa membuka nomor). Nama resmi/tanggal lahir/alamat **belum** ada di sini →
+task turunan **T-078** (mereka butuh kolom terenkripsi sendiri).
+
+**Bukti.** `tkyc` (normalisasi/validasi/aritmetika re-KYC), `itkyc` (ciphertext berawalan
+`kran:enc:v1`, plaintext tidak ada di kolom, blind index deterministik, duplikat ditolak DB,
+riwayat risiko append-only, rollback bersih), `itapi_kyc` (jalur HTTP penuh: 401/403/404/400/409,
+audit tanpa nomor, event `party.risk_changed`, 501 tanpa KEK, nomor tidak muncul di badan respons).
+
+**HUMAN-REVIEW-REQUIRED**: area kriptografi/PII (AGENTS.md §8) — perlu review manusia sebelum data
+nyata masuk.
+
+---
+
+## D-070 — COA & periode T-072: kode = parameter, sisi normal = kode, seed COA lewat migrasi
+
+**Konteks.** T-072 adalah fondasi jurnal double-entry. Tiga hal harus diputuskan sebelum ada data:
+(1) mana yang parameter dan mana yang invarian, (2) bagaimana periode dicegah tumpang tindih,
+(3) bagaimana COA awal sampai ke produksi tanpa langkah manual.
+
+**Keputusan.**
+1. **Format kode akun = parameter** `ledger.coa.code_pattern` (regex, GLOBAL/INSTITUTION), dicocokkan
+   **seluruh string**. Spec §10.5 menyebut format kode sebagai database-driven; pola regex dipilih
+   (bukan parser token sendiri) karena cukup satu nilai, bisa diuji, dan tidak menambah dependensi
+   (`std/re`). Pola rusak = **500** (konfigurasi), kode tidak cocok = **400** (permintaan).
+2. **Sisi normal = kode**, bukan parameter: ASSET/EXPENSE = DEBIT, LIABILITY/EQUITY/REVENUE =
+   CREDIT. Ini invarian akuntansi (kelas yang sama dengan aritmetika `Money`), disimpan eksplisit
+   agar laporan tidak menghitung ulang, dan dijaga CHECK DB supaya tidak bisa menyimpang.
+3. **Periode = rentang inklusif** `[starts_on, ends_on]`, tumpang tindih ditolak
+   `EXCLUDE USING gist (daterange(...,'[]') WITH &&)`. Constraint DB, bukan pemeriksaan aplikasi:
+   dua permintaan bersamaan tidak bisa lolos. Urutan penutupan (periode lebih awal harus tutup
+   dulu) **tidak** ditegakkan di T-072 — itu orkestrasi `daycloser` (Fase 5).
+4. **COA awal lewat migrasi idempoten** (`0002_ledger_coa_base.sql`), bukan `packs/*/seed/`:
+   direktori seed pack hanya diterapkan `dbtools seed --dev`, sehingga produksi tidak akan pernah
+   mendapatkannya (O-066). Isinya **contoh struktur** bertanda `NEEDS-COMPLIANCE-REVIEW`
+   (REG-011 `V!`) — bukan klaim patuh SAK/PSAK.
+5. Semua endpoint COA/periode bersifat **institusi** (tanpa cabang), berbeda dari `party`. GL
+   dimiliki institusi pada Fase 1 (spec §9).
+
+**Konsekuensi.** Mengubah format kode COA hanya berlaku untuk akun **baru** (tidak ada endpoint
+update; koreksi = akun baru + nonaktifkan yang lama). Mengubah huruf/ejaan tidak relevan (pola
+regex), tetapi mengganti pola yang lebih ketat membuat kode lama “tidak sah” bila kelak divalidasi
+ulang — karena itu kode lama tidak divalidasi ulang, hanya kode baru.
+
+**Konsekuensi lanjutan (review putaran 1).**
+- Aksi COA/periode adalah aksi **institusi**, jadi dijaga **dua gerbang**: `requirePermission`
+  (izin dipegang di cabang mana pun) + `authorizedAtBranch(db, principal, "", permission)` di dalam
+  transaksi. Grant yang dibatasi cabang → **403 `branch_not_allowed`** (D-062).
+- Penutupan periode bersamaan: `UPDATE` yang mengenai 0 baris diperlakukan **409**, dan audit/event
+  **tidak** ditulis. Status `OPEN` di `SELECT` sebelumnya bukan pengunci; pemeriksaan hasil
+  `UPDATE`-lah yang menutup balapan.
+- **Akun kontra belum bisa dimodelkan**: CHECK `normal_side` mewajibkan ASSET/EXPENSE = DEBIT,
+  sehingga akun seperti CKPN/akumulasi penyusutan (saldo normal kredit pada kelompok aset) tidak
+  punya tempat. Dicatat **O-075**; keputusan penanda `contra` menunggu accounting/compliance owner
+  sebelum T-075/T-076.
+- `postable = false` masih **konvensi** sampai T-073: belum ada jurnal, jadi belum ada yang menolak
+  posting ke akun header/non-`ACTIVE`. T-073 wajib menegakkannya di DB.
+- Daftar COA/periode dibatasi **200 baris** (batas ukuran respons, bukan aturan bisnis); paginasi
+  menyusul bila COA tumbuh melewati itu.
+
+**Bukti.** `tledger` (13 unit: tipe/sisi normal, pencocokan pola penuh termasuk pola tanpa anchor
+dan pola cocok-kosong, tanggal 31 Feb ditolak, rentang terbalik), `itledger` (seed 15 akun, kode
+unik, CHECK sisi normal, EXCLUDE: tumpang tindih sebagian/persis/satu hari vs periode bersambung,
+tutup periode + penutupan kedua = hasil kosong, rollback), `itapi_ledger` (401/403/400/404/409/500
+lewat HTTP, filter, audit create/open/close, event `period.closed`, pola rusak → 500, grant
+bercabang → 403). `./task ci` hijau — 709 `[OK]`, e2e 24 passed.
+
+---
+
+## D-071 — Izin tetap pemilik: migrasi, push, dan kerja paralel (20 Okt 2026)
+
+**Konteks.** Pemilik memberi tiga izin tetap supaya alur kerja tidak berhenti menunggu konfirmasi
+untuk hal yang sudah jelas.
+
+**Keputusan.**
+1. **Eksekusi migrasi selalu diizinkan** — `./task dbtools migrate|status|validate`, reset schema
+   DB dev, dan penerapan migrasi ke DB dev/prod tidak perlu izin per kejadian. Tetap berlaku:
+   migrasi expand-only, perubahan destruktif butuh `-- dbtools:destructive <alasan>` + keputusan
+   terpisah, dan tidak menyentuh server di luar repo tanpa task eksplisit (AGENTS §3).
+2. **Push diizinkan, tetapi dibatch** — jangan push terlalu sering karena deploy ke `main`
+   membangun image container dan menumpuk tag (T-069 sudah memangkas 12-hex lama, tetapi tetap
+   lebih murah tidak membangun). Push ke branch fitur tidak membangun image; merge ke `main` tetap
+   keputusan manusia, dan push ke `main` hanya setelah gate hijau (D-044), sebaiknya digabung
+   dengan perubahan lain yang siap.
+3. **Kerja paralel antartask yang tidak tumpang tindih** — task lain boleh dikerjakan bersamaan
+   dengan loop yang sama: implementasi → audit/review independen → perbaiki → ulangi sampai
+   APPROVE. Task yang berbagi berkas panas (`routes.nim`, kontrak OpenAPI, modul yang sama) tetap
+   berurutan.
+
+**Konsekuensi.** Review independen tetap wajib sebelum `DONE` (AGENTS §4.5–4.7) dengan konteks
+bersih; yang berubah hanya izin operasional (migrasi/push) dan pengizinan paralelisasi.
+
+**Ditegaskan ulang (20 Okt 2026).** Pemilik meminta paralelisasi dijalankan agresif untuk pekerjaan
+yang **tidak berbagi berkas**: jangan menunggu review task sebelumnya selesai untuk memulai task
+berikutnya. Review tetap berjalan di commit yang sudah jadi; perbaikan temuan masuk commit susulan.
+Yang tetap berurutan hanya: task yang mengedit berkas sama (`routes.nim`, kontrak OpenAPI, modul
+yang sama), dan langkah yang butuh verdict review sebelum menandai `DONE`.
+
+---
+
+## D-072 — Jurnal T-073 tanpa partisi pada Fase 1 (spec §9.3 = acuan, bukan final)
+
+**Konteks.** Spec §9.3 memberi contoh DDL `ledger.journal … PARTITION BY RANGE (business_date)`.
+T-073 harus memilih: ikuti partisi sejak awal, atau tunda.
+
+**Keputusan.** Fase 1 memakai tabel **tanpa partisi**. Alasan:
+1. Volume pilot (1 koperasi, <5.000 anggota) tidak membutuhkan partisi; biaya operasionalnya
+   (partisi default, pemeliharaan bulanan, `ATTACH`/`DETACH` untuk arsip) lebih besar dari manfaat.
+2. FK `journal_line → journal` dan **constraint trigger deferred** (keseimbangan per jurnal) jauh
+   lebih sederhana tanpa partisi; kombinasi partisi + constraint trigger + FK menambah risiko yang
+   tidak bisa dibuktikan dengan test di T-073.
+3. Spec sendiri menyebut blok DDL itu *acuan, bukan final*.
+
+**Konsekuensi.** Sebelum go-live bervolume besar (multi-cabang), partisi/arsip per `business_date`
+harus ditinjau ulang — konversi ke tabel terpartisi adalah migrasi tersendiri (expand/contract,
+bukan edit migrasi lama). Indeks `journal_business_date_idx` sudah mendukung query per tanggal.
+Retensi/arsip mengikuti parameter retensi platform (belum aktif di Fase 1).
+
+**Bukti.** `itledger`/`itjournal`/`itapi_journal` menguji immutability, keseimbangan deferred,
+periode OPEN, akun postable/ACTIVE, idempotency, dan pembalik pada tabel tanpa partisi.
+
+---
+
+## D-073 — Posting rule sebagai data + konsumen outbox `ledger` (T-074)
+
+**Konteks.** Modul bisnis tidak menulis jurnal; mereka memancarkan accounting event. T-074 harus
+memetakan event → jurnal tanpa menaruh mapping di kode, dan tanpa membuat jurnal ganda saat event
+dikirim ulang.
+
+**Keputusan.**
+1. **Mapping = data** di `ledger.posting_rule` (+ `posting_rule_line`). Rule awal lewat migrasi
+   idempoten bertanda `NEEDS-COMPLIANCE-REVIEW` (REG-011 `V!`), sama alasannya dengan COA (D-070):
+   seed pack hanya untuk `--dev` dan produksi tidak akan menerimanya.
+2. **Pemilihan rule**: `event_type` sama; `product_code` (bila diisi) sama dengan `payload.product`;
+   `conditions` harus **subset** payload (containment JSON). Rule paling spesifik (kondisi
+   terbanyak) menang; seri → `priority` terkecil; masih seri → **ambigu = gagal terlihat**
+   (`DEAD` + `last_error`), bukan dipilih diam-diam.
+3. **Event akuntansi ditandai header `accounting: true`** di outbox. Event tanpa header itu
+   diabaikan konsumen (`DONE` tanpa jurnal). Event akuntansi **tanpa rule** = `markFailed` →
+   `DEAD` setelah `ledger.posting.max_attempts`; jurnal kosong tidak pernah dibuat.
+4. **Idempotensi berlapis**: `platform.inbox (consumer, event_id)` + `journal.idempotency_key =
+   "outbox:<eventId>"`. Pengiriman ulang (redelivery/redrive setelah crash) tidak menambah jurnal.
+5. **Template Fase 1: tepat satu DEBIT + satu CREDIT**, nominal = `payload.amount` (desimal 4),
+   `branchId` wajib di payload. Split multi-baris/akad menunggu T-076.
+6. **Worker** (`role=worker`) kini berjalan sebagai loop konsumen (sebelumnya placeholder `quit 3`,
+   O-013). Batas operasional dari parameter: `ledger.posting.batch_size`, `max_attempts`,
+   `retry_backoff_seconds`, `poll_interval_ms` — fail-fast bila belum tersemai.
+7. Satu transaksi **per event**: klaim batch di luar, lalu `claimInbox`+jurnal+`markDone` dalam satu
+   transaksi; kegagalan → rollback event itu dan `markFailed` di koneksi terpisah sehingga event
+   lain dalam batch tetap diproses.
+
+**Konsekuensi.** Belum ada API/UI pengelolaan rule — perubahan mapping masih lewat migrasi
+(**O-080**). Worker yang dahulu keluar dengan status 3 sekarang long-running; unit container tetap
+sama, dan `RestartPreventExitStatus=3` tidak lagi relevan untuk worker (tidak berbahaya). Bila
+akun tujuan rule dinonaktifkan, event terkait gagal terlihat (DEAD) sampai rule diperbaiki.
+
+**Konsekuensi lanjutan (review putaran 1).**
+- Klaim batch memakai **lease** (`ledger.posting.lease_seconds`, default 300): event `IN_FLIGHT`
+  yang lebih lama dari lease boleh direbut worker lain, sehingga worker yang mati tidak memarkir
+  event selamanya. Identitas worker = `kran-worker:<pid>`.
+- Konsumen **memancarkan `journal.posted`** dalam transaksi yang sama (tanpa header `accounting`,
+  jadi tidak loop) — sebelumnya hanya endpoint pembalik yang memancarkannya.
+- Header `accounting` yang ada tetapi **bukan boolean** = gagal terlihat (`DEAD`), bukan diabaikan.
+- Baris jurnal hanya boleh masuk dalam **transaksi yang sama** dengan header (migrasi `0008`,
+  dibandingkan lewat `xmin`); mencegah nominal jurnal final "ditambah" lewat INSERT berpasangan.
+- **MINOR yang ditunda**: rule belum punya API/UI (O-080); worker belum masuk readiness (status
+  `PENDING`/`DEAD`/`IN_FLIGHT`) dan belum di-enable saat boot (O-081).
+
+**Bukti.** `tposting` (12 unit: containment, spesifisitas/priority/produk, ambigu, template,
+nominal nol/negatif), `itposting` (8 integrasi: satu jurnal + `journal.posted`, redelivery tidak
+menambah, non-akuntansi diabaikan, tanpa rule → PENDING lalu DEAD, periode tertutup, lease reclaim,
+header salah tipe).
+
+---
+
+## D-074 — Trial balance dihitung dari jurnal; `balance_snapshot` hanya cache (T-075)
+
+**Konteks.** Spec §9.1(4) menyebut `balance_snapshot`; §9 meminta saldo sebagai turunan yang bisa
+direkonstruksi. Laporan tidak boleh bergantung pada cache yang basi.
+
+**Keputusan.**
+1. **Trial balance dihitung langsung dari `journal_line`** (join `journal` + `coa_account`) untuk
+   rentang periode. Tidak ada jalur baca laporan yang memakai cache.
+2. `ledger.balance_snapshot` disediakan sebagai **cache** per `(account_code, as_of)` dan hanya
+   diisi oleh fungsi `ledger.rebuild_balance_snapshot(as_of)` yang menghitung ulang dari jurnal
+   (DELETE + INSERT dalam satu pernyataan fungsi). Tidak ada API/consumer yang menulis saldo.
+3. Akun tanpa pergerakan tidak muncul di TB; urutan menurut kode akun.
+4. Izin: `ledger.journal.read` (tingkat institusi, dua gerbang seperti T-072/T-073). Tidak menambah
+   izin baru untuk laporan sampai ada kebutuhan pemisahan auditor.
+
+**Konsekuensi.** Biaya query TB tumbuh linear terhadap volume jurnal periode; bila itu menjadi
+masalah, laporan boleh membaca `balance_snapshot` **setelah** rekonsiliasi day-close (Fase 5) —
+bukan sebelum. Rekonstruksi cache adalah langkah eksplisit, bukan efek samping posting.
+
+**Tambahan (review putaran 1).** `balance_snapshot` bersifat **kumulatif** sampai `as_of`, sedangkan
+TB adalah **pergerakan periode**; keduanya hanya sama bila tidak ada periode sebelumnya — diuji
+dengan jurnal bulan sebelumnya. Akun yang punya saldo awal tetapi tidak bergerak di periode ini
+**tidak muncul** di TB (laporan saldo awal/neraca menunggu task laporan; **O-083**). "Tidak ada jalur
+tulis saldo selain jurnal" dipertegas: posting jurnal tidak menulis cache sama sekali; satu-satunya
+penulis cache adalah `rebuild_balance_snapshot`.
+
+**Bukti.** `ittb` (TB seimbang dengan total independen, sama dengan agregasi SQL, snapshot kumulatif
+vs TB periode, periode tidak ada = `none`) + `itapi_journal` (kontrak/total, batas periode inklusif,
+400/404, 403).
+
+---
+
+## D-075 — Arah visual UI: "buku besar, kulit hangat" (20 Okt 2026)
+
+**Konteks.** Fase 0 hanya punya shell (login, parameter, audit) dengan token netral `system-ui`.
+Fase 2 akan membangun layar teller; tanpa arah tertulis, UI berisiko jadi template SaaS generik yang
+tidak cocok untuk kerja 8 jam. Pemilik meminta UI "keren dan tidak AI-ish", dengan brainstorming SME.
+
+**Keputusan.** `DESIGN.md` menjadi acuan wajib untuk layar baru:
+
+1. **Arah**: basis data "buku besar" (near-monokrom, hairline, angka tabular, bidang datar) dengan
+   kulit hangat (kertas tulang, hijau tua) hanya di header/navigasi/identitas — bukan di angka.
+2. **Tipografi**: IBM Plex Sans + Plex Mono, self-host (OFL), angka tabular wajib; `system-ui` hanya
+   fallback.
+3. **Palet target** dengan kontras terverifikasi (teks ≥ 6.47:1; border kontrol ≥ 3.67:1) berlaku
+   untuk migrasi token, **bukan** perubahan token produksi sekarang.
+4. **Density & kontrol**: baris tabel 34 px; kontrol 32 px; aksi primer 44 px; target 1366×768 zoom
+   125%; satu lapisan modal.
+5. **Angka**: rata kanan, tabular, format `id-ID`, debit/kredit lewat posisi + label, bukan warna.
+6. **Larangan**: gradien biru-ungu, shadow di semua kartu, pill, kartu statistik tanpa sumber,
+   emoji/sparkle, hero/tur, count-up, skeleton palsu (daftar lengkap di `DESIGN.md` §11).
+
+**Batas.** Fase 1 (T-070…T-077) tidak menyentuh UI. Migrasi token, komponen tabel/angka, font, dan
+matriks kontras penuh = **T-079** (persiapan Fase 2), tidak dimulai sebelum T-077 selesai dan pemilik
+meratifikasi arah ini. Bila pemilik memveto, cukup ganti §1–§3 `DESIGN.md`; aturan operasional (§4–§12)
+tetap berlaku.
+
+**Konsekuensi.** Menambah token/komponen UI tanpa memperbarui matriks kontras dan `DESIGN.md` =
+temuan review. Font baru adalah aset self-host (bukan dependency runtime); lisensi OFL diverifikasi
+saat T-079.
+
+---
+
+## D-076 — Bentuk tabel `product` & semantik versi (T-076)
+
+**Konteks.** Spec hanya menyebut nama tabel (`product`, `product_version`,
+`product_param_binding`) dan aturan effective-dated (§9.1(5)); tidak ada daftar kolom. T-076 harus
+menurunkan bentuknya sendiri.
+
+**Keputusan.**
+1. **Identitas stabil di `product`** (`code` unik, `name`, `product_type`), hanya nama yang boleh
+   diubah. Atribut bisnis tidak ada di sini.
+2. **Versi di `product_version`**: `version_no` unik per produk, `effective_from`/`effective_to`
+   dengan rentang **inklusif** `[from, to]` — konsisten dengan `ledger.period` (T-072) — dan
+   `EXCLUDE USING gist (product_id WITH =, daterange(...) WITH &&)` menolak tumpang tindih, termasuk
+   versi terbuka (`to` NULL).
+3. **Versi immutable**: hanya `effective_to` yang boleh diisi, sekali (trigger). Versi baru menutup
+   versi terbuka sehari sebelum tanggal mulai. Koreksi = versi baru, bukan edit.
+4. **Atribut = binding parameter**: `product_param_binding(version_id, param_key, value jsonb)`,
+   kunci wajib berawalan `product.`, minimal satu binding per versi (deferred), binding immutable.
+   Binding adalah **snapshot penuh atribut versi itu**: atribut yang tidak disertakan di versi baru
+   berarti tidak berlaku pada versi tersebut (bukan mewarisi versi sebelumnya).
+   Tipe/enum/batas divalidasi composition root terhadap `platform.param_definition`; kunci tak
+   terdaftar = 400.
+5. **Izin** `product.catalog.read|manage` (migrasi platform `0017` + grant `0018`), aksi institusi
+   dua gerbang.
+6. **Event** `ProductPublished` per versi (payload productId/code/productType/versionNo/effectiveFrom),
+   dedup per `versionId`.
+
+**Tambahan (review putaran 1, 20 Okt 2026).** Empat perbaikan wajib:
+1. `CREATE EXTENSION IF NOT EXISTS btree_gist` **di dalam `0002`** — urutan migrasi global menjalankan
+   `product/0002` sebelum `platform/0004`, jadi DB kosong gagal tanpa ini (diverifikasi pada cluster
+   PG kosong: 32 migrasi diterapkan, `btree_gist` + EXCLUDE ada).
+2. CHECK jendela menjadi `effective_to >= effective_from` supaya versi baru H+1 (versi lama menjadi
+   satu hari) sah; sebelumnya menghasilkan 500.
+3. Binding **di-seal**: constraint trigger deferred memverifikasi minimal satu binding lalu
+   `UPDATE product_version SET sealed = true`; trigger `BEFORE INSERT` menolak binding baru ke versi
+   terbit. Guard versi hanya mengizinkan transisi `sealed` false→true.
+4. Penutupan versi memakai `version_id` yang sudah dibaca (`closeVersion`), bukan "apa pun yang
+   terbuka", sehingga balapan dua permintaan berakhir 409, bukan menutup versi lain.
+Parser desimal memakai kernel (`moneyFromString`, `rateFromPercentString`) — checked, tanpa float;
+batas schema non-integer ditolak fail-closed.
+
+**Konsekuensi.** Belum ada maker-checker (**O-085**), belum ada status DRAFT/RETIRED, dan atribut
+rate/day-count belum dimodelkan (**O-084**) karena butuh keputusan akad/produk. Perubahan bentuk
+tabel setelah deploy harus lewat migrasi expand/contract, bukan edit migrasi lama.
+
+---
+
+## D-077 — Lane cepat untuk loop pengembangan (tanpa melemahkan gate)
+
+**Konteks.** `./task ci` memakan waktu terutama karena `nim check` dijalankan **sekuensial** untuk
+174 berkas; e2e Playwright hanya ~27 detik dan suite integrasi per modul hitungan detik. Loop
+harian jadi lambat, sementara gate akhir task tetap harus utuh (AGENTS §6).
+
+**Keputusan (disetujui pemilik, 20 Okt 2026).**
+1. **`./task verify [filter]`** = `check-fast` + OpenAPI (sinkron + lint + typecheck klien) +
+   `build` + (bila filter diberikan) test modul itu. Dipakai selama implementasi.
+2. **`./task check-fast`** = format + archcheck + lint-nomagic + paramgen `--check` + i18n +
+   shellcheck — **tanpa** `nim check` penuh.
+3. **`./task check`** tetap seperti sekarang (termasuk `nim check` penuh) dan tetap menjadi bagian
+   `./task ci`. **DoD tidak berubah**: `./task ci` hijau sebelum task ditandai `DONE`.
+4. **`nim check` di-shard paralel** (`xargs -P`, default 4, bisa diatur `KRAN_LINT_JOBS`) dengan log
+   per berkas; kegagalan tetap menampilkan log berkas yang gagal dan exit non-zero. Ini hanya
+   mengubah cara menjalankan, bukan cakupan gate.
+5. **Filter test** memakai kecocokan **nama berkas persis** lebih dulu (`tproduct` tidak lagi ikut
+   menjalankan `itproduct`); bila tidak ada yang persis, baru jatuh ke substring seperti sebelumnya.
+
+**Konsekuensi.** Loop harian tidak lagi menunggu lint penuh; regresi lint tetap tertangkap di
+`task ci` sebelum `DONE`. `KRAN_LINT_JOBS` dinaikkan/diturunkan sesuai memori mesin (tiap `nim
+check` memuat graf impor; 4 dipilih agar tidak menekan mesin 8–10 core).
+
+---
+
+## D-090 — Otorisasi pemilik untuk langkah produksi Fase 1 (override AGENTS §3)
+
+**Konteks.** AGENTS §3 melarang agen merge ke `main` (push = deploy) dan menyentuh server/secret.
+Pemilik secara eksplisit memilih "saya eksekusi (override §3)" pada 20 Okt 2026 untuk: merge
+`feat/fase1-party` → `main`, seed parameter base di DB produksi, enable unit worker, dan
+membuat/memasang KEK produksi.
+
+**Keputusan.** Override berlaku **hanya** untuk rangkaian go-live Fase 1 ini, dengan pagar:
+1. Tidak ada secret (nilai KEK, URL DB, password) masuk repo, log, atau pesan.
+2. Sebelum merge: preflight read-only dicatat (DB `kran`, user `kran_app`, 13 migrasi, `btree_gist`
+   + `pgcrypto` ada, `CREATE` privilege ada, kran-api sehat, SHA produksi `69dfca3`).
+3. Deploy tetap lewat pipeline resmi (`push` → webhook → build → health gate `/readyz` →
+   auto-rollback); tidak ada langkah manual yang melewati gate.
+4. Seed parameter hanya berkas generated (`param_definitions` DO UPDATE metadata, `param_values`
+   DO NOTHING) — tidak menimpa nilai yang sudah diubah pemilik; nilai base bertanda
+   `NEEDS-COMPLIANCE-REVIEW`.
+5. KEK dibuat di server, mode 0600, di luar repo/image; `sops`/`age` menyusul (D-046 butir 12).
+6. Setiap langkah + hasilnya dicatat di `docs/PROGRESS.md`; kegagalan → rollback `:prev`, bukan
+   memaksa ulang.
+
+**Konsekuensi.** Tanggung jawab operasional atas deploy ini ada pada pemilik yang memberi override;
+catatan ini yang membuat tindakan agen dapat diaudit. Aturan §3 tetap berlaku untuk task lain.

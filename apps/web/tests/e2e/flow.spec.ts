@@ -119,21 +119,32 @@ async function waitForRow(
   return row;
 }
 
-/** Daftar nilai aktif dalam urutan tampil; baris pertama yang bertipe angka jadi sasaran uji. */
+/**
+ * Baris aktif pertama yang nilainya angka → sasaran uji, lalu arahkan form pengajuan ke baris itu.
+ *
+ * Daftar aktif juga memuat parameter **teks** (mis. `party.cif.format` yang bernilai pola), dan
+ * urutan tampil tidak dijamin stabil saat parameter baru masuk. Jadi sasaran dipilih dari nilainya,
+ * bukan dari baris/urutan pertama.
+ */
 async function pickTarget(page: Page): Promise<{ key: string; current: number }> {
-  const select = field(page, TEXT.submitKey);
-  const key = await select.inputValue();
-
-  const rows = region(page, TEXT.activeHeading).locator("tbody tr", { hasText: key });
+  const rows = region(page, TEXT.activeHeading).locator("tbody tr");
   const count = await rows.count();
-  if (count === 0) throw new Error(`tidak ada nilai aktif untuk ${key}`);
+  if (count === 0) throw new Error("tidak ada nilai parameter aktif");
 
-  const raw = (await rows.first().locator("td").nth(0).innerText()).trim();
-  const current = Number(raw);
-  if (!Number.isFinite(current)) {
-    throw new Error(`nilai aktif ${key} tidak bertipe angka ("${raw}") — spec butuh parameter angka`);
+  for (let index = 0; index < count; index += 1) {
+    const row = rows.nth(index);
+    const raw = (await row.locator("td").nth(0).innerText()).trim();
+    const current = Number(raw);
+    if (!Number.isFinite(current)) continue;
+
+    const key = (await row.locator("th").first().innerText()).trim();
+    const select = field(page, TEXT.submitKey);
+    await select.selectOption(key);
+    await expect(select).toHaveValue(key);
+    return { key, current };
   }
-  return { key, current };
+
+  throw new Error("tidak ada parameter aktif bernilai angka untuk diuji");
 }
 
 /**

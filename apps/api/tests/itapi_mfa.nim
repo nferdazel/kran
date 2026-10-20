@@ -69,7 +69,7 @@ let dbPool = newDbPool(dbConfigFromEnv(envT))
 # --- penyiapan DB: skema bersih + seed pack + seed pengguna dev -------------------------------
 block:
   let db = dbPool.acquire()
-  execScript(db, "DROP SCHEMA IF EXISTS platform CASCADE")
+  resetTestSchemas(db, ".")
   discard applyMigrations(db, ".")
   execScript(db, readFile("packs/base/generated/param_definitions.sql"))
   execScript(db, readFile("packs/base/generated/param_values.sql"))

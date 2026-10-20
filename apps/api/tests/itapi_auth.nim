@@ -62,7 +62,7 @@ let dbPool = newDbPool(dbConfigFromEnv(envT))
 # --- penyiapan DB: skema bersih + seed pack + seed pengguna dev -------------------------------
 block:
   let db = dbPool.acquire()
-  execScript(db, "DROP SCHEMA IF EXISTS platform CASCADE")
+  resetTestSchemas(db, ".")
   discard applyMigrations(db, ".")
   execScript(db, readFile("packs/base/generated/param_definitions.sql"))
   execScript(db, readFile("packs/base/generated/param_values.sql"))
@@ -143,7 +143,10 @@ type
     setCookie: string
 
 proc call(verb, path, payload, token: string): Reply =
-  let client = newHttpClient(timeout = 15000)
+  # Endpoint kata sandi menjalankan PBKDF2 (verifikasi + riwayat N) dan biner debug ±20x lebih
+  # lambat dari release (T-060/O-068: ganti kata sandi saja ≈ 13,6 s). Batas 15 s membuat test
+  # gagal karena waktu, bukan perilaku → 60 s; assertion tidak dilonggarkan.
+  let client = newHttpClient(timeout = 60_000)
   defer: client.close()
   if token.len > 0:
     client.headers["Cookie"] = CookieName & "=" & token

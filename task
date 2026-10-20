@@ -3,6 +3,8 @@
 # KRAN - satu pintu perintah (AGENTS.md 2).
 #
 #   ./task check   format + lint + archcheck + lint-nomagic + paramgen --check + i18n check
+#   ./task check-fast  seperti check tanpa `nim check` penuh (loop pengembangan, D-077)
+#   ./task verify [filter]  check-fast + openapi + build + test modul terpilih (D-077)
 #   ./task test    unit + property + integration (Postgres) + contract
 #   ./task e2e     web: kontras token + svelte-check + Playwright (axe 2 tema x 2 locale, keyboard,
 #                   alur login/maker-checker/realtime bila KRAN_DATABASE_URL tersedia)
@@ -100,17 +102,34 @@ cmd_fmt_check() {
 }
 
 cmd_lint() {
-  log "lint (nim check)"
-  n=0
-  for f in $(nim_files); do
-    n=$((n + 1))
-    flags=$NIMFLAGS
-    case "$f" in */tests/*) flags=$TESTFLAGS ;; esac
-    nim check $flags "$f" >"$BUILD/check.log" 2>&1 || {
-      cat "$BUILD/check.log" >&2
-      die "nim check gagal: $f"
-    }
-  done
+  jobs="${KRAN_LINT_JOBS:-4}"
+  log "lint (nim check, paralel $jobs)"
+  files=$(nim_files)
+  n=$(printf '%s\n' "$files" | wc -l | tr -d ' ')
+  # Tiap berkas di `nim check` terpisah, log per berkas, hanya kegagalan yang dicetak.
+  # Ini hanya mengubah cara menjalankan; cakupan gate tetap seluruh berkas (D-077).
+  export NIMFLAGS TESTFLAGS
+  LINTDIR=$BUILD
+  export LINTDIR
+  rm -f "$BUILD/lint-failures.txt"
+  printf '%s\n' "$files" | xargs -P "$jobs" -I{} sh -c '
+    f="$1"
+    flags="$NIMFLAGS"
+    case "$f" in */tests/*) flags="$TESTFLAGS" ;; esac
+    out="$LINTDIR/check.$(printf "%s" "$f" | tr "/ " "__").log"
+    if nim check $flags "$f" >"$out" 2>&1; then
+      rm -f "$out"
+    else
+      printf "%s\n" "$f"
+    fi
+  ' _ {} >"$BUILD/lint-failures.txt" || true
+  if [ -s "$BUILD/lint-failures.txt" ]; then
+    while IFS= read -r f; do
+      printf -- "--- nim check gagal: %s\n" "$f" >&2
+      cat "$BUILD/check.$(printf "%s" "$f" | tr "/ " "__").log" >&2 || true
+    done <"$BUILD/lint-failures.txt"
+    die "nim check gagal: $(wc -l <"$BUILD/lint-failures.txt" | tr -d ' ') berkas"
+  fi
   ok "$n berkas"
 }
 
@@ -228,6 +247,24 @@ cmd_shlint() {
   ok "$(printf '%s\n' "$files" | wc -l | tr -d ' ') skrip lolos bash -n + shellcheck (level warning)"
 }
 
+cmd_check_fast() {
+  mkdir -p "$BUILD"
+  cmd_fmt_check
+  cmd_archcheck
+  cmd_nomagic
+  cmd_paramgen
+  cmd_i18n
+  cmd_shlint
+}
+
+cmd_verify() {
+  filter="${1:-}"
+  cmd_check_fast
+  cmd_openapi
+  cmd_build
+  cmd_test "$filter"
+}
+
 cmd_check() {
   mkdir -p "$BUILD"
   cmd_fmt_check
@@ -246,14 +283,40 @@ run_nim_test() { # run_nim_test <berkas>
   "$BIN/$name" || die "test gagal: $f"
 }
 
+select_tests() {
+  # `strict=1` = filter cocok persis dengan nama berkas di suite mana pun, jadi hanya berkas
+  # persis itu yang dijalankan (tproduct ≠ itproduct). `strict=0` = substring, untuk filter lebar
+  # seperti `product` (D-077). Keputusan strict diambil sekali di cmd_test, bukan per daftar.
+  all="$1"
+  filter="$2"
+  strict="$3"
+  [ -n "$filter" ] || { printf '%s\n' "$all"; return; }
+  if [ "$strict" = "1" ]; then
+    for f in $all; do
+      if [ "$(basename "$f" .nim)" = "$filter" ]; then
+        printf '%s\n' "$f"
+      fi
+    done
+  else
+    printf '%s\n' "$all" | grep -- "$filter" || true
+  fi
+  return 0
+}
+
 cmd_test() {
   filter="${1:-}"
   matched=0
+  strict=0
+  if [ -n "$filter" ]; then
+    for f in $(test_files) $(it_files); do
+      if [ "$(basename "$f" .nim)" = "$filter" ]; then
+        strict=1
+      fi
+    done
+  fi
   log "unit + property test${filter:+ (filter: $filter)}"
   list=$(test_files)
-  if [ -n "$filter" ]; then
-    list=$(printf '%s\n' "$list" | grep -- "$filter" || true)
-  fi
+  list=$(select_tests "$list" "$filter" "$strict")
   if [ -z "$list" ]; then
     # Gate ini sengaja asimetris: repo kosong boleh (Fase 0 baru mulai), tetapi kode yang
     # ada tanpa satu pun test = kegagalan. Dengan filter, daftar kosong itu wajar (mis. filter
@@ -268,9 +331,7 @@ cmd_test() {
 
   log "integration test (Postgres)"
   its=$(it_files)
-  if [ -n "$filter" ]; then
-    its=$(printf '%s\n' "$its" | grep -- "$filter" || true)
-  fi
+  its=$(select_tests "$its" "$filter" "$strict")
   if [ -z "$its" ]; then
     [ -n "$filter" ] || skip "belum ada test integrasi (T-004)"
   elif [ -z "$KRAN_DATABASE_URL" ]; then
@@ -361,6 +422,7 @@ summarize() {
 }
 
 cmd_ci() {
+  log "commit $(git rev-parse --short HEAD 2>/dev/null || echo '-')"
   cmd_check
   cmd_openapi
   cmd_test
@@ -395,6 +457,8 @@ cmd_help() {
 
 case "${1:-help}" in
   check) cmd_check ;;
+  check-fast) cmd_check_fast ;;
+  verify) shift; cmd_verify "${1:-}" ;;
   test) shift; cmd_test "${1:-}" ;;
   e2e) cmd_e2e ;;
   ci) cmd_ci ;;
