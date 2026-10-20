@@ -1780,3 +1780,18 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
 - **Temuan operasional**: (a) deploy me-restart worker **sebelum** seed parameter → worker exit 2
   pada deploy pertama (dicatat **O-090**); (b) unit quadlet tidak bisa `systemctl enable` karena
   unit generated → symlink manual (didokumentasikan); (c) backup KEK offline (`sops`/`age`) belum.
+
+## T-080 — O-089: tutup periode tidak bisa ditembus jurnal (20 Okt 2026)
+
+- **Masalah**: trigger periode hanya membaca status; penutupan yang belum commit tidak terlihat
+  oleh insert jurnal → jurnal bisa mendarat di periode CLOSED.
+- **Perbaikan**: `0011_ledger_period_lock.sql` — `SELECT ... FOR SHARE` pada baris periode.
+  `CREATE OR REPLACE`, expand-only; tidak ada perubahan API/parameter.
+- **Bukti**: dua test `itjournal` — (1) insert menunggu lock (`lock_timeout` 200 ms) saat close
+  belum commit; (2) thread menahan close 800 ms lalu COMMIT → insert ditolak `tidak ada periode
+  OPEN`, tidak ada baris jurnal. Mutation check: test (1) **FAILED** tanpa `FOR SHARE`.
+- **Gate**: `./task verify ledger` hijau; `./task ci` hijau (818 `[OK]`, e2e 24). Reviewer
+  independen APPROVE (MINOR diperbaiki: mekanisme lock di-pin di assertion, cell O-089, status
+  belum "selesai" sebelum CI, rentang migrasi MODULE.md).
+- **Catatan**: urutan lock `period → audit` sekarang berlaku; penambahan lock baru di ledger harus
+  sadar urutan ini (D-091). Penutupan menunggu jurnal berjalan — disengaja.
