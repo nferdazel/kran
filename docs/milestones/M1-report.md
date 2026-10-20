@@ -20,7 +20,7 @@ permintaan pemilik).
 | T-074 | Posting rule sebagai data + konsumen outbox (`platform.inbox`), lease claim, `journal.posted`, worker long-running | `b1de872`, `bac5970`, `8b48e51` | APPROVE (r2) |
 | T-075 | Trial balance dari `journal_line`; `balance_snapshot` cache kumulatif yang dapat direkonstruksi | `bac5970`, `8b48e51` | APPROVE |
 | T-076 | `product` factory: `product`/`product_version`/`product_param_binding`, versi inklusif tanpa tumpang tindih, binding = parameter, `ProductPublished` | `997fafd`, `4930514`, `534221b` | APPROVE (r3) |
-| T-077 | Alur end-to-end Fase 1 + laporan ini | `9a04d50` | review menyusul |
+| T-077 | Alur end-to-end Fase 1 + laporan ini | `9a04d50`, `abc3ec8`, `09d2c46` | APPROVE (r2) |
 | — | Arah UI "buku besar, kulit hangat" + memo SME (bahan Fase 2) | `1111948` | D-075 |
 
 ## 2. Bukti gate
@@ -98,8 +98,9 @@ tercakup `task ci` lokal; job CI `db-tests` sudah ada). O-068 **selesai** (T-060
 
 ## 6. Rekomendasi langkah berikut
 
-1. **Merge `feat/fase1-party` → `main` oleh pemilik** (deploy) setelah keputusan O-066/O-081 dan
-   penggantian password admin.
+1. **Merge `feat/fase1-party` → `main` oleh pemilik** (deploy) setelah: (a) verdict **T-073 r2**
+   keluar (perbaikan BLOCKER pembalik ganda belum direview ulang), (b) keputusan O-066/O-081, dan
+   (c) penggantian password admin.
 2. **Fase 2 (teller)**: mulai dari T-079 (token UI + IBM Plex) hanya setelah D-075 diratifikasi,
    lalu alur setor/tarik dengan produk `product.savings.*` yang sudah ada.
 3. Sebelum go-live koperasi: selesaikan O-071 (KEK), O-081 (worker + alert), O-066 (nilai

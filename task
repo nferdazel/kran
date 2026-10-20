@@ -422,6 +422,7 @@ summarize() {
 }
 
 cmd_ci() {
+  log "commit $(git rev-parse --short HEAD 2>/dev/null || echo '-')"
   cmd_check
   cmd_openapi
   cmd_test
