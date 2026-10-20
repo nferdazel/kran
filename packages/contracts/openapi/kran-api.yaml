@@ -1092,6 +1092,137 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/ledger/journals:
+    get:
+      operationId: listJournals
+      tags: [ledger]
+      summary: Daftar jurnal
+      description: |
+        Header jurnal (tanpa baris), urut tanggal bisnis terbaru, dibatasi **200**. Jurnal tidak
+        bisa dibuat/diubah/dihapus lewat HTTP: pembuatan berasal dari posting rule/event (T-074),
+        koreksi lewat jurnal pembalik.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: businessDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: sourceEvent
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Daftar jurnal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/ledger/journals/{journalId}:
+    get:
+      operationId: getJournal
+      tags: [ledger]
+      summary: Detail jurnal + baris
+      description: |
+        Header jurnal beserta seluruh barisnya. Jurnal immutable: tidak ada endpoint edit/hapus;
+        koreksi dilakukan lewat jurnal pembalik.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: journalId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Jurnal beserta baris
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Journal"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/ledger/journals/{journalId}/reversal:
+    post:
+      operationId: reverseJournal
+      tags: [ledger]
+      summary: Jurnal pembalik
+      description: |
+        Membuat jurnal baru dengan `reversalOf` = jurnal asal dan debit/kredit **ditukar**, pada
+        tanggal bisnis asal. Hanya jika periode tanggal itu masih OPEN dan jurnal belum pernah
+        dibalik. **Idempoten**: permintaan ulang dengan `Idempotency-Key` yang sama mengembalikan
+        jurnal pembalik yang sudah ada (200); kunci sama untuk jurnal asal lain → 409.
+        Tidak ada endpoint edit/hapus — DB menolak UPDATE/DELETE pada jurnal.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: journalId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JournalReversalRequest"
+      responses:
+        "201":
+          description: Jurnal pembalik dibuat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Journal"
+        "200":
+          description: Permintaan ulang dengan kunci yang sama (idempoten)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Journal"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -1790,3 +1921,107 @@ components:
           minLength: 1
           maxLength: 500
           description: Alasan penutupan; masuk jejak audit.
+
+    JournalLine:
+      type: object
+      additionalProperties: false
+      required: [lineNo, glAccount, branchId, debit, credit]
+      properties:
+        lineNo:
+          type: integer
+          minimum: 1
+        glAccount:
+          type: string
+        branchId:
+          type: string
+          format: uuid
+        debit:
+          type: string
+          description: Desimal 4 angka di belakang koma, mis. `1500.0000`.
+        credit:
+          type: string
+          description: Desimal 4 angka di belakang koma; tepat satu dari debit/credit > 0.
+
+    JournalHeader:
+      type: object
+      additionalProperties: false
+      required: [journalId, businessDate, valueDate, sourceEvent, sourceRef, idempotencyKey,
+                 reversalOf, recordedAt]
+      properties:
+        journalId:
+          type: string
+          format: uuid
+        businessDate:
+          type: string
+          format: date
+        valueDate:
+          type: string
+          format: date
+        sourceEvent:
+          type: string
+        sourceRef:
+          type: string
+          format: uuid
+        idempotencyKey:
+          type: string
+        reversalOf:
+          type: ["string", "null"]
+          description: UUID jurnal asal bila jurnal ini pembalik; `null` bila bukan.
+        recordedAt:
+          type: string
+          description: ISO-8601 UTC.
+
+    Journal:
+      type: object
+      additionalProperties: false
+      required: [journalId, businessDate, valueDate, sourceEvent, sourceRef, idempotencyKey,
+                 reversalOf, recordedAt, lines, totalDebit, totalCredit]
+      properties:
+        journalId:
+          type: string
+          format: uuid
+        businessDate:
+          type: string
+          format: date
+        valueDate:
+          type: string
+          format: date
+        sourceEvent:
+          type: string
+        sourceRef:
+          type: string
+          format: uuid
+        idempotencyKey:
+          type: string
+        reversalOf:
+          type: ["string", "null"]
+        recordedAt:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/JournalLine"
+        totalDebit:
+          type: string
+        totalCredit:
+          type: string
+
+    JournalList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/JournalHeader"
+
+    JournalReversalRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500

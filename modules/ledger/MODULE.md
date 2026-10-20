@@ -24,16 +24,35 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 - Urutan penutupan (tidak menutup periode lebih awal saat sebelumnya masih terbuka) **belum**
   ditegakkan di sini — itu tugas `daycloser` (Fase 5). Lihat `docs/tasks/T-072.md`.
 
+## Jurnal (T-073)
+
+- `ledger.journal` + `ledger.journal_line`: double-entry. **Immutable** — trigger menolak
+  `UPDATE`/`DELETE`/`TRUNCATE`; koreksi hanya lewat **jurnal pembalik** (`reversal_of`).
+- Keseimbangan `SUM(debit) = SUM(credit)` (minimal 2 baris) ditegakkan **constraint trigger
+  deferred** → diperiksa saat `COMMIT`. Karena itu header + baris **wajib satu transaksi**;
+  menyisipkan baris dengan autocommit akan ditolak.
+- Tanggal bisnis harus berada di periode **OPEN** (trigger). Belum ada periode = tidak bisa posting.
+- Akun GL harus `postable` dan `ACTIVE` (trigger).
+- `idempotency_key` unik; endpoint pembalik memakai header `Idempotency-Key` dan **idempoten**
+  (permintaan ulang → 200 dengan jurnal yang sama). Jurnal yang sudah dibalik tidak bisa dibalik
+  lagi; jurnal pembalik tidak bisa dibalik.
+- Tanpa partisi pada Fase 1 — **D-072**.
+
 ## Public API (`api.nim`)
 
 - `coa` — `AccountType`, `NormalSide`, `AccountStatus`, `CoaAccount`, `parseAccountType`,
   `parseAccountStatus`, `normalSideOf`, `compileCodePattern`, `validateCode`, `validateName`.
 - `period` — `PeriodStatus`, `Period`, `parsePeriodStatus`, `parseIsoDate`, `validateRange`,
   `validateCloseReason`.
+- `journal` — `Journal`, `JournalLine`, `totalDebit`, `totalCredit`, `isBalanced`,
+  `validateJournalLines`, `validateIdempotencyKey`, `validateSourceEvent`, `reversalLinesOf`,
+  `validateReversalReason`.
 
 ## Event dipublish / dikonsumsi (versi)
 
 - Publish: `period.closed` v1, aggregate `period`, payload `{periodId, startsOn, endsOn}`.
+- Publish: `journal.posted` v1, aggregate `journal`, payload
+  `{journalId, businessDate, reversalOf, totalDebit}` (dipakai untuk rekonsiliasi/real-time).
 - Konsumsi: belum ada (event bisnis via posting rule menyusul di T-074).
 
 ## Parameter key (+ sensitivitas, regulatory_refs)
@@ -42,11 +61,13 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 |---|---|---|---|---|
 | `ledger.coa.code_pattern` | string (regex) | GLOBAL, INSTITUTION | `^[0-9]{1,3}(\.[0-9]{1,3})*$` | NORMAL |
 
-## Tabel & schema (migrasi `0001`, `0002`)
+## Tabel & schema (migrasi `0001`, `0002`, `0003`)
 
 - `ledger.coa_account` — kode unik, tipe, sisi normal (CHECK konsisten), `postable`, status.
   Tidak ber-cabang: GL milik institusi (spec §9).
 - `ledger.period` — rentang inklusif, status, `closed_at`/`closed_by`, EXCLUDE tumpang tindih.
+- `ledger.journal` / `ledger.journal_line` — jurnal immutable + pembalik, trigger keseimbangan
+  deferred, periode OPEN, akun postable/ACTIVE (lihat bagian Jurnal di atas).
 - COA awal (`0002_ledger_coa_base.sql`) adalah **contoh struktur** untuk pilot, bertanda
   `NEEDS-COMPLIANCE-REVIEW` (REG-011 `V!`): jangan dijadikan dasar laporan final sebelum review
   compliance. Ditaruh di migrasi (bukan `packs/*/seed/`) karena seed pack hanya untuk `--dev`.
@@ -64,8 +85,11 @@ Belum ada. Penutupan periode **tidak** memakai cron/batch sendiri (AGENTS §1.7)
 | `ledger.coa.manage` | `coa` | ya |
 | `ledger.period.read` | `period` | ya |
 | `ledger.period.manage` | `period` | ya |
+| `ledger.journal.read` | `journal` | ya |
+| `ledger.journal.reverse` | `journal` | ya |
 
-Katalog: `modules/platform/migrations/0015_platform_rbac_ledger.sql`.
+Katalog: `modules/platform/migrations/0015_platform_rbac_ledger.sql` (COA/periode) dan
+`0016_platform_rbac_ledger_journal.sql` (jurnal).
 
 Aksi COA/periode adalah **aksi institusi**: selain `requirePermission`, handler memanggil
 `authorizedAtBranch(db, principal, "", permission)` di dalam transaksi, sehingga grant yang
