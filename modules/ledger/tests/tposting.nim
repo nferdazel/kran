@@ -92,3 +92,18 @@ suite "posting: template & baris":
   test "nominal nol ditolak":
     expect ValueError:
       discard buildLines(rule(), zero(), branch)
+
+suite "posting: spesifisitas produk & nominal":
+  test "rule produk lebih spesifik daripada rule generik (tidak ambigu)":
+    var generic = rule(priority = 100)
+    generic.ruleId = Id("33333333-3333-7333-8333-333333333333")
+    var sav = rule(product = "SAV", priority = 100)
+    sav.ruleId = Id("44444444-4444-7444-8444-444444444444")
+    let chosen = selectRule(@[generic, sav], "DepositPosted",
+      parseJson("""{"product": "SAV", "amount": "1.0000"}"""))
+    check chosen.productCode == "SAV"
+    check chosen.ruleId == sav.ruleId
+
+  test "nominal negatif ditolak domain":
+    expect ValueError:
+      discard buildLines(rule(), money(-100), branch)

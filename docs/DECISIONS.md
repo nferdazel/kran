@@ -2066,6 +2066,43 @@ dikirim ulang.
 sama, dan `RestartPreventExitStatus=3` tidak lagi relevan untuk worker (tidak berbahaya). Bila
 akun tujuan rule dinonaktifkan, event terkait gagal terlihat (DEAD) sampai rule diperbaiki.
 
-**Bukti.** `tposting` (10 unit: containment, spesifisitas/priority, ambigu, template, nominal nol),
-`itposting` (5 integrasi: satu jurnal per event, redelivery tidak menambah, event non-akuntansi
-diabaikan, tanpa rule → DEAD + pesan, periode tertutup → DEAD tanpa jurnal).
+**Konsekuensi lanjutan (review putaran 1).**
+- Klaim batch memakai **lease** (`ledger.posting.lease_seconds`, default 300): event `IN_FLIGHT`
+  yang lebih lama dari lease boleh direbut worker lain, sehingga worker yang mati tidak memarkir
+  event selamanya. Identitas worker = `kran-worker:<pid>`.
+- Konsumen **memancarkan `journal.posted`** dalam transaksi yang sama (tanpa header `accounting`,
+  jadi tidak loop) — sebelumnya hanya endpoint pembalik yang memancarkannya.
+- Header `accounting` yang ada tetapi **bukan boolean** = gagal terlihat (`DEAD`), bukan diabaikan.
+- Baris jurnal hanya boleh masuk dalam **transaksi yang sama** dengan header (migrasi `0008`,
+  dibandingkan lewat `xmin`); mencegah nominal jurnal final "ditambah" lewat INSERT berpasangan.
+- **MINOR yang ditunda**: rule belum punya API/UI (O-080); worker belum masuk readiness (status
+  `PENDING`/`DEAD`/`IN_FLIGHT`) dan belum di-enable saat boot (O-081).
+
+**Bukti.** `tposting` (12 unit: containment, spesifisitas/priority/produk, ambigu, template,
+nominal nol/negatif), `itposting` (8 integrasi: satu jurnal + `journal.posted`, redelivery tidak
+menambah, non-akuntansi diabaikan, tanpa rule → PENDING lalu DEAD, periode tertutup, lease reclaim,
+header salah tipe).
+
+---
+
+## D-074 — Trial balance dihitung dari jurnal; `balance_snapshot` hanya cache (T-075)
+
+**Konteks.** Spec §9.1(4) menyebut `balance_snapshot`; §9 meminta saldo sebagai turunan yang bisa
+direkonstruksi. Laporan tidak boleh bergantung pada cache yang basi.
+
+**Keputusan.**
+1. **Trial balance dihitung langsung dari `journal_line`** (join `journal` + `coa_account`) untuk
+   rentang periode. Tidak ada jalur baca laporan yang memakai cache.
+2. `ledger.balance_snapshot` disediakan sebagai **cache** per `(account_code, as_of)` dan hanya
+   diisi oleh fungsi `ledger.rebuild_balance_snapshot(as_of)` yang menghitung ulang dari jurnal
+   (DELETE + INSERT dalam satu pernyataan fungsi). Tidak ada API/consumer yang menulis saldo.
+3. Akun tanpa pergerakan tidak muncul di TB; urutan menurut kode akun.
+4. Izin: `ledger.journal.read` (tingkat institusi, dua gerbang seperti T-072/T-073). Tidak menambah
+   izin baru untuk laporan sampai ada kebutuhan pemisahan auditor.
+
+**Konsekuensi.** Biaya query TB tumbuh linear terhadap volume jurnal periode; bila itu menjadi
+masalah, laporan boleh membaca `balance_snapshot` **setelah** rekonsiliasi day-close (Fase 5) —
+bukan sebelum. Rekonstruksi cache adalah langkah eksplisit, bukan efek samping posting.
+
+**Bukti.** `ittb` (4 integrasi: TB seimbang, sama dengan agregasi SQL langsung, snapshot rekonstruksi
+== TB, periode tidak ada = error) + `itapi_journal` (3 HTTP: kontrak/total seimbang, 400/404, 403).

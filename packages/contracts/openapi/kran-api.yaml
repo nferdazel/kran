@@ -1223,6 +1223,42 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/ledger/trial-balance:
+    get:
+      operationId: getTrialBalance
+      tags: [ledger]
+      summary: Trial balance per periode
+      description: |
+        Agregat debit/kredit per akun untuk periode yang diberikan, dihitung **langsung dari
+        `journal_line`** (bukan cache `balance_snapshot`). Total debit dan total kredit harus sama;
+        akun tanpa pergerakan tidak muncul. Izin: `ledger.journal.read` (tingkat institusi).
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: periodId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Trial balance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialBalance"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -2025,3 +2061,43 @@ components:
           type: string
           minLength: 1
           maxLength: 500
+
+    TrialBalanceLine:
+      type: object
+      additionalProperties: false
+      required: [accountCode, accountName, accountType, debit, credit]
+      properties:
+        accountCode:
+          type: string
+        accountName:
+          type: string
+        accountType:
+          type: string
+          enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+        debit:
+          type: string
+        credit:
+          type: string
+
+    TrialBalance:
+      type: object
+      additionalProperties: false
+      required: [periodId, startsOn, endsOn, totalDebit, totalCredit, lines]
+      properties:
+        periodId:
+          type: string
+          format: uuid
+        startsOn:
+          type: string
+          format: date
+        endsOn:
+          type: string
+          format: date
+        totalDebit:
+          type: string
+        totalCredit:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrialBalanceLine"

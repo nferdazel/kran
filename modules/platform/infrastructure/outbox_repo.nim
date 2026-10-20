@@ -33,13 +33,21 @@ proc appendEvent*(db: DbConn, ev: OutboxEvent): bool =
     (if ev.payload.isNil: "{}" else: $ev.payload),
     (if ev.headers.isNil: "{}" else: $ev.headers), ev.dedupKey) == 1
 
-proc claimBatch*(db: DbConn, worker: string, limit: int): seq[OutboxEvent] =
+proc claimBatch*(db: DbConn, worker: string, limit: int,
+                 leaseSeconds = 0): seq[OutboxEvent] =
   ## Mengambil dan mengunci satu batch (`PENDING` yang `available_at` sudah lewat).
+  ##
+  ## `leaseSeconds > 0` juga merebut kembali event `IN_FLIGHT` yang `locked_at`-nya lebih lama dari
+  ## lease: worker yang mati setelah klaim tidak boleh memarkir event selamanya (review T-074).
+  ## Lease 0 = perilaku lama (hanya `PENDING`).
   for row in db.getAllRows(
       sql"""WITH claimed AS (
               SELECT c.outbox_id
                 FROM platform.outbox c
-               WHERE c.status = 'PENDING' AND c.available_at <= now()
+               WHERE c.available_at <= now()
+                 AND (c.status = 'PENDING'
+                      OR (c.status = 'IN_FLIGHT' AND ? > 0
+                          AND c.locked_at < now() - make_interval(secs => ?)))
                ORDER BY c.seq
                FOR UPDATE SKIP LOCKED
                LIMIT ?
@@ -55,7 +63,7 @@ proc claimBatch*(db: DbConn, worker: string, limit: int): seq[OutboxEvent] =
                               'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
                       o.status, o.attempts, coalesce(o.locked_by, ''),
                       coalesce(o.last_error, '')""",
-      $limit, worker):
+      $leaseSeconds, $leaseSeconds, $limit, worker):
     result.add OutboxEvent(
       eventId: Id(row[0]),
       eventType: row[1],

@@ -18,7 +18,7 @@ import db_connector/db_postgres
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
 
-import kernel/[clock, ids, paramkey, result]
+import kernel/[clock, ids, money, paramkey, result]
 import kernel/generated/paramkeys
 import platform/domain/[event, scope]
 import platform/infrastructure/[auth_service, inbox_repo, outbox_repo, param_repo]
@@ -40,9 +40,13 @@ type
     poDuplicate = "duplicate"
 
 proc isAccounting(ev: OutboxEvent): bool =
-  not ev.headers.isNil and ev.headers.kind == JObject and
-    ev.headers.hasKey("accounting") and ev.headers["accounting"].kind == JBool and
-    ev.headers["accounting"].getBool()
+  ## Penanda akuntansi harus **boolean**. Header yang ada tetapi salah tipe = kesalahan produsen
+  ## (gagal terlihat), bukan diam-diam diabaikan (fail-closed).
+  if ev.headers.isNil or ev.headers.kind != JObject or not ev.headers.hasKey("accounting"):
+    return false
+  if ev.headers["accounting"].kind != JBool:
+    raise newException(ValueError, "header accounting harus boolean")
+  ev.headers["accounting"].getBool()
 
 proc requireString(node: JsonNode, field: string): string =
   if node.kind != JObject or not node.hasKey(field) or node[field].kind != JString or
@@ -70,7 +74,7 @@ proc processEvent*(db: DbConn, clock: Clock, ev: OutboxEvent): PostingOutcome =
     raise newException(ValueError, "payload.branchId bukan uuid")
   let businessDate = businessDateOf(db, clock, ev.payload)
 
-  let rule = selectRule(activeRules(db, ev.eventType), ev.eventType, ev.payload)
+  let rule = selectRule(activeRules(db, ev.eventType, businessDate), ev.eventType, ev.payload)
   let lines = buildLines(rule, amount, branchId.value())
   let sourceRef = parseId(ev.aggregateId)
   if sourceRef.isErr:
@@ -87,6 +91,13 @@ proc processEvent*(db: DbConn, clock: Clock, ev: OutboxEvent): PostingOutcome =
   discard insertJournal(db, journal, systemActor)
   for line in lines:
     insertJournalLine(db, journal.journalId, line)
+  # Event turunan untuk konsumen lain/realtime. Tanpa header `accounting` supaya tidak loop ke
+  # konsumen ini sendiri (spec §8.1: ledger mem-publish `journal.posted`).
+  discard appendEvent(db, newOutboxEvent(newId(clock), "journal.posted", "journal",
+    $journal.journalId, "journal.posted:" & $journal.journalId,
+    %*{"journalId": $journal.journalId, "businessDate": businessDate,
+       "sourceEvent": ev.eventType, "reversalOf": nil,
+       "totalDebit": lines.totalDebit.toDecimalString}))
   poPosted
 
 proc paramInt(db: DbConn, key: ParamKey[int64], asOf: string): int {.gcsafe.} =
@@ -99,10 +110,11 @@ proc paramInt(db: DbConn, key: ParamKey[int64], asOf: string): int {.gcsafe.} =
     int(node.getBiggestInt())
 
 proc processBatch*(app: AppContext, workerId: string, batchSize, maxAttempts,
-                   backoffSeconds: int): int =
+                   backoffSeconds: int, leaseSeconds = 0): int =
   ## Mengklaim dan memproses sampai `batchSize` event. Mengembalikan jumlah event yang diklaim.
+  ## `leaseSeconds > 0` merebut kembali event yang terdampar `IN_FLIGHT` (worker sebelumnya mati).
   let events = app.pool.withConn(proc(db: DbConn): seq[OutboxEvent] {.gcsafe.} =
-    claimBatch(db, workerId, batchSize))
+    claimBatch(db, workerId, batchSize, leaseSeconds))
   for i in 0 ..< events.len:
     let ev = events[i]
     try:
@@ -113,12 +125,19 @@ proc processBatch*(app: AppContext, workerId: string, batchSize, maxAttempts,
       if outcome == poPosted:
         stderr.writeLine "kran-worker: jurnal diposting untuk event " & $ev.eventId
     except CatchableError as e:
-      # Koneksi transaksi sudah di-ROLLBACK; kegagalan dicatat di koneksi terpisah.
       let message = e.msg
-      discard app.pool.withConn(proc(db: DbConn): int {.gcsafe.} =
-        markFailed(db, ev.eventId, message, backoffSeconds, maxAttempts)
-        1)
-      stderr.writeLine "kran-worker: event " & $ev.eventId & " gagal: " & message
+      if "journal_idempotency_uq" in message:
+        # Inbox terhapus/terlewat tetapi jurnalnya sudah ada: bukan kegagalan, tandai selesai.
+        discard app.pool.withConn(proc(db: DbConn): int {.gcsafe.} =
+          markDone(db, ev.eventId)
+          1)
+        stderr.writeLine "kran-worker: event " & $ev.eventId & " sudah pernah diposting"
+      else:
+        # Koneksi transaksi sudah di-ROLLBACK; kegagalan dicatat di koneksi terpisah.
+        discard app.pool.withConn(proc(db: DbConn): int {.gcsafe.} =
+          markFailed(db, ev.eventId, message, backoffSeconds, maxAttempts)
+          1)
+        stderr.writeLine "kran-worker: event " & $ev.eventId & " gagal: " & message
   events.len
 
 proc runWorker*(): int =
@@ -131,7 +150,7 @@ proc runWorker*(): int =
   let pool = newDbPool(dbConfigFromProcessEnv())
   var app = AppContext(version: "worker", role: "worker", startedAt: epochTime(),
     pool: pool, clock: clock)
-  var batchSize, maxAttempts, backoffSeconds, pollMs: int
+  var batchSize, maxAttempts, backoffSeconds, pollMs, leaseSeconds: int
   try:
     let asOf = businessDateIso(clock)
     discard pool.withConn(proc(db: DbConn): int {.gcsafe.} =
@@ -139,14 +158,19 @@ proc runWorker*(): int =
       maxAttempts = paramInt(db, P_ledger_posting_max_attempts, asOf)
       backoffSeconds = paramInt(db, P_ledger_posting_retry_backoff_seconds, asOf)
       pollMs = paramInt(db, P_ledger_posting_poll_interval_ms, asOf)
+      leaseSeconds = paramInt(db, P_ledger_posting_lease_seconds, asOf)
       1)
   except CatchableError as e:
     stderr.writeLine "kran-worker: parameter posting tidak terbaca: " & e.msg
     return 2
 
-  stderr.writeLine "kran-worker: mulai (batch=" & $batchSize & ", maxAttempts=" &
-    $maxAttempts & ", backoff=" & $backoffSeconds & "s, poll=" & $pollMs & "ms)"
+  # Identitas per proses: reclaim lease tidak boleh mencuri event milik worker lain yang hidup.
+  let workerId = "kran-worker:" & $getCurrentProcessId()
+  stderr.writeLine "kran-worker: mulai (" & workerId & ", batch=" & $batchSize &
+    ", maxAttempts=" & $maxAttempts & ", backoff=" & $backoffSeconds & "s, lease=" &
+    $leaseSeconds & "s, poll=" & $pollMs & "ms)"
   while true:
-    let claimed = processBatch(app, "kran-worker", batchSize, maxAttempts, backoffSeconds)
+    let claimed = processBatch(app, workerId, batchSize, maxAttempts, backoffSeconds,
+      leaseSeconds)
     if claimed == 0:
       sleep(pollMs)

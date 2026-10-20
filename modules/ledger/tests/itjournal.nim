@@ -217,15 +217,38 @@ suite "journal: guard tambahan (review T-073)":
     check raised
     check journalById(db, j.journalId).isNone
 
-  test "baris tidak bisa ditambahkan setelah periode ditutup":
+  test "baris setelah header COMMIT ditolak, termasuk pasangan seimbang":
+    # Dua baris berpasangan lolos pemeriksaan keseimbangan, jadi guard yang menolaknya harus
+    # "transaksi sama dengan header" — bukan keseimbangan.
+    let j = newJournal(businessDate = "2026-10-19")
+    discard save(j)
+    var raised = false
+    try:
+      discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+        insertJournalLine(d, j.journalId, line(3, "101", 1_0000, 0))
+        insertJournalLine(d, j.journalId, line(4, "201", 0, 1_0000))
+        1)
+    except DbError:
+      raised = true
+    check raised
+    check journalById(db, j.journalId).get().lines.len == 2
+
+  test "periode tertutup juga menolak baris (defense-in-depth)":
     let decId = newId(testClock)
     discard insertPeriod(db,
       Period(periodId: decId, startsOn: "2026-12-01", endsOn: "2026-12-31"), actor)
     let j = newJournal(businessDate = "2026-12-15")
     discard save(j)
     discard closePeriod(db, decId, actor)
-    expectDbError(proc() = insertJournalLine(db, j.journalId,
-      line(3, "101", 1_0000, 0)))
+    var raised = false
+    try:
+      discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+        insertJournalLine(d, j.journalId, line(3, "101", 1_0000, 0))
+        insertJournalLine(d, j.journalId, line(4, "201", 0, 1_0000))
+        1)
+    except DbError:
+      raised = true
+    check raised
 
   test "hanya satu pembalik per jurnal asal (indeks unik DB)":
     let original = newJournal(businessDate = "2026-10-18")
