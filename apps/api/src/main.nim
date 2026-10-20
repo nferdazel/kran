@@ -41,6 +41,7 @@ import ./context
 import ./drain
 import ./events
 import ./health
+import ./posting
 import ./readiness
 import ./server
 import ./version
@@ -462,9 +463,7 @@ proc main() =
   if opts.role == roleCtl:
     quit(runCtl(opts.cmd, opts.root, opts.username))
   if opts.role == roleWorker:
-    stderr.writeLine "kran-api: role 'worker' belum ada pekerjaannya (Fase 0: 'api' dan peran " &
-      "operasional 'migrate'/'ctl'; lihat docs/OPEN_ITEMS.md O-013)"
-    quit(3)
+    quit(runWorker())
 
   let logger = newLogger(app = "kran-api")
 

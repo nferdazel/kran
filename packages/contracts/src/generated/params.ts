@@ -17,6 +17,236 @@ export interface ParamDefinition {
 
 export const paramDefinitions: readonly ParamDefinition[] = [
   {
+    "key": "ledger.coa.code_pattern",
+    "module": "ledger",
+    "valueType": "string",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.ledger.coa.code_pattern",
+    "jsonSchema": {
+      "minLength": 5,
+      "maxLength": 120
+    }
+  },
+  {
+    "key": "ledger.posting.batch_size",
+    "module": "ledger",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.ledger.posting.batch_size",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 500
+    }
+  },
+  {
+    "key": "ledger.posting.lease_seconds",
+    "module": "ledger",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.ledger.posting.lease_seconds",
+    "jsonSchema": {
+      "minimum": 30,
+      "maximum": 3600
+    }
+  },
+  {
+    "key": "ledger.posting.max_attempts",
+    "module": "ledger",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.ledger.posting.max_attempts",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 100
+    }
+  },
+  {
+    "key": "ledger.posting.poll_interval_ms",
+    "module": "ledger",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.ledger.posting.poll_interval_ms",
+    "jsonSchema": {
+      "minimum": 50,
+      "maximum": 60000
+    }
+  },
+  {
+    "key": "ledger.posting.retry_backoff_seconds",
+    "module": "ledger",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.ledger.posting.retry_backoff_seconds",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 86400
+    }
+  },
+  {
+    "key": "party.cif.format",
+    "module": "party",
+    "valueType": "string",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.party.cif.format",
+    "jsonSchema": {
+      "minLength": 5,
+      "maxLength": 24
+    }
+  },
+  {
+    "key": "party.identity.doc_lengths",
+    "module": "party",
+    "valueType": "json",
+    "tsType": "unknown",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.party.identity.doc_lengths",
+    "jsonSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "key": "party.identity.doc_types",
+    "module": "party",
+    "valueType": "json",
+    "tsType": "unknown",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.party.identity.doc_types",
+    "jsonSchema": {
+      "type": "array"
+    }
+  },
+  {
+    "key": "party.identity.number_max_length",
+    "module": "party",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.party.identity.number_max_length",
+    "jsonSchema": {
+      "minimum": 4,
+      "maximum": 64
+    }
+  },
+  {
+    "key": "party.kyc.default_risk_level",
+    "module": "party",
+    "valueType": "string",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.party.kyc.default_risk_level",
+    "jsonSchema": {
+      "minLength": 1,
+      "maxLength": 32
+    }
+  },
+  {
+    "key": "party.kyc.review_months",
+    "module": "party",
+    "valueType": "json",
+    "tsType": "unknown",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.party.kyc.review_months",
+    "jsonSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "key": "party.kyc.risk_levels",
+    "module": "party",
+    "valueType": "json",
+    "tsType": "unknown",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.party.kyc.risk_levels",
+    "jsonSchema": {
+      "type": "array"
+    }
+  },
+  {
     "key": "platform.calendar.fiscal_year_start_month",
     "module": "platform",
     "valueType": "integer",
@@ -312,6 +542,58 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     "jsonSchema": {
       "minimum": 1,
       "maximum": 1440
+    }
+  },
+  {
+    "key": "product.savings.admin_fee",
+    "module": "product",
+    "valueType": "money",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.product.savings.admin_fee",
+    "jsonSchema": {
+      "minimum": 0
+    }
+  },
+  {
+    "key": "product.savings.grace_period_days",
+    "module": "product",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.product.savings.grace_period_days",
+    "jsonSchema": {
+      "minimum": 0,
+      "maximum": 365
+    }
+  },
+  {
+    "key": "product.savings.min_balance",
+    "module": "product",
+    "valueType": "money",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.product.savings.min_balance",
+    "jsonSchema": {
+      "minimum": 0
     }
   }
 ] as const;

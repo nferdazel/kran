@@ -12,8 +12,14 @@ import mummy
 import ./events
 import ./handlers_audit
 import ./handlers_auth
+import ./handlers_journals
+import ./handlers_kyc
+import ./handlers_ledger
 import ./handlers_mfa
+import ./handlers_products
+import ./handlers_reports
 import ./handlers_param
+import ./handlers_party
 import ./health
 import ./problem
 
@@ -104,5 +110,71 @@ proc auditRoutes*(): seq[RouteSpec] =
               handler: handleListAudit),
   ]
 
+proc partyRoutes*(): seq[RouteSpec] =
+  ## party: CIF + identitas dasar (T-070).
+  @[
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/parties", operationId: "createParty",
+              handler: handleCreateParty),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/parties/{partyId}",
+              operationId: "getParty", handler: handleGetParty),
+  ]
+
+proc kycRoutes*(): seq[RouteSpec] =
+  ## KYC & dokumen identitas (T-071). Nomor dokumen hanya keluar lewat *unmask* (izin + audit).
+  @[
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/parties/{partyId}/identity-docs",
+              operationId: "addIdentityDoc", handler: handleAddIdentityDoc),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/parties/{partyId}/kyc",
+              operationId: "getPartyKyc", handler: handleGetKyc),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/parties/{partyId}/risk-rating",
+              operationId: "ratePartyRisk", handler: handleRiskRating),
+    RouteSpec(httpMethod: hmPost,
+              path: "/api/v1/parties/{partyId}/identity-docs/{docId}/unmask",
+              operationId: "unmaskIdentityDoc", handler: handleUnmask),
+  ]
+
+proc ledgerRoutes*(): seq[RouteSpec] =
+  ## `ledger`: COA + periode (T-072).
+  @[
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/ledger/coa", operationId: "listCoa",
+              handler: handleListCoa),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/ledger/coa", operationId: "createCoa",
+              handler: handleCreateCoa),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/ledger/periods", operationId: "listPeriods",
+              handler: handleListPeriods),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/ledger/periods", operationId: "openPeriod",
+              handler: handleOpenPeriod),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/ledger/periods/{periodId}/close",
+              operationId: "closePeriod", handler: handleClosePeriod),
+  ]
+
+proc journalRoutes*(): seq[RouteSpec] =
+  ## `ledger` jurnal: baca + pembalik (T-073). Tidak ada endpoint buat/edit/hapus.
+  @[
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/ledger/journals",
+              operationId: "listJournals", handler: handleListJournals),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/ledger/journals/{journalId}",
+              operationId: "getJournal", handler: handleGetJournal),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/ledger/journals/{journalId}/reversal",
+              operationId: "reverseJournal", handler: handleReverseJournal),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/ledger/trial-balance",
+              operationId: "getTrialBalance", handler: handleTrialBalance),
+  ]
+
+proc productRoutes*(): seq[RouteSpec] =
+  ## Katalog produk parametrik (T-076).
+  @[
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/products",
+              operationId: "listProducts", handler: handleListProducts),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/products/{code}",
+              operationId: "getProduct", handler: handleGetProduct),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/products",
+              operationId: "createProduct", handler: handleCreateProduct),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/products/{code}/versions",
+              operationId: "createProductVersion", handler: handleCreateVersion),
+  ]
+
 proc allRoutes*(): seq[RouteSpec] =
-  systemRoutes() & authRoutes() & mfaRoutes() & paramRoutes() & auditRoutes() & eventRoutes()
+  systemRoutes() & authRoutes() & mfaRoutes() & paramRoutes() & auditRoutes() &
+    partyRoutes() & kycRoutes() & ledgerRoutes() & journalRoutes() & productRoutes() &
+    eventRoutes()

@@ -370,6 +370,379 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/parties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Buat party baru (CIF)
+         * @description Membuat party dengan CIF dari parameter `party.cif.format` dan nomor urut DB. Audit
+         *     `party.create` dan event `party.onboarded` ditulis dalam transaksi yang sama.
+         */
+        post: operations["createParty"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/parties/{partyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Baca satu party
+         * @description Mengembalikan party bila pemanggil memegang izin `party.party.read` di cabang party.
+         *     Party yang tidak ada → 404; party yang ada di cabang lain → 403 (izin cabang, sama seperti
+         *     jalur parameter `branch_not_allowed`). Id yang bukan UUID juga dijawab 404.
+         */
+        get: operations["getParty"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/parties/{partyId}/identity-docs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Registrasi dokumen identitas party
+         * @description Nomor dokumen disimpan **terenkripsi** (field-level, AAD = nama tabel) dengan *blind index*
+         *     untuk deteksi duplikat; respons ini hanya memuat dua karakter terakhir. Butuh izin
+         *     `party.kyc.manage` di cabang party. Nomor ganda (lintas party) ditolak 409.
+         *     Bila `KRAN_KEK_FILE` belum diatur, endpoint menjawab 501 (fail-closed) — tidak pernah
+         *     menyimpan plaintext.
+         */
+        post: operations["addIdentityDoc"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/parties/{partyId}/kyc": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Profil KYC party
+         * @description Profil KYC, rating risiko berjalan, riwayat penilaian, dan daftar dokumen identitas
+         *     **tanpa nomor** (hanya bentuk tersamar). Membuka nomor dokumen punya endpoint sendiri
+         *     (`unmask`) yang butuh izin tambahan + alasan + audit. Butuh `party.party.read` di cabang
+         *     party; party atau profil yang tidak ada dijawab 404.
+         */
+        get: operations["getPartyKyc"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/parties/{partyId}/risk-rating": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Penilaian risiko party (riwayat bertambah)
+         * @description Menambah satu baris riwayat penilaian risiko (append-only), memperbarui rating berjalan di
+         *     profil KYC, dan menghitung jadwal re-KYC dari parameter `party.kyc.review_months`. Menulis
+         *     audit `party.risk.change` dan event `party.risk_changed` dalam transaksi yang sama.
+         *     Butuh izin `party.kyc.manage` di cabang party.
+         */
+        post: operations["ratePartyRisk"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/parties/{partyId}/identity-docs/{docId}/unmask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Buka nomor dokumen identitas (unmask)
+         * @description Mengembalikan nomor dokumen dalam bentuk asli. Butuh izin `party.identity_doc.read` di
+         *     cabang party **dan** alasan pada badan permintaan; setiap pembukaan menulis audit
+         *     `party.identity.unmask` (tanpa nomor). Dokumen milik party lain dijawab 404, bukan 403,
+         *     supaya id dokumen tidak menjadi alat menghitung keberadaan data (spec §18.2).
+         */
+        post: operations["unmaskIdentityDoc"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ledger/coa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daftar akun COA
+         * @description Daftar akun urut kode. Filter `type` dan `postable` menyaring **di SQL** (bukan setelah
+         *     batas baris), jadi hasil tidak terpotong di tengah filter. COA dimiliki institusi, bukan
+         *     cabang. Daftar dibatasi **200 akun** (batas ukuran respons); paginasi menyusul bila COA
+         *     tumbuh melewati itu.
+         */
+        get: operations["listCoa"];
+        put?: never;
+        /**
+         * Buat akun COA
+         * @description Kode akun dicocokkan dengan parameter `ledger.coa.code_pattern` (seluruh string). Sisi
+         *     normal **tidak** dikirim pemanggil: diturunkan dari `accountType` (ASSET/EXPENSE = DEBIT,
+         *     LIABILITY/EQUITY/REVENUE = CREDIT) dan dijaga CHECK DB. Kode duplikat → 409.
+         */
+        post: operations["createCoa"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ledger/periods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daftar periode akuntansi
+         * @description Periode akuntansi urut tanggal mulai terbaru, dibatasi **200 periode**. Rentang bersifat
+         *     **inklusif** (`startsOn`..`endsOn`); tumpang tindih ditolak DB.
+         */
+        get: operations["listPeriods"];
+        put?: never;
+        /**
+         * Buka periode
+         * @description Membuka periode baru. Periode yang tumpang tindih dengan periode mana pun ditolak **409**
+         *     oleh exclusion constraint (`period_no_overlap`), bukan oleh pemeriksaan aplikasi.
+         *     Urutan penutupan (EOD/EOM) diatur `daycloser`, bukan endpoint ini.
+         */
+        post: operations["openPeriod"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ledger/periods/{periodId}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tutup periode
+         * @description Menutup periode OPEN: mengisi `closed_at`/`closedBy`, menulis audit `ledger.period.close`
+         *     dan event `period.closed` dalam transaksi yang sama. **Alasan wajib**. Periode yang sudah
+         *     tertutup → 409.
+         */
+        post: operations["closePeriod"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ledger/journals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daftar jurnal
+         * @description Header jurnal (tanpa baris), urut tanggal bisnis terbaru, dibatasi **200**. Jurnal tidak
+         *     bisa dibuat/diubah/dihapus lewat HTTP: pembuatan berasal dari posting rule/event (T-074),
+         *     koreksi lewat jurnal pembalik.
+         */
+        get: operations["listJournals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ledger/journals/{journalId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detail jurnal + baris
+         * @description Header jurnal beserta seluruh barisnya. Jurnal immutable: tidak ada endpoint edit/hapus;
+         *     koreksi dilakukan lewat jurnal pembalik.
+         */
+        get: operations["getJournal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ledger/journals/{journalId}/reversal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Jurnal pembalik
+         * @description Membuat jurnal baru dengan `reversalOf` = jurnal asal dan debit/kredit **ditukar**, pada
+         *     tanggal bisnis asal. Hanya jika periode tanggal itu masih OPEN dan jurnal belum pernah
+         *     dibalik. **Idempoten**: permintaan ulang dengan `Idempotency-Key` yang sama mengembalikan
+         *     jurnal pembalik yang sudah ada (200); kunci sama untuk jurnal asal lain → 409.
+         *     Tidak ada endpoint edit/hapus — DB menolak UPDATE/DELETE pada jurnal.
+         */
+        post: operations["reverseJournal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ledger/trial-balance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Trial balance per periode
+         * @description Agregat debit/kredit per akun untuk periode yang diberikan, dihitung **langsung dari
+         *     `journal_line`** (bukan cache `balance_snapshot`). Total debit dan total kredit harus sama;
+         *     akun tanpa pergerakan tidak muncul. Izin: `ledger.journal.read` (tingkat institusi).
+         */
+        get: operations["getTrialBalance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daftar produk
+         * @description Katalog produk + versi yang berlaku pada `asOf` (default tanggal bisnis institusi).
+         *     Produk tanpa versi yang berlaku pada tanggal itu tetap muncul dengan `currentVersion: null`.
+         */
+        get: operations["listProducts"];
+        put?: never;
+        /**
+         * Buat produk + versi pertama
+         * @description Membuat produk baru beserta versi 1 (terbuka). Setiap atribut **wajib** berupa binding ke
+         *     parameter terdaftar (`product.*`) dan divalidasi terhadap definisi parameter (tipe, enum,
+         *     batas numerik). Menerbitkan event `ProductPublished`.
+         */
+        post: operations["createProduct"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/products/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detail produk + versi
+         * @description Detail produk beserta seluruh versi dan binding parameternya. Versi bersifat immutable;
+         *     perubahan atribut = versi baru, bukan edit baris lama.
+         */
+        get: operations["getProduct"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/products/{code}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Versi produk baru
+         * @description Menerbitkan versi baru mulai `effectiveFrom`. Versi terbuka sebelumnya ditutup sehari
+         *     sebelum tanggal itu. Versi tidak boleh tumpang tindih (dijaga EXCLUDE di DB). Menerbitkan
+         *     event `ProductPublished`.
+         */
+        post: operations["createProductVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -549,6 +922,315 @@ export interface components {
         AuditList: {
             items: components["schemas"]["AuditItem"][];
         };
+        PartyCreate: {
+            /**
+             * @description Jenis party. Detail orang/lembaga menyusul di T-071.
+             * @enum {string}
+             */
+            kind: "PERSON" | "ORG";
+            /** @description Nama tampil party (PII; tidak diterbitkan ke event). */
+            displayName: string;
+            /**
+             * Format: uuid
+             * @description Cabang pemilik party (izin dan audit mengikuti cabang ini).
+             */
+            branchId: string;
+        };
+        Party: {
+            /** Format: uuid */
+            partyId: string;
+            /** @description Nomor CIF dari parameter `party.cif.format` + sequence. */
+            cif: string;
+            /** @enum {string} */
+            kind: "PERSON" | "ORG";
+            displayName: string;
+            /** @enum {string} */
+            status: "ACTIVE" | "SUSPENDED" | "CLOSED";
+            /** Format: uuid */
+            branchId: string;
+            /** @description ISO-8601 UTC. */
+            createdAt: string;
+        };
+        IdentityDocCreate: {
+            /** @description Harus termasuk daftar parameter `party.identity.doc_types`. */
+            docType: string;
+            /**
+             * @description Nomor dokumen apa adanya; server menormalkan (huruf besar, hanya A-Z0-9) sebelum
+             *     dienkripsi. Nilai ini tidak pernah dikembalikan utuh kecuali lewat *unmask*.
+             */
+            number: string;
+            /**
+             * @description Tanggal terbit `YYYY-MM-DD` (opsional; `null`/absen bila tidak dicatat). Bentuk
+             *     tanggal tidak sah dijawab 400, bukan 500.
+             */
+            issuedAt?: string | null;
+            /**
+             * @description Tanggal kedaluwarsa `YYYY-MM-DD` (opsional). Tidak boleh lebih awal dari `issuedAt`
+             *     (dijawab 400).
+             */
+            expiresAt?: string | null;
+        };
+        IdentityDoc: {
+            /** Format: uuid */
+            docId: string;
+            docType: string;
+            /** @description Dua karakter terakhir nomor (bentuk tersamar untuk UI). */
+            numberLast2: string;
+            issuedAt: string | null;
+            expiresAt: string | null;
+            /** @description ISO-8601 UTC. */
+            createdAt: string;
+        };
+        IdentityDocUnmasked: {
+            /** Format: uuid */
+            docId: string;
+            docType: string;
+            /** @description Nomor asli (ternormalisasi). Setiap pembacaan diaudit. */
+            number: string;
+            expiresAt: string | null;
+        };
+        UnmaskRequest: {
+            /** @description Alasan pembukaan data (masuk jejak audit, bukan opsional). */
+            reason: string;
+        };
+        KycProfileView: {
+            /** Format: uuid */
+            partyId: string;
+            /** @enum {string} */
+            status: "PENDING" | "VERIFIED" | "REJECTED";
+            /** @description Tingkat risiko berjalan (anggota `party.kyc.risk_levels`). */
+            riskLevel: string;
+            /** @description ISO-8601 UTC; `null` bila belum pernah dinilai. */
+            riskAssessedAt: string | null;
+            /** @description Tanggal re-KYC berikutnya (`YYYY-MM-DD`). */
+            nextReviewDue: string | null;
+            /** @description Maksimum 50 dokumen pertama menurut `createdAt` (batas teknis respons). */
+            documents: components["schemas"]["IdentityDoc"][];
+            /** @description Maksimum 50 penilaian terbaru (batas teknis respons, bukan aturan bisnis). */
+            riskHistory: components["schemas"]["RiskRatingItem"][];
+        };
+        RiskRatingItem: {
+            /** Format: uuid */
+            ratingId: string;
+            level: string;
+            reason: string;
+            /** @description ISO-8601 UTC. */
+            assessedAt: string;
+            /** Format: uuid */
+            assessedBy: string;
+        };
+        RiskRatingCreate: {
+            /** @description Harus termasuk daftar parameter `party.kyc.risk_levels`. */
+            level: string;
+            reason: string;
+        };
+        RiskRatingView: {
+            /** Format: uuid */
+            ratingId: string;
+            /** Format: uuid */
+            partyId: string;
+            level: string;
+            reason: string;
+            /** @description ISO-8601 UTC. */
+            assessedAt: string;
+            nextReviewDue: string | null;
+        };
+        CoaCreate: {
+            /** @description Harus cocok dengan parameter `ledger.coa.code_pattern`. */
+            code: string;
+            name: string;
+            /** @enum {string} */
+            accountType: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE";
+            /**
+             * @description `false` untuk akun header/induk yang tidak boleh dipakai posting jurnal (T-073).
+             * @default true
+             */
+            postable: boolean;
+        };
+        CoaAccount: {
+            /** Format: uuid */
+            accountId: string;
+            code: string;
+            name: string;
+            /** @enum {string} */
+            accountType: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE";
+            /**
+             * @description Invarian dari `accountType` — bukan masukan pemanggil.
+             * @enum {string}
+             */
+            normalSide: "DEBIT" | "CREDIT";
+            postable: boolean;
+            /** @enum {string} */
+            status: "ACTIVE" | "INACTIVE";
+            /** @description ISO-8601 UTC. */
+            createdAt: string;
+        };
+        CoaList: {
+            items: components["schemas"]["CoaAccount"][];
+        };
+        PeriodCreate: {
+            /**
+             * Format: date
+             * @description Tanggal mulai `YYYY-MM-DD` (inklusif).
+             */
+            startsOn: string;
+            /**
+             * Format: date
+             * @description Tanggal akhir `YYYY-MM-DD` (inklusif); tidak boleh sebelum `startsOn`.
+             */
+            endsOn: string;
+        };
+        Period: {
+            /** Format: uuid */
+            periodId: string;
+            startsOn: string;
+            endsOn: string;
+            /** @enum {string} */
+            status: "OPEN" | "CLOSED";
+            /** @description ISO-8601 UTC; `null` selama periode masih OPEN. */
+            closedAt: string | null;
+            /** @description UUID penutup; `null` selama periode masih OPEN. */
+            closedBy: string | null;
+            /** @description ISO-8601 UTC. */
+            createdAt: string;
+        };
+        PeriodList: {
+            items: components["schemas"]["Period"][];
+        };
+        PeriodCloseRequest: {
+            /** @description Alasan penutupan; masuk jejak audit. */
+            reason: string;
+        };
+        JournalLine: {
+            lineNo: number;
+            glAccount: string;
+            /** Format: uuid */
+            branchId: string;
+            /** @description Desimal 4 angka di belakang koma, mis. `1500.0000`. */
+            debit: string;
+            /** @description Desimal 4 angka di belakang koma; tepat satu dari debit/credit > 0. */
+            credit: string;
+        };
+        JournalHeader: {
+            /** Format: uuid */
+            journalId: string;
+            /** Format: date */
+            businessDate: string;
+            /** Format: date */
+            valueDate: string;
+            sourceEvent: string;
+            /** Format: uuid */
+            sourceRef: string;
+            idempotencyKey: string;
+            /** @description UUID jurnal asal bila jurnal ini pembalik; `null` bila bukan. */
+            reversalOf: string | null;
+            /** @description ISO-8601 UTC. */
+            recordedAt: string;
+        };
+        Journal: {
+            /** Format: uuid */
+            journalId: string;
+            /** Format: date */
+            businessDate: string;
+            /** Format: date */
+            valueDate: string;
+            sourceEvent: string;
+            /** Format: uuid */
+            sourceRef: string;
+            idempotencyKey: string;
+            reversalOf: string | null;
+            recordedAt: string;
+            lines: components["schemas"]["JournalLine"][];
+            totalDebit: string;
+            totalCredit: string;
+        };
+        JournalList: {
+            items: components["schemas"]["JournalHeader"][];
+        };
+        JournalReversalRequest: {
+            reason: string;
+        };
+        TrialBalanceLine: {
+            accountCode: string;
+            accountName: string;
+            /** @enum {string} */
+            accountType: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE";
+            debit: string;
+            credit: string;
+        };
+        TrialBalance: {
+            /** Format: uuid */
+            periodId: string;
+            /** Format: date */
+            startsOn: string;
+            /** Format: date */
+            endsOn: string;
+            totalDebit: string;
+            totalCredit: string;
+            lines: components["schemas"]["TrialBalanceLine"][];
+        };
+        ParamBinding: {
+            paramKey: string;
+            /** @description Nilai JSON sesuai tipe parameter (money/decimal/rate berupa string desimal). */
+            value: unknown;
+        };
+        ProductVersion: {
+            /** Format: uuid */
+            versionId: string;
+            versionNo: number;
+            /** Format: date */
+            effectiveFrom: string;
+            /** Format: date */
+            effectiveTo: string | null;
+            bindings: components["schemas"]["ParamBinding"][];
+        };
+        ProductVersionRef: {
+            versionNo: number;
+            /** Format: date */
+            effectiveFrom: string;
+        };
+        Product: {
+            /** Format: uuid */
+            productId: string;
+            code: string;
+            name: string;
+            /** @enum {string} */
+            productType: "SAVINGS" | "TIME_DEPOSIT" | "LOAN" | "FINANCING";
+            createdAt: string;
+            versions: components["schemas"]["ProductVersion"][];
+        };
+        ProductSummary: {
+            /** Format: uuid */
+            productId: string;
+            code: string;
+            name: string;
+            /** @enum {string} */
+            productType: "SAVINGS" | "TIME_DEPOSIT" | "LOAN" | "FINANCING";
+            createdAt: string;
+            currentVersion: components["schemas"]["ProductVersionRef"] | null;
+        };
+        ProductList: {
+            items: components["schemas"]["ProductSummary"][];
+        };
+        ProductCreate: {
+            code: string;
+            name: string;
+            /** @enum {string} */
+            productType: "SAVINGS" | "TIME_DEPOSIT" | "LOAN" | "FINANCING";
+            /** Format: date */
+            effectiveFrom: string;
+            /** @description Peta `paramKey` → nilai. */
+            bindings: {
+                [key: string]: unknown;
+            };
+        };
+        ProductVersionCreate: {
+            /** Format: date */
+            effectiveFrom: string;
+            bindings: {
+                [key: string]: unknown;
+            };
+        };
     };
     responses: {
         /** @description Error dengan amplop RFC 9457 (`application/problem+json`) */
@@ -561,7 +1243,10 @@ export interface components {
             };
         };
     };
-    parameters: never;
+    parameters: {
+        /** @description Id party (UUID). */
+        PartyId: string;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -1164,6 +1849,563 @@ export interface operations {
             405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+        };
+    };
+    createParty: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartyCreate"];
+            };
+        };
+        responses: {
+            /** @description Party dibuat */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Party"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    getParty: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                partyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Party */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Party"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    addIdentityDoc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Id party (UUID). */
+                partyId: components["parameters"]["PartyId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IdentityDocCreate"];
+            };
+        };
+        responses: {
+            /** @description Dokumen terdaftar */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityDoc"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+        };
+    };
+    getPartyKyc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Id party (UUID). */
+                partyId: components["parameters"]["PartyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Profil KYC */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KycProfileView"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    ratePartyRisk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Id party (UUID). */
+                partyId: components["parameters"]["PartyId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RiskRatingCreate"];
+            };
+        };
+        responses: {
+            /** @description Penilaian tersimpan */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RiskRatingView"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    unmaskIdentityDoc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Id party (UUID). */
+                partyId: components["parameters"]["PartyId"];
+                docId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnmaskRequest"];
+            };
+        };
+        responses: {
+            /** @description Nomor dokumen */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityDocUnmasked"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+        };
+    };
+    listCoa: {
+        parameters: {
+            query?: {
+                type?: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE";
+                postable?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar akun */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoaList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    createCoa: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CoaCreate"];
+            };
+        };
+        responses: {
+            /** @description Akun dibuat */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoaAccount"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    listPeriods: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar periode */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeriodList"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    openPeriod: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PeriodCreate"];
+            };
+        };
+        responses: {
+            /** @description Periode dibuka */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Period"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    closePeriod: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                periodId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PeriodCloseRequest"];
+            };
+        };
+        responses: {
+            /** @description Periode tertutup */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Period"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    listJournals: {
+        parameters: {
+            query?: {
+                businessDate?: string;
+                sourceEvent?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar jurnal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JournalList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    getJournal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                journalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Jurnal beserta baris */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Journal"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    reverseJournal: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                journalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JournalReversalRequest"];
+            };
+        };
+        responses: {
+            /** @description Permintaan ulang dengan kunci yang sama (idempoten) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Journal"];
+                };
+            };
+            /** @description Jurnal pembalik dibuat */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Journal"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    getTrialBalance: {
+        parameters: {
+            query: {
+                periodId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Trial balance */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrialBalance"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    listProducts: {
+        parameters: {
+            query?: {
+                asOf?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar produk */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    createProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductCreate"];
+            };
+        };
+        responses: {
+            /** @description Produk dibuat */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Product"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    getProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Detail produk */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Product"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    createProductVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductVersionCreate"];
+            };
+        };
+        responses: {
+            /** @description Versi dibuat */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Product"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
         };
     };
 }

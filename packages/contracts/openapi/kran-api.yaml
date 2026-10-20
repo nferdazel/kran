@@ -48,6 +48,18 @@ tags:
       lain, dan nilai aktif lama dipangkas saat nilai baru disetujui.
   - name: audit
     description: Jejak audit append-only ber-rantai hash (spec §9.1(7), §18.2).
+  - name: ledger
+    description: |
+      Buku besar: Chart of Accounts dan periode akuntansi (Fase 1, T-072). Jurnal double-entry,
+      saldo, dan trial balance menyusul di T-073/T-075.
+  - name: product
+    description: |
+      Katalog produk parametrik & effective-dated (spec §9, T-076): atribut hanya lewat binding
+      parameter, versi immutable, tidak ada tumpang tindih.
+  - name: party
+    description: |
+      Party (CIF + identitas dasar) — Fase 1, T-070. Nomor CIF dibentuk dari parameter
+      `party.cif.format`; data PII menyusul di T-071 bersama field crypto.
 
 paths:
   /healthz:
@@ -687,6 +699,711 @@ paths:
         "501":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/parties:
+    post:
+      operationId: createParty
+      tags: [party]
+      summary: Buat party baru (CIF)
+      description: |
+        Membuat party dengan CIF dari parameter `party.cif.format` dan nomor urut DB. Audit
+        `party.create` dan event `party.onboarded` ditulis dalam transaksi yang sama.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartyCreate"
+      responses:
+        "201":
+          description: Party dibuat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Party"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/parties/{partyId}:
+    get:
+      operationId: getParty
+      tags: [party]
+      summary: Baca satu party
+      description: |
+        Mengembalikan party bila pemanggil memegang izin `party.party.read` di cabang party.
+        Party yang tidak ada → 404; party yang ada di cabang lain → 403 (izin cabang, sama seperti
+        jalur parameter `branch_not_allowed`). Id yang bukan UUID juga dijawab 404.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: partyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Party
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Party"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/parties/{partyId}/identity-docs:
+    post:
+      operationId: addIdentityDoc
+      tags: [party]
+      summary: Registrasi dokumen identitas party
+      description: |
+        Nomor dokumen disimpan **terenkripsi** (field-level, AAD = nama tabel) dengan *blind index*
+        untuk deteksi duplikat; respons ini hanya memuat dua karakter terakhir. Butuh izin
+        `party.kyc.manage` di cabang party. Nomor ganda (lintas party) ditolak 409.
+        Bila `KRAN_KEK_FILE` belum diatur, endpoint menjawab 501 (fail-closed) — tidak pernah
+        menyimpan plaintext.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/PartyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentityDocCreate"
+      responses:
+        "201":
+          description: Dokumen terdaftar
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityDoc"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/parties/{partyId}/kyc:
+    get:
+      operationId: getPartyKyc
+      tags: [party]
+      summary: Profil KYC party
+      description: |
+        Profil KYC, rating risiko berjalan, riwayat penilaian, dan daftar dokumen identitas
+        **tanpa nomor** (hanya bentuk tersamar). Membuka nomor dokumen punya endpoint sendiri
+        (`unmask`) yang butuh izin tambahan + alasan + audit. Butuh `party.party.read` di cabang
+        party; party atau profil yang tidak ada dijawab 404.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/PartyId"
+      responses:
+        "200":
+          description: Profil KYC
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KycProfileView"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/parties/{partyId}/risk-rating:
+    post:
+      operationId: ratePartyRisk
+      tags: [party]
+      summary: Penilaian risiko party (riwayat bertambah)
+      description: |
+        Menambah satu baris riwayat penilaian risiko (append-only), memperbarui rating berjalan di
+        profil KYC, dan menghitung jadwal re-KYC dari parameter `party.kyc.review_months`. Menulis
+        audit `party.risk.change` dan event `party.risk_changed` dalam transaksi yang sama.
+        Butuh izin `party.kyc.manage` di cabang party.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/PartyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RiskRatingCreate"
+      responses:
+        "201":
+          description: Penilaian tersimpan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RiskRatingView"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/parties/{partyId}/identity-docs/{docId}/unmask:
+    post:
+      operationId: unmaskIdentityDoc
+      tags: [party]
+      summary: Buka nomor dokumen identitas (unmask)
+      description: |
+        Mengembalikan nomor dokumen dalam bentuk asli. Butuh izin `party.identity_doc.read` di
+        cabang party **dan** alasan pada badan permintaan; setiap pembukaan menulis audit
+        `party.identity.unmask` (tanpa nomor). Dokumen milik party lain dijawab 404, bukan 403,
+        supaya id dokumen tidak menjadi alat menghitung keberadaan data (spec §18.2).
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/PartyId"
+        - name: docId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnmaskRequest"
+      responses:
+        "200":
+          description: Nomor dokumen
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityDocUnmasked"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/ledger/coa:
+    get:
+      operationId: listCoa
+      tags: [ledger]
+      summary: Daftar akun COA
+      description: |
+        Daftar akun urut kode. Filter `type` dan `postable` menyaring **di SQL** (bukan setelah
+        batas baris), jadi hasil tidak terpotong di tengah filter. COA dimiliki institusi, bukan
+        cabang. Daftar dibatasi **200 akun** (batas ukuran respons); paginasi menyusul bila COA
+        tumbuh melewati itu.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+        - name: postable
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Daftar akun
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoaList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createCoa
+      tags: [ledger]
+      summary: Buat akun COA
+      description: |
+        Kode akun dicocokkan dengan parameter `ledger.coa.code_pattern` (seluruh string). Sisi
+        normal **tidak** dikirim pemanggil: diturunkan dari `accountType` (ASSET/EXPENSE = DEBIT,
+        LIABILITY/EQUITY/REVENUE = CREDIT) dan dijaga CHECK DB. Kode duplikat → 409.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CoaCreate"
+      responses:
+        "201":
+          description: Akun dibuat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoaAccount"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/ledger/periods:
+    get:
+      operationId: listPeriods
+      tags: [ledger]
+      summary: Daftar periode akuntansi
+      description: |
+        Periode akuntansi urut tanggal mulai terbaru, dibatasi **200 periode**. Rentang bersifat
+        **inklusif** (`startsOn`..`endsOn`); tumpang tindih ditolak DB.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Daftar periode
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeriodList"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: openPeriod
+      tags: [ledger]
+      summary: Buka periode
+      description: |
+        Membuka periode baru. Periode yang tumpang tindih dengan periode mana pun ditolak **409**
+        oleh exclusion constraint (`period_no_overlap`), bukan oleh pemeriksaan aplikasi.
+        Urutan penutupan (EOD/EOM) diatur `daycloser`, bukan endpoint ini.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PeriodCreate"
+      responses:
+        "201":
+          description: Periode dibuka
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Period"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/ledger/periods/{periodId}/close:
+    post:
+      operationId: closePeriod
+      tags: [ledger]
+      summary: Tutup periode
+      description: |
+        Menutup periode OPEN: mengisi `closed_at`/`closedBy`, menulis audit `ledger.period.close`
+        dan event `period.closed` dalam transaksi yang sama. **Alasan wajib**. Periode yang sudah
+        tertutup → 409.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: periodId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PeriodCloseRequest"
+      responses:
+        "200":
+          description: Periode tertutup
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Period"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/ledger/journals:
+    get:
+      operationId: listJournals
+      tags: [ledger]
+      summary: Daftar jurnal
+      description: |
+        Header jurnal (tanpa baris), urut tanggal bisnis terbaru, dibatasi **200**. Jurnal tidak
+        bisa dibuat/diubah/dihapus lewat HTTP: pembuatan berasal dari posting rule/event (T-074),
+        koreksi lewat jurnal pembalik.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: businessDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: sourceEvent
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Daftar jurnal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/ledger/journals/{journalId}:
+    get:
+      operationId: getJournal
+      tags: [ledger]
+      summary: Detail jurnal + baris
+      description: |
+        Header jurnal beserta seluruh barisnya. Jurnal immutable: tidak ada endpoint edit/hapus;
+        koreksi dilakukan lewat jurnal pembalik.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: journalId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Jurnal beserta baris
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Journal"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/ledger/journals/{journalId}/reversal:
+    post:
+      operationId: reverseJournal
+      tags: [ledger]
+      summary: Jurnal pembalik
+      description: |
+        Membuat jurnal baru dengan `reversalOf` = jurnal asal dan debit/kredit **ditukar**, pada
+        tanggal bisnis asal. Hanya jika periode tanggal itu masih OPEN dan jurnal belum pernah
+        dibalik. **Idempoten**: permintaan ulang dengan `Idempotency-Key` yang sama mengembalikan
+        jurnal pembalik yang sudah ada (200); kunci sama untuk jurnal asal lain → 409.
+        Tidak ada endpoint edit/hapus — DB menolak UPDATE/DELETE pada jurnal.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: journalId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JournalReversalRequest"
+      responses:
+        "201":
+          description: Jurnal pembalik dibuat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Journal"
+        "200":
+          description: Permintaan ulang dengan kunci yang sama (idempoten)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Journal"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/ledger/trial-balance:
+    get:
+      operationId: getTrialBalance
+      tags: [ledger]
+      summary: Trial balance per periode
+      description: |
+        Agregat debit/kredit per akun untuk periode yang diberikan, dihitung **langsung dari
+        `journal_line`** (bukan cache `balance_snapshot`). Total debit dan total kredit harus sama;
+        akun tanpa pergerakan tidak muncul. Izin: `ledger.journal.read` (tingkat institusi).
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: periodId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Trial balance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialBalance"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/products:
+    get:
+      operationId: listProducts
+      tags: [product]
+      summary: Daftar produk
+      description: |
+        Katalog produk + versi yang berlaku pada `asOf` (default tanggal bisnis institusi).
+        Produk tanpa versi yang berlaku pada tanggal itu tetap muncul dengan `currentVersion: null`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: asOf
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Daftar produk
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createProduct
+      tags: [product]
+      summary: Buat produk + versi pertama
+      description: |
+        Membuat produk baru beserta versi 1 (terbuka). Setiap atribut **wajib** berupa binding ke
+        parameter terdaftar (`product.*`) dan divalidasi terhadap definisi parameter (tipe, enum,
+        batas numerik). Menerbitkan event `ProductPublished`.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductCreate"
+      responses:
+        "201":
+          description: Produk dibuat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/products/{code}:
+    get:
+      operationId: getProduct
+      tags: [product]
+      summary: Detail produk + versi
+      description: |
+        Detail produk beserta seluruh versi dan binding parameternya. Versi bersifat immutable;
+        perubahan atribut = versi baru, bukan edit baris lama.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Detail produk
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/products/{code}/versions:
+    post:
+      operationId: createProductVersion
+      tags: [product]
+      summary: Versi produk baru
+      description: |
+        Menerbitkan versi baru mulai `effectiveFrom`. Versi terbuka sebelumnya ditutup sehari
+        sebelum tanggal itu. Versi tidak boleh tumpang tindih (dijaga EXCLUDE di DB). Menerbitkan
+        event `ProductPublished`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductVersionCreate"
+      responses:
+        "201":
+          description: Versi dibuat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -696,6 +1413,16 @@ components:
       description: |
         Sesi login (spec §13): cookie `HttpOnly`, `Secure`, `SameSite=Lax`. Header
         `Authorization: Bearer <token>` juga diterima untuk klien non-browser.
+
+  parameters:
+    PartyId:
+      name: partyId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Id party (UUID).
 
   responses:
     Problem:
@@ -1052,3 +1779,604 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AuditItem"
+
+    PartyCreate:
+      type: object
+      additionalProperties: false
+      required: [kind, displayName, branchId]
+      properties:
+        kind:
+          type: string
+          enum: [PERSON, ORG]
+          description: Jenis party. Detail orang/lembaga menyusul di T-071.
+        displayName:
+          type: string
+          minLength: 2
+          maxLength: 200
+          description: Nama tampil party (PII; tidak diterbitkan ke event).
+        branchId:
+          type: string
+          format: uuid
+          description: Cabang pemilik party (izin dan audit mengikuti cabang ini).
+
+    Party:
+      type: object
+      additionalProperties: false
+      required: [partyId, cif, kind, displayName, status, branchId, createdAt]
+      properties:
+        partyId:
+          type: string
+          format: uuid
+        cif:
+          type: string
+          description: Nomor CIF dari parameter `party.cif.format` + sequence.
+        kind:
+          type: string
+          enum: [PERSON, ORG]
+        displayName:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED, CLOSED]
+        branchId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          description: ISO-8601 UTC.
+
+    IdentityDocCreate:
+      type: object
+      additionalProperties: false
+      required: [docType, number]
+      properties:
+        docType:
+          type: string
+          description: Harus termasuk daftar parameter `party.identity.doc_types`.
+        number:
+          type: string
+          maxLength: 64
+          description: |
+            Nomor dokumen apa adanya; server menormalkan (huruf besar, hanya A-Z0-9) sebelum
+            dienkripsi. Nilai ini tidak pernah dikembalikan utuh kecuali lewat *unmask*.
+        issuedAt:
+          type: ["string", "null"]
+          description: |
+            Tanggal terbit `YYYY-MM-DD` (opsional; `null`/absen bila tidak dicatat). Bentuk
+            tanggal tidak sah dijawab 400, bukan 500.
+        expiresAt:
+          type: ["string", "null"]
+          description: |
+            Tanggal kedaluwarsa `YYYY-MM-DD` (opsional). Tidak boleh lebih awal dari `issuedAt`
+            (dijawab 400).
+
+    IdentityDoc:
+      type: object
+      additionalProperties: false
+      required: [docId, docType, numberLast2, issuedAt, expiresAt, createdAt]
+      properties:
+        docId:
+          type: string
+          format: uuid
+        docType:
+          type: string
+        numberLast2:
+          type: string
+          description: Dua karakter terakhir nomor (bentuk tersamar untuk UI).
+        issuedAt:
+          type: ["string", "null"]
+        expiresAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          description: ISO-8601 UTC.
+
+    IdentityDocUnmasked:
+      type: object
+      additionalProperties: false
+      required: [docId, docType, number, expiresAt]
+      properties:
+        docId:
+          type: string
+          format: uuid
+        docType:
+          type: string
+        number:
+          type: string
+          description: Nomor asli (ternormalisasi). Setiap pembacaan diaudit.
+        expiresAt:
+          type: ["string", "null"]
+
+    UnmaskRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Alasan pembukaan data (masuk jejak audit, bukan opsional).
+
+    KycProfileView:
+      type: object
+      additionalProperties: false
+      required: [partyId, status, riskLevel, riskAssessedAt, nextReviewDue, documents, riskHistory]
+      properties:
+        partyId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, VERIFIED, REJECTED]
+        riskLevel:
+          type: string
+          description: Tingkat risiko berjalan (anggota `party.kyc.risk_levels`).
+        riskAssessedAt:
+          type: ["string", "null"]
+          description: ISO-8601 UTC; `null` bila belum pernah dinilai.
+        nextReviewDue:
+          type: ["string", "null"]
+          description: Tanggal re-KYC berikutnya (`YYYY-MM-DD`).
+        documents:
+          type: array
+          description: Maksimum 50 dokumen pertama menurut `createdAt` (batas teknis respons).
+          items:
+            $ref: "#/components/schemas/IdentityDoc"
+        riskHistory:
+          type: array
+          description: Maksimum 50 penilaian terbaru (batas teknis respons, bukan aturan bisnis).
+          items:
+            $ref: "#/components/schemas/RiskRatingItem"
+
+    RiskRatingItem:
+      type: object
+      additionalProperties: false
+      required: [ratingId, level, reason, assessedAt, assessedBy]
+      properties:
+        ratingId:
+          type: string
+          format: uuid
+        level:
+          type: string
+        reason:
+          type: string
+        assessedAt:
+          type: string
+          description: ISO-8601 UTC.
+        assessedBy:
+          type: string
+          format: uuid
+
+    RiskRatingCreate:
+      type: object
+      additionalProperties: false
+      required: [level, reason]
+      properties:
+        level:
+          type: string
+          description: Harus termasuk daftar parameter `party.kyc.risk_levels`.
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    RiskRatingView:
+      type: object
+      additionalProperties: false
+      required: [ratingId, partyId, level, reason, assessedAt, nextReviewDue]
+      properties:
+        ratingId:
+          type: string
+          format: uuid
+        partyId:
+          type: string
+          format: uuid
+        level:
+          type: string
+        reason:
+          type: string
+        assessedAt:
+          type: string
+          description: ISO-8601 UTC.
+        nextReviewDue:
+          type: ["string", "null"]
+
+    CoaCreate:
+      type: object
+      additionalProperties: false
+      required: [code, name, accountType]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 32
+          description: Harus cocok dengan parameter `ledger.coa.code_pattern`.
+        name:
+          type: string
+          minLength: 2
+          maxLength: 200
+        accountType:
+          type: string
+          enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+        postable:
+          type: boolean
+          default: true
+          description: |
+            `false` untuk akun header/induk yang tidak boleh dipakai posting jurnal (T-073).
+
+    CoaAccount:
+      type: object
+      additionalProperties: false
+      required: [accountId, code, name, accountType, normalSide, postable, status, createdAt]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        accountType:
+          type: string
+          enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+        normalSide:
+          type: string
+          enum: [DEBIT, CREDIT]
+          description: Invarian dari `accountType` — bukan masukan pemanggil.
+        postable:
+          type: boolean
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+        createdAt:
+          type: string
+          description: ISO-8601 UTC.
+
+    CoaList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoaAccount"
+
+    PeriodCreate:
+      type: object
+      additionalProperties: false
+      required: [startsOn, endsOn]
+      properties:
+        startsOn:
+          type: string
+          format: date
+          description: Tanggal mulai `YYYY-MM-DD` (inklusif).
+        endsOn:
+          type: string
+          format: date
+          description: Tanggal akhir `YYYY-MM-DD` (inklusif); tidak boleh sebelum `startsOn`.
+
+    Period:
+      type: object
+      additionalProperties: false
+      required: [periodId, startsOn, endsOn, status, closedAt, closedBy, createdAt]
+      properties:
+        periodId:
+          type: string
+          format: uuid
+        startsOn:
+          type: string
+        endsOn:
+          type: string
+        status:
+          type: string
+          enum: [OPEN, CLOSED]
+        closedAt:
+          type: ["string", "null"]
+          description: ISO-8601 UTC; `null` selama periode masih OPEN.
+        closedBy:
+          type: ["string", "null"]
+          description: UUID penutup; `null` selama periode masih OPEN.
+        createdAt:
+          type: string
+          description: ISO-8601 UTC.
+
+    PeriodList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Period"
+
+    PeriodCloseRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Alasan penutupan; masuk jejak audit.
+
+    JournalLine:
+      type: object
+      additionalProperties: false
+      required: [lineNo, glAccount, branchId, debit, credit]
+      properties:
+        lineNo:
+          type: integer
+          minimum: 1
+        glAccount:
+          type: string
+        branchId:
+          type: string
+          format: uuid
+        debit:
+          type: string
+          description: Desimal 4 angka di belakang koma, mis. `1500.0000`.
+        credit:
+          type: string
+          description: Desimal 4 angka di belakang koma; tepat satu dari debit/credit > 0.
+
+    JournalHeader:
+      type: object
+      additionalProperties: false
+      required: [journalId, businessDate, valueDate, sourceEvent, sourceRef, idempotencyKey,
+                 reversalOf, recordedAt]
+      properties:
+        journalId:
+          type: string
+          format: uuid
+        businessDate:
+          type: string
+          format: date
+        valueDate:
+          type: string
+          format: date
+        sourceEvent:
+          type: string
+        sourceRef:
+          type: string
+          format: uuid
+        idempotencyKey:
+          type: string
+        reversalOf:
+          type: ["string", "null"]
+          description: UUID jurnal asal bila jurnal ini pembalik; `null` bila bukan.
+        recordedAt:
+          type: string
+          description: ISO-8601 UTC.
+
+    Journal:
+      type: object
+      additionalProperties: false
+      required: [journalId, businessDate, valueDate, sourceEvent, sourceRef, idempotencyKey,
+                 reversalOf, recordedAt, lines, totalDebit, totalCredit]
+      properties:
+        journalId:
+          type: string
+          format: uuid
+        businessDate:
+          type: string
+          format: date
+        valueDate:
+          type: string
+          format: date
+        sourceEvent:
+          type: string
+        sourceRef:
+          type: string
+          format: uuid
+        idempotencyKey:
+          type: string
+        reversalOf:
+          type: ["string", "null"]
+        recordedAt:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/JournalLine"
+        totalDebit:
+          type: string
+        totalCredit:
+          type: string
+
+    JournalList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/JournalHeader"
+
+    JournalReversalRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    TrialBalanceLine:
+      type: object
+      additionalProperties: false
+      required: [accountCode, accountName, accountType, debit, credit]
+      properties:
+        accountCode:
+          type: string
+        accountName:
+          type: string
+        accountType:
+          type: string
+          enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+        debit:
+          type: string
+        credit:
+          type: string
+
+    TrialBalance:
+      type: object
+      additionalProperties: false
+      required: [periodId, startsOn, endsOn, totalDebit, totalCredit, lines]
+      properties:
+        periodId:
+          type: string
+          format: uuid
+        startsOn:
+          type: string
+          format: date
+        endsOn:
+          type: string
+          format: date
+        totalDebit:
+          type: string
+        totalCredit:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrialBalanceLine"
+
+    ParamBinding:
+      type: object
+      additionalProperties: false
+      required: [paramKey, value]
+      properties:
+        paramKey:
+          type: string
+        value:
+          description: Nilai JSON sesuai tipe parameter (money/decimal/rate berupa string desimal).
+
+    ProductVersion:
+      type: object
+      additionalProperties: false
+      required: [versionId, versionNo, effectiveFrom, effectiveTo, bindings]
+      properties:
+        versionId:
+          type: string
+          format: uuid
+        versionNo:
+          type: integer
+          minimum: 1
+        effectiveFrom:
+          type: string
+          format: date
+        effectiveTo:
+          type: [ "string", "null" ]
+          format: date
+        bindings:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParamBinding"
+
+    ProductVersionRef:
+      type: object
+      additionalProperties: false
+      required: [versionNo, effectiveFrom]
+      properties:
+        versionNo:
+          type: integer
+          minimum: 1
+        effectiveFrom:
+          type: string
+          format: date
+
+    Product:
+      type: object
+      additionalProperties: false
+      required: [productId, code, name, productType, createdAt, versions]
+      properties:
+        productId:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        productType:
+          type: string
+          enum: [SAVINGS, TIME_DEPOSIT, LOAN, FINANCING]
+        createdAt:
+          type: string
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductVersion"
+
+    ProductSummary:
+      type: object
+      additionalProperties: false
+      required: [productId, code, name, productType, createdAt, currentVersion]
+      properties:
+        productId:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        productType:
+          type: string
+          enum: [SAVINGS, TIME_DEPOSIT, LOAN, FINANCING]
+        createdAt:
+          type: string
+        currentVersion:
+          oneOf:
+            - $ref: "#/components/schemas/ProductVersionRef"
+            - type: "null"
+
+    ProductList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductSummary"
+
+    ProductCreate:
+      type: object
+      additionalProperties: false
+      required: [code, name, productType, effectiveFrom, bindings]
+      properties:
+        code:
+          type: string
+          minLength: 2
+          maxLength: 32
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        productType:
+          type: string
+          enum: [SAVINGS, TIME_DEPOSIT, LOAN, FINANCING]
+        effectiveFrom:
+          type: string
+          format: date
+        bindings:
+          type: object
+          description: Peta `paramKey` → nilai.
+          additionalProperties: true
+
+    ProductVersionCreate:
+      type: object
+      additionalProperties: false
+      required: [effectiveFrom, bindings]
+      properties:
+        effectiveFrom:
+          type: string
+          format: date
+        bindings:
+          type: object
+          additionalProperties: true

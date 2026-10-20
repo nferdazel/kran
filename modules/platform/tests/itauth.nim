@@ -38,7 +38,8 @@ let dbPool = newDbPool(dbConfigFromEnv(envT))
 let db = dbPool.acquire()
 let sysClock = systemClock()
 
-execScript(db, "DROP SCHEMA IF EXISTS platform CASCADE")
+
+resetTestSchemas(db, ".")
 discard applyMigrations(db, repoRoot)
 execScript(db, readFile(repoRoot / "packs/base/generated/param_definitions.sql"))
 execScript(db, readFile(repoRoot / "packs/base/generated/param_values.sql"))
