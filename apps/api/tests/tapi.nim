@@ -6,7 +6,9 @@ import mummy
 
 import platform/domain/authz
 
-import ../src/[access, health, main, server]
+import platform/infrastructure/worker_repo
+
+import ../src/[access, health, main, readiness, server]
 
 ## Test server HTTP tanpa layanan eksternal (tanpa DB): aman dijalankan di CI mana pun, jadi
 ## dinamai `t*` (unit) dan bukan `it*`. Yang diuji: respons nyata **sesuai kontrak** (spec §13) —
@@ -255,3 +257,41 @@ suite "bootstrap: kata sandi acak (murni, tanpa DB)":
       check passwordClasses(randomPassword(20, 2)) >= 2
     # `minClasses = 1` hanya menuntut panjang; alfabetnya sendiri sudah memberi >= 1 kelas.
     check passwordClasses(randomPassword(20, 1)) >= 1
+
+suite "readiness worker konsumen (O-081)":
+  ## Logika murni di sini (tanpa DB), jadi ikut berjalan di CI yang tidak menyediakan Postgres.
+  test "denyut segar → ok":
+    check workerCheck(ageSeconds = 3, uptimeSeconds = 600).status == csOk
+
+  test "belum pernah melapor, masih masa tenggang → ok (deploy/restart baru)":
+    let c = workerCheck(ageSeconds = -1, uptimeSeconds = 30)
+    check c.status == csOk
+    check c.detail == "menunggu denyut pertama"
+
+  test "belum pernah melapor melewati masa tenggang → gagal":
+    let c = workerCheck(ageSeconds = -1, uptimeSeconds = workerStartupGraceSeconds + 1)
+    check c.status == csFailed
+    check c.detail == "worker konsumen belum pernah melapor"
+
+  test "denyut basi setelah masa tenggang → gagal dengan usia":
+    let stale = workerStaleSeconds + 5
+    let c = workerCheck(ageSeconds = int64(stale), uptimeSeconds = 600)
+    check c.status == csFailed
+    check c.detail.contains($stale)
+
+  test "batas tepat ambang masih ok, satu detik lewat gagal":
+    check workerCheck(ageSeconds = 30, uptimeSeconds = 600, staleSeconds = 30).status == csOk
+    check workerCheck(ageSeconds = 31, uptimeSeconds = 600, staleSeconds = 30).status == csFailed
+
+  test "anggaran denyut menutup poll interval maksimum (60 dtk)":
+    # `poll_interval_ms` maksimum di seed adalah 60000 ms; ambang harus lebih longgar dari itu
+    # ditambah satu interval tulis, kalau tidak worker idle yang sehat akan gagal rutin.
+    check workerStaleSeconds > 60 + heartbeatWriteSeconds
+
+  test "event DEAD terlihat tanpa menggagalkan readiness":
+    check outboxDeadCheck(dead = 0).status == csOk
+    check outboxDeadCheck(dead = 0).detail.len == 0
+    let c = outboxDeadCheck(dead = 2)
+    check c.name == "outbox-dead"
+    check c.status == csOk
+    check c.detail.contains("2 event DEAD")

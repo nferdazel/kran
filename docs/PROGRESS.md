@@ -1875,3 +1875,18 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
   terkunci permanen; MAJOR riwayat kata sandi tidak dicatat + test tidak membuktikan sesi/CLI.
   Semua diperbaiki; mutation check (pemulihan LOCKED dihapus → test **FAILED**) membuktikan
   BLOCKER tertangkap. `./task verify api` hijau; `./task ci` hijau (`820 [OK]`, e2e 24).
+
+### O-081 — worker konsumen terpantau (D-101, 20 Okt 2026)
+
+- Worker menulis denyut `platform.worker_heartbeat` (migrasi `platform/0019`, maks. satu tulisan tiap
+  15 dtk) di awal putaran **dan di antara event di dalam batch**; `/readyz` menambah check `worker`
+  (gagal bila usia denyut > 180 dtk, atau belum pernah melapor setelah masa tenggang start 180 dtk)
+  dan `outbox-dead` (jumlah `DEAD` di `detail`, tidak menggagalkan readiness — D-101).
+- Reviewer O-081 putaran 1 **CHANGES REQUESTED**: MAJOR denyut hanya ditulis antar-batch sehingga
+  batch 500 event/impor massal bisa melewati ambang dan worker sehat terlihat mati; MINOR grace,
+  jam mundur, dan test/docs. Perbaikan: denyut per event, ambang `12 × 15 dtk` terikat konstanta
+  tulis, usia dijepit `greatest(0, floor(...))`, logika murni pindah ke `tapi`, test denyut di dalam
+  batch di `itposting`, dan alert eksternal dicatat sebagai O-092. Putaran 2 **APPROVE**.
+- Mutation check: hapus `heartbeat(app)` di loop batch → `itposting` **FAILED**; hapus klausa
+  throttle → test throttle **FAILED**; ubah/matikan ambang → test keputusan **FAILED**.
+- `./task ci` hijau (`828 [OK]`).

@@ -18,7 +18,8 @@ import "platform-lib/db/pool"
 import dbtools/lib
 import kernel/[clock, ids]
 import platform/domain/scope
-import platform/infrastructure/[audit_repo, auth_repo, auth_service, password_hasher]
+import platform/infrastructure/[audit_repo, auth_repo, auth_service, password_hasher,
+  worker_repo]
 
 import ../src/main
 
@@ -179,6 +180,37 @@ suite "kran-api: peran CLI (O-013)":
     # Kontrak CLI (tanpa menyentuh akun nyata): argumen kurang = 2, pengguna tidak ada = 3.
     check runCtl(resetPasswordCmd, ".", "") == 2
     check runCtl(resetPasswordCmd, ".", "tidak-ada") == 3
+
+  test "denyut worker: tulis, usia, throttle, isolasi nama, hitung DEAD (O-081)":
+    let wname = "it-denyut-" & $newId(systemClock())
+    let wnameLain = "it-denyut-lain-" & $newId(systemClock())
+    defer:
+      discard db.execAffectedRows(sql"""
+        DELETE FROM platform.worker_heartbeat WHERE worker_name IN (?, ?)""", wname, wnameLain)
+    check workerHeartbeatAgeSeconds(db, wname) == -1
+    check touchWorkerHeartbeat(db, wname)
+    check workerHeartbeatAgeSeconds(db, wname) >= 0
+    # Baris worker lain yang basi tidak boleh memengaruhi usia worker ini (WHERE tidak boleh hilang).
+    check touchWorkerHeartbeat(db, wnameLain)
+    discard db.execAffectedRows(sql"""
+      UPDATE platform.worker_heartbeat SET last_seen_at = now() - interval '1 hour'
+       WHERE worker_name = ?""", wnameLain)
+    check workerHeartbeatAgeSeconds(db, wname) < 60
+    check workerHeartbeatAgeSeconds(db, wnameLain) >= 3500
+    # Putaran berikutnya dalam <15 detik tidak menulis ulang (throttle).
+    check not touchWorkerHeartbeat(db, wname)
+    # Denyut yang sudah basi ditulis ulang.
+    discard db.execAffectedRows(sql"""
+      UPDATE platform.worker_heartbeat SET last_seen_at = now() - interval '1 minute'
+       WHERE worker_name = ?""", wname)
+    check touchWorkerHeartbeat(db, wname)
+    check workerHeartbeatAgeSeconds(db, wname) <= 5
+    # Jam mundur/NTP: denyut di masa depan tidak boleh terbaca sebagai "belum pernah melapor".
+    discard db.execAffectedRows(sql"""
+      UPDATE platform.worker_heartbeat SET last_seen_at = now() + interval '1 hour'
+       WHERE worker_name = ?""", wname)
+    check workerHeartbeatAgeSeconds(db, wname) == 0
+    check deadEventCount(db) >= 0
 
   test "migrate --seed: menulis ulang nilai hilang, tanpa seed dev (O-090)":
     # Selektor: hanya pack generated; seed dev/test (`packs/*/seed/`) tidak boleh ikut.

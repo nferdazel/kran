@@ -11,8 +11,9 @@ user/role/session, workflow, notifikasi (spec §8, §9.2).
 | Domain peristiwa | `domain/event.nim` | `OutboxEvent`, `EventStatus` |
 | Repo audit | `infrastructure/audit_repo.nim` | `appendAudit`, `verifyChain` |
 | Repo outbox | `infrastructure/outbox_repo.nim` | `appendEvent`, `claimBatch`, `markDone/Failed`, `redrive` |
+| Repo denyut worker | `infrastructure/worker_repo.nim` | `touchWorkerHeartbeat`, `workerHeartbeatAgeSeconds`, `deadEventCount` (O-081) |
 | Repo inbox | `infrastructure/inbox_repo.nim` | `claimInbox` (de-dup per konsumen) |
-| Migrasi | `migrations/0001..0007` | schema, audit_log, outbox+inbox, parameter, kalender, auth, NOTIFY outbox (realtime) |
+| Migrasi | `migrations/0001..0019` | schema, audit_log, outbox+inbox, parameter, kalender, auth, NOTIFY outbox (realtime) |
 
 `api.nim` (permukaan publik modul) menyusul bersama T-005 (parameter) / T-006 (auth):
 saat ini belum ada konsumen lintas-modul, jadi belum ada yang perlu diekspor.
@@ -22,6 +23,7 @@ saat ini belum ada konsumen lintas-modul, jadi belum ada yang perlu diekspor.
 - `platform.schema_migration` — dibuat `tools/dbtools`, bukan migrasi modul.
 - `platform.audit_log` — **append-only** + hash chain.
 - `platform.outbox`, `platform.inbox` — transactional outbox + de-dup.
+- `platform.worker_heartbeat` — denyut worker untuk `/readyz` (teknis, O-081).
 - `platform.param_definition`, `platform.param_value` — parameter framework (T-005).
 - `platform.holiday`, `platform.business_date` — kalender & tanggal buku (T-007).
 - `platform.app_user`, `platform.role`, `platform.permission`, `platform.role_permission`,

@@ -47,8 +47,10 @@ git push origin main          # memicu deploy + health gate + auto-rollback
 
 Unit worker kini long-running (`ops/systemd/kran-worker.container`). Sebelum enable:
 
-- [ ] Probe: pastikan ada cara melihat backlog outbox (query `platform.outbox` per status) dan
-      `RestartPreventExitStatus=2 3` dipahami (exit 2 = konfigurasi, 1 = DB transien/restart)
+- [x] Probe: `/readyz` memuat check `worker` (denyut > 180 dtk, atau belum pernah melapor setelah
+      masa tenggang start 180 dtk = gagal) dan `outbox-dead` (jumlah `DEAD` di `detail`, tidak
+      menggagalkan readiness). `RestartPreventExitStatus=2 3` dipahami (exit 2 = konfigurasi, 1 = DB transien/restart)
+- [ ] Alert eksternal yang memanggil `/readyz` dan memeriksa `DEAD` (O-092)
 - [x] Worker aktif 20 Okt 2026; autostart lewat symlink `default.target.wants` (unit quadlet
       generated menolak `systemctl enable`)
 - [ ] Kirim satu event sintetis → jurnal muncul, event `DONE` (belum dilakukan di produksi agar

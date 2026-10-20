@@ -618,15 +618,17 @@ proc main() =
       [("policy", "sesi cookie + izin per topik (T-012)"),
         ("maxTopics", $limits.maxTopics), ("maxTopicLen", $limits.maxTopicLen)])
 
-  # Readiness = dependensi bootstrap (DB) + skema (O-019) + realtime (O-029) + lag outbox (O-019):
-  # pump yang mati berlarut harus terlihat dari `/readyz`, tetapi penyambungan ulang sekejap tidak
-  # boleh mencabut instance dari trafik. `opts.root` = akar repo untuk membaca daftar migrasi
-  # (default "."; di produksi diarahkan unit systemd ke checkout monorepo).
+  # Readiness = dependensi bootstrap (DB) + skema (O-019) + realtime (O-029) + lag outbox (O-019) +
+  # denyut worker konsumen (O-081): pump yang mati berlarut harus terlihat dari `/readyz`, tetapi
+  # penyambungan ulang sekejap tidak boleh mencabut instance dari trafik. `opts.root` = akar repo
+  # untuk membaca daftar migrasi (default "."; di produksi diarahkan unit systemd ke checkout
+  # monorepo).
   app.readiness = combineProbes(@[
     databaseProbe(),
     migrationProbe(app.pool, opts.root),
     realtimeProbe(app.events),
     pumpLagProbe(app.events, app.pool),
+    workerProbe(app.pool, consumerName, app.startedAt),
     drainProbe(),
   ])
 

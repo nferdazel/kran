@@ -1,16 +1,18 @@
 ## Pemeriksaan kesiapan (readiness) yang dipakai `/readyz` — spec §21.4 #11.
 ##
-## Dipisah dari `main.nim` supaya bisa diuji (`apps/api/tests/itapi.nim`) tanpa menjalankan CLI.
+## Dipisah dari `main.nim` supaya bisa diuji (`apps/api/tests/tapi.nim` untuk keputusan murni,
+## `itapi.nim` untuk endpoint dengan DB) tanpa menjalankan CLI.
 ## Yang diperiksa: dependensi bootstrap (DB), kesesuaian skema (O-019), kesehatan pump realtime
-## (O-029), lag outbox terhadap pump (O-019), dan status drain (T-032). Tidak ada nilai bisnis di sini
+## (O-029), lag outbox terhadap pump (O-019), denyut worker konsumen + event `DEAD` (O-081), dan
+## status drain (T-032). Tidak ada nilai bisnis di sini
 ## — ambang yang dipakai bersifat teknis dan diberi komentar.
 
-import std/strutils
+import std/[strutils, times]
 
 import db_connector/db_postgres
 
 import dbtools/lib
-import platform/infrastructure/outbox_repo
+import platform/infrastructure/[outbox_repo, worker_repo]
 
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
@@ -32,6 +34,20 @@ const
   ## ini. Nilainya sengaja **bukan** parameter DB — `/readyz` adalah gate deploy dan harus tetap
   ## jalan walau nilai parameter belum/ tidak tersedia.
   pumpLagSeconds* = 30
+
+  ## Umur maksimum denyut worker konsumen sebelum readiness gagal (O-081). Worker menulis denyut
+  ## paling jarang tiap `heartbeatWriteSeconds` (15 dtk) dan **juga di dalam batch**, jadi usia
+  ## normal jauh di bawah ambang; 3 menit memberi ruang untuk `poll_interval_ms` maksimum (60 dtk)
+  ## dan satu putaran lambat tanpa alarm palsu. Nilai **teknis**, mengikuti pola `pumpLagSeconds`:
+  ## `/readyz` adalah gate deploy dan tidak boleh bergantung pada parameter DB yang mungkin belum
+  ## tersedia.
+  workerStaleSeconds* = heartbeatWriteSeconds * 12
+
+  ## Masa tenggang setelah proses API start sebelum "worker belum pernah melapor" dianggap gagal.
+  ## Deploy menyalakan API dan worker hampir bersamaan; gate kesehatan berjalan beberapa detik
+  ## setelah restart dan mengulang, jadi masa tenggang ini menutup start pertama tanpa menunda
+  ## deteksi worker yang denyutnya **basi** (itu langsung gagal: basi = worker memang tidak jalan).
+  workerStartupGraceSeconds* = 180
 
 proc realtimeCheck*(pumping: bool; ready: bool; degradedSeconds, graceSeconds: int):
     ReadinessCheck =
@@ -163,4 +179,55 @@ proc pumpLagProbe*(svc: EventService; pool: DbPool;
       @[pumpLagCheck(int(lag), thresholdSeconds)]
     except CatchableError as e:
       @[ReadinessCheck(name: "outbox", status: csOk,
+                       detail: "tidak dapat diperiksa: " & e.msg)]
+
+proc workerCheck*(ageSeconds: int64; uptimeSeconds: int64;
+                  staleSeconds = workerStaleSeconds;
+                  startupGraceSeconds = workerStartupGraceSeconds): ReadinessCheck =
+  ## Keputusan readiness worker konsumen (O-081), dipisah dari I/O supaya bisa diuji deterministik.
+  ##
+  ## `ageSeconds < 0` = worker belum pernah melapor; hanya kasus itu yang mendapat masa tenggang
+  ## start (worker mungkin belum sempat menulis denyut pertama). Denyut **basi** langsung gagal:
+  ## worker sehat menulis paling lambat tiap 60 dtk (`poll_interval_ms` maksimum), jadi usia > 180
+  ## dtk berarti worker tidak jalan — bukan sekadar API baru start.
+  if ageSeconds < 0:
+    if uptimeSeconds < startupGraceSeconds:
+      ReadinessCheck(name: "worker", status: csOk, detail: "menunggu denyut pertama")
+    else:
+      ReadinessCheck(name: "worker", status: csFailed,
+                     detail: "worker konsumen belum pernah melapor")
+  elif ageSeconds > staleSeconds:
+    ReadinessCheck(name: "worker", status: csFailed,
+                   detail: "worker konsumen tidak melapor " & $ageSeconds & " detik")
+  else:
+    ReadinessCheck(name: "worker", status: csOk)
+
+proc outboxDeadCheck*(dead: int64): ReadinessCheck =
+  ## Peristiwa `DEAD` perlu re-drive operator, tetapi **bukan** alasan mencabut API dari trafik:
+  ## deploy ulang tidak menghidupkannya, dan gate deploy yang gagal hanya akan berputar rollback.
+  ## Karena itu statusnya `ok` dengan jumlah di `detail` — terlihat di `/readyz`, tidak memblokir.
+  if dead == 0:
+    ReadinessCheck(name: "outbox-dead", status: csOk)
+  else:
+    ReadinessCheck(name: "outbox-dead", status: csOk,
+                   detail: $dead & " event DEAD menunggu re-drive (`ctl outbox-status`)")
+
+proc workerProbe*(pool: DbPool; workerName: string;
+                  startedAt: float): ReadinessProbe =
+  ## Readiness worker konsumen (O-081): denyut + jumlah event `DEAD`.
+  ##
+  ## Tanpa pool (mis. test tanpa DB) tidak ada yang diperiksa — `databaseProbe` yang melaporkan.
+  result = proc(): seq[ReadinessCheck] {.gcsafe.} =
+    if pool.isNil:
+      return @[]
+    try:
+      let snapshot = withDbConn(pool,
+        proc(db: DbConn): tuple[ageSeconds: int64; dead: int64] {.gcsafe.} =
+        dbCalls:
+          (workerHeartbeatAgeSeconds(db, workerName), deadEventCount(db)))
+      let uptime = int64(max(0.0, epochTime() - startedAt))
+      @[workerCheck(snapshot.ageSeconds, uptime), outboxDeadCheck(snapshot.dead)]
+    except CatchableError as e:
+      # DB tidak terjangkau sudah dilaporkan `databaseProbe`; jangan gagal dua kali.
+      @[ReadinessCheck(name: "worker", status: csOk,
                        detail: "tidak dapat diperiksa: " & e.msg)]

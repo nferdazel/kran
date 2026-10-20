@@ -13,7 +13,7 @@ import kernel/[clock, ids, money]
 import ledger/domain/[journal, period]
 import ledger/infrastructure/[journal_repo, ledger_repo, posting_repo]
 import platform/domain/event
-import platform/infrastructure/[inbox_repo, outbox_repo]
+import platform/infrastructure/[inbox_repo, outbox_repo, worker_repo]
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
 
@@ -69,7 +69,12 @@ proc journalCount(eventType: string): int =
 suite "posting: alur normal":
   test "event akuntansi → satu jurnal seimbang, outbox DONE, inbox tercatat":
     let eventId = accountingEvent()
+    # Denyut ditulis **di dalam** batch (O-081): batch panjang tidak boleh membuat worker sehat
+    # terlihat mati. Hapus baris dulu supaya yang diuji bukan sisa run sebelumnya.
+    discard db.execAffectedRows(
+      sql"DELETE FROM platform.worker_heartbeat WHERE worker_name = ?", consumerName)
     check processBatch(app, "test-worker", 10, 3, 0) >= 1
+    check workerHeartbeatAgeSeconds(db, consumerName) >= 0
     check statusOf(eventId) == "DONE"
     check journalCount("DepositPosted") == 1
     check inboxSeen(db, consumerName, eventId)

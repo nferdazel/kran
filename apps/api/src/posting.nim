@@ -21,7 +21,7 @@ import "platform-lib/db/pool"
 import kernel/[clock, ids, money, paramkey, result]
 import kernel/generated/paramkeys
 import platform/domain/[event, scope]
-import platform/infrastructure/[auth_service, inbox_repo, outbox_repo, param_repo]
+import platform/infrastructure/[auth_service, inbox_repo, outbox_repo, param_repo, worker_repo]
 import ledger/domain/[journal, period, posting]
 import ledger/infrastructure/[journal_repo, posting_repo]
 
@@ -109,6 +109,16 @@ proc paramInt(db: DbConn, key: ParamKey[int64], asOf: string): int {.gcsafe.} =
       raise newException(ValueError, "parameter " & keyString(key) & " bukan integer")
     int(node.getBiggestInt())
 
+proc heartbeat(app: AppContext) =
+  ## Denyut `/readyz` (O-081): `touch` hanya menulis bila denyut tersimpan sudah basi, jadi biayanya
+  ## satu query ringan. Gagal menulis denyut tidak boleh mematikan worker — posting tetap yang utama,
+  ## dan readiness yang akan melaporkannya.
+  try:
+    discard app.pool.withConn(proc(db: DbConn): int {.gcsafe.} =
+      if touchWorkerHeartbeat(db, consumerName): 1 else: 0)
+  except CatchableError as e:
+    stderr.writeLine "kran-worker: gagal menulis denyut: " & e.msg
+
 proc processBatch*(app: AppContext, workerId: string, batchSize, maxAttempts,
                    backoffSeconds: int, leaseSeconds = 0): int =
   ## Mengklaim dan memproses sampai `batchSize` event. Mengembalikan jumlah event yang diklaim.
@@ -116,6 +126,9 @@ proc processBatch*(app: AppContext, workerId: string, batchSize, maxAttempts,
   let events = app.pool.withConn(proc(db: DbConn): seq[OutboxEvent] {.gcsafe.} =
     claimBatch(db, workerId, batchSize, leaseSeconds))
   for i in 0 ..< events.len:
+    # Satu batch bisa berjalan lebih lama dari ambang readiness (impor massal/DB sibuk); denyut yang
+    # hanya ditulis antar-batch membuat worker sehat terlihat mati di tengah batch.
+    heartbeat(app)
     let ev = events[i]
     if ev.attempts > maxAttempts:
       # Klaim berulang tanpa pernah selesai (mis. fault non-Catchable/OOM). Paksa DEAD supaya
@@ -185,6 +198,7 @@ proc runWorker*(): int =
     ", maxAttempts=" & $maxAttempts & ", backoff=" & $backoffSeconds & "s, lease=" &
     $leaseSeconds & "s, poll=" & $pollMs & "ms)"
   while true:
+    heartbeat(app)
     let claimed = processBatch(app, workerId, batchSize, maxAttempts, backoffSeconds,
       leaseSeconds)
     if claimed == 0:

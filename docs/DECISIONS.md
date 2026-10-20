@@ -2466,3 +2466,38 @@ boleh pakai ulang" berlaku setelah reset.
 **Konsekuensi.** Operator dengan akses server bisa mereset siapa pun yang namanya diketahui;
 tindakan tercatat di audit dengan aktor sistem (`actor_user_id` kosong) dan alasan eksplisit.
 Perintah ini **tidak** menggantikan maker-checker untuk hal lain; ia jalur pemulihan darurat.
+
+---
+
+## D-101 — Monitoring worker konsumen lewat denyut, bukan panjang backlog
+
+**Konteks.** `/readyz` sudah mengukur lag pump realtime (`pumpLagProbe`, O-019), tetapi itu
+**bukan** konsumen posting: pump realtime membaca outbox dengan kursor sendiri, sedangkan jurnal
+diposting worker (`ledger-postings`). Worker yang mati tidak terlihat — lag pump tetap kecil,
+`DEAD` hanya muncul lewat query manual (O-081).
+
+**Keputusan.** Worker menulis denyut `platform.worker_heartbeat` (satu baris per worker, maksimal
+satu tulisan tiap 15 dtk lewat `INSERT ... ON CONFLICT DO UPDATE ... WHERE last_seen_at`). Denyut
+ditulis **di awal putaran dan di antara event di dalam batch**, karena satu batch (maks. 500 event)
+bisa berjalan lebih lama dari ambang dan worker yang sedang bekerja tidak boleh terlihat mati.
+`/readyz` menambah dua check:
+- `worker`: gagal bila denyut terakhir > **180 dtk** (`12 × 15 dtk`, memberi ruang
+  `poll_interval_ms` maksimum 60 dtk), atau worker **belum pernah** melapor setelah **masa tenggang
+  180 dtk** sejak proses API start. Denyut yang sudah basi **tidak** mendapat masa tenggang: worker
+  sehat menulis paling lambat tiap 60 dtk, jadi basi berarti worker tidak jalan. Masa tenggang hanya
+  menutup start pertama (API dan worker menyala bersamaan; gate deploy mengulang).
+- `outbox-dead`: jumlah event `DEAD` muncul di `detail`, status tetap `ok`. **Alasan:** `DEAD`
+  butuh re-drive operator; deploy ulang tidak menghidupkannya, dan readiness yang gagal hanya
+  membuat gate deploy berputar rollback.
+
+**Ditolak.** Menyimpulkan kesehatan worker dari panjang/usia backlog: backlog bisa kosong walau
+worker mati, dan bisa besar walau worker sehat (impor massal). Ambang denyut sebagai parameter DB:
+`/readyz` adalah gate deploy dan harus tetap berjalan walau parameter belum tersedia — sama seperti
+`pumpLagSeconds`/`pumpReadyGraceSeconds`.
+
+**Konsekuensi.** Worker yang pernah hidup lalu mati terlihat dari `/readyz` paling lambat ~3 menit
+(usia denyut melewati 180 dtk); worker yang tidak pernah start terlihat setelah masa tenggang 180 dtk. Monitoring eksternal yang memberi alarm masih **belum ada**
+(O-092); `DEAD` harus dipantau dari `detail` atau `ctl outbox-status`, bukan dari status HTTP.
+**Limitasi yang diketahui:** worker yang crash-loop cepat (start → tulis denyut → mati) tetap
+menyegarkan denyut dan bisa lolos sebagai `ok`; sinyal usia `IN_FLIGHT`/`PENDING` sengaja tidak
+dipakai karena rawan alarm palsu saat impor massal — pantau `platform.outbox` untuk kasus itu.
