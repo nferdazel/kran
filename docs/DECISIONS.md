@@ -2030,3 +2030,42 @@ Retensi/arsip mengikuti parameter retensi platform (belum aktif di Fase 1).
 
 **Bukti.** `itledger`/`itjournal`/`itapi_journal` menguji immutability, keseimbangan deferred,
 periode OPEN, akun postable/ACTIVE, idempotency, dan pembalik pada tabel tanpa partisi.
+
+---
+
+## D-073 — Posting rule sebagai data + konsumen outbox `ledger` (T-074)
+
+**Konteks.** Modul bisnis tidak menulis jurnal; mereka memancarkan accounting event. T-074 harus
+memetakan event → jurnal tanpa menaruh mapping di kode, dan tanpa membuat jurnal ganda saat event
+dikirim ulang.
+
+**Keputusan.**
+1. **Mapping = data** di `ledger.posting_rule` (+ `posting_rule_line`). Rule awal lewat migrasi
+   idempoten bertanda `NEEDS-COMPLIANCE-REVIEW` (REG-011 `V!`), sama alasannya dengan COA (D-070):
+   seed pack hanya untuk `--dev` dan produksi tidak akan menerimanya.
+2. **Pemilihan rule**: `event_type` sama; `product_code` (bila diisi) sama dengan `payload.product`;
+   `conditions` harus **subset** payload (containment JSON). Rule paling spesifik (kondisi
+   terbanyak) menang; seri → `priority` terkecil; masih seri → **ambigu = gagal terlihat**
+   (`DEAD` + `last_error`), bukan dipilih diam-diam.
+3. **Event akuntansi ditandai header `accounting: true`** di outbox. Event tanpa header itu
+   diabaikan konsumen (`DONE` tanpa jurnal). Event akuntansi **tanpa rule** = `markFailed` →
+   `DEAD` setelah `ledger.posting.max_attempts`; jurnal kosong tidak pernah dibuat.
+4. **Idempotensi berlapis**: `platform.inbox (consumer, event_id)` + `journal.idempotency_key =
+   "outbox:<eventId>"`. Pengiriman ulang (redelivery/redrive setelah crash) tidak menambah jurnal.
+5. **Template Fase 1: tepat satu DEBIT + satu CREDIT**, nominal = `payload.amount` (desimal 4),
+   `branchId` wajib di payload. Split multi-baris/akad menunggu T-076.
+6. **Worker** (`role=worker`) kini berjalan sebagai loop konsumen (sebelumnya placeholder `quit 3`,
+   O-013). Batas operasional dari parameter: `ledger.posting.batch_size`, `max_attempts`,
+   `retry_backoff_seconds`, `poll_interval_ms` — fail-fast bila belum tersemai.
+7. Satu transaksi **per event**: klaim batch di luar, lalu `claimInbox`+jurnal+`markDone` dalam satu
+   transaksi; kegagalan → rollback event itu dan `markFailed` di koneksi terpisah sehingga event
+   lain dalam batch tetap diproses.
+
+**Konsekuensi.** Belum ada API/UI pengelolaan rule — perubahan mapping masih lewat migrasi
+(**O-080**). Worker yang dahulu keluar dengan status 3 sekarang long-running; unit container tetap
+sama, dan `RestartPreventExitStatus=3` tidak lagi relevan untuk worker (tidak berbahaya). Bila
+akun tujuan rule dinonaktifkan, event terkait gagal terlihat (DEAD) sampai rule diperbaiki.
+
+**Bukti.** `tposting` (10 unit: containment, spesifisitas/priority, ambigu, template, nominal nol),
+`itposting` (5 integrasi: satu jurnal per event, redelivery tidak menambah, event non-akuntansi
+diabaikan, tanpa rule → DEAD + pesan, periode tertutup → DEAD tanpa jurnal).

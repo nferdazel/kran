@@ -12,3 +12,34 @@
   schema: { minLength: 5, maxLength: 120 }
   sensitivity: NORMAL
   default_pack: { base: "^[0-9]{1,3}(\\.[0-9]{1,3})*$" }
+
+# --- Konsumen posting (T-074) -------------------------------------------------------------
+# Batas operasional worker, bukan nilai bisnis akuntansi. Tetap parameter karena institusi boleh
+# menyesuaikan beban kerjanya tanpa deploy.
+- key: ledger.posting.batch_size
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 1, maximum: 500 }
+  sensitivity: NORMAL
+  default_pack: { base: 50 }
+
+- key: ledger.posting.max_attempts
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 1, maximum: 100 }
+  sensitivity: NORMAL
+  default_pack: { base: 10 }
+
+- key: ledger.posting.retry_backoff_seconds
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 1, maximum: 86400 }
+  sensitivity: NORMAL
+  default_pack: { base: 30 }
+
+- key: ledger.posting.poll_interval_ms
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 50, maximum: 60000 }
+  sensitivity: NORMAL
+  default_pack: { base: 500 }

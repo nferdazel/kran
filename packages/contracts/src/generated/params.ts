@@ -35,6 +35,78 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "ledger.posting.batch_size",
+    "module": "ledger",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.ledger.posting.batch_size",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 500
+    }
+  },
+  {
+    "key": "ledger.posting.max_attempts",
+    "module": "ledger",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.ledger.posting.max_attempts",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 100
+    }
+  },
+  {
+    "key": "ledger.posting.poll_interval_ms",
+    "module": "ledger",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.ledger.posting.poll_interval_ms",
+    "jsonSchema": {
+      "minimum": 50,
+      "maximum": 60000
+    }
+  },
+  {
+    "key": "ledger.posting.retry_backoff_seconds",
+    "module": "ledger",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.ledger.posting.retry_backoff_seconds",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 86400
+    }
+  },
+  {
     "key": "party.cif.format",
     "module": "party",
     "valueType": "string",

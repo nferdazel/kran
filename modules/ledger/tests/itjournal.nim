@@ -203,3 +203,41 @@ suite "journal: pembalik & daftar":
           insertJournalLine(d, j.journalId, l)
       1)
     check journals(db, "2026-10-20").len == before + 30
+
+suite "journal: guard tambahan (review T-073)":
+  test "header tanpa baris ditolak saat COMMIT":
+    let j = newJournal(businessDate = "2026-10-17")
+    var raised = false
+    try:
+      discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+        discard insertJournal(d, j, actor)
+        1)
+    except DbError:
+      raised = true
+    check raised
+    check journalById(db, j.journalId).isNone
+
+  test "baris tidak bisa ditambahkan setelah periode ditutup":
+    let decId = newId(testClock)
+    discard insertPeriod(db,
+      Period(periodId: decId, startsOn: "2026-12-01", endsOn: "2026-12-31"), actor)
+    let j = newJournal(businessDate = "2026-12-15")
+    discard save(j)
+    discard closePeriod(db, decId, actor)
+    expectDbError(proc() = insertJournalLine(db, j.journalId,
+      line(3, "101", 1_0000, 0)))
+
+  test "hanya satu pembalik per jurnal asal (indeks unik DB)":
+    let original = newJournal(businessDate = "2026-10-18")
+    discard save(original)
+    let stored = journalById(db, original.journalId).get()
+    let first = Journal(journalId: newId(testClock), businessDate: stored.businessDate,
+      valueDate: stored.valueDate, sourceEvent: "reversal", sourceRef: original.journalId,
+      idempotencyKey: nextKey(), reversalOf: $original.journalId,
+      lines: reversalLinesOf(stored.lines))
+    discard save(first)
+    var second = first
+    second.journalId = newId(testClock)
+    second.idempotencyKey = nextKey()
+    expectDbError(proc() = discard save(second))
+    check journals(db, stored.businessDate, "reversal").len == 1

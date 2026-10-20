@@ -10,6 +10,8 @@ import std/[json, options, strutils]
 import mummy
 import db_connector/db_postgres
 
+import "platform-lib/db/pool"
+
 import kernel/[ids, money, result]
 import platform/domain/[audit, event, scope]
 import platform/infrastructure/[audit_repo, auth_service, outbox_repo]
@@ -244,9 +246,25 @@ proc handleReverseJournal*(app: AppContext, req: Request) {.gcsafe.} =
       status = 400
     problem = e.msg
   except DbError as e:
-    if "journal_idempotency_uq" in e.msg or "duplicate key" in e.msg:
+    if "journal_reversal_uq" in e.msg:
+      # Dijamin indeks unik parsial: hanya satu pembalik per jurnal asal, juga saat dua permintaan
+      # bersamaan (yang kalah kena pelanggaran unik, bukan lolos).
       status = 409
-      problem = "Idempotency-Key sudah dipakai untuk jurnal lain"
+      problem = "jurnal sudah dibalik"
+    elif "journal_idempotency_uq" in e.msg:
+      # Balapan kunci yang sama: transaksi ini kalah, tetapi yang menang sudah COMMIT. Baca ulang
+      # di koneksi baru; bila memang jurnal pembalik untuk asal yang sama → 200 (kontrak idempoten),
+      # bukan 409.
+      var existing: Option[Journal]
+      {.cast(gcsafe).}:
+        existing = app.pool.withConn(proc(d: DbConn): Option[Journal] {.gcsafe.} =
+          journalByIdempotencyKey(d, idempotencyKey))
+      if existing.isSome and existing.get().reversalOf == $journalId.value():
+        status = 200
+        payload = journalJson(existing.get())
+      else:
+        status = 409
+        problem = "Idempotency-Key sudah dipakai untuk jurnal lain"
     elif "tidak ada periode OPEN" in e.msg or "sudah ditutup" in e.msg:
       status = 409
       problem = "periode tanggal bisnis jurnal sudah ditutup"
