@@ -147,6 +147,13 @@ proc checkProblem(path, verb, status: string, body: JsonNode) =
   for problem in problems:
     checkpoint problem
 
+proc execDb(query: SqlQuery, args: varargs[string, `$`]) =
+  let conn = dbPool.acquire()
+  try:
+    conn.exec(query, args)
+  finally:
+    dbPool.release(conn)
+
 proc dbValue(query: SqlQuery, args: varargs[string, `$`]): string =
   let conn = dbPool.acquire()
   try:
@@ -283,6 +290,25 @@ suite "product: validasi & konflik":
     let wrongKind = postJson(ProductsPath, productBody("SAV10", "Tipe Nilai",
       bindings = %*{"product.savings.min_balance": 1000}), makerToken)
     check wrongKind.code == 400
+
+  test "batas schema rate dihitung dalam persen (1% = 10_000 unit)":
+    execDb(sql"""INSERT INTO platform.param_definition
+      (key, module, value_type, json_schema, allowed_scopes, description_key,
+       since_version, requires_approval, sensitivity)
+      VALUES ('product.savings.__rate_test', 'product', 'rate',
+              '{"minimum": 1, "maximum": 12}'::jsonb, '{GLOBAL,INSTITUTION}',
+              'test.rate', '0.0.0', false, 'NORMAL')
+      ON CONFLICT (key) DO NOTHING""")
+    let below = postJson(ProductsPath, productBody("SAV-R1", "Rate Bawah",
+      bindings = %*{"product.savings.__rate_test": "0.5"}), makerToken)
+    check below.code == 400
+    let above = postJson(ProductsPath, productBody("SAV-R2", "Rate Atas",
+      bindings = %*{"product.savings.__rate_test": "12.5"}), makerToken)
+    check above.code == 400
+    let ok = postJson(ProductsPath, productBody("SAV-R3", "Rate Pas",
+      bindings = %*{"product.savings.__rate_test": "12"}), makerToken)
+    check ok.code == 201
+    check ok.body["versions"][0]["bindings"][0]["value"].getStr() == "12"
 
   test "kode duplikat → 409":
     let reply = postJson(ProductsPath, productBody("SAV01", "Duplikat"), makerToken)

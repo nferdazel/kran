@@ -25,7 +25,7 @@ menunggu verdict review independen** (DoD §6), jadi milestone ini belum ditutup
 ## 2. Bukti gate
 
 - `./task ci` (format, lint, archcheck, lint-nomagic, paramgen --check, i18n, OpenAPI +
-  klien TS, unit + property + integrasi Postgres, e2e Playwright/axe): **hijau — 815 `[OK]`,
+  klien TS, unit + property + integrasi Postgres, e2e Playwright/axe): **hijau — 816 `[OK]`,
   e2e 24 passed** (angka final ada di `docs/PROGRESS.md`).
 - **Migrasi dari DB kosong** diverifikasi pada cluster PostgreSQL sementara (bukan DB dev yang
   sudah berisi): 32 migrasi diterapkan berurutan, `btree_gist`, EXCLUDE versi produk, dan kolom

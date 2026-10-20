@@ -28,6 +28,10 @@ Kolom diturunkan dari spec: spec hanya menyebut nama ketiga tabel + aturan effec
 - Kunci binding hanya boleh parameter berawalan `product.` (mencegah produk menunjuk parameter
   keamanan/platform).
 - Binding ke parameter tak terdaftar/deprecated/di luar batas = **400**, bukan diabaikan.
+- Batas schema numerik mengikuti satuan nilai: `money`/`decimal` satuan utuh (×10⁴ minor),
+  **`rate` dalam persen** (1% = 10.000 unit) — bukan fraksi 0,01.
+- Binding = **snapshot atribut versi itu**: versi baru boleh tidak menyertakan atribut lama
+  (berarti atribut itu tidak berlaku pada versi tersebut).
 
 ## API
 
@@ -59,6 +63,10 @@ Katalog atribut untuk pilot (`modules/product/seeds/params.yaml`): `product.savi
 - Migrasi platform `0017` memuat grant no-op ke `product.read/manage` (kode lama); grant sebenarnya
   ada di `0018`. Dibiarkan karena `0017` sudah diterapkan (checksum).
 - Binding `pvtJson` dibatasi ukuran (16 KiB) tetapi bentuknya belum divalidasi schema; batas schema
-  pecahan ditolak (fail-closed), bukan diabaikan (**O-087**).
+  pecahan ditolak (fail-closed), bukan diabaikan. Plafon teknis teks 200 karakter dan `decimal`
+  mewarisi 4 desimal `moneyFromString` (**O-087**).
+- Migrasi modul ini pernah diubah sebelum deploy (review T-076); DB dev yang dibuat sebelum
+  `4930514` harus reset schema `product` + hapus riwayat `product/%` sebelum `dbtools migrate`.
+  Jalur DB kosong belum dikunci test otomatis (**O-088**).
 - Belum ada UI; pengelolaan lewat API.
 - Versi belum punya status DRAFT/RETIRED; semua versi yang tersimpan dianggap terbit.
