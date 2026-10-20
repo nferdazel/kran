@@ -1703,3 +1703,32 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
 - **Gate**: `ittb` 4 integrasi (TB seimbang, sama dengan agregasi SQL, snapshot == TB, periode tidak
   ada = error), `itapi_journal` +3 HTTP (kontrak & total seimbang, 400/404, 403); `./task ci` hijau.
 - **Sisa**: review independen; T-076 (product), T-077 (end-to-end Fase 1).
+
+## T-076 — `product` factory parametrik & effective-dated (20 Okt 2026)
+
+- **Kode**: modul `product` (`product`/`product_version`/`product_param_binding`, migrasi
+  `0001`–`0002`), EXCLUDE anti-tumpang-tindih dengan rentang **inklusif**, versi immutable
+  (hanya `effective_to` sekali), binding wajib minimal satu (deferred) dan immutable; domain
+  `product.nim`; repo `product_repo`; handler `handlers_products` (daftar/detail/buat/versi baru);
+  izin `product.catalog.read|manage` (platform `0017` + grant `0018`); kontrak + klien TS; katalog
+  parameter pilot `product.savings.*`.
+- **Prinsip**: atribut produk **hanya** dari binding parameter; kunci wajib `product.`,
+  terdaftar, tidak deprecated, tipe/enum/batas divalidasi tanpa float; versi baru menutup versi
+  terbuka sehari sebelum tanggal mulai; event `ProductPublished` + audit `product.publish` satu
+  transaksi.
+- **Gate**: `tproduct` 8 unit, `itproduct` 6 integrasi (binding deferred, overlap, immutability,
+  effective_to sekali, versi berlaku), `itapi_product` 11 HTTP (401/403/400/404/409/201/200,
+  audit+event, grant bercabang); `./task ci` hijau — **804 `[OK]`**, e2e 24 passed.
+- **Keputusan**: **D-076** (bentuk tabel & semantik versi). Sisa: maker-checker produk (**O-085**),
+  atribut rate/day-count (**O-084**), review independen.
+
+## Tindak lanjut review T-074 & T-075 (20 Okt 2026)
+
+- T-074 putaran 2 **APPROVE**: lease reclaim terbukti; ditambahkan batas percobaan klaim, pemisahan
+  exit code worker (1 = DB transien → restart, 2 = konfigurasi), test "IN_FLIGHT segar tidak
+  direbut" dan "inbox hilang tetapi jurnal ada → DONE", catatan epoch xid/savepoint (**O-086**).
+- T-075 putaran 1 **APPROVE**: TB kini mengembalikan `Option` (periode hilang = 404, data rusak =
+  500), total TB diuji terhadap angka independen, batas periode inklusif diuji, snapshot kumulatif
+  didokumentasikan + diuji dengan jurnal bulan sebelumnya, 403 memuat `branch_not_allowed`, indeks
+  `(as_of)` ditambahkan, unit test `totalDebit`/`isBalanced`; saldo awal di luar TB dicatat
+  **O-083**.

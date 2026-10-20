@@ -673,6 +673,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daftar produk
+         * @description Katalog produk + versi yang berlaku pada `asOf` (default tanggal bisnis institusi).
+         *     Produk tanpa versi yang berlaku pada tanggal itu tetap muncul dengan `currentVersion: null`.
+         */
+        get: operations["listProducts"];
+        put?: never;
+        /**
+         * Buat produk + versi pertama
+         * @description Membuat produk baru beserta versi 1 (terbuka). Setiap atribut **wajib** berupa binding ke
+         *     parameter terdaftar (`product.*`) dan divalidasi terhadap definisi parameter (tipe, enum,
+         *     batas numerik). Menerbitkan event `ProductPublished`.
+         */
+        post: operations["createProduct"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/products/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detail produk + versi
+         * @description Detail produk beserta seluruh versi dan binding parameternya. Versi bersifat immutable;
+         *     perubahan atribut = versi baru, bukan edit baris lama.
+         */
+        get: operations["getProduct"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/products/{code}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Versi produk baru
+         * @description Menerbitkan versi baru mulai `effectiveFrom`. Versi terbuka sebelumnya ditutup sehari
+         *     sebelum tanggal itu. Versi tidak boleh tumpang tindih (dijaga EXCLUDE di DB). Menerbitkan
+         *     event `ProductPublished`.
+         */
+        post: operations["createProductVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1098,6 +1168,68 @@ export interface components {
             totalDebit: string;
             totalCredit: string;
             lines: components["schemas"]["TrialBalanceLine"][];
+        };
+        ParamBinding: {
+            paramKey: string;
+            /** @description Nilai JSON sesuai tipe parameter (money/decimal/rate berupa string desimal). */
+            value: unknown;
+        };
+        ProductVersion: {
+            /** Format: uuid */
+            versionId: string;
+            versionNo: number;
+            /** Format: date */
+            effectiveFrom: string;
+            /** Format: date */
+            effectiveTo: string | null;
+            bindings: components["schemas"]["ParamBinding"][];
+        };
+        ProductVersionRef: {
+            versionNo: number;
+            /** Format: date */
+            effectiveFrom: string;
+        };
+        Product: {
+            /** Format: uuid */
+            productId: string;
+            code: string;
+            name: string;
+            /** @enum {string} */
+            productType: "SAVINGS" | "TIME_DEPOSIT" | "LOAN" | "FINANCING";
+            createdAt: string;
+            versions: components["schemas"]["ProductVersion"][];
+        };
+        ProductSummary: {
+            /** Format: uuid */
+            productId: string;
+            code: string;
+            name: string;
+            /** @enum {string} */
+            productType: "SAVINGS" | "TIME_DEPOSIT" | "LOAN" | "FINANCING";
+            createdAt: string;
+            currentVersion: components["schemas"]["ProductVersionRef"] | null;
+        };
+        ProductList: {
+            items: components["schemas"]["ProductSummary"][];
+        };
+        ProductCreate: {
+            code: string;
+            name: string;
+            /** @enum {string} */
+            productType: "SAVINGS" | "TIME_DEPOSIT" | "LOAN" | "FINANCING";
+            /** Format: date */
+            effectiveFrom: string;
+            /** @description Peta `paramKey` → nilai. */
+            bindings: {
+                [key: string]: unknown;
+            };
+        };
+        ProductVersionCreate: {
+            /** Format: date */
+            effectiveFrom: string;
+            bindings: {
+                [key: string]: unknown;
+            };
         };
     };
     responses: {
@@ -2160,6 +2292,119 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    listProducts: {
+        parameters: {
+            query?: {
+                asOf?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar produk */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    createProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductCreate"];
+            };
+        };
+        responses: {
+            /** @description Produk dibuat */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Product"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    getProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Detail produk */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Product"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    createProductVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductVersionCreate"];
+            };
+        };
+        responses: {
+            /** @description Versi dibuat */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Product"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
         };
     };
