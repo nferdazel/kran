@@ -1717,7 +1717,7 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   terbuka sehari sebelum tanggal mulai; event `ProductPublished` + audit `product.publish` satu
   transaksi.
 - **Gate**: `tproduct` 8 unit, `itproduct` 8 integrasi (binding deferred + sealed, overlap,
-  immutability, effective_to sekali, H+1 satu hari, versi berlaku), `itapi_product` 13 HTTP
+  immutability, effective_to sekali, H+1 satu hari, versi berlaku), `itapi_product` 14 HTTP
   (401/403/400/404/409/201/200, audit+event, grant bercabang, H+1, overflow/batas); migrasi DB
   kosong diverifikasi pada cluster PG sementara (32 migrasi, `btree_gist` + EXCLUDE + `sealed`).
 - **Keputusan**: **D-076** (bentuk tabel & semantik versi). Sisa: maker-checker produk (**O-085**),
@@ -1752,4 +1752,4 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   (sebelumnya `task check` saja >15 menit di bawah beban).
 - Filter test memakai nama berkas persis lebih dulu: `./task verify tproduct` = 14 detik, hanya
   `tproduct`; filter lebar `./task test product` tetap menjalankan semua test modul.
-- `./task ci` penuh dengan lint paralel: **694 detik**, hijau, 815 `[OK]`, e2e 24 passed.
+- `./task ci` penuh dengan lint paralel: **694 detik**, hijau, 816 `[OK]`, e2e 24 passed.

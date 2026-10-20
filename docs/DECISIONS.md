@@ -2171,6 +2171,8 @@ menurunkan bentuknya sendiri.
    versi terbuka sehari sebelum tanggal mulai. Koreksi = versi baru, bukan edit.
 4. **Atribut = binding parameter**: `product_param_binding(version_id, param_key, value jsonb)`,
    kunci wajib berawalan `product.`, minimal satu binding per versi (deferred), binding immutable.
+   Binding adalah **snapshot penuh atribut versi itu**: atribut yang tidak disertakan di versi baru
+   berarti tidak berlaku pada versi tersebut (bukan mewarisi versi sebelumnya).
    Tipe/enum/batas divalidasi composition root terhadap `platform.param_definition`; kunci tak
    terdaftar = 400.
 5. **Izin** `product.catalog.read|manage` (migrasi platform `0017` + grant `0018`), aksi institusi

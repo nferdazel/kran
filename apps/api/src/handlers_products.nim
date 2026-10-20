@@ -75,10 +75,10 @@ proc pow10(n: int): int64 =
   for _ in 0 ..< n:
     result *= 10
 
-proc boundUnits(bound: int64, scale: int): Option[int64] =
-  ## `bound * 10^scale` dengan pemeriksaan overflow; `none` = di luar rentang int64.
+proc boundUnits(bound: int64, factor: int64): Option[int64] =
+  ## `bound * factor` (faktor = unit per satuan schema) dengan pemeriksaan overflow.
   try:
-    some(checkedMul(bound, pow10(scale)))
+    some(checkedMul(bound, factor))
   except MoneyOverflowError:
     none(int64)
 
@@ -153,27 +153,29 @@ proc definitionError(db: DbConn, bindings: seq[ParamBinding]): string =
       if b.value.kind != JString:
         return b.paramKey & " harus teks desimal"
       var units: int64
-      var scale: int
+      # Satuan schema mengikuti satuan nilai: money/decimal dalam satuan utuh (×10^4 minor),
+      # rate dalam **persen** (1% = 10_000 unit, lihat kernel/rate.rateUnitsPerPercent).
+      var factor: int64
       if def.valueType == pvtRate:
         let parsed = rateFromPercentString(b.value.getStr())
         if parsed.isErr:
           return b.paramKey & " bukan rate persen yang sah"
         units = parsed.value().microUnits
-        scale = rateScale
+        factor = rateUnitsPerPercent
       else:
         let parsed = moneyFromString(b.value.getStr())
         if parsed.isErr:
           return b.paramKey & " bukan desimal 4 angka di belakang koma yang sah"
         units = parsed.value().minorUnits
-        scale = moneyScale
+        factor = pow10(moneyScale)
       if minB.value.isSome:
-        let lo = boundUnits(minB.value.get(), scale)
+        let lo = boundUnits(minB.value.get(), factor)
         if lo.isNone:
           return b.paramKey & ": batas minimum di luar rentang"
         if units < lo.get():
           return b.paramKey & " di bawah minimum"
       if maxB.value.isSome:
-        let hi = boundUnits(maxB.value.get(), scale)
+        let hi = boundUnits(maxB.value.get(), factor)
         if hi.isNone:
           return b.paramKey & ": batas maximum di luar rentang"
         if units > hi.get():
@@ -356,6 +358,9 @@ proc handleCreateProduct*(app: AppContext, req: Request) {.gcsafe.} =
     elif "product_version_window_chk" in e.msg:
       status = 409
       problemText = "jendela versi tidak sah"
+    elif "product_version_no_uq" in e.msg or "duplicate key" in e.msg:
+      status = 409
+      problemText = "nomor versi bentrok; ulangi permintaan"
     else:
       status = 500
       problemText = "produk gagal disimpan"
@@ -459,6 +464,9 @@ proc handleCreateVersion*(app: AppContext, req: Request) {.gcsafe.} =
     elif "product_version_window_chk" in e.msg:
       status = 409
       problemText = "jendela versi tidak sah"
+    elif "product_version_no_uq" in e.msg or "duplicate key" in e.msg:
+      status = 409
+      problemText = "nomor versi bentrok; ulangi permintaan"
     else:
       status = 500
       problemText = "versi produk gagal disimpan"
