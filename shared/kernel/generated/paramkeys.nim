@@ -2,6 +2,7 @@
 ##
 ## Ubah definisi di `modules/<m>/seeds/params.yaml`, lalu jalankan `./task paramgen-gen`.
 
+import ../money
 import ../paramkey
 import std/json
 
@@ -36,6 +37,9 @@ const paramKeys*: seq[string] = @[
   "platform.security.password_pbkdf2_iterations",
   "platform.security.session_absolute_minutes",
   "platform.security.session_idle_minutes",
+  "product.savings.admin_fee",
+  "product.savings.grace_period_days",
+  "product.savings.min_balance",
 ]
 
 const P_ledger_coa_code_pattern* = ParamKey[string]("ledger.coa.code_pattern")
@@ -97,6 +101,12 @@ const P_platform_security_password_pbkdf2_iterations* = ParamKey[int64]("platfor
 const P_platform_security_session_absolute_minutes* = ParamKey[int64]("platform.security.session_absolute_minutes")
 
 const P_platform_security_session_idle_minutes* = ParamKey[int64]("platform.security.session_idle_minutes")
+
+const P_product_savings_admin_fee* = ParamKey[Money]("product.savings.admin_fee")
+
+const P_product_savings_grace_period_days* = ParamKey[int64]("product.savings.grace_period_days")
+
+const P_product_savings_min_balance* = ParamKey[Money]("product.savings.min_balance")
 
 const paramDefinitions*: seq[ParamDefinition] = @[
   ParamDefinition(
@@ -427,6 +437,39 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.platform.security.session_idle_minutes",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "product.savings.admin_fee",
+    module: "product",
+    valueType: pvtMoney,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.product.savings.admin_fee",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "product.savings.grace_period_days",
+    module: "product",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.product.savings.grace_period_days",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "product.savings.min_balance",
+    module: "product",
+    valueType: pvtMoney,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.product.savings.min_balance",
     sinceVersion: "0.1.0",
   ),
 ]

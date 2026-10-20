@@ -543,5 +543,57 @@ export const paramDefinitions: readonly ParamDefinition[] = [
       "minimum": 1,
       "maximum": 1440
     }
+  },
+  {
+    "key": "product.savings.admin_fee",
+    "module": "product",
+    "valueType": "money",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.product.savings.admin_fee",
+    "jsonSchema": {
+      "minimum": 0
+    }
+  },
+  {
+    "key": "product.savings.grace_period_days",
+    "module": "product",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.product.savings.grace_period_days",
+    "jsonSchema": {
+      "minimum": 0,
+      "maximum": 365
+    }
+  },
+  {
+    "key": "product.savings.min_balance",
+    "module": "product",
+    "valueType": "money",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.product.savings.min_balance",
+    "jsonSchema": {
+      "minimum": 0
+    }
   }
 ] as const;

@@ -1,0 +1,29 @@
+# Definisi parameter modul `product` (spec §10.3).
+#
+# Ini **katalog atribut** yang boleh di-bind ke versi produk. Nilai yang dipakai suatu versi
+# disimpan di `product.product_param_binding` dan divalidasi terhadap definisi di sini
+# (tipe, enum, batas numerik). Tidak ada angka bisnis di kode.
+#
+# NEEDS-COMPLIANCE-REVIEW: nama/arti atribut di bawah masih contoh struktur untuk pilot; nilai
+# final (batas saldo minimum, biaya admin, grace period) menunggu keputusan pemilik/compliance.
+
+- key: product.savings.min_balance
+  type: money
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 0 }
+  sensitivity: NORMAL
+  default_pack: { base: "0.0000" }
+
+- key: product.savings.admin_fee
+  type: money
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 0 }
+  sensitivity: NORMAL
+  default_pack: { base: "0.0000" }
+
+- key: product.savings.grace_period_days
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 0, maximum: 365 }
+  sensitivity: NORMAL
+  default_pack: { base: 0 }

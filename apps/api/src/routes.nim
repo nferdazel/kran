@@ -16,6 +16,7 @@ import ./handlers_journals
 import ./handlers_kyc
 import ./handlers_ledger
 import ./handlers_mfa
+import ./handlers_products
 import ./handlers_reports
 import ./handlers_param
 import ./handlers_party
@@ -160,6 +161,20 @@ proc journalRoutes*(): seq[RouteSpec] =
               operationId: "getTrialBalance", handler: handleTrialBalance),
   ]
 
+proc productRoutes*(): seq[RouteSpec] =
+  ## Katalog produk parametrik (T-076).
+  @[
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/products",
+              operationId: "listProducts", handler: handleListProducts),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/products/{code}",
+              operationId: "getProduct", handler: handleGetProduct),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/products",
+              operationId: "createProduct", handler: handleCreateProduct),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/products/{code}/versions",
+              operationId: "createProductVersion", handler: handleCreateVersion),
+  ]
+
 proc allRoutes*(): seq[RouteSpec] =
   systemRoutes() & authRoutes() & mfaRoutes() & paramRoutes() & auditRoutes() &
-    partyRoutes() & kycRoutes() & ledgerRoutes() & journalRoutes() & eventRoutes()
+    partyRoutes() & kycRoutes() & ledgerRoutes() & journalRoutes() & productRoutes() &
+    eventRoutes()

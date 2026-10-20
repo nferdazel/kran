@@ -52,6 +52,10 @@ tags:
     description: |
       Buku besar: Chart of Accounts dan periode akuntansi (Fase 1, T-072). Jurnal double-entry,
       saldo, dan trial balance menyusul di T-073/T-075.
+  - name: product
+    description: |
+      Katalog produk parametrik & effective-dated (spec §9, T-076): atribut hanya lewat binding
+      parameter, versi immutable, tidak ada tumpang tindih.
   - name: party
     description: |
       Party (CIF + identitas dasar) — Fase 1, T-070. Nomor CIF dibentuk dari parameter
@@ -1259,6 +1263,147 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/products:
+    get:
+      operationId: listProducts
+      tags: [product]
+      summary: Daftar produk
+      description: |
+        Katalog produk + versi yang berlaku pada `asOf` (default tanggal bisnis institusi).
+        Produk tanpa versi yang berlaku pada tanggal itu tetap muncul dengan `currentVersion: null`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: asOf
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Daftar produk
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createProduct
+      tags: [product]
+      summary: Buat produk + versi pertama
+      description: |
+        Membuat produk baru beserta versi 1 (terbuka). Setiap atribut **wajib** berupa binding ke
+        parameter terdaftar (`product.*`) dan divalidasi terhadap definisi parameter (tipe, enum,
+        batas numerik). Menerbitkan event `ProductPublished`.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductCreate"
+      responses:
+        "201":
+          description: Produk dibuat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/products/{code}:
+    get:
+      operationId: getProduct
+      tags: [product]
+      summary: Detail produk + versi
+      description: |
+        Detail produk beserta seluruh versi dan binding parameternya. Versi bersifat immutable;
+        perubahan atribut = versi baru, bukan edit baris lama.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Detail produk
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/products/{code}/versions:
+    post:
+      operationId: createProductVersion
+      tags: [product]
+      summary: Versi produk baru
+      description: |
+        Menerbitkan versi baru mulai `effectiveFrom`. Versi terbuka sebelumnya ditutup sehari
+        sebelum tanggal itu. Versi tidak boleh tumpang tindih (dijaga EXCLUDE di DB). Menerbitkan
+        event `ProductPublished`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductVersionCreate"
+      responses:
+        "201":
+          description: Versi dibuat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -2101,3 +2246,137 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TrialBalanceLine"
+
+    ParamBinding:
+      type: object
+      additionalProperties: false
+      required: [paramKey, value]
+      properties:
+        paramKey:
+          type: string
+        value:
+          description: Nilai JSON sesuai tipe parameter (money/decimal/rate berupa string desimal).
+
+    ProductVersion:
+      type: object
+      additionalProperties: false
+      required: [versionId, versionNo, effectiveFrom, effectiveTo, bindings]
+      properties:
+        versionId:
+          type: string
+          format: uuid
+        versionNo:
+          type: integer
+          minimum: 1
+        effectiveFrom:
+          type: string
+          format: date
+        effectiveTo:
+          type: [ "string", "null" ]
+          format: date
+        bindings:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParamBinding"
+
+    ProductVersionRef:
+      type: object
+      additionalProperties: false
+      required: [versionNo, effectiveFrom]
+      properties:
+        versionNo:
+          type: integer
+          minimum: 1
+        effectiveFrom:
+          type: string
+          format: date
+
+    Product:
+      type: object
+      additionalProperties: false
+      required: [productId, code, name, productType, createdAt, versions]
+      properties:
+        productId:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        productType:
+          type: string
+          enum: [SAVINGS, TIME_DEPOSIT, LOAN, FINANCING]
+        createdAt:
+          type: string
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductVersion"
+
+    ProductSummary:
+      type: object
+      additionalProperties: false
+      required: [productId, code, name, productType, createdAt, currentVersion]
+      properties:
+        productId:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        productType:
+          type: string
+          enum: [SAVINGS, TIME_DEPOSIT, LOAN, FINANCING]
+        createdAt:
+          type: string
+        currentVersion:
+          oneOf:
+            - $ref: "#/components/schemas/ProductVersionRef"
+            - type: "null"
+
+    ProductList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductSummary"
+
+    ProductCreate:
+      type: object
+      additionalProperties: false
+      required: [code, name, productType, effectiveFrom, bindings]
+      properties:
+        code:
+          type: string
+          minLength: 2
+          maxLength: 32
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        productType:
+          type: string
+          enum: [SAVINGS, TIME_DEPOSIT, LOAN, FINANCING]
+        effectiveFrom:
+          type: string
+          format: date
+        bindings:
+          type: object
+          description: Peta `paramKey` → nilai.
+          additionalProperties: true
+
+    ProductVersionCreate:
+      type: object
+      additionalProperties: false
+      required: [effectiveFrom, bindings]
+      properties:
+        effectiveFrom:
+          type: string
+          format: date
+        bindings:
+          type: object
+          additionalProperties: true
