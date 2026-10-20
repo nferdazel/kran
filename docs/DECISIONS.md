@@ -2106,3 +2106,34 @@ bukan sebelum. Rekonstruksi cache adalah langkah eksplisit, bukan efek samping p
 
 **Bukti.** `ittb` (4 integrasi: TB seimbang, sama dengan agregasi SQL langsung, snapshot rekonstruksi
 == TB, periode tidak ada = error) + `itapi_journal` (3 HTTP: kontrak/total seimbang, 400/404, 403).
+
+---
+
+## D-075 — Arah visual UI: "buku besar, kulit hangat" (20 Okt 2026)
+
+**Konteks.** Fase 0 hanya punya shell (login, parameter, audit) dengan token netral `system-ui`.
+Fase 2 akan membangun layar teller; tanpa arah tertulis, UI berisiko jadi template SaaS generik yang
+tidak cocok untuk kerja 8 jam. Pemilik meminta UI "keren dan tidak AI-ish", dengan brainstorming SME.
+
+**Keputusan.** `DESIGN.md` menjadi acuan wajib untuk layar baru:
+
+1. **Arah**: basis data "buku besar" (near-monokrom, hairline, angka tabular, bidang datar) dengan
+   kulit hangat (kertas tulang, hijau tua) hanya di header/navigasi/identitas — bukan di angka.
+2. **Tipografi**: IBM Plex Sans + Plex Mono, self-host (OFL), angka tabular wajib; `system-ui` hanya
+   fallback.
+3. **Palet target** dengan kontras terverifikasi (teks ≥ 6.47:1; border kontrol ≥ 3.67:1) berlaku
+   untuk migrasi token, **bukan** perubahan token produksi sekarang.
+4. **Density & kontrol**: baris tabel 34 px; kontrol 32 px; aksi primer 44 px; target 1366×768 zoom
+   125%; satu lapisan modal.
+5. **Angka**: rata kanan, tabular, format `id-ID`, debit/kredit lewat posisi + label, bukan warna.
+6. **Larangan**: gradien biru-ungu, shadow di semua kartu, pill, kartu statistik tanpa sumber,
+   emoji/sparkle, hero/tur, count-up, skeleton palsu (daftar lengkap di `DESIGN.md` §11).
+
+**Batas.** Fase 1 (T-070…T-077) tidak menyentuh UI. Migrasi token, komponen tabel/angka, font, dan
+matriks kontras penuh = **T-079** (persiapan Fase 2), tidak dimulai sebelum T-077 selesai dan pemilik
+meratifikasi arah ini. Bila pemilik memveto, cukup ganti §1–§3 `DESIGN.md`; aturan operasional (§4–§12)
+tetap berlaku.
+
+**Konsekuensi.** Menambah token/komponen UI tanpa memperbarui matriks kontras dan `DESIGN.md` =
+temuan review. Font baru adalah aset self-host (bukan dependency runtime); lisensi OFL diverifikasi
+saat T-079.
