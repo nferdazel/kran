@@ -1,9 +1,10 @@
 ## Titik masuk `kran-api` (spec §12.5 konfigurasi bootstrap, §21.4 role proses).
 ##
 ##   kran-api --role=api [--port=8080] [--address=127.0.0.1] [--version=<string>]
-##   kran-api --role=migrate [--check|--up|--contract|--down N] [--root=<dir>]
+##   kran-api --role=migrate [--check|--up|--seed|--contract|--down N] [--root=<dir>]
 ##                                              migrasi: terapkan expand, terapkan contract,
-##                                              batalkan N migrasi terakhir, atau periksa saja
+##                                              seed parameter base, batalkan N migrasi terakhir,
+##                                              atau periksa saja
 ##   kran-api --role=ctl <perintah> [--root=<dir>] perintah operasional (read-only, kecuali
 ##                                                `bootstrap-admin`)
 ##   kran-api --role=ctl bootstrap-admin --username=<nama>   admin pertama (kata sandi diacak,
@@ -68,7 +69,7 @@ const
 
 const Usage =
   "pemakaian: kran-api --role=api|migrate|ctl|worker [--root=<dir>] [--port=8080] " &
-  "[--address=127.0.0.1] [--version=<string>] [--check|--up|--contract|--down N] " &
+  "[--address=127.0.0.1] [--version=<string>] [--check|--up|--seed|--contract|--down N] " &
   "[--username=<nama>] [<perintah ctl>]"
 
 type
@@ -79,7 +80,7 @@ type
     version: string
     root: string     ## akar repo untuk `--role=migrate` (letak `modules/*/migrations`)
     cmd: string      ## perintah posisi untuk `--role=ctl`
-    sub: string      ## subperintah `--role=migrate`: --check | --up | --contract | --down
+    sub: string      ## subperintah `--role=migrate`: --check | --up | --seed | --contract | --down
     subArg: string   ## angka `N` untuk `--role=migrate --down N`
     username: string ## `--role=ctl bootstrap-admin`: nama admin pertama
 
@@ -112,7 +113,7 @@ proc parseArgs(argv: seq[string]): CliOptions =
       result.username = arg["--username=".len .. ^1]
     elif arg.startsWith("--root="):
       result.root = arg["--root=".len .. ^1]
-    elif arg in ["--check", "--up", "--contract", "--down"]:
+    elif arg in ["--check", "--up", "--seed", "--contract", "--down"]:
       result.sub = arg
     elif arg in ["-h", "--help"]:
       echo Usage
@@ -359,11 +360,18 @@ proc runCtl*(command, root: string, username = ""): int =
     stderr.writeLine CtlUsage
     2
 
+proc seedBaseFiles*(root: string): seq[string] =
+  ## Berkas seed yang boleh dipakai produksi: **hanya** `packs/*/generated/*.sql`.
+  ## `packs/*/seed/` (data dev/test) tidak pernah ikut — satu titik yang diuji `itapi_roles`.
+  seedFiles(root, dev = false)
+
 proc runMigrate*(root: string, sub = "", subArg = ""): int =
   ## Peran `migrate` (kontrak yang dipakai `ops/scripts/migrate.sh` dan gate deploy):
   ##   tanpa subperintah / `--up` : terapkan migrasi expand yang tertunda lalu keluar (idempoten)
   ##   `--check`                  : **read-only** — keluar 1 bila ada migrasi expand belum diterapkan
   ##                                atau isi migrasi yang sudah diterapkan berubah (drift)
+  ##   `--seed`                   : terapkan `packs/*/generated/*.sql` (parameter base) — idempoten,
+  ##                                **tanpa** seed dev/test; dipakai deploy sebelum worker start
   ##   `--contract`               : terapkan migrasi bertanda contract (opt-in manual, §21.4)
   ##   `--down N`                 : batalkan N migrasi yang terakhir diterapkan (butuh pasangan
   ##                                `<nama>.down.sql`)
@@ -372,7 +380,8 @@ proc runMigrate*(root: string, sub = "", subArg = ""): int =
   ##
   ## Kode keluar punya arti tetap: 0 berhasil, 1 salah data (mis. isi migrasi berubah), 2 salah pakai,
   ## 3 = **dikenali tetapi sengaja ditolak pada keadaan itu** (N tidak jelas, expand masih tertunda,
-  ## berkas pasangan rollback tidak ada). Skrip ops membaca bedanya.
+  ## berkas pasangan rollback tidak ada, atau `--seed` tidak menemukan berkas seed — root salah).
+  ## Skrip ops membaca bedanya.
   withRoleDb(proc(db: DbConn): int {.closure.} =
     let status = reportStatus(db, root)
     case sub
@@ -399,6 +408,26 @@ proc runMigrate*(root: string, sub = "", subArg = ""): int =
         1
       else:
         0
+    of "--seed":
+      # O-090: deploy me-restart worker sebelum parameter tersemai → worker exit 2. Seed base
+      # dijalankan di jalur yang sama dengan migrasi supaya urutannya tidak bisa terlewat.
+      # Berkas generated idempoten (`param_definitions` DO UPDATE metadata, `param_values`
+      # DO NOTHING) dan **tidak** memuat seed dev/test.
+      try:
+        let files = seedBaseFiles(root)
+        if files.len == 0:
+          stderr.writeLine "kran-api migrate --seed: tidak ada berkas seed di " & root &
+            " — salah konfigurasi (repo selalu punya packs/*/generated/*.sql)"
+          return 3
+        for rel in files:
+          execScript(db, readFile(root / rel))
+          echo "  + " & rel
+        echo "kran-api migrate --seed: " & $files.len & " berkas diterapkan (idempoten)"
+        0
+      except CatchableError as e:
+        stderr.writeLine "kran-api migrate --seed: ditolak — " & e.msg
+        1
+
     of "--contract":
       let tertunda = expandPending(status)
       if tertunda.len > 0:

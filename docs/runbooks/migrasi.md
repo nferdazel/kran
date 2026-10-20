@@ -71,3 +71,28 @@ Belum pernah dijalankan di server: skripnya bagian dari latihan deploy (T-013). 
 `itapi_roles` (kontrak kode keluar) + `itplatform` (efeknya di DB: DDL benar dijalankan/dikembalikan,
 baris ikut terhapus, kegagalan di tengah tidak meninggalkan keadaan setengah). Bukti mutasi: 13
 penjagaan, masing-masing dilepas dan ada uji yang gagal — `docs/tasks/T-035.md`.
+
+## Seed parameter (sejak T-081/D-092)
+
+`deploy-vps.sh` menjalankan `kran-api --role=migrate --seed` **setelah** biner ditukar dan
+**sebelum** unit di-restart. Perintah itu menerapkan `packs/*/generated/*.sql` (definisi + nilai base),
+idempoten, tanpa seed dev/test. Manual di server:
+
+```bash
+# di server, dari root repo (packs/ ada di sini); biner host butuh libpq yang di-vendor
+cd /srv/qouver/apps/kran/monorepo
+# env prod memakai nama service podman (`@qouver-postgres:`); host tidak bisa me-resolve-nya
+KRAN_DATABASE_URL="$(grep '^KRAN_DATABASE_URL=' /srv/qouver/apps/kran/env/kran-prod.env | cut -d= -f2-)"
+KRAN_DATABASE_URL="${KRAN_DATABASE_URL//@qouver-postgres:/@127.0.0.1:}"
+KRAN_DATABASE_URL="$KRAN_DATABASE_URL" \
+LD_LIBRARY_PATH=/srv/qouver/apps/kran/lib \
+  /srv/qouver/apps/kran/bin/kran-api --role=migrate --root=. --seed
+
+# atau, bila LD_LIBRARY_PATH sudah diset di shell: `ops/scripts/migrate.sh --seed` dari root repo
+```
+
+Kode keluar `--seed`: `1` = SQL ditolak database (mis. EXCLUDE karena ada nilai ACTIVE non-seed),
+`3` = tidak ada berkas seed (root/`packs/` salah) — dua-duanya membuat deploy batal.
+Gagal seed = deploy dibatalkan (`die`) — jangan me-restart worker dengan parameter belum lengkap
+(worker exit 2). Nilai base bertanda `NEEDS-COMPLIANCE-REVIEW`; nilai yang sudah diubah operator
+tidak ditimpa (`DO NOTHING`).
