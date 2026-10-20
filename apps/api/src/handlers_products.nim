@@ -68,7 +68,6 @@ proc parseBindings(body: JsonNode): seq[ParamBinding] =
 const
   maxStringBindingLength = 200 # nomagic:ok batas teknis nilai parameter teks
   maxJsonBindingBytes = 16_384 # nomagic:ok batas teknis payload JSON binding
-  rateScale = 6                # nomagic:ok Rate = 10^-6 (shared/kernel/rate)
 
 proc pow10(n: int): int64 =
   result = 1
@@ -358,9 +357,6 @@ proc handleCreateProduct*(app: AppContext, req: Request) {.gcsafe.} =
     elif "product_version_window_chk" in e.msg:
       status = 409
       problemText = "jendela versi tidak sah"
-    elif "product_version_no_uq" in e.msg or "duplicate key" in e.msg:
-      status = 409
-      problemText = "nomor versi bentrok; ulangi permintaan"
     else:
       status = 500
       problemText = "produk gagal disimpan"
@@ -464,7 +460,7 @@ proc handleCreateVersion*(app: AppContext, req: Request) {.gcsafe.} =
     elif "product_version_window_chk" in e.msg:
       status = 409
       problemText = "jendela versi tidak sah"
-    elif "product_version_no_uq" in e.msg or "duplicate key" in e.msg:
+    elif "product_version_no_uq" in e.msg:
       status = 409
       problemText = "nomor versi bentrok; ulangi permintaan"
     else:
