@@ -41,6 +41,12 @@ jobs:
       - name: Install dependencies
         run: nimble install -d -y
 
+      - name: Runtime libs (libpcre3)
+        # `std/re` (validasi pola COA) membuka `libpcre.so.3` saat jalan lewat dynlib. Runner tidak
+        # membawanya; image runtime produksi sudah memasangnya (`apps/api/Dockerfile`). Tanpa ini
+        # test lulus di macOS tapi gagal di CI dengan `could not load: libpcre.so`.
+        run: sudo apt-get update -qq && sudo apt-get install -y libpcre3
+
       - name: Pastikan shellcheck ada
         # `./task check` memblokir pada level `warning` dan fail-closed bila tool ini tidak ada
         # (T-050(b), O-014). Runner GitHub umumnya sudah membawanya; langkah ini penjamin.
@@ -96,6 +102,12 @@ jobs:
 
       - name: Install dependencies
         run: nimble install -d -y
+
+      - name: Runtime libs (libpcre3)
+        # `std/re` (validasi pola COA) membuka `libpcre.so.3` saat jalan lewat dynlib. Runner tidak
+        # membawanya; image runtime produksi sudah memasangnya (`apps/api/Dockerfile`). Tanpa ini
+        # test lulus di macOS tapi gagal di CI dengan `could not load: libpcre.so`.
+        run: sudo apt-get update -qq && sudo apt-get install -y libpcre3
 
       - name: Migrasi + seed
         # Skema dari migrasi; seed pack (parameter) + seed dev (user contoh `dev.maker`/

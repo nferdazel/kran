@@ -67,3 +67,10 @@ untuk kode yang benar:
      bukan diasumsikan;
    - proses yang dibunuh/di-restart oleh test harus memakai port dan instance sendiri
      (`shutdown.spec.ts` memakai port bebas, bukan 8099 milik `webServer`).
+
+## Prasyarat pustaka runtime di runner (20 Okt 2026)
+
+Kedua job yang menjalankan test Nim memasang `libpcre3`: `std/re` (validasi pola COA) membuka
+`libpcre.so.3` lewat dynlib saat jalan. macOS membawanya, image runtime produksi juga
+(`apps/api/Dockerfile`), tetapi runner `ubuntu-latest` tidak — gejalanya
+`could not load: libpcre.so(.3|.1|)` di awal binary test, bukan kegagalan assertion.
