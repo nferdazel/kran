@@ -68,6 +68,15 @@ block:
   execScript(db, readFile("packs/base/generated/param_values.sql"))
   execScript(db, readFile("packs/base/seed/0001_dev_users.sql"))
 
+  # Biaya KDF untuk test: parameter ini menentukan hash password **baru** (ganti kata sandi) dan
+  # hash tiruan login akun tak dikenal. Nilai produksi (600.000) membuat suite ini ~90 detik CPU
+  # tanpa menguji apa pun tentang biaya hashing — biaya KDF diuji di `tpassword`/`itpassword` dan
+  # `./task bench-password`. Turunkan **hanya di DB test**; seed pack tetap 600.000.
+  exec(db, sql"""UPDATE platform.param_value
+                    SET value = '1000'::jsonb
+                  WHERE key = 'platform.security.password_pbkdf2_iterations'
+                    AND status = 'ACTIVE'""")
+
 proc paramSchemaBound(key, bound: string): int =
   ## Batas schema sebuah parameter dibaca dari **definisi** yang tersemai (asal
   ## `packs/base/generated/param_definitions.sql`), bukan angka yang disalin ke test (O-042).

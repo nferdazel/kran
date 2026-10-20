@@ -27,3 +27,41 @@
   schema: { minimum: 0, maximum: 365 }
   sensitivity: NORMAL
   default_pack: { base: 0 }
+
+# --- Akrual simpanan (O-084, D-094): BENTUK tanpa nilai --------------------------------------
+# Kunci ini sengaja **tanpa `default_pack`**: angka rate/basis/pembulatan untuk produk nyata
+# menunggu keputusan compliance (`NEEDS-COMPLIANCE-REVIEW`), dan parameter tanpa nilai membuat
+# pembacaan gagal-cepat alih-alih memakai default yang tidak disetujui (spec §10.6).
+# Akrual sendiri adalah task day-close (Fase 3), bukan atribut produk; lihat D-094.
+- key: product.savings.interest_rate
+  type: rate
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { maxLength: 32 }
+  sensitivity: NORMAL
+
+- key: product.savings.day_count_basis
+  type: enum
+  scopes: [GLOBAL, INSTITUTION]
+  enum: [ACT_365, ACT_360, THIRTY_360]
+  schema: { enum: [ACT_365, ACT_360, THIRTY_360] }
+  sensitivity: NORMAL
+
+- key: product.savings.rounding_mode
+  type: enum
+  scopes: [GLOBAL, INSTITUTION]
+  enum: [HALF_UP, HALF_EVEN]
+  schema: { enum: [HALF_UP, HALF_EVEN] }
+  sensitivity: NORMAL
+
+- key: product.savings.rounding_scale
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 0, maximum: 4 }
+  sensitivity: NORMAL
+
+- key: product.savings.interest_posting
+  type: enum
+  scopes: [GLOBAL, INSTITUTION]
+  enum: [NONE, MONTH_END]
+  schema: { enum: [NONE, MONTH_END] }
+  sensitivity: NORMAL
