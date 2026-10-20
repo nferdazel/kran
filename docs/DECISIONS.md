@@ -2331,3 +2331,138 @@ lalu membuktikan `--seed` mengembalikannya (`ACTIVE`, nilai `50`), tidak menggan
 dan tidak menyertakan berkas `packs/*/seed/` (dev). Mutation check: tanpa cabang `--seed` test
 **FAILED**. Catatan urutan: `sync_script` memasang skrip deploy untuk deploy **berikutnya**, jadi
 langkah seed baru aktif pada deploy setelah merge — bukan pada deploy yang membawa commit ini.
+
+---
+
+## D-093 — Biaya KDF di test: seed dev 1000 iterasi, parameter test diturunkan (bukan produksi)
+
+**Konteks.** Seed pengguna dev memakai PBKDF2 600.000 iterasi (nilai parameter produksi). Setiap
+login di test memverifikasi hash dengan iterasi tersimpan; ganti-password di satu test membuat hash
+600k yang dipakai semua test berikutnya. Hasil ukur: `itapi_auth` **170 s**, `itapi_mfa` **49 s**
+hanya untuk verifikasi login.
+
+**Keputusan.** (1) Seed dev/test memakai **1000** iterasi (tetap PBKDF2-HMAC-SHA256, salt sama);
+(2) test yang mengganti password (`itapi_auth`, `itapi_mfa`) menurunkan nilai parameter
+`platform.security.password_pbkdf2_iterations` ke 1000 **di DB test saja**; (3) nilai produksi
+(seed pack `600000`) tidak berubah; biaya KDF diuji terpisah di `tpassword`/`itpassword` dan
+`./task bench-password`.
+
+**Ditolak.** Menurunkan nilai di pack (produksi ikut lemah); caching binari test berdasarkan
+mtime (risiko test lulus dengan kode lama — lebih buruk daripada panas). Kompilasi ulang setiap
+run dipertahankan.
+
+**Konsekuensi.** `itapi_auth` 170→30 s, `itapi_mfa` 49→20 s, `./task test` 368 s (819 `[OK]`).
+Loop harian: `./task verify <modul>` atau `./task test <nama-suite>`; `./task ci` untuk pra-merge.
+
+---
+
+## D-094 — O-084: bentuk parameter akrual simpanan, tanpa nilai
+
+**Keputusan.** Tambah lima kunci di `modules/product/seeds/params.yaml` **tanpa `default_pack`**:
+`product.savings.{interest_rate, day_count_basis, rounding_mode, rounding_scale, interest_posting}`.
+Nilai (rate/basis/pembulatan) menunggu compliance (`NEEDS-COMPLIANCE-REVIEW`); parameter tanpa nilai
+membuat pembacaan gagal-cepat, bukan memakai default tak disetujui (spec §10.6).
+
+**Ditolak.** Menunda bentuk (versi produk immutable + binding sealed → menambah kunci nanti =
+versi produk baru); JSON blob (mematikan validasi, maker-checker, paramgen).
+
+**Batas.** Frekuensi akrual = sifat day-close (Fase 3), cut-off = milik business date institusi,
+nisbah syariah bukan `interest_rate`. Akrual bukan atribut produk.
+
+---
+
+## D-095 — O-066: klasifikasi seed base (teknis / kebijakan / menunggu compliance)
+
+**Keputusan.** Seed base dipakai untuk pilot dengan kelas eksplisit:
+- **Teknis** (aman): `ledger.posting.*`, `ledger.coa.code_pattern`, `platform.security.mfa.*`,
+  `pbkdf2_iterations=600000` (tetap `HUMAN-REVIEW-REQUIRED` untuk kripto).
+- **Kebijakan internal** (aman dipakai, wajib ditandai): password min length/classes/history,
+  max failed logins, lockout, session idle/absolute.
+- **Komersial** (konservatif): `product.savings.min_balance=0`, `admin_fee=0` — tidak menagih;
+  angka final menunggu pemilik.
+- **Belum punya semantik**: `product.savings.grace_period_days` — tidak ada konsumen; definisikan
+  atau keluarkan sebelum dipakai.
+- **Penerimaan risiko**: `mfa.enabled=false` untuk pilot hanya sebagai keputusan pemilik tertulis
+  (spec §18.2 meminta MFA; jangan disebut "patuh").
+- **Regulasi**: rate/nisbah/pajak/PPAP/LPS **tidak** disemai — pertahankan.
+
+---
+
+## D-096 — O-083: saldo GL sebagai laporan terpisah, TB tetap mutasi
+
+**Keputusan.** TB tidak diberi kolom saldo. Endpoint baru `GET /api/v1/ledger/balances?periodId=`
+mengembalikan opening/period/closing **debit & kredit terpisah** per akun dalam **satu query**;
+baris = akun bergerak atau bersaldo awal ≠ 0; `source: ledger|snapshot` + `computedAt` wajib.
+Snapshot hanya dipakai bila periode sudah CLOSED dan terekonsiliasi; default hitung dari jurnal.
+Izin tetap `ledger.journal.read` (institusi). Saldo teller = modul deposit (per cabang), bukan GL.
+
+**Ditolak.** Kolom saldo di TB (mencampur mutasi & posisi, akun tanpa mutasi tetap hilang);
+snapshot sebagai default "cepat" (basi tanpa galat, granularitas harian, tanpa cabang).
+
+---
+
+## D-097 — O-082: 4 desimal di tabel, 2 desimal untuk tunai
+
+**Keputusan.** Penyimpanan tetap `Money` 10⁻⁴. Tampilan: **4 desimal** untuk nilai yang
+dijumlahkan (jurnal, TB, neraca), **2 desimal** untuk nilai tunai tunggal (input/konfirmasi teller,
+struk). Satu pintu `formatMoney(decimal, {decimals})` di `apps/web/src/lib/app/format.ts`, parsing
+string tanpa `Number()`/float, pembulatan sama dengan `Money`. `DESIGN.md` §6 diperbarui.
+
+**Ditolak.** 2 desimal di tabel (jumlah baris tampak ≠ total → "TB tidak seimbang"); parameter
+per institusi (presisi bukan kebijakan; dua orang melihat presisi berbeda).
+
+---
+
+## D-098 — O-072: idempotency bertahap pada endpoint pembuat objek (bukan middleware semua POST)
+
+**Keputusan.** `Idempotency-Key` wajib pada POST pembuat objek bisnis, dimulai dari yang berisiko
+duplikat nyata: `POST /parties`, risk-rating, param submit; lalu endpoint finansial teller.
+Tabel `platform.idempotency_key` PK `(principal_id, key)` + `operation_id`, `request_hash`,
+`response_status`, `response_body`, `expires_at`; baris ditulis **dalam transaksi bisnis**. Aturan:
+kunci+hash sama → 200 replay + `Idempotent-Replayed: true`; hash/operasi beda → 409; baris ada tapi
+belum selesai → 409 + `Retry-After`; 5xx di-rollback. TTL = parameter, pembersihan lewat daycloser.
+Outbox key + `journal.idempotency_key` tetap lapisan dalam.
+
+**Ditolak.** Middleware generik (tidak bisa membedakan login/MFA/logout; menyimpan respons error).
+
+---
+
+## D-099 — O-085: maker-checker versi produk (DRAFT → ACTIVE)
+
+**Keputusan.** `product_version` mendapat status `DRAFT|ACTIVE`, `maker`, `checker`, timestamp;
+binding tetap di-seal saat approve; `ProductPublished` terbit saat **approve**, bukan submit;
+self-approval ditolak CHECK DB; izin baru `product.catalog.approve`. Versi lama tetap immutable.
+
+**Konsekuensi.** Pilot satu operator akan terblokir sampai ada penyetuju kedua — konsekuensi
+kebijakan, bukan bug. Sampai D-099 diimplementasi, perubahan produk produksi dibekukan (dicatat di
+`ACCEPTED-LIMITS.md`).
+
+---
+
+## D-100 — Reset kata sandi lewat `ctl reset-password`, bukan SQL manual
+
+**Konteks.** `bootstrap-admin` mencetak kata sandi awal **sekali**, tidak disimpan; akun `admin`
+produksi masih `must_change_password = true` dan kata sandi awalnya hilang. Tidak ada jalur reset,
+dan mengubah `password_hash` langsung lewat SQL akan melewati audit, pencabutan sesi, dan policy
+check — persis area `HUMAN-REVIEW-REQUIRED` (AGENTS §8).
+
+**Keputusan.** Tambah `kran-api --role=ctl reset-password --username=<nama>`:
+- kata sandi acak CSPRNG, panjang mengikuti `password_min_length` + margin, kelas karakter dijamin;
+- hash dengan `platform.security.password_pbkdf2_iterations` (nilai produksi, bukan konstanta);
+- `must_change_password = true`, `failed_attempts = 0`, `locked_until = NULL`;
+- **semua sesi pengguna dicabut**;
+- audit `user.password_reset` (username, flag wajib-ganti, jumlah sesi dicabut) ditulis dalam
+  transaksi yang sama lewat trigger rantai audit;
+- kata sandi hanya di memori + stdout sekali; kode keluar 0/1/2/3 mengikuti kontrak `ctl`.
+
+Perilaku yang dituntut dan diuji: akun berstatus `LOCKED` dikembalikan ke `ACTIVE` (tanpa
+menyentuh `INACTIVE`/`SUSPENDED`) — `setPassword` hanya mengosongkan `locked_until`, sehingga tanpa
+ini akun terkunci permanen; hash lama tetap masuk `user_password_history` supaya kebijakan "tidak
+boleh pakai ulang" berlaku setelah reset.
+
+**Ditolak.** UPDATE SQL manual (tanpa audit/sesi/policy); menyimpan kata sandi awal di disk
+(melanggar desain bootstrap).
+
+**Konsekuensi.** Operator dengan akses server bisa mereset siapa pun yang namanya diketahui;
+tindakan tercatat di audit dengan aktor sistem (`actor_user_id` kosong) dan alasan eksplisit.
+Perintah ini **tidak** menggantikan maker-checker untuk hal lain; ia jalur pemulihan darurat.

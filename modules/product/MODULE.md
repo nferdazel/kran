@@ -54,6 +54,12 @@ bercabang → 403 `branch_not_allowed`.
 
 Katalog atribut untuk pilot (`modules/product/seeds/params.yaml`): `product.savings.min_balance`
 (money), `product.savings.admin_fee` (money), `product.savings.grace_period_days` (integer).
+
+Bentuk akrual (O-084/D-094) sudah terdefinisi tetapi **belum bernilai**: `interest_rate` (rate, persen),
+`day_count_basis` (`ACT_365|ACT_360|THIRTY_360`), `rounding_mode` (`HALF_UP|HALF_EVEN`),
+`rounding_scale` (0–4), `interest_posting` (`NONE|MONTH_END`). Tanpa `default_pack` → binding produk
+ke kunci ini gagal-cepat sampai nilainya disetujui compliance. `grace_period_days` belum punya
+semantik (T-087); jangan dipakai sebagai konsumen.
 **NEEDS-COMPLIANCE-REVIEW**: arti/nilai final menunggu compliance. Rate/day-count/fee lain dicatat
 **O-084**.
 
