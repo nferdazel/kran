@@ -1,0 +1,152 @@
+## Konsumen outbox → jurnal `ledger` (T-074).
+##
+## Composition root: modul `ledger` tetap murni (domain saja); pengambilan/kunci outbox, inbox,
+## dan pengulangan ada di sini. Alur per event:
+##
+##   claimBatch (IN_FLIGHT) → transaksi: claimInbox → resolve posting rule → tulis jurnal → markDone
+##   gagal → rollback transaksi event itu, lalu markFailed (backoff/DEAD) di koneksi terpisah.
+##
+## Idempotensi berlapis: `platform.inbox (consumer, event_id)` mencegah event yang sama diproses dua
+## kali, dan `journal.idempotency_key = "outbox:<eventId>"` mencegah jurnal ganda bila inbox
+## terhapus/terlewat. Event non-akuntansi (tanpa header `accounting: true`) = DONE tanpa jurnal;
+## event akuntansi **tanpa rule** = gagal terlihat (`last_error`, lalu DEAD), bukan jurnal kosong.
+
+import std/[json, os, strutils, times]
+
+import db_connector/db_postgres
+
+import "platform-lib/db/config"
+import "platform-lib/db/pool"
+
+import kernel/[clock, ids, paramkey, result]
+import kernel/generated/paramkeys
+import platform/domain/[event, scope]
+import platform/infrastructure/[auth_service, inbox_repo, outbox_repo, param_repo]
+import ledger/domain/[journal, period, posting]
+import ledger/infrastructure/[journal_repo, posting_repo]
+
+import ./context
+
+const
+  consumerName* = "ledger-postings"
+  ## Aktor sistem untuk kolom `created_by` jurnal. Bukan akun manusia: tidak bisa login, dan
+  ## jejak sebenarnya ada di `source_event`/`source_ref` + outbox.
+  systemActor* = Id("00000000-0000-0000-0000-0000000000a1")
+
+type
+  PostingOutcome* = enum
+    poPosted = "posted"
+    poIgnored = "ignored"
+    poDuplicate = "duplicate"
+
+proc isAccounting(ev: OutboxEvent): bool =
+  not ev.headers.isNil and ev.headers.kind == JObject and
+    ev.headers.hasKey("accounting") and ev.headers["accounting"].kind == JBool and
+    ev.headers["accounting"].getBool()
+
+proc requireString(node: JsonNode, field: string): string =
+  if node.kind != JObject or not node.hasKey(field) or node[field].kind != JString or
+      node[field].getStr().strip().len == 0:
+    raise newException(ValueError, "payload." & field & " wajib berupa teks")
+  node[field].getStr()
+
+proc businessDateOf(db: DbConn, clock: Clock, payload: JsonNode): string =
+  ## Tanggal bisnis event: dari payload bila ada (event bisa terlambat), selain itu tanggal bisnis
+  ## institusi saat ini. Periode OPEN tetap diperiksa trigger DB.
+  if payload.kind == JObject and payload.hasKey("businessDate"):
+    return parseIsoDate(requireString(payload, "businessDate"), "payload.businessDate")
+  businessDateFor(db, institutionScope(), businessDateIso(clock))
+
+proc processEvent*(db: DbConn, clock: Clock, ev: OutboxEvent): PostingOutcome =
+  ## Satu event, di dalam transaksi pemanggil. `ValueError` = event gagal (dipetakan markFailed).
+  if not isAccounting(ev):
+    return poIgnored
+  if not claimInbox(db, consumerName, ev.eventId):
+    return poDuplicate
+
+  let amount = moneyOf(requireString(ev.payload, "amount"))
+  let branchId = parseId(requireString(ev.payload, "branchId"))
+  if branchId.isErr:
+    raise newException(ValueError, "payload.branchId bukan uuid")
+  let businessDate = businessDateOf(db, clock, ev.payload)
+
+  let rule = selectRule(activeRules(db, ev.eventType), ev.eventType, ev.payload)
+  let lines = buildLines(rule, amount, branchId.value())
+  let sourceRef = parseId(ev.aggregateId)
+  if sourceRef.isErr:
+    raise newException(ValueError, "aggregate_id event bukan uuid")
+
+  let journal = Journal(
+    journalId: newId(clock),
+    businessDate: businessDate,
+    valueDate: businessDate,
+    sourceEvent: ev.eventType,
+    sourceRef: sourceRef.value(),
+    idempotencyKey: "outbox:" & $ev.eventId,
+    reversalOf: "")
+  discard insertJournal(db, journal, systemActor)
+  for line in lines:
+    insertJournalLine(db, journal.journalId, line)
+  poPosted
+
+proc paramInt(db: DbConn, key: ParamKey[int64], asOf: string): int {.gcsafe.} =
+  # `activeValueJson` tidak ditandai gcsafe (indirect call lewat resolver scope), sama seperti
+  # pemanggilan parameter lain dari konteks HTTP; asumsi tanpa state bersama ditegaskan di sini.
+  {.cast(gcsafe).}:
+    let node = activeValueJson(db, keyString(key), asOf, lookupFor(institutionScope()))
+    if node.kind != JInt:
+      raise newException(ValueError, "parameter " & keyString(key) & " bukan integer")
+    int(node.getBiggestInt())
+
+proc processBatch*(app: AppContext, workerId: string, batchSize, maxAttempts,
+                   backoffSeconds: int): int =
+  ## Mengklaim dan memproses sampai `batchSize` event. Mengembalikan jumlah event yang diklaim.
+  let events = app.pool.withConn(proc(db: DbConn): seq[OutboxEvent] {.gcsafe.} =
+    claimBatch(db, workerId, batchSize))
+  for i in 0 ..< events.len:
+    let ev = events[i]
+    try:
+      let outcome = app.pool.withTx(proc(db: DbConn): PostingOutcome {.gcsafe.} =
+        let outcome = processEvent(db, app.clock, ev)
+        markDone(db, ev.eventId)
+        outcome)
+      if outcome == poPosted:
+        stderr.writeLine "kran-worker: jurnal diposting untuk event " & $ev.eventId
+    except CatchableError as e:
+      # Koneksi transaksi sudah di-ROLLBACK; kegagalan dicatat di koneksi terpisah.
+      let message = e.msg
+      discard app.pool.withConn(proc(db: DbConn): int {.gcsafe.} =
+        markFailed(db, ev.eventId, message, backoffSeconds, maxAttempts)
+        1)
+      stderr.writeLine "kran-worker: event " & $ev.eventId & " gagal: " & message
+  events.len
+
+proc runWorker*(): int =
+  ## Loop worker `ledger`. Batas dari parameter DB (fail-fast bila belum tersemai): lebih baik
+  ## menolak start daripada memakai angka yang bukan konfigurasi institusi.
+  if not databaseUrlSet(envTableFromProcess()):
+    stderr.writeLine "kran-worker: KRAN_DATABASE_URL kosong — worker tidak bisa berjalan"
+    return 2
+  let clock = systemClock()
+  let pool = newDbPool(dbConfigFromProcessEnv())
+  var app = AppContext(version: "worker", role: "worker", startedAt: epochTime(),
+    pool: pool, clock: clock)
+  var batchSize, maxAttempts, backoffSeconds, pollMs: int
+  try:
+    let asOf = businessDateIso(clock)
+    discard pool.withConn(proc(db: DbConn): int {.gcsafe.} =
+      batchSize = paramInt(db, P_ledger_posting_batch_size, asOf)
+      maxAttempts = paramInt(db, P_ledger_posting_max_attempts, asOf)
+      backoffSeconds = paramInt(db, P_ledger_posting_retry_backoff_seconds, asOf)
+      pollMs = paramInt(db, P_ledger_posting_poll_interval_ms, asOf)
+      1)
+  except CatchableError as e:
+    stderr.writeLine "kran-worker: parameter posting tidak terbaca: " & e.msg
+    return 2
+
+  stderr.writeLine "kran-worker: mulai (batch=" & $batchSize & ", maxAttempts=" &
+    $maxAttempts & ", backoff=" & $backoffSeconds & "s, poll=" & $pollMs & "ms)"
+  while true:
+    let claimed = processBatch(app, "kran-worker", batchSize, maxAttempts, backoffSeconds)
+    if claimed == 0:
+      sleep(pollMs)

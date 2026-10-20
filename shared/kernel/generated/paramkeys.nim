@@ -7,6 +7,10 @@ import std/json
 
 const paramKeys*: seq[string] = @[
   "ledger.coa.code_pattern",
+  "ledger.posting.batch_size",
+  "ledger.posting.max_attempts",
+  "ledger.posting.poll_interval_ms",
+  "ledger.posting.retry_backoff_seconds",
   "party.cif.format",
   "party.identity.doc_lengths",
   "party.identity.doc_types",
@@ -34,6 +38,14 @@ const paramKeys*: seq[string] = @[
 ]
 
 const P_ledger_coa_code_pattern* = ParamKey[string]("ledger.coa.code_pattern")
+
+const P_ledger_posting_batch_size* = ParamKey[int64]("ledger.posting.batch_size")
+
+const P_ledger_posting_max_attempts* = ParamKey[int64]("ledger.posting.max_attempts")
+
+const P_ledger_posting_poll_interval_ms* = ParamKey[int64]("ledger.posting.poll_interval_ms")
+
+const P_ledger_posting_retry_backoff_seconds* = ParamKey[int64]("ledger.posting.retry_backoff_seconds")
 
 const P_party_cif_format* = ParamKey[string]("party.cif.format")
 
@@ -93,6 +105,50 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.ledger.coa.code_pattern",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "ledger.posting.batch_size",
+    module: "ledger",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.ledger.posting.batch_size",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "ledger.posting.max_attempts",
+    module: "ledger",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.ledger.posting.max_attempts",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "ledger.posting.poll_interval_ms",
+    module: "ledger",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.ledger.posting.poll_interval_ms",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "ledger.posting.retry_backoff_seconds",
+    module: "ledger",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.ledger.posting.retry_backoff_seconds",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(

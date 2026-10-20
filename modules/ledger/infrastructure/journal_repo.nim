@@ -10,7 +10,7 @@ import ../domain/journal
 const
   listLimit* = 200 # nomagic:ok batas ukuran respons daftar (bukan nilai bisnis)
 
-proc moneyOf(raw: string): Money =
+proc moneyOf*(raw: string): Money =
   ## `numeric(24,4)` → `Money` tanpa float. Skala 4 desimal; lebih dari itu = data rusak (ditolak,
   ## bukan dibulatkan diam-diam).
   let s = raw.strip

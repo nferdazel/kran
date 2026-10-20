@@ -37,6 +37,27 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
   (permintaan ulang → 200 dengan jurnal yang sama). Jurnal yang sudah dibalik tidak bisa dibalik
   lagi; jurnal pembalik tidak bisa dibalik.
 - Tanpa partisi pada Fase 1 — **D-072**.
+- Immutability **bersandar pada trigger**, bukan pemisahan privilege: role aplikasi saat ini adalah
+  pemilik tabel, sehingga `ALTER TABLE … DISABLE TRIGGER`/`session_replication_role` bisa
+  membatalkannya. Pemisahan role produksi dicatat **O-010**; sampai itu ada, jaminan ini berlaku
+  untuk jalur aplikasi, bukan terhadap superuser.
+- Pembalik memakai akun dari jurnal asal; bila akun sudah dinonaktifkan, pembalik ditolak
+  (fail-closed) — kebijakan alternatif dicatat **O-079**.
+
+## Posting rule & konsumen outbox (T-074)
+
+- `ledger.posting_rule` / `posting_rule_line`: mapping event → template jurnal, **data** bukan kode.
+  Kondisi = subset payload; rule paling spesifik menang, tie-break `priority`, ambigu = gagal
+  terlihat. Template Fase 1: tepat satu DEBIT + satu CREDIT, nominal `payload.amount`.
+- Konsumen ada di composition root (`apps/api/src/posting.nim`) karena modul tidak boleh menyentuh
+  outbox/inbox platform. Event akuntansi **wajib** membawa header outbox `{"accounting": true}`;
+  tanpa itu event diabaikan.
+- Idempotensi: `platform.inbox` (`consumer = "ledger-postings"`) + `journal.idempotency_key =
+  "outbox:<eventId>"`. Event akuntansi tanpa rule → `markFailed`, setelah batas percobaan `DEAD`
+  dengan `last_error` — tidak ada jurnal kosong.
+- Worker `role=worker` menjalankan loop konsumen; batas dari parameter
+  `ledger.posting.batch_size`, `max_attempts`, `retry_backoff_seconds`, `poll_interval_ms`.
+- Pengelolaan rule lewat migrasi sampai ada API/UI (**O-080**).
 
 ## Public API (`api.nim`)
 
@@ -44,6 +65,8 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
   `parseAccountStatus`, `normalSideOf`, `compileCodePattern`, `validateCode`, `validateName`.
 - `period` — `PeriodStatus`, `Period`, `parsePeriodStatus`, `parseIsoDate`, `validateRange`,
   `validateCloseReason`.
+- `posting` — `PostingRule`, `PostingRuleLine`, `jsonContains`, `selectRule`,
+  `validateTemplate`, `buildLines`.
 - `journal` — `Journal`, `JournalLine`, `totalDebit`, `totalCredit`, `isBalanced`,
   `validateJournalLines`, `validateIdempotencyKey`, `validateSourceEvent`, `reversalLinesOf`,
   `validateReversalReason`.
@@ -60,6 +83,10 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 | Key | Tipe | Scope | Default seed | Sensitivitas |
 |---|---|---|---|---|
 | `ledger.coa.code_pattern` | string (regex) | GLOBAL, INSTITUTION | `^[0-9]{1,3}(\.[0-9]{1,3})*$` | NORMAL |
+| `ledger.posting.batch_size` | integer | GLOBAL, INSTITUTION | 50 | NORMAL |
+| `ledger.posting.max_attempts` | integer | GLOBAL, INSTITUTION | 10 | NORMAL |
+| `ledger.posting.retry_backoff_seconds` | integer | GLOBAL, INSTITUTION | 30 | NORMAL |
+| `ledger.posting.poll_interval_ms` | integer | GLOBAL, INSTITUTION | 500 | NORMAL |
 
 ## Tabel & schema (migrasi `0001`, `0002`, `0003`)
 
