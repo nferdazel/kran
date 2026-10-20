@@ -1660,7 +1660,11 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   `./task ci` hijau — **711 `[OK]`**, e2e 24 passed; `./task openapi` sinkron.
 - **Review independen** putaran 1: **CHANGES-REQUIRED** — 2 MAJOR (grant bercabang bisa melakukan
   aksi institusi; balapan tutup periode menghasilkan 200 palsu + audit ganda) + 8 MINOR. Semua
-  ditindaklanjuti (tabel di `docs/tasks/T-072.md`); putaran 2 menyusul.
+  ditindaklanjuti (tabel di `docs/tasks/T-072.md`). Putaran 2: **APPROVE** tanpa BLOCKER/MAJOR;
+  enam MINOR baru ditutup (izin yang salah pada 403 buka periode, komentar kepala handler, klaim
+  `btree_gist` di dokumen task, semantik `matchLen` didokumentasikan, `resetTestSchemas` gagal keras
+  bila daftar migrasi kosong, audit/event duplikat diuji) dan dua dicatat: **O-076** (cabang
+  balapan tutup periode belum punya test khusus) + **O-077** (kebijakan pembalik lintas periode).
 - **Catatan jujur**: satu run CI sempat merah karena `itpool` (stress 8 thread) timeout 15 s di
   bawah beban mesin — lolos standalone dan pada run berikutnya (**O-074**). `resetTestSchemas` di
   `tools/dbtools/lib.nim` menggantikan `DROP SCHEMA` tulis-tangan di 10 harness, supaya menambah
