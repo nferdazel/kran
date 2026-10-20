@@ -25,9 +25,11 @@ permintaan pemilik).
 
 ## 2. Bukti gate
 
-- `./task ci` (format, lint, archcheck, lint-nomagic, paramgen --check, i18n, OpenAPI +
-  klien TS, unit + property + integrasi Postgres, e2e Playwright/axe): **hijau — 816 `[OK]`,
-  e2e 24 passed** (angka final ada di `docs/PROGRESS.md`).
+- `./task ci` pada **HEAD `abc3ec8`** (format, lint, archcheck, lint-nomagic, paramgen --check,
+  i18n, OpenAPI + klien TS, unit + property + integrasi Postgres, e2e Playwright/axe):
+  **hijau — 816 `[OK]`, e2e 24 passed, 627 detik** (log: `/tmp/ci-head2.log`; angka juga di
+  `docs/PROGRESS.md`). Run sebelumnya gagal karena **tunnel SSH DB dev putus** di tengah jalan,
+  bukan regresi kode; watchdog menyambung ulang dan run diulang pada commit yang sama.
 - **Migrasi dari DB kosong** diverifikasi pada cluster PostgreSQL sementara (bukan DB dev yang
   sudah berisi): 32 migrasi diterapkan berurutan, `btree_gist`, EXCLUDE versi produk, dan kolom
   `sealed` ada. Ini menutup BLOCKER review T-076 (urutan migrasi `product/0002` vs
@@ -74,8 +76,9 @@ permintaan pemilik).
 - **O-086**: guard `xmin` jurnal bergantung pada asumsi tanpa savepoint + epoch xid.
 - **O-087**: binding `pvtJson` hanya dibatasi ukuran; batas schema pecahan ditolak fail-closed.
 
-**Teknis tertunda**: O-068 (PBKDF2 memperlambat test), O-009 (`daycloser` belum ada),
-O-027 (sisa butuh tabel Fase 6), O-065, O-076…O-079 (catatan review sebelumnya).
+**Teknis tertunda**: O-009 (`daycloser` belum ada), O-027 (sisa job `traceability`, bukan tabel
+Fase 6), O-065, O-076…O-079 (catatan review sebelumnya), O-088 (jalur migrasi DB kosong tidak
+tercakup `task ci` lokal; job CI `db-tests` sudah ada). O-068 **selesai** (T-060).
 
 ## 5. Risiko
 
@@ -88,9 +91,10 @@ O-027 (sisa butuh tabel Fase 6), O-065, O-076…O-079 (catatan review sebelumnya
    sampai worker dijalankan; monitoring belum ada.
 4. **Tanpa maker-checker produk** — perubahan biaya/limit berlaku langsung. Untuk pilot dengan
    satu operator dapat diterima; sebelum multi-operator, O-085 wajib.
-5. **Beban migrasi DB kosong** — sudah diuji manual pada cluster PG sementara, tetapi **belum ada
-   job CI `db-tests`** yang menerapkan migrasi ke DB benar-benar kosong; ini harus ditambahkan
-   sebagai syarat merge (**O-088**) agar regresi urutan migrasi tertangkap otomatis.
+5. **Migrasi DB kosong** — job CI `db-tests` sudah menerapkan migrasi ke `kran_test` kosong, dan
+   jalur ini juga diuji manual pada cluster PG sementara. Yang belum tercakup: `./task ci` lokal
+   (schema di-reset tanpa melepas ekstensi), jadi regresi urutan/checksum baru terlihat setelah
+   push (**O-088**).
 
 ## 6. Rekomendasi langkah berikut
 
