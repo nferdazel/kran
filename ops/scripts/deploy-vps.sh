@@ -310,6 +310,13 @@ if [ -f "$BIN_NEW" ]; then
   chmod +x "$BIN"
 fi
 
+# O-090: parameter base wajib ada SEBELUM unit di-restart. Deploy me-restart worker lebih dulu,
+# dan worker menolak start (exit 2) bila parameter posting belum tersemai. Berkas seed idempoten
+# (`param_definitions` DO UPDATE metadata, `param_values` DO NOTHING) dan tidak memuat seed dev.
+log "==> seed parameter base (idempoten)"
+KRAN_DATABASE_URL="$GATE_DB_URL" "$BIN" --role=migrate --root="$MONO_DIR" --seed ||
+  die "seed parameter gagal — deploy dibatalkan (worker tidak di-restart dengan parameter belum lengkap)"
+
 # 9. Web: build statis lalu swap atomik (`web.new` -> `web`, `web.prev` disimpan).
 if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/web/|packages/)' <<<"$CHANGED_FILES"; then
   if [ -f "$MONO_DIR/apps/web/package.json" ]; then

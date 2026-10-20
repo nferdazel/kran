@@ -3,11 +3,12 @@
 #
 #   migrate.sh --check            periksa urutan/drift tanpa menulis
 #   migrate.sh --up               terapkan migrasi expand-only yang belum tercatat
+#   migrate.sh --seed             terapkan parameter base (packs/*/generated, idempoten)
 #   migrate.sh --contract --yes   migrasi contract (drop/rename/ketat); wajib --yes
 #   migrate.sh --down --yes N     batalkan N migrasi terakhir; wajib --yes dan N
 #
 # Menjalankan role migrate dari binary multi-role (spec §26.1 #5):
-#   <bin> --role=migrate [--check|--up|--contract|--down N] [--root=<dir>]
+#   <bin> --role=migrate [--check|--up|--seed|--contract|--down N] [--root=<dir>]
 #
 # Kontrak di biner (T-026 untuk `--check`/`--up`, T-035 untuk sisanya): `--check` read-only (kode 1
 # bila ada migrasi expand tertunda atau isinya berubah), `--up` menerapkan yang tertunda (idempoten),
@@ -28,6 +29,7 @@ usage() {
 pemakaian: migrate.sh <subperintah>
   --check            periksa drift/urutan (read-only)
   --up               terapkan migrasi expand-only
+  --seed             terapkan parameter base (idempoten, tanpa seed dev)
   --contract --yes   migrasi contract (drop/rename), wajib --yes
   --down --yes N     batalkan N migrasi terakhir, wajib --yes dan N
 USAGE
@@ -58,14 +60,14 @@ mode="$1"
 shift
 
 case "$mode" in
-  --check|--up|--contract|--down) ;;
+  --check|--up|--seed|--contract|--down) ;;
   *) usage ;;
 esac
 
 [ -x "$BIN" ] || { echo "ERROR: $BIN tidak ada / tidak executable" >&2; exit 1; }
 
 case "$mode" in
-  --check | --up)
+  --check | --up | --seed)
     # Argumen tambahan tidak diteruskan apa adanya: biner akan membacanya sebagai argumen posisi dan
     # menjawab kode 2 "argumen posisi hanya untuk --role=ctl", yang menyesatkan. `--yes` hanya milik
     # jalur destruktif di bawah.
