@@ -1823,3 +1823,18 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
 - Fungsi `assert_journal_period_open` di produksi memuat `FOR SHARE` (diverifikasi dari `pg_proc`).
 - **Langkah seed belum muncul** di log deploy ini (0 baris) — sesuai dugaan: `sync_script` memasang
   skrip deploy baru untuk deploy **berikutnya**. Bukti O-090 menyusul di deploy setelah commit ini.
+
+### Deploy `5cb337b` — bukti O-090 (20:01 WIB)
+
+- Log: `==> seed parameter base (idempoten)` **sebelum** `restart kran-api & kran-worker`;
+  `migrasi tidak berubah; gate dilewati`, API sehat, `kran-api` + `kran-worker` **active**.
+- Artinya perbaikan T-081 bekerja di pipeline, bukan hanya di test.
+
+### CI GitHub merah (libpcre) — diperbaiki
+
+- Run pada `70bd2fc` gagal di job DB: `could not load: libpcre.so(.3|.1|)` saat binary test `tapi`
+  start. Penyebab: `std/re` (validasi pola COA, `modules/ledger/domain/coa.nim`) memuat pcre lewat
+  dynlib; runner `ubuntu-latest` tidak punya `libpcre3`, sedangkan macOS dan image runtime produksi
+  punya.
+- Perbaikan: kedua job test (`nim-check`, `db-tests`) memasang `libpcre3`; dicatat di
+  `docs/ci-jobs.md`. Bukan pelonggaran gate — prasyarat runtime yang selama ini implisit.
