@@ -506,6 +506,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ledger/coa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daftar akun COA
+         * @description Daftar akun urut kode. Filter `type` dan `postable` menyaring **di SQL** (bukan setelah
+         *     batas baris), jadi hasil tidak terpotong di tengah filter. COA dimiliki institusi, bukan
+         *     cabang. Daftar dibatasi **200 akun** (batas ukuran respons); paginasi menyusul bila COA
+         *     tumbuh melewati itu.
+         */
+        get: operations["listCoa"];
+        put?: never;
+        /**
+         * Buat akun COA
+         * @description Kode akun dicocokkan dengan parameter `ledger.coa.code_pattern` (seluruh string). Sisi
+         *     normal **tidak** dikirim pemanggil: diturunkan dari `accountType` (ASSET/EXPENSE = DEBIT,
+         *     LIABILITY/EQUITY/REVENUE = CREDIT) dan dijaga CHECK DB. Kode duplikat → 409.
+         */
+        post: operations["createCoa"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ledger/periods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daftar periode akuntansi
+         * @description Periode akuntansi urut tanggal mulai terbaru, dibatasi **200 periode**. Rentang bersifat
+         *     **inklusif** (`startsOn`..`endsOn`); tumpang tindih ditolak DB.
+         */
+        get: operations["listPeriods"];
+        put?: never;
+        /**
+         * Buka periode
+         * @description Membuka periode baru. Periode yang tumpang tindih dengan periode mana pun ditolak **409**
+         *     oleh exclusion constraint (`period_no_overlap`), bukan oleh pemeriksaan aplikasi.
+         *     Urutan penutupan (EOD/EOM) diatur `daycloser`, bukan endpoint ini.
+         */
+        post: operations["openPeriod"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ledger/periods/{periodId}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tutup periode
+         * @description Menutup periode OPEN: mengisi `closed_at`/`closedBy`, menulis audit `ledger.period.close`
+         *     dan event `period.closed` dalam transaksi yang sama. **Alasan wajib**. Periode yang sudah
+         *     tertutup → 409.
+         */
+        post: operations["closePeriod"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -797,6 +875,72 @@ export interface components {
             /** @description ISO-8601 UTC. */
             assessedAt: string;
             nextReviewDue: string | null;
+        };
+        CoaCreate: {
+            /** @description Harus cocok dengan parameter `ledger.coa.code_pattern`. */
+            code: string;
+            name: string;
+            /** @enum {string} */
+            accountType: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE";
+            /**
+             * @description `false` untuk akun header/induk yang tidak boleh dipakai posting jurnal (T-073).
+             * @default true
+             */
+            postable: boolean;
+        };
+        CoaAccount: {
+            /** Format: uuid */
+            accountId: string;
+            code: string;
+            name: string;
+            /** @enum {string} */
+            accountType: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE";
+            /**
+             * @description Invarian dari `accountType` — bukan masukan pemanggil.
+             * @enum {string}
+             */
+            normalSide: "DEBIT" | "CREDIT";
+            postable: boolean;
+            /** @enum {string} */
+            status: "ACTIVE" | "INACTIVE";
+            /** @description ISO-8601 UTC. */
+            createdAt: string;
+        };
+        CoaList: {
+            items: components["schemas"]["CoaAccount"][];
+        };
+        PeriodCreate: {
+            /**
+             * Format: date
+             * @description Tanggal mulai `YYYY-MM-DD` (inklusif).
+             */
+            startsOn: string;
+            /**
+             * Format: date
+             * @description Tanggal akhir `YYYY-MM-DD` (inklusif); tidak boleh sebelum `startsOn`.
+             */
+            endsOn: string;
+        };
+        Period: {
+            /** Format: uuid */
+            periodId: string;
+            startsOn: string;
+            endsOn: string;
+            /** @enum {string} */
+            status: "OPEN" | "CLOSED";
+            /** @description ISO-8601 UTC; `null` selama periode masih OPEN. */
+            closedAt: string | null;
+            /** @description UUID penutup; `null` selama periode masih OPEN. */
+            closedBy: string | null;
+            /** @description ISO-8601 UTC. */
+            createdAt: string;
+        };
+        PeriodList: {
+            items: components["schemas"]["Period"][];
+        };
+        PeriodCloseRequest: {
+            /** @description Alasan penutupan; masuk jejak audit. */
+            reason: string;
         };
     };
     responses: {
@@ -1597,6 +1741,146 @@ export interface operations {
             404: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+        };
+    };
+    listCoa: {
+        parameters: {
+            query?: {
+                type?: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE";
+                postable?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar akun */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoaList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    createCoa: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CoaCreate"];
+            };
+        };
+        responses: {
+            /** @description Akun dibuat */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoaAccount"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    listPeriods: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar periode */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeriodList"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    openPeriod: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PeriodCreate"];
+            };
+        };
+        responses: {
+            /** @description Periode dibuka */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Period"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    closePeriod: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                periodId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PeriodCloseRequest"];
+            };
+        };
+        responses: {
+            /** @description Periode tertutup */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Period"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
         };
     };
 }

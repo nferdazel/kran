@@ -34,8 +34,7 @@ let db = dbPool.acquire()
 let sysClock = systemClock()
 
 # State awal bersih: schema dibuang, migrasi diterapkan ulang oleh test pertama.
-execScript(db, "DROP SCHEMA IF EXISTS platform CASCADE")
-execScript(db, "DROP SCHEMA IF EXISTS party CASCADE")
+resetTestSchemas(db, ".")
 
 proc expectDbError(sqlText: SqlQuery, needle = "") =
   var raised = false

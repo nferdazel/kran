@@ -1643,3 +1643,27 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
 - **Sisa**: T-078 (nama resmi/tanggal lahir/alamat + PII lengkap); O-073 (reindex blind index saat
   rotasi KEK); O-072 (idempotency POST master data); O-066 (seed produksi — 6 parameter baru ikut),
   dan deploy Fase 1 menunggu keputusan pemilik.
+
+## T-072 — `ledger` COA + periode: fondasi jurnal double-entry (20 Okt 2026)
+
+- **Kode**: modul baru `ledger` — migrasi `0001` (`coa_account`, `period`) + `0002` COA awal
+  idempoten bertanda `NEEDS-COMPLIANCE-REVIEW`; domain `coa`/`period`; repo `ledger_repo`; handler
+  `handlers_ledger` (5 endpoint: daftar/buat COA, daftar/buka/tutup periode); parameter
+  `ledger.coa.code_pattern`; izin `ledger.coa.read|manage` + `ledger.period.read|manage`
+  (migrasi platform `0015`); kontrak OpenAPI + klien TS.
+- **Invarian**: sisi normal diturunkan dari tipe akun dan dijaga CHECK DB; periode inklusif dengan
+  `EXCLUDE` menolak tumpang tindih (persis, sebagian, satu hari) dan mengizinkan periode
+  bersambung; tutup periode wajib alasan + audit + event `period.closed` dalam satu transaksi;
+  balapan tutup periode → 409 tanpa audit kedua. Aksi institusi dijaga dua gerbang
+  (`authorizedAtBranch(..., "")`), grant yang dibatasi cabang → 403 `branch_not_allowed`.
+- **Gate**: `./task check` hijau; `tledger` 13 unit, `itledger` 8 integrasi, `itapi_ledger` 9 HTTP;
+  `./task ci` hijau — **711 `[OK]`**, e2e 24 passed; `./task openapi` sinkron.
+- **Review independen** putaran 1: **CHANGES-REQUIRED** — 2 MAJOR (grant bercabang bisa melakukan
+  aksi institusi; balapan tutup periode menghasilkan 200 palsu + audit ganda) + 8 MINOR. Semua
+  ditindaklanjuti (tabel di `docs/tasks/T-072.md`); putaran 2 menyusul.
+- **Catatan jujur**: satu run CI sempat merah karena `itpool` (stress 8 thread) timeout 15 s di
+  bawah beban mesin — lolos standalone dan pada run berikutnya (**O-074**). `resetTestSchemas` di
+  `tools/dbtools/lib.nim` menggantikan `DROP SCHEMA` tulis-tangan di 10 harness, supaya menambah
+  modul baru tidak lagi membuat test lama gagal karena migrasi modul dijalankan ulang.
+- **Sisa**: **O-075** (akun kontra tidak bisa dimodelkan), T-073 (jurnal; wajib menegakkan
+  `postable`/`ACTIVE`), deploy Fase 1 (seed parameter) menunggu keputusan pemilik.

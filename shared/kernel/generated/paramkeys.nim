@@ -6,6 +6,7 @@ import ../paramkey
 import std/json
 
 const paramKeys*: seq[string] = @[
+  "ledger.coa.code_pattern",
   "party.cif.format",
   "party.identity.doc_lengths",
   "party.identity.doc_types",
@@ -31,6 +32,8 @@ const paramKeys*: seq[string] = @[
   "platform.security.session_absolute_minutes",
   "platform.security.session_idle_minutes",
 ]
+
+const P_ledger_coa_code_pattern* = ParamKey[string]("ledger.coa.code_pattern")
 
 const P_party_cif_format* = ParamKey[string]("party.cif.format")
 
@@ -81,6 +84,17 @@ const P_platform_security_session_absolute_minutes* = ParamKey[int64]("platform.
 const P_platform_security_session_idle_minutes* = ParamKey[int64]("platform.security.session_idle_minutes")
 
 const paramDefinitions*: seq[ParamDefinition] = @[
+  ParamDefinition(
+    key: "ledger.coa.code_pattern",
+    module: "ledger",
+    valueType: pvtString,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.ledger.coa.code_pattern",
+    sinceVersion: "0.1.0",
+  ),
   ParamDefinition(
     key: "party.cif.format",
     module: "party",

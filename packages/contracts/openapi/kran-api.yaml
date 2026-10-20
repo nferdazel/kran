@@ -48,6 +48,10 @@ tags:
       lain, dan nilai aktif lama dipangkas saat nilai baru disetujui.
   - name: audit
     description: Jejak audit append-only ber-rantai hash (spec §9.1(7), §18.2).
+  - name: ledger
+    description: |
+      Buku besar: Chart of Accounts dan periode akuntansi (Fase 1, T-072). Jurnal double-entry,
+      saldo, dan trial balance menyusul di T-073/T-075.
   - name: party
     description: |
       Party (CIF + identitas dasar) — Fase 1, T-070. Nomor CIF dibentuk dari parameter
@@ -914,6 +918,180 @@ paths:
         "501":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/ledger/coa:
+    get:
+      operationId: listCoa
+      tags: [ledger]
+      summary: Daftar akun COA
+      description: |
+        Daftar akun urut kode. Filter `type` dan `postable` menyaring **di SQL** (bukan setelah
+        batas baris), jadi hasil tidak terpotong di tengah filter. COA dimiliki institusi, bukan
+        cabang. Daftar dibatasi **200 akun** (batas ukuran respons); paginasi menyusul bila COA
+        tumbuh melewati itu.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+        - name: postable
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Daftar akun
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoaList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createCoa
+      tags: [ledger]
+      summary: Buat akun COA
+      description: |
+        Kode akun dicocokkan dengan parameter `ledger.coa.code_pattern` (seluruh string). Sisi
+        normal **tidak** dikirim pemanggil: diturunkan dari `accountType` (ASSET/EXPENSE = DEBIT,
+        LIABILITY/EQUITY/REVENUE = CREDIT) dan dijaga CHECK DB. Kode duplikat → 409.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CoaCreate"
+      responses:
+        "201":
+          description: Akun dibuat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoaAccount"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/ledger/periods:
+    get:
+      operationId: listPeriods
+      tags: [ledger]
+      summary: Daftar periode akuntansi
+      description: |
+        Periode akuntansi urut tanggal mulai terbaru, dibatasi **200 periode**. Rentang bersifat
+        **inklusif** (`startsOn`..`endsOn`); tumpang tindih ditolak DB.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Daftar periode
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeriodList"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: openPeriod
+      tags: [ledger]
+      summary: Buka periode
+      description: |
+        Membuka periode baru. Periode yang tumpang tindih dengan periode mana pun ditolak **409**
+        oleh exclusion constraint (`period_no_overlap`), bukan oleh pemeriksaan aplikasi.
+        Urutan penutupan (EOD/EOM) diatur `daycloser`, bukan endpoint ini.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PeriodCreate"
+      responses:
+        "201":
+          description: Periode dibuka
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Period"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/ledger/periods/{periodId}/close:
+    post:
+      operationId: closePeriod
+      tags: [ledger]
+      summary: Tutup periode
+      description: |
+        Menutup periode OPEN: mengisi `closed_at`/`closedBy`, menulis audit `ledger.period.close`
+        dan event `period.closed` dalam transaksi yang sama. **Alasan wajib**. Periode yang sudah
+        tertutup → 409.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: periodId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PeriodCloseRequest"
+      responses:
+        "200":
+          description: Periode tertutup
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Period"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -1491,3 +1669,124 @@ components:
           description: ISO-8601 UTC.
         nextReviewDue:
           type: ["string", "null"]
+
+    CoaCreate:
+      type: object
+      additionalProperties: false
+      required: [code, name, accountType]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 32
+          description: Harus cocok dengan parameter `ledger.coa.code_pattern`.
+        name:
+          type: string
+          minLength: 2
+          maxLength: 200
+        accountType:
+          type: string
+          enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+        postable:
+          type: boolean
+          default: true
+          description: |
+            `false` untuk akun header/induk yang tidak boleh dipakai posting jurnal (T-073).
+
+    CoaAccount:
+      type: object
+      additionalProperties: false
+      required: [accountId, code, name, accountType, normalSide, postable, status, createdAt]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        accountType:
+          type: string
+          enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+        normalSide:
+          type: string
+          enum: [DEBIT, CREDIT]
+          description: Invarian dari `accountType` — bukan masukan pemanggil.
+        postable:
+          type: boolean
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+        createdAt:
+          type: string
+          description: ISO-8601 UTC.
+
+    CoaList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoaAccount"
+
+    PeriodCreate:
+      type: object
+      additionalProperties: false
+      required: [startsOn, endsOn]
+      properties:
+        startsOn:
+          type: string
+          format: date
+          description: Tanggal mulai `YYYY-MM-DD` (inklusif).
+        endsOn:
+          type: string
+          format: date
+          description: Tanggal akhir `YYYY-MM-DD` (inklusif); tidak boleh sebelum `startsOn`.
+
+    Period:
+      type: object
+      additionalProperties: false
+      required: [periodId, startsOn, endsOn, status, closedAt, closedBy, createdAt]
+      properties:
+        periodId:
+          type: string
+          format: uuid
+        startsOn:
+          type: string
+        endsOn:
+          type: string
+        status:
+          type: string
+          enum: [OPEN, CLOSED]
+        closedAt:
+          type: ["string", "null"]
+          description: ISO-8601 UTC; `null` selama periode masih OPEN.
+        closedBy:
+          type: ["string", "null"]
+          description: UUID penutup; `null` selama periode masih OPEN.
+        createdAt:
+          type: string
+          description: ISO-8601 UTC.
+
+    PeriodList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Period"
+
+    PeriodCloseRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Alasan penutupan; masuk jejak audit.
