@@ -1,7 +1,5 @@
 ## Laporan buku besar (T-075): trial balance. Murni; sumber angka = jurnal.
 
-import std/options
-
 import kernel/[ids, money]
 import ./coa
 

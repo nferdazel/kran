@@ -3,7 +3,7 @@
 ## Rekonsiliasi: TB (dihitung dari jurnal) == agregasi SQL langsung, dan cache `balance_snapshot`
 ## hasil `rebuild_balance_snapshot` == angka TB. Tidak ada jalur tulis saldo selain jurnal.
 
-import std/[options, os, random, times, unittest]
+import std/[options, random, times, unittest]
 
 import db_connector/db_postgres
 
@@ -42,9 +42,11 @@ proc line(no: int, account: string, debit, credit: int64): JournalLine =
 
 # 40 jurnal acak seimbang dalam satu transaksi (uang bergerak antar akun nyata).
 var r = initRand(20261020)
+var expectedOct: int64 = 0
 discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
   for i in 0 ..< 40:
     let amount = r.rand(1 .. 5_000_000).int64
+    expectedOct += amount
     let j = Journal(journalId: newId(testClock), businessDate: "2026-10-15",
       valueDate: "2026-10-15", sourceEvent: "TbTest", sourceRef: newId(testClock),
       idempotencyKey: "ittb-" & $i,
@@ -54,18 +56,41 @@ discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
       insertJournalLine(d, j.journalId, l)
   1)
 
+# Jurnal bulan sebelumnya: snapshot kumulatif, TB hanya periode berjalan.
+const sepAmount = 100_0000'i64
+block:
+  let sepId = newId(testClock)
+  discard insertPeriod(db,
+    Period(periodId: sepId, startsOn: "2026-09-01", endsOn: "2026-09-30"), actor)
+  discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+    let j = Journal(journalId: newId(testClock), businessDate: "2026-09-15",
+      valueDate: "2026-09-15", sourceEvent: "TbTestPrior", sourceRef: newId(testClock),
+      idempotencyKey: "ittb-prior",
+      lines: @[line(1, "101", sepAmount, 0), line(2, "201", 0, sepAmount)])
+    discard insertJournal(d, j, actor)
+    for l in j.lines:
+      insertJournalLine(d, j.journalId, l)
+    1)
+
 suite "trial balance: rekonsiliasi":
-  test "TB seimbang dan hanya memuat akun dengan pergerakan":
-    let tb = trialBalance(db, periodId)
+  test "TB seimbang, angkanya cocok dengan total yang dihitung test":
+    let tb = trialBalance(db, periodId).get()
     check tb.lines.len == 2
     check tb.isBalanced
-    check tb.totalDebit == tb.totalCredit
-    check tb.totalDebit > zero()
+    check tb.totalDebit == money(expectedOct)
+    check tb.totalCredit == money(expectedOct)
     for l in tb.lines:
-      check l.accountCode in ["101", "201"]
+      if l.accountCode == "101":
+        check l.debit == money(expectedOct)
+        check l.credit.isZero
+      elif l.accountCode == "201":
+        check l.credit == money(expectedOct)
+        check l.debit.isZero
+      else:
+        check false
 
   test "angka TB sama dengan agregasi SQL langsung":
-    let tb = trialBalance(db, periodId)
+    let tb = trialBalance(db, periodId).get()
     for l in tb.lines:
       let direct = db.getRow(sql"""
         SELECT coalesce(sum(l.debit), 0)::text, coalesce(sum(l.credit), 0)::text
@@ -75,8 +100,8 @@ suite "trial balance: rekonsiliasi":
       check moneyOf(direct[0]) == l.debit
       check moneyOf(direct[1]) == l.credit
 
-  test "cache balance_snapshot dapat direkonstruksi dan sama dengan TB":
-    let tb = trialBalance(db, periodId)
+  test "snapshot = kumulatif sampai tanggal; TB = pergerakan periode":
+    let tb = trialBalance(db, periodId).get()
     rebuildSnapshot(db, tb.endsOn)
     let snap = snapshotTotals(db, tb.endsOn)
     check snap.len == tb.lines.len
@@ -85,10 +110,12 @@ suite "trial balance: rekonsiliasi":
       for l in tb.lines:
         if l.accountCode == code:
           found = true
-          check debit == l.debit.minorUnits
-          check credit == l.credit.minorUnits
+          # Bulan sebelumnya ikut di snapshot (kumulatif), tidak ikut di TB periode Oktober.
+          let priorDebit = if code == "101": sepAmount else: 0
+          let priorCredit = if code == "201": sepAmount else: 0
+          check debit == l.debit.minorUnits + priorDebit
+          check credit == l.credit.minorUnits + priorCredit
       check found
 
-  test "periode tidak ada = ValueError (bukan angka kosong)":
-    expect ValueError:
-      discard trialBalance(db, Id("88888888-8888-7888-8888-888888888888"))
+  test "periode tidak ada = none (bukan angka kosong)":
+    check trialBalance(db, Id("88888888-8888-7888-8888-888888888888")).isNone

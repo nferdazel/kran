@@ -1,7 +1,7 @@
 ## Query laporan (T-075). Trial balance dihitung dari `journal_line` (sumber kebenaran), bukan
 ## dari cache `balance_snapshot`.
 
-import std/[options, strutils]
+import std/options
 
 import kernel/[ids, money]
 
@@ -10,17 +10,15 @@ import db_connector/db_postgres
 import ../domain/[coa, report]
 import ./journal_repo
 
-proc trialBalance*(db: DbConn, periodId: Id): TrialBalance =
+proc trialBalance*(db: DbConn, periodId: Id): Option[TrialBalance] =
   ## Agregasi debit/kredit per akun untuk rentang periode. Akun tanpa pergerakan tidak muncul.
+  ## `none` = periode tidak ada (404); kerusakan data tetap `ValueError` (500).
   let rows = db.getAllRows(sql"""
     SELECT to_char(starts_on, 'YYYY-MM-DD'), to_char(ends_on, 'YYYY-MM-DD')
       FROM ledger.period WHERE period_id = ?""", $periodId)
   if rows.len == 0:
-    raise newException(ValueError, "periode tidak ditemukan")
-  let period = rows[0]
-  result.periodId = periodId
-  result.startsOn = period[0]
-  result.endsOn = period[1]
+    return none(TrialBalance)
+  result = some(TrialBalance(periodId: periodId, startsOn: rows[0][0], endsOn: rows[0][1]))
   for row in db.getAllRows(sql"""
       SELECT a.code, a.name, a.account_type,
              sum(l.debit)::text, sum(l.credit)::text
@@ -29,11 +27,11 @@ proc trialBalance*(db: DbConn, periodId: Id): TrialBalance =
         JOIN ledger.coa_account a ON a.code = l.gl_account
        WHERE j.business_date BETWEEN ?::date AND ?::date
        GROUP BY a.code, a.name, a.account_type
-       ORDER BY a.code""", result.startsOn, result.endsOn):
+       ORDER BY a.code""", result.get().startsOn, result.get().endsOn):
     let accountType = parseAccountType(row[2])
     if accountType.isNone:
       raise newException(ValueError, "account_type di DB tidak dikenal: " & row[2])
-    result.lines.add TrialBalanceLine(
+    result.get().lines.add TrialBalanceLine(
       accountCode: row[0],
       accountName: row[1],
       accountType: accountType.get(),

@@ -161,6 +161,30 @@ suite "posting: retry, lease, dan header salah":
         check ev.lockedBy == "worker-baru"
     check found
 
+  test "IN_FLIGHT yang masih segar tidak direbut meski lease aktif":
+    let eventId = accountingEvent(amount = "12.0000")
+    let first = dbPool.withConn(proc(d: DbConn): seq[OutboxEvent] {.gcsafe.} =
+      claimBatch(d, "worker-aktif", 50, 300))
+    var claimed = false
+    for ev in first:
+      if ev.eventId == eventId:
+        claimed = true
+    check claimed
+    let second = dbPool.withConn(proc(d: DbConn): seq[OutboxEvent] {.gcsafe.} =
+      claimBatch(d, "worker-lain", 50, 300))
+    for ev in second:
+      check ev.eventId != eventId
+
+  test "inbox hilang tetapi jurnal sudah ada → event DONE, bukan jurnal kedua":
+    let eventId = accountingEvent(amount = "13.0000")
+    discard processBatch(app, "test-worker", 10, 3, 0)
+    let before = journals(db, "", "DepositPosted").len
+    db.exec(sql"DELETE FROM platform.inbox WHERE event_id = ?", $eventId)
+    db.exec(sql"UPDATE platform.outbox SET status = 'PENDING' WHERE outbox_id = ?", $eventId)
+    discard processBatch(app, "test-worker", 10, 3, 0)
+    check journals(db, "", "DepositPosted").len == before
+    check statusOf(eventId) == "DONE"
+
   test "header accounting salah tipe = gagal terlihat, bukan diabaikan":
     let ev = newOutboxEvent(newId(testClock), "DepositPosted", "deposit",
       "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb", "itposting:bad-header:" & $newId(testClock),
