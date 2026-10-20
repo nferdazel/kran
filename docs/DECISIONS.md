@@ -2222,3 +2222,28 @@ harian jadi lambat, sementara gate akhir task tetap harus utuh (AGENTS §6).
 **Konsekuensi.** Loop harian tidak lagi menunggu lint penuh; regresi lint tetap tertangkap di
 `task ci` sebelum `DONE`. `KRAN_LINT_JOBS` dinaikkan/diturunkan sesuai memori mesin (tiap `nim
 check` memuat graf impor; 4 dipilih agar tidak menekan mesin 8–10 core).
+
+---
+
+## D-090 — Otorisasi pemilik untuk langkah produksi Fase 1 (override AGENTS §3)
+
+**Konteks.** AGENTS §3 melarang agen merge ke `main` (push = deploy) dan menyentuh server/secret.
+Pemilik secara eksplisit memilih "saya eksekusi (override §3)" pada 20 Okt 2026 untuk: merge
+`feat/fase1-party` → `main`, seed parameter base di DB produksi, enable unit worker, dan
+membuat/memasang KEK produksi.
+
+**Keputusan.** Override berlaku **hanya** untuk rangkaian go-live Fase 1 ini, dengan pagar:
+1. Tidak ada secret (nilai KEK, URL DB, password) masuk repo, log, atau pesan.
+2. Sebelum merge: preflight read-only dicatat (DB `kran`, user `kran_app`, 13 migrasi, `btree_gist`
+   + `pgcrypto` ada, `CREATE` privilege ada, kran-api sehat, SHA produksi `69dfca3`).
+3. Deploy tetap lewat pipeline resmi (`push` → webhook → build → health gate `/readyz` →
+   auto-rollback); tidak ada langkah manual yang melewati gate.
+4. Seed parameter hanya berkas generated (`param_definitions` DO UPDATE metadata, `param_values`
+   DO NOTHING) — tidak menimpa nilai yang sudah diubah pemilik; nilai base bertanda
+   `NEEDS-COMPLIANCE-REVIEW`.
+5. KEK dibuat di server, mode 0600, di luar repo/image; `sops`/`age` menyusul (D-046 butir 12).
+6. Setiap langkah + hasilnya dicatat di `docs/PROGRESS.md`; kegagalan → rollback `:prev`, bukan
+   memaksa ulang.
+
+**Konsekuensi.** Tanggung jawab operasional atas deploy ini ada pada pemilik yang memberi override;
+catatan ini yang membuat tindakan agen dapat diaudit. Aturan §3 tetap berlaku untuk task lain.
