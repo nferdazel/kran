@@ -13,6 +13,7 @@ import ./events
 import ./handlers_audit
 import ./handlers_auth
 import ./handlers_kyc
+import ./handlers_ledger
 import ./handlers_mfa
 import ./handlers_param
 import ./handlers_party
@@ -129,6 +130,21 @@ proc kycRoutes*(): seq[RouteSpec] =
               operationId: "unmaskIdentityDoc", handler: handleUnmask),
   ]
 
+proc ledgerRoutes*(): seq[RouteSpec] =
+  ## `ledger`: COA + periode (T-072).
+  @[
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/ledger/coa", operationId: "listCoa",
+              handler: handleListCoa),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/ledger/coa", operationId: "createCoa",
+              handler: handleCreateCoa),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/ledger/periods", operationId: "listPeriods",
+              handler: handleListPeriods),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/ledger/periods", operationId: "openPeriod",
+              handler: handleOpenPeriod),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/ledger/periods/{periodId}/close",
+              operationId: "closePeriod", handler: handleClosePeriod),
+  ]
+
 proc allRoutes*(): seq[RouteSpec] =
   systemRoutes() & authRoutes() & mfaRoutes() & paramRoutes() & auditRoutes() &
-    partyRoutes() & kycRoutes() & eventRoutes()
+    partyRoutes() & kycRoutes() & ledgerRoutes() & eventRoutes()

@@ -17,6 +17,24 @@ export interface ParamDefinition {
 
 export const paramDefinitions: readonly ParamDefinition[] = [
   {
+    "key": "ledger.coa.code_pattern",
+    "module": "ledger",
+    "valueType": "string",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.ledger.coa.code_pattern",
+    "jsonSchema": {
+      "minLength": 5,
+      "maxLength": 120
+    }
+  },
+  {
     "key": "party.cif.format",
     "module": "party",
     "valueType": "string",

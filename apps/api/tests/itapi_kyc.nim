@@ -53,8 +53,7 @@ let dbPool = newDbPool(dbConfigFromEnv(envT))
 
 block:
   let db = dbPool.acquire()
-  execScript(db, "DROP SCHEMA IF EXISTS platform CASCADE")
-  execScript(db, "DROP SCHEMA IF EXISTS party CASCADE")
+  resetTestSchemas(db, ".")
   discard applyMigrations(db, ".")
   execScript(db, readFile("packs/base/generated/param_definitions.sql"))
   execScript(db, readFile("packs/base/generated/param_values.sql"))

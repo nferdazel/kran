@@ -1,0 +1,14 @@
+# Definisi parameter modul `ledger` (spec §10.3).
+#
+# Nilai di `default_pack` adalah nilai awal pack, BUKAN fallback kode: aplikasi tetap
+# gagal-cepat bila nilai aktif tidak ada (spec §10.6).
+
+# Format kode akun COA. Kode akun adalah identitas akuntansi institusi (spec §10.5: "format kode"),
+# jadi polanya parameter — bukan konstanta di kode. Regex dicocokkan **seluruh string**.
+# Default: angka dengan segmen bertitik, 1–3 digit per segmen (mis. `1`, `101`, `1.100.01`).
+- key: ledger.coa.code_pattern
+  type: string
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minLength: 5, maxLength: 120 }
+  sensitivity: NORMAL
+  default_pack: { base: "^[0-9]{1,3}(\\.[0-9]{1,3})*$" }

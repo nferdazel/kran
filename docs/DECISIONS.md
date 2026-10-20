@@ -1927,3 +1927,83 @@ audit tanpa nomor, event `party.risk_changed`, 501 tanpa KEK, nomor tidak muncul
 
 **HUMAN-REVIEW-REQUIRED**: area kriptografi/PII (AGENTS.md §8) — perlu review manusia sebelum data
 nyata masuk.
+
+---
+
+## D-070 — COA & periode T-072: kode = parameter, sisi normal = kode, seed COA lewat migrasi
+
+**Konteks.** T-072 adalah fondasi jurnal double-entry. Tiga hal harus diputuskan sebelum ada data:
+(1) mana yang parameter dan mana yang invarian, (2) bagaimana periode dicegah tumpang tindih,
+(3) bagaimana COA awal sampai ke produksi tanpa langkah manual.
+
+**Keputusan.**
+1. **Format kode akun = parameter** `ledger.coa.code_pattern` (regex, GLOBAL/INSTITUTION), dicocokkan
+   **seluruh string**. Spec §10.5 menyebut format kode sebagai database-driven; pola regex dipilih
+   (bukan parser token sendiri) karena cukup satu nilai, bisa diuji, dan tidak menambah dependensi
+   (`std/re`). Pola rusak = **500** (konfigurasi), kode tidak cocok = **400** (permintaan).
+2. **Sisi normal = kode**, bukan parameter: ASSET/EXPENSE = DEBIT, LIABILITY/EQUITY/REVENUE =
+   CREDIT. Ini invarian akuntansi (kelas yang sama dengan aritmetika `Money`), disimpan eksplisit
+   agar laporan tidak menghitung ulang, dan dijaga CHECK DB supaya tidak bisa menyimpang.
+3. **Periode = rentang inklusif** `[starts_on, ends_on]`, tumpang tindih ditolak
+   `EXCLUDE USING gist (daterange(...,'[]') WITH &&)`. Constraint DB, bukan pemeriksaan aplikasi:
+   dua permintaan bersamaan tidak bisa lolos. Urutan penutupan (periode lebih awal harus tutup
+   dulu) **tidak** ditegakkan di T-072 — itu orkestrasi `daycloser` (Fase 5).
+4. **COA awal lewat migrasi idempoten** (`0002_ledger_coa_base.sql`), bukan `packs/*/seed/`:
+   direktori seed pack hanya diterapkan `dbtools seed --dev`, sehingga produksi tidak akan pernah
+   mendapatkannya (O-066). Isinya **contoh struktur** bertanda `NEEDS-COMPLIANCE-REVIEW`
+   (REG-011 `V!`) — bukan klaim patuh SAK/PSAK.
+5. Semua endpoint COA/periode bersifat **institusi** (tanpa cabang), berbeda dari `party`. GL
+   dimiliki institusi pada Fase 1 (spec §9).
+
+**Konsekuensi.** Mengubah format kode COA hanya berlaku untuk akun **baru** (tidak ada endpoint
+update; koreksi = akun baru + nonaktifkan yang lama). Mengubah huruf/ejaan tidak relevan (pola
+regex), tetapi mengganti pola yang lebih ketat membuat kode lama “tidak sah” bila kelak divalidasi
+ulang — karena itu kode lama tidak divalidasi ulang, hanya kode baru.
+
+**Konsekuensi lanjutan (review putaran 1).**
+- Aksi COA/periode adalah aksi **institusi**, jadi dijaga **dua gerbang**: `requirePermission`
+  (izin dipegang di cabang mana pun) + `authorizedAtBranch(db, principal, "", permission)` di dalam
+  transaksi. Grant yang dibatasi cabang → **403 `branch_not_allowed`** (D-062).
+- Penutupan periode bersamaan: `UPDATE` yang mengenai 0 baris diperlakukan **409**, dan audit/event
+  **tidak** ditulis. Status `OPEN` di `SELECT` sebelumnya bukan pengunci; pemeriksaan hasil
+  `UPDATE`-lah yang menutup balapan.
+- **Akun kontra belum bisa dimodelkan**: CHECK `normal_side` mewajibkan ASSET/EXPENSE = DEBIT,
+  sehingga akun seperti CKPN/akumulasi penyusutan (saldo normal kredit pada kelompok aset) tidak
+  punya tempat. Dicatat **O-075**; keputusan penanda `contra` menunggu accounting/compliance owner
+  sebelum T-075/T-076.
+- `postable = false` masih **konvensi** sampai T-073: belum ada jurnal, jadi belum ada yang menolak
+  posting ke akun header/non-`ACTIVE`. T-073 wajib menegakkannya di DB.
+- Daftar COA/periode dibatasi **200 baris** (batas ukuran respons, bukan aturan bisnis); paginasi
+  menyusul bila COA tumbuh melewati itu.
+
+**Bukti.** `tledger` (13 unit: tipe/sisi normal, pencocokan pola penuh termasuk pola tanpa anchor
+dan pola cocok-kosong, tanggal 31 Feb ditolak, rentang terbalik), `itledger` (seed 15 akun, kode
+unik, CHECK sisi normal, EXCLUDE: tumpang tindih sebagian/persis/satu hari vs periode bersambung,
+tutup periode + penutupan kedua = hasil kosong, rollback), `itapi_ledger` (401/403/400/404/409/500
+lewat HTTP, filter, audit create/open/close, event `period.closed`, pola rusak → 500, grant
+bercabang → 403). `./task ci` hijau — 709 `[OK]`, e2e 24 passed.
+
+---
+
+## D-071 — Izin tetap pemilik: migrasi, push, dan kerja paralel (20 Okt 2026)
+
+**Konteks.** Pemilik memberi tiga izin tetap supaya alur kerja tidak berhenti menunggu konfirmasi
+untuk hal yang sudah jelas.
+
+**Keputusan.**
+1. **Eksekusi migrasi selalu diizinkan** — `./task dbtools migrate|status|validate`, reset schema
+   DB dev, dan penerapan migrasi ke DB dev/prod tidak perlu izin per kejadian. Tetap berlaku:
+   migrasi expand-only, perubahan destruktif butuh `-- dbtools:destructive <alasan>` + keputusan
+   terpisah, dan tidak menyentuh server di luar repo tanpa task eksplisit (AGENTS §3).
+2. **Push diizinkan, tetapi dibatch** — jangan push terlalu sering karena deploy ke `main`
+   membangun image container dan menumpuk tag (T-069 sudah memangkas 12-hex lama, tetapi tetap
+   lebih murah tidak membangun). Push ke branch fitur tidak membangun image; merge ke `main` tetap
+   keputusan manusia, dan push ke `main` hanya setelah gate hijau (D-044), sebaiknya digabung
+   dengan perubahan lain yang siap.
+3. **Kerja paralel antartask yang tidak tumpang tindih** — task lain boleh dikerjakan bersamaan
+   dengan loop yang sama: implementasi → audit/review independen → perbaiki → ulangi sampai
+   APPROVE. Task yang berbagi berkas panas (`routes.nim`, kontrak OpenAPI, modul yang sama) tetap
+   berurutan.
+
+**Konsekuensi.** Review independen tetap wajib sebelum `DONE` (AGENTS §4.5–4.7) dengan konteks
+bersih; yang berubah hanya izin operasional (migrasi/push) dan pengizinan paralelisasi.
