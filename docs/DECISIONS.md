@@ -2253,3 +2253,42 @@ deploy mendahului seed (**O-090**).
 
 **Konsekuensi.** Tanggung jawab operasional atas deploy ini ada pada pemilik yang memberi override;
 catatan ini yang membuat tindakan agen dapat diaudit. Aturan §3 tetap berlaku untuk task lain.
+
+---
+
+## D-091 — Tutup periode mengunci baris periode (`FOR SHARE`), bukan hanya membaca status
+
+**Konteks.** O-089: trigger `ledger.assert_journal_period_open()` hanya membaca status periode.
+Sesi A yang menutup periode (belum `COMMIT`) dan sesi B yang memposting jurnal pada tanggal itu
+tidak saling melihat: B membaca versi lama `OPEN`, insert berhasil, lalu A commit — jurnal berada
+di periode `CLOSED`. Invarian "tidak ada posting ke periode tertutup" bocor tanpa galat apa pun.
+
+**Opsi.** (A) kunci baris periode di trigger; (B) dokumentasikan bahwa jaminan hanya untuk periode
+yang sudah commit `CLOSED`; (C) A + B.
+
+**Keputusan.** **A** (sekaligus B: sisa jendela operasional dicatat). Fungsi trigger diganti
+`CREATE OR REPLACE` dengan `SELECT ... FOR SHARE` pada baris periode. `UPDATE` penutupan memakai
+lock `FOR NO KEY UPDATE` yang berkonflik dengan `FOR SHARE`, sehingga:
+- B menunggu sampai A selesai, lalu mengevaluasi versi **setelah** commit (`CLOSED`) → ditolak;
+- bila B memegang lock lebih dulu, penutupan menunggu jurnal commit → jurnal tetap di periode OPEN.
+
+**Ditolak.** B saja: membiarkan jalur posting normal (bukan hanya `daycloser`) menembus invarian
+akuntansi; "didokumentasikan" tidak cukup untuk buku besar. `daycloser` (Fase 5) tetap menjadi
+pemilik urutan EOD, tetapi penegakan tidak boleh bergantung padanya.
+
+**Konsekuensi.** Lock baris periode dipegang sampai transaksi jurnal selesai (satu lock per jurnal);
+penutupan periode menunggu jurnal yang sedang berjalan. Volume pilot kecil (D-072) sehingga
+memadai; bila throughput jadi masalah, alternatifnya advisory lock per periode — bukan menurunkan
+invarian. Migrasi `0011_ledger_period_lock.sql` expand-only.
+
+**Urutan penguncian.** Jalur yang ada: tutup periode `period` → advisory `platform.audit_log`;
+pembalik `period` (via `insertJournal`) → advisory; worker `inbox` → `period` → `outbox` (tanpa
+audit). Tidak ada siklus hari ini. Konsekuensinya: penambahan lock baru di ledger harus sadar urutan
+`period → audit`; jalur yang menulis audit **sebelum** posting berpotensi membuat siklus dengan
+penutupan periode.
+
+**Bukti.** Dua test `itjournal`: (1) dua koneksi, `lock_timeout` 200 ms — insert **gagal** karena
+menunggu lock saat penutupan belum commit; (2) thread menahan penutupan 800 ms lalu COMMIT — insert
+yang menunggu **ditolak** (`tidak ada periode OPEN`), bukan timeout, dan tidak ada baris jurnal.
+Test (1) **FAILED** bila `FOR SHARE` dilepas (mutation check), lalu hijau setelah dipulihkan.
+`./task verify ledger` hijau; `./task ci` hijau (lihat PROGRESS).
