@@ -1723,7 +1723,7 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
 - **Review**: r1 CHANGES-REQUIRED (btree_gist/H+1/sealed) → `4930514`; r2 CHANGES-REQUIRED
   (batas `rate` 100× salah skala) → `534221b`; **r3 APPROVE** (tanpa BLOCKER/MAJOR).
 - **Keputusan**: **D-076** (bentuk tabel & semantik versi). Sisa: maker-checker produk (**O-085**),
-  atribut rate/day-count (**O-084**), jalur DB kosong otomatis (**O-088**).
+  atribut rate/day-count (**O-084**), cakupan migrasi DB kosong di `task ci` lokal (**O-088**; job CI `db-tests` sudah ada).
 
 ## Tindak lanjut review T-074 & T-075 (20 Okt 2026)
 

@@ -208,6 +208,8 @@ suite "Fase 1 end-to-end":
     # meng-hardcode 7 digit akan gagal di sini.
     let pattern = withDbValue(sql"""SELECT value #>> '{}' FROM platform.param_value
       WHERE key = 'party.cif.format' AND status = 'ACTIVE' AND scope_type = 'GLOBAL'
+        AND effective_from <= '2026-10-20'
+        AND (effective_to IS NULL OR effective_to >= '2026-10-20')
       ORDER BY effective_from DESC LIMIT 1""")
     let seq = parseBiggestInt(withDbValue(sql"SELECT last_value::text FROM party.cif_seq"))
     check cif == formatCif(pattern, seq)
