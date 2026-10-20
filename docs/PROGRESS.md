@@ -1838,3 +1838,37 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   punya.
 - Perbaikan: kedua job test (`nim-check`, `db-tests`) memasang `libpcre3`; dicatat di
   `docs/ci-jobs.md`. Bukan pelonggaran gate — prasyarat runtime yang selama ini implisit.
+
+## Biaya test + keputusan blocker Fase 2 (20 Okt 2026)
+
+**Test panas.** Penyebab: seed pengguna dev memakai PBKDF2 **600.000** iterasi; `itapi_auth`
+170 s dan `itapi_mfa` 49 s hanya untuk verifikasi login. Perbaikan (D-093):
+- seed dev/test → 1000 iterasi (produksi tidak berubah, tetap 600k);
+- test yang mengganti password menurunkan parameter KDF **di DB test** ke 1000;
+- hasil: `itapi_auth` 30 s, `itapi_mfa` 20 s, `./task test` **368 s / 819 `[OK]`** (sebelumnya
+  ~500 s). Loop harian: `./task test <suite>` atau `./task verify <modul>`; `ci` pra-merge.
+
+**Keputusan blocker (delegasi pemilik, SME paralel):**
+- **D-094/O-084** — lima parameter bentuk akrual ditambahkan **tanpa nilai**; nilai menunggu
+  compliance; akrual = task day-close Fase 3.
+- **D-095/O-066** — seed base diklasifikasi (teknis / kebijakan / komersial / menunggu compliance);
+  `grace_period_days` belum punya semantik (T-087).
+- **D-096/O-083** — TB tetap mutasi; endpoint saldo GL terpisah (T-082).
+- **D-097/O-082** — 4 desimal di tabel, 2 untuk tunai; formatter terpusat (T-083).
+- **D-098/O-072** — idempotency bertahap pada POST pembuat objek (T-084/T-085).
+- **D-099/O-085** — maker-checker versi produk DRAFT→ACTIVE (T-086); sampai itu perubahan produk
+  dibekukan.
+
+**Sisa operasional (butuh pemilik):** password admin (`admin`, `must_change_password=t` sejak
+17 Okt), salinan offline KEK (`age`/`sops` tidak terpasang di laptop/server), verifikasi autostart
+lewat reboot, alert backlog worker (O-081).
+
+### `ctl reset-password` (D-100, 20 Okt 2026)
+
+- Ditambahkan untuk pemulihan kata sandi admin tanpa SQL manual: hash PBKDF2 dengan parameter
+  produksi, `must_change_password=true`, pemulihan `LOCKED`→`ACTIVE`, hash lama masuk riwayat,
+  semua sesi dicabut, audit `user.password_reset` dalam transaksi yang sama.
+- Reviewer (auth, HUMAN-REVIEW-REQUIRED) r1 **CHANGES REQUESTED**: BLOCKER akun LOCKED tetap
+  terkunci permanen; MAJOR riwayat kata sandi tidak dicatat + test tidak membuktikan sesi/CLI.
+  Semua diperbaiki; mutation check (pemulihan LOCKED dihapus → test **FAILED**) membuktikan
+  BLOCKER tertangkap. `./task verify api` hijau; `./task ci` hijau (`820 [OK]`, e2e 24).

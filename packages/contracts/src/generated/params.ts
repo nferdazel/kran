@@ -562,6 +562,27 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "product.savings.day_count_basis",
+    "module": "product",
+    "valueType": "enum",
+    "tsType": "\"ACT_365\" | \"ACT_360\" | \"THIRTY_360\"",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.product.savings.day_count_basis",
+    "jsonSchema": {
+      "enum": [
+        "ACT_365",
+        "ACT_360",
+        "THIRTY_360"
+      ]
+    }
+  },
+  {
     "key": "product.savings.grace_period_days",
     "module": "product",
     "valueType": "integer",
@@ -580,6 +601,43 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "product.savings.interest_posting",
+    "module": "product",
+    "valueType": "enum",
+    "tsType": "\"NONE\" | \"MONTH_END\"",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.product.savings.interest_posting",
+    "jsonSchema": {
+      "enum": [
+        "NONE",
+        "MONTH_END"
+      ]
+    }
+  },
+  {
+    "key": "product.savings.interest_rate",
+    "module": "product",
+    "valueType": "rate",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.product.savings.interest_rate",
+    "jsonSchema": {
+      "maxLength": 32
+    }
+  },
+  {
     "key": "product.savings.min_balance",
     "module": "product",
     "valueType": "money",
@@ -594,6 +652,44 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     "descriptionKey": "param.product.savings.min_balance",
     "jsonSchema": {
       "minimum": 0
+    }
+  },
+  {
+    "key": "product.savings.rounding_mode",
+    "module": "product",
+    "valueType": "enum",
+    "tsType": "\"HALF_UP\" | \"HALF_EVEN\"",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.product.savings.rounding_mode",
+    "jsonSchema": {
+      "enum": [
+        "HALF_UP",
+        "HALF_EVEN"
+      ]
+    }
+  },
+  {
+    "key": "product.savings.rounding_scale",
+    "module": "product",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.product.savings.rounding_scale",
+    "jsonSchema": {
+      "minimum": 0,
+      "maximum": 4
     }
   }
 ] as const;

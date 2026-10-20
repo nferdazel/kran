@@ -9,7 +9,7 @@
 ## untuk membuktikan deteksi. Yang diuji di sini: kode keluar `ctl verify-audit` **konsisten** dengan
 ## hasil `verifyChain` pada DB yang sedang dipakai.
 
-import std/[os, strutils, unittest]
+import std/[options, os, strutils, unittest]
 
 import db_connector/db_postgres
 
@@ -18,7 +18,7 @@ import "platform-lib/db/pool"
 import dbtools/lib
 import kernel/[clock, ids]
 import platform/domain/scope
-import platform/infrastructure/[audit_repo, auth_repo, auth_service]
+import platform/infrastructure/[audit_repo, auth_repo, auth_service, password_hasher]
 
 import ../src/main
 
@@ -76,7 +76,7 @@ suite "kran-api: peran CLI (O-013)":
     check runCtl("daycloser-status", ".") == 3
 
   test "ctl bootstrap-admin: tanpa --username → 2 (salah pakai), bantuan menyebutnya":
-    # `bootstrap-admin` satu-satunya perintah `ctl` yang menulis, jadi kontraknya diuji eksplisit.
+    # `bootstrap-admin` salah satu dari dua perintah `ctl` yang menulis (D-100), jadi kontraknya diuji eksplisit.
     # Alur sukses + kata sandi yang dicetak sekali diuji di `itauth` (butuh skema bersih); di sini
     # yang penting: salah pakai tidak diam-diam membuat admin, dan perintahnya terlihat di bantuan.
     check runCtl(bootstrapAdminCmd, ".", "") == 2
@@ -127,6 +127,58 @@ suite "kran-api: peran CLI (O-013)":
     check runMigrate(".") == 0
     check runMigrate(".", "--up") == 0
     check applyMigrations(db, ".").applied.len == 0
+
+  test "ctl reset-password: hash baru, wajib ganti, sesi dicabut, audit, lockout pulih (O-071)":
+    let uid = $newId(systemClock())
+    let uname = "itapi-reset-" & uid[0 .. 7]
+    check insertUser(db, NewUser(userId: uid, username: uname,
+      fullName: "Uji Reset", passwordHash: $hashPassword("sandi-lama-123", 1000)))
+    defer: discard db.execAffectedRows(
+      sql"DELETE FROM platform.app_user WHERE user_id = ?::uuid", uid)
+    # Skenario nyata pemicu reset: akun terkunci + ada sesi aktif di beberapa perangkat.
+    check setUserStatus(db, uid, "LOCKED")
+    let nowIso = utcIso(systemClock().now())
+    for i in 1 .. 2:
+      check createSession(db, $newId(systemClock()), uid, "token-reset-" & uid & "-" & $i,
+        nowIso, nowIso, "", "", "")
+    let setelan = settingsOf(db, institutionScope(), nowIso[0 .. 9])
+
+    let r = resetUserPassword(db, uname, systemClock())
+    check r.code == 0
+    check r.password.len >= 12
+    let sesudah = userById(db, uid).get()
+    check sesudah.status == "ACTIVE" # LOCKED tidak boleh terkunci permanen
+    check sesudah.mustChangePassword
+    check sesudah.failedAttempts == 0
+    check sesudah.lockedUntil.len == 0
+    check verifyPassword(r.password, sesudah.passwordHash)
+    check not verifyPassword("sandi-lama-123", sesudah.passwordHash)
+    check sesudah.passwordHash.split('$')[1] == $setelan.pbkdf2Iterations
+    check db.getValue(sql"""select count(*) from platform.session
+                             where user_id = ?::uuid and revoked_at is null""", uid) == "0"
+    check db.getValue(sql"""select count(*) from platform.user_password_history
+                             where user_id = ?::uuid""", uid) == "1"
+    check verifyPassword("sandi-lama-123", db.getValue(
+      sql"""select password_hash from platform.user_password_history
+             where user_id = ?::uuid""", uid))
+    check db.getValue(sql"""select after_value->>'must_change_password'
+                              from platform.audit_log
+                             where action = 'user.password_reset' and resource_id = ?""",
+      uid) == "true"
+    # Status yang sengaja dinonaktifkan tidak ikut diaktifkan oleh reset.
+    let uidNonaktif = $newId(systemClock())
+    let unameNonaktif = "itapi-reset-off-" & uidNonaktif[0 .. 7]
+    check insertUser(db, NewUser(userId: uidNonaktif, username: unameNonaktif,
+      fullName: "Uji Reset Nonaktif", passwordHash: $hashPassword("sandi-lama-123", 1000)))
+    check setUserStatus(db, uidNonaktif, "INACTIVE")
+    check resetUserPassword(db, unameNonaktif, systemClock()).code == 0
+    check userById(db, uidNonaktif).get().status == "INACTIVE"
+    discard db.execAffectedRows(
+      sql"DELETE FROM platform.app_user WHERE user_id = ?::uuid", uidNonaktif)
+
+    # Kontrak CLI (tanpa menyentuh akun nyata): argumen kurang = 2, pengguna tidak ada = 3.
+    check runCtl(resetPasswordCmd, ".", "") == 2
+    check runCtl(resetPasswordCmd, ".", "tidak-ada") == 3
 
   test "migrate --seed: menulis ulang nilai hilang, tanpa seed dev (O-090)":
     # Selektor: hanya pack generated; seed dev/test (`packs/*/seed/`) tidak boleh ikut.

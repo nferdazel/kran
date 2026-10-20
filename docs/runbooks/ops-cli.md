@@ -13,6 +13,7 @@ repo** (atau dengan `--root=<dir>` yang menunjuk ke sana), karena migrasi dibaca
 | `ctl` | `kran-api --role=ctl outbox-status` | **0** (hanya mencetak jumlah per status) |
 | `ctl` | `kran-api --role=ctl daycloser-status` | **3** belum ada di Fase 0 (dipakai freeze gate deploy) |
 | `ctl` | `kran-api --role=ctl bootstrap-admin --username=<nama>` | **0** admin dibuat, **3** sudah ada pemegang role admin, **2** tanpa `--username` |
+| `ctl` | `kran-api --role=ctl reset-password --username=<nama>` | **0** kata sandi baru dicetak sekali, **1** gagal menulis/acak, **2** tanpa `--username`, **3** pengguna tidak ada |
 | `ctl` | `kran-api --role=ctl help` | **0** |
 | `worker` | `kran-api --role=worker` | **3** belum ada pekerjaan di Fase 0 |
 | — | argumen salah / perintah tidak dikenal | **2** (bantuan ditulis ke stderr) |
@@ -37,9 +38,11 @@ ketiganya, jadi jangan "merapikan" kode keluar tanpa memperbarui skrip.
 
 ## Catatan
 
-- Peran `ctl` sengaja **read-only**, dengan satu pengecualian: `bootstrap-admin`. Skrip otomatis
-  memanggil perintah lain di peran ini tanpa pengawasan, jadi tidak boleh ada perintah lain yang
-  menulis data (re-drive outbox dsb. menyusul sebagai perintah terpisah dengan `--yes`).
+- Peran `ctl` sengaja **read-only**, dengan dua pengecualian yang terdokumentasi:
+  `bootstrap-admin` dan `reset-password`. Keduanya butuh `--username` eksplisit dan menulis audit;
+  keduanya **tidak** memakai `--yes` karena bukan rollback skema — pemulihan akses harus bisa
+  dijalankan saat insiden. Skrip otomatis memanggil perintah lain di peran ini tanpa pengawasan,
+  jadi tidak boleh ada perintah tulis lain (re-drive outbox dsb. menyusul dengan `--yes`).
 - `--role=migrate` memakai implementasi yang sama dengan `./task dbtools migrate`/`validate`
   (`tools/dbtools/lib.nim`), supaya tidak ada dua jalur migrasi yang bisa berbeda hasil.
 
@@ -61,9 +64,8 @@ kran-api --role=ctl bootstrap-admin --username=admin.pertama
 Yang terjadi: pengguna dibuat dengan `must_change_password = true` dan role `platform_admin`
 (katalog izin & role sistem ada di migrasi `0008_platform_rbac_catalogue.sql`, jadi role itu memang
 punya seluruh izin yang dikenal), lalu kata sandi awal acak (CSPRNG; panjangnya `password_min_length` + margin, alfabet tanpa
-karakter mudah tertukar) dicetak **sekali** ke stdout. Yang tersimpan di DB hanya hash-nya; kalau
-output-nya hilang sebelum dipakai, tidak ada cara memulihkannya — buat admin lain lewat alur
-penugasan role biasa.
+karakter mudah tertukar) dicetak **sekali** ke stdout. Yang tersimpan di DB hanya hash-nya; kalau output-nya hilang sebelum
+dipakai, jalurnya `reset-password --username=<nama>` di bawah (bukan UPDATE SQL manual).
 
 Sebelum kata sandinya diganti, akun itu hanya bisa memakai `/auth/session`, `/auth/password`, dan
 `/auth/logout`. Rute ber-izin dijawab 403 `password_change_required` (juga di jalur realtime), dan
@@ -73,3 +75,20 @@ tetap hidup dan sesi lain milik pengguna itu dicabut.
 Kode keluar: **0** berhasil, **3** ditolak karena sudah ada pemegang role admin (atau username sudah
 dipakai) — perintah ini sekali-jalan dan tidak punya opsi paksa, **2** salah pakai (mis.
 `--username` kosong), **1** gagal terhadap DB / kebijakan keamanan tidak sah.
+
+## Reset kata sandi (lupa kata sandi awal) — D-100
+
+```bash
+cd /srv/qouver/apps/kran/monorepo
+KRAN_DATABASE_URL="$(grep '^KRAN_DATABASE_URL=' /srv/qouver/apps/kran/env/kran-prod.env | cut -d= -f2-)"
+KRAN_DATABASE_URL="${KRAN_DATABASE_URL//@qouver-postgres:/@127.0.0.1:}"
+KRAN_DATABASE_URL="$KRAN_DATABASE_URL" LD_LIBRARY_PATH=/srv/qouver/apps/kran/lib \
+  /srv/qouver/apps/kran/bin/kran-api --role=ctl reset-password --username=admin
+```
+
+Yang terjadi: kata sandi acak dicetak **sekali**; hash memakai iterasi parameter produksi;
+`must_change_password=true`; akun `LOCKED` dikembalikan ke `ACTIVE` (status `INACTIVE`/`SUSPENDED`
+**tidak** diaktifkan); hash lama masuk `user_password_history` sehingga tidak bisa dipakai ulang;
+semua sesi dicabut; audit `user.password_reset` tercatat dalam transaksi yang sama. Login berikutnya
+dipaksa ganti kata sandi. Jangan mengubah `platform.app_user.password_hash` lewat SQL — itu
+melewati audit dan pencabutan sesi.
