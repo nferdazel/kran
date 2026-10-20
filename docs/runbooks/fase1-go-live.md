@@ -11,8 +11,8 @@ Branch `feat/fase1-party`, gate terakhir `b3f3f98` (816 `[OK]`, e2e 24). Rujukan
 - [x] `./task ci` hijau pada commit yang akan di-merge (`b3f3f98`)
 - [x] Semua task Fase 1 `DONE` + reviewer APPROVE (`docs/BACKLOG.md`)
 - [x] `docs/milestones/M1-report.md` diperbarui
-- [ ] Nilai parameter pilot disetujui pemilik (**O-066**) — seed base bertanda
-      `NEEDS-COMPLIANCE-REVIEW`; jangan mengarang angka
+- [x] Seed base dijalankan 20 Okt 2026 (33 definisi/nilai; `product.savings.*` ada). Nilai final
+      tetap menunggu **O-066**
 
 ## 1. Sebelum merge (OWNER, di server)
 
@@ -31,17 +31,17 @@ git merge --no-ff feat/fase1-party
 git push origin main          # memicu deploy + health gate + auto-rollback
 ```
 
-- [ ] Pantau log deploy; health gate `/readyz` lulus
+- [x] Deploy 20 Okt 2026: `36602a8` lalu `28168f7`, health gate `/readyz` 200, 33 migrasi
 - [ ] Bila rollback otomatis: cek `ops/scripts/rollback.sh` + log, jangan paksa ulang
 
 ## 3. Setelah deploy (OWNER + verifikasi)
 
-- [ ] `curl -fsS https://cbs.qouver.com/healthz` dan `/readyz` → 200
-- [ ] Login sesi nyata; buka `GET /api/v1/ledger/coa` (izin `ledger.coa.read`)
+- [x] `curl -fsS https://cbs.qouver.com/healthz` dan `/readyz` → 200 (20 Okt 2026)
+- [ ] Login sesi nyata; buka `GET /api/v1/ledger/coa` (izin `ledger.coa.read`) — **butuh password admin**
 - [ ] `GET /api/v1/ledger/trial-balance?periodId=…` untuk periode yang dibuka
 - [ ] `GET /api/v1/products` (kosong sampai seed katalog) dan `GET /api/v1/parties` (izin sesuai)
 - [ ] Audit `platform.audit_log` bertambah untuk aksi yang dilakukan
-- [ ] Migrasi: `dbtools status` tidak ada `pending`; tabel `product.*` ada
+- [x] Migrasi: 33 tercatat, schema `party`/`ledger`/`product` ada
 
 ## 4. Worker akuntansi (OWNER — O-081)
 
@@ -49,18 +49,20 @@ Unit worker kini long-running (`ops/systemd/kran-worker.container`). Sebelum ena
 
 - [ ] Probe: pastikan ada cara melihat backlog outbox (query `platform.outbox` per status) dan
       `RestartPreventExitStatus=2 3` dipahami (exit 2 = konfigurasi, 1 = DB transien/restart)
-- [ ] `systemctl enable --now kran-worker` (quadlet: `systemctl enable --now kran-worker.service`)
-- [ ] Kirim satu event sintetis di lingkungan uji/staging → jurnal muncul, event `DONE`
+- [x] Worker aktif 20 Okt 2026; autostart lewat symlink `default.target.wants` (unit quadlet
+      generated menolak `systemctl enable`)
+- [ ] Kirim satu event sintetis → jurnal muncul, event `DONE` (belum dilakukan di produksi agar
+      buku tidak tercemar data uji)
 - [ ] Cek `journal.posted` terbit dan log worker tidak berhenti diam-diam
 
 ## 5. KEK / field encryption (OWNER — O-071)
 
 Ikuti `docs/runbooks/field-encryption.md` (D-046 butir 12). Ringkas:
 
-- [ ] Buat kunci 32 byte di luar repo/image, mode 0600 (rencana `sops`/`age`)
-- [ ] Set `KRAN_KEK_FILE` pada unit API, restart, cek startup tidak menolak
-- [ ] Uji satu enkripsi/dekripsi di staging + audit pembacaan
-- [ ] **Jangan** aktifkan alur KYC penuh sebelum ini selesai
+- [x] Kunci v1 32 byte dibuat di server, mode 600, di luar repo/image
+- [x] `KRAN_KEK_FILE=/run/secrets/kran-kek.key` + mount + `UserNS=keep-id`; API sehat
+- [ ] Uji enkripsi/dekripsi nyata + audit pembacaan (butuh sesi admin)
+- [ ] Salinan offline/terenkripsi KEK (`sops`/`age`) — **wajib** sebelum data anggota nyata
 
 ## 6. Rollback (bila perlu — OWNER)
 

@@ -1756,3 +1756,27 @@ non-uuid tak bisa diatribusi) dan O-070 (langganan realtime belum disaring per c
   `tproduct`; filter lebar `./task test product` tetap menjalankan semua test modul.
 - `./task ci` penuh dengan lint paralel: **627 detik** pada `abc3ec8`, hijau, 816 `[OK]`, e2e 24
   passed (log `/tmp/ci-head2.log`).
+
+## Go-live Fase 1 — deploy produksi (20 Okt 2026, D-090)
+
+- **Merge + deploy**: `feat/fase1-party` → `main`, merge `36602a8`; webhook 16:25–16:27 WIB,
+  **migrasi `--up`** (33 migrasi, schema `party`/`ledger`/`product` ada), health gate
+  `/readyz` 200, `.deployed_rev` = `36602a814b67`. Deploy kedua `28168f7` (unit KEK) juga sukses.
+- **Seed parameter**: `param_definitions.sql` + `param_values.sql` diterapkan ke DB `kran`
+  (33 definisi, 33 nilai; `product.savings.{min_balance,admin_fee,grace_period_days}` ada).
+  Nilai base bertanda `NEEDS-COMPLIANCE-REVIEW`; persetujuan nilai final tetap **O-066**.
+- **Worker**: deploy pertama gagal start (exit 2) karena parameter posting belum tersemai —
+  setelah seed, `systemctl --user restart kran-worker` → **active**, log
+  `mulai (batch=50, maxAttempts=10, lease=300s, poll=500ms)`, outbox `PENDING` = 0.
+- **Autostart**: symlink `default.target.wants` untuk `kran-api.service` **dangling** (menunjuk unit
+  native yang sudah dihapus) dan `kran-worker` belum ada. Keduanya diperbaiki menunjuk unit
+  generator; API tetap `active` setelah `daemon-reload`.
+- **KEK (O-006)**: berkas `env/kran-kek.key` (v1, 32 byte, mode 600) dibuat di host; percobaan
+  pertama API **gagal start** karena path tidak di-mount, percobaan kedua gagal karena container
+  berjalan uid 10001. Diperbaiki dengan `Volume=…:/run/secrets/kran-kek.key:ro,z` +
+  `UserNS=keep-id:uid=10001,gid=10001` pada kedua unit (commit `28168f7`). Sesudah deploy:
+  env container `KRAN_KEK_FILE=/run/secrets/kran-kek.key`, mount terlihat, berkas terbaca sebagai
+  user `kran` (600), `/readyz` 200, worker active.
+- **Temuan operasional**: (a) deploy me-restart worker **sebelum** seed parameter → worker exit 2
+  pada deploy pertama (dicatat **O-090**); (b) unit quadlet tidak bisa `systemctl enable` karena
+  unit generated → symlink manual (didokumentasikan); (c) backup KEK offline (`sops`/`age`) belum.
