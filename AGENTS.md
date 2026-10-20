@@ -24,9 +24,12 @@ diam-diam memilih; catat di `docs/DECISIONS.md` dan eskalasi (lihat §8).
 
 ## 2. Perintah standar (satu pintu)
 `task check`   → format + lint + archcheck + lint-nomagic + paramgen --check + i18n check
+`task check-fast` → seperti `check` tanpa `nim check` penuh (loop harian, D-077)
+`task verify [filter]` → `check-fast` + openapi + build + test modul terpilih (loop harian)
 `task test`    → unit + property + integration (Postgres ephemeral) + contract
 `task e2e`     → Playwright (e2e + axe + visual 2 tema)
-`task ci`      → semua di atas (harus hijau sebelum menyatakan task selesai)
+`task ci`      → semua di atas (harus hijau sebelum menyatakan task selesai; DoD tidak berubah).
+Selama implementasi pakai `task verify <modul>`; `nim check` penuh di-shard paralel (D-077).
 Kalau perintah ini belum ada, MEMBUATNYA adalah task pertama (Fase 0, T-001).
 
 ## 3. Git & rilis — PENTING
