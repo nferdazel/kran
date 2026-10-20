@@ -36,11 +36,11 @@ suite "product: jendela versi":
     check w.fromIso == "2026-10-01"
     check w.toIso == ""
 
-  test "effectiveTo harus setelah effectiveFrom":
+  test "effectiveTo boleh sama (versi satu hari), tidak boleh sebelum":
     let w = validateWindow("2026-10-01", "2026-11-01")
     check w.toIso == "2026-11-01"
-    expect ValueError:
-      discard validateWindow("2026-10-01", "2026-10-01")
+    let oneDay = validateWindow("2026-10-01", "2026-10-01")
+    check oneDay.toIso == "2026-10-01"
     expect ValueError:
       discard validateWindow("2026-10-02", "2026-10-01")
 

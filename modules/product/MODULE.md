@@ -9,8 +9,8 @@ kode: setiap nilai adalah binding ke parameter terdaftar, dan perubahan atribut 
 | Tabel | Isi |
 |---|---|
 | `product.product` | Identitas stabil: `code` (unik), `name`, `product_type`. Hanya nama yang boleh diubah. |
-| `product.product_version` | `version_no`, `effective_from`, `effective_to`, status terbit. Rentang **inklusif** `[from, to]`; `EXCLUDE` menolak tumpang tindih. Immutable kecuali `effective_to` (diisi sekali). |
-| `product.product_param_binding` | `param_key` → `value` per versi. Immutable. Minimal satu binding per versi (constraint trigger deferred). |
+| `product.product_version` | `version_no`, `effective_from`, `effective_to`, `sealed`. Rentang **inklusif** `[from, to]`; `EXCLUDE` menolak tumpang tindih. Immutable kecuali `effective_to` (diisi sekali) dan `sealed` false→true. |
+| `product.product_param_binding` | `param_key` → `value` per versi. Immutable. Minimal satu binding per versi (constraint trigger deferred), lalu versi **di-seal** sehingga binding baru ditolak. |
 
 Kolom diturunkan dari spec: spec hanya menyebut nama ketiga tabel + aturan effective-dated
 (§9.1(5)); keputusan bentuk dicatat **D-076**.
@@ -21,7 +21,10 @@ Kolom diturunkan dari spec: spec hanya menyebut nama ketiga tabel + aturan effec
   parameter (`platform.param_definition`) di composition root.
 - **Versi tidak tumpang tindih** (DB `EXCLUDE`, bukan pengecekan aplikasi).
 - **Versi immutable**: koreksi/atribut baru = versi baru; `effective_to` hanya diisi sekali untuk
-  menutup versi saat versi berikutnya terbit.
+  menutup versi saat versi berikutnya terbit, dan **himpunan binding dibekukan** (`sealed`) pada
+  COMMIT. Versi satu hari sah (`effective_to == effective_from`) — versi baru boleh mulai H+1.
+- **`btree_gist` dibuat di migrasi `0002`** karena urutan migrasi global menjalankan `product/0002`
+  sebelum `platform/0004`; tanpa itu migrasi DB kosong gagal (diverifikasi pada cluster kosong).
 - Kunci binding hanya boleh parameter berawalan `product.` (mencegah produk menunjuk parameter
   keamanan/platform).
 - Binding ke parameter tak terdaftar/deprecated/di luar batas = **400**, bukan diabaikan.
@@ -53,5 +56,9 @@ Katalog atribut untuk pilot (`modules/product/seeds/params.yaml`): `product.savi
 ## Batas
 
 - Belum ada maker-checker untuk perubahan produk (**O-085**); izin `manage` cukup.
+- Migrasi platform `0017` memuat grant no-op ke `product.read/manage` (kode lama); grant sebenarnya
+  ada di `0018`. Dibiarkan karena `0017` sudah diterapkan (checksum).
+- Binding `pvtJson` dibatasi ukuran (16 KiB) tetapi bentuknya belum divalidasi schema; batas schema
+  pecahan ditolak (fail-closed), bukan diabaikan (**O-087**).
 - Belum ada UI; pengelolaan lewat API.
 - Versi belum punya status DRAFT/RETIRED; semua versi yang tersimpan dianggap terbit.

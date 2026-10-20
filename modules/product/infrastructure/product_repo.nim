@@ -78,14 +78,15 @@ proc nextVersionNo*(db: DbConn, productId: Id): int =
      WHERE product_id = ?""", $productId)
   parseInt(raw) + 1
 
-proc closeOpenVersion*(db: DbConn, productId: Id, newFrom: string): bool =
-  ## Menutup versi terbuka tepat sebelum versi baru mulai. `false` = tidak ada versi terbuka
-  ## (balapan: worker/request lain sudah menutupnya) — pemanggil memperlakukan sebagai konflik.
+proc closeVersion*(db: DbConn, versionId: Id, newFrom: string): bool =
+  ## Menutup **versi yang sudah dibaca** tepat sebelum versi baru mulai. `false` = versi itu sudah
+  ## ditutup permintaan lain (balapan) — pemanggil memperlakukan sebagai konflik, bukan menutup
+  ## versi lain yang belum divalidasi.
   db.getValue(sql"""
     UPDATE product.product_version
        SET effective_to = ?::date - 1
-     WHERE product_id = ? AND effective_to IS NULL
-     RETURNING version_id::text""", newFrom, $productId).len > 0
+     WHERE version_id = ? AND effective_to IS NULL
+     RETURNING version_id::text""", newFrom, $versionId).len > 0
 
 proc insertVersion*(db: DbConn, v: ProductVersion, actor: Id) =
   db.exec(sql"""

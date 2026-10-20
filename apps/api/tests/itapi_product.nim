@@ -258,6 +258,32 @@ suite "product: validasi & konflik":
       fromIso = "2026-02-31"), makerToken)
     check badDate.code == 400
 
+  test "versi mulai besok (H+1) sah, bukan 500":
+    let created = postJson(ProductsPath, productBody("SAV-H1", "Versi Harian",
+      fromIso = "2026-10-01"), makerToken)
+    check created.code == 201
+    let next = postJson(VersionsPath.replace("{code}", "SAV-H1"),
+      %*{"effectiveFrom": "2026-10-02",
+         "bindings": {"product.savings.min_balance": "0.0000"}}, makerToken)
+    check next.code == 201
+    check next.body["versions"][0]["effectiveTo"].getStr() == "2026-10-01"
+    check next.body["versions"][1]["versionNo"].getInt() == 2
+
+  test "nilai di luar batas/overflow → 400, bukan 500":
+    let overflow = postJson(ProductsPath, productBody("SAV06", "Besar",
+      bindings = %*{"product.savings.min_balance": "922337203685478.0000"}), makerToken)
+    check overflow.code == 400
+    checkProblem(ProductsPath, "POST", "400", overflow.body)
+    let negative = postJson(ProductsPath, productBody("SAV07", "Negatif",
+      bindings = %*{"product.savings.min_balance": "-1.0000"}), makerToken)
+    check negative.code == 400
+    let graceTooBig = postJson(ProductsPath, productBody("SAV08", "Grace",
+      bindings = %*{"product.savings.grace_period_days": 999}), makerToken)
+    check graceTooBig.code == 400
+    let wrongKind = postJson(ProductsPath, productBody("SAV10", "Tipe Nilai",
+      bindings = %*{"product.savings.min_balance": 1000}), makerToken)
+    check wrongKind.code == 400
+
   test "kode duplikat → 409":
     let reply = postJson(ProductsPath, productBody("SAV01", "Duplikat"), makerToken)
     check reply.code == 409
