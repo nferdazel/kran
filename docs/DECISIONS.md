@@ -2245,5 +2245,11 @@ membuat/memasang KEK produksi.
 6. Setiap langkah + hasilnya dicatat di `docs/PROGRESS.md`; kegagalan → rollback `:prev`, bukan
    memaksa ulang.
 
+**Hasil (20 Okt 2026).** Deploy `36602a8` + `28168f7` sukses (33 migrasi, `/readyz` 200), parameter
+base ter-seed, worker aktif, KEK v1 ter-mount. Dua kegagalan nyata saat proses: (a) API menolak
+start karena berkas KEK tidak di-mount; (b) setelah mount, uid container 10001 tidak bisa membaca
+berkas 600 → diperbaiki dengan `UserNS=keep-id:uid=10001,gid=10001`. Worker sempat exit 2 karena
+deploy mendahului seed (**O-090**).
+
 **Konsekuensi.** Tanggung jawab operasional atas deploy ini ada pada pemilik yang memberi override;
 catatan ini yang membuat tindakan agen dapat diaudit. Aturan §3 tetap berlaku untuk task lain.

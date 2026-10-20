@@ -44,6 +44,15 @@ permintaan pemilik).
 - Test integrasi DB me-reset schema modul sebelum migrasi (disiplin harness), tetapi jalur DB
   kosong diuji terpisah seperti di atas.
 
+## 2b. Deploy produksi (20 Okt 2026, D-090)
+
+- `feat/fase1-party` di-merge ke `main`: `36602a8` (Fase 1) dan `28168f7` (unit KEK); webhook
+  berhasil, 33 migrasi diterapkan, health gate `/readyz` 200.
+- Seed parameter base dijalankan (33 definisi/nilai); worker aktif setelah seed; autostart boot
+  diperbaiki (symlink unit generator); KEK v1 ter-mount dan terbaca container (`UserNS=keep-id`).
+- Temuan: worker exit 2 bila deploy mendahului seed (**O-090**); unit quadlet tidak bisa
+  `systemctl enable` (symlink manual); backup KEK offline belum (**O-006**).
+
 ## 3. Deviasi dari spec (keputusan tercatat)
 
 | Hal | Spec | Yang dibangun | Alasan |
