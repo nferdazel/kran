@@ -1958,4 +1958,8 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
   user aktif (`kran-api`, `kran-worker`, qouver/sds/majadu/fond/skyward/victoriametrics/webhook/
   qouver-postgres), `kran-alert.timer` + `system-health.timer` + `qouver-restore-verify.timer`
   aktif, `/readyz` 200, denyut worker segar, container podman lengkap.
+- **Bukti deploy O-016** (`e7b2983`): migrasi 0020 diterapkan lewat role owner, `platform.role_conflict`
+  berisi `param_checker <-> param_maker`, total 36 migrasi, 0 pengguna memegang kedua peran,
+  `/readyz` 200. Test `itapi_auth` memakai peran uji baca-saja (`param_reader_uji`) agar gerbang
+  cabang tetap teruji tanpa melanggar SoD.
 
