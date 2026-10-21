@@ -172,8 +172,11 @@ suite "idempotency helper":
     check second.payload["n"].getInt == 1
 
   test "path berbeda dengan body sama bukan replay":
+    check withIdempotencyKey(db, principal, some("k-path"), "party.create",
+      partyRequest, asOf, fixedNow(), okBody(Counter())).decision == idemProceed
+
     let dijalankan = Counter()
-    let outcome = withIdempotencyKey(db, principal, some("k-1"), "party.create",
+    let outcome = withIdempotencyKey(db, principal, some("k-path"), "party.create",
       partyOther, asOf, fixedNow(), okBody(dijalankan))
     check outcome.decision == idemMismatch
     check outcome.status == 409
