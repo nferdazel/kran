@@ -161,6 +161,8 @@ proc journalRoutes*(): seq[RouteSpec] =
               operationId: "reverseJournal", handler: handleReverseJournal),
     RouteSpec(httpMethod: hmGet, path: "/api/v1/ledger/trial-balance",
               operationId: "getTrialBalance", handler: handleTrialBalance),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/ledger/balances",
+              operationId: "getLedgerBalances", handler: handleLedgerBalances),
   ]
 
 proc productRoutes*(): seq[RouteSpec] =

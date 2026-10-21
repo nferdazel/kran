@@ -71,6 +71,18 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
   (bukan saldo kumulatif), jadi angka snapshot dan TB hanya sama bila tidak ada periode sebelumnya.
 - Izin baca laporan memakai `ledger.journal.read` (tingkat institusi).
 
+## Laporan saldo GL (T-082, D-096)
+
+- `GET /api/v1/ledger/balances?periodId=` — saldo per akun: `opening` (kumulatif sebelum
+  `startsOn`), `period` (mutasi dalam rentang **inklusif**), `closing` (= opening + mutasi),
+  debit/kredit **terpisah** (bukan saldo bersih). Angka dari **satu** query agregasi atas
+  `journal_line` (sumber kebenaran); `closing` turunan di domain (`report.closingDebit/Credit`).
+- Baris = akun yang bergerak di periode **atau** bersaldo awal ≠ 0; akun tanpa apa pun absen.
+- `source`: `ledger` bila dihitung dari jurnal; `snapshot` **hanya** bila periode CLOSED **dan**
+  cache `balance_snapshot` pada `endsOn` terekonsiliasi dengan jurnal (cocok per akun, D-096).
+  Snapshot tidak pernah dipakai untuk periode OPEN. `computedAt` = ISO-8601 UTC.
+- Izin `ledger.journal.read`; periode tidak ada → 404; `periodId` bukan uuid → 400.
+
 ## Public API (`api.nim`)
 
 - `coa` — `AccountType`, `NormalSide`, `AccountStatus`, `CoaAccount`, `parseAccountType`,
