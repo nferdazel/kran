@@ -180,3 +180,9 @@ aturan pengakuan belum diklaim patuh; lihat `NEEDS-COMPLIANCE-REVIEW` di migrasi
 - `./task test tledger` — unit tipe akun, pola kode, rentang periode.
 - `./task test itledger` — seed COA, kode unik, CHECK sisi normal, EXCLUDE tumpang tindih.
 - `./task test itapi_ledger` — jalur HTTP penuh + kontrak + audit/event.
+
+Catatan kasus vakum: periode CLOSED yang tidak punya jurnal sama sekali dan cache-nya belum
+pernah dibangun akan menjawab `source=snapshot` dengan daftar kosong, karena tidak ada angka yang
+bisa dibantah. Dampak finansial nol; bila `source` dipakai sebagai bukti audit, periksa juga
+keberadaan baris `balance_snapshot` pada `ends_on`.
+
