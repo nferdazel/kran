@@ -110,6 +110,36 @@ block:
   baseUrl = startServer(app)
 
 type
+  ReversalRaceArgs = object
+    url: string
+    path: string
+    token: string
+    key: string
+
+var
+  reversalRaceCode = 0
+  reversalRaceBody = ""
+
+proc reversalRaceWorker(args: ReversalRaceArgs) {.thread.} =
+  ## Menjalankan pembalik lewat HTTP dari thread lain supaya test bisa menahan entri indeks unik
+  ## `journal_idempotency_uq` di transaksi kedua (O-078).
+  let client = newHttpClient(timeout = 30_000)
+  try:
+    client.headers["Cookie"] = CookieName & "=" & args.token
+    client.headers["Content-Type"] = "application/json"
+    client.headers["Idempotency-Key"] = args.key
+    let response = client.post(args.url & args.path, $ %*{"reason": "balapan kunci"})
+    {.cast(gcsafe).}:
+      reversalRaceCode = response.code.int
+      reversalRaceBody = response.body
+  except CatchableError as e:
+    {.cast(gcsafe).}:
+      reversalRaceCode = -1
+      reversalRaceBody = e.msg
+  finally:
+    client.close()
+
+type
   Reply = object
     code: int
     raw: string
@@ -195,6 +225,42 @@ proc seedJournal(businessDate = "2026-10-15", amount: int64 = 250_0000): Id =
       insertJournalLine(d, j.journalId, l)
     1)
   j.journalId
+
+proc raceReversal(sourceId: Id; winner: Journal; loserToken, loserKey: string):
+    tuple[blocked: bool, code: int, body: string] =
+  ## Menahan entri unik dari jurnal "pemenang" yang belum COMMIT, menjalankan pembalik lewat HTTP di
+  ## thread lain, menunggu backend benar-benar diblokir koneksi ini, lalu melepas lock. Cabang catch
+  ## yang dieksekusi ditentukan oleh konflik yang dibuat `winner` (lihat tiga test di suite pembalik).
+  let path = ReversalPath.replace("{journalId}", $sourceId)
+  let side = dbPool.acquire()
+  try:
+    exec(side, sql"BEGIN")
+    discard insertJournal(side, winner, actor)
+    for l in winner.lines:
+      insertJournalLine(side, winner.journalId, l)
+    let sidePid = side.getValue(sql"SELECT pg_backend_pid()")
+    reversalRaceCode = 0
+    reversalRaceBody = ""
+    var worker: Thread[ReversalRaceArgs]
+    createThread(worker, reversalRaceWorker,
+      ReversalRaceArgs(url: baseUrl, path: path, token: loserToken, key: loserKey))
+
+    var blocked = false
+    let deadline = epochTime() + 10.0
+    while epochTime() < deadline and not blocked:
+      blocked = dbValue(sql"""
+        SELECT count(*)::text FROM pg_stat_activity
+         WHERE datname = current_database() AND pid <> pg_backend_pid()
+           AND wait_event_type = 'Lock'
+           AND ?::int = ANY(pg_blocking_pids(pid))""", sidePid) != "0"
+      if not blocked:
+        sleep(20)
+
+    exec(side, sql"COMMIT")
+    joinThread(worker)
+    (blocked, reversalRaceCode, reversalRaceBody)
+  finally:
+    dbPool.release(side)
 
 let maker = login(MakerUser)
 doAssert maker.code == 200, "login dev.maker gagal — seed dev terpasang?"
@@ -298,12 +364,82 @@ suite "journal: pembalik":
     let twice = postJson(path, %*{"reason": "lagi"}, makerToken, nextKey())
     check twice.code == 409
     checkProblem(ReversalPath, "POST", "409", twice.body)
-
     # Jurnal pembalik tidak bisa dibalik lagi.
     let chain = postJson(ReversalPath.replace("{journalId}", reversalId),
       %*{"reason": "balik pembalik"}, makerToken, nextKey())
     check chain.code == 409
     checkProblem(ReversalPath, "POST", "409", chain.body)
+
+  test "balapan kunci sama + pembalik: yang kalah membaca ulang → 200 (O-078)":
+    let id = seedJournal(amount = 150_0000)
+    let key = nextKey()
+    let original = dbPool.withConn(proc(d: DbConn): Journal = journalById(d, id).get())
+    let winner = Journal(
+      journalId: newId(testClock),
+      businessDate: original.businessDate,
+      valueDate: original.valueDate,
+      sourceEvent: "reversal",
+      sourceRef: id,
+      idempotencyKey: key,
+      reversalOf: $id,
+      lines: reversalLinesOf(original.lines))
+
+    let r = raceReversal(id, winner, makerToken, key)
+    check r.blocked
+    check r.code == 200
+    if r.code == 200:
+      let body = parseJson(r.body)
+      check body["journalId"].getStr() == $winner.journalId
+      check body["reversalOf"].getStr() == $id
+      checkJson(ReversalPath, "POST", "200", body)
+    check dbValue(sql"""
+      SELECT count(*)::text FROM ledger.journal WHERE reversal_of = ?::uuid""", $id) == "1"
+
+  test "balapan kunci sama + jurnal lain: 409 dari cabang idempotensi (O-078)":
+    # `winner` bukan pembalik untuk asal ini dan memakai kunci yang sama → hanya
+    # `journal_idempotency_uq` yang berkonflik. Catch harus menjawab 409, bukan 200.
+    let id = seedJournal()
+    let key = nextKey()
+    let winner = Journal(
+      journalId: newId(testClock),
+      businessDate: "2026-10-15",
+      valueDate: "2026-10-15",
+      sourceEvent: "DepositPosted",
+      sourceRef: newId(testClock),
+      idempotencyKey: key,
+      lines: @[line(1, "101", 100_0000, 0), line(2, "201", 0, 100_0000)])
+
+    let r = raceReversal(id, winner, makerToken, key)
+    check r.blocked
+    check r.code == 409
+    if r.code == 409:
+      checkProblem(ReversalPath, "POST", "409", parseJson(r.body))
+    check dbValue(sql"""
+      SELECT count(*)::text FROM ledger.journal WHERE reversal_of = ?::uuid""", $id) == "0"
+
+  test "balapan kunci beda + pembalik: 409 dari cabang indeks pembalik (O-078)":
+    # `winner` pembalik untuk asal yang sama tetapi memakai kunci **berbeda** → hanya
+    # `journal_reversal_uq` yang berkonflik. Catch harus menjawab 409, bukan 200 dengan jurnal asing.
+    let id = seedJournal()
+    let winnerKey = nextKey()
+    let original = dbPool.withConn(proc(d: DbConn): Journal = journalById(d, id).get())
+    let winner = Journal(
+      journalId: newId(testClock),
+      businessDate: original.businessDate,
+      valueDate: original.valueDate,
+      sourceEvent: "reversal",
+      sourceRef: id,
+      idempotencyKey: winnerKey,
+      reversalOf: $id,
+      lines: reversalLinesOf(original.lines))
+
+    let r = raceReversal(id, winner, makerToken, nextKey())
+    check r.blocked
+    check r.code == 409
+    if r.code == 409:
+      checkProblem(ReversalPath, "POST", "409", parseJson(r.body))
+    check dbValue(sql"""
+      SELECT count(*)::text FROM ledger.journal WHERE reversal_of = ?::uuid""", $id) == "1"
 
   test "jurnal asal tidak ada → 404":
     let reply = postJson(ReversalPath.replace("{journalId}",
