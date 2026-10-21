@@ -2654,3 +2654,22 @@ kebijakan institusi, tidak disemai.
 ditolak saat `authorize` (`arRoleConflict`). Di produksi saat migrasi dijalankan tidak ada pengguna
 yang memegang kedua peran. Test memakai kode peran nyata (`itauth.nim`), bukan peran sintetis.
 
+---
+
+## D-114 — Default parameter pilot diterima pemilik (jalur 1); validasi per institusi jadi gate komersial
+
+**Keputusan.** Nilai parameter yang sekarang disemai (`party.kyc.review_months`, `doc_types`,
+`doc_lengths`, `risk_levels`, `ledger.coa.code_pattern`) diterima pemilik **untuk pilot internal**,
+tanpa klaim sesuai regulasi. Penanda `NEEDS-COMPLIANCE-REVIEW` tetap ada. Tidak ada kode yang
+berubah dan tidak ada nilai regulasi baru yang disemai.
+
+**Gate go-live komersial (wajib, tidak boleh dilewati).** Sebelum anggota nyata pertama dilayani
+atau klien BPR/koperasi pertama menandatangani, nilai pada scope **institusi klien itu** harus
+divalidasi oleh compliance klien/konsultan, dengan `reason` pengajuan parameter memuat nomor aturan
++ tanggal akses. Penanda `NEEDS-COMPLIANCE-REVIEW` dicabut **per institusi**, bukan global. Default
+repo tidak pernah menjadi angka sah untuk klien.
+
+**Konsekuensi.** Pilot boleh berjalan sekarang. Bila gate ini dilanggar, risikonya bukan teknis
+(sistem tetap jalan) melainkan kepatuhan: angka default bisa berbeda dari ketentuan yang berlaku
+untuk institusi tersebut.
+

@@ -1962,4 +1962,7 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
   berisi `param_checker <-> param_maker`, total 36 migrasi, 0 pengguna memegang kedua peran,
   `/readyz` 200. Test `itapi_auth` memakai peran uji baca-saja (`param_reader_uji`) agar gerbang
   cabang tetap teruji tanpa melanggar SoD.
+- **O-001 jalur 1** (D-114): default parameter pilot diterima pemilik; `NEEDS-COMPLIANCE-REVIEW`
+  tetap. Gate komersial tertulis: validasi per institusi + sumber di `reason` sebelum anggota nyata
+  pertama / klien BPR pertama. Tidak ada perubahan kode/nilai.
 
