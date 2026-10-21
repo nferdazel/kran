@@ -50,4 +50,11 @@ atau nilai tetap ditandai `NEEDS-COMPLIANCE-REVIEW` di dokumentasi produk. Perba
 - [ ] Baris **deferred** disetujui tetap kosong sampai modulnya ada.
 - [ ] `NEEDS-COMPLIANCE-REVIEW` dihapus hanya untuk baris yang sudah ditandatangani.
 
-**Status:** klasifikasi teknis selesai; belum ada nilai regulasi yang divalidasi manusia.
+## Status: jalur 1 (D-114)
+
+Pemilik menerima nilai default di atas **untuk pilot internal** — bukan klaim sesuai regulasi.
+Penanda `NEEDS-COMPLIANCE-REVIEW` sengaja dipertahankan.
+
+**Gate go-live komersial:** sebelum anggota nyata pertama atau klien BPR/koperasi pertama, nilai
+pada scope institusi klien itu wajib divalidasi compliance klien/konsultan; `reason` pengajuan
+parameter memuat nomor aturan + tanggal akses; penanda dicabut per institusi, bukan global.
