@@ -1,37 +1,53 @@
 # Validasi register regulasi (§4) — O-001
 
-Dokumen ini adalah daftar kerja untuk **compliance owner**. Kode/seed tidak boleh memakai nilai
-regulasi final sebelum baris terkait ditandai tervalidasi di sini.
+Dokumen kerja untuk **compliance owner**. Kode/seed tidak boleh memakai nilai regulasi final
+sebelum baris terkait ditandai tervalidasi di sini.
 
-## Aturan penandaan
+## Status per 21 Okt 2026
 
-- Nilai/pasal yang belum diverifikasi **wajib** ditandai `NEEDS-COMPLIANCE-REVIEW` di kode/seed/docs.
-- Seed base hanya berisi nilai **teknis/kebijakan internal/komersial konservatif**; nilai regulasi
-  (rate, nisbah, pajak, PPAP, LPS) **tidak** disemai (D-095).
-- Perubahan status baris di sini harus disertai sumber resmi (nomor, pasal, tanggal akses).
+Klasifikasi **live vs deferred** di bawah berasal dari penelusuran pembaca parameter di kode
+(bukan tebakan): item "live" punya konsumen di jalur pilot, item "deferred" tidak dibaca kode mana
+pun sehingga tidak butuh nilai sekarang.
 
-## Daftar V?/V! yang perlu diverifikasi
+### Live (dipakai kode; nilainya sudah disemai, tetapi masih `NEEDS-COMPLIANCE-REVIEW`)
 
-| ID | Perlu diverifikasi | Dipakai di | Status |
+| ID | Parameter yang dibaca | Konsumen | Status |
 |---|---|---|---|
-| REG-001 | P2SK: pengaturan/pengawasan koperasi & BPR, masa transisi | lingkup produk, laporan | `NEEDS-COMPLIANCE-REVIEW` |
-| REG-002 | PDP: dasar pemrosesan, retensi, notifikasi kebocoran (3×24 jam), DPO | field encryption, audit, retensi | `NEEDS-COMPLIANCE-REVIEW` |
-| REG-003 | PP-TPPU: CDD, CTR/STR, retensi dokumen | KYC, pelaporan | `NEEDS-COMPLIANCE-REVIEW` |
-| REG-004 | POJK APU-PPT (nomor/versi), PEP, screening DTTOT/DPPSPM | KYC, risk rating | `NEEDS-COMPLIANCE-REVIEW` |
-| REG-005 | UU ITE/PP 71/2019: dokumen & tanda tangan elektronik | bukti transaksi | `NEEDS-COMPLIANCE-REVIEW` |
-| REG-006 | POJK pelindungan konsumen: disclosure, SLA pengaduan | produk, UI | `NEEDS-COMPLIANCE-REVIEW` |
-| REG-007 | Retensi dokumen keuangan (10 tahun?) | parameter retensi/arsip | `NEEDS-COMPLIANCE-REVIEW` |
-| REG-008 | Pajak: PPh final bunga/bagi hasil, PPN fee, bukti potong, AEOI | parameter pajak, laporan | `NEEDS-COMPLIANCE-REVIEW` |
-| REG-009 | LPS: penjaminan, tingkat bunga penjaminan, transisi koperasi | parameter rate, flag simpanan | `NEEDS-COMPLIANCE-REVIEW` |
-| REG-010 | Dukcapil: bentuk verifikasi NIK/e-KTP | adapter identitas | `NEEDS-COMPLIANCE-REVIEW` |
-| REG-011 | SAK EP/PSAK syariah: COA, pengakuan margin/bagi hasil, akun kontra | COA, posting rule, laporan | `NEEDS-COMPLIANCE-REVIEW` |
+| REG-003/004 | `party.kyc.risk_levels`, `party.kyc.default_risk_level`, `party.kyc.review_months` | `handlers_kyc.nim` (onboarding/re-KYC) | `NEEDS-COMPLIANCE-REVIEW` |
+| REG-010 | `party.identity.doc_types`, `party.identity.doc_lengths` | `handlers_party.nim` (validasi identitas) | `NEEDS-COMPLIANCE-REVIEW` |
+| REG-011 | `ledger.coa.code_pattern` | teknis (pola kode COA), bukan kebijakan akuntansi | `NEEDS-COMPLIANCE-REVIEW` |
+
+Pilot boleh berjalan dengan nilai ini, tetapi **jangan diklaim sesuai regulasi** sampai
+ditandatangani.
+
+### Deferred (tidak ada pembaca di kode; nilai tidak disemai)
+
+| ID | Alasan fungsional |
+|---|---|
+| REG-203/204 (PPAP/kolektibilitas) | modul `lending` belum ada; key hanya muncul di komentar contoh |
+| REG-008 (pajak) | modul `tax` belum ada |
+| REG-009 (LPS) | belum ada konsumen rate/flag penjaminan |
+| REG-305 (bagi hasil syariah) | modul `sharia` belum ada |
+| REG-005/006/007 (e-sign, disclosure, retensi) | tidak ada parameter pembaca; retensi arsip belum diimplementasi |
+
+Tandai deferred di `docs/OPEN_ITEMS.md`; jangan isi nilainya "supaya ada".
+
+## Risiko yang tersisa (dari SME compliance)
+
+D-095 (tidak menyemai nilai regulasi) tetap benar dan gagal-cepat (`ParamNotFound`), bukan
+nilai-salah-diam-diam. Risiko praktisnya: `platform.param_value` tidak menyimpan provenance review,
+jadi setelah operator mengisi angka lewat maker-checker, angka tebakan tidak bisa dibedakan dari
+yang sudah divalidasi.
+
+**Mitigasi wajib:** `reason` pada pengajuan parameter harus memuat nomor sumber + tanggal akses,
+atau nilai tetap ditandai `NEEDS-COMPLIANCE-REVIEW` di dokumentasi produk. Perbaikan skema
+(kolom provenance) dicatat sebagai item Fase 2, bukan diubah diam-diam sekarang.
 
 ## Checklist sign-off
 
-- [ ] Setiap baris di atas diverifikasi ke sumber resmi (nomor + pasal + tanggal akses).
-- [ ] Nilai yang akan disemai ditulis di `packs/base/seed/` dengan komentar sumber dan tanggal.
-- [ ] Nilai yang belum final tetap kosong; produk yang membutuhkannya gagal-cepat (bukan default).
-- [ ] `docs/OPEN_ITEMS.md` O-001 diperbarui; `NEEDS-COMPLIANCE-REVIEW` dihapus hanya untuk baris yang
-      sudah ditandatangani.
+- [ ] Baris **live** diverifikasi ke sumber resmi (nomor + pasal + tanggal akses); alasan
+      pengajuan parameter memuat sumber.
+- [ ] Baris **deferred** disetujui tetap kosong sampai modulnya ada.
+- [ ] `NEEDS-COMPLIANCE-REVIEW` dihapus hanya untuk baris yang sudah ditandatangani.
 
-**Status:** belum ada baris yang divalidasi. Semua nilai regulasi tetap tertunda.
+**Status:** klasifikasi teknis selesai; belum ada nilai regulasi yang divalidasi manusia.

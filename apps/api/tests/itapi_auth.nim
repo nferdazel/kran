@@ -991,6 +991,24 @@ suite "scoping cabang di jalur HTTP (T-058, D-062)":
     finally:
       dbPool.release(db)
 
+  proc pastikanRolePembaca() =
+    ## Peran uji baca-saja. Dibutuhkan sejak D-113: satu pengguna tidak boleh memegang
+    ## `param_maker` + `param_checker` (SoD), padahal test gerbang cabang perlu izin baca di
+    ## cabang lain tanpa memberi wewenang submit/approve di sana.
+    let db = dbPool.acquire()
+    try:
+      db.exec(sql"""
+        INSERT INTO platform.role (role_id, code, name_key, is_system)
+        VALUES (gen_random_uuid(), 'param_reader_uji', 'role.param_reader_uji', false)
+        ON CONFLICT (code) DO NOTHING""")
+      db.exec(sql"""
+        INSERT INTO platform.role_permission (role_id, permission_id)
+        SELECT r.role_id, p.permission_id FROM platform.role r, platform.permission p
+         WHERE r.code = 'param_reader_uji' AND p.code = 'platform.param.read'
+        ON CONFLICT DO NOTHING""")
+    finally:
+      dbPool.release(db)
+
   proc ajukanCabang(token, cabang: string): Reply =
     postJson(ParamsPath & "/" & BranchKey & "/changes",
       %*{"value": [5, 6], "scopeType": "BRANCH", "scopeId": cabang,
@@ -1015,12 +1033,14 @@ suite "scoping cabang di jalur HTTP (T-058, D-062)":
   test "grant khusus cabang: boleh di cabangnya, 403 `branch_not_allowed` di cabang lain":
     let cabangA = $newId(systemClock())
     let cabangB = $newId(systemClock())
-    # Maker di A, checker di B. Izin **baca** ada di kedua cabang, jadi pemeriksaan D-047
-    # (`mayReadScope`) lolos dan 403 di bawah benar-benar datang dari gerbang cabang pengajuan —
-    # bukan dari aturan scope.
+    # Maker di A, pembaca baca-saja di B (bukan checker: D-113 melarang satu orang memegang
+    # maker+checker). Izin **baca** ada di kedua cabang, jadi pemeriksaan D-047 (`mayReadScope`)
+    # lolos dan 403 di bawah benar-benar datang dari gerbang cabang pengajuan — bukan dari aturan
+    # scope.
     let uid = buatUser("itapi-cabang-dua")
+    pastikanRolePembaca()
     beriRole(uid, "param_maker", cabangA)
-    beriRole(uid, "param_checker", cabangB)
+    beriRole(uid, "param_reader_uji", cabangB)
     let token = tokenOf(login("itapi-cabang-dua", SandiUji))
     check token.len > 0
 
@@ -1048,10 +1068,12 @@ suite "scoping cabang di jalur HTTP (T-058, D-062)":
     check pengaju.code == 201
     let pvId = pengaju.body["paramValueId"].getStr()
 
-    # Penyetuju ber-cabang B (dan maker di A): gerbang izin lolos, gerbang cabang menolak.
+    # Penyetuju ber-cabang B dan pembaca baca-saja di A: gerbang izin lolos, gerbang cabang
+    # menolak. Tidak memakai `param_maker` di A karena D-113 melarang maker+checker satu orang.
     let uid = buatUser("itapi-cabang-penyetuju")
+    pastikanRolePembaca()
     beriRole(uid, "param_checker", cabangB)
-    beriRole(uid, "param_maker", cabangA)
+    beriRole(uid, "param_reader_uji", cabangA)
     let tokenB = tokenOf(login("itapi-cabang-penyetuju", SandiUji))
     let tolak = postJson("/api/v1/params/changes/" & pvId & "/approve", newJObject(), tokenB)
     check tolak.code == 403

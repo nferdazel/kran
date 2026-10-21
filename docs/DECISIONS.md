@@ -2636,3 +2636,21 @@ menghasilkan skema/crypto setengah matang.
 **Konsekuensi.** T-078 tetap `TODO` di backlog sebagai kandidat Fase 2; penutupan Fase 0/1 tidak
 menunggunya. Bila pilot membutuhkan alamat/tanggal lahir, jadwalkan T-078 sebagai task tersendiri
 dengan reviewer.
+
+---
+
+## D-113 — SoD ditegakkan sekarang hanya untuk `param_maker` vs `param_checker`
+
+**Keputusan.** Migrasi `0020_platform_sod_param_conflict.sql` menyemai satu pasangan
+`platform.role_conflict`: `param_checker` / `param_maker` (`sod.param.maker_checker`).
+
+**Alasan.** Ini satu-satunya pasangan yang (a) sudah punya peran nyata di `0008`, (b) izinnya
+saling melengkapi (`submit` vs `approve`), dan (c) hanya dijaga separuh oleh CHECK
+`param_value_no_self_approval_chk` (yang memblokir approver = maker pada satu baris, bukan
+kepemilikan dua peran). Pasangan lain — terutama yang menyertakan `platform_admin` — adalah
+kebijakan institusi, tidak disemai.
+
+**Konsekuensi.** `grantRole` menolak pemberian peran kedua; data lama yang memegang keduanya akan
+ditolak saat `authorize` (`arRoleConflict`). Di produksi saat migrasi dijalankan tidak ada pengguna
+yang memegang kedua peran. Test memakai kode peran nyata (`itauth.nim`), bukan peran sintetis.
+

@@ -294,7 +294,7 @@ suite "otoisasi: role + branch scoping + SoD":
     siapkanRole("maker", "platform.param.submit")
     siapkanRole("checker", "platform.param.approve")
     check setRoleConflict(db, "checker", "maker", "sod.param.maker_checker")
-    check conflictPairs(db) == @[("checker", "maker")]
+    check ("checker", "maker") in conflictPairs(db)
     let uid = buatUser("orang-dua-topi")
     check grantRole(db, uid, "maker", "", adminId)
     var raised = false
@@ -305,6 +305,20 @@ suite "otoisasi: role + branch scoping + SoD":
       check e.msg.contains("pemisahan tugas")
     check raised
     check roleCodesOfUser(db, uid) == @["maker"]
+
+  test "pasangan SoD param_maker/param_checker disemai dan ditegakkan (0020)":
+    # Keputusan D-113: satu pasangan nyata yang wajib, bukan peran sintetis seperti test di atas.
+    check ("param_checker", "param_maker") in conflictPairs(db)
+    let uid = buatUser("param-dua-topi")
+    check grantRole(db, uid, "param_maker", "", adminId)
+    var raised = false
+    try:
+      discard grantRole(db, uid, "param_checker", "", adminId)
+    except ValueError as e:
+      raised = true
+      check e.msg.contains("pemisahan tugas")
+    check raised
+    check roleCodesOfUser(db, uid) == @["param_maker"]
 
   test "konflik yang lolos ke DB tetap ditolak saat otorisasi (pertahanan berlapis)":
     let uid = buatUser("dua-topi-paksa")
