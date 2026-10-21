@@ -154,3 +154,13 @@
   schema: { minimum: 1, maximum: 4096 }
   sensitivity: NORMAL
   default_pack: { base: 128 }
+
+# --- Idempotensi endpoint pembuat objek (T-084, D-098) ---------------------------------------
+# Umur baris `platform.idempotency_key`. Bukan ambang bisnis: nilai ini mengatur berapa lama
+# replay dilayani dan kapan daycloser boleh menyapu baris kedaluwarsa.
+- key: platform.idempotency.ttl_hours
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 1, maximum: 8760 }
+  sensitivity: NORMAL
+  default_pack: { base: 24 }
