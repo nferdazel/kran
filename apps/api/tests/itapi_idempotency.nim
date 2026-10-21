@@ -7,13 +7,14 @@
 
 import std/[json, options, os, times, unittest]
 
+import mummy
 import db_connector/db_postgres
 
 import dbtools/lib
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
 import platform/domain/idempotency
-import platform/infrastructure/[auth_repo, idempotency_repo]
+import platform/infrastructure/auth_repo
 
 import ../src/[access, idempotency]
 
@@ -59,8 +60,8 @@ proc fixedNow(): DateTime = parse(nowIso, "yyyy-MM-dd'T'HH:mm:ss'Z'", utc())
 type Counter = ref object
   n: int
 
-proc okBody(counter: Counter): proc(): tuple[status: int, payload: JsonNode] =
-  result = proc(): tuple[status: int, payload: JsonNode] =
+proc okBody(counter: Counter): proc(): tuple[status: int, payload: JsonNode] {.gcsafe.} =
+  result = proc(): tuple[status: int, payload: JsonNode] {.gcsafe.} =
     inc counter.n
     (201, %*{"n": counter.n})
 
@@ -93,6 +94,48 @@ suite "canonical request":
     let b = canonicalOf("POST", "/p", @[("a", "1&b=2")], "{}")
     check a != b
 
+proc newReq(headers: seq[(string, string)] = @[], path = "/api/v1/parties",
+    query: seq[(string, string)] = @[]): Request =
+  ## `Request` adalah ptr; alokasi heap supaya aman dipakai lintas pemanggilan test.
+  let p = cast[ptr RequestObj](alloc0(sizeof(RequestObj)))
+  p[] = RequestObj(httpMethod: "POST", uri: path, path: path, body: "{}",
+    queryParams: QueryParams(query), headers: HttpHeaders(headers))
+  p
+
+suite "request seam (pintu handler)":
+  test "canonicalRequest memakai method/path/query; urutan query tidak mengubah":
+    let a = newReq(query = @[("x", "1"), ("y", "2")])
+    let b = newReq(query = @[("y", "2"), ("x", "1")])
+    check canonicalRequest(a, "{}") == canonicalRequest(b, "{}")
+    let lain = newReq(query = @[("x", "1"), ("y", "2")], path = "/api/v1/other")
+    check canonicalRequest(a, "{}") != canonicalRequest(lain, "{}")
+
+  test "tanpa header operasi berjalan; header kosong ditolak":
+    let dijalankan = Counter()
+    let tanpa = withIdempotency(db, principal, newReq(), "party.create", "{}", asOf,
+      fixedNow(), okBody(dijalankan))
+    check tanpa.decision == idemProceed
+    check dijalankan.n == 1
+
+    var ditolak = false
+    try:
+      discard withIdempotency(db, principal,
+        newReq(headers = @[("Idempotency-Key", "")]), "party.create", "{}", asOf,
+        fixedNow(), okBody(Counter()))
+    except ValueError:
+      ditolak = true
+    check ditolak
+
+  test "header ada: permintaan kedua lewat pintu Request adalah replay":
+    let req = newReq(headers = @[("Idempotency-Key", "k-req")])
+    let dijalankan = Counter()
+    check withIdempotency(db, principal, req, "party.create", "{}", asOf, fixedNow(),
+      okBody(dijalankan)).decision == idemProceed
+    let second = withIdempotency(db, principal, req, "party.create", "{}", asOf,
+      fixedNow(), okBody(dijalankan))
+    check second.decision == idemReplay
+    check dijalankan.n == 1
+
 suite "idempotency helper":
   test "tanpa header: operasi berjalan dan tidak ada baris klaim":
     let dijalankan = Counter()
@@ -100,7 +143,7 @@ suite "idempotency helper":
       partyRequest, asOf, fixedNow(), okBody(dijalankan))
     check outcome.decision == idemProceed
     check dijalankan.n == 1
-    check countKey("k-1") == "0"
+    check countKey("k-none") == "0"
 
   test "header ada tetapi kosong ditolak, operasi tidak berjalan":
     let dijalankan = Counter()
@@ -177,9 +220,10 @@ suite "idempotency helper":
   test "klaim in-flight memberi Retry-After yang dibatasi, bukan sisa TTL penuh":
     execScript(db, """
       INSERT INTO platform.idempotency_key
-        (principal_id, key, operation_id, request_hash, expires_at)
+        (principal_id, key, operation_id, request_hash, created_at, expires_at)
       VALUES ('11111111-1111-7111-8111-111111111111', 'k-flight', 'party.create',
-              '""" & requestHash(partyRequest) & """', '2026-10-21T06:00:00Z')
+              '""" & requestHash(partyRequest) & """', '2026-10-21T00:00:00Z',
+              '2026-10-21T06:00:00Z')
       ON CONFLICT DO NOTHING
     """)
     let outcome = withIdempotencyKey(db, principal, some("k-flight"), "party.create",
@@ -190,7 +234,26 @@ suite "idempotency helper":
     check outcome.retryAfterSeconds == maxRetryAfterSeconds
 
   test "klaim kedaluwarsa boleh dipakai ulang":
-    let outcome = withIdempotencyKey(db, principal, some("k-flight"), "party.create",
+    execScript(db, """
+      INSERT INTO platform.idempotency_key
+        (principal_id, key, operation_id, request_hash, created_at, expires_at)
+      VALUES ('11111111-1111-7111-8111-111111111111', 'k-expired', 'party.create',
+              '""" & requestHash(partyRequest) & """', '2026-10-21T00:00:00Z',
+              '2026-10-21T06:00:00Z')
+      ON CONFLICT DO NOTHING
+    """)
+    let outcome = withIdempotencyKey(db, principal, some("k-expired"), "party.create",
       partyRequest, asOf, parse("2026-10-21T07:00:00Z", "yyyy-MM-dd'T'HH:mm:ss'Z'", utc()),
       proc(): tuple[status: int, payload: JsonNode] = (201, %*{}))
     check outcome.decision == idemProceed
+
+  test "parameter TTL hilang adalah konfigurasi server, bukan 400":
+    execScript(db, "DELETE FROM platform.param_value WHERE key = 'platform.idempotency.ttl_hours'")
+    var raised = false
+    try:
+      discard withIdempotencyKey(db, principal, some("k-cfg"), "party.create",
+        partyRequest, asOf, fixedNow(), okBody(Counter()))
+    except IdempotencyConfigError:
+      raised = true
+    check raised
+    execScript(db, readFile(repoRoot / "packs/base/generated/param_values.sql"))

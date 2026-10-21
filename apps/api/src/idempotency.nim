@@ -19,17 +19,20 @@ import platform/domain/[idempotency, scope]
 import platform/infrastructure/[idempotency_repo, param_repo]
 
 import ./access
+import ./http_util
+import ./problem
 
 const
   ## Klaim in-flight normalnya selesai dalam milidetik; menunggu sisa TTL penuh (bisa sehari)
   ## bukan jawaban yang berguna. Batas ini teknis, bukan kebijakan bisnis.
   maxRetryAfterSeconds* = 60 # nomagic:ok batas protokol Retry-After
+  idempotencyHeader* = "Idempotency-Key"
 
 type
-  ## Parameter TTL hilang/rusak = salah konfigurasi operator → handler memetakan ke 500.
-  IdempotencyConfigError* = object of ValueError
-  ## Klaim hilang/tertutup di tengah transaksi = bug server → 500, bukan 400.
-  IdempotencyStateError* = object of ValueError
+  ## Sengaja **bukan** turunan `ValueError`: handler memetakan `ValueError` → 400 untuk kesalahan
+  ## pemanggil, sedangkan dua kondisi ini kesalahan server/konfigurasi (500).
+  IdempotencyConfigError* = object of CatchableError
+  IdempotencyStateError* = object of CatchableError
 
   IdempotentOutcome* = object
     decision*: IdempotencyDecision
@@ -63,8 +66,14 @@ proc canonicalRequest*(req: Request, body: string): string =
 proc ttlHours(db: DbConn, asOf: string): int =
   ## Parameter dibaca di dalam transaksi yang sama: TTL yang dipakai adalah nilai yang berlaku
   ## saat operasi, bukan salinan saat start.
-  let node = activeValueJson(db, keyString(P_platform_idempotency_ttl_hours), asOf,
-    lookupFor(institutionScope()))
+  let node =
+    try:
+      activeValueJson(db, keyString(P_platform_idempotency_ttl_hours), asOf,
+        lookupFor(institutionScope()))
+    except ValueError as e:
+      # Parameter hilang/rusak = konfigurasi, bukan permintaan klien. Tanpa pemetaan ini
+      # `ValueError` akan dijawab 400 oleh handler dan menyembunyikan masalah server.
+      raise newException(IdempotencyConfigError, e.msg)
   if node.kind != JInt or node.getInt() <= 0:
     raise newException(IdempotencyConfigError,
       "parameter platform.idempotency.ttl_hours harus bilangan positif")
@@ -72,7 +81,7 @@ proc ttlHours(db: DbConn, asOf: string): int =
 
 proc withIdempotencyKey*(db: DbConn, principal: Principal, rawKey: Option[string],
     operationId, canonicalRequestBody: string, asOf: string, now: DateTime,
-    body: proc(): tuple[status: int, payload: JsonNode]): IdempotentOutcome =
+    body: proc(): tuple[status: int, payload: JsonNode] {.gcsafe.}): IdempotentOutcome =
   ## Inti helper tanpa `Request`, supaya bisa diuji langsung dengan `Principal` buatan test.
   ## `rawKey = none` berarti header tidak dikirim: operasi berjalan tanpa replay. `some("")`
   ## (header ada tetapi kosong) **ditolak** validator — bukan diperlakukan sebagai absen.
@@ -85,7 +94,7 @@ proc withIdempotencyKey*(db: DbConn, principal: Principal, rawKey: Option[string
   let nowIso = utcIso(now)
   let expiresAt = utcIso(now + initDuration(hours = ttlHours(db, asOf)))
   let claim = claimIdempotency(db, principal.user.userId, key, operationId, fingerprint,
-    nowIso, expiresAt)
+    nowIso, nowIso, expiresAt)
 
   case claim.decision
   of idemProceed:
@@ -110,14 +119,39 @@ proc withIdempotencyKey*(db: DbConn, principal: Principal, rawKey: Option[string
         max(1, min(maxRetryAfterSeconds, int((expires - now).inSeconds)))
     IdempotentOutcome(decision: idemInFlight, status: 409, retryAfterSeconds: seconds)
 
+proc requireIdempotencyKey*(req: Request): bool =
+  ## `true` bila header ada **dan** isinya tidak kosong. Handler T-085 memakai ini untuk 400;
+  ## helper sendiri membedakan absen (`none`) dari kosong (`some("")` → ditolak validator).
+  req.headers.contains(idempotencyHeader) and
+    req.headers[idempotencyHeader].strip.len > 0
+
+proc respondIdempotent*(req: Request, outcome: IdempotentOutcome): bool =
+  ## Menulis respons untuk hasil non-`idemProceed`. `false` = pemanggil harus menulis respons
+  ## suksesnya sendiri (operasi baru saja dijalankan).
+  case outcome.decision
+  of idemProceed:
+    false
+  of idemReplay:
+    req.respondJsonHeaders(200, outcome.payload, [("Idempotent-Replayed", "true")])
+    true
+  of idemMismatch:
+    req.respondProblem(pkConflict, "Conflict",
+      "Idempotency-Key sudah dipakai untuk permintaan lain")
+    true
+  of idemInFlight:
+    req.respondProblem(
+      newProblem(pkConflict, "Conflict", "permintaan dengan kunci ini masih diproses",
+        traceId = traceIdFrom(req)), [("Retry-After", $outcome.retryAfterSeconds)])
+    true
+
 proc withIdempotency*(db: DbConn, principal: Principal, req: Request, operationId: string,
     requestBody: string, asOf: string, now: DateTime,
-    body: proc(): tuple[status: int, payload: JsonNode]): IdempotentOutcome =
+    body: proc(): tuple[status: int, payload: JsonNode] {.gcsafe.}): IdempotentOutcome =
   ## Pintu handler: membedakan header tidak ada dari header kosong, lalu menyerahkan sidik jari
   ## kanonik ke `withIdempotencyKey`.
   let rawKey =
-    if req.headers.contains("Idempotency-Key"):
-      some(req.headers["Idempotency-Key"])
+    if req.headers.contains(idempotencyHeader):
+      some(req.headers[idempotencyHeader])
     else:
       none(string)
   withIdempotencyKey(db, principal, rawKey, operationId, canonicalRequest(req, requestBody),

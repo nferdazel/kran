@@ -18,6 +18,14 @@ proc respondJson*(req: Request, status: int, body: JsonNode) =
   ## Satu tempat menulis respons JSON supaya header konsisten.
   req.respond(status, headersWithType(ContentTypeJson), $body)
 
+proc respondJsonHeaders*(req: Request, status: int, body: JsonNode,
+    extra: openArray[(string, string)]) =
+  ## JSON + header tambahan (mis. `Idempotent-Replayed` pada replay, `Retry-After`).
+  var headers = headersWithType(ContentTypeJson)
+  for (key, value) in extra:
+    headers[key] = value
+  req.respond(status, headers, $body)
+
 proc jsonField*(node: JsonNode, name: string): string =
   ## Nilai string sebuah field; "" bila tidak ada atau bukan string. Field bertipe salah
   ## diperlakukan "tidak diisi" — handler yang memutuskan itu 400 (satu aturan validasi).

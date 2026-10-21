@@ -83,5 +83,13 @@ proc traceIdFrom*(req: Request): string =
 proc respondProblem*(req: Request, problem: Problem) =
   req.respond(statusOf(problem.kind), headersWithType(ContentTypeProblem), $problem.toJson)
 
+proc respondProblem*(req: Request, problem: Problem,
+    extra: openArray[(string, string)]) =
+  ## Problem + header tambahan (mis. `Retry-After` saat klaim idempotensi masih berjalan).
+  var headers = headersWithType(ContentTypeProblem)
+  for (key, value) in extra:
+    headers[key] = value
+  req.respond(statusOf(problem.kind), headers, $problem.toJson)
+
 proc respondProblem*(req: Request, kind: ProblemKind, title: string, detail = "") =
   req.respondProblem(newProblem(kind, title, detail, traceId = traceIdFrom(req)))

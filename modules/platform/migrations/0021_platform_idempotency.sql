@@ -19,6 +19,8 @@ CREATE TABLE platform.idempotency_key (
   CONSTRAINT idempotency_key_hash_chk CHECK (length(request_hash) > 0),
   CONSTRAINT idempotency_status_chk
     CHECK (response_status IS NULL OR (response_status >= 200 AND response_status < 300)),
+  CONSTRAINT idempotency_time_chk CHECK (expires_at > created_at),
+  CONSTRAINT idempotency_completed_chk CHECK (completed_at IS NULL OR completed_at >= created_at),
   CONSTRAINT idempotency_complete_chk CHECK (
     (response_status IS NULL AND response_body IS NULL AND completed_at IS NULL)
     OR (response_status IS NOT NULL AND response_body IS NOT NULL AND completed_at IS NOT NULL)
