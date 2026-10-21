@@ -73,6 +73,18 @@ if [ "${KRAN_DATABASE_URL:-}" = "$GATE_DB_URL" ]; then
   log "==> WARN: KRAN_DATABASE_URL tidak memakai @qouver-postgres: — gate host memakai nilai apa adanya"
 fi
 
+# O-010: migrasi/seed memakai role **owner**, runtime memakai role aplikasi tanpa hak tulis audit.
+# URL owner disimpan terpisah supaya tidak ikut dimuat unit API/worker (EnvironmentFile).
+# Tanpa berkas ini perilaku lama dipertahankan (satu URL), jadi deploy aman sebelum role dipisah.
+MIGRATE_ENV_FILE="${KRAN_MIGRATE_ENV_FILE:-$APP_DIR/env/kran-migrate.env}"
+MIGRATE_DB_URL="$KRAN_DATABASE_URL"
+if [ -f "$MIGRATE_ENV_FILE" ]; then
+  MIGRATE_DB_URL="$(sed -n 's/^KRAN_DATABASE_URL=//p' "$MIGRATE_ENV_FILE" | head -1)"
+  [ -n "$MIGRATE_DB_URL" ] || die "KRAN_DATABASE_URL kosong di $MIGRATE_ENV_FILE"
+  log "==> migrasi memakai role owner dari $MIGRATE_ENV_FILE"
+fi
+MIGRATE_DB_URL_HOST="${MIGRATE_DB_URL//@qouver-postgres:/@127.0.0.1:}"
+
 # Salin lib runtime yang tidak ada di host dari image yang baru dibangun. Nama tujuan = **soname**
 # (bukan nama berkas asli) karena `podman cp` mengikuti symlink: tanpa ini `libpq.so.5` hilang dan
 # biner gagal start dengan `could not load: libpq.so(.5|)`. Rantainya terbukti di Rocky 9
@@ -282,7 +294,7 @@ if [ "$MIGRATIONS_CHANGED" -eq 1 ]; then
   # justru itu yang mau diterapkan) dan migrasi yang **isinya berubah** (drift: berkas yang sudah
   # diterapkan diubah, berarti DB dan repo tidak lagi sinkron). Hanya yang kedua membatalkan deploy.
   # Skrip membaca angka drift dari keluarannya; keluaran yang tidak dikenal = fail-closed.
-  if check_out="$(KRAN_DATABASE_URL="$GATE_DB_URL" "$MIGRATE_BIN" --role=migrate --check 2>&1)"; then
+  if check_out="$(KRAN_DATABASE_URL="$MIGRATE_DB_URL_HOST" "$MIGRATE_BIN" --role=migrate --check 2>&1)"; then
     log "    migrasi --check bersih"
   else
     drift="$(sed -nE 's/.*, ([0-9]+) isinya berubah.*/\1/p' <<<"$check_out" | head -1)"
@@ -298,7 +310,7 @@ if [ "$MIGRATIONS_CHANGED" -eq 1 ]; then
     esac
   fi
   log "==> MIGRATION GATE: --up"
-  KRAN_DATABASE_URL="$GATE_DB_URL" "$MIGRATE_BIN" --role=migrate --up || die "migrasi --up gagal"
+  KRAN_DATABASE_URL="$MIGRATE_DB_URL_HOST" "$MIGRATE_BIN" --role=migrate --up || die "migrasi --up gagal"
 else
   log "==> migrasi tidak berubah; gate dilewati"
 fi
@@ -314,7 +326,7 @@ fi
 # dan worker menolak start (exit 2) bila parameter posting belum tersemai. Berkas seed idempoten
 # (`param_definitions` DO UPDATE metadata, `param_values` DO NOTHING) dan tidak memuat seed dev.
 log "==> seed parameter base (idempoten)"
-KRAN_DATABASE_URL="$GATE_DB_URL" "$BIN" --role=migrate --root="$MONO_DIR" --seed ||
+KRAN_DATABASE_URL="$MIGRATE_DB_URL_HOST" "$BIN" --role=migrate --root="$MONO_DIR" --seed ||
   die "seed parameter gagal — deploy dibatalkan (worker tidak di-restart dengan parameter belum lengkap)"
 
 # 9. Web: build statis lalu swap atomik (`web.new` -> `web`, `web.prev` disimpan).

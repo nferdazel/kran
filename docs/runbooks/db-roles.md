@@ -1,83 +1,102 @@
-# Pemisahan role DB: migrasi/owner vs aplikasi (O-010)
+# Pemisahan role DB: migrasi (owner) vs runtime (O-010, D-110)
 
-**Status: prosedur siap, BELUM diterapkan di produksi.** Saat ini `kran_app` adalah pemilik schema
-(`platform`, `ledger`, `party`, `product`), jadi `REVOKE UPDATE/DELETE ON platform.audit_log` tidak
-mengubah apa pun — pemilik tabel selalu punya hak. Tanpa pemisahan role, append-only audit hanya
-dijaga trigger (defense in depth), bukan privilege.
+**Tujuan:** audit append-only punya dua lapis — trigger (sudah ada) **dan** privilege: role runtime
+tidak boleh `UPDATE/DELETE/TRUNCATE` pada `platform.audit_log`. Role owner hanya dipakai migrasi/seed.
 
-## Target
+Pendekatan yang dipakai: **role runtime terpisah**, bukan memindahkan ownership. `kran_app` tetap
+pemilik schema (migrasi tidak berubah); API/worker/ctl memakai `kran_runtime`. Ini menghindari
+`REASSIGN OWNED` yang bisa memutus grant dan default privilege.
 
-| Role | Dipakai oleh | Hak |
+| Role | Dipakai | Hak |
 |---|---|---|
-| `kran_owner` | `--role=migrate`, DDL | pemilik schema/tabel; boleh `ALTER`/`GRANT` |
-| `kran_app` | API, worker, `ctl` | `SELECT/INSERT/UPDATE/DELETE` pada tabel bisnis; **hanya `SELECT/INSERT`** pada `platform.audit_log`; tanpa DDL |
-| `qouver` | superuser operasi | di luar aplikasi |
+| `kran_app` | `--role=migrate` (deploy), seed | pemilik schema/objek, DDL |
+| `kran_runtime` | api, worker, ctl | CRUD tabel bisnis; audit hanya `SELECT/INSERT`; tanpa DDL; tanpa TRUNCATE audit |
 
-Audit tetap append-only di dua lapis: trigger menolak `UPDATE/DELETE`, dan role aplikasi tidak
-punya privilege itu.
+Deploy sudah mendukung ini (`ops/scripts/deploy-vps.sh`): bila `env/kran-migrate.env` ada, migrasi/
+seed memakai URL di berkas itu; runtime memakai `KRAN_DATABASE_URL` seperti biasa.
 
-## Langkah (butuh superuser; jadwalkan, bukan saat jam sibuk)
+## Langkah (sekali, butuh superuser; jadwalkan)
 
 ```bash
-# 1. Backup + siapkan sandi baru untuk kran_owner (lewat stdin, jangan argv)
-podman exec qouver-postgres psql -U qouver -d postgres -c \
-  "CREATE ROLE kran_owner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE"
-podman exec -i qouver-postgres psql -U qouver -d postgres <<'SQL'
-ALTER ROLE kran_owner PASSWORD :'pw';
-GRANT kran_owner TO kran_app;          -- sementara: kran_app harus bisa memindahkan ownership
+cd /srv/qouver/apps/kran
+
+# 1. Sandi runtime baru (tidak dicetak; disimpan ke env, bukan argv)
+NEW_PW="$(openssl rand -hex 24)"
+printf "\\set pw '%s'\nCREATE ROLE kran_runtime LOGIN PASSWORD :'pw';\n" "$NEW_PW" \
+  | podman exec -i qouver-postgres psql -U qouver -d postgres
+
+# 2. Pindahkan URL owner ke berkas terpisah (tidak dimuat unit), lalu ganti URL runtime
+python3 - "$NEW_PW" <<'PY'
+import os, re, sys
+pw = sys.argv[1]
+base = "/srv/qouver/apps/kran/env"
+prod = open(f"{base}/kran-prod.env").read().splitlines()
+url = next(l.split("=", 1)[1] for l in prod if l.startswith("KRAN_DATABASE_URL="))
+open(f"{base}/kran-migrate.env", "w").write("KRAN_DATABASE_URL=" + url + "\n")
+os.chmod(f"{base}/kran-migrate.env", 0o600)
+runtime = re.sub(r"(://[^:]+:)[^@]*(@)", r"\g<1>" + pw + r"\g<2>", url)
+runtime = re.sub(r"(://)[^:]+(:)", r"\g<1>kran_runtime\g<2>", runtime, count=1)
+out = []
+for l in prod:
+    if l.startswith("KRAN_DATABASE_URL="):
+        l = "KRAN_DATABASE_URL=" + runtime
+    out.append(l)
+open(f"{base}/kran-prod.env", "w").write("\n".join(out) + "\n")
+os.chmod(f"{base}/kran-prod.env", 0o600)
+PY
+
+# 3. Grant runtime (idempoten; jalankan sebagai superuser)
+podman exec -i qouver-postgres psql -U qouver -d kran <<'SQL'
+GRANT USAGE ON SCHEMA platform, ledger, party, product TO kran_runtime;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA platform, ledger, party, product
+  TO kran_runtime;
+GRANT SELECT, INSERT ON platform.audit_log TO kran_runtime;
+REVOKE UPDATE, DELETE, TRUNCATE ON platform.audit_log FROM kran_runtime;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA platform, ledger, party, product TO kran_runtime;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA platform, ledger, party, product TO kran_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE kran_app IN SCHEMA platform
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO kran_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE kran_app IN SCHEMA ledger
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO kran_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE kran_app IN SCHEMA party
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO kran_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE kran_app IN SCHEMA product
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO kran_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE kran_app IN SCHEMA platform
+  GRANT USAGE, SELECT ON SEQUENCES TO kran_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE kran_app IN SCHEMA ledger
+  GRANT USAGE, SELECT ON SEQUENCES TO kran_runtime;
 SQL
 
-# 2. Pindahkan kepemilikan schema & objek (ulangi untuk schema lain bila perlu)
-podman exec qouver-postgres psql -U qouver -d kran <<'SQL'
-REASSIGN OWNED BY kran_app TO kran_owner;   -- menjalankan sebagai superuser
-SQL
-
-# 3. Cabut hak tulis audit dari role aplikasi, lalu uji
-podman exec qouver-postgres psql -U qouver -d kran <<'SQL'
-REVOKE UPDATE, DELETE, TRUNCATE ON platform.audit_log FROM kran_app;
-REVOKE ALL ON SCHEMA platform, ledger, party, product FROM PUBLIC;
-GRANT USAGE ON SCHEMA platform, ledger, party, product TO kran_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ledger, party, product TO kran_app;
-GRANT SELECT, INSERT ON platform.audit_log TO kran_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON platform.param_value, platform.param_definition,
-  platform.app_user, platform.session, platform.user_role, platform.role, platform.permission,
-  platform.role_permission, platform.worker_heartbeat, platform.outbox, platform.inbox,
-  platform.idempotency_key, platform.business_date TO kran_app;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA platform, ledger, party, product TO kran_app;
-SQL
+# 4. Restart dengan URL runtime, lalu verifikasi
+systemctl --user restart kran-api kran-worker
+sleep 3
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8095/readyz          # 200
+systemctl --user is-active kran-api kran-worker                                 # active active
 ```
-
-Daftar tabel di atas harus disesuaikan dengan schema aktual (`\dt platform.*`). **Jangan** memakai
-`GRANT ALL ON ALL TABLES` untuk `platform`, karena itu mengembalikan hak tulis audit.
 
 ## Verifikasi wajib
 
 ```bash
-# 4. Role aplikasi TIDAK boleh mengubah audit
-podman exec qouver-postgres psql -U kran_app -d kran -c \
+# a. Runtime TIDAK boleh mengubah audit
+PW=$(sed -nE 's#^KRAN_DATABASE_URL=.*://[^:]+:([^@]+)@.*#\1#p' /srv/qouver/apps/kran/env/kran-prod.env)
+podman exec -e PGPASSWORD="$PW" qouver-postgres psql -h 127.0.0.1 -U kran_runtime -d kran -c \
   "UPDATE platform.audit_log SET action = action WHERE seq = (SELECT max(seq) FROM platform.audit_log)"
 # harapan: ERROR: permission denied for table audit_log
 
-# 5. API tetap sehat dengan role aplikasi
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8095/readyz   # 200
-systemctl --user is-active kran-api kran-worker
+# b. Runtime masih bisa menulis tabel bisnis (denyut worker menyegar)
+podman exec qouver-postgres psql -U qouver -d kran -tAc \
+  "select worker_name, extract(epoch from now()-last_seen_at)::int from platform.worker_heartbeat"
 
-# 6. Migrasi tetap bisa dijalankan role owner (env migrasi terpisah)
-KRAN_DATABASE_URL="<url kran_owner>" LD_LIBRARY_PATH=/srv/qouver/apps/kran/lib \
-  /srv/qouver/apps/kran/bin/kran-api --role=migrate --check
+# c. Migrasi tetap jalan dengan role owner
+URL=$(sed -n 's/^KRAN_DATABASE_URL=//p' /srv/qouver/apps/kran/env/kran-migrate.env)
+URL="${URL//@qouver-postgres:/@127.0.0.1:}"
+KRAN_DATABASE_URL="$URL" LD_LIBRARY_PATH=/srv/qouver/apps/kran/lib \
+  /srv/qouver/apps/kran/bin/kran-api --role=migrate --check; echo "check=$?"
 ```
 
 ## Rollback
 
-- `GRANT UPDATE, DELETE, TRUNCATE ON platform.audit_log TO kran_app;`
-- `REASSIGN OWNED BY kran_owner TO kran_app;` (bila perlu kembali ke kondisi lama)
-- Kembalikan env ke URL lama, restart, `/readyz` 200.
-
-## Catatan
-
-- Deploy saat ini memakai **satu** `KRAN_DATABASE_URL` untuk migrasi dan runtime. Pemisahan baru
-  benar-benar berlaku setelah deploy memakai dua URL (`KRAN_MIGRATE_DATABASE_URL` untuk
-  `--role=migrate`, `KRAN_DATABASE_URL` untuk api/worker/ctl). Itu perubahan kode + env di server;
-  jangan lakukan setengah jalan: bila hanya ownership yang dipindah tanpa env migrasi, deploy
-  berikutnya gagal di langkah migrasi.
-- Catat tanggal, role, dan hasil verifikasi di `docs/PROGRESS.md`.
+- Kembalikan `KRAN_DATABASE_URL` dari `kran-migrate.env` ke `kran-prod.env`, restart, `/readyz` 200.
+- `REVOKE ALL ... FROM kran_runtime; DROP ROLE kran_runtime;` (opsional).
+- Jangan menghapus `kran-migrate.env` selama deploy berikutnya masih butuh role owner.
