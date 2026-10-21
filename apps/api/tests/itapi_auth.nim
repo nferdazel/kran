@@ -59,6 +59,13 @@ let contract = loadContractFile(ContractPath)
 let eventsSchema = loadSchemaFile(EventsSchemaPath)
 let dbPool = newDbPool(dbConfigFromEnv(envT))
 
+proc dbValue(query: SqlQuery, args: varargs[string, `$`]): string =
+  let conn = dbPool.acquire()
+  try:
+    conn.getValue(query, args)
+  finally:
+    dbPool.release(conn)
+
 # --- penyiapan DB: skema bersih + seed pack + seed pengguna dev -------------------------------
 block:
   let db = dbPool.acquire()
@@ -361,6 +368,45 @@ suite "parameter maker-checker lewat HTTP":
       "/api/v1/params/changes/00000000-0000-7000-8000-000000000000/approve",
       newJObject(), checkerToken)
     check missing.code == 404
+
+  test "checker menolak pengajuan: REJECTED, audit + event, nilai aktif tetap":
+    let maker = login(MakerUser)
+    let makerToken = tokenOf(maker)
+    let checkerToken = tokenOf(login(CheckerUser))
+    let before = activeValueOf(getJson(ParamsPath, makerToken).body, ParamKey)
+    let target = before.getInt() + 1
+
+    let submitted = postJson("/api/v1/params/" & ParamKey & "/changes",
+      %*{"value": target, "reason": "uji otomatis: pengajuan untuk ditolak"}, makerToken)
+    check submitted.code == 201
+    let paramValueId = submitted.body["paramValueId"].getStr()
+    let rejectPath = "/api/v1/params/changes/" & paramValueId & "/reject"
+
+    # Alasan wajib dan hanya checker yang boleh menolak.
+    let noReason = postJson(rejectPath, newJObject(), checkerToken)
+    check noReason.code == 400
+    check noReason.body["params"]["reason"].getStr() == "reason_missing"
+    let makerReject = postJson(rejectPath, %*{"reason": "bukan wewenang"}, makerToken)
+    check makerReject.code == 403
+
+    let rejected = postJson(rejectPath, %*{"reason": "salah ketik nilai"}, checkerToken)
+    check rejected.code == 200
+    checkJson("/api/v1/params/changes/{paramValueId}/reject", "POST", "200", rejected.body)
+    check rejected.body["status"].getStr() == "REJECTED"
+
+    # Nilai aktif tidak berubah, dan pengajuan itu tidak bisa ditolak dua kali.
+    check activeValueOf(getJson(ParamsPath, makerToken).body, ParamKey).getInt() == before.getInt()
+    let twice = postJson(rejectPath, %*{"reason": "ulang"}, checkerToken)
+    check twice.code == 409
+    check twice.body["params"]["reason"].getStr() == "not_pending"
+
+    # Jejak audit + event memakai id pengajuan yang sama.
+    check dbValue(sql"""
+      SELECT count(*)::text FROM platform.audit_log
+       WHERE action = 'param.reject' AND resource_id = ?""", paramValueId) == "1"
+    check dbValue(sql"""
+      SELECT count(*)::text FROM platform.outbox
+       WHERE event_type = 'param.changed' AND aggregate_id = ?""", paramValueId) >= "2"
 
   test "nilai yang melanggar schema definisi ditolak 400":
     let maker = login(MakerUser)

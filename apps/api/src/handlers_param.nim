@@ -32,6 +32,8 @@ const
   ## berarti aksi **tingkat institusi**, dan itu punya kalimatnya sendiri: menuliskan "cabang  di luar
   ## wewenang" (cabang kosong) akan menyesatkan operator.
   reasonBranchNotAllowed* = "branch_not_allowed"
+  ## Batas panjang alasan penolakan (kontrak OpenAPI; teks audit/reason tidak dipotong diam-diam).
+  maxParamReasonLength* = 500 # nomagic:ok batas ukuran permintaan, bukan nilai bisnis
 
 proc branchNotAllowedProblem(targetBranch, aksi: string): string =
   if targetBranch.len == 0:
@@ -363,6 +365,91 @@ proc handleApproveParamChange*(app: AppContext, req: Request) {.gcsafe.} =
   of 200: req.respondJson(200, payload)
   of 403: req.respondParamReason(pkForbidden, "Forbidden", reasonParam, problem)
   of 404: req.respondProblem(pkNotFound, "Not Found", problem)
+  of 409: req.respondProblem(newProblem(pkConflict, "Conflict", problem,
+           traceId = traceIdFrom(req), params = @[("reason", reasonParam)]))
+  else: req.respondProblem(pkInternal, "Internal Server Error", problem)
+
+proc handleRejectParamChange*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `POST /api/v1/params/changes/{paramValueId}/reject` — penolakan (checker) → REJECTED.
+  ##
+  ## O-065: tanpa jalur ini pengajuan yang salah hanya bisa "dibiarkan" (menumpuk PENDING) atau
+  ## diubah lewat SQL — keduanya melewati audit dan event. Penolakan menulis `param.reject` +
+  ## `param.changed` dalam transaksi yang sama, dan **tidak** menyentuh nilai ACTIVE.
+  let principalOpt = requirePrincipal(app, req)
+  if principalOpt.isNone:
+    return
+  let principal = principalOpt.get()
+  if not requirePermission(app, req, principal, permissionParamApprove):
+    return
+
+  let paramValueId = pathParam(req, "paramValueId")
+  if paramValueId.len == 0:
+    req.respondProblem(pkBadRequest, "Bad Request", "paramValueId kosong")
+    return
+  if parseId(paramValueId).isErr:
+    req.respondProblem(pkNotFound, "Not Found", "paramValueId bukan UUID yang sah")
+    return
+
+  let body = parseJsonBody(req)
+  if body.isNone or body.get().kind != JObject:
+    req.respondParamReason(pkBadRequest, "Bad Request", "reason_missing",
+      "badan permintaan harus objek JSON dengan field reason")
+    return
+  let reason = body.get().jsonField("reason").strip()
+  if reason.len == 0:
+    req.respondParamReason(pkBadRequest, "Bad Request", "reason_missing",
+      "field reason wajib diisi")
+    return
+  if reason.len > maxParamReasonLength:
+    req.respondParamReason(pkBadRequest, "Bad Request", "reason_too_long",
+      "reason maksimum " & $maxParamReasonLength & " karakter")
+    return
+
+  var status = 0
+  var payload = newJObject()
+  var problem = ""
+  var reasonParam = ""
+  try:
+    withDbTx(app.pool, proc(db: DbConn) {.gcsafe.} =
+      dbCalls:
+        let current = statusOf(db, paramValueId)
+        if current.isNone:
+          status = 404
+          problem = "nilai parameter tidak ditemukan"
+        elif current.get() != pvPending:
+          status = 409
+          reasonParam = "not_pending"
+          problem = "nilai tidak berstatus PENDING (sekarang " & $current.get() & ")"
+        else:
+          let pending = pendingValueOf(db, paramValueId)
+          let targetBranch =
+            if pending.isSome and pending.get().scopeType == $pstBranch:
+              pending.get().scopeId
+            else:
+              ""
+          if not authorizedAtBranch(db, principal, targetBranch, permissionParamApprove):
+            status = 403
+            reasonParam = reasonBranchNotAllowed
+            problem = branchNotAllowedProblem(targetBranch, "penyetuju")
+          else:
+            let ctx = auditContextFor(principal, req, app.clock,
+              "penolakan perubahan parameter: " & reason, targetBranch)
+            let outcome = rejectChange(db, ctx, app.clock, paramValueId, reason)
+            status = 200
+            payload = %*{"paramValueId": outcome.paramValueId, "status": $pvRejected})
+  except ValueError as e:
+    status = 409
+    reasonParam = "not_pending"
+    problem = e.msg
+  except DbError as e:
+    status = 500
+    problem = "penolakan gagal disimpan: " & e.msg
+
+  case status
+  of 200: req.respondJson(200, payload)
+  of 403: req.respondParamReason(pkForbidden, "Forbidden", reasonParam, problem)
+  of 404: req.respondProblem(pkNotFound, "Not Found", problem)
+  of 400: req.respondParamReason(pkBadRequest, "Bad Request", reasonParam, problem)
   of 409: req.respondProblem(newProblem(pkConflict, "Conflict", problem,
            traceId = traceIdFrom(req), params = @[("reason", reasonParam)]))
   else: req.respondProblem(pkInternal, "Internal Server Error", problem)

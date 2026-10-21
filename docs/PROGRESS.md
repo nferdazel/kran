@@ -1915,3 +1915,19 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
 - Keduanya memakai deteksi `pg_stat_activity` yang di-scope ke koneksi pemenang (`datname` +
   `pg_blocking_pids`), bukan potongan teks SQL, agar tidak false positive dari sesi lain; timeout
   thread 10–30 dtk. Periode latihan O-076 dihapus lagi setelah test.
+
+### Batch penutup Fase 0/1 (21 Okt 2026)
+
+- **O-065 (D-109)**: `POST /api/v1/params/changes/{paramValueId}/reject` — checker, alasan wajib
+  (≤500), `PENDING → REJECTED`, audit `param.reject` + event `param.changed` satu transaksi, 409
+  `not_pending` pada penolakan ulang, nilai ACTIVE tidak disentuh. Kontrak + klien TS ikut dibuat.
+- **O-009 (D-108)**: `ctl audit-anchor [--out=<berkas>]` mencetak/menyimpan `waktu seq hash` kepala
+  rantai ke berkas append (di luar DB); verifikasi = `verify-audit` + cocokkan hash/seq. Jadwal
+  harian + salinan luar server tetap tindakan host.
+- **Keputusan**: O-017 (D-103, id cabang UUID/`scope_id` text), O-077 (D-104, koreksi lintas
+  periode lewat jurnal penyesuaian), O-079 (D-105, fail-closed akun INACTIVE), O-075 (D-106, akun
+  kontra Fase 2), O-080 (D-107, rule via migrasi sampai Fase 2), O-073 (D-111, rotasi KEK dilarang
+  sampai ada reindex).
+- **Runbook**: `docs/runbooks/rotasi-sandi-db.md` (O-069) dan `docs/runbooks/db-roles.md` (O-010 —
+  prosedur siap, **belum diterapkan**; butuh pemisahan URL migrasi + persetujuan pemilik).
+- **Catatan basi**: O-060 ditutup (worker sudah ada/aktif).

@@ -73,6 +73,13 @@ Deploy yang sekarang sehat (tanpa kolom terenkripsi) **tidak** perlu menyetel `K
   masih ada, baca masih jalan).
 - **Rotasi kunci blind index membatalkan indeks**: indeks adalah HMAC dari kunci turunan; setelah
   kunci berubah, indeks lama tidak lagi cocok → perlu **reindex**.
+- **JANGAN merotasi KEK selama data identitas (`party.identity_doc.number_bidx`) ada** sampai
+  perintah reindex tersedia (O-073). Tanpa reindex, deteksi duplikat NIK gagal-terbuka: tidak ada
+  galat, tetapi constraint unik tidak lagi menangkap duplikat. Bila rotasi darurat terpaksa
+  dilakukan: (1) re-enkripsi semua ciphertext dengan kunci baru, (2) hitung ulang `number_bidx`
+  dari plaintext hasil dekripsi kunci lama, (3) bandingkan jumlah baris + cari duplikat baru,
+  (4) baru hapus kunci lama. Langkah 2 belum punya perintah `ctl` — kerjakan manual dengan snapshot
+  DB dan catat di `docs/PROGRESS.md`.
 - Selalu uji baca (dekripsi + pencarian indeks) sebelum menghapus kunci lama.
 
 ## 5. Kontrak pemakaian (Fase 1)

@@ -348,6 +348,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/params/changes/{paramValueId}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tolak perubahan parameter (checker)
+         * @description Menolak nilai `PENDING` menjadi `REJECTED`. Nilai yang sedang `ACTIVE` tidak disentuh.
+         *     Penolakan menulis audit `param.reject` + event `param.changed` dalam transaksi yang sama,
+         *     sehingga pengajuan yang salah tidak perlu dibiarkan menumpuk atau diubah lewat SQL.
+         *     Alasan wajib (maksimum 500 karakter) dan disimpan di audit. Penolak bertindak di cabang
+         *     nilai itu, jadi izin checker harus menutupi cabang tersebut (403 `branch_not_allowed`).
+         */
+        post: operations["rejectParamChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/audit": {
         parameters: {
             query?: never;
@@ -902,6 +926,16 @@ export interface components {
             paramValueId: string;
             /** @enum {string} */
             status: "ACTIVE";
+        };
+        ParamRejectRequest: {
+            /** @description Alasan penolakan; disimpan di audit (`param.reject`). */
+            reason: string;
+        };
+        ParamRejectResponse: {
+            /** Format: uuid */
+            paramValueId: string;
+            /** @enum {string} */
+            status: "REJECTED";
         };
         AuditItem: {
             seq: number;
@@ -1809,6 +1843,64 @@ export interface operations {
              *     atau penerusnya hilang lagi sebelum persetujuan (`effective_to_without_successor`,
              *     O-043).
              */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+        };
+    };
+    rejectParamChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paramValueId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ParamRejectRequest"];
+            };
+        };
+        responses: {
+            /** @description Nilai ditolak */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParamRejectResponse"];
+                };
+            };
+            /** @description `reason` kosong atau lebih dari 500 karakter (`params.reason` = `reason_missing`/`reason_too_long`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            /** @description paramValueId tidak ditemukan */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            405: components["responses"]["Problem"];
+            /** @description Tidak bisa ditolak: bukan `PENDING` (`params.reason` = `not_pending`). */
             409: {
                 headers: {
                     [name: string]: unknown;

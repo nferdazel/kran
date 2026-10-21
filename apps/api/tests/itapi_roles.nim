@@ -76,6 +76,18 @@ suite "kran-api: peran CLI (O-013)":
   test "ctl daycloser-status: dikenali, tapi belum ada di Fase 0 → 3":
     check runCtl("daycloser-status", ".") == 3
 
+  test "ctl audit-anchor: kepala rantai ke berkas append (O-009)":
+    let path = getTempDir() / ("kran-anchor-" & $newId(systemClock()) & ".txt")
+    defer: removeFile(path)
+    let line = runAuditAnchor(db, systemClock(), path)
+    let head = auditHead(db)
+    check line.contains("seq=" & $head.seq)
+    check line.contains("hash=" & head.hash)
+    check readFile(path).strip() == line
+    # Anchor kedua menambah baris (append), bukan menimpa.
+    discard runAuditAnchor(db, systemClock(), path)
+    check readFile(path).strip().splitLines().len == 2
+
   test "ctl bootstrap-admin: tanpa --username → 2 (salah pakai), bantuan menyebutnya":
     # `bootstrap-admin` salah satu dari dua perintah `ctl` yang menulis (D-100), jadi kontraknya diuji eksplisit.
     # Alur sukses + kata sandi yang dicetak sekali diuji di `itauth` (butuh skema bersih); di sini

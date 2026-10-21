@@ -14,6 +14,7 @@ repo** (atau dengan `--root=<dir>` yang menunjuk ke sana), karena migrasi dibaca
 | `ctl` | `kran-api --role=ctl daycloser-status` | **3** belum ada di Fase 0 (dipakai freeze gate deploy) |
 | `ctl` | `kran-api --role=ctl bootstrap-admin --username=<nama>` | **0** admin dibuat, **3** sudah ada pemegang role admin, **2** tanpa `--username` |
 | `ctl` | `kran-api --role=ctl reset-password --username=<nama>` | **0** kata sandi baru dicetak sekali, **1** gagal menulis/acak, **2** tanpa `--username`, **3** pengguna tidak ada |
+| `ctl` | `kran-api --role=ctl audit-anchor [--out=<berkas>]` | **0** baris anchor dicetak (dan ditambahkan ke berkas), **1** gagal menulis, **2** tanpa DB |
 | `ctl` | `kran-api --role=ctl help` | **0** |
 | `worker` | `kran-api --role=worker` | **3** belum ada pekerjaan di Fase 0 |
 | — | argumen salah / perintah tidak dikenal | **2** (bantuan ditulis ke stderr) |
@@ -92,3 +93,18 @@ Yang terjadi: kata sandi acak dicetak **sekali**; hash memakai iterasi parameter
 semua sesi dicabut; audit `user.password_reset` tercatat dalam transaksi yang sama. Login berikutnya
 dipaksa ganti kata sandi. Jangan mengubah `platform.app_user.password_hash` lewat SQL — itu
 melewati audit dan pencabutan sesi.
+
+## Anchor rantai audit (O-009, D-108)
+
+```bash
+podman run --rm --network qouver \
+  --env-file /srv/qouver/apps/kran/env/kran-prod.env \
+  -v /srv/qouver/audit-anchor:/anchor:Z \
+  localhost/kran-api:local --role=ctl audit-anchor --out=/anchor/audit-anchor.log
+```
+
+Satu baris = `waktu-UTC seq=<n> hash=<hash>`, ditambahkan (append) ke berkas. Simpan berkas itu di
+**luar** DB/backup DB (mis. ikut backup harian ke host lain). Verifikasi: `ctl verify-audit` harus
+menyatakan rantai utuh, dan `seq`/`hash` baris anchor terakhir harus sama dengan baris
+`platform.audit_log` pada `seq` itu. Jadwalkan harian (systemd timer/cron) — penjadwalan adalah
+tindakan host, bukan dari repo.

@@ -57,6 +57,9 @@ const
   ## awal tidak punya jalur lain — hash tidak boleh diubah langsung lewat SQL (melewati audit).
   resetPasswordCmd* = "reset-password"
 
+  ## Perintah `ctl` yang menyimpan kepala rantai audit ke berkas terpisah (O-009).
+  auditAnchorCmd* = "audit-anchor"
+
   ## Role yang diberikan `bootstrap-admin`. `platform_admin` diisi migrasi
   ## `0008_platform_rbac_catalogue.sql` beserta seluruh izin yang dikenal, jadi admin pertama
   ## memang bisa bekerja — tanpa itu perintahnya hanya menghasilkan pengguna tanpa izin.
@@ -75,7 +78,7 @@ const
 const Usage =
   "pemakaian: kran-api --role=api|migrate|ctl|worker [--root=<dir>] [--port=8080] " &
   "[--address=127.0.0.1] [--version=<string>] [--check|--up|--seed|--contract|--down N] " &
-  "[--username=<nama>] [<perintah ctl>]"
+  "[--username=<nama>] [--out=<berkas>] [<perintah ctl>]"
 
 type
   CliOptions = object
@@ -88,6 +91,7 @@ type
     sub: string      ## subperintah `--role=migrate`: --check | --up | --seed | --contract | --down
     subArg: string   ## angka `N` untuk `--role=migrate --down N`
     username: string ## `--role=ctl bootstrap-admin`: nama admin pertama
+    outPath: string  ## `--role=ctl audit-anchor`: berkas tujuan (append)
 
 proc die(msg: string) =
   stderr.writeLine "kran-api: " & msg
@@ -116,6 +120,8 @@ proc parseArgs(argv: seq[string]): CliOptions =
       result.version = arg["--version=".len .. ^1]
     elif arg.startsWith("--username="):
       result.username = arg["--username=".len .. ^1]
+    elif arg.startsWith("--out="):
+      result.outPath = arg["--out=".len .. ^1]
     elif arg.startsWith("--root="):
       result.root = arg["--root=".len .. ^1]
     elif arg in ["--check", "--up", "--seed", "--contract", "--down"]:
@@ -138,6 +144,9 @@ proc parseArgs(argv: seq[string]): CliOptions =
     die("angka jumlah rollback hanya untuk `--role=migrate --down N`: " & result.subArg)
   if result.sub.len > 0 and result.role != roleMigrate:
     die("subperintah " & result.sub & " hanya untuk --role=migrate")
+  if result.outPath.len > 0 and
+     not (result.role == roleCtl and result.cmd == auditAnchorCmd):
+    die("--out hanya untuk `--role=ctl " & auditAnchorCmd & "`")
   if result.username.len > 0 and
      not (result.role == roleCtl and result.cmd in [bootstrapAdminCmd, resetPasswordCmd]):
     die("--username hanya untuk `--role=ctl " & bootstrapAdminCmd & "` atau `" &
@@ -200,6 +209,7 @@ const CtlUsage* =
   "                    wajib diganti saat login pertama; menolak bila admin sudah ada)\n" &
   "  reset-password  : setel kata sandi baru acak untuk pengguna yang ada (butuh --username=<nama>;\n" &
   "                    dicetak sekali, wajib diganti, semua sesi dicabut, audit user.password_reset)\n" &
+  "  audit-anchor    : catat kepala rantai audit (seq + hash) ke stdout dan/atau --out=<berkas>\n" &
   "  daycloser-status: (belum ada di Fase 0 → kode 3)\n" &
   "  help            : tampilkan bantuan ini"
 
@@ -383,7 +393,25 @@ proc resetUserPassword*(db: DbConn, username: string, clock: Clock): tuple[code:
                "sessions_revoked": revoked}))
   (0, password)
 
-proc runCtl*(command, root: string, username = ""): int =
+proc auditAnchorLine*(db: DbConn, clock: Clock): string =
+  ## Satu baris anchor: waktu UTC, `seq` dan `hash` kepala rantai. Tanpa PII/kredensial.
+  let head = auditHead(db)
+  utcIso(clock.now()) & " seq=" & $head.seq & " hash=" & head.hash
+
+proc runAuditAnchor*(db: DbConn, clock: Clock, outPath: string): string =
+  ## Menghitung anchor dan (bila `outPath` diisi) **menambahkannya** ke berkas append-only.
+  ## Berkas sengaja di luar DB: penyerang dengan hak tulis DB tetap tidak bisa menulis ulang
+  ## seluruh rantai tanpa ketahuan saat anchor dibandingkan (spec §18.2).
+  result = auditAnchorLine(db, clock)
+  if outPath.len > 0:
+    var f = open(outPath, fmAppend)
+    try:
+      f.writeLine result
+      f.flushFile()
+    finally:
+      f.close()
+
+proc runCtl*(command, root: string, username = "", outPath = ""): int =
   ## Peran `ctl`: perintah operasional yang aman (read-only), dipakai skrip ops dan freeze gate.
   ## Dua pengecualian yang memang menulis: `bootstrap-admin` (sekali-jalan) dan `reset-password`
   ## (pemulihan darurat, dengan audit + pencabutan sesi + wajib ganti).
@@ -408,6 +436,10 @@ proc runCtl*(command, root: string, username = ""): int =
       echo password
       echo "Masuk dengan kata sandi itu, lalu ganti saat diminta."
     code
+  of auditAnchorCmd:
+    withRoleDb(proc(db: DbConn): int {.closure.} =
+      echo runAuditAnchor(db, systemClock(), outPath)
+      0)
   of "verify-audit":
     withRoleDb(proc(db: DbConn): int {.closure.} =
       let rows = verifyChain(db)
@@ -573,7 +605,7 @@ proc main() =
   if opts.role == roleMigrate:
     quit(runMigrate(opts.root, opts.sub, opts.subArg))
   if opts.role == roleCtl:
-    quit(runCtl(opts.cmd, opts.root, opts.username))
+    quit(runCtl(opts.cmd, opts.root, opts.username, opts.outPath))
   if opts.role == roleWorker:
     quit(runWorker())
 

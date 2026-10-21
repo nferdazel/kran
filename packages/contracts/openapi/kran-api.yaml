@@ -653,6 +653,69 @@ paths:
         "501":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/params/changes/{paramValueId}/reject:
+    post:
+      operationId: rejectParamChange
+      tags: [params]
+      summary: Tolak perubahan parameter (checker)
+      description: |
+        Menolak nilai `PENDING` menjadi `REJECTED`. Nilai yang sedang `ACTIVE` tidak disentuh.
+        Penolakan menulis audit `param.reject` + event `param.changed` dalam transaksi yang sama,
+        sehingga pengajuan yang salah tidak perlu dibiarkan menumpuk atau diubah lewat SQL.
+        Alasan wajib (maksimum 500 karakter) dan disimpan di audit. Penolak bertindak di cabang
+        nilai itu, jadi izin checker harus menutupi cabang tersebut (403 `branch_not_allowed`).
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: paramValueId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ParamRejectRequest"
+      responses:
+        "200":
+          description: Nilai ditolak
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParamRejectResponse"
+        "400":
+          description: "`reason` kosong atau lebih dari 500 karakter (`params.reason` = `reason_missing`/`reason_too_long`)"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          description: "paramValueId tidak ditemukan"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "409":
+          description: |
+            Tidak bisa ditolak: bukan `PENDING` (`params.reason` = `not_pending`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
   /api/v1/audit:
     get:
       operationId: listAudit
@@ -1738,6 +1801,29 @@ components:
         status:
           type: string
           enum: [ACTIVE]
+
+    ParamRejectRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Alasan penolakan; disimpan di audit (`param.reject`).
+
+    ParamRejectResponse:
+      type: object
+      additionalProperties: false
+      required: [paramValueId, status]
+      properties:
+        paramValueId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [REJECTED]
 
     AuditItem:
       type: object
