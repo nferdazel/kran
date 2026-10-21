@@ -10,7 +10,7 @@ CREATE TABLE platform.idempotency_key (
   request_hash    text NOT NULL,
   response_status integer,
   response_body   jsonb,
-  created_at      timestamptz NOT NULL DEFAULT now(),
+  created_at      timestamptz NOT NULL,
   completed_at    timestamptz,
   expires_at      timestamptz NOT NULL,
   PRIMARY KEY (principal_id, key),

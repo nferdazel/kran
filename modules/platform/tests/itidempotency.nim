@@ -84,9 +84,10 @@ suite "idempotency: parameter & klaim":
     let key = "inflight-1"
     execScript(db, """
       INSERT INTO platform.idempotency_key
-        (principal_id, key, operation_id, request_hash, expires_at)
+        (principal_id, key, operation_id, request_hash, created_at, expires_at)
       VALUES ('11111111-1111-7111-8111-111111111111', 'inflight-1', 'party.create',
-              '""" & hashOf("""{"y":1}""") & """', '2026-10-22T00:00:00Z')
+              '""" & hashOf("""{"y":1}""") & """', '2026-10-21T00:00:00Z',
+              '2026-10-22T00:00:00Z')
       ON CONFLICT DO NOTHING
     """)
     let claim = claim(key, "party.create", hashOf("""{"y":1}"""))

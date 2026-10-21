@@ -5,7 +5,8 @@
 ## menjalankan operasi seperti biasa (T-085 yang mewajibkan header di endpoint rentan).
 ##
 ## Aturan replay (D-098): kunci + sidik jari sama → 200 + `Idempotent-Replayed`; kunci sama tapi
-## operasi/sidik jari beda → 409; klaim belum selesai → 409 + `Retry-After`. Respons non-2xx
+## operasi/sidik jari beda → 409. Klaim dan penutupannya satu transaksi, jadi baris in-flight yang
+## ter-COMMIT tidak muncul (D-117); cabang 409 + `Retry-After` bersifat defensif. Respons non-2xx
 ## tidak pernah disimpan: `body()` **wajib** mengembalikan 2xx; pelanggaran itu bug server.
 
 import std/[algorithm, json, options, strutils, times]
