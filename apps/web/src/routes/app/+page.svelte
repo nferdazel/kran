@@ -50,6 +50,12 @@
   let formReason = $state("");
   let formEffectiveFrom = $state("");
   let sending = $state(false);
+  /**
+   * Kunci idempotensi pengajuan parameter. Dibuat sekali per percobaan dan dipertahankan saat
+   * gagal 5xx/jaringan supaya klik ulang tidak membuat pengajuan ganda; dibersihkan setelah
+   * sukses atau kegagalan 4xx (isi permintaan berubah / tidak akan pernah valid).
+   */
+  let submitIdempotencyKey = $state("");
   let approvingId = $state("");
 
   /** Kunci yang bisa diajukan = kunci yang sedang punya nilai aktif (urutan dari server). */
@@ -182,16 +188,22 @@
     };
     if (formEffectiveFrom) body.effectiveFrom = formEffectiveFrom;
 
+    if (submitIdempotencyKey === "") submitIdempotencyKey = crypto.randomUUID();
     const { response, error } = await api.POST("/api/v1/params/{key}/changes", {
-      params: { path: { key: currentRow.key } },
+      params: {
+        path: { key: currentRow.key },
+        header: { "Idempotency-Key": submitIdempotencyKey },
+      },
       body,
     });
     sending = false;
 
     if (!response.ok) {
+      if (response.status < 500) submitIdempotencyKey = "";
       errorMessage = errorFrom(error);
       return;
     }
+    submitIdempotencyKey = "";
     notice = m.params_submit_success();
     formValue = "";
     formReason = "";
