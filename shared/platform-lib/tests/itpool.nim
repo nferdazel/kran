@@ -86,6 +86,13 @@ suite "pool: kueri & batas":
 const
   stressThreads = 8
 
+  ## Anggaran tunggu pinjaman koneksi untuk test stress (O-074). Test ini menguji **kebocoran/
+  ## invarian pool**, bukan SLA latensi: di gate penuh 8 thread + pool 3 + tunnel SSH bisa membuat
+  ## satu pinjaman menunggu > 15 dtk walau pool benar. Menaikkan anggaran tidak melonggarkan
+  ## assertion apa pun (galat tetap harus 0, `inUse` tetap 0, `created <= poolSize`); yang dilonggarkan
+  ## hanya "berapa lama boleh menunggu sebelum dinyatakan gagal".
+  stressAcquireTimeoutMs = 60_000
+
 type
   StressArgs = object
     pool: DbPool
@@ -142,7 +149,7 @@ proc runStress(pool: DbPool; iterations: int) =
 
 suite "pool: paralel antar-thread":
   test "8 thread pada poolSize=3: tidak ada kebocoran dan batas pool dihormati":
-    let pool = newDbPool(cfgWith(poolSize = 3, acquireTimeoutMs = 15_000))
+    let pool = newDbPool(cfgWith(poolSize = 3, acquireTimeoutMs = stressAcquireTimeoutMs))
     defer: pool.close()
     runStress(pool, 25)
 
@@ -168,7 +175,7 @@ suite "pool: paralel antar-thread":
     check unik.len == 3
 
   test "poolSize=1 dengan 8 thread: saling menunggu, bukan gagal":
-    let pool = newDbPool(cfgWith(poolSize = 1, acquireTimeoutMs = 15_000))
+    let pool = newDbPool(cfgWith(poolSize = 1, acquireTimeoutMs = stressAcquireTimeoutMs))
     defer: pool.close()
     runStress(pool, 5)
 

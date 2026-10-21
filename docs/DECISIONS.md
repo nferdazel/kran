@@ -2501,3 +2501,24 @@ worker mati, dan bisa besar walau worker sehat (impor massal). Ambang denyut seb
 **Limitasi yang diketahui:** worker yang crash-loop cepat (start → tulis denyut → mati) tetap
 menyegarkan denyut dan bisa lolos sebagai `ok`; sinyal usia `IN_FLIGHT`/`PENDING` sengaja tidak
 dipakai karena rawan alarm palsu saat impor massal — pantau `platform.outbox` untuk kasus itu.
+
+---
+
+## D-102 — Anggaran tunggu test stress pool mengikuti tujuan test, bukan SLA latensi
+
+**Konteks.** `shared/platform-lib/tests/itpool.nim` menekan pool (8 thread, pool 3, 200 iterasi).
+Di satu run `./task ci` (T-072) 4 iterasi gagal `PoolError: timeout menunggu koneksi` pada
+15 dtk, sementara run lain hijau dan tanpa indikasi kebocoran (O-074). Penyebab paling mungkin
+latensi tunnel SSH ke DB dev + penjadwalan thread, bukan invarian pool.
+
+**Keputusan.** Anggaran tunggu test stress dinaikkan ke **60 dtk** lewat konstanta
+`stressAcquireTimeoutMs` dengan komentar yang menyebut tujuan test. Tidak ada assertion yang
+dilonggarkan: galat tetap harus 0, `inUse` kembali 0, `created <= poolSize`, jumlah iterasi tetap.
+Yang berubah hanya berapa lama satu pinjaman boleh menunggu sebelum dinyatakan gagal.
+
+**Ditolak.** Menurunkan iterasi/thread (mengurangi daya uji kebocoran); menaikkan `poolSize`
+(menguji kontensi yang berbeda); menandai test `skip` saat lambat (menyembunyikan kebocoran nyata).
+
+**Konsekuensi.** Test stress tidak lagi menjadi alarm latensi DB dev — itu memang bukan tujuannya.
+Bila `timeout` muncul lagi, penyebabnya harus diselidiki sebagai kebocoran/koneksi mati, bukan
+dinaikkan ambangnya lagi tanpa bukti.
