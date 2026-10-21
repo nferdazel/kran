@@ -281,6 +281,24 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "platform.idempotency.ttl_hours",
+    "module": "platform",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.idempotency.ttl_hours",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 8760
+    }
+  },
+  {
     "key": "platform.realtime.max_topic_len",
     "module": "platform",
     "valueType": "integer",

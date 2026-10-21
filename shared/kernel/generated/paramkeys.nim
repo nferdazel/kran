@@ -23,6 +23,7 @@ const paramKeys*: seq[string] = @[
   "party.kyc.risk_levels",
   "platform.calendar.fiscal_year_start_month",
   "platform.calendar.weekend_days",
+  "platform.idempotency.ttl_hours",
   "platform.realtime.max_topic_len",
   "platform.realtime.max_topics",
   "platform.security.lockout_minutes",
@@ -77,6 +78,8 @@ const P_party_kyc_risk_levels* = ParamKey[JsonNode]("party.kyc.risk_levels")
 const P_platform_calendar_fiscal_year_start_month* = ParamKey[int64]("platform.calendar.fiscal_year_start_month")
 
 const P_platform_calendar_weekend_days* = ParamKey[JsonNode]("platform.calendar.weekend_days")
+
+const P_platform_idempotency_ttl_hours* = ParamKey[int64]("platform.idempotency.ttl_hours")
 
 const P_platform_realtime_max_topic_len* = ParamKey[int64]("platform.realtime.max_topic_len")
 
@@ -288,6 +291,17 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.platform.calendar.weekend_days",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "platform.idempotency.ttl_hours",
+    module: "platform",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.platform.idempotency.ttl_hours",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(
