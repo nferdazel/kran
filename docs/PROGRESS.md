@@ -1981,4 +1981,17 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
   Bukti: `pnpm --filter @kran/ui test` 107 test, `pnpm --filter @kran/web build` hijau,
   `playwright a11y.spec.ts` 8/8 (axe 2 tema x 2 locale + toggle tema/bahasa).
 - Sisa T-079: halaman demo tabel ledger (menunggu T-082), 1366x768@125%, cetak, keyboard tabel.
+### Fase 2 batch 1: T-082 + T-083 + fondasi T-079 (21 Okt 2026)
+
+- **Deploy `be3aad3`** (merge `feat/fase2`): `/readyz` 200, `kran-api`/`kran-worker`/`kran-alert.timer`
+  aktif, migrasi tetap 36 (tanpa migrasi baru), `GET /api/v1/ledger/balances` membalas 401 tanpa sesi
+  (rute hidup), font IBM Plex tersaji dari `https://cbs.qouver.com/fonts/...` (200, 19 KB).
+- **T-082 DONE** (reviewer APPROVE r2, CI 847 `[OK]`): saldo GL opening/period/closing; snapshot hanya
+  dipakai untuk periode CLOSED yang terekonsiliasi; test membuktikan cache basi ditolak (jurnal
+  backdated), mutation check menangkap `snapshotMatches → true`.
+- **T-083 DONE**: `formatMoney` tanpa float, half-even, 4/2 desimal.
+- **T-079 fondasi live**: palette D-075, IBM Plex self-host, skala tipe/radius/kontrol, CSS tabel.
+  Sisa: layar tabel ledger (menyusul bersama UI T-082), verifikasi 1366x768@125%, cetak, keyboard tabel.
+- **Perbaikan ops**: seed demo dipindah ke `packs/demo/manual/` karena `--dev` memuat semua
+  `packs/*/seed/*.sql` (sempat membuat CI merah: `created_by` null). Data demo produksi tetap ada.
 
