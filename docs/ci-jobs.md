@@ -74,3 +74,11 @@ Kedua job yang menjalankan test Nim memasang `libpcre3`: `std/re` (validasi pola
 `libpcre.so.3` lewat dynlib saat jalan. macOS membawanya, image runtime produksi juga
 (`apps/api/Dockerfile`), tetapi runner `ubuntu-latest` tidak — gejalanya
 `could not load: libpcre.so(.3|.1|)` di awal binary test, bukan kegagalan assertion.
+
+## Anggaran waktu test stress pool (O-074, D-102)
+
+`itpool` menekan pool (8 thread, pool 3) untuk membuktikan **tidak ada kebocoran**. Di gate penuh,
+latensi tunnel DB dev bisa membuat satu pinjaman menunggu > 15 dtk walau pool benar; karena itu
+anggaran tunggunya 60 dtk (`stressAcquireTimeoutMs`). Assertion tidak berubah: galat harus 0,
+`inUse` kembali 0, `created <= poolSize`. Timeout yang masih muncul = indikasi kebocoran/koneksi
+mati, bukan alasan menaikkan ambang lagi.

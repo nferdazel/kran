@@ -1890,3 +1890,14 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
 - Mutation check: hapus `heartbeat(app)` di loop batch → `itposting` **FAILED**; hapus klausa
   throttle → test throttle **FAILED**; ubah/matikan ambang → test keputusan **FAILED**.
 - `./task ci` hijau (`828 [OK]`).
+
+### O-007 restore drill + O-074 test stress (21 Okt 2026)
+
+- **O-007**: restore nyata `kran_2026-10-21_02-00-01.dump` ke DB latihan `kran_verify_restore_20261021`:
+  `pg_restore` exit 0, 0 stderr, 1 dtk; schema dimiliki `kran_app` (restore **tanpa** `--no-owner`;
+  versi `--no-owner` membuat `verify-audit` gagal karena ACL, bukan dump rusak). Hitungan identik
+  dengan produksi (35 migrasi, 5 audit, 0 jurnal/party/outbox; 32 tabel, 3 trigger audit).
+  `ctl verify-audit` di DB hasil restore: **rantai audit utuh (5 entri)**. DB latihan dihapus.
+  Prosedur bulanan: `docs/runbooks/restore-drill.md`.
+- **O-074**: test stress pool memakai `stressAcquireTimeoutMs = 60 dtk` (D-102); assertion tidak
+  berubah. `./task test itpool` hijau.
