@@ -1970,4 +1970,15 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
   REJECTED, risiko LOW/MEDIUM/HIGH). Idempoten; tidak ikut deploy (seed produksi hanya
   `packs/*/generated/*.sql`). Tanpa `identity_doc` (butuh field crypto) dan tanpa `risk_rating`
   (append-only). Cara hapus: `docs/runbooks/demo-data.md`.
+### T-079 fondasi + T-083 (21 Okt 2026)
+
+- **T-083 SELESAI**: `formatMoney` berbasis string + BigInt (tanpa float), pembulatan half-even,
+  4 desimal default / 2 untuk tunai, locale id-ID/en-US; `formatIdr` dihapus. Test unit termasuk
+  nilai di atas 2^53 dan kasus tepat setengah.
+- **T-079 fondasi**: token D-075 (canvas hangat, teks, aksen hijau tua, positif/negatif, hairline,
+  tint status), IBM Plex self-host + `OFL.txt`, skala tipe 11-28px, radius 2/4/6/8, kontrol 32/44px,
+  elevasi hanya overlay, CSS tabel semantik (garis rambut, angka rata kanan, baris total sticky).
+  Bukti: `pnpm --filter @kran/ui test` 107 test, `pnpm --filter @kran/web build` hijau,
+  `playwright a11y.spec.ts` 8/8 (axe 2 tema x 2 locale + toggle tema/bahasa).
+- Sisa T-079: halaman demo tabel ledger (menunggu T-082), 1366x768@125%, cetak, keyboard tabel.
 

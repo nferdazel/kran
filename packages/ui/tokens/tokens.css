@@ -1,30 +1,68 @@
 /*
- * Design tokens KRAN (spec §15). Sumber kebenaran tunggal untuk warna, spasi, radius,
- * tipografi, elevasi, dan motion.
+ * Design tokens KRAN (spec §15, DESIGN.md D-075).
  *
  * Aturan:
- *  - Token warna SEMANTIK (bukan nama warna mentah), mis. `--color-text` bukan `--blue`.
- *  - Tema dipilih lewat atribut `<html data-theme="light|dark">` (spec §15.3); skrip inline
- *    kecil di `apps/web/src/app.html` menetapkan tema sebelum render untuk mencegah flash.
- *  - Kontras pasangan token diuji otomatis di `packages/ui/tests/tokens.contrast.test.ts`
- *    (spec §15.4): teks normal >= 4.5:1, teks besar & UI >= 3:1, pada KEDUA tema.
- *  - Status tidak boleh hanya lewat warna (spec §15.4) — selalu teks/ikon.
+ *  - Token warna SEMANTIK, bukan nama warna mentah (`--color-text`, bukan `--brown`).
+ *  - Tema lewat `<html data-theme="light|dark">`; skrip `static/theme.js` memasangnya sebelum
+ *    render untuk mencegah flash (spec §15.3).
+ *  - Kontras setiap pasangan diuji otomatis di `packages/ui/tests/tokens.contrast.test.ts`
+ *    pada KEDUA tema, termasuk status di atas tint (spec §15.4).
+ *  - Status tidak pernah hanya warna: selalu teks + bentuk/ikon (spec §15.4).
+ *  - Arah "buku besar, kulit hangat": angka `tabular-nums`, garis rambut, elevasi hanya overlay.
  */
 
-:root {
-  /* Tipografi */
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  --text-xs: 0.75rem;
-  --text-sm: 0.875rem;
-  --text-base: 1rem;
-  --text-lg: 1.125rem;
-  --text-xl: 1.375rem;
-  --text-2xl: 1.75rem;
-  --line-height-tight: 1.25;
-  --line-height-base: 1.5;
+/* IBM Plex (OFL, self-host — tanpa CDN saat runtime). Berkas: apps/web/static/fonts/. */
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-sans-latin-500-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2");
+}
 
-  /* Spasi (skala 4px) */
+:root {
+  /* Tipografi (DESIGN §2): 11 / 12 / 13 / 14 / 16 / 20 / 28 px. */
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --text-2xs: 0.6875rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.75rem;
+  --line-height-tight: 1.2;
+  --line-height-base: 1.45;
+
+  /* Spasi (grid 4px): 4 / 8 / 12 / 16 / 24 / 32 / 48. */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -34,66 +72,107 @@
   --space-7: 3rem;
   --space-8: 4rem;
 
-  /* Radius */
+  /* Radius (DESIGN §5): chip 2, kontrol 4, kartu 6, dialog 8. Tidak ada pill. */
+  --radius-chip: 0.125rem;
   --radius-sm: 0.25rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  --radius-full: 9999px;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
 
-  /* Elevasi */
-  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.08);
-  --shadow-2: 0 2px 8px rgb(0 0 0 / 0.12);
-  --shadow-3: 0 8px 24px rgb(0 0 0 / 0.16);
+  /* Elevasi hanya untuk overlay (DESIGN §5). */
+  --shadow-1: 0 2px 4px rgb(28 27 25 / 0.1);
+  --shadow-2: 0 8px 24px rgb(28 27 25 / 0.16);
 
-  /* Motion */
+  /* Motion (DESIGN §8): 120 ms hover/focus, 180 ms expand/dialog, 0 ms untuk angka. */
   --motion-duration-fast: 120ms;
-  --motion-duration-base: 200ms;
+  --motion-duration-base: 180ms;
   --motion-ease: cubic-bezier(0.2, 0, 0, 1);
 
-  /* Ukuran kontrol (spec §17.1: target minimal 24x24 CSS px) */
+  /* Ukuran kontrol & tabel (DESIGN §4). */
   --control-min-size: 1.5rem;
+  --control-height: 2rem;
+  --control-height-primary: 2.75rem;
+  --row-height: 2.125rem;
+  --row-height-compact: 2rem;
+  --row-height-two: 2.5rem;
+  --toolbar-height: 48px;
 
   /* Layout */
   --layout-max-width: 72rem;
+
+  /* Merek/identitas (dipakai header, bukan permukaan angka). */
+  --brand-ink: #1f4b43;
 }
 
-/* ---- Token warna per tema (spec §15.1, §15.3) ---- */
+/* ---- Token warna per tema (DESIGN §3) ---- */
 
 [data-theme="light"] {
   color-scheme: light;
-  --color-bg: #ffffff;
-  --color-surface: #f4f6f9;
+  --color-bg: #faf8f5;
+  --color-surface: #ffffff;
   --color-surface-raised: #ffffff;
-  --color-text: #12181f;
-  --color-text-muted: #565f6d;
+  --color-selected: #eef2ef;
+  --color-text: #1c1b19;
+  --color-text-muted: #5c5a55;
+  --color-text-2: #5c5a55;
   --color-text-on-primary: #ffffff;
-  --color-border: #7b8695;
-  --color-primary: #1d4ed8;
-  --color-primary-hover: #1a44bd;
-  --color-danger: #b42318;
-  --color-success: #0a6b45;
-  --color-warning: #92400e;
-  --color-focus-ring: #1d4ed8;
+  --color-hairline: #e3ded6;
+  --color-border: #8a857c;
+  --color-primary: #1f4b43;
+  --color-primary-hover: #183b35;
+  --color-accent: #1f4b43;
+  --color-success: #1a6b4a;
+  --color-positive: #1a6b4a;
+  --color-danger: #9b2c2c;
+  --color-negative: #9b2c2c;
+  --color-warning: #8a5a00;
+  --color-info: #2a4c8f;
+  --color-focus-ring: #1f4b43;
+  --color-success-tint: #eaf3ee;
+  --color-danger-tint: #f8eceb;
+  --color-warning-tint: #f6f0e3;
+  --color-info-tint: #ebf0f7;
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --color-bg: #0e1116;
-  --color-surface: #171c24;
-  --color-surface-raised: #1e2530;
-  --color-text: #eef2f7;
-  --color-text-muted: #aab4c2;
-  --color-text-on-primary: #0e1116;
-  --color-border: #6b7684;
-  --color-primary: #8ab4ff;
-  --color-primary-hover: #a9c6ff;
-  --color-danger: #ff9b90;
-  --color-success: #64d19a;
-  --color-warning: #f2c14e;
-  --color-focus-ring: #8ab4ff;
+  --color-bg: #171614;
+  --color-surface: #1e1d1b;
+  --color-surface-raised: #24221f;
+  --color-selected: #23302c;
+  --color-text: #edeae4;
+  --color-text-muted: #a8a49c;
+  --color-text-2: #a8a49c;
+  --color-text-on-primary: #171614;
+  --color-hairline: #2a2926;
+  --color-border: #7c7770;
+  --color-primary: #6fbfaa;
+  --color-primary-hover: #85cdb9;
+  --color-accent: #6fbfaa;
+  --color-success: #5fc08a;
+  --color-positive: #5fc08a;
+  --color-danger: #e88b84;
+  --color-negative: #e88b84;
+  --color-warning: #d9a84e;
+  --color-info: #8fb3e8;
+  --color-focus-ring: #6fbfaa;
+  --color-success-tint: #1b2a24;
+  --color-danger-tint: #2e2020;
+  --color-warning-tint: #2a2519;
+  --color-info-tint: #1d2430;
 }
 
-/* Spec §17.1: indikator fokus selalu terlihat, kontras >= 3:1. */
+/* Angka uang & kolom jurnal: digit tetap, desimal sejajar (DESIGN §6). */
+.kran-num {
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+.kran-money {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+  text-align: end;
+  white-space: nowrap;
+}
+
+/* Spec §17.1: indikator fokus selalu terlihat, kontras >= 3:1 termasuk surface raised. */
 :focus-visible {
   outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
@@ -102,12 +181,16 @@
 /* Spec §15.5: dukung preferensi kontras tinggi. */
 @media (prefers-contrast: more) {
   [data-theme="light"] {
-    --color-text-muted: #3a424e;
-    --color-border: #3a424e;
+    --color-text-muted: #3a3833;
+    --color-text-2: #3a3833;
+    --color-border: #3a3833;
+    --color-hairline: #8a857c;
   }
   [data-theme="dark"] {
-    --color-text-muted: #d6dde6;
-    --color-border: #9aa5b3;
+    --color-text-muted: #d6d2ca;
+    --color-text-2: #d6d2ca;
+    --color-border: #9a958c;
+    --color-hairline: #6b665f;
   }
 }
 
@@ -115,6 +198,7 @@
 @media (forced-colors: active) {
   :root {
     --color-border: CanvasText;
+    --color-hairline: CanvasText;
     --color-focus-ring: Highlight;
   }
 }
@@ -126,16 +210,27 @@
     --color-bg: #ffffff;
     --color-surface: #ffffff;
     --color-surface-raised: #ffffff;
+    --color-selected: #f2f0ec;
     --color-text: #000000;
     --color-text-muted: #333333;
+    --color-text-2: #333333;
     --color-text-on-primary: #000000;
+    --color-hairline: #999999;
     --color-border: #000000;
     --color-primary: #000000;
     --color-primary-hover: #000000;
-    --color-danger: #000000;
+    --color-accent: #000000;
     --color-success: #000000;
+    --color-positive: #000000;
+    --color-danger: #000000;
+    --color-negative: #000000;
     --color-warning: #000000;
+    --color-info: #000000;
     --color-focus-ring: #000000;
+    --color-success-tint: #ffffff;
+    --color-danger-tint: #ffffff;
+    --color-warning-tint: #ffffff;
+    --color-info-tint: #ffffff;
   }
 }
 

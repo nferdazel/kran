@@ -2673,3 +2673,16 @@ repo tidak pernah menjadi angka sah untuk klien.
 (sistem tetap jalan) melainkan kepatuhan: angka default bisa berbeda dari ketentuan yang berlaku
 untuk institusi tersebut.
 
+---
+
+## D-115 — Arah visual D-075 diratifikasi; T-079 dimulai
+
+**Keputusan.** Pemilik menyetujui arah `DESIGN.md` ("buku besar, kulit hangat") dan memerintahkan
+Fase 2 dimulai dengan syarat UI/UX bermutu, bukan hasil default AI. Ratifikasi ini yang ditunggu
+D-075 sebelum token dipakai.
+
+**Konsekuensi.** Token lama (biru) diganti palette D-075; IBM Plex Sans/Mono di-self-host (OFL,
+tanpa CDN); angka uang memakai Plex Mono + `tabular-nums`; radius/ elevasi mengikuti DESIGN.
+Pekerjaan UI wajib melewati antislop mode `during` + Delivery Gate, dan `DESIGN.md` menjadi sumber
+arah, bukan selera agen.
+

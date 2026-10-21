@@ -7,7 +7,7 @@
    * token, tema, bahasa, ICU plural, format `Intl`, dan pola status/landmark bekerja.
    */
   import * as m from "#lib/paraglide/messages.js";
-  import { formatAccountCount, formatIdr } from "#lib/app/format.js";
+  import { formatAccountCount, formatMoney } from "#lib/app/format.js";
 
   // Dihitung di body komponen (bukan module scope) supaya ikut dibangun ulang saat bahasa
   // berganti — layout membungkus children dengan `{#key locale}`.
@@ -48,6 +48,6 @@
   </p>
   <p>
     <span class="kran-muted">{m.common_demo_amount()}:</span>
-    {formatIdr(contohUang)}
+    {formatMoney(contohUang)}
   </p>
 </section>

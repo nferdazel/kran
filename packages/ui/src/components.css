@@ -20,7 +20,7 @@
   z-index: 100;
   padding-block: var(--space-2);
   padding-inline: var(--space-4);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--color-primary);
   color: var(--color-text-on-primary);
   text-decoration: none;
@@ -116,10 +116,11 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  padding-block: var(--space-2);
-  padding-inline: var(--space-4);
+  min-block-size: var(--control-height);
+  padding-block: 0;
+  padding-inline: var(--space-3);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--color-surface-raised);
   color: var(--color-text);
   font: inherit;
@@ -137,10 +138,11 @@
 }
 
 .kran-select {
-  padding-block: var(--space-2);
+  min-block-size: var(--control-height);
+  padding-block: 0;
   padding-inline: var(--space-2);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--color-surface-raised);
   color: var(--color-text);
   font: inherit;
@@ -169,10 +171,9 @@
 .kran-card {
   padding-block: var(--space-4);
   padding-inline: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-md);
   background: var(--color-surface-raised);
-  box-shadow: var(--shadow-1);
 }
 
 .kran-card + .kran-card {
@@ -250,7 +251,7 @@
   padding-block: var(--space-1);
   padding-inline: var(--space-2);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--color-surface-raised);
   cursor: pointer;
   min-block-size: var(--control-min-size);
@@ -276,9 +277,12 @@
 
 /* Aksi utama satu halaman: satu tombol beraksen, sisanya netral (Part 3 "one deliberate accent"). */
 .kran-button--primary {
+  min-block-size: var(--control-height-primary);
+  padding-inline: var(--space-4);
   border-color: var(--color-primary);
   background: var(--color-primary);
   color: var(--color-text-on-primary);
+  font-weight: 500;
 }
 
 .kran-button--primary:hover {
@@ -303,10 +307,11 @@
 
 .kran-input,
 .kran-select {
-  padding-block: var(--space-2);
+  min-block-size: var(--control-height);
+  padding-block: 0;
   padding-inline: var(--space-2);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--color-surface-raised);
   color: var(--color-text);
   font: inherit;
@@ -330,26 +335,118 @@
   justify-content: space-between;
 }
 
-/* Tabel data: pembungkus menggulir mendatar agar tidak meluber di layar sempit (R-03). */
+/* Tabel data (DESIGN §6): semantik, garis rambut, angka rata kanan + tabular.
+ * Pembungkus = region berlabel (role/tabindex ada di markup), scroll mendatar di layar sempit. */
 .kran-table-wrap {
   overflow-x: auto;
+  border-radius: var(--radius-sm);
+}
+
+.kran-table-wrap:focus-visible {
+  outline-offset: 0;
 }
 
 .kran-table {
   inline-size: 100%;
   border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.kran-table caption {
+  padding-block-end: var(--space-2);
+  text-align: start;
+  color: var(--color-text-muted);
 }
 
 .kran-table th,
 .kran-table td {
-  padding-block: var(--space-2);
-  padding-inline-end: var(--space-3);
+  block-size: var(--row-height);
+  padding-block: 0;
+  padding-inline: var(--space-3) var(--space-3);
   text-align: start;
-  vertical-align: top;
-  border-block-end: 1px solid var(--color-border);
+  vertical-align: middle;
+  border-block-end: 1px solid var(--color-hairline);
+}
+
+.kran-table th:first-child,
+.kran-table td:first-child {
+  padding-inline-start: var(--space-4);
 }
 
 .kran-table th {
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
+  font-weight: 500;
   color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.kran-table thead th {
+  border-block-end-color: var(--color-border);
+}
+
+.kran-table tbody tr:last-child td,
+.kran-table tbody tr:last-child th {
+  border-block-end: 0;
+}
+
+/* Angka: kolom terpisah, rata kanan, digit tetap (DESIGN §6).
+ * Jangan `user-select: none` — nilai harus bisa disalin. */
+.kran-table .kran-num,
+.kran-table .kran-money {
+  text-align: end;
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.kran-table .kran-money {
+  padding-inline-end: calc(var(--space-3) + 4px);
+}
+
+/* Baris total: menempel di bawah region, hairline 2px di atas, latar surface. */
+.kran-table tfoot td,
+.kran-table tfoot th {
+  position: sticky;
+  inset-block-end: 0;
+  background: var(--color-surface);
+  border-block-start: 2px solid var(--color-border);
+  border-block-end: 0;
+  font-weight: 600;
+}
+
+.kran-table .kran-table__selected {
+  background: var(--color-selected);
+}
+
+/* Tabel padat untuk daftar panjang (32px) dan dua tingkat (40px). */
+.kran-table--compact td,
+.kran-table--compact th {
+  block-size: var(--row-height-compact);
+}
+
+.kran-table--two-line td,
+.kran-table--two-line th {
+  block-size: var(--row-height-two);
+}
+
+/* Status baris: teks + ikon sudah di markup; warna hanya penguat. */
+.kran-table .kran-status--ok,
+.kran-table .kran-status--warning,
+.kran-table .kran-status--danger {
+  font-weight: 500;
+}
+
+@media print {
+  .kran-nav,
+  .kran-toolbar,
+  .kran-skip-link {
+    display: none !important;
+  }
+  .kran-table thead {
+    display: table-header-group;
+  }
+  .kran-table tr {
+    break-inside: avoid;
+  }
+  .kran-table-wrap {
+    overflow: visible;
+  }
 }
