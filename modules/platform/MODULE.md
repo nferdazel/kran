@@ -13,7 +13,8 @@ user/role/session, workflow, notifikasi (spec §8, §9.2).
 | Repo outbox | `infrastructure/outbox_repo.nim` | `appendEvent`, `claimBatch`, `markDone/Failed`, `redrive` |
 | Repo denyut worker | `infrastructure/worker_repo.nim` | `touchWorkerHeartbeat`, `workerHeartbeatAgeSeconds`, `deadEventCount` (O-081) |
 | Repo inbox | `infrastructure/inbox_repo.nim` | `claimInbox` (de-dup per konsumen) |
-| Migrasi | `migrations/0001..0019` | schema, audit_log, outbox+inbox, parameter, kalender, auth, NOTIFY outbox (realtime) |
+| Repo idempotency | `infrastructure/idempotency_repo.nim` | `claimIdempotency`, `completeIdempotency` (T-084) |
+| Migrasi | `migrations/0001..0021` | schema, audit_log, outbox+inbox, parameter, kalender, auth, NOTIFY outbox (realtime), heartbeat, SoD, idempotency |
 
 `api.nim` (permukaan publik modul) menyusul bersama T-005 (parameter) / T-006 (auth):
 saat ini belum ada konsumen lintas-modul, jadi belum ada yang perlu diekspor.
@@ -29,6 +30,9 @@ saat ini belum ada konsumen lintas-modul, jadi belum ada yang perlu diekspor.
 - `platform.app_user`, `platform.role`, `platform.permission`, `platform.role_permission`,
   `platform.user_role`, `platform.role_conflict`, `platform.session` — identitas, akses, sesi (T-006).
 - `platform.user_mfa` — faktor kedua per akun (TOTP); rahasia **terenkripsi** (T-046).
+- `platform.idempotency_key` — klaim `Idempotency-Key` per principal (T-084, D-098). Baris hanya
+  ditulis di dalam transaksi bisnis; respons non-2xx tidak pernah disimpan; TTL dari parameter
+  `platform.idempotency.ttl_hours`.
 
 ## Invarian yang tidak boleh dilanggar
 

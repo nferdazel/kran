@@ -14,10 +14,11 @@ import ../domain/idempotency
 
 type
   IdempotencyClaim* = object
-    ## `decision == idemProceed` berarti baris klaim baru dibuat; pemanggil wajib menjalankan
-    ## operasi lalu memanggil `completeIdempotency` sebelum COMMIT.
+    ## `decision == idemProceed` berarti klaim baru (atau baris lama yang sudah kedaluwarsa
+    ## diganti); pemanggil wajib menjalankan operasi lalu memanggil `completeIdempotency`
+    ## sebelum COMMIT.
     decision*: IdempotencyDecision
-    status*: int ## hanya untuk `idemReplay`
+    status*: int ## status tersimpan; hanya untuk `idemReplay`
     body*: string ## JSON tersimpan; hanya untuk `idemReplay`
     expiresAt*: string ## ISO UTC; dipakai pemanggil untuk menghitung `Retry-After`
 
@@ -25,9 +26,14 @@ const expiresAtSelect = """
   to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')"""
 
 proc claimIdempotency*(db: DbConn,
-    principalId, key, operationId, fingerprint, expiresAtIso: string): IdempotencyClaim =
-  ## `true` = klaim baru; `false` = sudah ada (replay/konflik). Baris yang belum selesai
-  ## (mis. proses sebelumnya mati setelah COMMIT klaim) dilaporkan `idemInFlight`.
+    principalId, key, operationId, fingerprint, nowIso, expiresAtIso: string): IdempotencyClaim =
+  ## Baris kedaluwarsa diperlakukan sebagai tidak ada: dihapus dulu, lalu klaim baru dibuat.
+  ## Tanpa ini, TTL hanya berlaku kalau daycloser kebetulan sudah berjalan (D-098).
+  discard db.execAffectedRows(sql"""
+    DELETE FROM platform.idempotency_key
+    WHERE principal_id = ?::uuid AND key = ? AND expires_at <= ?::timestamptz""",
+    principalId, key, nowIso)
+
   let inserted = db.execAffectedRows(sql"""
     INSERT INTO platform.idempotency_key
       (principal_id, key, operation_id, request_hash, expires_at)
@@ -45,9 +51,10 @@ proc claimIdempotency*(db: DbConn,
     FROM platform.idempotency_key
     WHERE principal_id = ?::uuid AND key = ?"""), principalId, key)
   if row.len == 0:
-    # Baris hilang di antara INSERT dan SELECT (daycloser menyapu baris kedaluwarsa).
-    # Perlakuan paling aman: minta pemanggil mencoba lagi, bukan menjalankan operasi bisnis.
-    return IdempotencyClaim(decision: idemInFlight, expiresAt: expiresAtIso)
+    # Baris hilang di antara INSERT dan SELECT (disapu proses lain). Perlakuan paling aman:
+    # minta pemanggil mencoba lagi, bukan menjalankan operasi bisnis tanpa klaim. `expiresAt`
+    # kosong membuat helper memakai `Retry-After` minimum (1 detik), bukan satu TTL penuh.
+    return IdempotencyClaim(decision: idemInFlight)
 
   if row[0] != operationId or row[1] != fingerprint:
     return IdempotencyClaim(decision: idemMismatch, expiresAt: row[4])
@@ -58,15 +65,16 @@ proc claimIdempotency*(db: DbConn,
   IdempotencyClaim(decision: idemReplay, status: parseInt(row[2]), body: row[3],
     expiresAt: row[4])
 
-proc completeIdempotency*(db: DbConn, principalId, key: string, status: int,
+proc completeIdempotency*(db: DbConn, principalId, key, completedAtIso: string, status: int,
     body: string): bool =
-  ## Menutup klaim dengan respons sukses. `false` = klaim tidak ditemukan/ sudah tertutup —
-  ## dianggap bug pemanggil, bukan kondisi normal (klaim ditulis di transaksi yang sama).
+  ## Menutup klaim dengan respons sukses pada waktu yang dikirim pemanggil (jam yang sama dengan
+  ## klaim, sehingga test memakai jam tetap). `false` = klaim tidak ada/sudah tertutup — bug
+  ## pemanggil, bukan kondisi normal.
   db.execAffectedRows(sql"""
     UPDATE platform.idempotency_key
-    SET response_status = ?, response_body = ?::jsonb, completed_at = now()
+    SET response_status = ?, response_body = ?::jsonb, completed_at = ?::timestamptz
     WHERE principal_id = ?::uuid AND key = ? AND response_status IS NULL""",
-    status, body, principalId, key) == 1
+    status, body, completedAtIso, principalId, key) == 1
 
 proc idempotencyCount*(db: DbConn, principalId: string): int64 =
   ## Untuk test: jumlah baris klaim milik satu principal.
