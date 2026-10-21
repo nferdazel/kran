@@ -1931,3 +1931,20 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
 - **Runbook**: `docs/runbooks/rotasi-sandi-db.md` (O-069) dan `docs/runbooks/db-roles.md` (O-010 —
   prosedur siap, **belum diterapkan**; butuh pemisahan URL migrasi + persetujuan pemilik).
 - **Catatan basi**: O-060 ditutup (worker sudah ada/aktif).
+
+### O-010/O-092/O-091/O-001/O-016 (21 Okt 2026)
+
+- **O-010 SELESAI**: role `kran_runtime` (api/worker/ctl) tanpa `UPDATE/DELETE/TRUNCATE` pada
+  `platform.audit_log`; `kran_app` tetap owner untuk migrasi/seed. Deploy memakai
+  `env/kran-migrate.env` (owner) terpisah dari `KRAN_DATABASE_URL` (runtime) — skrip deploy diubah
+  dan dibuktikan lewat deploy `fe94570`. Verifikasi produksi: `UPDATE platform.audit_log` sebagai
+  runtime → `permission denied`; denyut worker segar; `migrate --check` dengan URL owner → exit 0;
+  `/readyz` 200.
+- **O-092 SELESAI**: `ops/scripts/kran-alert.sh` + `kran-alert.timer` (2 menit) di server; alert
+  Telegram saat `/readyz` non-200 (dengan detail check gagal) atau `outbox DEAD > 0`; anti-spam
+  transisi + ulang 6 jam. Dry-run sehat dan gagal terbukti, timer aktif.
+- **O-091 tetap pemilik**: `sudo` di VPS butuh password, agent tidak bisa reboot; unit `generated`
+  dan aktif.
+- **O-001/O-016 SEBAGIAN**: `docs/compliance/register-validation.md` dan
+  `docs/compliance/sod-matrix-draft.md` (daftar kerja + draf), menunggu sign-off compliance.
+- **T-078** diputuskan sebagai fitur tersendiri (D-112), bukan syarat penutupan Fase 0/1.

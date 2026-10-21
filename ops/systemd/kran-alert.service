@@ -1,0 +1,10 @@
+[Unit]
+Description=KRAN alert: /readyz + outbox DEAD (O-092)
+Documentation=file:/srv/qouver/apps/kran/monorepo/docs/runbooks/ops-cli.md
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/srv/qouver/scripts/kran-alert.sh
+StandardOutput=append:/home/sachiel/kran-alert.log
+StandardError=append:/home/sachiel/kran-alert.log

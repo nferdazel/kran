@@ -2621,3 +2621,18 @@ prosedur rutin.
 
 **Konsekuensi.** Rotasi kunci untuk data non-identitas boleh mengikuti runbook; kunci lama tidak
 dihapus sampai verifikasi baca selesai.
+
+---
+
+## D-112 — T-078 (detail PII party) adalah fitur tersendiri, bukan syarat penutupan Fase 0/1
+
+**Keputusan.** Fase 1 berhenti pada `party` CIF + identitas dasar + KYC profile + risk rating
+(T-070/T-071), sesuai §23 "CIF+KYC dasar". T-078 (nama resmi, tanggal lahir, jenis kelamin,
+pekerjaan, alamat; tabel `party_person`/`party_org`/`address` dengan crypto per kolom) adalah
+**fitur baru** yang menyentuh PII + enkripsi, wajib reviewer manusia (`HUMAN-REVIEW-REQUIRED`),
+kontrak OpenAPI, dan test at-rest. Mengerjakannya sebagai tambahan cepat di akhir batch berisiko
+menghasilkan skema/crypto setengah matang.
+
+**Konsekuensi.** T-078 tetap `TODO` di backlog sebagai kandidat Fase 2; penutupan Fase 0/1 tidak
+menunggunya. Bila pilot membutuhkan alamat/tanggal lahir, jadwalkan T-078 sebagai task tersendiri
+dengan reviewer.
