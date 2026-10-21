@@ -1,0 +1,11 @@
+[Unit]
+Description=Jalankan alert KRAN tiap 2 menit (O-092)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Unit=kran-alert.service
+
+[Install]
+WantedBy=timers.target

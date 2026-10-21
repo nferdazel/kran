@@ -108,3 +108,14 @@ Satu baris = `waktu-UTC seq=<n> hash=<hash>`, ditambahkan (append) ke berkas. Si
 menyatakan rantai utuh, dan `seq`/`hash` baris anchor terakhir harus sama dengan baris
 `platform.audit_log` pada `seq` itu. Jadwalkan harian (systemd timer/cron) — penjadwalan adalah
 tindakan host, bukan dari repo.
+
+## Alert otomatis (O-092)
+
+`kran-alert.timer` (user systemd, tiap 2 menit) menjalankan `ops/scripts/kran-alert.sh`:
+
+- `/readyz` non-200 → pesan berisi nama check yang gagal + detail;
+- `platform.outbox` status `DEAD` > 0 → pesan berisi jumlahnya;
+- pengiriman lewat `tg-notify.sh` (kanal Telegram yang sama dengan backup), hanya saat status
+  berubah dan diulang tiap 6 jam selama masih bermasalah;
+- status terakhir di `~/.local/state/kran-alert/last`, log di `~/kran-alert.log`;
+- uji tanpa kirim: `/srv/qouver/scripts/kran-alert.sh --dry-run`.
