@@ -1995,3 +1995,21 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
 - **Perbaikan ops**: seed demo dipindah ke `packs/demo/manual/` karena `--dev` memuat semua
   `packs/*/seed/*.sql` (sempat membuat CI merah: `created_by` null). Data demo produksi tetap ada.
 
+
+### UI Fase 2: layar buku besar (21 Okt 2026)
+
+- **Deploy `283a8c5`**: `/readyz` 200; aset `entry/start.BL8pFj2M.js` di produksi identik dengan build
+  lokal; `/app/ledger` dan `/login` 200; `GET /api/v1/ledger/{balances,periods}` 401 tanpa sesi;
+  font IBM Plex 200.
+- **Layar kerja**: `/app/ledger` — judul + meta periode (status, sumber angka, waktu hitung), kontrol
+  periode/muat ulang/cetak, tabel 8 kolom dengan baris total, state loading/empty/error/denied.
+- **Pintu masuk**: `/` mengalihkan ke `/app/ledger` bila ada sesi, ke `/login` bila tidak; halaman
+  demo kartu dihapus; login mendarat di buku besar.
+- **Perbaikan struktur nyata** (ditemukan lewat screenshot): grid shell 4 anak/3 baris membuat `<nav>`
+  setinggi 426px dan konten terdorong ke tengah; `body` masih margin 8px; tabel lebar memperlebar
+  halaman di ponsel. Diperbaiki dengan `auto auto 1fr auto`, reset dokumen, `minmax(0,1fr)` +
+  `min-inline-size: 0`.
+- **Bukti**: `task ci` hijau (24 e2e, termasuk flow login → buku besar + axe 2 tema),
+  `pnpm --filter @kran/ui test` 110, screenshot 1440 terang/gelap, 1366x768, 390px.
+- **Catatan jujur**: cetak baru diuji lewat `@media print` (belum cetak fisik/PDF); 1366x768@125%
+  belum diverifikasi formal; kolom kode/akun belum sticky saat tabel digulir di ponsel.
