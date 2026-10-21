@@ -1948,3 +1948,14 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
 - **O-001/O-016 SEBAGIAN**: `docs/compliance/register-validation.md` dan
   `docs/compliance/sod-matrix-draft.md` (daftar kerja + draf), menunggu sign-off compliance.
 - **T-078** diputuskan sebagai fitur tersendiri (D-112), bukan syarat penutupan Fase 0/1.
+
+### O-016 + O-091 (21 Okt 2026)
+
+- **O-016 SELESAI (pasangan wajib)**: migrasi `0020_platform_sod_param_conflict.sql`
+  (`param_checker`/`param_maker`) + test `itauth.nim` dengan kode peran nyata. Sebelumnya tabel
+  `platform.role_conflict` kosong, jadi mekanisme SoD tidak pernah aktif.
+- **O-091 SELESAI**: reboot mesin dijalankan 21 Okt 2026 (izin pemilik). Setelah boot: 10 service
+  user aktif (`kran-api`, `kran-worker`, qouver/sds/majadu/fond/skyward/victoriametrics/webhook/
+  qouver-postgres), `kran-alert.timer` + `system-health.timer` + `qouver-restore-verify.timer`
+  aktif, `/readyz` 200, denyut worker segar, container podman lengkap.
+
