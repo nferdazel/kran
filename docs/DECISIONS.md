@@ -2686,3 +2686,15 @@ tanpa CDN); angka uang memakai Plex Mono + `tabular-nums`; radius/ elevasi mengi
 Pekerjaan UI wajib melewati antislop mode `during` + Delivery Gate, dan `DESIGN.md` menjadi sumber
 arah, bukan selera agen.
 
+
+---
+
+## D-116 — Region tabel buku besar tetap fokusabel meski `role="region"`
+
+**Keputusan.** Wadah tabel saldo (`/app/ledger`) memakai `role="region"` + `tabindex="0"` supaya
+pengguna keyboard bisa menggulir tabel lebar dengan tombol panah (WCAG 2.1.1). `svelte-check`
+memperingatkan `a11y_no_noninteractive_tabindex` untuk pola ini; peringatan ditekan dengan
+`svelte-ignore` beralasan, bukan dengan melonggarkan gate.
+
+**Konsekuensi.** Gate svelte-check kembali 0 warning. Kalau nanti wadah itu berisi kontrol
+interaktif langsung, `tabindex` harus ditinjau ulang agar tidak menambah tab stop ganda.

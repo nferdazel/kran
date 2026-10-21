@@ -221,6 +221,9 @@
     <p class="kran-muted">{m.ledger_empty_hint()}</p>
   </div>
 {:else if balances}
+  <!-- Area bergulir harus bisa difokus supaya bisa digeser dengan keyboard (WCAG 2.1.1);
+       svelte-check menganggap `region` selalu noninteraktif. Pengecualian ini dicatat di D-116. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
     class="kran-table-wrap ledger-region"
     role="region"
