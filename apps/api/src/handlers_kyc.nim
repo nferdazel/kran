@@ -11,10 +11,10 @@ import std/[json, options, strutils]
 import mummy
 import db_connector/db_postgres
 
-import kernel/[ids, paramkey, result]
+import kernel/[clock, ids, paramkey, result]
 import kernel/generated/paramkeys
 import "platform-lib/crypto/fieldcrypto"
-import platform/domain/[audit, event, scope]
+import platform/domain/[audit, event, idempotency, scope]
 import platform/infrastructure/[audit_repo, auth_service, outbox_repo, param_repo]
 import party/domain/[identity, jsonparam, kyc]
 import party/infrastructure/[kyc_repo, party_repo]
@@ -24,6 +24,7 @@ import ./context
 import ./db_bridge
 import ./handlers_party # `permissionPartyRead` — satu sumber kode izin
 import ./http_util
+import ./idempotency
 import ./problem
 
 const
@@ -226,6 +227,12 @@ proc handleAddIdentityDoc*(app: AppContext, req: Request) {.gcsafe.} =
 
         status = 201
         payload = docJson(doc))
+  except IdempotencyConfigError:
+    status = 500
+    problem = "konfigurasi idempotensi di server tidak sah"
+  except IdempotencyStateError:
+    status = 500
+    problem = "idempotensi gagal diselesaikan"
   except KycConfigError as e:
     status = 500
     problem = "konfigurasi KYC/dokumen di server tidak sah: " & e.msg
@@ -340,76 +347,87 @@ proc handleRiskRating*(app: AppContext, req: Request) {.gcsafe.} =
     req.respondProblem(pkBadRequest, "Bad Request", e.msg)
     return
 
+  if not requireIdempotencyKey(req):
+    req.respondProblem(pkBadRequest, "Bad Request", "Idempotency-Key wajib diisi")
+    return
+
+  let asOf = businessDateIso(app.clock)
+
   var status = 0
   var problem = ""
   var payload = newJObject()
+  var outcome = IdempotentOutcome(decision: idemProceed)
   try:
-    withDbTx(app.pool, proc(db: DbConn) {.gcsafe.} =
+    outcome = withDbTx(app.pool, proc(db: DbConn): IdempotentOutcome {.gcsafe.} =
       dbCalls:
-        let party = partyById(db, partyId.value())
-        if party.isNone:
-          status = 404
-          problem = "party tidak ditemukan"
-          raise newException(ValueError, problem)
-        if not authorizedAtBranch(db, principal, $(party.get().branchId), permissionKycManage):
-          status = 403
-          problem = "izin " & permissionKycManage & " tidak dipegang di cabang party ini"
-          raise newException(ValueError, problem)
+        withIdempotency(db, principal, req, "party.risk.change", $node, asOf,
+            app.clock.now(),
+          proc(): tuple[status: int, payload: JsonNode] {.gcsafe.} =
+          dbCalls:
+            let party = partyById(db, partyId.value())
+            if party.isNone:
+              status = 404
+              problem = "party tidak ditemukan"
+              raise newException(ValueError, problem)
+            if not authorizedAtBranch(db, principal, $(party.get().branchId), permissionKycManage):
+              status = 403
+              problem = "izin " & permissionKycManage & " tidak dipegang di cabang party ini"
+              raise newException(ValueError, problem)
 
-        let asOf = businessDateIso(app.clock)
-        let allowed = listParam(db, keyString(P_party_kyc_risk_levels), asOf)
-        let level = parseRiskLevel(node.jsonField("level"), allowed)
-        if level.isNone:
-          status = 400
-          problem = "level tidak termasuk daftar parameter party.kyc.risk_levels"
-          raise newException(ValueError, problem)
+            let allowed = listParam(db, keyString(P_party_kyc_risk_levels), asOf)
+            let level = parseRiskLevel(node.jsonField("level"), allowed)
+            if level.isNone:
+              status = 400
+              problem = "level tidak termasuk daftar parameter party.kyc.risk_levels"
+              raise newException(ValueError, problem)
 
-        var months = 0
-        try:
-          months = reviewMonthsOf(mapParam(db, keyString(P_party_kyc_review_months), asOf),
-            level.get())
-        except ValueError as e:
-          raise newException(KycConfigError, e.msg)
+            var months = 0
+            try:
+              months = reviewMonthsOf(mapParam(db, keyString(P_party_kyc_review_months), asOf),
+                level.get())
+            except ValueError as e:
+              raise newException(KycConfigError, e.msg)
 
-        let due = reviewDueDate(asOf, months)
-        let userId = parseId(principal.user.userId).value()
-        var assessment = RiskAssessment(
-          ratingId: newId(app.clock),
-          partyId: party.get().partyId,
-          level: level.get(),
-          reason: reason,
-          assessedAt: "",
-          assessedBy: principal.user.userId)
-        assessment.assessedAt = insertRiskAssessment(db, assessment)
-        # Profil memakai cap waktu yang **sama** dengan baris riwayat, bukan `now()` kedua.
-        applyRiskAssessment(db, party.get().partyId, level.get(), due, userId,
-          assessment.assessedAt)
+            let due = reviewDueDate(asOf, months)
+            let userId = parseId(principal.user.userId).value()
+            var assessment = RiskAssessment(
+              ratingId: newId(app.clock),
+              partyId: party.get().partyId,
+              level: level.get(),
+              reason: reason,
+              assessedAt: "",
+              assessedBy: principal.user.userId)
+            assessment.assessedAt = insertRiskAssessment(db, assessment)
+            # Profil memakai cap waktu yang **sama** dengan baris riwayat, bukan `now()` kedua.
+            applyRiskAssessment(db, party.get().partyId, level.get(), due, userId,
+              assessment.assessedAt)
 
-        let ctx = auditContextFor(principal, req, app.clock, reason,
-          $(party.get().branchId))
-        discard appendAudit(db, newAuditEntry(ctx, "party.risk.change", "risk_rating",
-          $assessment.ratingId, app.clock,
-          businessDate = businessDateFor(db, institutionScope(), asOf),
-          after = %*{"ratingId": $assessment.ratingId, "partyId": $party.get().partyId,
-                     "level": level.get(), "nextReviewDue": due}))
-        # Event tanpa PII: identitas party + tingkat risiko + jadwal re-KYC.
-        discard appendEvent(db, newOutboxEvent(newId(app.clock), "party.risk_changed", "party",
-          $party.get().partyId, "party.risk_changed:" & $assessment.ratingId, %*{
-            "partyId": $party.get().partyId,
-            "ratingId": $assessment.ratingId,
-            "level": level.get(),
-            "nextReviewDue": due,
-          }))
+            let ctx = auditContextFor(principal, req, app.clock, reason,
+              $(party.get().branchId))
+            discard appendAudit(db, newAuditEntry(ctx, "party.risk.change", "risk_rating",
+              $assessment.ratingId, app.clock,
+              businessDate = businessDateFor(db, institutionScope(), asOf),
+              after = %*{"ratingId": $assessment.ratingId, "partyId": $party.get().partyId,
+                         "level": level.get(), "nextReviewDue": due}))
+            # Event tanpa PII: identitas party + tingkat risiko + jadwal re-KYC.
+            discard appendEvent(db, newOutboxEvent(newId(app.clock), "party.risk_changed", "party",
+              $party.get().partyId, "party.risk_changed:" & $assessment.ratingId, %*{
+                "partyId": $party.get().partyId,
+                "ratingId": $assessment.ratingId,
+                "level": level.get(),
+                "nextReviewDue": due,
+              }))
 
-        status = 201
-        payload = %*{
-          "ratingId": $assessment.ratingId,
-          "partyId": $party.get().partyId,
-          "level": level.get(),
-          "reason": reason,
-          "assessedAt": assessment.assessedAt,
-          "nextReviewDue": due,
-        })
+            status = 201
+            payload = %*{
+              "ratingId": $assessment.ratingId,
+              "partyId": $party.get().partyId,
+              "level": level.get(),
+              "reason": reason,
+              "assessedAt": assessment.assessedAt,
+              "nextReviewDue": due,
+            }
+            (status, payload)))
   except KycConfigError as e:
     status = 500
     problem = "konfigurasi KYC di server tidak sah: " & e.msg
@@ -420,6 +438,10 @@ proc handleRiskRating*(app: AppContext, req: Request) {.gcsafe.} =
   except DbError:
     status = 500
     problem = "penilaian risiko gagal disimpan"
+
+  if outcome.decision != idemProceed:
+    discard req.respondIdempotent(outcome)
+    return
 
   case status
   of 201: req.respondJson(201, payload)

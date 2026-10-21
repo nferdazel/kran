@@ -9,9 +9,9 @@ import std/[json, options]
 import mummy
 import db_connector/db_postgres
 
-import kernel/[ids, paramkey, result]
+import kernel/[clock, ids, paramkey, result]
 import kernel/generated/paramkeys
-import platform/domain/[audit, event, scope]
+import platform/domain/[audit, event, idempotency, scope]
 import platform/infrastructure/[audit_repo, auth_service, outbox_repo, param_repo]
 import party/domain/[cif, jsonparam, kyc, party]
 import party/infrastructure/[kyc_repo, party_repo]
@@ -20,6 +20,7 @@ import ./access
 import ./context
 import ./db_bridge
 import ./http_util
+import ./idempotency
 import ./problem
 
 const
@@ -75,103 +76,122 @@ proc handleCreateParty*(app: AppContext, req: Request) {.gcsafe.} =
     req.respondProblem(pkBadRequest, "Bad Request", "branchId harus UUID yang sah")
     return
 
+  if not requireIdempotencyKey(req):
+    req.respondProblem(pkBadRequest, "Bad Request", "Idempotency-Key wajib diisi")
+    return
+
+  let asOf = businessDateIso(app.clock)
+
   var status = 0
   var problem = ""
   var payload = newJObject()
+  var outcome = IdempotentOutcome(decision: idemProceed)
   try:
-    withDbTx(app.pool, proc(db: DbConn) {.gcsafe.} =
+    outcome = withDbTx(app.pool, proc(db: DbConn): IdempotentOutcome {.gcsafe.} =
       dbCalls:
-        if not authorizedAtBranch(db, principal.get(), branchRaw, permissionPartyCreate):
-          status = 403
-          problem = "izin " & permissionPartyCreate & " tidak dipegang di cabang ini"
-          raise newException(ValueError, problem)
+        withIdempotency(db, principal.get(), req, "party.create", $node, asOf,
+          app.clock.now(),
+        proc(): tuple[status: int, payload: JsonNode] {.gcsafe.} =
+          dbCalls:
+            if not authorizedAtBranch(db, principal.get(), branchRaw, permissionPartyCreate):
+              status = 403
+              problem = "izin " & permissionPartyCreate & " tidak dipegang di cabang ini"
+              raise newException(ValueError, problem)
 
-        let asOf = businessDateIso(app.clock)
-        let patternNode =
-          try:
-            activeValueJson(db, keyString(P_party_cif_format), asOf,
-              lookupFor(institutionScope()))
-          except ValueError:
-            raise newException(PartyConfigError, "parameter party.cif.format tidak terbaca")
-        if patternNode.kind != JString:
-          raise newException(PartyConfigError, "parameter party.cif.format bukan string")
-        let pattern = patternNode.getStr()
+            let patternNode =
+              try:
+                activeValueJson(db, keyString(P_party_cif_format), asOf,
+                  lookupFor(institutionScope()))
+              except ValueError:
+                raise newException(PartyConfigError, "parameter party.cif.format tidak terbaca")
+            if patternNode.kind != JString:
+              raise newException(PartyConfigError, "parameter party.cif.format bukan string")
+            let pattern = patternNode.getStr()
 
-        # Pola divalidasi **sebelum** nomor urut dipakai supaya salah konfigurasi tidak
-        # meninggalkan lubang CIF yang tidak perlu.
-        try:
-          discard formatCif(pattern, 1)
-        except ValueError:
-          raise newException(PartyConfigError, "parameter party.cif.format tidak sah")
+            # Pola divalidasi **sebelum** nomor urut dipakai supaya salah konfigurasi tidak
+            # meninggalkan lubang CIF yang tidak perlu.
+            try:
+              discard formatCif(pattern, 1)
+            except ValueError:
+              raise newException(PartyConfigError, "parameter party.cif.format tidak sah")
 
-        # Nama sudah divalidasi sebelum transaksi, jadi `ValueError` dari sini hanya bisa datang
-        # dari pola/lebar sequence (mis. nomor urut melewati `{seq:N}`) — kondisi operator.
-        let party =
-          try:
-            newParty(newId(app.clock), kind.get(), displayName, branchId.value(),
-              pattern, nextCifSeq(db))
-          except ValueError:
-            raise newException(PartyConfigError,
-              "nomor CIF tidak bisa dibentuk dari pola parameter")
-        let userId = parseId(principal.get().user.userId).value()
-        let createdAt = insertParty(db, party, userId)
+            # Nama sudah divalidasi sebelum transaksi, jadi `ValueError` dari sini hanya bisa datang
+            # dari pola/lebar sequence (mis. nomor urut melewati `{seq:N}`) — kondisi operator.
+            let party =
+              try:
+                newParty(newId(app.clock), kind.get(), displayName, branchId.value(),
+                  pattern, nextCifSeq(db))
+              except ValueError:
+                raise newException(PartyConfigError,
+                  "nomor CIF tidak bisa dibentuk dari pola parameter")
+            let userId = parseId(principal.get().user.userId).value()
+            let createdAt = insertParty(db, party, userId)
 
-        # Profil KYC lahir bersama party (T-071): status PENDING, rating awal + jadwal re-KYC
-        # dari parameter. Parameter rusak = kondisi operator (500), bukan permintaan salah.
-        var riskLevel = ""
-        var reviewMonths = 0
-        try:
-          let levelNode = activeValueJson(db, keyString(P_party_kyc_default_risk_level), asOf,
-            lookupFor(institutionScope()))
-          if levelNode.kind != JString:
-            raise newException(PartyConfigError,
-              "parameter party.kyc.default_risk_level bukan teks")
-          let levels = stringList(activeValueJson(db, keyString(P_party_kyc_risk_levels), asOf,
-            lookupFor(institutionScope())), "party.kyc.risk_levels")
-          # Tingkat awal **wajib** anggota daftar tingkat; kalau tidak, profil KYC akan memuat
-          # nilai yang tidak dikenal validasi lain (salah konfigurasi, bukan permintaan salah).
-          let canonical = parseRiskLevel(levelNode.getStr(), levels)
-          if canonical.isNone:
-            raise newException(PartyConfigError,
-              "party.kyc.default_risk_level tidak termasuk party.kyc.risk_levels")
-          riskLevel = canonical.get()
-          reviewMonths = reviewMonthsOf(activeValueJson(db, keyString(P_party_kyc_review_months),
-            asOf, lookupFor(institutionScope())), riskLevel)
-        except PartyConfigError:
-          raise
-        except ValueError as e:
-          raise newException(PartyConfigError, e.msg)
-        discard insertKycProfile(db, party.partyId, riskLevel, reviewDueDate(asOf, reviewMonths),
-          userId)
-        let ctx = auditContextFor(principal.get(), req, app.clock, "buat party", branchRaw)
-        discard appendAudit(db, newAuditEntry(
-          ctx, "party.create", "party", $party.partyId, app.clock,
-          businessDate = businessDateFor(db, institutionScope(), asOf),
-          after = %*{
-            "partyId": $party.partyId,
-            "cif": party.cif,
-            "kind": $party.kind,
-            "branchId": $party.branchId,
-            "status": $party.status,
-          }))
-        # Nama **tidak** ikut event: data pribadi tidak perlu meninggalkan modul ini.
-        discard appendEvent(db, newOutboxEvent(newId(app.clock), "party.onboarded", "party",
-          $party.partyId, "party.onboarded:" & $party.partyId, %*{
-            "partyId": $party.partyId,
-            "cif": party.cif,
-            "kind": $party.kind,
-            "branchId": $party.branchId,
-          }))
-        status = 201
-        payload = %*{
-          "partyId": $party.partyId,
-          "cif": party.cif,
-          "kind": $party.kind,
-          "displayName": party.displayName,
-          "status": $party.status,
-          "branchId": $party.branchId,
-          "createdAt": createdAt,
-        })
+            # Profil KYC lahir bersama party (T-071): status PENDING, rating awal + jadwal re-KYC
+            # dari parameter. Parameter rusak = kondisi operator (500), bukan permintaan salah.
+            var riskLevel = ""
+            var reviewMonths = 0
+            try:
+              let levelNode = activeValueJson(db, keyString(P_party_kyc_default_risk_level), asOf,
+                lookupFor(institutionScope()))
+              if levelNode.kind != JString:
+                raise newException(PartyConfigError,
+                  "parameter party.kyc.default_risk_level bukan teks")
+              let levels = stringList(activeValueJson(db, keyString(P_party_kyc_risk_levels), asOf,
+                lookupFor(institutionScope())), "party.kyc.risk_levels")
+              # Tingkat awal **wajib** anggota daftar tingkat; kalau tidak, profil KYC akan memuat
+              # nilai yang tidak dikenal validasi lain (salah konfigurasi, bukan permintaan salah).
+              let canonical = parseRiskLevel(levelNode.getStr(), levels)
+              if canonical.isNone:
+                raise newException(PartyConfigError,
+                  "party.kyc.default_risk_level tidak termasuk party.kyc.risk_levels")
+              riskLevel = canonical.get()
+              reviewMonths = reviewMonthsOf(activeValueJson(db, keyString(
+                  P_party_kyc_review_months),
+                asOf, lookupFor(institutionScope())), riskLevel)
+            except PartyConfigError:
+              raise
+            except ValueError as e:
+              raise newException(PartyConfigError, e.msg)
+            discard insertKycProfile(db, party.partyId, riskLevel, reviewDueDate(asOf,
+                reviewMonths),
+              userId)
+            let ctx = auditContextFor(principal.get(), req, app.clock, "buat party", branchRaw)
+            discard appendAudit(db, newAuditEntry(
+              ctx, "party.create", "party", $party.partyId, app.clock,
+              businessDate = businessDateFor(db, institutionScope(), asOf),
+              after = %*{
+                "partyId": $party.partyId,
+                "cif": party.cif,
+                "kind": $party.kind,
+                "branchId": $party.branchId,
+                "status": $party.status,
+              }))
+            # Nama **tidak** ikut event: data pribadi tidak perlu meninggalkan modul ini.
+            discard appendEvent(db, newOutboxEvent(newId(app.clock), "party.onboarded", "party",
+              $party.partyId, "party.onboarded:" & $party.partyId, %*{
+                "partyId": $party.partyId,
+                "cif": party.cif,
+                "kind": $party.kind,
+                "branchId": $party.branchId,
+              }))
+            status = 201
+            payload = %*{
+              "partyId": $party.partyId,
+              "cif": party.cif,
+              "kind": $party.kind,
+              "displayName": party.displayName,
+              "status": $party.status,
+              "branchId": $party.branchId,
+              "createdAt": createdAt,
+            }
+            (status, payload)))
+  except IdempotencyConfigError:
+    status = 500
+    problem = "konfigurasi idempotensi di server tidak sah"
+  except IdempotencyStateError:
+    status = 500
+    problem = "idempotensi gagal diselesaikan"
   except PartyConfigError:
     status = 500
     # Pesan tidak memuat nilai parameter maupun data party; menyebut modulnya supaya operator tahu
@@ -184,6 +204,10 @@ proc handleCreateParty*(app: AppContext, req: Request) {.gcsafe.} =
   except DbError:
     status = 500
     problem = "party gagal disimpan"
+
+  if outcome.decision != idemProceed:
+    discard req.respondIdempotent(outcome)
+    return
 
   case status
   of 201: req.respondJson(201, payload)

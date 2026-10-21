@@ -119,13 +119,20 @@ type
     body: JsonNode
     setCookie: string
 
+var idemCounter = 0
+
+proc autoIdemKey(): string =
+  inc idemCounter
+  "it-fase1-" & $idemCounter
+
 proc call(verb, path, payload, token: string, idempotencyKey = ""): Reply =
   let client = newHttpClient(timeout = 60_000)
   defer: client.close()
   if token.len > 0:
     client.headers["Cookie"] = CookieName & "=" & token
-  if idempotencyKey.len > 0:
-    client.headers["Idempotency-Key"] = idempotencyKey
+  if verb != "GET":
+    client.headers["Idempotency-Key"] =
+      if idempotencyKey.len > 0: idempotencyKey else: autoIdemKey()
   var response: Response
   if verb == "GET":
     response = client.get(baseUrl & path)

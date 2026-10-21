@@ -112,8 +112,16 @@ type
     code: int
     body: JsonNode
     setCookie: string
+    replayed: string
 
-proc call(verb, path, payload, token: string): Reply =
+var idemCounter = 0
+
+proc autoIdemKey(): string =
+  inc idemCounter
+  "it-party-" & $idemCounter
+
+proc call(verb, path, payload, token: string, idempotencyKey = "",
+    sendKey = true): Reply =
   let client = newHttpClient(timeout = 15000)
   defer: client.close()
   if token.len > 0:
@@ -124,9 +132,13 @@ proc call(verb, path, payload, token: string): Reply =
   else:
     if payload.len > 0:
       client.headers["Content-Type"] = "application/json"
+    if sendKey:
+      client.headers["Idempotency-Key"] =
+        if idempotencyKey.len > 0: idempotencyKey else: autoIdemKey()
     response = client.post(baseUrl & path, payload)
   result.code = response.code.int
   result.setCookie = response.headers.getOrDefault("Set-Cookie")
+  result.replayed = response.headers.getOrDefault("Idempotent-Replayed")
   result.body = newJNull()
   if response.body.len > 0:
     try:
@@ -137,8 +149,9 @@ proc call(verb, path, payload, token: string): Reply =
 proc getJson(path: string, token = ""): Reply =
   call("GET", path, "", token)
 
-proc postJson(path: string, payload: JsonNode, token = ""): Reply =
-  call("POST", path, $payload, token)
+proc postJson(path: string, payload: JsonNode, token = "", key = "",
+    sendKey = true): Reply =
+  call("POST", path, $payload, token, key, sendKey)
 
 proc tokenOf(reply: Reply): string =
   for part in reply.setCookie.split(';'):
@@ -310,3 +323,25 @@ suite "party: konfigurasi parameter":
     # Setelah pola dipulihkan, jalur normal jalan lagi (bukti pemulihan, bukan asumsi).
     let ok = postJson(PartyPath, partyBody(name = "CIF Pulih"), token)
     check ok.code == 201
+
+test "idempotency: kunci sama replay, isi beda 409, tanpa header 400":
+  let token = tokenOf(login(MakerUser))
+  let body = partyBody(name = "Idem Party")
+  let first = postJson(PartyPath, body, token, "idem-party-1")
+  check first.code == 201
+  let partyId = first.body["partyId"].getStr()
+
+  let replay = postJson(PartyPath, body, token, "idem-party-1")
+  check replay.code == 200
+  check replay.replayed == "true"
+  check replay.body["partyId"].getStr() == partyId
+
+  let conflict = postJson(PartyPath, partyBody(name = "Idem Party Lain"), token,
+    "idem-party-1")
+  check conflict.code == 409
+  checkProblem(PartyPath, "POST", "409", conflict.body)
+
+  let tanpaKunci = postJson(PartyPath, partyBody(name = "Tanpa Kunci"), token,
+    sendKey = false)
+  check tanpaKunci.code == 400
+  checkProblem(PartyPath, "POST", "400", tanpaKunci.body)

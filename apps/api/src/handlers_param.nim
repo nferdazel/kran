@@ -12,13 +12,14 @@ import db_connector/db_postgres
 
 import kernel/[clock, ids, paramkey, result]
 
-import platform/domain/[audit, authz, param]
+import platform/domain/[audit, authz, idempotency, param]
 import platform/infrastructure/[audit_repo, auth_repo, auth_service, param_repo]
 
 import ./access
 import ./context
 import ./db_bridge
 import ./http_util
+import ./idempotency
 import ./problem
 const
   ## Batas ukuran daftar (permintaan & jawaban). Nilainya **teknis** — pertahanan terhadap UI
@@ -194,51 +195,70 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
   # tetap menuntut grant tanpa batas cabang, sama seperti sebelum T-058.
   let targetBranch = if scope == pstBranch: scopeId else: ""
 
+  if not requireIdempotencyKey(req):
+    req.respondParamReason(pkBadRequest, "Bad Request", "idempotency_key_required",
+      "header Idempotency-Key wajib diisi")
+    return
+
+  let asOf = businessDateIso(app.clock)
+
   var status = 0
   var payload = newJObject()
+  var outcome = IdempotentOutcome(decision: idemProceed)
   var problem = ""
   var problemCode = ""
   try:
-    withDbTx(app.pool, proc(db: DbConn) {.gcsafe.} =
+    outcome = withDbTx(app.pool, proc(db: DbConn): IdempotentOutcome {.gcsafe.} =
       dbCalls:
-        # D-047 (O-044): wewenang mengusulkan tidak boleh melebihi wewenang melihat — pengaju
-        # hanya boleh mengajukan nilai untuk scope yang ia sendiri boleh baca.
-        if not mayReadScope(grantsOf(db, principal.get().user.userId), permissionParamRead,
-                            scope, scopeId):
-          problemCode = "scope_not_readable"
-          raise newException(ValueError,
-            "scope " & scopeType & " di luar wewenang baca pengaju")
-        if not authorizedAtBranch(db, principal.get(), targetBranch, permissionParamSubmit):
-          problemCode = reasonBranchNotAllowed
-          raise newException(ValueError, branchNotAllowedProblem(targetBranch, "pengaju"))
-        let ctx = auditContextFor(principal.get(), req, app.clock, reason, targetBranch)
-        # Aturan lintas-parameter diperiksa lebih dulu: nilai yang sah sendiri bisa tetap ditolak
-        # bila digabung nilai lain yang sudah aktif (lihat `sessionPolicyCandidateProblem`).
-        let combinationProblem = sessionPolicyCandidateProblem(db, key, node["value"],
-          effectiveFrom, effectiveTo, businessDateIso(app.clock))
-        if combinationProblem.len > 0:
-          problemCode = "invalid_combination"
-          raise newException(ValueError, combinationProblem)
-        # O-043 (D-046 butir 8): `effectiveTo` hanya boleh bila ada penerus yang menutup tanggal
-        # berakhirnya — diperiksa sebelum menulis apa pun, dan diperiksa lagi saat persetujuan.
-        let gapProblem = effectiveToGapProblem(db, key, scopeType, scopeId, effectiveFrom,
-          effectiveTo)
-        if gapProblem.len > 0:
-          problemCode = "effective_to_without_successor"
-          raise newException(ValueError, gapProblem)
-        let outcome = submitChange(db, ctx, app.clock, key, scopeType, scopeId, node["value"],
-          effectiveFrom, effectiveTo, reason)
-        status = 201
-        payload = %*{
-          "paramValueId": outcome.paramValueId,
-          "key": key,
-          "status": $pvPending,
-          "scopeType": scopeType,
-          "scopeId": scopeId,
-          "value": node["value"],
-          "effectiveFrom": effectiveFrom,
-          "effectiveTo": effectiveTo,
-          "reason": reason})
+        withIdempotency(db, principal.get(), req, "param.submit", $node, asOf,
+            app.clock.now(),
+          proc(): tuple[status: int, payload: JsonNode] {.gcsafe.} =
+          dbCalls:
+            # D-047 (O-044): wewenang mengusulkan tidak boleh melebihi wewenang melihat — pengaju
+            # hanya boleh mengajukan nilai untuk scope yang ia sendiri boleh baca.
+            if not mayReadScope(grantsOf(db, principal.get().user.userId), permissionParamRead,
+                                scope, scopeId):
+              problemCode = "scope_not_readable"
+              raise newException(ValueError,
+                "scope " & scopeType & " di luar wewenang baca pengaju")
+            if not authorizedAtBranch(db, principal.get(), targetBranch, permissionParamSubmit):
+              problemCode = reasonBranchNotAllowed
+              raise newException(ValueError, branchNotAllowedProblem(targetBranch, "pengaju"))
+            let ctx = auditContextFor(principal.get(), req, app.clock, reason, targetBranch)
+            # Aturan lintas-parameter diperiksa lebih dulu: nilai yang sah sendiri bisa tetap ditolak
+            # bila digabung nilai lain yang sudah aktif (lihat `sessionPolicyCandidateProblem`).
+            let combinationProblem = sessionPolicyCandidateProblem(db, key, node["value"],
+              effectiveFrom, effectiveTo, businessDateIso(app.clock))
+            if combinationProblem.len > 0:
+              problemCode = "invalid_combination"
+              raise newException(ValueError, combinationProblem)
+            # O-043 (D-046 butir 8): `effectiveTo` hanya boleh bila ada penerus yang menutup tanggal
+            # berakhirnya — diperiksa sebelum menulis apa pun, dan diperiksa lagi saat persetujuan.
+            let gapProblem = effectiveToGapProblem(db, key, scopeType, scopeId, effectiveFrom,
+              effectiveTo)
+            if gapProblem.len > 0:
+              problemCode = "effective_to_without_successor"
+              raise newException(ValueError, gapProblem)
+            let outcome = submitChange(db, ctx, app.clock, key, scopeType, scopeId, node["value"],
+              effectiveFrom, effectiveTo, reason)
+            status = 201
+            payload = %*{
+              "paramValueId": outcome.paramValueId,
+              "key": key,
+              "status": $pvPending,
+              "scopeType": scopeType,
+              "scopeId": scopeId,
+              "value": node["value"],
+              "effectiveFrom": effectiveFrom,
+              "effectiveTo": effectiveTo,
+              "reason": reason}
+            (status, payload)))
+  except IdempotencyConfigError:
+    status = 500
+    problem = "konfigurasi idempotensi di server tidak sah"
+  except IdempotencyStateError:
+    status = 500
+    problem = "idempotensi gagal diselesaikan"
   except ValueError as e:
     # Validasi definisi/scope/schema/tipe nilai — semuanya kesalahan permintaan, bukan kesalahan
     # server (spec §10.4: pesannya menyebut aturan yang dilanggar). `problemCode` sudah diisi
@@ -252,6 +272,10 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
   except DbError:
     status = 500
     problem = "perubahan parameter gagal disimpan"
+
+  if outcome.decision != idemProceed:
+    discard req.respondIdempotent(outcome)
+    return
 
   case status
   of 201: req.respondJson(201, payload)

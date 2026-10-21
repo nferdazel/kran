@@ -157,8 +157,16 @@ type
     code: int
     body: JsonNode
     setCookie: string
+    replayed: string
 
-proc call(verb, path, payload, token: string): Reply =
+var idemCounter = 0
+
+proc autoIdemKey(): string =
+  inc idemCounter
+  "it-auth-" & $idemCounter
+
+proc call(verb, path, payload, token: string, idempotencyKey = "",
+    sendKey = true): Reply =
   # Endpoint kata sandi menjalankan PBKDF2 (verifikasi + riwayat N) dan biner debug ±20x lebih
   # lambat dari release (T-060/O-068: ganti kata sandi saja ≈ 13,6 s). Batas 15 s membuat test
   # gagal karena waktu, bukan perilaku → 60 s; assertion tidak dilonggarkan.
@@ -172,9 +180,13 @@ proc call(verb, path, payload, token: string): Reply =
   else:
     if payload.len > 0:
       client.headers["Content-Type"] = "application/json"
+    if sendKey:
+      client.headers["Idempotency-Key"] =
+        if idempotencyKey.len > 0: idempotencyKey else: autoIdemKey()
     response = client.post(baseUrl & path, payload)
   result.code = response.code.int
   result.setCookie = response.headers.getOrDefault("Set-Cookie")
+  result.replayed = response.headers.getOrDefault("Idempotent-Replayed")
   if response.body.len > 0:
     try:
       result.body = parseJson(response.body)
@@ -184,8 +196,9 @@ proc call(verb, path, payload, token: string): Reply =
 proc getJson(path: string, token = ""): Reply =
   call("GET", path, "", token)
 
-proc postJson(path: string, payload: JsonNode, token = ""): Reply =
-  call("POST", path, $payload, token)
+proc postJson(path: string, payload: JsonNode, token = "", key = "",
+    sendKey = true): Reply =
+  call("POST", path, $payload, token, key, sendKey)
 
 proc portOf(url: string): int =
   ## Port dari `http://127.0.0.1:<port>` — dipakai klien WebSocket (yang memakai host/port,
@@ -1218,3 +1231,24 @@ suite "akhir periode tanpa penerus lewat HTTP (O-043, D-046 butir 8)":
     check approve.code == 409
     check approve.body["params"]["reason"].getStr() == "effective_to_without_successor"
     checkProblem("/api/v1/params/changes/{paramValueId}/approve", "POST", "409", approve.body)
+
+test "idempotency param submit: replay, konflik, tanpa header":
+  let token = tokenOf(login("dev.maker"))
+  let path = "/api/v1/params/platform.realtime.max_topics/changes"
+  let body = %*{"value": 40, "reason": "uji idempotensi pengajuan"}
+
+  let first = postJson(path, body, token, key = "idem-param-1")
+  check first.code == 201
+  let paramValueId = first.body["paramValueId"].getStr()
+
+  let replay = postJson(path, body, token, key = "idem-param-1")
+  check replay.code == 200
+  check replay.replayed == "true"
+  check replay.body["paramValueId"].getStr() == paramValueId
+
+  let conflict = postJson(path, %*{"value": 41, "reason": "beda isi"}, token,
+    key = "idem-param-1")
+  check conflict.code == 409
+
+  let noKey = postJson(path, body, token, sendKey = false)
+  check noKey.code == 400

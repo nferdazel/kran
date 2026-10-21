@@ -569,6 +569,7 @@ paths:
           schema:
             type: string
           description: Kunci parameter, mis. `platform.security.max_failed_logins`.
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -576,7 +577,21 @@ paths:
             schema:
               $ref: "#/components/schemas/ParamChangeRequest"
       responses:
+        "200":
+          description: |
+            Replay permintaan sebelumnya: `Idempotency-Key` sama dengan isi yang sama. Body adalah
+            respons asli yang tersimpan; tidak ada objek/audit baru.
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParamSubmitResponse"
         "201":
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
           description: Pengajuan tercatat sebagai `PENDING`
           content:
             application/json:
@@ -590,6 +605,19 @@ paths:
           $ref: "#/components/responses/Problem"
         "405":
           $ref: "#/components/responses/Problem"
+        "409":
+          description: |
+            Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda), atau
+            permintaan dengan kunci yang sama masih diproses (`Retry-After`).
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Detik sampai permintaan sebelumnya selesai (hanya untuk klaim in-flight).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
         "500":
           $ref: "#/components/responses/Problem"
         "501":
@@ -772,6 +800,8 @@ paths:
         `party.create` dan event `party.onboarded` ditulis dalam transaksi yang sama.
       security:
         - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -779,7 +809,21 @@ paths:
             schema:
               $ref: "#/components/schemas/PartyCreate"
       responses:
+        "200":
+          description: |
+            Replay permintaan sebelumnya: `Idempotency-Key` sama dengan isi yang sama. Body adalah
+            respons asli yang tersimpan; tidak ada objek/audit baru.
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Party"
         "201":
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
           description: Party dibuat
           content:
             application/json:
@@ -791,6 +835,19 @@ paths:
           $ref: "#/components/responses/Problem"
         "403":
           $ref: "#/components/responses/Problem"
+        "409":
+          description: |
+            Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda), atau
+            permintaan dengan kunci yang sama masih diproses (`Retry-After`).
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Detik sampai permintaan sebelumnya selesai (hanya untuk klaim in-flight).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
         "500":
           $ref: "#/components/responses/Problem"
 
@@ -915,6 +972,7 @@ paths:
         - sessionCookie: []
       parameters:
         - $ref: "#/components/parameters/PartyId"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -922,7 +980,21 @@ paths:
             schema:
               $ref: "#/components/schemas/RiskRatingCreate"
       responses:
+        "200":
+          description: |
+            Replay permintaan sebelumnya: `Idempotency-Key` sama dengan isi yang sama. Body adalah
+            respons asli yang tersimpan; tidak ada objek/audit baru.
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RiskRatingView"
         "201":
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
           description: Penilaian tersimpan
           content:
             application/json:
@@ -936,6 +1008,19 @@ paths:
           $ref: "#/components/responses/Problem"
         "404":
           $ref: "#/components/responses/Problem"
+        "409":
+          description: |
+            Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda), atau
+            permintaan dengan kunci yang sama masih diproses (`Retry-After`).
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Detik sampai permintaan sebelumnya selesai (hanya untuk klaim in-flight).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
         "500":
           $ref: "#/components/responses/Problem"
 
@@ -1520,6 +1605,18 @@ components:
         `Authorization: Bearer <token>` juga diterima untuk klien non-browser.
 
   parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
+      description: |
+        Kunci idempotensi per pemanggil (D-098). Wajib pada endpoint pembuat objek: kirim ulang
+        dengan kunci yang sama untuk mengulang permintaan tanpa membuat objek ganda. Replay
+        dijawab 200 + header `Idempotent-Replayed: true`; kunci sama dengan isi berbeda → 409.
     PartyId:
       name: partyId
       in: path
@@ -1528,6 +1625,13 @@ components:
         type: string
         format: uuid
       description: Id party (UUID).
+
+  headers:
+    IdempotentReplayed:
+      description: Ada dan bernilai `true` bila respons ini adalah replay permintaan sebelumnya.
+      schema:
+        type: string
+        enum: ["true"]
 
   responses:
     Problem:
