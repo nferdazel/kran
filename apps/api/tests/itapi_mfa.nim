@@ -154,6 +154,12 @@ type
     setCookie: string
     cacheControl: string
 
+var idemCounter = 0
+
+proc autoIdemKey(): string =
+  inc idemCounter
+  "it-mfa-" & $idemCounter
+
 proc call(base, verb, path, payload, token: string): Reply =
   let client = newHttpClient(timeout = 15000)
   defer: client.close()
@@ -165,6 +171,7 @@ proc call(base, verb, path, payload, token: string): Reply =
   else:
     if payload.len > 0:
       client.headers["Content-Type"] = "application/json"
+    client.headers["Idempotency-Key"] = autoIdemKey()
     response = client.post(base & path, payload)
   result.code = response.code.int
   result.cacheControl = response.headers.getOrDefault("Cache-Control")

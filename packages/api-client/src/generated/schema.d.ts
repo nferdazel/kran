@@ -1342,11 +1342,20 @@ export interface components {
         };
     };
     parameters: {
+        /**
+         * @description Kunci idempotensi per pemanggil (D-098). Wajib pada endpoint pembuat objek: kirim ulang
+         *     dengan kunci yang sama untuk mengulang permintaan tanpa membuat objek ganda. Replay
+         *     dijawab 200 + header `Idempotent-Replayed: true`; kunci sama dengan isi berbeda → 409.
+         */
+        IdempotencyKey: string;
         /** @description Id party (UUID). */
         PartyId: string;
     };
     requestBodies: never;
-    headers: never;
+    headers: {
+        /** @description Ada dan bernilai `true` bila respons ini adalah replay permintaan sebelumnya. */
+        IdempotentReplayed: "true";
+    };
     pathItems: never;
 }
 export type $defs = Record<string, never>;
@@ -1837,7 +1846,14 @@ export interface operations {
     submitParamChange: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /**
+                 * @description Kunci idempotensi per pemanggil (D-098). Wajib pada endpoint pembuat objek: kirim ulang
+                 *     dengan kunci yang sama untuk mengulang permintaan tanpa membuat objek ganda. Replay
+                 *     dijawab 200 + header `Idempotent-Replayed: true`; kunci sama dengan isi berbeda → 409.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
             path: {
                 /** @description Kunci parameter, mis. `platform.security.max_failed_logins`. */
                 key: string;
@@ -1850,9 +1866,23 @@ export interface operations {
             };
         };
         responses: {
+            /**
+             * @description Replay permintaan sebelumnya: `Idempotency-Key` sama dengan isi yang sama. Body adalah
+             *     respons asli yang tersimpan; tidak ada objek/audit baru.
+             */
+            200: {
+                headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParamSubmitResponse"];
+                };
+            };
             /** @description Pengajuan tercatat sebagai `PENDING` */
             201: {
                 headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -1863,6 +1893,20 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             405: components["responses"]["Problem"];
+            /**
+             * @description Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda), atau
+             *     permintaan dengan kunci yang sama masih diproses (`Retry-After`).
+             */
+            409: {
+                headers: {
+                    /** @description Detik sampai permintaan sebelumnya selesai (hanya untuk klaim in-flight). */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
         };
@@ -2010,7 +2054,14 @@ export interface operations {
     createParty: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /**
+                 * @description Kunci idempotensi per pemanggil (D-098). Wajib pada endpoint pembuat objek: kirim ulang
+                 *     dengan kunci yang sama untuk mengulang permintaan tanpa membuat objek ganda. Replay
+                 *     dijawab 200 + header `Idempotent-Replayed: true`; kunci sama dengan isi berbeda → 409.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -2020,9 +2071,23 @@ export interface operations {
             };
         };
         responses: {
+            /**
+             * @description Replay permintaan sebelumnya: `Idempotency-Key` sama dengan isi yang sama. Body adalah
+             *     respons asli yang tersimpan; tidak ada objek/audit baru.
+             */
+            200: {
+                headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Party"];
+                };
+            };
             /** @description Party dibuat */
             201: {
                 headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -2032,6 +2097,20 @@ export interface operations {
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            /**
+             * @description Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda), atau
+             *     permintaan dengan kunci yang sama masih diproses (`Retry-After`).
+             */
+            409: {
+                headers: {
+                    /** @description Detik sampai permintaan sebelumnya selesai (hanya untuk klaim in-flight). */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             500: components["responses"]["Problem"];
         };
     };
@@ -2125,7 +2204,14 @@ export interface operations {
     ratePartyRisk: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /**
+                 * @description Kunci idempotensi per pemanggil (D-098). Wajib pada endpoint pembuat objek: kirim ulang
+                 *     dengan kunci yang sama untuk mengulang permintaan tanpa membuat objek ganda. Replay
+                 *     dijawab 200 + header `Idempotent-Replayed: true`; kunci sama dengan isi berbeda → 409.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
             path: {
                 /** @description Id party (UUID). */
                 partyId: components["parameters"]["PartyId"];
@@ -2138,9 +2224,23 @@ export interface operations {
             };
         };
         responses: {
+            /**
+             * @description Replay permintaan sebelumnya: `Idempotency-Key` sama dengan isi yang sama. Body adalah
+             *     respons asli yang tersimpan; tidak ada objek/audit baru.
+             */
+            200: {
+                headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RiskRatingView"];
+                };
+            };
             /** @description Penilaian tersimpan */
             201: {
                 headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -2151,6 +2251,20 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            /**
+             * @description Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda), atau
+             *     permintaan dengan kunci yang sama masih diproses (`Retry-After`).
+             */
+            409: {
+                headers: {
+                    /** @description Detik sampai permintaan sebelumnya selesai (hanya untuk klaim in-flight). */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             500: components["responses"]["Problem"];
         };
     };

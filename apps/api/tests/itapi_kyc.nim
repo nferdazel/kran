@@ -138,8 +138,16 @@ type
     raw: string
     body: JsonNode
     setCookie: string
+    replayed: string
 
-proc call(base, verb, path, payload, token: string): Reply =
+var idemCounter = 0
+
+proc autoIdemKey(): string =
+  inc idemCounter
+  "it-kyc-" & $idemCounter
+
+proc call(base, verb, path, payload, token: string, idempotencyKey = "",
+    sendKey = true): Reply =
   let client = newHttpClient(timeout = 15000)
   defer: client.close()
   if token.len > 0:
@@ -150,10 +158,14 @@ proc call(base, verb, path, payload, token: string): Reply =
   else:
     if payload.len > 0:
       client.headers["Content-Type"] = "application/json"
+    if sendKey:
+      client.headers["Idempotency-Key"] =
+        if idempotencyKey.len > 0: idempotencyKey else: autoIdemKey()
     response = client.post(base & path, payload)
   result.code = response.code.int
   result.raw = response.body
   result.setCookie = response.headers.getOrDefault("Set-Cookie")
+  result.replayed = response.headers.getOrDefault("Idempotent-Replayed")
   result.body = newJNull()
   if response.body.len > 0:
     try:
@@ -164,8 +176,9 @@ proc call(base, verb, path, payload, token: string): Reply =
 proc getJson(path: string, token = ""): Reply =
   call(baseUrl, "GET", path, "", token)
 
-proc postJson(path: string, payload: JsonNode, token = "", base = baseUrl): Reply =
-  call(base, "POST", path, $payload, token)
+proc postJson(path: string, payload: JsonNode, token = "", base = baseUrl,
+    key = "", sendKey = true): Reply =
+  call(base, "POST", path, $payload, token, key, sendKey)
 
 proc tokenOf(reply: Reply): string =
   for part in reply.setCookie.split(';'):
@@ -432,3 +445,30 @@ suite "kyc: tanpa KEK (fail-closed)":
        WHERE doc_type = 'NPWP' AND party_id = ?::uuid""", partyId) == "0"
     # Profil KYC (tanpa PII) tetap bisa dibaca walau kunci belum ada.
     check getJson(KycPath.replace("{partyId}", partyId), makerToken).code == 200
+
+proc ratingCount(partyId: string): string =
+  dbValue(sql"SELECT count(*)::text FROM party.risk_rating WHERE party_id = ?::uuid",
+    partyId)
+
+suite "kyc: idempotency":
+  test "replay tidak menambah riwayat, konflik 409, tanpa header 400":
+    let id = createParty("KYC Idem")["partyId"].getStr()
+    let path = RiskPath.replace("{partyId}", id)
+    let body = %*{"level": "high", "reason": "uji idempotensi"}
+
+    let first = postJson(path, body, makerToken, key = "idem-risk-1")
+    check first.code == 201
+    check ratingCount(id) == "1"
+
+    let replay = postJson(path, body, makerToken, key = "idem-risk-1")
+    check replay.code == 200
+    check replay.replayed == "true"
+    check replay.body["ratingId"].getStr() == first.body["ratingId"].getStr()
+    check ratingCount(id) == "1"
+
+    let conflict = postJson(path, %*{"level": "medium", "reason": "beda isi"}, makerToken,
+      key = "idem-risk-1")
+    check conflict.code == 409
+
+    let noKey = postJson(path, body, makerToken, sendKey = false)
+    check noKey.code == 400
