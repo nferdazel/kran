@@ -449,6 +449,21 @@ suite "ledger: periode":
     check missing.code == 404
     checkProblem(ClosePath, "POST", "404", missing.body)
 
+proc ensurePeriod(startsOn, endsOn: string): string =
+  ## Buka periode langsung di DB; yang diuji di suite ini laporan, bukan pembukaan periode.
+  dbValue(sql"""
+    INSERT INTO ledger.period
+      (period_id, starts_on, ends_on, status, created_by, updated_by)
+    VALUES
+      (gen_random_uuid(), ?::date, ?::date, 'OPEN',
+       '00000000-0000-0000-0000-0000000000a1',
+       '00000000-0000-0000-0000-0000000000a1')
+    RETURNING period_id::text""", startsOn, endsOn)
+
+let
+  mayPeriod = ensurePeriod("2026-05-01", "2026-05-31")
+  julyPeriod = ensurePeriod("2026-07-01", "2026-07-31")
+
 suite "ledger: grant bercabang tidak boleh aksi institusi":
   test "grant yang dibatasi cabang → 403; grant tanpa batas → 200":
     # D-062: aksi tingkat institusi (`targetBranch = ""`) hanya untuk grant tanpa batas cabang.
@@ -483,6 +498,10 @@ suite "ledger: grant bercabang tidak boleh aksi institusi":
 
       let listPeriods = getJson(PeriodsPath, makerToken)
       check listPeriods.code == 403
+      let balances = getJson("/api/v1/ledger/balances?periodId=" & mayPeriod, makerToken)
+      check balances.code == 403
+      checkProblem("/api/v1/ledger/balances", "GET", "403", balances.body)
+      check balances.body["params"]["reason"].getStr() == "branch_not_allowed"
     finally:
       conn.exec(sql"""
         UPDATE platform.user_role ur SET branch_id = NULL
@@ -509,16 +528,7 @@ proc lineOf(body: JsonNode, code: string): JsonNode =
       return item
   newJNull()
 
-proc ensurePeriod(startsOn, endsOn: string): string =
-  ## Buka periode langsung di DB; yang diuji di suite ini laporan, bukan pembukaan periode.
-  dbValue(sql"""
-    INSERT INTO ledger.period
-      (period_id, starts_on, ends_on, status, created_by, updated_by)
-    VALUES
-      (gen_random_uuid(), ?::date, ?::date, 'OPEN',
-       '00000000-0000-0000-0000-0000000000a1',
-       '00000000-0000-0000-0000-0000000000a1')
-    RETURNING period_id::text""", startsOn, endsOn)
+
 
 proc postJournal(businessDate, debitAccount, creditAccount, amount: string) =
   ## Satu jurnal seimbang. Header + baris dalam **satu transaksi** (trigger keseimbangan
@@ -554,10 +564,6 @@ proc rebuildSnapshotAt(asOf: string) =
     discard conn.getValue(sql"SELECT ledger.rebuild_balance_snapshot(?::date)", asOf)
   finally:
     dbPool.release(conn)
-
-let
-  mayPeriod = ensurePeriod("2026-05-01", "2026-05-31")
-  julyPeriod = ensurePeriod("2026-07-01", "2026-07-31")
 
 block:
   # April: saldo awal periode Mei (periode lain, tetap OPEN).
@@ -681,3 +687,16 @@ suite "ledger: laporan saldo GL (T-082)":
     check kas["closingDebit"].getStr() == "11449.0000"
     check asMoney(kas["closingDebit"].getStr()) ==
       asMoney(kas["openingDebit"].getStr()) + asMoney(kas["periodDebit"].getStr())
+
+  test "snapshot basi ditolak: jurnal backdated setelah CLOSED → source=ledger":
+    # Prasyarat: test sebelumnya menutup Juli dan cache 31 Juli cocok dengan jurnal.
+    # Jurnal ke April (periode OPEN) mengubah saldo awal Juli, jadi cache tidak lagi sah.
+    postJournal("2026-04-15", "101", "201", "77.0000")
+
+    let reply = getJson(BalancesPath & "?periodId=" & julyPeriod, makerToken)
+    check reply.code == 200
+    check reply.body["source"].getStr() == "ledger" # bukan `snapshot` yang sudah basi
+    let kas = lineOf(reply.body, "101")
+    check kas.kind == JObject
+    # 11449 + 77: angka tetap dari jurnal, bukan dari cache lama.
+    check kas["closingDebit"].getStr() == "11526.0000"

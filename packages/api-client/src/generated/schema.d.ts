@@ -710,7 +710,8 @@ export interface paths {
          *     `period` (mutasi dalam rentang **inklusif** `startsOn`..`endsOn`), dan `closing`
          *     (= opening + mutasi), dengan debit dan kredit **terpisah** (bukan saldo bersih).
          *     Hanya akun yang bergerak di periode atau bersaldo awal ≠ 0 yang muncul; akun tanpa
-         *     mutasi tidak ditampilkan. Angka dihitung dari `journal_line` (sumber kebenaran).
+         *     mutasi **dan** tanpa saldo awal tetap absen. Angka dihitung dari `journal_line`
+         *     (sumber kebenaran).
          *     `source=ledger` untuk perhitungan langsung dari jurnal; `source=snapshot` bila periode
          *     sudah CLOSED dan cache `balance_snapshot` pada `endsOn` sudah terekonsiliasi dengan
          *     jurnal (D-096). Izin: `ledger.journal.read` (tingkat institusi).
