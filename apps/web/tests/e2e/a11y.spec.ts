@@ -22,14 +22,14 @@ const TEXT: Record<
   { h1: string; appTitle: string; themeDark: string; themeLight: string; localeLabel: string }
 > = {
   id: {
-    h1: "Selamat datang",
+    h1: "Masuk",
     appTitle: "KRAN — Sistem Koperasi & Bank",
     themeDark: "Gelap",
     themeLight: "Terang",
     localeLabel: "Bahasa",
   },
   en: {
-    h1: "Welcome",
+    h1: "Sign in",
     appTitle: "KRAN — Cooperative & Bank System",
     themeDark: "Dark",
     themeLight: "Light",
@@ -122,10 +122,10 @@ test("ganti bahasa mengganti isi dan mengumumkannya lewat live region", async ({
   await expect(page.getByRole("status")).toContainText("English");
 });
 
-test("tidak ada string hardcode: judul & label ikut berganti bahasa", async ({ page }) => {
+test("tidak ada string hardcode: label form ikut berganti bahasa", async ({ page }) => {
   await gotoApp(page, "id");
-  await expect(page.getByRole("heading", { level: 2 }).first()).toHaveText("Status sistem");
+  await expect(page.getByLabel("Nama pengguna")).toBeVisible();
 
   await page.getByRole("radio", { name: "Inggris" }).check();
-  await expect(page.getByRole("heading", { level: 2 }).first()).toHaveText("System status");
+  await expect(page.getByLabel("Username")).toBeVisible();
 });

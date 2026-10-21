@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatMoney } from "../src/money.js";
+import { addMoney, formatMoney } from "../src/money.js";
 
 /**
  * T-083 / D-097: uang diformat dari string desimal tanpa float.
@@ -63,5 +63,20 @@ describe("formatMoney: presisi & tanda", () => {
     for (const bad of ["", "abc", "1,5", "1.2.3", "1e6"]) {
       expect(() => formatMoney(bad)).toThrow(/bukan desimal/);
     }
+  });
+});
+
+describe("addMoney: total laporan tanpa float", () => {
+  it("menjumlahkan desimal apa adanya", () => {
+    expect(addMoney("1000.0000", "150.5000")).toBe("1150.5000");
+    expect(addMoney("-0.0001", "0.0002")).toBe("0.0001");
+  });
+
+  it("tetap tepat di atas 2^53", () => {
+    expect(addMoney("9007199254740993.0001", "0.0001")).toBe("9007199254740993.0002");
+  });
+
+  it("menolak masukan bukan desimal", () => {
+    expect(() => addMoney("1,5", "2")).toThrow(/bukan desimal/);
   });
 });

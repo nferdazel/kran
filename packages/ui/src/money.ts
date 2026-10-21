@@ -64,3 +64,37 @@ export function formatMoney(decimal: string, options: MoneyOptions = {}): string
   const negative = sign === "-";
   return `${negative ? "-" : ""}${groupInteger(intPart.toString(), locale)}${separator}${fracPart}`;
 }
+
+/**
+ * Menjumlahkan dua string desimal tanpa float (untuk baris total laporan).
+ * Kedua masukan dibulatkan half-even ke `decimals` lebih dulu, lalu dijumlahkan sebagai `BigInt`.
+ * Keluaran berupa desimal polos (tanpa pemisah ribuan) supaya bisa diformat sekali di lapisan UI.
+ */
+export function addMoney(a: string, b: string, decimals: MoneyDecimals = 4): string {
+  const sum = scaledValue(a, decimals) + scaledValue(b, decimals);
+  const scale = 10n ** BigInt(decimals);
+  const negative = sum < 0n;
+  const abs = negative ? -sum : sum;
+  const intPart = (abs / scale).toString();
+  const fracPart = (abs % scale).toString().padStart(decimals, "0");
+  return `${negative ? "-" : ""}${intPart}.${fracPart}`;
+}
+
+function scaledValue(decimal: string, decimals: MoneyDecimals): bigint {
+  const match = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(decimal.trim());
+  if (!match) {
+    throw new Error(`nilai uang bukan desimal: ${decimal}`);
+  }
+  const [, sign = "", intDigits = "0", fraction = ""] = match;
+  const kept = fraction.slice(0, decimals).padEnd(decimals, "0");
+  let scaled = BigInt(intDigits + kept);
+  const dropped = fraction.slice(decimals);
+  if (dropped.length > 0) {
+    const first = dropped[0] ?? "0";
+    const restNonZero = /[1-9]/.test(dropped.slice(1));
+    if (first > "5" || (first === "5" && (restNonZero || scaled % 2n === 1n))) {
+      scaled += 1n;
+    }
+  }
+  return sign === "-" ? -scaled : scaled;
+}

@@ -241,3 +241,39 @@
     --motion-duration-base: 0ms;
   }
 }
+
+/* ---- Dasar dokumen ----------------------------------------------------------------
+ * Tanpa reset, `body` memakai margin 8px bawaan peramban dan latar putih, sehingga aplikasi
+ * terlihat seperti dokumen HTML, bukan alat kerja. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--line-height-base);
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+ol {
+  margin-block: 0;
+}
+
+ul,
+ol {
+  padding-inline-start: 0;
+}

@@ -35,7 +35,12 @@
 .kran-shell {
   min-block-size: 100vh;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  /* header + nav = auto, isi = 1fr, footer = auto. Sebelumnya 3 baris untuk 4 anak, sehingga
+     `1fr` jatuh ke <nav> dan mendorong konten ke tengah layar. */
+  grid-template-rows: auto auto 1fr auto;
+  /* Kolom eksplisit `minmax(0,1fr)`: tanpa ini, min-content tabel lebar bisa memperlebar grid
+     melebihi viewport, sehingga seluruh halaman bergeser di ponsel. */
+  grid-template-columns: minmax(0, 1fr);
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-sans);
@@ -46,35 +51,37 @@
 .kran-header {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-4);
+  gap: var(--space-3) var(--space-5);
   align-items: center;
   justify-content: space-between;
-  padding-block: var(--space-3);
+  min-block-size: 52px;
+  padding-block: var(--space-2);
   padding-inline: var(--space-4);
   background: var(--color-surface);
-  border-block-end: 1px solid var(--color-border);
+  border-block-end: 1px solid var(--color-hairline);
 }
 
 .kran-header__brand {
+  min-inline-size: 0;
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
-  font-size: var(--text-lg);
+  font-size: var(--text-md);
   font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .kran-header__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-4);
+  gap: var(--space-3);
   align-items: center;
 }
 
 .kran-nav {
-  padding-block: var(--space-2);
   padding-inline: var(--space-4);
   background: var(--color-surface);
-  border-block-end: 1px solid var(--color-border);
+  border-block-end: 1px solid var(--color-hairline);
 }
 
 .kran-nav ul {
@@ -85,7 +92,25 @@
   list-style: none;
 }
 
+.kran-nav a {
+  display: inline-block;
+  padding-block: var(--space-2);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-size: var(--text-sm);
+}
+
+.kran-nav a:hover {
+  color: var(--color-text);
+}
+
+.kran-nav a[aria-current="page"] {
+  color: var(--color-text);
+  box-shadow: inset 0 -2px 0 var(--color-primary);
+}
+
 .kran-main {
+  min-inline-size: 0;
   width: 100%;
   max-inline-size: var(--layout-max-width);
   margin-inline: auto;
@@ -153,14 +178,21 @@
   padding: 0;
   border: 0;
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
+  min-inline-size: 0;
 }
 
 .kran-fieldset > legend {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
   padding: 0;
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .kran-radio-group {
@@ -247,14 +279,24 @@
 .kran-radio {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  padding-block: var(--space-1);
-  padding-inline: var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-raised);
+  gap: 4px;
+  padding-block: 2px;
+  padding-inline: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-chip);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
   cursor: pointer;
   min-block-size: var(--control-min-size);
+}
+
+.kran-radio:has(input:focus-visible) {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.kran-radio input {
+  accent-color: var(--color-primary);
 }
 
 .kran-radio:hover {
@@ -262,7 +304,9 @@
 }
 
 .kran-radio:has(input:checked) {
-  border-color: var(--color-primary);
+  border-color: var(--color-hairline);
+  background: var(--color-selected);
+  color: var(--color-text);
 }
 
 /* Tautan: warna aksen pada latar token (pasangan `primary`/`bg` & `surface` diuji kontrasnya). */
