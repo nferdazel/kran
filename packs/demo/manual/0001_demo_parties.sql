@@ -1,8 +1,8 @@
 -- Data demo untuk pilot (SINTETIS — bukan data anggota nyata).
 --
--- Kenapa tidak masuk `packs/*/seed/`: seed produksi hanya memuat `packs/*/generated/*.sql`
--- (main.nim), jadi berkas ini tidak akan pernah ikut deploy. Terapkan manual, lihat
--- `docs/runbooks/demo-data.md`.
+-- Kenapa di `manual/`, bukan `packs/*/seed/`: `--dev` memuat SEMUA `packs/*/seed/*.sql`, jadi data
+-- demo di sana ikut ter-seed saat test/e2e dan gagal bila belum ada pengguna. Berkas ini hanya
+-- diterapkan manual ke database yang sudah punya pengguna; lihat `docs/runbooks/demo-data.md`.
 --
 -- Isi: 12 party (11 orang + 1 koperasi) + profil KYC.
 --

@@ -46,6 +46,56 @@ proc snapshotTotals*(db: DbConn, asOf: string): seq[tuple[accountCode: string,
         FROM ledger.balance_snapshot WHERE as_of = ?::date ORDER BY account_code""", asOf):
     result.add (row[0], moneyOf(row[1]).minorUnits, moneyOf(row[2]).minorUnits)
 
+proc balancesFromLedger*(db: DbConn, startsOn, endsOn: string): seq[BalanceLine] =
+  ## Laporan saldo GL dari `journal_line` dalam **satu** query agregasi (D-096): opening =
+  ## kumulatif jurnal sebelum `startsOn`, period = mutasi dalam rentang **inklusif**.
+  ## Baris = akun bergerak di periode atau bersaldo awal ≠ 0; akun lain tidak muncul.
+  ## `closing` tidak dikembalikan DB — ia turunan `opening + period` (lihat domain `report`).
+  for row in db.getAllRows(sql"""
+      SELECT code, name, account_type,
+             opening_debit::text, opening_credit::text,
+             period_debit::text, period_credit::text
+        FROM (
+          SELECT a.code, a.name, a.account_type,
+                 coalesce(sum(l.debit) FILTER (WHERE j.business_date < ?::date), 0)
+                   AS opening_debit,
+                 coalesce(sum(l.credit) FILTER (WHERE j.business_date < ?::date), 0)
+                   AS opening_credit,
+                 coalesce(sum(l.debit)
+                   FILTER (WHERE j.business_date BETWEEN ?::date AND ?::date), 0)
+                   AS period_debit,
+                 coalesce(sum(l.credit)
+                   FILTER (WHERE j.business_date BETWEEN ?::date AND ?::date), 0)
+                   AS period_credit
+            FROM ledger.coa_account a
+            LEFT JOIN ledger.journal_line l ON l.gl_account = a.code
+            LEFT JOIN ledger.journal j ON j.journal_id = l.journal_id
+           GROUP BY a.code, a.name, a.account_type
+        ) t
+       WHERE opening_debit <> 0 OR opening_credit <> 0
+          OR period_debit <> 0 OR period_credit <> 0
+       ORDER BY code""", startsOn, startsOn, startsOn, endsOn, startsOn, endsOn):
+    let accountType = parseAccountType(row[2])
+    if accountType.isNone:
+      raise newException(ValueError, "account_type di DB tidak dikenal: " & row[2])
+    result.add BalanceLine(
+      accountCode: row[0],
+      accountName: row[1],
+      accountType: accountType.get(),
+      openingDebit: moneyOf(row[3]),
+      openingCredit: moneyOf(row[4]),
+      periodDebit: moneyOf(row[5]),
+      periodCredit: moneyOf(row[6]))
+
+proc snapshotBalances*(db: DbConn, asOf: string): seq[SnapshotTotal] =
+  ## Cache kumulatif pada satu tanggal, dalam `Money` (gerbang rekonsiliasi T-082).
+  for row in db.getAllRows(sql"""
+      SELECT account_code, debit_total::text, credit_total::text
+        FROM ledger.balance_snapshot WHERE as_of = ?::date ORDER BY account_code""", asOf):
+    result.add SnapshotTotal(accountCode: row[0], debit: moneyOf(row[1]),
+      credit: moneyOf(row[2]))
+
+
 proc rebuildSnapshot*(db: DbConn, asOf: string) =
   ## Fungsi SQL mengembalikan satu baris (void); `exec` pada SELECT yang mengembalikan hasil
   ## menghasilkan error kosong di driver, jadi hasilnya dibaca lewat `getValue` dan dibuang.
