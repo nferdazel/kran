@@ -2698,3 +2698,24 @@ memperingatkan `a11y_no_noninteractive_tabindex` untuk pola ini; peringatan dite
 
 **Konsekuensi.** Gate svelte-check kembali 0 warning. Kalau nanti wadah itu berisi kontrol
 interaktif langsung, `tabindex` harus ditinjau ulang agar tidak menambah tab stop ganda.
+
+---
+
+## D-117 — Amandemen D-098: duplikat konkuren menunggu lalu replay; `Retry-After` dibatasi
+
+**Keputusan.**
+1. Baris klaim tetap ditulis di transaksi bisnis. Duplikat yang datang **saat transaksi pemenang
+   masih berjalan** akan menunggu unique index `(principal_id, key)`, lalu setelah pemenang
+   COMMIT membaca baris yang sudah selesai dan dijawab **replay 200** — bukan 409. `409 +
+   Retry-After` hanya untuk baris klaim yang sudah ter-COMMIT tetapi belum selesai (proses mati di
+   tengah) atau baris yang hilang karena disapu. Kontrak OpenAPI T-085 tidak boleh menjanjikan 409
+   untuk duplikat konkuren.
+2. `Retry-After` untuk klaim in-flight dibatasi **60 detik** (konstanta protokol di kode, bukan
+   parameter bisnis); menunggu sisa TTL penuh (bisa sehari) tidak berguna bagi klien.
+3. `created_at`, `expires_at`, dan `completed_at` memakai jam aplikasi yang sama (dikirim
+   pemanggil), dengan CHECK `expires_at > created_at` dan `completed_at >= created_at`.
+
+**Konsekuensi.** Duplikat konkuren menahan satu koneksi pool selama transaksi pemenang; bila
+melewati deadline query, pemanggil menerima 500/PoolError. Ini batas yang diterima untuk pilot
+(operasi pembuat objek pendek). Bila kelak ada operasi panjang, klaim harus dipisah ke transaksi
+sendiri atau memakai advisory lock — perubahan itu butuh ADR baru.

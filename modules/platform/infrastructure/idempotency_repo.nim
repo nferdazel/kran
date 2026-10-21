@@ -25,8 +25,8 @@ type
 const expiresAtSelect = """
   to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')"""
 
-proc claimIdempotency*(db: DbConn,
-    principalId, key, operationId, fingerprint, nowIso, expiresAtIso: string): IdempotencyClaim =
+proc claimIdempotency*(db: DbConn, principalId, key, operationId, fingerprint,
+    createdAtIso, nowIso, expiresAtIso: string): IdempotencyClaim =
   ## Baris kedaluwarsa diperlakukan sebagai tidak ada: dihapus dulu, lalu klaim baru dibuat.
   ## Tanpa ini, TTL hanya berlaku kalau daycloser kebetulan sudah berjalan (D-098).
   discard db.execAffectedRows(sql"""
@@ -36,10 +36,10 @@ proc claimIdempotency*(db: DbConn,
 
   let inserted = db.execAffectedRows(sql"""
     INSERT INTO platform.idempotency_key
-      (principal_id, key, operation_id, request_hash, expires_at)
-    VALUES (?::uuid, ?, ?, ?, ?::timestamptz)
+      (principal_id, key, operation_id, request_hash, created_at, expires_at)
+    VALUES (?::uuid, ?, ?, ?, ?::timestamptz, ?::timestamptz)
     ON CONFLICT (principal_id, key) DO NOTHING""",
-    principalId, key, operationId, fingerprint, expiresAtIso) == 1
+    principalId, key, operationId, fingerprint, createdAtIso, expiresAtIso) == 1
   if inserted:
     return IdempotencyClaim(decision: idemProceed)
 

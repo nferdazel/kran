@@ -47,8 +47,9 @@ execScript(db, """
 
 proc hashOf(body: string): string = requestHash(body)
 
-proc claim(key, operationId, fingerprint: string, expires = expiresAt): IdempotencyClaim =
-  claimIdempotency(db, principalId, key, operationId, fingerprint, nowIso, expires)
+proc claim(key, operationId, fingerprint: string, expires = expiresAt,
+    created = nowIso): IdempotencyClaim =
+  claimIdempotency(db, principalId, key, operationId, fingerprint, created, nowIso, expires)
 
 proc complete(key: string, status: int, body: string): bool =
   completeIdempotency(db, principalId, key, nowIso, status, body)
@@ -95,7 +96,8 @@ suite "idempotency: parameter & klaim":
   test "baris selesai yang kedaluwarsa boleh dipakai ulang":
     let key = "expired-done"
     let fp = hashOf("""{"e":1}""")
-    check claim(key, "party.create", fp, "2026-10-20T00:00:00Z").decision == idemProceed
+    check claim(key, "party.create", fp, "2026-10-20T00:00:00Z",
+      "2026-10-19T00:00:00Z").decision == idemProceed
     discard complete(key, 201, """{"old":true}""")
 
     let again = claim(key, "party.create", fp)
@@ -105,9 +107,10 @@ suite "idempotency: parameter & klaim":
     let key = "expired-inflight"
     execScript(db, """
       INSERT INTO platform.idempotency_key
-        (principal_id, key, operation_id, request_hash, expires_at)
+        (principal_id, key, operation_id, request_hash, created_at, expires_at)
       VALUES ('11111111-1111-7111-8111-111111111111', 'expired-inflight', 'party.create',
-              '""" & hashOf("""{"e":2}""") & """', '2026-10-20T00:00:00Z')
+              '""" & hashOf("""{"e":2}""") & """', '2026-10-19T00:00:00Z',
+              '2026-10-20T00:00:00Z')
       ON CONFLICT DO NOTHING
     """)
     check claim(key, "party.create", hashOf("""{"e":2}""")).decision == idemProceed
@@ -141,7 +144,7 @@ proc racer(args: RaceArgs) {.thread.} =
     try:
       discard dbPool.withTx(proc(d: DbConn): bool {.closure.} =
         let claim = claimIdempotency(d, principalId, args.key, "party.create",
-          hashOf("""{"race":true}"""), nowIso, expiresAt)
+          hashOf("""{"race":true}"""), nowIso, nowIso, expiresAt)
         raceDecision[args.index] = claim.decision
         if claim.decision == idemProceed:
           # Tahan transaksi supaya koneksi lain benar-benar menunggu di unique index.
