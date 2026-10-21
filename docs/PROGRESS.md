@@ -1965,4 +1965,9 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
 - **O-001 jalur 1** (D-114): default parameter pilot diterima pemilik; `NEEDS-COMPLIANCE-REVIEW`
   tetap. Gate komersial tertulis: validasi per institusi + sumber di `reason` sebelum anggota nyata
   pertama / klien BPR pertama. Tidak ada perubahan kode/nilai.
+- **Data demo pilot** (21 Okt 2026): `packs/demo/seed/0001_demo_parties.sql` diterapkan ke produksi —
+  12 party sintetis (CIF 9000001–9000012, 11 orang + 1 koperasi) + profil KYC (VERIFIED/PENDING/
+  REJECTED, risiko LOW/MEDIUM/HIGH). Idempoten; tidak ikut deploy (seed produksi hanya
+  `packs/*/generated/*.sql`). Tanpa `identity_doc` (butuh field crypto) dan tanpa `risk_rating`
+  (append-only). Cara hapus: `docs/runbooks/demo-data.md`.
 
