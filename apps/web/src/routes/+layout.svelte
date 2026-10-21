@@ -10,6 +10,7 @@
   import "@kran/ui/components.css";
 
   import { onMount } from "svelte";
+  import { page } from "$app/state";
 
   import * as m from "#lib/paraglide/messages.js";
   import {
@@ -123,10 +124,29 @@
 
   <nav class="kran-nav" aria-label={m.common_nav_label()}>
     <ul>
-      <li><a class="kran-link" href="/">{m.common_nav_home()}</a></li>
-      <!-- Tautan masuk (O-033). Sesudah masuk, aksi "Keluar" ada di toolbar `/app` (yang punya
-           konteks sesi); header sengaja statis supaya tidak membaca sesi di setiap halaman. -->
-      <li><a class="kran-link" href="/login">{m.common_nav_login()}</a></li>
+      <li>
+        <a
+          class="kran-link"
+          href="/app/ledger"
+          aria-current={page.url.pathname.startsWith("/app/ledger") ? "page" : undefined}
+        >
+          {m.common_nav_ledger()}
+        </a>
+      </li>
+      <li>
+        <a
+          class="kran-link"
+          href="/app"
+          aria-current={page.url.pathname === "/app" ? "page" : undefined}
+        >
+          {m.common_nav_params()}
+        </a>
+      </li>
+      <!-- Tautan masuk (O-033) hanya di halaman publik; di area kerja tempatnya di toolbar `/app`
+           bersama aksi "Keluar" (yang punya konteks sesi). -->
+      {#if !page.url.pathname.startsWith("/app")}
+        <li><a class="kran-link" href="/login">{m.common_nav_login()}</a></li>
+      {/if}
     </ul>
   </nav>
 

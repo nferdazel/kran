@@ -67,7 +67,7 @@ test("bahasa bisa diganti hanya dengan keyboard (panah dalam grup radio)", async
   await page.keyboard.press("ArrowRight"); // pindah ke "Inggris" tanpa mouse
 
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Welcome");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Sign in");
   await expect(page.getByRole("status")).toContainText("English");
 });
 
@@ -78,19 +78,22 @@ test("setiap kontrol dapat dijangkau keyboard dalam urutan logis", async ({ page
   await expect(page.locator("a.kran-skip-link")).toBeFocused();
 
   const urutan: string[] = [];
-  for (let i = 0; i < 4; i += 1) {
+  for (let i = 0; i < 5; i += 1) {
     await page.keyboard.press("Tab");
     urutan.push(await activeElement(page));
   }
 
-  // Tiap grup radio punya satu tab stop (radio terpilih), lalu dua tautan navigasi (Beranda,
-  // Masuk); setelah itu tidak ada yang bisa difokus di shell maupun beranda (tidak ada focus trap).
+  // Tiap grup radio punya satu tab stop (radio terpilih), lalu tiga tautan navigasi
+  // (Buku besar, Parameter, Masuk); setelah itu tidak ada yang bisa difokus di shell halaman
+  // masuk sebelum field form (tidak ada focus trap).
   expect(urutan).toEqual([
     "input:radio:theme",
     "input:radio:locale",
     expect.stringMatching(/^a:/) as unknown as string,
     expect.stringMatching(/^a:/) as unknown as string,
+    expect.stringMatching(/^a:/) as unknown as string,
   ]);
+  // Sesudah navigasi, fokus masuk ke form halaman (halaman publik tidak punya focus trap).
   await page.keyboard.press("Tab");
-  expect(await activeElement(page)).not.toMatch(/^(input|select|a|button)/);
+  expect(await activeElement(page)).toBe("input:text:username");
 });

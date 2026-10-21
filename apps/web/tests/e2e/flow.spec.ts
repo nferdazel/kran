@@ -24,6 +24,7 @@ const CHECKER = { username: "dev.checker", password: "rahasia-panjang-123" };
 /** Teks katalog (id) yang dijadikan penanda di spec — dibaca dari `packages/i18n/messages`. */
 const TEXT = {
   loginTitle: "Masuk",
+  ledgerTitle: "Saldo buku besar",
   appTitle: "Parameter & jejak audit",
   username: "Nama pengguna",
   password: "Kata sandi",
@@ -75,7 +76,12 @@ async function login(page: Page, user: { username: string; password: string }): 
   await page.keyboard.type(user.password);
   await page.keyboard.press("Enter");
 
-  await expect(page).toHaveURL(/\/app$/);
+  // Sesudah masuk, tempat kerja adalah buku besar.
+  await expect(page).toHaveURL(/\/app\/ledger$/);
+  await expect(page.getByRole("heading", { level: 1, name: TEXT.ledgerTitle })).toBeVisible();
+
+  // Alur Fase 0 (parameter) tetap diuji di layarnya sendiri; pindah lewat rute nyata.
+  await page.goto("/app");
   await expect(page.getByRole("heading", { level: 1, name: TEXT.appTitle })).toBeVisible();
 }
 

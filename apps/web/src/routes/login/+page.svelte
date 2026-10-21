@@ -47,7 +47,7 @@
 
     if (response.ok) {
       // Cookie sesi sudah terpasang oleh respons ini; lanjut ke shell aplikasi.
-      await goto("/app");
+      await goto("/app/ledger");
       return;
     }
 
@@ -60,10 +60,15 @@
   <title>{m.common_app_title()} — {m.login_title()}</title>
 </svelte:head>
 
-<h1>{m.login_title()}</h1>
+<div class="login">
+  <aside class="login-identity">
+    <p class="login-brand">{m.common_brand_short()}</p>
+    <p class="login-line">{m.login_intro()}</p>
+  </aside>
 
-<section class="kran-card">
-  <p class="kran-muted">{m.login_intro()}</p>
+  <section class="login-panel">
+    <h1 class="login-title">{m.login_title()}</h1>
+
 
   <form class="kran-form" onsubmit={submit} novalidate>
     <div class="kran-field">
@@ -104,4 +109,63 @@
       </button>
     </p>
   </form>
-</section>
+  </section>
+</div>
+
+<style>
+  .login {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
+    gap: var(--space-7);
+    align-items: start;
+    max-inline-size: 64rem;
+    margin-inline: auto;
+    padding-block: var(--space-6);
+  }
+
+  .login-identity {
+    padding-block-start: var(--space-2);
+    padding-inline-end: var(--space-5);
+    border-inline-end: 1px solid var(--color-hairline);
+    min-block-size: 18rem;
+  }
+
+  .login-brand {
+    font-size: var(--text-xl);
+    line-height: var(--line-height-tight);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .login-line {
+    margin-block-start: var(--space-2);
+    max-inline-size: 34ch;
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+  }
+
+  .login-panel {
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .login-title {
+    font-size: var(--text-xl);
+    line-height: var(--line-height-tight);
+    font-weight: 600;
+  }
+
+  @media (max-width: 900px) {
+    .login {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--space-4);
+      padding-block: var(--space-4);
+    }
+
+    .login-identity {
+      border-inline-end: 0;
+      padding-inline-end: 0;
+      min-block-size: 0;
+    }
+  }
+</style>
