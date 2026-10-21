@@ -1326,6 +1326,48 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/ledger/balances:
+    get:
+      operationId: getLedgerBalances
+      tags: [ledger]
+      summary: Saldo GL per periode (opening/period/closing)
+      description: |
+        Saldo per akun untuk periode yang diberikan: `opening` (kumulatif sebelum `startsOn`),
+        `period` (mutasi dalam rentang **inklusif** `startsOn`..`endsOn`), dan `closing`
+        (= opening + mutasi), dengan debit dan kredit **terpisah** (bukan saldo bersih).
+        Hanya akun yang bergerak di periode atau bersaldo awal ≠ 0 yang muncul; akun tanpa
+        mutasi **dan** tanpa saldo awal tetap absen. Angka dihitung dari `journal_line`
+        (sumber kebenaran).
+        `source=ledger` untuk perhitungan langsung dari jurnal; `source=snapshot` bila periode
+        sudah CLOSED dan cache `balance_snapshot` pada `endsOn` sudah terekonsiliasi dengan
+        jurnal (D-096). Izin: `ledger.journal.read` (tingkat institusi).
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: periodId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Saldo GL per akun
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LedgerBalances"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
   /api/v1/products:
     get:
       operationId: listProducts
@@ -2332,6 +2374,65 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TrialBalanceLine"
+
+    LedgerBalanceLine:
+      type: object
+      additionalProperties: false
+      required: [accountCode, accountName, accountType, openingDebit, openingCredit,
+                 periodDebit, periodCredit, closingDebit, closingCredit]
+      properties:
+        accountCode:
+          type: string
+        accountName:
+          type: string
+        accountType:
+          type: string
+          enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+        openingDebit:
+          description: Kumulatif debit sebelum periode (desimal 4, string tanpa float).
+          type: string
+        openingCredit:
+          type: string
+        periodDebit:
+          description: Mutasi debit dalam periode (rentang inklusif).
+          type: string
+        periodCredit:
+          type: string
+        closingDebit:
+          description: openingDebit + periodDebit.
+          type: string
+        closingCredit:
+          description: openingCredit + periodCredit.
+          type: string
+
+    LedgerBalances:
+      type: object
+      additionalProperties: false
+      required: [periodId, startsOn, endsOn, source, computedAt, lines]
+      properties:
+        periodId:
+          type: string
+          format: uuid
+        startsOn:
+          type: string
+          format: date
+        endsOn:
+          type: string
+          format: date
+        source:
+          description: |
+            `ledger` = dihitung dari jurnal; `snapshot` = periode CLOSED yang cache-nya pada
+            `endsOn` terekonsiliasi dengan jurnal.
+          type: string
+          enum: [ledger, snapshot]
+        computedAt:
+          description: Waktu perhitungan (ISO-8601 UTC).
+          type: string
+          format: date-time
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/LedgerBalanceLine"
 
     ParamBinding:
       type: object

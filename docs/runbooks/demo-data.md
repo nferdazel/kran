@@ -1,6 +1,6 @@
 # Data demo (sintetis) untuk pilot
 
-Berkas: `packs/demo/seed/0001_demo_parties.sql`.
+Berkas: `packs/demo/manual/0001_demo_parties.sql`.
 
 **Tidak ikut deploy.** Seed produksi hanya memuat `packs/*/generated/*.sql`, jadi berkas ini harus
 diterapkan manual dan boleh dihapus kapan saja.
@@ -10,7 +10,7 @@ diterapkan manual dan boleh dihapus kapan saja.
 ```bash
 ssh sachiel@43.133.148.191
 podman exec -i qouver-postgres psql -U qouver -d kran \
-  < /srv/qouver/apps/kran/monorepo/packs/demo/seed/0001_demo_parties.sql
+  < /srv/qouver/apps/kran/monorepo/packs/demo/manual/0001_demo_parties.sql
 ```
 
 Idempoten: `party_id`/`rating_id` deterministik dari CIF, `ON CONFLICT DO NOTHING`.

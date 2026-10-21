@@ -14,7 +14,7 @@ import mummy
 import db_connector/db_postgres
 
 import dbtools/lib
-import kernel/clock
+import kernel/[clock, money, result]
 import openapi/lib
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
@@ -449,6 +449,21 @@ suite "ledger: periode":
     check missing.code == 404
     checkProblem(ClosePath, "POST", "404", missing.body)
 
+proc ensurePeriod(startsOn, endsOn: string): string =
+  ## Buka periode langsung di DB; yang diuji di suite ini laporan, bukan pembukaan periode.
+  dbValue(sql"""
+    INSERT INTO ledger.period
+      (period_id, starts_on, ends_on, status, created_by, updated_by)
+    VALUES
+      (gen_random_uuid(), ?::date, ?::date, 'OPEN',
+       '00000000-0000-0000-0000-0000000000a1',
+       '00000000-0000-0000-0000-0000000000a1')
+    RETURNING period_id::text""", startsOn, endsOn)
+
+let
+  mayPeriod = ensurePeriod("2026-05-01", "2026-05-31")
+  julyPeriod = ensurePeriod("2026-07-01", "2026-07-31")
+
 suite "ledger: grant bercabang tidak boleh aksi institusi":
   test "grant yang dibatasi cabang → 403; grant tanpa batas → 200":
     # D-062: aksi tingkat institusi (`targetBranch = ""`) hanya untuk grant tanpa batas cabang.
@@ -483,6 +498,10 @@ suite "ledger: grant bercabang tidak boleh aksi institusi":
 
       let listPeriods = getJson(PeriodsPath, makerToken)
       check listPeriods.code == 403
+      let balances = getJson("/api/v1/ledger/balances?periodId=" & mayPeriod, makerToken)
+      check balances.code == 403
+      checkProblem("/api/v1/ledger/balances", "GET", "403", balances.body)
+      check balances.body["params"]["reason"].getStr() == "branch_not_allowed"
     finally:
       conn.exec(sql"""
         UPDATE platform.user_role ur SET branch_id = NULL
@@ -493,3 +512,191 @@ suite "ledger: grant bercabang tidak boleh aksi institusi":
 
     # Grant tanpa batas pulih → jalur normal jalan lagi.
     check getJson(CoaPath, makerToken).code == 200
+
+# ==== T-082: laporan saldo GL (opening/period/closing) ====
+
+const BalancesPath = "/api/v1/ledger/balances"
+
+proc asMoney(s: string): Money =
+  let r = moneyFromString(s)
+  doAssert r.isOk, "desimal tidak sah dari API: " & s
+  r.value()
+
+proc lineOf(body: JsonNode, code: string): JsonNode =
+  for item in body["lines"]:
+    if item["accountCode"].getStr() == code:
+      return item
+  newJNull()
+
+
+
+proc postJournal(businessDate, debitAccount, creditAccount, amount: string) =
+  ## Satu jurnal seimbang. Header + baris dalam **satu transaksi** (trigger keseimbangan
+  ## deferred + penjaga `xmin` migrasi 0008).
+  let conn = dbPool.acquire()
+  try:
+    exec(conn, sql"BEGIN")
+    let jid = conn.getValue(sql"""
+      INSERT INTO ledger.journal
+        (journal_id, business_date, value_date, source_event, source_ref,
+         idempotency_key, created_by)
+      VALUES
+        (gen_random_uuid(), ?::date, ?::date, 'BalancesTest', gen_random_uuid(),
+         gen_random_uuid()::text, '00000000-0000-0000-0000-0000000000a1')
+      RETURNING journal_id::text""", businessDate, businessDate)
+    exec(conn, sql"""
+      INSERT INTO ledger.journal_line
+        (journal_id, line_no, gl_account, branch_id, debit, credit)
+      VALUES
+        (?::uuid, 1, ?, '11111111-1111-7111-8111-111111111111', ?::numeric, 0),
+        (?::uuid, 2, ?, '11111111-1111-7111-8111-111111111111', 0, ?::numeric)""",
+      jid, debitAccount, amount, jid, creditAccount, amount)
+    exec(conn, sql"COMMIT")
+  except DbError:
+    exec(conn, sql"ROLLBACK")
+    raise
+  finally:
+    dbPool.release(conn)
+
+proc rebuildSnapshotAt(asOf: string) =
+  let conn = dbPool.acquire()
+  try:
+    discard conn.getValue(sql"SELECT ledger.rebuild_balance_snapshot(?::date)", asOf)
+  finally:
+    dbPool.release(conn)
+
+block:
+  # April: saldo awal periode Mei (periode lain, tetap OPEN).
+  discard ensurePeriod("2026-04-01", "2026-04-30")
+  postJournal("2026-04-10", "101", "201", "1000.0000")
+  postJournal("2026-04-20", "102", "201", "200.0000")
+  # Mei: mutasi di hari pertama & terakhir periode (batas inklusif).
+  postJournal("2026-05-01", "101", "201", "100.0000")
+  postJournal("2026-05-31", "101", "201", "50.0000")
+  # Juni: di luar periode Mei → tidak boleh masuk closing Mei.
+  discard ensurePeriod("2026-06-01", "2026-06-30")
+  postJournal("2026-06-01", "101", "201", "9999.0000")
+  # Juli: untuk jalur snapshot saat periode CLOSED.
+  postJournal("2026-07-05", "101", "201", "300.0000")
+
+suite "ledger: laporan saldo GL (T-082)":
+  test "tanpa sesi → 401, tanpa izin → 403, periodId bentuk salah → 400":
+    check getJson(BalancesPath & "?periodId=" & mayPeriod).code == 401
+
+    let forbidden = getJson(BalancesPath & "?periodId=" & mayPeriod, checkerToken)
+    check forbidden.code == 403
+    checkProblem(BalancesPath, "GET", "403", forbidden.body)
+
+    let bad = getJson(BalancesPath & "?periodId=bukan-uuid", makerToken)
+    check bad.code == 400
+    checkProblem(BalancesPath, "GET", "400", bad.body)
+
+  test "periode tidak ada → 404 problem":
+    let missing = getJson(BalancesPath &
+      "?periodId=88888888-8888-7888-8888-888888888888", makerToken)
+    check missing.code == 404
+    checkProblem(BalancesPath, "GET", "404", missing.body)
+
+  test "batas inklusif + akun tanpa mutasi ber-saldo-awal + akun kosong absen":
+    let reply = getJson(BalancesPath & "?periodId=" & mayPeriod, makerToken)
+    check reply.code == 200
+    checkJson(BalancesPath, "GET", "200", reply.body)
+    check reply.body["periodId"].getStr() == mayPeriod
+    check reply.body["startsOn"].getStr() == "2026-05-01"
+    check reply.body["endsOn"].getStr() == "2026-05-31"
+    check reply.body["source"].getStr() == "ledger"
+    check reply.body["computedAt"].getStr().endsWith("Z")
+    check reply.body["computedAt"].getStr().len >= 20
+
+    # 01/05 + 31/05 keduanya ikut (inklusif); 01/06 tidak.
+    let kas = lineOf(reply.body, "101")
+    check kas.kind == JObject
+    check kas["openingDebit"].getStr() == "1000.0000"
+    check kas["openingCredit"].getStr() == "0.0000"
+    check kas["periodDebit"].getStr() == "150.0000"
+    check kas["periodCredit"].getStr() == "0.0000"
+    check kas["closingDebit"].getStr() == "1150.0000"
+    check kas["closingCredit"].getStr() == "0.0000"
+
+    # 201 hanya bergerak di sisi kredit.
+    let simpanan = lineOf(reply.body, "201")
+    check simpanan.kind == JObject
+    check simpanan["openingCredit"].getStr() == "1200.0000"
+    check simpanan["periodCredit"].getStr() == "150.0000"
+    check simpanan["closingCredit"].getStr() == "1350.0000"
+
+    # 102 tidak bergerak di Mei tetapi saldo awalnya ≠ 0 → wajib tampil.
+    let bank = lineOf(reply.body, "102")
+    check bank.kind == JObject
+    check bank["openingDebit"].getStr() == "200.0000"
+    check bank["periodDebit"].getStr() == "0.0000"
+    check bank["closingDebit"].getStr() == "200.0000"
+
+    # Akun yang tidak pernah dipakai tidak tampil.
+    check lineOf(reply.body, "501").kind == JNull
+
+  test "total opening + mutasi = closing (per akun dan menyeluruh)":
+    let reply = getJson(BalancesPath & "?periodId=" & mayPeriod, makerToken)
+    check reply.code == 200
+    var sumOpenD, sumOpenC, sumPeriodD, sumPeriodC, sumCloseD, sumCloseC: Money
+    for l in reply.body["lines"]:
+      let openD = asMoney(l["openingDebit"].getStr())
+      let openC = asMoney(l["openingCredit"].getStr())
+      let periodD = asMoney(l["periodDebit"].getStr())
+      let periodC = asMoney(l["periodCredit"].getStr())
+      let closeD = asMoney(l["closingDebit"].getStr())
+      let closeC = asMoney(l["closingCredit"].getStr())
+      check closeD == openD + periodD
+      check closeC == openC + periodC
+      sumOpenD = sumOpenD + openD
+      sumOpenC = sumOpenC + openC
+      sumPeriodD = sumPeriodD + periodD
+      sumPeriodC = sumPeriodC + periodC
+      sumCloseD = sumCloseD + closeD
+      sumCloseC = sumCloseC + closeC
+    check sumOpenD == sumOpenC # neraca saldo awal seimbang
+    check sumPeriodD == sumPeriodC
+    check sumCloseD == sumCloseC
+    check sumCloseD == sumOpenD + sumPeriodD
+    # Mutasi periode laporan = mutasi trial balance periode yang sama.
+    let tb = getJson("/api/v1/ledger/trial-balance?periodId=" & mayPeriod, makerToken)
+    check tb.code == 200
+    check asMoney(tb.body["totalDebit"].getStr()) == sumPeriodD
+
+  test "periode CLOSED memakai snapshot; periode OPEN mengabaikannya":
+    # Snapshot dibangun saat periode masih OPEN → tetap dihitung dari jurnal (`source=ledger`).
+    rebuildSnapshotAt("2026-07-31")
+    let openReply = getJson(BalancesPath & "?periodId=" & julyPeriod, makerToken)
+    check openReply.code == 200
+    check openReply.body["source"].getStr() == "ledger"
+
+    # Tutup periode lalu baca lagi: snapshot terekonsiliasi → `source=snapshot`.
+    let closed = postJson(ClosePath.replace("{periodId}", julyPeriod),
+      %*{"reason": "tutup Juli 2026 (test saldo)"}, makerToken)
+    check closed.code == 200
+    check closed.body["status"].getStr() == "CLOSED"
+
+    let closedReply = getJson(BalancesPath & "?periodId=" & julyPeriod, makerToken)
+    check closedReply.code == 200
+    checkJson(BalancesPath, "GET", "200", closedReply.body)
+    check closedReply.body["source"].getStr() == "snapshot"
+    check closedReply.body["computedAt"].getStr().endsWith("Z")
+    # Angka tetap benar: 101 kumulatif s.d. 31 Juli = 1000 + 150 + 9999 + 300.
+    let kas = lineOf(closedReply.body, "101")
+    check kas.kind == JObject
+    check kas["closingDebit"].getStr() == "11449.0000"
+    check asMoney(kas["closingDebit"].getStr()) ==
+      asMoney(kas["openingDebit"].getStr()) + asMoney(kas["periodDebit"].getStr())
+
+  test "snapshot basi ditolak: jurnal backdated setelah CLOSED → source=ledger":
+    # Prasyarat: test sebelumnya menutup Juli dan cache 31 Juli cocok dengan jurnal.
+    # Jurnal ke April (periode OPEN) mengubah saldo awal Juli, jadi cache tidak lagi sah.
+    postJournal("2026-04-15", "101", "201", "77.0000")
+
+    let reply = getJson(BalancesPath & "?periodId=" & julyPeriod, makerToken)
+    check reply.code == 200
+    check reply.body["source"].getStr() == "ledger" # bukan `snapshot` yang sudah basi
+    let kas = lineOf(reply.body, "101")
+    check kas.kind == JObject
+    # 11449 + 77: angka tetap dari jurnal, bukan dari cache lama.
+    check kas["closingDebit"].getStr() == "11526.0000"
