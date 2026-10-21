@@ -102,6 +102,8 @@ proc paramRoutes*(): seq[RouteSpec] =
               operationId: "submitParamChange", handler: handleSubmitParamChange),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/params/changes/{paramValueId}/approve",
               operationId: "approveParamChange", handler: handleApproveParamChange),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/params/changes/{paramValueId}/reject",
+              operationId: "rejectParamChange", handler: handleRejectParamChange),
   ]
 
 proc auditRoutes*(): seq[RouteSpec] =

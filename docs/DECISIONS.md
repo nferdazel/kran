@@ -2522,3 +2522,102 @@ Yang berubah hanya berapa lama satu pinjaman boleh menunggu sebelum dinyatakan g
 **Konsekuensi.** Test stress tidak lagi menjadi alarm latensi DB dev — itu memang bukan tujuannya.
 Bila `timeout` muncul lagi, penyebabnya harus diselidiki sebagai kebocoran/koneksi mati, bukan
 dinaikkan ambangnya lagi tanpa bukti.
+
+---
+
+## D-103 — Id cabang: UUID untuk identitas, `text` hanya untuk kolom scope
+
+**Keputusan.** Semua id cabang yang **dibuat** aplikasi adalah UUID. Kolom `platform.*.scope_id`
+tetap `text` karena spec §10.2 mendefinisikan scope sebagai pasangan `scope_type`/`scope_id` yang
+generik (bukan FK), dan parameter dapat ber-scope selain cabang. Tidak ada migrasi tipe.
+
+**Konsekuensi.** Data uji lama yang memakai id non-UUID (mis. `cabang-uji`) tetap sah sebagai
+**fixture**, bukan contoh produksi. Handler yang menulis `branch_id` wajib mem-parse UUID
+(`parseId`) sebelum menulis; audit sudah memaksa `uuid`. O-017 ditutup sebagai konvensi, bukan
+perubahan skema.
+
+## D-104 — Pembalik jurnal pada periode yang sudah CLOSED tetap ditolak
+
+**Keputusan.** Koreksi lintas periode **tidak** dilakukan dengan membalik jurnal di periode lama
+(itu menembus immutability dan mengubah laporan yang sudah ditutup). Jalur resmi: buat jurnal
+pembalik/penyesuaian di **periode berjalan** dengan referensi ke jurnal asal, alasan, dan audit —
+disetujui operator berwenang. Sistem tetap menolak `POST .../reversal` bila periode tanggal asal
+CLOSED (409).
+
+**Konsekuensi.** Koreksi lintas periode adalah prosedur manual yang tercatat, bukan fitur tersembunyi.
+Bila kelak dibutuhkan otomasi, tambahkan use case eksplisit (izin + alasan + audit), bukan
+melonggarkan guard.
+
+## D-105 — Pembalik ditolak bila akun GL asal `INACTIVE`
+
+**Keputusan.** Pertahankan fail-closed: trigger menuntut akun `postable AND ACTIVE`, termasuk untuk
+baris pembalik. Aturan operasional: **jangan menonaktifkan akun GL yang masih dirujuk jurnal**;
+koreksi dilakukan selagi akun aktif, atau akun diaktifkan sementara dengan alasan + audit lalu
+dinonaktifkan lagi.
+
+**Konsekuensi.** Tidak ada jalur "pembalik ke akun mati". Bila kebutuhan akun kontra/laporan muncul,
+itu keputusan COA (D-106), bukan pelonggaran trigger.
+
+## D-106 — Akun kontra (CKPN, akumulasi penyusutan) ditunda ke Fase 2
+
+**Keputusan.** COA Fase 1 memakai invarian `normal_side` menurut tipe akun (D-070). Akun kontra
+belum dimodelkan; jangan memaksanya menjadi LIABILITY. Perluasan (penanda `contra` atau
+`normal_side` eksplisit) menunggu kebutuhan produk/akuntansi nyata dan keputusan REG-011.
+
+**Konsekuensi.** Laporan Fase 1 tidak memuat akun kontra. Bila pilot membutuhkannya, itu task COA
+baru dengan property test yang menjaga neraca tetap seimbang.
+
+## D-107 — Perubahan posting rule lewat migrasi sampai ada API (Fase 2)
+
+**Keputusan.** Fase 1 menyediakan tabel + resolver + konsumen; perubahan mapping oleh institusi
+masih lewat migrasi/seed yang di-review. CRUD rule (maker-checker, effective-dated) ditunda ke
+Fase 2 (O-080), karena belum ada kebutuhan multi-produk di pilot.
+
+**Konsekuensi.** Setiap perubahan rule = perubahan repo + deploy + audit review. Jangan menambah
+endpoint tulis rule diam-diam tanpa desain maker-checker.
+
+## D-108 — Anchor audit harian lewat `ctl audit-anchor`
+
+**Keputusan.** Rantai audit punya **anchor** yang disimpan di luar database: `kran-api --role=ctl
+audit-anchor [--out=<berkas>]` mencetak `waktu seq hash` kepala rantai dan (bila `--out`) menambah
+baris ke berkas append-only. Verifikasi: `ctl verify-audit` menyatakan rantai utuh **dan** hash/seq
+terakhir pada anchor cocok dengan baris DB pada seq itu. Berkas anchor disimpan di host terpisah/
+backup terpisah, bukan di DB yang sama.
+
+**Alasan tidak menunggu daycloser.** Framework daycloser (Fase 3) boleh menjadwalkan anchor nanti;
+kemampuan mencatatnya tidak bergantung pada daycloser, dan tanpa anchor penulisan ulang seluruh ekor
+rantai tidak terdeteksi.
+
+**Konsekuensi.** Penjadwalan harian (cron/systemd timer) dan penyimpanan salinan di luar server
+tetap tindakan host/pemilik (O-009 sisa operasional). Command ini tidak mengubah audit.
+
+## D-109 — Penolakan pengajuan parameter lewat endpoint `reject`
+
+**Keputusan.** `POST /api/v1/params/changes/{paramValueId}/reject` (izin checker) mengubah
+`PENDING` → `REJECTED`, alasan wajib (maks. 500 karakter), menulis audit `param.reject` + event
+`param.changed` (status REJECTED) dalam satu transaksi; nilai `ACTIVE` tidak disentuh. Penolakan
+kedua → 409 `not_pending`.
+
+**Konsekuensi.** Pengajuan salah tidak lagi perlu dibiarkan menumpuk atau diubah lewat SQL; semua
+jalur penolakan punya jejak audit yang sama dengan persetujuan.
+
+## D-110 — Pemisahan role DB: prosedur siap, penerapan butuh pemilik
+
+**Keputusan.** Append-only audit harus punya dua lapis: trigger (sudah ada) dan role aplikasi tanpa
+`UPDATE/DELETE` pada `platform.audit_log`. Prosedur lengkap ada di `docs/runbooks/db-roles.md`.
+Penerapannya **belum** dilakukan karena (a) `kran_app` saat ini pemilik schema, (b) deploy memakai
+satu URL untuk migrasi dan runtime sehingga memindahkan ownership tanpa memisahkan URL akan
+mematikan migrasi berikutnya.
+
+**Konsekuensi.** O-010 tetap terbuka sampai pemilik menyetujui jendela perubahan dan env migrasi
+dipisah. Jangan menjalankan separuh prosedur.
+
+## D-111 — Rotasi KEK dilarang selama blind index identitas ada
+
+**Keputusan.** Sampai ada perintah reindex blind index, rotasi KEK atas data identitas **dilarang**
+(O-073). Prosedur darurat (re-enkripsi + hitung ulang `number_bidx` manual + verifikasi duplikat)
+tercatat di `docs/runbooks/field-encryption.md`; itu operasi berisiko dengan snapshot DB, bukan
+prosedur rutin.
+
+**Konsekuensi.** Rotasi kunci untuk data non-identitas boleh mengikuti runbook; kunci lama tidak
+dihapus sampai verifikasi baca selesai.

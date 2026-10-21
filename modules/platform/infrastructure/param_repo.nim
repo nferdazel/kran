@@ -492,3 +492,27 @@ proc approveChange*(db: DbConn, ctx: AuditContext, clock: Clock,
       "key": pending.key, "scope_type": pending.scopeType, "scope_id": pending.scopeId,
       "status": $pvActive, "effective_from": pending.effectiveFrom, "value": pending.value}))
   notifyChange(db, pending.key)
+
+proc rejectChange*(db: DbConn, ctx: AuditContext, clock: Clock,
+                   paramValueId, reason: string): ChangeOutcome =
+  ## Penolakan oleh checker: PENDING → REJECTED + audit + event. Nilai ACTIVE tidak disentuh.
+  ##
+  ## Kenapa lewat repo, bukan UPDATE langsung dari handler: audit (`param.reject`) dan event
+  ## `param.changed` harus satu transaksi dengan perubahan status, seperti `approveChange`.
+  let found = pendingValueOf(db, paramValueId)
+  if found.isNone:
+    raise newException(ValueError, "param_value_id tidak ditemukan: " & paramValueId)
+  let pending = found.get()
+  if not rejectValue(db, paramValueId, ctx.userId, reason):
+    raise newException(ValueError, "nilai " & paramValueId & " tidak berstatus PENDING")
+
+  result.paramValueId = paramValueId
+  result.auditHash = appendAudit(db, newAuditEntry(ctx, "param.reject", "param_value",
+    paramValueId, clock, businessDate = pending.effectiveFrom,
+    after = %*{"key": pending.key, "scope_type": pending.scopeType, "scope_id": pending.scopeId,
+               "status": $pvRejected, "reason": reason}))
+  result.eventId = newId(clock)
+  discard appendEvent(db, newOutboxEvent(result.eventId, "param.changed", "param_value",
+    paramValueId, "param.change:" & paramValueId & ":rejected", %*{
+      "key": pending.key, "scope_type": pending.scopeType, "scope_id": pending.scopeId,
+      "status": $pvRejected, "effective_from": pending.effectiveFrom}))

@@ -71,6 +71,16 @@ proc chainOk*(rows: openArray[AuditChainRow]): bool =
       return false
   true
 
+proc auditHead*(db: DbConn): tuple[seq: int64, hash: string] =
+  ## Kepala rantai audit saat ini (baris terakhir yang tercatat). `seq = 0`, `hash = ""` bila kosong.
+  ##
+  ## Dipakai `ctl audit-anchor`: menyimpan kepala rantai di tempat lain sehingga penulisan ulang
+  ## seluruh ekor rantai (yang bisa lolos `verifyChain` sendiri) tetap terdeteksi.
+  for row in db.getAllRows(sql"""
+      SELECT seq, hash FROM platform.audit_log ORDER BY seq DESC LIMIT 1"""):
+    return (parseBiggestInt(row[0]), row[1])
+  (0'i64, "")
+
 proc countAudit*(db: DbConn): int64 =
   parseBiggestInt(db.getValue(sql"SELECT count(*) FROM platform.audit_log"))
 
