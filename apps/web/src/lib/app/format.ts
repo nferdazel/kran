@@ -7,19 +7,19 @@
  */
 
 import * as m from "#lib/paraglide/messages.js";
+import { formatMoney as formatMoneyForLocale, type MoneyDecimals } from "@kran/ui/money";
 import { currentLocale } from "#lib/app/i18n.js";
 
-export function formatIdr(decimal: string, options: { full?: boolean } = {}): string {
-  const value = Number(decimal);
-  if (!Number.isFinite(value)) {
-    throw new Error(`nilai uang bukan desimal: ${decimal}`);
-  }
-  return new Intl.NumberFormat(currentLocale(), {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: options.full ? 2 : 0,
-    maximumFractionDigits: options.full ? 2 : 0,
-  }).format(value);
+/**
+ * Uang dari API datang sebagai **string desimal** (spec §13: `"1500000.00"`), bukan number JSON.
+ * `formatMoney` (T-083/D-097) mempertahankan presisi tanpa float dan tanpa simbol mata uang:
+ * simbol ditaruh di judul kolom (DESIGN §6).
+ */
+export function formatMoney(decimal: string, options: { decimals?: MoneyDecimals } = {}): string {
+  return formatMoneyForLocale(decimal, {
+    locale: currentLocale(),
+    decimals: options.decimals ?? 4,
+  });
 }
 
 /**

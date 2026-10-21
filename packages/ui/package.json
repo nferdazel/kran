@@ -7,7 +7,8 @@
   "exports": {
     "./tokens.css": "./tokens/tokens.css",
     "./components.css": "./src/components.css",
-    "./contrast": "./src/contrast.ts"
+    "./contrast": "./src/contrast.ts",
+    "./money": "./src/money.ts"
   },
   "scripts": {
     "test": "vitest run"

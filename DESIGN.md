@@ -1,6 +1,6 @@
 # DESIGN.md — arah visual & aturan UI KRAN
 
-Status: **arah ditetapkan (D-075)**, menunggu ratifikasi/veto pemilik sebelum implementasi Fase 2.
+Status: **arah ditetapkan (D-075) dan diratifikasi pemilik 21 Okt 2026 (D-115)**; implementasi Fase 2 berjalan mulai T-079.
 Berlaku untuk layar baru. **Fase 1 (T-070…T-077) tidak mengubah UI**; migrasi token & komponen
 dikerjakan di T-079. Selama dokumen ini ada, pekerjaan UI tidak boleh lagi "draft without direction".
 
