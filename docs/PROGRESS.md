@@ -1901,3 +1901,17 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
   Prosedur bulanan: `docs/runbooks/restore-drill.md`.
 - **O-074**: test stress pool memakai `stressAcquireTimeoutMs = 60 dtk` (D-102); assertion tidak
   berubah. `./task test itpool` hijau.
+
+### O-076/O-078 balapan ledger (21 Okt 2026)
+
+- **O-076**: test dua-koneksi `itapi_ledger` menahan lock baris periode di antara SELECT dan UPDATE
+  handler; setelah transaksi kedua menutup periode, handler mendapat 409 dari guard UPDATE 0 baris,
+  tanpa audit/event kedua. Mutasi guard dinonaktifkan → test **FAILED**.
+- **O-078**: tiga test dua-koneksi `itapi_journal` dengan satu konflik unik per cabang: kunci sama +
+  pembalik → **200** dengan jurnal pemenang; kunci sama + jurnal bukan pembalik → **409** (cabang
+  idempotensi); kunci beda + pembalik untuk asal yang sama → **409** (`journal_reversal_uq`). Test
+  pertama tidak mengklaim indeks mana yang lebih dulu diperiksa (bukan kontrak PostgreSQL). Mutasi
+  masing-masing cabang catch → test terkait **FAILED**.
+- Keduanya memakai deteksi `pg_stat_activity` yang di-scope ke koneksi pemenang (`datname` +
+  `pg_blocking_pids`), bukan potongan teks SQL, agar tidak false positive dari sesi lain; timeout
+  thread 10–30 dtk. Periode latihan O-076 dihapus lagi setelah test.

@@ -101,6 +101,34 @@ block:
   baseUrl = startServer(app)
 
 type
+  CloseRaceArgs = object
+    url: string
+    path: string
+    token: string
+
+var
+  closeRaceCode = 0
+  closeRaceBody = ""
+
+proc closeRaceWorker(args: CloseRaceArgs) {.thread.} =
+  ## Menjalankan penutupan periode lewat HTTP dari thread lain supaya test bisa menahan lock baris
+  ## di antara SELECT dan UPDATE handler (O-076).
+  let client = newHttpClient(timeout = 20000)
+  try:
+    client.headers["Cookie"] = CookieName & "=" & args.token
+    client.headers["Content-Type"] = "application/json"
+    let response = client.post(args.url & args.path, $ %*{"reason": "balapan tutup"})
+    {.cast(gcsafe).}:
+      closeRaceCode = response.code.int
+      closeRaceBody = response.body
+  except CatchableError as e:
+    {.cast(gcsafe).}:
+      closeRaceCode = -1
+      closeRaceBody = e.msg
+  finally:
+    client.close()
+
+type
   Reply = object
     code: int
     raw: string
@@ -350,6 +378,71 @@ suite "ledger: periode":
     check dbValue(sql"""
       SELECT count(*)::text FROM platform.outbox
        WHERE event_type = 'period.closed' AND aggregate_id = ?""", periodId) == "1"
+
+  test "kalah balapan tutup periode → 409 dari guard UPDATE 0 baris, tanpa audit/event":
+    let opened = postJson(PeriodsPath, %*{"startsOn": "2026-02-01", "endsOn": "2026-02-28"},
+      makerToken)
+    check opened.code == 201
+    let periodId = opened.body["periodId"].getStr()
+    let path = ClosePath.replace("{periodId}", periodId)
+
+    # Kunci baris periode dari transaksi kedua. Handler boleh membaca OPEN (plain SELECT), tetapi
+    # UPDATE `WHERE status = 'OPEN'` akan menunggu — persis jendela balapan yang dijaga guard.
+    let side = dbPool.acquire()
+    defer: dbPool.release(side)
+    exec(side, sql"BEGIN")
+    discard side.getValue(
+      sql"SELECT 1 FROM ledger.period WHERE period_id = ?::uuid FOR UPDATE", periodId)
+    let sidePid = side.getValue(sql"SELECT pg_backend_pid()")
+
+    closeRaceCode = 0
+    closeRaceBody = ""
+    var worker: Thread[CloseRaceArgs]
+    createThread(worker, closeRaceWorker, CloseRaceArgs(url: baseUrl, path: path,
+        token: makerToken))
+
+    var blocked = false
+    let deadline = epochTime() + 10.0
+    while epochTime() < deadline and not blocked:
+      # Scope ke sesi ini: backend yang menunggu **diblokir oleh koneksi `side`**, bukan sesi lain.
+      blocked = dbValue(sql"""
+        SELECT count(*)::text FROM pg_stat_activity
+         WHERE datname = current_database() AND pid <> pg_backend_pid()
+           AND wait_event_type = 'Lock'
+           AND ?::int = ANY(pg_blocking_pids(pid))""", sidePid) != "0"
+      if not blocked:
+        sleep(20)
+
+    # Transaksi kedua menutup periode lebih dulu, lalu melepas kunci: UPDATE handler dievaluasi
+    # ulang, melihat status CLOSED, mengenai 0 baris.
+    exec(side, sql"""
+      UPDATE ledger.period
+         SET status = 'CLOSED', closed_at = now(),
+             closed_by = (SELECT user_id FROM platform.app_user WHERE username = 'dev.maker'),
+             updated_at = now(),
+             updated_by = (SELECT user_id FROM platform.app_user WHERE username = 'dev.maker')
+       WHERE period_id = ?::uuid""", periodId)
+    exec(side, sql"COMMIT")
+    joinThread(worker)
+
+    check blocked
+    check closeRaceCode == 409
+    check parseJson(closeRaceBody)["title"].getStr().len > 0
+    # Yang kalah tidak boleh menulis audit/event kedua untuk periode ini.
+    check dbValue(sql"""
+      SELECT count(*)::text FROM platform.audit_log
+       WHERE action = 'ledger.period.close' AND resource_id = ?""", periodId) == "0"
+    check dbValue(sql"""
+      SELECT count(*)::text FROM platform.outbox
+       WHERE event_type = 'period.closed' AND aggregate_id = ?""", periodId) == "0"
+
+    # Bersihkan periode latihan: CLOSED tanpa `period.closed`/audit tidak mungkin di produksi dan
+    # bisa mematahkan invarian yang ditambahkan nanti.
+    let bersih = dbPool.acquire()
+    try:
+      exec(bersih, sql"DELETE FROM ledger.period WHERE period_id = ?::uuid", periodId)
+    finally:
+      dbPool.release(bersih)
 
     let missing = postJson(ClosePath.replace("{periodId}", "88888888-8888-7888-8888-888888888888"),
       %*{"reason": "tidak ada"}, makerToken)
