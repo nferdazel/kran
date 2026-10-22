@@ -1,0 +1,419 @@
+## Test integrasi HTTP transaksi tunai teller (T-088b) — butuh `KRAN_DATABASE_URL`.
+##
+## Jalur penuh: sesi/izin (401/403), validasi 400, akun tidak ada 404, setor/tarik 201 dengan saldo
+## yang benar, konflik 409 `insufficient_funds`, idempotency (replay 200 + `Idempotent-Replayed`,
+## isi beda 409, tanpa header 400), dan periode CLOSED → 409 `period_closed` **tanpa** perubahan
+## saldo/baris/jurnal (bukti satu transaksi DB).
+##
+## Test me-reset seluruh schema, menyiapkan seed pack `base`, seed pengguna dev, satu party + produk
+## `SAV-DEP` ber-versi ACTIVE, periode Oktober OPEN, dan beberapa rekening sintetis. Business date
+## dikunci lewat `FakeClock` (2026-10-22) supaya periode uji deterministik.
+
+import std/[httpclient, json, net, os, strutils, times, unittest]
+
+import mummy
+import db_connector/db_postgres
+
+import dbtools/lib
+import kernel/[clock, ids]
+import openapi/lib
+import "platform-lib/db/config"
+import "platform-lib/db/pool"
+
+import deposit/domain/account
+import deposit/infrastructure/account_repo
+import ledger/domain/period
+import ledger/infrastructure/ledger_repo
+import party/domain/party
+import party/infrastructure/party_repo
+import product/domain/product
+import product/infrastructure/product_repo
+
+import ../src/[context, readiness, server]
+
+const
+  ContractPath = "packages/contracts/openapi/kran-api.yaml"
+  CashPath = "/api/v1/teller/cash-transactions"
+  LoginPath = "/api/v1/auth/login"
+  MakerUser = "dev.maker"
+  CheckerUser = "dev.checker"
+  DevPassword = "rahasia-panjang-123"
+  CookieName = "kran_session"
+  BranchId = "11111111-1111-7111-8111-111111111111"
+  ProductCode = "SAV-DEP"
+  BusinessDate = "2026-10-22"
+
+let envT = envTableFromProcess()
+if not databaseUrlSet(envT):
+  echo "itapi_teller: KRAN_DATABASE_URL kosong — dilewati"
+  quit(0)
+
+let contract = loadContractFile(ContractPath)
+let dbPool = newDbPool(dbConfigFromEnv(envT))
+
+var fixtureActor: Id
+var
+  PartyId: string
+  AccountIds: array[6, string]
+
+# --- penyiapan DB: skema bersih + seed pack + fixture party/produk/rekening --------------------
+block:
+  let db = dbPool.acquire()
+  resetTestSchemas(db, ".")
+  discard applyAllMigrations(db, ".")
+  execScript(db, readFile("packs/base/generated/param_definitions.sql"))
+  execScript(db, readFile("packs/base/generated/param_values.sql"))
+  execScript(db, readFile("packs/base/seed/0001_dev_users.sql"))
+  # `dev.maker` hanya memegang `param_maker` di seed; jalur sukses diuji dengan `platform_admin`
+  # (pemegang seluruh izin, termasuk izin teller dari migrasi `platform/0024`).
+  execScript(db, """
+    INSERT INTO platform.user_role (user_id, role_id, branch_id)
+    SELECT u.user_id, r.role_id, NULL
+      FROM platform.app_user u, platform.role r
+     WHERE u.username = 'dev.maker' AND r.code = 'platform_admin'
+    ON CONFLICT DO NOTHING
+  """)
+
+  let fixtureClock = fakeClock(dateTime(2026, mOct, 22, 9, 0, 0))
+  fixtureActor = Id("77777777-7777-7777-8777-777777777777")
+  let approver = Id("88888888-8888-7888-8888-888888888888")
+  let party = newParty(newId(fixtureClock), pkPerson, "Budi Santoso", Id(BranchId),
+    "{seq:6}{check}", nextCifSeq(db))
+  discard insertParty(db, party, fixtureActor)
+
+  let prod = Product(productId: newId(fixtureClock), code: ProductCode,
+    name: "Simpanan Sukarela", productType: ptSavings)
+  let ver = ProductVersion(versionId: newId(fixtureClock), productId: prod.productId,
+    versionNo: 1, effectiveFrom: "2020-01-01")
+  discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+    insertProduct(d, prod, fixtureActor)
+    insertVersion(d, ver, fixtureActor)
+    insertBinding(d, ver.versionId, ParamBinding(paramKey: "product.savings.min_balance",
+      value: %"0.0000"))
+    1)
+  doAssert approveVersion(db, ver.versionId, approver), "versi produk uji gagal di-approve"
+
+  discard insertPeriod(db,
+    Period(periodId: newId(fixtureClock), startsOn: "2026-10-01", endsOn: "2026-10-31"),
+    fixtureActor)
+
+  # Rekening sintetis untuk diuji; saldo awal 0. Dibuat lewat repo (bukan HTTP) supaya id stabil.
+  proc seedAccount(partyId: Id, productId: Id, versionId: Id): Id =
+    let a = newAccount(newId(fixtureClock), partyId, productId, versionId, ProductCode,
+      Id(BranchId), "2026-10-01", nextAccountSeq(db))
+    discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+      insertAccount(d, a, fixtureActor)
+      1)
+    a.accountId
+
+  var accountIds: seq[Id]
+  for _ in 0 ..< 6:
+    accountIds.add seedAccount(party.partyId, prod.productId, ver.versionId)
+
+  # Id rekening dipakai test lewat variabel global sederhana.
+  for i, id in accountIds:
+    AccountIds[i] = $id
+  PartyId = $party.partyId
+  dbPool.release(db)
+
+var app = AppContext(version: "itapi-teller-0.0.0", role: "api", startedAt: epochTime(),
+                     pool: dbPool, clock: fakeClock(dateTime(2026, mOct, 22, 9, 0, 0)),
+                     readiness: databaseProbe())
+
+type
+  ServeArgs = object
+    server: Server
+    port: int
+
+var
+  serverThread: Thread[ServeArgs]
+  baseUrl = ""
+
+proc freePort(): int =
+  let socket = newSocket()
+  socket.bindAddr(Port(0), "127.0.0.1")
+  result = int(socket.getLocalAddr()[1])
+  socket.close()
+
+proc serveInThread(args: ServeArgs) {.thread.} =
+  try:
+    args.server.serve(Port(args.port), "127.0.0.1")
+  except CatchableError:
+    discard
+
+proc startServer(a: AppContext): string =
+  let port = freePort()
+  let server = newApiServer(a)
+  createThread(serverThread, serveInThread, ServeArgs(server: server, port: port))
+  result = "http://127.0.0.1:" & $port
+  let deadline = epochTime() + 10.0
+  var up = false
+  while epochTime() < deadline and not up:
+    try:
+      let probe = newHttpClient(timeout = 1000)
+      defer: probe.close()
+      up = probe.get(result & "/healthz").code.int == 200
+    except CatchableError:
+      discard
+    if not up:
+      sleep(50)
+  doAssert up, "server test tidak pernah siap"
+
+block:
+  baseUrl = startServer(app)
+
+type
+  Reply = object
+    code: int
+    body: JsonNode
+    setCookie: string
+    replayed: string
+
+var idemCounter = 0
+
+proc autoIdemKey(): string =
+  inc idemCounter
+  "it-teller-" & $idemCounter
+
+proc call(verb, path, payload, token: string, idempotencyKey = "",
+    sendKey = true): Reply =
+  let client = newHttpClient(timeout = 15000)
+  defer: client.close()
+  if token.len > 0:
+    client.headers["Cookie"] = CookieName & "=" & token
+  var response: Response
+  if verb == "GET":
+    response = client.get(baseUrl & path)
+  else:
+    if payload.len > 0:
+      client.headers["Content-Type"] = "application/json"
+    if sendKey:
+      client.headers["Idempotency-Key"] =
+        if idempotencyKey.len > 0: idempotencyKey else: autoIdemKey()
+    response = client.post(baseUrl & path, payload)
+  result.code = response.code.int
+  result.setCookie = response.headers.getOrDefault("Set-Cookie")
+  result.replayed = response.headers.getOrDefault("Idempotent-Replayed")
+  result.body = newJNull()
+  if response.body.len > 0:
+    try:
+      result.body = parseJson(response.body)
+    except JsonParsingError:
+      discard
+
+proc postJson(path: string, payload: JsonNode, token = "", key = "",
+    sendKey = true): Reply =
+  call("POST", path, $payload, token, key, sendKey)
+
+proc tokenOf(reply: Reply): string =
+  for part in reply.setCookie.split(';'):
+    let item = part.strip()
+    if item.startsWith(CookieName & "="):
+      return item[CookieName.len + 1 .. ^1]
+  ""
+
+proc login(username: string, password = DevPassword): Reply =
+  postJson(LoginPath, %*{"username": username, "password": password})
+
+proc checkJson(path, verb, status: string, body: JsonNode) =
+  let problems = contract.validateValue(contract.responseSchema(path, verb, status), body, "$")
+  check problems.len == 0
+  for problem in problems:
+    checkpoint problem
+
+proc checkProblem(path, verb, status: string, body: JsonNode) =
+  let problems = contract.validateValue(
+    contract.responseSchema(path, verb, status, "application/problem+json"), body, "$")
+  check problems.len == 0
+  for problem in problems:
+    checkpoint problem
+
+proc dbCount(query: SqlQuery, args: varargs[string, `$`]): int =
+  let conn = dbPool.acquire()
+  try:
+    parseInt(conn.getValue(query, args))
+  finally:
+    dbPool.release(conn)
+
+proc dbText(query: SqlQuery, args: varargs[string, `$`]): string =
+  let conn = dbPool.acquire()
+  try:
+    conn.getValue(query, args)
+  finally:
+    dbPool.release(conn)
+
+proc balanceOf(accountId: string): string =
+  dbText(sql"SELECT balance::text FROM deposit.account_balance WHERE account_id = ?", accountId)
+
+proc txCount(accountId: string): int =
+  dbCount(sql"SELECT count(*)::text FROM deposit.transaction WHERE account_id = ?", accountId)
+
+proc journalCount(eventType: string): int =
+  dbCount(sql"SELECT count(*)::text FROM ledger.journal WHERE source_event = ?", eventType)
+
+var accountCursor = 0
+
+proc freshAccount(): string =
+  result = AccountIds[accountCursor]
+  inc accountCursor
+
+proc cashBody(accountId, direction, amount: string, narration = ""): JsonNode =
+  result = %*{"accountId": accountId, "direction": direction, "amount": amount}
+  if narration.len > 0:
+    result["narration"] = %narration
+
+# --- suite ------------------------------------------------------------------------------------
+
+suite "teller: autentikasi & izin":
+  test "tanpa sesi → 401":
+    let reply = postJson(CashPath, cashBody(AccountIds[0], "DEPOSIT", "10.0000"))
+    check reply.code == 401
+    checkProblem(CashPath, "POST", "401", reply.body)
+
+  test "pemegang izin lain → 403 (params.permission)":
+    let checker = login(CheckerUser)
+    check checker.code == 200
+    let reply = postJson(CashPath, cashBody(AccountIds[0], "DEPOSIT", "10.0000"),
+      tokenOf(checker))
+    check reply.code == 403
+    checkProblem(CashPath, "POST", "403", reply.body)
+    check reply.body["params"]["permission"].getStr() == "teller.transaction.post"
+
+suite "teller: validasi & bukan ditemukan":
+  test "badan/arah/nominal/narration tidak sah → 400":
+    let token = tokenOf(login(MakerUser))
+    check token.len > 0
+
+    let badId = postJson(CashPath,
+      %*{"accountId": "bukan-uuid", "direction": "DEPOSIT", "amount": "10.0000"}, token)
+    check badId.code == 400
+    checkProblem(CashPath, "POST", "400", badId.body)
+
+    let badDirection = postJson(CashPath,
+      %*{"accountId": AccountIds[0], "direction": "TRANSFER", "amount": "10.0000"}, token)
+    check badDirection.code == 400
+
+    for bad in ["0.0000", "-5.0000", "abc", "1.00001"]:
+      let reply = postJson(CashPath,
+        %*{"accountId": AccountIds[0], "direction": "DEPOSIT", "amount": bad}, token)
+      check reply.code == 400
+      checkProblem(CashPath, "POST", "400", reply.body)
+
+    let longNarration = postJson(CashPath,
+      cashBody(AccountIds[0], "DEPOSIT", "10.0000", repeat('n', 201)), token)
+    check longNarration.code == 400
+
+    let tanpaKunci = postJson(CashPath, cashBody(AccountIds[0], "DEPOSIT", "10.0000"), token,
+      sendKey = false)
+    check tanpaKunci.code == 400
+    checkProblem(CashPath, "POST", "400", tanpaKunci.body)
+
+  test "rekening tidak ada → 404":
+    let token = tokenOf(login(MakerUser))
+    let reply = postJson(CashPath,
+      cashBody("99999999-9999-7999-8999-999999999999", "DEPOSIT", "10.0000"), token)
+    check reply.code == 404
+    checkProblem(CashPath, "POST", "404", reply.body)
+
+suite "teller: setor & tarik":
+  test "setor 201 → saldo naik, satu baris + satu jurnal":
+    let token = tokenOf(login(MakerUser))
+    let accountId = freshAccount()
+    let reply = postJson(CashPath, cashBody(accountId, "DEPOSIT", "100.0000", "setor tunai"),
+      token)
+    check reply.code == 201
+    checkJson(CashPath, "POST", "201", reply.body)
+    check reply.body["direction"].getStr() == "DEPOSIT"
+    check reply.body["amount"].getStr() == "100.0000"
+    check reply.body["balanceAfter"].getStr() == "100.0000"
+    check reply.body["businessDate"].getStr() == BusinessDate
+    check balanceOf(accountId) == "100.0000"
+    check txCount(accountId) == 1
+    check journalCount("DepositPosted") == 1
+    # Satu baris transaksi menunjuk jurnal yang dilaporkan.
+    check dbText(sql"SELECT journal_id::text FROM deposit.transaction WHERE account_id = ?",
+      accountId) == reply.body["journalId"].getStr()
+
+  test "tarik 201 → saldo turun; tarik melebihi saldo 409 tanpa ubah apa pun":
+    let token = tokenOf(login(MakerUser))
+    let accountId = freshAccount()
+    let deposit = postJson(CashPath, cashBody(accountId, "DEPOSIT", "100.0000"), token)
+    check deposit.code == 201
+
+    let withdraw = postJson(CashPath, cashBody(accountId, "WITHDRAWAL", "60.0000"), token)
+    check withdraw.code == 201
+    checkJson(CashPath, "POST", "201", withdraw.body)
+    check withdraw.body["direction"].getStr() == "WITHDRAWAL"
+    check withdraw.body["balanceAfter"].getStr() == "40.0000"
+    check balanceOf(accountId) == "40.0000"
+    check txCount(accountId) == 2
+    check journalCount("DepositWithdrawn") == 1
+
+    let rowsBefore = txCount(accountId)
+    let journalsBefore = journalCount("DepositWithdrawn")
+    let tooMuch = postJson(CashPath, cashBody(accountId, "WITHDRAWAL", "100.0000"), token)
+    check tooMuch.code == 409
+    checkProblem(CashPath, "POST", "409", tooMuch.body)
+    check tooMuch.body["params"]["reason"].getStr() == "insufficient_funds"
+    # Rollback: saldo, baris, dan jurnal tidak berubah.
+    check balanceOf(accountId) == "40.0000"
+    check txCount(accountId) == rowsBefore
+    check journalCount("DepositWithdrawn") == journalsBefore
+
+suite "teller: idempotency":
+  test "replay 200 + Idempotent-Replayed, tepat satu jurnal; isi beda 409":
+    let token = tokenOf(login(MakerUser))
+    let accountId = freshAccount()
+    let body = cashBody(accountId, "DEPOSIT", "25.0000")
+    let key = "idem-teller-1"
+
+    let journalsBefore = journalCount("DepositPosted")
+    let first = postJson(CashPath, body, token, key)
+    check first.code == 201
+    let txId = first.body["transactionId"].getStr()
+    let journalId = first.body["journalId"].getStr()
+    check txCount(accountId) == 1
+    check journalCount("DepositPosted") == journalsBefore + 1
+
+    let replay = postJson(CashPath, body, token, key)
+    check replay.code == 200
+    check replay.replayed == "true"
+    check replay.body["transactionId"].getStr() == txId
+    check replay.body["journalId"].getStr() == journalId
+    # Replay tidak menambah transaksi/jurnal kedua.
+    check txCount(accountId) == 1
+    check journalCount("DepositPosted") == journalsBefore + 1
+    check balanceOf(accountId) == "25.0000"
+
+    # Isi beda pada kunci yang sama → 409.
+    let mismatch = postJson(CashPath, cashBody(accountId, "DEPOSIT", "30.0000"), token, key)
+    check mismatch.code == 409
+    checkProblem(CashPath, "POST", "409", mismatch.body)
+
+suite "teller: periode tertutup":
+  test "periode CLOSED → 409 period_closed, tanpa perubahan (rollback)":
+    let token = tokenOf(login(MakerUser))
+    let accountId = freshAccount()
+    let journalsBefore = journalCount("DepositPosted")
+
+    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+      exec(d, sql"""
+        UPDATE ledger.period SET status = 'CLOSED', closed_at = now(), closed_by = ?
+         WHERE starts_on <= '2026-10-22'::date AND ends_on >= '2026-10-22'::date""",
+        $fixtureActor)
+      1)
+
+    let reply = postJson(CashPath, cashBody(accountId, "DEPOSIT", "10.0000"), token)
+    check reply.code == 409
+    checkProblem(CashPath, "POST", "409", reply.body)
+    check reply.body["params"]["reason"].getStr() == "period_closed"
+    check balanceOf(accountId) == "0.0000"
+    check txCount(accountId) == 0
+    check journalCount("DepositPosted") == journalsBefore
+
+    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+      exec(d, sql"""
+        UPDATE ledger.period SET status = 'OPEN', closed_at = NULL, closed_by = NULL
+         WHERE starts_on <= '2026-10-22'::date AND ends_on >= '2026-10-22'::date""")
+      1)
+

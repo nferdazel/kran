@@ -21,6 +21,7 @@ import ./handlers_products
 import ./handlers_reports
 import ./handlers_param
 import ./handlers_party
+import ./handlers_teller
 import ./health
 import ./problem
 
@@ -194,7 +195,14 @@ proc depositRoutes*(): seq[RouteSpec] =
               operationId: "getDepositAccount", handler: handleGetDepositAccount),
   ]
 
+proc tellerRoutes*(): seq[RouteSpec] =
+  ## Teller: transaksi tunai (T-088b). Objek ber-cabang → gerbang `authorizedAtBranch` di handler.
+  @[
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/teller/cash-transactions",
+              operationId: "postCashTransaction", handler: handleCashTransaction),
+  ]
+
 proc allRoutes*(): seq[RouteSpec] =
   systemRoutes() & authRoutes() & mfaRoutes() & paramRoutes() & auditRoutes() &
     partyRoutes() & kycRoutes() & ledgerRoutes() & journalRoutes() & productRoutes() &
-    depositRoutes() & eventRoutes()
+    depositRoutes() & tellerRoutes() & eventRoutes()
