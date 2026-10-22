@@ -6,16 +6,19 @@
   schema: { minimum: 0 }
   sensitivity: NORMAL
   requires_approval: false
+  provenance: { class: komersial-konservatif, compliance: NEEDS-COMPLIANCE-REVIEW }
   default_pack: { base: "10000.00" }
 
 - key: deposit.payroll.admin_fee
   type: money
   scopes: [INSTITUTION, SEGMENT]
   schema: { minimum: 0 }
+  provenance: { class: komersial-konservatif, compliance: NEEDS-COMPLIANCE-REVIEW }
   default_pack: { base: "2500.00" }
 
 - key: deposit.statement.line_label
   type: string
   scopes: [GLOBAL]
   schema: { maxLength: 32 }
+  provenance: { class: kebijakan }
   default_pack: { base: "mutasi" }

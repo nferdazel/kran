@@ -2,6 +2,9 @@
 #
 # Nilai di `default_pack` adalah nilai awal pack, BUKAN fallback kode: aplikasi tetap
 # gagal-cepat bila nilai aktif tidak ada (spec §10.6).
+#
+# `provenance.class` menandai asal-usul nilai seed (D-095); tabel hasilnya di
+# `packs/base/generated/param_provenance.md`. Seluruh parameter ledger bersifat teknis.
 
 # Format kode akun COA. Kode akun adalah identitas akuntansi institusi (spec §10.5: "format kode"),
 # jadi polanya parameter — bukan konstanta di kode. Regex dicocokkan **seluruh string**.
@@ -11,6 +14,7 @@
   scopes: [GLOBAL, INSTITUTION]
   schema: { minLength: 5, maxLength: 120 }
   sensitivity: NORMAL
+  provenance: { class: teknis }
   default_pack: { base: "^[0-9]{1,3}(\\.[0-9]{1,3})*$" }
 
 # --- Konsumen posting (T-074) -------------------------------------------------------------
@@ -21,6 +25,7 @@
   scopes: [GLOBAL, INSTITUTION]
   schema: { minimum: 1, maximum: 500 }
   sensitivity: NORMAL
+  provenance: { class: teknis }
   default_pack: { base: 50 }
 
 - key: ledger.posting.max_attempts
@@ -28,6 +33,7 @@
   scopes: [GLOBAL, INSTITUTION]
   schema: { minimum: 1, maximum: 100 }
   sensitivity: NORMAL
+  provenance: { class: teknis }
   default_pack: { base: 10 }
 
 - key: ledger.posting.retry_backoff_seconds
@@ -35,6 +41,7 @@
   scopes: [GLOBAL, INSTITUTION]
   schema: { minimum: 1, maximum: 86400 }
   sensitivity: NORMAL
+  provenance: { class: teknis }
   default_pack: { base: 30 }
 
 - key: ledger.posting.poll_interval_ms
@@ -42,6 +49,7 @@
   scopes: [GLOBAL, INSTITUTION]
   schema: { minimum: 50, maximum: 60000 }
   sensitivity: NORMAL
+  provenance: { class: teknis }
   default_pack: { base: 500 }
 
 # Lease klaim outbox: event IN_FLIGHT yang lebih lama dari ini dianggap terdampar (worker mati) dan
@@ -51,4 +59,5 @@
   scopes: [GLOBAL, INSTITUTION]
   schema: { minimum: 30, maximum: 3600 }
   sensitivity: NORMAL
+  provenance: { class: teknis }
   default_pack: { base: 300 }

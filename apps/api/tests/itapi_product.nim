@@ -440,9 +440,9 @@ suite "product: validasi & konflik":
     let negative = postJson(ProductsPath, productBody("SAV08", "Negatif",
       bindings = %*{"product.savings.min_balance": "-1.0000"}), makerToken)
     check negative.code == 400
-    let graceTooBig = postJson(ProductsPath, productBody("SAV10", "Grace",
-      bindings = %*{"product.savings.grace_period_days": 999}), makerToken)
-    check graceTooBig.code == 400
+    let scaleTooBig = postJson(ProductsPath, productBody("SAV10", "Skala",
+      bindings = %*{"product.savings.rounding_scale": 999}), makerToken)
+    check scaleTooBig.code == 400
     let wrongKind = postJson(ProductsPath, productBody("SAV11", "Tipe Nilai",
       bindings = %*{"product.savings.min_balance": 1000}), makerToken)
     check wrongKind.code == 400
@@ -472,6 +472,23 @@ suite "product: validasi & konflik":
     check versionOf(ok.body, 1)["bindings"][0]["value"].getStr() == "12"
     execDb(sql"""DELETE FROM platform.param_definition
                   WHERE key = 'product.savings.__rate_test'""")
+
+  test "binding ke parameter deprecated → 400 (T-087)":
+    # Definisi `deprecated` (mis. `product.savings.grace_period_days` yang dipensiunkan lewat
+    # migrasi `product/0005`) tidak boleh lagi di-bind, walau barisnya masih ada di DB.
+    execDb(sql"""INSERT INTO platform.param_definition
+      (key, module, value_type, json_schema, allowed_scopes, description_key,
+       since_version, requires_approval, sensitivity, deprecated)
+      VALUES ('product.savings.__deprecated_test', 'product', 'integer',
+              '{"minimum": 0}'::jsonb, '{GLOBAL,INSTITUTION}', 'test.deprecated',
+              '0.0.0', true, 'NORMAL', true)
+      ON CONFLICT (key) DO UPDATE SET deprecated = true""")
+    let deprecated = postJson(ProductsPath, productBody("SAV-DEP", "Dipensiunkan",
+      bindings = %*{"product.savings.__deprecated_test": 1}), makerToken)
+    check deprecated.code == 400
+    checkProblem(ProductsPath, "POST", "400", deprecated.body)
+    execDb(sql"""DELETE FROM platform.param_definition
+                  WHERE key = 'product.savings.__deprecated_test'""")
 
   test "kode duplikat → 409":
     let reply = postJson(ProductsPath, productBody("SAV01", "Duplikat"), makerToken)

@@ -601,24 +601,6 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
-    "key": "product.savings.grace_period_days",
-    "module": "product",
-    "valueType": "integer",
-    "tsType": "string",
-    "scopes": [
-      "GLOBAL",
-      "INSTITUTION"
-    ],
-    "sensitivity": "NORMAL",
-    "requiresApproval": true,
-    "regulatoryRefs": [],
-    "descriptionKey": "param.product.savings.grace_period_days",
-    "jsonSchema": {
-      "minimum": 0,
-      "maximum": 365
-    }
-  },
-  {
     "key": "product.savings.interest_posting",
     "module": "product",
     "valueType": "enum",

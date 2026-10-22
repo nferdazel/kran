@@ -64,15 +64,22 @@ bercabang → 403 `branch_not_allowed`.
 ## Parameter
 
 Katalog atribut untuk pilot (`modules/product/seeds/params.yaml`): `product.savings.min_balance`
-(money), `product.savings.admin_fee` (money), `product.savings.grace_period_days` (integer).
+(money) dan `product.savings.admin_fee` (money). Keduanya kelas `komersial-konservatif` (nilai 0 =
+tidak menagih) dan bertanda `NEEDS-COMPLIANCE-REVIEW` sampai angka final disetujui pemilik.
 
 Bentuk akrual (O-084/D-094) sudah terdefinisi tetapi **belum bernilai**: `interest_rate` (rate, persen),
 `day_count_basis` (`ACT_365|ACT_360|THIRTY_360`), `rounding_mode` (`HALF_UP|HALF_EVEN`),
 `rounding_scale` (0–4), `interest_posting` (`NONE|MONTH_END`). Tanpa `default_pack` → binding produk
-ke kunci ini gagal-cepat sampai nilainya disetujui compliance. `grace_period_days` belum punya
-semantik (T-087); jangan dipakai sebagai konsumen.
-**NEEDS-COMPLIANCE-REVIEW**: arti/nilai final menunggu compliance. Rate/day-count/fee lain dicatat
-**O-084**.
+ke kunci ini gagal-cepat sampai nilainya disetujui compliance. Kelimanya kelas
+`regulasi-tidak-disemai` (D-095): nilai rate/basis yang bersifat regulasi tidak disemai.
+
+`product.savings.grace_period_days` **dikeluarkan** dari katalog (T-087, D-095) — tidak ada konsumen
+dan semantiknya tidak boleh dikarang. Baris lama di DB ditandai `deprecated` oleh migrasi expand-only
+`product/0005` supaya binding ke kunci itu ditolak; kode deposit/teller tidak disentuh.
+
+**NEEDS-COMPLIANCE-REVIEW**: arti/nilai final menunggu compliance. Tiap definisi wajib menyatakan
+`provenance.class` (D-095); tabel hasilnya di `packs/base/generated/param_provenance.md` (dihasilkan
+`paramgen`, diverifikasi `./task check`). Rate/day-count/fee lain dicatat **O-084**.
 
 ## Batas
 
