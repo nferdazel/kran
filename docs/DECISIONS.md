@@ -2811,3 +2811,29 @@ kosong (0 definisi) — disediakan untuk parameter yang didefinisikan tetapi bel
 `regulasi-tidak-disemai` memuat lima kunci akrual produk (O-084). Guard drift hanya membandingkan
 definisi **hidup**: `dbDefinitions` mengabaikan baris `deprecated` supaya definisi pensiun tidak
 dilaporkan sebagai "key yatim".
+
+---
+
+## D-122 — Nomor migrasi modul baru: seq harus > seq tabel yang di-FK (urutan `(seq, modul, berkas)`)
+
+**Konteks.** Urutan migrasi global adalah `(seq, nama modul, nama berkas)` (`tools/dbtools/lib.nim`),
+jadi pada **seq yang sama** modul yang abjadnya lebih dulu berjalan lebih dulu. Rencana T-088
+menaruh `deposit.account` di `deposit/0002`, padahal tabel itu mem-FK `product.product` /
+`product.product_version` yang dibuat `product/0002`. Karena `deposit` < `product` menurut abjad,
+`deposit/0002` berjalan sebelum `product/0002` dan migrasi gagal di DB kosong (jalur `db-tests` CI +
+`resetTestSchemas` harness). Rencana yang sama sudah menyadari bahaya ini untuk `ledger.journal`
+(mendasari "tabel ber-FK `ledger.journal` wajib seq ≥ 4") tetapi melewatkannya untuk `product`.
+
+**Keputusan.** Migrasi modul baru yang mem-FK tabel modul lain **wajib** memakai seq lebih besar
+daripada seq migrasi yang membuat tabel itu. Untuk `deposit`: schema+sequence di `deposit/0001`,
+tabel akun di `deposit/0003` (setelah `product/0002`); nomor `0002` sengaja dilewati. Diverifikasi
+`./task dbtools validate` (urutan tercetak tanpa DB) dan `itaccount` (migrasi dari skema kosong).
+
+**Alternatif yang ditolak.** Menaruh FK di migrasi terpisah (memecah pembuatan tabel dari
+invariannya) dan menunda tabel akun sampai 0004 (memaksa nomor transaksi T-088b naik). Keduanya
+menambah berkas/kerumitan tanpa manfaat.
+
+**Konsekuensi.** Nomor berkas modul bisa berlubang (mis. `deposit/0002` tidak ada) — itu
+disengaja dan dijelaskan di `MODULE.md`. Aturan ini juga mengikat T-088b (`deposit/0004` +
+`ledger/0012`) dan modul Fase 2+ lainnya.
+

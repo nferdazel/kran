@@ -60,6 +60,10 @@ tags:
     description: |
       Party (CIF + identitas dasar) — Fase 1, T-070. Nomor CIF dibentuk dari parameter
       `party.cif.format`; data PII menyusul di T-071 bersama field crypto.
+  - name: deposit
+    description: |
+      Rekening simpanan (spec §9.2, T-088a): buka + baca rekening, saldo tidak boleh negatif.
+      Transaksi tunai/PB + posting jurnal menyusul di T-088b/T-088c.
 
 paths:
   /healthz:
@@ -1670,6 +1674,120 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/deposit/accounts:
+    get:
+      operationId: listDepositAccounts
+      tags: [deposit]
+      summary: Daftar rekening simpanan milik satu party
+      description: |
+        Rekening milik `partyId`, disaring per cabang: rekening di cabang yang izinnya tidak
+        dipegang pemanggil tidak dikembalikan. `partyId` wajib dan harus UUID (kalau tidak → 400).
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: partyId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Daftar rekening
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepositAccountList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: openDepositAccount
+      tags: [deposit]
+      summary: Buka rekening simpanan
+      description: |
+        Membuka rekening dari produk `SAVINGS` yang punya versi `ACTIVE` berlaku pada tanggal
+        bisnis. Party harus `ACTIVE` dan satu cabang dengan rekening (kalau tidak → 409
+        `party_not_active`/`branch_mismatch`). Audit `deposit.account.open` ditulis dalam
+        transaksi yang sama. Nomor rekening **provisoris**: 10 digit dari sequence, tanpa check
+        digit (**NEEDS-COMPLIANCE-REVIEW**).
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DepositAccountCreate"
+      responses:
+        "200":
+          description: |
+            Replay permintaan sebelumnya: `Idempotency-Key` sama dengan isi yang sama. Body adalah
+            respons asli yang tersimpan; tidak ada rekening/audit baru.
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepositAccount"
+        "201":
+          description: Rekening dibuat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepositAccount"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/deposit/accounts/{accountId}:
+    get:
+      operationId: getDepositAccount
+      tags: [deposit]
+      summary: Baca satu rekening simpanan
+      description: |
+        Mengembalikan rekening + saldo bila pemanggil memegang izin `deposit.account.read` di
+        cabang rekening. Rekening tidak ada → 404; di cabang lain → 403. Id yang bukan UUID → 404.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Rekening
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepositAccount"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -2768,3 +2886,74 @@ components:
           minLength: 1
           maxLength: 500
           description: Alasan penolakan; tersimpan di audit dan pada versi (`rejectReason`).
+
+    DepositAccountCreate:
+      type: object
+      additionalProperties: false
+      required: [partyId, productCode, branchId]
+      properties:
+        partyId:
+          type: string
+          format: uuid
+          description: Party pemilik rekening (harus berstatus `ACTIVE`).
+        productCode:
+          type: string
+          description: Kode produk berjenis `SAVINGS` yang punya versi `ACTIVE` berlaku.
+        branchId:
+          type: string
+          format: uuid
+          description: Cabang rekening; harus sama dengan cabang party (kalau tidak → 409).
+
+    DepositAccount:
+      type: object
+      additionalProperties: false
+      required: [accountId, accountNo, partyId, productId, productCode, productVersionId,
+                 branchId, accountType, status, balance, openedOn, createdAt]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        accountNo:
+          type: string
+          description: |
+            Nomor rekening **provisoris**: 10 digit zero-padded dari sequence, tanpa check digit
+            (**NEEDS-COMPLIANCE-REVIEW** sampai bentuk final ditetapkan).
+        partyId:
+          type: string
+          format: uuid
+        productId:
+          type: string
+          format: uuid
+        productCode:
+          type: string
+        productVersionId:
+          type: string
+          format: uuid
+        branchId:
+          type: string
+          format: uuid
+        accountType:
+          type: string
+          enum: [SAVINGS]
+        status:
+          type: string
+          enum: [ACTIVE, CLOSED]
+        balance:
+          type: string
+          description: Saldo desimal string 4 desimal (tanpa float), mis. `"0.0000"`.
+        openedOn:
+          type: string
+          format: date
+        createdAt:
+          type: string
+          description: ISO-8601 UTC.
+
+    DepositAccountList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DepositAccount"
