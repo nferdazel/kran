@@ -516,13 +516,16 @@ proc runMigrate*(root: string, sub = "", subArg = ""): int =
           inc drift
       echo "kran-api migrate --check: " & $(status.len - belum - contractTertunda) & "/" &
         $status.len & " diterapkan, " & $drift & " isinya berubah"
+      # Baris mesin selalu ada supaya skrip deploy bisa membedakan "tidak ada contract" dari
+      # "format keluaran berubah"; keduanya dulu sama-sama berarti "lewati contract".
+      var ids: seq[string]
+      for s in status:
+        if s.migration.contract and not s.applied:
+          ids.add s.migration.id
+      echo "  contract_pending=" & $contractTertunda
       if contractTertunda > 0:
-        var ids: seq[string]
-        for s in status:
-          if s.migration.contract and not s.applied:
-            ids.add s.migration.id
-        echo "  " & $contractTertunda &
-          " migrasi contract menunggu `--contract` (bukan urusan --check): " & ids.join(", ")
+        echo "  migrasi contract menunggu `--contract` (bukan urusan --check): " & ids.join(", ")
+        echo "  contract_ids=" & ids.join(", ")
       if belum > 0 or drift > 0:
         1
       else:

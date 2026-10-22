@@ -24,6 +24,7 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 
 | Batas | Dampak nyata | Cara mendeteksi | Pemilik |
 |---|---|---|---|
+| Rollback layanan tidak mengembalikan skema; contract produk `0004` tetap terpasang | Binary lama + skema pasca-contract menyimpan versi sebagai DRAFT (seal lama sudah dilepas), jadi versi dari jendela itu perlu approve manual setelah pulih | `SELECT status, sealed FROM product.product_version` untuk versi yang dibuat selama jendela rollback | T-086, T-090, D-119, D-040 |
 | Migrasi contract/rollback baru terbukti di DB dev, belum di server | Rollback skema belum pernah dilatih pada data nyata; pasangan `.down.sql` belum ada untuk migrasi nyata | jalankan latihan deploy (T-013) sebelum mengandalkannya | T-035, D-040 |
 | Job CI GitHub belum lengkap (`db-tests`/`traceability`) | CI GitHub tidak menjalankan uji integrasi DB; gate yang sebenarnya adalah `./task ci` lokal (butuh DB dev) | lihat `docs/ci-jobs.md` | O-027 |
 | Antrean kirim realtime per koneksi tidak dibatasi | Klien lambat menambah pemakaian memori proses | pantau RSS; peristiwa hilang ditutup resume token | O-028 |
