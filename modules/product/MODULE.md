@@ -4,25 +4,32 @@ Katalog produk untuk koperasi/BPR/BMT (spec §8, §9, §23). Atribut produk **ti
 kode: setiap nilai adalah binding ke parameter terdaftar, dan perubahan atribut diterbitkan sebagai
 **versi baru** yang effective-dated.
 
-## Tabel (migrasi `0001` schema, `0002` katalog)
+## Tabel (migrasi `0001` schema, `0002` katalog, `0003` maker-checker)
 
 | Tabel | Isi |
 |---|---|
 | `product.product` | Identitas stabil: `code` (unik), `name`, `product_type`. Hanya nama yang boleh diubah. |
-| `product.product_version` | `version_no`, `effective_from`, `effective_to`, `sealed`. Rentang **inklusif** `[from, to]`; `EXCLUDE` menolak tumpang tindih. Immutable kecuali `effective_to` (diisi sekali) dan `sealed` false→true. |
-| `product.product_param_binding` | `param_key` → `value` per versi. Immutable. Minimal satu binding per versi (constraint trigger deferred), lalu versi **di-seal** sehingga binding baru ditolak. |
+| `product.product_version` | `version_no`, `effective_from`, `effective_to`, `status` (`DRAFT`/`ACTIVE`/`REJECTED`), `maker`, `checker`, `approved_at`, `reject_reason`, `sealed`. Rentang **inklusif** `[from, to]`; `EXCLUDE` parsial menolak tumpang tindih **antar versi ACTIVE** (draft bersaing boleh tumpang tindih). Immutable kecuali transisi status sekali dari `DRAFT`, `effective_to` (diisi sekali), dan `sealed` false→true. |
+| `product.product_param_binding` | `param_key` → `value` per versi. Immutable. Hanya boleh masuk selama versi `DRAFT`; versi `ACTIVE`/`REJECTED` selalu `sealed` sehingga binding baru ditolak. Minimal satu binding untuk bisa di-approve (ditegakkan trigger saat transisi ke `ACTIVE`). |
 
 Kolom diturunkan dari spec: spec hanya menyebut nama ketiga tabel + aturan effective-dated
-(§9.1(5)); keputusan bentuk dicatat **D-076**.
+(§9.1(5)); keputusan bentuk dicatat **D-076**, maker-checker **D-099** + **D-119**.
 
 ## Invarian
 
 - **Tidak ada angka bisnis di kode/DDL.** Tipe, enum, dan batas nilai divalidasi terhadap definisi
   parameter (`platform.param_definition`) di composition root.
-- **Versi tidak tumpang tindih** (DB `EXCLUDE`, bukan pengecekan aplikasi).
-- **Versi immutable**: koreksi/atribut baru = versi baru; `effective_to` hanya diisi sekali untuk
-  menutup versi saat versi berikutnya terbit, dan **himpunan binding dibekukan** (`sealed`) pada
-  COMMIT. Versi satu hari sah (`effective_to == effective_from`) — versi baru boleh mulai H+1.
+- **Maker-checker** (D-099 + D-119): versi lahir `DRAFT`; hanya `DRAFT` → `ACTIVE` (approve) atau
+  `DRAFT` → `REJECTED` (reject) yang sah. Reject wajib `reject_reason`. Versi tidak pernah dihapus.
+- **Pemisahan tugas** ditegakkan DB: `checker <> maker` (`product_version_self_approval_chk`); approve
+  sendiri → 409 `self_approval`.
+- **Versi ACTIVE tidak tumpang tindih** (DB `EXCLUDE` parsial); draft yang bertumpang tindih sah —
+  tumpang tindih diperiksa saat approve (409 `window_conflict`). Approve menutup versi `ACTIVE`
+  sebelumnya sehari sebelum tanggal mulai (`effective_to = tanggalBaru - 1`).
+- **Versi immutable**: koreksi/atribut baru = versi baru; `effective_to` hanya diisi sekali;
+  himpunan binding dibekukan (`sealed`) saat approve/reject, bukan saat binding pertama masuk.
+- **Katalog hanya memuat versi ACTIVE**: `currentVersion`/`openVersion` memfilter `status = 'ACTIVE'`,
+  sehingga draft/rejected tidak bocor (T-086, D-119).
 - **`btree_gist` dibuat di migrasi `0002`** karena urutan migrasi global menjalankan `product/0002`
   sebelum `platform/0004`; tanpa itu migrasi DB kosong gagal (diverifikasi pada cluster kosong).
 - Kunci binding hanya boleh parameter berawalan `product.` (mencegah produk menunjuk parameter
@@ -37,18 +44,22 @@ Kolom diturunkan dari spec: spec hanya menyebut nama ketiga tabel + aturan effec
 
 | Endpoint | Izin | Catatan |
 |---|---|---|
-| `GET /api/v1/products?asOf=` | `product.catalog.read` | Katalog + versi berlaku pada tanggal itu. |
-| `GET /api/v1/products/{code}` | `product.catalog.read` | Detail + semua versi + binding. |
-| `POST /api/v1/products` | `product.catalog.manage` | Produk + versi 1 (terbuka). |
-| `POST /api/v1/products/{code}/versions` | `product.catalog.manage` | Versi baru; versi terbuka ditutup sehari sebelum tanggal mulai. |
+| `GET /api/v1/products?asOf=` | `product.catalog.read` | Katalog + versi `ACTIVE` yang berlaku pada tanggal itu. |
+| `GET /api/v1/products/{code}` | `product.catalog.read` | Detail + semua versi (semua status) + binding. |
+| `POST /api/v1/products` | `product.catalog.manage` | Produk + versi 1 `DRAFT` (belum terbit). |
+| `POST /api/v1/products/{code}/versions` | `product.catalog.manage` | Ajukan versi baru `DRAFT`; tidak menutup versi ACTIVE berjalan. |
+| `POST /api/v1/products/{code}/versions/{versionId}/approve` | `product.catalog.approve` | `DRAFT` → `ACTIVE`; menutup versi ACTIVE sebelumnya; 409 `not_draft`/`self_approval`/`window_conflict`. |
+| `POST /api/v1/products/{code}/versions/{versionId}/reject` | `product.catalog.approve` | `DRAFT` → `REJECTED` dengan `reason` wajib (tanpa reason = 400). |
 
 Aksi institusi → dua gerbang: `requirePermission` lalu `authorizedAtBranch(..., "")`; grant
 bercabang → 403 `branch_not_allowed`.
 
 ## Event
 
-- `ProductPublished` (aggregate `product`) dalam transaksi yang sama dengan versi + audit
-  `product.publish`. Payload: `productId`, `code`, `productType`, `versionNo`, `effectiveFrom`.
+- `ProductPublished` (aggregate `product`) diterbitkan **saat approve** — dalam transaksi yang sama
+  dengan perubahan status + audit `product.approve`. Payload: `productId`, `code`, `productType`,
+  `versionNo`, `effectiveFrom`.
+- Submit (`product.draft`) dan reject (`product.reject`) hanya menulis audit, **tanpa** event.
 
 ## Parameter
 
@@ -65,7 +76,14 @@ semantik (T-087); jangan dipakai sebagai konsumen.
 
 ## Batas
 
-- Belum ada maker-checker untuk perubahan produk (**O-085**); izin `manage` cukup.
+- Maker-checker versi produk **sudah ada** (T-086). Pilot satu operator akan terblokir sampai ada
+  penyetuju kedua (`checker <> maker`) — konsekuensi kebijakan, bukan bug (D-099, `ACCEPTED-LIMITS.md`).
+- `published_at` kini berarti **waktu pencatatan versi** (saat submit), bukan saat terbit; nama
+  historis dipertahankan (utang nama, D-119). Waktu terbit yang sebenarnya = `approved_at`.
+- Migrasi `0003` bersifat **destruktif** (`-- dbtools:destructive`): mengganti constraint `EXCLUDE`
+  dan menambah kolom `NOT NULL`, jadi **bukan expand-only murni**. Trigger `fill_version_maker`
+  menjaga jendela rolling deploy (binary lama menulis tanpa `maker`); dihapus di migrasi contract
+  (T-090 di backlog).
 - Migrasi platform `0017` memuat grant no-op ke `product.read/manage` (kode lama); grant sebenarnya
   ada di `0018`. Dibiarkan karena `0017` sudah diterapkan (checksum).
 - Binding `pvtJson` dibatasi ukuran (16 KiB) tetapi bentuknya belum divalidasi schema; batas schema
@@ -75,4 +93,3 @@ semantik (T-087); jangan dipakai sebagai konsumen.
   `4930514` harus reset schema `product` + hapus riwayat `product/%` sebelum `dbtools migrate`.
   Jalur DB kosong belum dikunci test otomatis (**O-088**).
 - Belum ada UI; pengelolaan lewat API.
-- Versi belum punya status DRAFT/RETIRED; semua versi yang tersimpan dianggap terbit.

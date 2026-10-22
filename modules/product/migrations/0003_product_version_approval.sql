@@ -1,0 +1,131 @@
+-- Maker-checker versi produk (T-086, D-099 + D-119).
+--
+-- dbtools:destructive menambah kolom NOT NULL pada tabel berisi data dan mengganti constraint
+-- EXCLUDE (dari semua versi → hanya versi ACTIVE). Alasannya: DRAFT yang bertumpang
+-- tindih memang sah (dua pengajuan bersaing), sedangkan versi ACTIVE tetap tidak boleh tumpang
+-- tindih. Migrasi tetap expand-friendly: kolom baru, backfill, lalu constraint; tidak ada data
+-- yang dihapus.
+--
+-- Catatan rolling deploy: `maker` diisi trigger BEFORE INSERT dari `published_by` supaya binary
+-- lama yang masih berjalan (masih menulis tanpa kolom baru) tidak gagal selama jendela restart.
+-- Trigger itu bisa dihapus di migrasi contract setelah deploy selesai (T-090 di backlog).
+
+ALTER TABLE product.product_version
+  ADD COLUMN status text NOT NULL DEFAULT 'DRAFT',
+  ADD COLUMN maker uuid,
+  ADD COLUMN checker uuid,
+  ADD COLUMN approved_at timestamptz,
+  ADD COLUMN reject_reason text;
+
+-- Backfill baris lama: semuanya sudah terbit (tidak ada konsep DRAFT sebelumnya).
+UPDATE product.product_version
+   SET status = 'ACTIVE',
+       maker = published_by,
+       checker = '00000000-0000-0000-0000-000000000000',
+       approved_at = published_at,
+       sealed = true;
+
+ALTER TABLE product.product_version
+  ALTER COLUMN maker SET NOT NULL,
+  ALTER COLUMN status DROP DEFAULT,
+  ADD CONSTRAINT product_version_status_chk
+    CHECK (status IN ('DRAFT', 'ACTIVE', 'REJECTED')),
+  ADD CONSTRAINT product_version_self_approval_chk
+    CHECK (checker IS NULL OR checker <> maker),
+  ADD CONSTRAINT product_version_decision_chk CHECK (
+    (status = 'DRAFT') = (checker IS NULL)
+    AND (status = 'ACTIVE') = (approved_at IS NOT NULL)
+    AND (status = 'REJECTED') = (reject_reason IS NOT NULL)
+    AND (status <> 'DRAFT') = sealed);
+
+COMMENT ON COLUMN product.product_version.status IS
+  'DRAFT → ACTIVE (approve) atau REJECTED (reject). Tidak ada transisi lain (T-086).';
+COMMENT ON COLUMN product.product_version.checker IS
+  'Penyetuju/penolak; wajib berbeda dari maker. Backfill baris lama memakai UUID nol sebagai '
+  'sentinel "pack reviewer" (tidak ada aktor nyata sebelum maker-checker).';
+
+ALTER TABLE product.product_version
+  DROP CONSTRAINT product_version_no_overlap,
+  ADD CONSTRAINT product_version_active_no_overlap EXCLUDE USING gist (
+    product_id WITH =,
+    daterange(effective_from, effective_to, '[]') WITH &&
+  ) WHERE (status = 'ACTIVE');
+
+CREATE INDEX product_version_status_idx
+  ON product.product_version (product_id, status, effective_from DESC);
+
+-- Trigger lama membekukan versi begitu binding pertama masuk. Sekarang seal terjadi saat
+-- approve/reject, dan binding hanya boleh masuk selama versi masih DRAFT.
+DROP TRIGGER product_version_has_bindings ON product.product_version;
+DROP FUNCTION product.assert_version_has_bindings();
+
+CREATE OR REPLACE FUNCTION product.fill_version_maker() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.maker := coalesce(NEW.maker, NEW.published_by);
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER product_version_fill_maker
+  BEFORE INSERT ON product.product_version
+  FOR EACH ROW EXECUTE FUNCTION product.fill_version_maker();
+
+CREATE OR REPLACE FUNCTION product.guard_version_update() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'product: versi produk tidak boleh dihapus';
+  END IF;
+  IF NEW.version_id <> OLD.version_id OR NEW.product_id <> OLD.product_id
+     OR NEW.version_no <> OLD.version_no OR NEW.effective_from <> OLD.effective_from
+     OR NEW.published_at <> OLD.published_at OR NEW.published_by <> OLD.published_by
+     OR NEW.maker <> OLD.maker THEN
+    RAISE EXCEPTION 'product: versi immutable; hanya status/effective_to yang boleh berubah';
+  END IF;
+
+  IF NEW.status IS DISTINCT FROM OLD.status THEN
+    IF NOT (OLD.status = 'DRAFT' AND NEW.status IN ('ACTIVE', 'REJECTED')) THEN
+      RAISE EXCEPTION 'product: transisi status % → % tidak diizinkan', OLD.status, NEW.status;
+    END IF;
+    IF NEW.status = 'ACTIVE' AND NOT EXISTS (
+        SELECT 1 FROM product.product_param_binding b WHERE b.version_id = NEW.version_id) THEN
+      RAISE EXCEPTION 'product: versi % wajib punya minimal satu binding parameter',
+        NEW.version_id USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+  END IF;
+
+  IF OLD.checker IS NOT NULL AND NEW.checker IS DISTINCT FROM OLD.checker THEN
+    RAISE EXCEPTION 'product: checker sudah tercatat (tidak boleh diubah)';
+  END IF;
+  IF OLD.approved_at IS NOT NULL AND NEW.approved_at IS DISTINCT FROM OLD.approved_at THEN
+    RAISE EXCEPTION 'product: approved_at sudah tercatat (tidak boleh diubah)';
+  END IF;
+  IF OLD.reject_reason IS NOT NULL AND NEW.reject_reason IS DISTINCT FROM OLD.reject_reason THEN
+    RAISE EXCEPTION 'product: reject_reason sudah tercatat (tidak boleh diubah)';
+  END IF;
+
+  IF OLD.sealed AND NOT NEW.sealed THEN
+    RAISE EXCEPTION 'product: sealed tidak boleh dibuka kembali';
+  END IF;
+  IF OLD.effective_to IS NOT NULL AND NEW.effective_to IS DISTINCT FROM OLD.effective_to THEN
+    RAISE EXCEPTION 'product: effective_to sudah pernah diisi (tidak boleh diubah lagi)';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION product.assert_binding_open() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF EXISTS (
+      SELECT 1 FROM product.product_version v
+       WHERE v.version_id = NEW.version_id
+         AND (v.status <> 'DRAFT' OR v.sealed)) THEN
+    RAISE EXCEPTION 'product: binding versi % sudah dibekukan (bukan DRAFT); pakai versi baru',
+      NEW.version_id
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;

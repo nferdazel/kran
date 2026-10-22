@@ -28,6 +28,7 @@ import ./problem
 const
   permissionProductRead* = "product.catalog.read"
   permissionProductManage* = "product.catalog.manage"
+  permissionProductApprove* = "product.catalog.approve"
 
 proc respondInstitutionOnly(req: Request, permission: string) =
   req.respondProblem(newProblem(pkForbidden, "Forbidden",
@@ -47,6 +48,9 @@ proc versionJson(v: ProductVersion, bindings: seq[ParamBinding]): JsonNode =
     "versionNo": v.versionNo,
     "effectiveFrom": v.effectiveFrom,
     "effectiveTo": if v.effectiveTo.len == 0: newJNull() else: %v.effectiveTo,
+    "status": $v.status,
+    "approvedAt": if v.approvedAt.len == 0: newJNull() else: %v.approvedAt,
+    "rejectReason": if v.rejectReason.len == 0: newJNull() else: %v.rejectReason,
     "bindings": items,
   }
 
@@ -271,7 +275,7 @@ proc parseWindowFields(body: JsonNode): tuple[fromIso, toIso: string] =
   validateWindow(body["effectiveFrom"].getStr(), "")
 
 proc handleCreateProduct*(app: AppContext, req: Request) {.gcsafe.} =
-  ## `POST /api/v1/products` — produk baru + versi 1 (terbuka).
+  ## `POST /api/v1/products` — produk baru + versi 1 `DRAFT` (belum terbit; approve terpisah).
   let principalOpt = requirePrincipal(app, req)
   if principalOpt.isNone:
     return
@@ -330,15 +334,11 @@ proc handleCreateProduct*(app: AppContext, req: Request) {.gcsafe.} =
           insertBinding(db, v.versionId, b)
 
         let ctx = auditContextFor(principal, req, app.clock, "")
-        discard appendAudit(db, newAuditEntry(ctx, "product.publish", "product", $p.productId,
+        discard appendAudit(db, newAuditEntry(ctx, "product.draft", "product", $p.productId,
           app.clock,
           businessDate = businessDateFor(db, institutionScope(), businessDateIso(app.clock)),
           after = %*{"code": p.code, "productType": $p.productType,
                      "versionNo": 1, "effectiveFrom": window.fromIso}))
-        discard appendEvent(db, newOutboxEvent(newId(app.clock), "ProductPublished", "product",
-          $p.productId, "product.published:" & $v.versionId,
-          %*{"productId": $p.productId, "code": p.code, "productType": $p.productType,
-             "versionNo": 1, "effectiveFrom": window.fromIso}))
 
         payload = detailJson(db, p)
         status = 201)
@@ -351,7 +351,7 @@ proc handleCreateProduct*(app: AppContext, req: Request) {.gcsafe.} =
     if "product_code_key" in e.msg or "duplicate key" in e.msg:
       status = 409
       problemText = "kode produk sudah dipakai"
-    elif "product_version_no_overlap" in e.msg or "conflicting key" in e.msg:
+    elif "product_version_active_no_overlap" in e.msg or "conflicting key" in e.msg:
       status = 409
       problemText = "versi produk bertumpang tindih"
     elif "product_version_window_chk" in e.msg:
@@ -369,8 +369,8 @@ proc handleCreateProduct*(app: AppContext, req: Request) {.gcsafe.} =
   else: req.respondProblem(pkInternal, "Internal Server Error", problemText)
 
 proc handleCreateVersion*(app: AppContext, req: Request) {.gcsafe.} =
-  ## `POST /api/v1/products/{code}/versions` — versi baru; versi terbuka sebelumnya ditutup
-  ## sehari sebelum tanggal mulai.
+  ## `POST /api/v1/products/{code}/versions` — ajukan versi baru sebagai `DRAFT`. Submit tidak
+  ## menutup versi ACTIVE berjalan dan tidak menerbitkan event (D-119); itu tugas approve.
   let principalOpt = requirePrincipal(app, req)
   if principalOpt.isNone:
     return
@@ -412,18 +412,6 @@ proc handleCreateVersion*(app: AppContext, req: Request) {.gcsafe.} =
           problemText = defErr
           raise newException(ValueError, defErr)
 
-        let open = openVersion(db, p.get().productId)
-        if open.isSome:
-          if window.fromIso <= open.get().effectiveFrom:
-            status = 409
-            problemText = "effectiveFrom harus setelah versi berjalan (" &
-              open.get().effectiveFrom & ")"
-            raise newException(ValueError, problemText)
-          if not closeVersion(db, open.get().versionId, window.fromIso):
-            status = 409
-            problemText = "versi berjalan sudah ditutup permintaan lain"
-            raise newException(ValueError, problemText)
-
         let versionNo = nextVersionNo(db, p.get().productId)
         let v = ProductVersion(versionId: newId(app.clock), productId: p.get().productId,
           versionNo: versionNo, effectiveFrom: window.fromIso)
@@ -432,16 +420,11 @@ proc handleCreateVersion*(app: AppContext, req: Request) {.gcsafe.} =
           insertBinding(db, v.versionId, b)
 
         let ctx = auditContextFor(principal, req, app.clock, "")
-        discard appendAudit(db, newAuditEntry(ctx, "product.publish", "product",
+        discard appendAudit(db, newAuditEntry(ctx, "product.draft", "product",
           $p.get().productId, app.clock,
           businessDate = businessDateFor(db, institutionScope(), businessDateIso(app.clock)),
           after = %*{"code": p.get().code, "versionNo": versionNo,
                      "effectiveFrom": window.fromIso}))
-        discard appendEvent(db, newOutboxEvent(newId(app.clock), "ProductPublished", "product",
-          $p.get().productId, "product.published:" & $v.versionId,
-          %*{"productId": $p.get().productId, "code": p.get().code,
-             "productType": $p.get().productType, "versionNo": versionNo,
-             "effectiveFrom": window.fromIso}))
 
         payload = detailJson(db, p.get())
         status = 201)
@@ -451,7 +434,7 @@ proc handleCreateVersion*(app: AppContext, req: Request) {.gcsafe.} =
     if problemText.len == 0:
       problemText = e.msg
   except DbError as e:
-    if "product_version_no_overlap" in e.msg or "conflicting key" in e.msg:
+    if "product_version_active_no_overlap" in e.msg or "conflicting key" in e.msg:
       status = 409
       problemText = "versi produk bertumpang tindih"
     elif "effective_to sudah pernah diisi" in e.msg:
@@ -473,4 +456,241 @@ proc handleCreateVersion*(app: AppContext, req: Request) {.gcsafe.} =
   of 403: req.respondInstitutionOnly(permissionProductManage)
   of 404: req.respondProblem(pkNotFound, "Not Found", problemText)
   of 409: req.respondProblem(pkConflict, "Conflict", problemText)
+  else: req.respondProblem(pkInternal, "Internal Server Error", problemText)
+
+proc respondVersionReason(req: Request, kind: ProblemKind, title, reason, detail: string) =
+  req.respondProblem(newProblem(kind, title, detail, traceId = traceIdFrom(req),
+    params = @[("reason", reason)]))
+
+proc loadProductVersion(db: DbConn, code: string, versionId: Id,
+                        p: var Product, v: var ProductVersion): bool =
+  ## Produk + versi harus ada dan saling cocok; salah satu tidak cocok = tidak ditemukan.
+  let pOpt = productByCode(db, code)
+  if pOpt.isNone:
+    return false
+  let vOpt = versionById(db, versionId)
+  if vOpt.isNone or vOpt.get().productId != pOpt.get().productId:
+    return false
+  p = pOpt.get()
+  v = vOpt.get()
+  true
+
+proc handleApproveProductVersion*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `POST /api/v1/products/{code}/versions/{versionId}/approve` — checker (orang lain dari maker)
+  ## men-seal versi DRAFT: menutup versi ACTIVE sebelumnya sehari sebelum tanggal mulai, menulis
+  ## audit `product.approve`, dan menerbitkan `ProductPublished` (D-099 + D-119).
+  let principalOpt = requirePrincipal(app, req)
+  if principalOpt.isNone:
+    return
+  let principal = principalOpt.get()
+  if not requirePermission(app, req, principal, permissionProductApprove):
+    return
+  let code = pathParam(req, "code").strip.toUpperAscii()
+  let versionIdRaw = pathParam(req, "versionId").strip
+  if parseId(versionIdRaw).isErr:
+    req.respondProblem(pkNotFound, "Not Found", "versi tidak ditemukan")
+    return
+  let versionId = parseId(versionIdRaw).value()
+
+  var status = 0
+  var problemText = ""
+  var reasonParam = ""
+  var payload = newJObject()
+  try:
+    withDbTx(app.pool, proc(db: DbConn) {.gcsafe.} =
+      dbCalls:
+        if not authorizedAtBranch(db, principal, "", permissionProductApprove):
+          status = 403
+          return
+        let actor = parseId(principal.user.userId).value()
+        var p: Product
+        var v: ProductVersion
+        if not loadProductVersion(db, code, versionId, p, v):
+          status = 404
+          problemText = "produk atau versi tidak ditemukan"
+          raise newException(ValueError, problemText)
+        if v.status != vsDraft:
+          status = 409
+          reasonParam = "not_draft"
+          problemText = "versi tidak berstatus DRAFT (sekarang " & $v.status & ")"
+          raise newException(ValueError, problemText)
+        try:
+          assertDistinctActors(v.maker, actor)
+        except ValueError as e:
+          status = 409
+          reasonParam = "self_approval"
+          problemText = e.msg
+          raise newException(ValueError, problemText)
+
+        # Approve menutup versi ACTIVE berjalan; versi baru wajib mulai setelahnya.
+        let open = openVersion(db, p.productId)
+        if open.isSome:
+          if v.effectiveFrom <= open.get().effectiveFrom:
+            status = 409
+            reasonParam = "window_conflict"
+            problemText = "effectiveFrom harus setelah versi ACTIVE berjalan (" &
+              open.get().effectiveFrom & ")"
+            raise newException(ValueError, problemText)
+          if not closeVersion(db, open.get().versionId, v.effectiveFrom):
+            status = 409
+            reasonParam = "window_conflict"
+            problemText = "versi ACTIVE berjalan sudah ditutup permintaan lain"
+            raise newException(ValueError, problemText)
+
+        if not approveVersion(db, v.versionId, actor):
+          status = 409
+          reasonParam = "not_draft"
+          problemText = "versi sudah diputuskan permintaan lain"
+          raise newException(ValueError, problemText)
+
+        let ctx = auditContextFor(principal, req, app.clock, "")
+        discard appendAudit(db, newAuditEntry(ctx, "product.approve", "product", $p.productId,
+          app.clock,
+          businessDate = businessDateFor(db, institutionScope(), businessDateIso(app.clock)),
+          after = %*{"code": p.code, "versionNo": v.versionNo,
+                     "effectiveFrom": v.effectiveFrom, "status": "ACTIVE"}))
+        discard appendEvent(db, newOutboxEvent(newId(app.clock), "ProductPublished", "product",
+          $p.productId, "product.published:" & $v.versionId,
+          %*{"productId": $p.productId, "code": p.code, "productType": $p.productType,
+             "versionNo": v.versionNo, "effectiveFrom": v.effectiveFrom}))
+
+        payload = detailJson(db, p)
+        status = 200)
+  except ValueError as e:
+    if status == 0:
+      status = 400
+    if problemText.len == 0:
+      problemText = e.msg
+  except DbError as e:
+    if e.msg.contains("self_approval"):
+      status = 409
+      reasonParam = "self_approval"
+      problemText = "pengesahan sendiri ditolak: checker harus orang lain"
+    elif e.msg.contains("active_no_overlap") or e.msg.contains("conflicting key") or
+        e.msg.contains("exclusion"):
+      status = 409
+      reasonParam = "window_conflict"
+      problemText = "versi bertumpang tindih dengan versi ACTIVE"
+    elif e.msg.contains("product_version_window_chk"):
+      status = 409
+      reasonParam = "window_conflict"
+      problemText = "jendela versi tidak sah"
+    elif e.msg.contains("transisi status") or e.msg.contains("product_version_decision_chk"):
+      status = 409
+      reasonParam = "not_draft"
+      problemText = "transisi status versi tidak diizinkan"
+    else:
+      status = 500
+      problemText = "persetujuan versi gagal disimpan"
+
+  case status
+  of 200: req.respondJson(200, payload)
+  of 403: req.respondInstitutionOnly(permissionProductApprove)
+  of 404: req.respondProblem(pkNotFound, "Not Found", problemText)
+  of 409: req.respondVersionReason(pkConflict, "Conflict", reasonParam, problemText)
+  else: req.respondProblem(pkInternal, "Internal Server Error", problemText)
+
+const
+  maxProductRejectReasonLength = 500 # nomagic:ok batas ukuran permintaan, bukan nilai bisnis
+
+proc handleRejectProductVersion*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `POST /api/v1/products/{code}/versions/{versionId}/reject` — checker menolak versi DRAFT
+  ## (wajib alasan). Draft tidak dihapus; hanya audit, tanpa `ProductPublished` (D-119).
+  let principalOpt = requirePrincipal(app, req)
+  if principalOpt.isNone:
+    return
+  let principal = principalOpt.get()
+  if not requirePermission(app, req, principal, permissionProductApprove):
+    return
+  let code = pathParam(req, "code").strip.toUpperAscii()
+  let versionIdRaw = pathParam(req, "versionId").strip
+  if parseId(versionIdRaw).isErr:
+    req.respondProblem(pkNotFound, "Not Found", "versi tidak ditemukan")
+    return
+  let versionId = parseId(versionIdRaw).value()
+
+  let body = parseJsonBody(req)
+  if body.isNone or body.get().kind != JObject:
+    req.respondVersionReason(pkBadRequest, "Bad Request", "reason_missing",
+      "badan permintaan harus objek JSON dengan field reason")
+    return
+  let reason = body.get().jsonField("reason").strip()
+  if reason.len == 0:
+    req.respondVersionReason(pkBadRequest, "Bad Request", "reason_missing",
+      "field reason wajib diisi")
+    return
+  if reason.len > maxProductRejectReasonLength:
+    req.respondVersionReason(pkBadRequest, "Bad Request", "reason_too_long",
+      "reason maksimum " & $maxProductRejectReasonLength & " karakter")
+    return
+
+  var status = 0
+  var problemText = ""
+  var reasonParam = ""
+  var payload = newJObject()
+  try:
+    withDbTx(app.pool, proc(db: DbConn) {.gcsafe.} =
+      dbCalls:
+        if not authorizedAtBranch(db, principal, "", permissionProductApprove):
+          status = 403
+          return
+        let actor = parseId(principal.user.userId).value()
+        var p: Product
+        var v: ProductVersion
+        if not loadProductVersion(db, code, versionId, p, v):
+          status = 404
+          problemText = "produk atau versi tidak ditemukan"
+          raise newException(ValueError, problemText)
+        if v.status != vsDraft:
+          status = 409
+          reasonParam = "not_draft"
+          problemText = "versi tidak berstatus DRAFT (sekarang " & $v.status & ")"
+          raise newException(ValueError, problemText)
+        try:
+          assertDistinctActors(v.maker, actor)
+        except ValueError as e:
+          status = 409
+          reasonParam = "self_approval"
+          problemText = e.msg
+          raise newException(ValueError, problemText)
+
+        if not rejectVersion(db, v.versionId, actor, reason):
+          status = 409
+          reasonParam = "not_draft"
+          problemText = "versi sudah diputuskan permintaan lain"
+          raise newException(ValueError, problemText)
+
+        # Alasan masuk ke field audit `reason`, bukan `after`, supaya rantai audit tetap terbaca.
+        let ctx = auditContextFor(principal, req, app.clock, reason)
+        discard appendAudit(db, newAuditEntry(ctx, "product.reject", "product", $p.productId,
+          app.clock,
+          businessDate = businessDateFor(db, institutionScope(), businessDateIso(app.clock)),
+          after = %*{"code": p.code, "versionNo": v.versionNo,
+                     "effectiveFrom": v.effectiveFrom, "status": "REJECTED"}))
+
+        payload = detailJson(db, p)
+        status = 200)
+  except ValueError as e:
+    if status == 0:
+      status = 400
+    if problemText.len == 0:
+      problemText = e.msg
+  except DbError as e:
+    if e.msg.contains("self_approval"):
+      status = 409
+      reasonParam = "self_approval"
+      problemText = "pengesahan sendiri ditolak: checker harus orang lain"
+    elif e.msg.contains("transisi status") or e.msg.contains("product_version_decision_chk"):
+      status = 409
+      reasonParam = "not_draft"
+      problemText = "transisi status versi tidak diizinkan"
+    else:
+      status = 500
+      problemText = "penolakan versi gagal disimpan"
+
+  case status
+  of 200: req.respondJson(200, payload)
+  of 403: req.respondInstitutionOnly(permissionProductApprove)
+  of 404: req.respondProblem(pkNotFound, "Not Found", problemText)
+  of 409: req.respondVersionReason(pkConflict, "Conflict", reasonParam, problemText)
   else: req.respondProblem(pkInternal, "Internal Server Error", problemText)

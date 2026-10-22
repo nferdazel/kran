@@ -15,6 +15,13 @@ type
     ptLoan = "LOAN"
     ptFinancing = "FINANCING"
 
+  VersionStatus* = enum
+    ## Siklus hidup versi (D-099 + D-119): diajukan `DRAFT`, lalu diputuskan sekali menjadi
+    ## `ACTIVE` (approve) atau `REJECTED` (reject). Tidak ada transisi lain.
+    vsDraft = "DRAFT"
+    vsActive = "ACTIVE"
+    vsRejected = "REJECTED"
+
   Product* = object
     productId*: Id
     code*: string
@@ -28,7 +35,11 @@ type
     versionNo*: int
     effectiveFrom*: string ## ISO `yyyy-MM-dd`
     effectiveTo*: string   ## "" = terbuka ke atas
-    publishedAt*: string
+    status*: VersionStatus
+    maker*: Id             ## pengaju (D-099); tidak diserialisasi ke API
+    publishedAt*: string   ## waktu pencatatan versi (nama historis, D-119)
+    approvedAt*: string    ## "" = belum diputuskan
+    rejectReason*: string  ## "" = tidak ditolak
 
   ParamBinding* = object
     paramKey*: string
@@ -46,6 +57,24 @@ proc parseProductType*(raw: string): ProductType =
     if $t == s:
       return t
   raise newException(ValueError, "productType tidak dikenal: " & raw)
+
+proc parseVersionStatus*(raw: string): VersionStatus =
+  let s = raw.strip.toUpperAscii()
+  for st in VersionStatus:
+    if $st == s:
+      return st
+  raise newException(ValueError, "status versi tidak dikenal: " & raw)
+
+proc canTransition*(fromStatus, toStatus: VersionStatus): bool =
+  ## Satu-satunya transisi yang sah: DRAFT → ACTIVE/REJECTED. Dipakai test & handler sebagai
+  ## cermin aturan trigger `guard_version_update` di DB.
+  fromStatus == vsDraft and toStatus in {vsActive, vsRejected}
+
+proc assertDistinctActors*(maker, checker: Id) =
+  ## Maker-checker (D-099): pemutus harus orang lain daripada pengaju. Cermin CHECK
+  ## `product_version_self_approval_chk`.
+  if maker == checker:
+    raise newException(ValueError, "checker harus berbeda dari maker (pengesahan sendiri ditolak)")
 
 proc validateCode*(raw: string): string =
   ## Kode produk stabil (dipakai di API/referensi): huruf besar/angka, boleh `. _ -`.
