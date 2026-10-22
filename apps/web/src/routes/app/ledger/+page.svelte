@@ -386,6 +386,30 @@
     white-space: nowrap;
   }
 
+  /* Kolom kode akun tetap terlihat saat tabel digulir mendatar (DESIGN §10). Latar memakai
+   * warna surface yang sama dengan region supaya angka yang lewat di bawahnya tidak tembus,
+   * dan garis rambut baris tetap utuh, tanpa garis vertikal baru (DESIGN §6).
+   * `position: sticky` tidak berefek saat tabel muat penuh, jadi layar lebar tidak berubah.
+   * Dibatasi `screen`: perilaku cetak tidak disentuh selama ADR-013 belum diputuskan. */
+  @media screen {
+    .ledger-table thead tr:first-child th:first-child,
+    .ledger-table tbody th:first-child,
+    .ledger-table tfoot th:first-child {
+      position: sticky;
+      inset-inline-start: 0;
+      background: var(--color-surface);
+    }
+
+    .ledger-table thead tr:first-child th:first-child,
+    .ledger-table tfoot th:first-child {
+      z-index: 2;
+    }
+
+    .ledger-table tbody th:first-child {
+      z-index: 1;
+    }
+  }
+
   .ledger-account {
     min-inline-size: 12rem;
     max-inline-size: 18rem;
