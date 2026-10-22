@@ -32,7 +32,7 @@ let sysClock = systemClock()
 
 
 resetTestSchemas(db, ".")
-discard applyMigrations(db, repoRoot)
+let migrasiAwal = applyMigrations(db, repoRoot)
 execScript(db, readFile(repoRoot / "packs/base/generated/param_definitions.sql"))
 execScript(db, readFile(repoRoot / "packs/base/generated/param_values.sql"))
 
@@ -120,6 +120,7 @@ suite "migrasi product/0005 (T-087)":
       ON CONFLICT (key) DO UPDATE SET deprecated = false""", graceKey)
     check definitionOf(db, graceKey).get().deprecated == false
 
+    check "product/0005_product_deprecate_grace" in migrasiAwal.applied
     let migrasi = readFile(repoRoot / "modules/product/migrations/0005_product_deprecate_grace.sql")
     execScript(db, migrasi)
     execScript(db, migrasi) # idempoten: tidak error, tidak mengubah lagi
@@ -127,5 +128,4 @@ suite "migrasi product/0005 (T-087)":
     check definitionOf(db, graceKey).get().deprecated == true
     for d in dbDefinitions(db):
       check d.key != graceKey
-    for p in driftAgainstDatabase(db, paramDefinitions):
-      check p.key != graceKey
+    check driftAgainstDatabase(db, paramDefinitions).len == 0

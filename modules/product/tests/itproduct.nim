@@ -181,7 +181,7 @@ suite "product: tumpang tindih & penutupan versi":
     let activeV1 = versionsOf(db, created.productId)[0]
     expectDbError(proc() = db.exec(
       sql"""INSERT INTO product.product_param_binding (version_id, param_key, value)
-             VALUES (?, 'product.savings.min_balance', '0'::jsonb)""",
+             VALUES (?, 'product.savings.interest_rate', '0'::jsonb)""",
       $activeV1.versionId))
 
   test "INSERT langsung non-DRAFT atau maker palsu ditolak trigger":
