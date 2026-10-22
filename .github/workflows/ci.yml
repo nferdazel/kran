@@ -9,7 +9,13 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
 
 permissions:
   contents: read
@@ -22,6 +28,7 @@ jobs:
   nim-check:
     name: Nim (check + unit/property test)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,6 +73,7 @@ jobs:
   db-tests:
     name: DB (integrasi, Postgres 18)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:18
@@ -125,6 +133,7 @@ jobs:
   web-e2e:
     name: Web (svelte-check + axe + Playwright)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -143,6 +152,12 @@ jobs:
       - name: Install JS dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Cache browser Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Install browser Playwright
         # `playwright` adalah devDependency `apps/web`, bukan root: `pnpm exec` di root tidak
         # menemukannya (ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL: Command "playwright" not found), jadi
@@ -160,6 +175,7 @@ jobs:
   security:
     name: Security (gitleaks)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
