@@ -2759,3 +2759,26 @@ penerimaan ini.
 berlaku juga untuk reject. `published_at` tetap berarti waktu pencatatan versi (nama historis;
 utang nama dicatat di `MODULE.md`). Event `ProductPublished` hanya terbit saat approve; reject
 hanya audit.
+
+---
+
+## D-120 — Contract auto-apply lewat allowlist (deviasi terkontrol dari spec §21.4)
+
+**Konteks.** Spec §21.4 menyatakan migrasi contract "hanya dijalankan manual". Kenyataannya push ke
+`main` = deploy otomatis lewat webhook, sehingga contract yang menunggu manual akan membuat setiap
+deploy berikutnya merah (fail-closed) sampai operator turun tangan — termasuk deploy yang hanya
+mengubah dokumen. Keputusan pemilik pada T-086: contract dipecah expand (`product/0003`) + contract
+(`product/0004`) dan deploy boleh menjalankan contract **hanya** untuk id yang tercantum di
+`ops/migrations/contract-auto.txt`.
+
+**Keputusan.** (1) Allowlist adalah daftar putih yang di-review lewat PR; tidak ada flag di server.
+(2) `deploy-vps.sh` memeriksa contract pada **setiap** deploy (T-092), bukan hanya saat repo
+mengubah migrasi, karena skema bisa tertinggal akibat restore dump/`--down` manual. (3) Id di luar
+allowlist = deploy berhenti; operator menjalankan `--contract` manual. (4) Sebelum contract
+dijalankan, dump pra-deploy wajib ada; deploy mengambil dump `pre-contract` bila belum ada. (5) Bila
+contract dibatalkan dengan `--down`, id harus dikeluarkan dari allowlist sebelum push berikutnya,
+kalau tidak deploy akan memasangnya lagi.
+
+**Konsekuensi.** Deviasi dari spec tercatat di sini dan di runbook; allowlist menambah satu langkah
+review saat contract baru dipakai. Rollback layanan tetap tidak mengembalikan skema
+(ACCEPTED-LIMITS).

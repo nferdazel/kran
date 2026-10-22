@@ -258,7 +258,7 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE 'migrations/' <<<"$CHANGED_FILES"; then
     "$APP_DIR/scripts/backup-pre-deploy.sh" "$REVID" || die "pre-migration dump gagal; deploy dibatalkan"
     DUMP_TAKEN=1
   else
-    log "==> WARN: scripts/backup-pre-deploy.sh belum terpasang; pre-migration dump dilewati"
+    die "scripts/backup-pre-deploy.sh belum terpasang; pre-migration dump wajib (spec §21.4 #6)"
   fi
 fi
 
@@ -330,7 +330,7 @@ fi
 log "==> MIGRATION GATE: contract"
 if ! contract_check="$(KRAN_DATABASE_URL="$MIGRATE_DB_URL_HOST" "$MIGRATE_BIN" --role=migrate --check 2>&1)"; then
   log "$contract_check"
-  die "migrate --check gagal (expand tertunda/drift) — jalankan migrate --up manual lalu push ulang"
+  die "migrate --check gagal (expand tertunda atau drift) — periksa manual dengan migrate.sh --check"
 fi
 pending_count="$(sed -nE 's/^  contract_pending=([0-9]+)$/\1/p' <<<"$contract_check" | tail -1)"
 [ -n "${pending_count:-}" ] ||

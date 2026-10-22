@@ -1,7 +1,9 @@
 # Runbook — migrasi skema (expand → contract → rollback)
 
-Untuk operator. Yang rutin hanya `--check`/`--up` (dan itu dipanggil `ops/scripts/deploy-vps.sh`);
-`--contract` dan `--down` **manual, opt-in, dan bukan jalur rutin**. Implementasi:
+Untuk operator. Yang rutin hanya `--check`/`--up` (dan itu dipanggil `ops/scripts/deploy-vps.sh`).
+`--contract` pada prinsipnya **manual dan opt-in**; satu-satunya pengecualian adalah id yang sudah
+di-review di `ops/migrations/contract-auto.txt` — deploy menerapkannya otomatis dan memeriksanya
+pada **setiap** deploy (D-120). `--down` selalu manual. Implementasi:
 `tools/dbtools/lib.nim`; peran CLI-nya `--role=migrate` (lihat `ops-cli.md`).
 
 ## Bentuk berkas
@@ -67,7 +69,9 @@ dengan berkas pasangan yang di-review, bukan otomatis.
 1. Rilis migrasi expand, deploy biasa; versi lama dan baru hidup bersama.
 2. Setelah rilis stabil dan tidak ada lagi proses yang memakai bentuk lama, tambahkan berkas contract
    berpenanda (lewat PR, di-review), lalu jalankan manual di jendela pemeliharaan:
-   `migrate.sh --contract --yes`.
+   `migrate.sh --contract --yes`. Bila id-nya dicantumkan di `ops/migrations/contract-auto.txt`,
+   deploy berikutnya yang menyertakannya sudah menerapkannya otomatis (D-120) — pastikan binary
+   baru sudah live sebelum itu.
 3. Bila ternyata salah: `migrate.sh --down --yes 1` — hanya bila berkas pasangannya ada.
 
 ## Rollback: batasnya, supaya tidak dikira lebih kuat daripada kenyataannya
