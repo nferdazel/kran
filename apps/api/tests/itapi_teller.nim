@@ -15,7 +15,7 @@ import mummy
 import db_connector/db_postgres
 
 import dbtools/lib
-import kernel/[clock, ids]
+import kernel/[clock, ids, money, result]
 import openapi/lib
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
@@ -29,7 +29,7 @@ import party/infrastructure/party_repo
 import product/domain/product
 import product/infrastructure/product_repo
 
-import ../src/[context, readiness, server]
+import ../src/[context, deposit_posting, readiness, server]
 
 const
   ContractPath = "packages/contracts/openapi/kran-api.yaml"
@@ -40,6 +40,7 @@ const
   DevPassword = "rahasia-panjang-123"
   CookieName = "kran_session"
   BranchId = "11111111-1111-7111-8111-111111111111"
+  OtherBranchId = "22222222-2222-7222-8222-222222222222"
   ProductCode = "SAV-DEP"
   BusinessDate = "2026-10-22"
 
@@ -71,6 +72,23 @@ block:
     SELECT u.user_id, r.role_id, NULL
       FROM platform.app_user u, platform.role r
      WHERE u.username = 'dev.maker' AND r.code = 'platform_admin'
+    ON CONFLICT DO NOTHING
+  """)
+
+  # Pengguna ber-scope cabang lain: `requirePermission` lolos (grant ada), tetapi
+  # `authorizedAtBranch` harus menolak rekening cabang `BranchId`.
+  execScript(db, """
+    INSERT INTO platform.app_user (user_id, username, full_name, password_algo, password_hash,
+                                   password_updated_at, must_change_password)
+    SELECT gen_random_uuid(), 'dev.branchmaker', 'Dev Branch Maker', password_algo, password_hash,
+           password_updated_at, false
+      FROM platform.app_user WHERE username = 'dev.maker'
+  """)
+  execScript(db, """
+    INSERT INTO platform.user_role (user_id, role_id, branch_id)
+    SELECT u.user_id, r.role_id, '""" & OtherBranchId & """'
+      FROM platform.app_user u, platform.role r
+     WHERE u.username = 'dev.branchmaker' AND r.code = 'platform_admin'
     ON CONFLICT DO NOTHING
   """)
 
@@ -245,6 +263,24 @@ proc dbText(query: SqlQuery, args: varargs[string, `$`]): string =
 proc balanceOf(accountId: string): string =
   dbText(sql"SELECT balance::text FROM deposit.account_balance WHERE account_id = ?", accountId)
 
+proc journalLines(journalId: string): seq[tuple[gl, debit, credit: string]] =
+  let conn = dbPool.acquire()
+  try:
+    for row in conn.getAllRows(sql"""
+      SELECT gl_account, debit::text, credit::text FROM ledger.journal_line
+       WHERE journal_id = ? ORDER BY line_no""", journalId):
+      result.add((row[0], row[1], row[2]))
+  finally:
+    dbPool.release(conn)
+
+proc outboxAccountingHeaders(txId: string): int =
+  dbCount(sql"""
+    SELECT count(*)::text FROM platform.outbox
+     WHERE aggregate_id = ? AND jsonb_exists(headers, 'accounting')""", txId)
+
+proc auditCount(action: string): int =
+  dbCount(sql"SELECT count(*)::text FROM platform.audit_log WHERE action = ?", action)
+
 proc txCount(accountId: string): int =
   dbCount(sql"SELECT count(*)::text FROM deposit.transaction WHERE account_id = ?", accountId)
 
@@ -330,6 +366,19 @@ suite "teller: setor & tarik":
     check balanceOf(accountId) == "100.0000"
     check txCount(accountId) == 1
     check journalCount("DepositPosted") == 1
+    let depositLines = journalLines(reply.body["journalId"].getStr())
+    check depositLines == @[("101", "100.0000", "0.0000"), ("201", "0.0000", "100.0000")]
+    # M2: event outbox tidak boleh ber-header `accounting` (kalau tidak worker memposting jurnal kedua).
+    let txId = reply.body["transactionId"].getStr()
+    let journalId = reply.body["journalId"].getStr()
+    check outboxAccountingHeaders(txId) == 0
+    check outboxAccountingHeaders(journalId) == 0
+    check dbCount(sql"""
+      SELECT count(*)::text FROM platform.outbox
+       WHERE aggregate_id = ? AND event_type = 'CashTransactionPosted'""", txId) == 1
+    check dbCount(sql"""
+      SELECT count(*)::text FROM platform.outbox
+       WHERE aggregate_id = ? AND event_type = 'journal.posted'""", journalId) == 1
     # Satu baris transaksi menunjuk jurnal yang dilaporkan.
     check dbText(sql"SELECT journal_id::text FROM deposit.transaction WHERE account_id = ?",
       accountId) == reply.body["journalId"].getStr()
@@ -348,6 +397,8 @@ suite "teller: setor & tarik":
     check balanceOf(accountId) == "40.0000"
     check txCount(accountId) == 2
     check journalCount("DepositWithdrawn") == 1
+    let withdrawLines = journalLines(withdraw.body["journalId"].getStr())
+    check withdrawLines == @[("201", "60.0000", "0.0000"), ("101", "0.0000", "60.0000")]
 
     let rowsBefore = txCount(accountId)
     let journalsBefore = journalCount("DepositWithdrawn")
@@ -380,15 +431,53 @@ suite "teller: idempotency":
     check replay.replayed == "true"
     check replay.body["transactionId"].getStr() == txId
     check replay.body["journalId"].getStr() == journalId
-    # Replay tidak menambah transaksi/jurnal kedua.
+    # Replay tidak menambah transaksi/jurnal/audit kedua.
+    let auditsBeforeReplay = auditCount("deposit.transaction.post")
+    check auditsBeforeReplay > 0
     check txCount(accountId) == 1
     check journalCount("DepositPosted") == journalsBefore + 1
+    check auditCount("deposit.transaction.post") == auditsBeforeReplay
     check balanceOf(accountId) == "25.0000"
 
     # Isi beda pada kunci yang sama → 409.
     let mismatch = postJson(CashPath, cashBody(accountId, "DEPOSIT", "30.0000"), token, key)
     check mismatch.code == 409
     checkProblem(CashPath, "POST", "409", mismatch.body)
+
+suite "teller: otorisasi cabang & keadaan rekening":
+  test "izin hanya di cabang lain → 403 branch_not_allowed":
+    let token = tokenOf(login("dev.branchmaker"))
+    let reply = postJson(CashPath, cashBody(AccountIds[0], "DEPOSIT", "10.0000"), token,
+      "branch-teller-" & $epochTime())
+    check reply.code == 403
+    checkProblem(CashPath, "POST", "403", reply.body)
+    check reply.body["params"]["reason"].getStr() == "branch_not_allowed"
+
+  test "rekening CLOSED → 409 account_not_active tanpa mutasi":
+    let token = tokenOf(login(MakerUser))
+    let accountId = freshAccount()
+    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+      exec(d, sql"UPDATE deposit.account SET status = 'CLOSED' WHERE account_id = ?", accountId)
+      1)
+    let reply = postJson(CashPath, cashBody(accountId, "DEPOSIT", "10.0000"), token)
+    check reply.code == 409
+    checkProblem(CashPath, "POST", "409", reply.body)
+    check reply.body["params"]["reason"].getStr() == "account_not_active"
+    check balanceOf(accountId) == "0.0000"
+    check txCount(accountId) == 0
+
+  test "event tanpa posting rule → ValueError, tanpa jurnal":
+    var raised = false
+    try:
+      discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+        discard postJournalSync(d, app.clock, "EventTanpaRule", moneyFromString("1.0000").value(),
+          parseId(BranchId).value(), newId(app.clock), BusinessDate, "tanpa-rule-1",
+          fixtureActor)
+        1)
+    except ValueError:
+      raised = true
+    check raised
+    check journalCount("EventTanpaRule") == 0
 
 suite "teller: periode tertutup":
   test "periode CLOSED → 409 period_closed, tanpa perubahan (rollback)":

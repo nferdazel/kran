@@ -1810,7 +1810,8 @@ paths:
         default 0).
 
         `Idempotency-Key` wajib. Replay kunci+isi sama → 200 + `Idempotent-Replayed`; kunci sama isi
-        beda → 409. Izin `teller.transaction.post` harus dipegang di **cabang rekening**
+        beda → 409. Panjang efektif kunci maksimal **156** karakter (kunci jurnal menambah 44
+        karakter: `teller:` + UUID pemanggil + `:`); lebih dari itu → 400. Izin `teller.transaction.post` harus dipegang di **cabang rekening**
         (`params.reason=branch_not_allowed` bila hanya di cabang lain). Konflik domain 409 memakai
         `params.reason`: `account_not_active`, `insufficient_funds`, `period_closed`.
 
