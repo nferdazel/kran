@@ -2114,3 +2114,13 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
   di-`deprecated` lewat migrasi expand-only `product/0005`. Test integrasi menjalankan migrasi itu
   dua kali dan memastikan filter `deprecated` + guard drift. Reviewer 3 putaran (r3 APPROVE).
 - Bukti akhir: `./task ci` hijau (24 e2e). Belum di-push.
+
+### Deploy batch T-079/T-087/T-091/T-092 (22 Okt 2026)
+
+- **Push** `56f8a41..2fa7c3a` ke `main`; webhook deploy selesai.
+- Verifikasi eksternal: `/readyz` 200, `/login` 200, aset web baru `nodes/0.oZFEaok4.js`
+  (`4.rLP1r9cD.js` sebelumnya), `POST /api/v1/products/.../approve` tanpa sesi 401, path tak
+  dikenal 404.
+- Migrasi `product/0005` (deprecate `grace_period_days`) berjalan lewat gate deploy sebelum swap
+  biner; tidak ada contract tertunda. Bila health gate gagal, deploy tidak akan sampai swap —
+  aset web baru + readyz 200 menandakan gate lolos.
