@@ -176,6 +176,10 @@ proc productRoutes*(): seq[RouteSpec] =
               operationId: "createProduct", handler: handleCreateProduct),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/products/{code}/versions",
               operationId: "createProductVersion", handler: handleCreateVersion),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/products/{code}/versions/{versionId}/approve",
+              operationId: "approveProductVersion", handler: handleApproveProductVersion),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/products/{code}/versions/{versionId}/reject",
+              operationId: "rejectProductVersion", handler: handleRejectProductVersion),
   ]
 
 proc allRoutes*(): seq[RouteSpec] =

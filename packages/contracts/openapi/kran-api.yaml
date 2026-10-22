@@ -1439,8 +1439,9 @@ paths:
       tags: [product]
       summary: Daftar produk
       description: |
-        Katalog produk + versi yang berlaku pada `asOf` (default tanggal bisnis institusi).
-        Produk tanpa versi yang berlaku pada tanggal itu tetap muncul dengan `currentVersion: null`.
+        Katalog produk + versi `ACTIVE` yang berlaku pada `asOf` (default tanggal bisnis institusi).
+        Versi `DRAFT`/`REJECTED` tidak pernah muncul di katalog. Produk tanpa versi `ACTIVE` yang
+        berlaku pada tanggal itu tetap muncul dengan `currentVersion: null`.
       security:
         - sessionCookie: []
       parameters:
@@ -1468,11 +1469,12 @@ paths:
     post:
       operationId: createProduct
       tags: [product]
-      summary: Buat produk + versi pertama
+      summary: Buat produk + versi pertama (DRAFT)
       description: |
-        Membuat produk baru beserta versi 1 (terbuka). Setiap atribut **wajib** berupa binding ke
-        parameter terdaftar (`product.*`) dan divalidasi terhadap definisi parameter (tipe, enum,
-        batas numerik). Menerbitkan event `ProductPublished`.
+        Membuat produk baru beserta versi 1 berstatus `DRAFT` (belum terbit). Setiap atribut
+        **wajib** berupa binding ke parameter terdaftar (`product.*`) dan divalidasi terhadap
+        definisi parameter (tipe, enum, batas numerik). **Tidak** menerbitkan event: versi menjadi
+        `ACTIVE` lewat `approveProductVersion`, yang saat itu menerbitkan `ProductPublished`.
       security:
         - sessionCookie: []
       requestBody:
@@ -1535,11 +1537,12 @@ paths:
     post:
       operationId: createProductVersion
       tags: [product]
-      summary: Versi produk baru
+      summary: Ajukan versi produk baru (DRAFT)
       description: |
-        Menerbitkan versi baru mulai `effectiveFrom`. Versi terbuka sebelumnya ditutup sehari
-        sebelum tanggal itu. Versi tidak boleh tumpang tindih (dijaga EXCLUDE di DB). Menerbitkan
-        event `ProductPublished`.
+        Mengajukan versi baru mulai `effectiveFrom` sebagai `DRAFT`. Tidak menutup versi `ACTIVE`
+        berjalan dan **tidak** menerbitkan event. Dua draft boleh bertumpang tindih (pengajuan
+        bersaing); tumpang tindih divalidasi saat approve. Versi yang disetujui menutup versi
+        `ACTIVE` sebelumnya sehari sebelum tanggal mulai.
       security:
         - sessionCookie: []
       parameters:
@@ -1556,7 +1559,100 @@ paths:
               $ref: "#/components/schemas/ProductVersionCreate"
       responses:
         "201":
-          description: Versi dibuat
+          description: Versi diajukan (DRAFT)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/products/{code}/versions/{versionId}/approve:
+    post:
+      operationId: approveProductVersion
+      tags: [product]
+      summary: Setujui versi produk (DRAFT → ACTIVE)
+      description: |
+        Checker (harus **berbeda** dari maker; self-approval 409 `self_approval`) menyetujui versi
+        `DRAFT`: binding di-seal, versi `ACTIVE` berjalan ditutup sehari sebelum tanggal mulai
+        (`window_conflict` bila jendelanya bertabrakan), audit ditulis, dan event `ProductPublished`
+        diterbitkan. Versi yang bukan `DRAFT` → 409 `not_draft`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Versi disetujui
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/products/{code}/versions/{versionId}/reject:
+    post:
+      operationId: rejectProductVersion
+      tags: [product]
+      summary: Tolak versi produk (DRAFT → REJECTED)
+      description: |
+        Checker (harus **berbeda** dari maker) menolak versi `DRAFT` dengan `reason` wajib
+        (tanpa `reason` → 400). Draft tidak dihapus; hanya audit `product.reject` yang ditulis,
+        **tanpa** `ProductPublished`. Versi yang bukan `DRAFT` → 409 `not_draft`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductVersionReject"
+      responses:
+        "200":
+          description: Versi ditolak
           content:
             application/json:
               schema:
@@ -2531,7 +2627,7 @@ components:
     ProductVersion:
       type: object
       additionalProperties: false
-      required: [versionId, versionNo, effectiveFrom, effectiveTo, bindings]
+      required: [versionId, versionNo, effectiveFrom, effectiveTo, status, approvedAt, rejectReason, bindings]
       properties:
         versionId:
           type: string
@@ -2545,6 +2641,16 @@ components:
         effectiveTo:
           type: [ "string", "null" ]
           format: date
+        status:
+          type: string
+          enum: [DRAFT, ACTIVE, REJECTED]
+          description: "Siklus hidup versi (D-119): DRAFT → ACTIVE (approve) atau REJECTED (reject)."
+        approvedAt:
+          type: [ "string", "null" ]
+          description: Waktu persetujuan (ISO 8601 UTC); null selama belum disetujui.
+        rejectReason:
+          type: [ "string", "null" ]
+          description: Alasan penolakan; null kecuali status REJECTED.
         bindings:
           type: array
           items:
@@ -2651,3 +2757,14 @@ components:
         bindings:
           type: object
           additionalProperties: true
+
+    ProductVersionReject:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Alasan penolakan; tersimpan di audit dan pada versi (`rejectReason`).

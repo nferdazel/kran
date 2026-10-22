@@ -735,16 +735,18 @@ export interface paths {
         };
         /**
          * Daftar produk
-         * @description Katalog produk + versi yang berlaku pada `asOf` (default tanggal bisnis institusi).
-         *     Produk tanpa versi yang berlaku pada tanggal itu tetap muncul dengan `currentVersion: null`.
+         * @description Katalog produk + versi `ACTIVE` yang berlaku pada `asOf` (default tanggal bisnis institusi).
+         *     Versi `DRAFT`/`REJECTED` tidak pernah muncul di katalog. Produk tanpa versi `ACTIVE` yang
+         *     berlaku pada tanggal itu tetap muncul dengan `currentVersion: null`.
          */
         get: operations["listProducts"];
         put?: never;
         /**
-         * Buat produk + versi pertama
-         * @description Membuat produk baru beserta versi 1 (terbuka). Setiap atribut **wajib** berupa binding ke
-         *     parameter terdaftar (`product.*`) dan divalidasi terhadap definisi parameter (tipe, enum,
-         *     batas numerik). Menerbitkan event `ProductPublished`.
+         * Buat produk + versi pertama (DRAFT)
+         * @description Membuat produk baru beserta versi 1 berstatus `DRAFT` (belum terbit). Setiap atribut
+         *     **wajib** berupa binding ke parameter terdaftar (`product.*`) dan divalidasi terhadap
+         *     definisi parameter (tipe, enum, batas numerik). **Tidak** menerbitkan event: versi menjadi
+         *     `ACTIVE` lewat `approveProductVersion`, yang saat itu menerbitkan `ProductPublished`.
          */
         post: operations["createProduct"];
         delete?: never;
@@ -784,12 +786,58 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Versi produk baru
-         * @description Menerbitkan versi baru mulai `effectiveFrom`. Versi terbuka sebelumnya ditutup sehari
-         *     sebelum tanggal itu. Versi tidak boleh tumpang tindih (dijaga EXCLUDE di DB). Menerbitkan
-         *     event `ProductPublished`.
+         * Ajukan versi produk baru (DRAFT)
+         * @description Mengajukan versi baru mulai `effectiveFrom` sebagai `DRAFT`. Tidak menutup versi `ACTIVE`
+         *     berjalan dan **tidak** menerbitkan event. Dua draft boleh bertumpang tindih (pengajuan
+         *     bersaing); tumpang tindih divalidasi saat approve. Versi yang disetujui menutup versi
+         *     `ACTIVE` sebelumnya sehari sebelum tanggal mulai.
          */
         post: operations["createProductVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/products/{code}/versions/{versionId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Setujui versi produk (DRAFT → ACTIVE)
+         * @description Checker (harus **berbeda** dari maker; self-approval 409 `self_approval`) menyetujui versi
+         *     `DRAFT`: binding di-seal, versi `ACTIVE` berjalan ditutup sehari sebelum tanggal mulai
+         *     (`window_conflict` bila jendelanya bertabrakan), audit ditulis, dan event `ProductPublished`
+         *     diterbitkan. Versi yang bukan `DRAFT` → 409 `not_draft`.
+         */
+        post: operations["approveProductVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/products/{code}/versions/{versionId}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tolak versi produk (DRAFT → REJECTED)
+         * @description Checker (harus **berbeda** dari maker) menolak versi `DRAFT` dengan `reason` wajib
+         *     (tanpa `reason` → 400). Draft tidak dihapus; hanya audit `product.reject` yang ditulis,
+         *     **tanpa** `ProductPublished`. Versi yang bukan `DRAFT` → 409 `not_draft`.
+         */
+        post: operations["rejectProductVersion"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1281,6 +1329,15 @@ export interface components {
             effectiveFrom: string;
             /** Format: date */
             effectiveTo: string | null;
+            /**
+             * @description Siklus hidup versi (D-119): DRAFT → ACTIVE (approve) atau REJECTED (reject).
+             * @enum {string}
+             */
+            status: "DRAFT" | "ACTIVE" | "REJECTED";
+            /** @description Waktu persetujuan (ISO 8601 UTC); null selama belum disetujui. */
+            approvedAt: string | null;
+            /** @description Alasan penolakan; null kecuali status REJECTED. */
+            rejectReason: string | null;
             bindings: components["schemas"]["ParamBinding"][];
         };
         ProductVersionRef: {
@@ -1329,6 +1386,10 @@ export interface components {
             bindings: {
                 [key: string]: unknown;
             };
+        };
+        ProductVersionReject: {
+            /** @description Alasan penolakan; tersimpan di audit dan pada versi (`rejectReason`). */
+            reason: string;
         };
     };
     responses: {
@@ -2683,8 +2744,70 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Versi dibuat */
+            /** @description Versi diajukan (DRAFT) */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Product"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    approveProductVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+                versionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Versi disetujui */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Product"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    rejectProductVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+                versionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductVersionReject"];
+            };
+        };
+        responses: {
+            /** @description Versi ditolak */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
