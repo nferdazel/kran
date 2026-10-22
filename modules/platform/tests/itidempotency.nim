@@ -169,4 +169,5 @@ suite "idempotency: balapan":
     let decisions = {raceDecision[0], raceDecision[1]}
     check idemProceed in decisions
     check idemReplay in decisions
-    check idempotencyCount(db, principalId) >= 1
+    check db.getValue(sql"""SELECT count(*)::text FROM platform.idempotency_key
+      WHERE principal_id = ?::uuid AND key = ?""", principalId, key) == "1"

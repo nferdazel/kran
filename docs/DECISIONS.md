@@ -2710,7 +2710,8 @@ interaktif langsung, `tabindex` harus ditinjau ulang agar tidak menambah tab sto
 2. Karena klaim dan `completeIdempotency` terjadi dalam **satu** transaksi, baris in-flight yang
    ter-COMMIT **tidak mungkin muncul**: proses yang mati di tengah me-rollback klaimnya. Cabang
    `idemInFlight` (409 + `Retry-After`) karena itu **defensif** — hanya tercapai dari baris hasil
-   INSERT manual/seeder atau bila kelak klaim dipisah ke transaksi sendiri. Kontrak endpoint dan
+   INSERT manual/seeder, baris yang disapu setelah TTL di antara INSERT dan SELECT (fallback
+   1 detik), atau bila kelak klaim dipisah ke transaksi sendiri. Kontrak endpoint dan
    runbook tidak boleh menjanjikan `Retry-After` sebagai respons normal.
 3. `Retry-After` untuk klaim in-flight dibatasi **60 detik** (konstanta protokol di kode, bukan
    parameter bisnis); menunggu sisa TTL penuh (bisa sehari) tidak berguna bagi klien.
@@ -2721,3 +2722,19 @@ interaktif langsung, `tabindex` harus ditinjau ulang agar tidak menambah tab sto
 melewati deadline query, pemanggil menerima 500/PoolError. Ini batas yang diterima untuk pilot
 (operasi pembuat objek pendek). Bila kelak ada operasi panjang, klaim harus dipisah ke transaksi
 sendiri atau memakai advisory lock — perubahan itu butuh ADR baru.
+
+
+---
+
+## D-118 — `response_body` idempotensi menyimpan respons apa adanya (penerimaan risiko pilot)
+
+**Keputusan (pemilik, 22 Okt 2026).** Kolom `platform.idempotency_key.response_body` menyimpan
+respons sukses apa adanya, termasuk `displayName` pada `POST /parties`. Tidak ditulis ke log;
+akses hanya lewat role aplikasi; retensi mengikuti `expires_at` (TTL parameter, base 24 jam) dan
+sapuan **T-089** saat `daycloser` tersedia. Replay mengembalikan body tersimpan tanpa membaca ulang
+objek.
+
+**Batas.** Ini **bukan** penutupan O-093. Sebelum endpoint ini dipakai dengan data anggota nyata
+(produksi penuh), wajib diputuskan masking/field allowlist **atau** enkripsi kolom plus retensi
+formal; perubahan itu ditandai `HUMAN-REVIEW-REQUIRED` dan butuh ADR. Pilot dev/demo boleh dengan
+penerimaan ini.
