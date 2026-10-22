@@ -2013,3 +2013,23 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
   `pnpm --filter @kran/ui test` 110, screenshot 1440 terang/gelap, 1366x768, 390px.
 - **Catatan jujur**: cetak baru diuji lewat `@media print` (belum cetak fisik/PDF); 1366x768@125%
   belum diverifikasi formal; kolom kode/akun belum sticky saat tabel digulir di ponsel.
+
+
+### T-084/T-085: idempotensi transaksi (22 Okt 2026)
+
+- **T-084**: tabel `platform.idempotency_key` (migrasi `0021`, PK principal+kunci, hash, respons,
+  `created_at`/`expires_at`/`completed_at` dari jam aplikasi), domain + repo + helper
+  `withIdempotency`, parameter `platform.idempotency.ttl_hours` (base 24 jam). Test unit, integrasi,
+  rollback, konfigurasi rusak, dan balapan dua koneksi.
+- **T-085**: `POST /parties`, `POST /parties/{id}/risk-rating`, `POST /params/{key}/changes` menolak
+  tanpa header `Idempotency-Key` (400), replay 200 + `Idempotent-Replayed: true` tanpa objek/audit/
+  event kedua, isi/operasi berbeda 409, kesalahan konfigurasi server 500 amplop problem. Kontrak
+  OpenAPI + klien TS + gate kontrak (`tcontract`) diperbarui; UI parameter mengirim kunci per isi
+  form (dipertahankan saat 5xx/jaringan, dibersihkan saat sukses/4xx).
+- **Keputusan**: D-117 (duplikat konkuren menunggu lalu replay; `Retry-After` defensif; jam
+  aplikasi) dan D-118 (PII `response_body` diterima untuk pilot; wajib masking/enkripsi sebelum
+  data anggota nyata).
+- **Bukti**: `task ci` hijau pada `76a559a` (22 Okt 2026, termasuk e2e 24); reviewer T-084 r5
+  **APPROVE**, reviewer T-085 r2 **APPROVE**.
+- **Sisa**: T-089/O-094 (sapuan baris kedaluwarsa via daycloser) dan gate O-093/D-118 sebelum
+  produksi berisi PII nyata.
