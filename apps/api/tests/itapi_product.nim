@@ -518,3 +518,24 @@ suite "product: konflik jendela & reject self-approval":
     check reply.code == 409
     checkProblem(RejectPath, "POST", "409", reply.body)
     check reply.body["params"]["reason"].getStr() == "self_approval"
+
+  test "approve draft tanpa binding → 409 no_bindings, bukan 500":
+    let created = postJson(ProductsPath, productBody("SAV05", "Simpanan Lima"), makerToken)
+    check created.code == 201
+    let pid = created.body["productId"].getStr()
+    let vid = "a0000000-0000-7000-8000-000000000005"
+    let conn = dbPool.acquire()
+    try:
+      # Seed/import bisa membuat DRAFT tanpa binding (API tidak); approve-nya harus 409, bukan 500.
+      conn.exec(sql"""
+        INSERT INTO product.product_version
+          (version_id, product_id, version_no, effective_from, published_by, status, maker)
+        SELECT ?::uuid, ?::uuid, 2, '2026-12-01', u.user_id, 'DRAFT', u.user_id
+          FROM platform.app_user u WHERE u.username = 'dev.maker'""", vid, pid)
+    finally:
+      dbPool.release(conn)
+
+    let reply = postJson(fill(ApprovePath, "SAV05", vid), newJObject(), approverToken)
+    check reply.code == 409
+    checkProblem(ApprovePath, "POST", "409", reply.body)
+    check reply.body["params"]["reason"].getStr() == "no_bindings"

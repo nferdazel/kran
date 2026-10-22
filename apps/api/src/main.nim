@@ -506,22 +506,21 @@ proc runMigrate*(root: string, sub = "", subArg = ""): int =
       # begitu sebuah berkas contract dirilis.
       var belum = 0
       var drift = 0
-      var contractTertunda = 0
-      for s in status:
-        if s.migration.contract and not s.applied:
-          inc contractTertunda
-        elif not s.applied:
-          inc belum
-        elif s.checksumChanged:
-          inc drift
-      echo "kran-api migrate --check: " & $(status.len - belum - contractTertunda) & "/" &
-        $status.len & " diterapkan, " & $drift & " isinya berubah"
-      # Baris mesin selalu ada supaya skrip deploy bisa membedakan "tidak ada contract" dari
-      # "format keluaran berubah"; keduanya dulu sama-sama berarti "lewati contract".
+      # Satu daftar dipakai untuk hitungan **dan** allowlist deploy; dua loop terpisah bisa
+      # menyimpang dan membuat gate memverifikasi subset yang salah.
       var ids: seq[string]
       for s in status:
         if s.migration.contract and not s.applied:
           ids.add s.migration.id
+        elif not s.applied:
+          inc belum
+        elif s.checksumChanged:
+          inc drift
+      let contractTertunda = ids.len
+      echo "kran-api migrate --check: " & $(status.len - belum - contractTertunda) & "/" &
+        $status.len & " diterapkan, " & $drift & " isinya berubah"
+      # Baris mesin selalu ada supaya skrip deploy bisa membedakan "tidak ada contract" dari
+      # "format keluaran berubah"; keduanya dulu sama-sama berarti "lewati contract".
       echo "  contract_pending=" & $contractTertunda
       if contractTertunda > 0:
         echo "  migrasi contract menunggu `--contract` (bukan urusan --check): " & ids.join(", ")
