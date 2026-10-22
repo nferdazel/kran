@@ -1,10 +1,10 @@
-## Test integrasi HTTP modul `product` (T-076) — butuh `KRAN_DATABASE_URL`.
+## Test integrasi HTTP modul `product` (T-076 + T-086 maker-checker) — butuh `KRAN_DATABASE_URL`.
 ##
-## Jalur penuh: sesi/izin (401/403), buat produk + versi 1, daftar/detail sesuai kontrak, versi baru
-## menutup versi sebelumnya, validasi binding terhadap definisi parameter, duplikat → 409, audit +
-## event `ProductPublished`, dan grant bercabang → 403.
+## Jalur penuh: sesi/izin (401/403), submit produk/versi sebagai DRAFT, approve oleh operator lain
+## (men-seal, menutup versi ACTIVE sebelumnya, menerbitkan `ProductPublished`), reject berbahasa,
+## katalog hanya memuat versi ACTIVE, validasi binding, duplikat → 409, grant bercabang → 403.
 
-import std/[httpclient, json, net, options, os, strutils, times, unittest]
+import std/[httpclient, json, net, os, strutils, times, unittest]
 
 import mummy
 import db_connector/db_postgres
@@ -22,8 +22,11 @@ const
   ProductsPath = "/api/v1/products"
   DetailPath = "/api/v1/products/{code}"
   VersionsPath = "/api/v1/products/{code}/versions"
+  ApprovePath = "/api/v1/products/{code}/versions/{versionId}/approve"
+  RejectPath = "/api/v1/products/{code}/versions/{versionId}/reject"
   LoginPath = "/api/v1/auth/login"
   MakerUser = "dev.maker"
+  ApproverUser = "dev.approver"
   CheckerUser = "dev.checker"
   DevPassword = "rahasia-panjang-123"
   CookieName = "kran_session"
@@ -43,11 +46,22 @@ block:
   execScript(db, readFile("packs/base/generated/param_definitions.sql"))
   execScript(db, readFile("packs/base/generated/param_values.sql"))
   execScript(db, readFile("packs/base/seed/0001_dev_users.sql"))
+  # Approver baru: pengaju dan pemutus harus orang berbeda (D-099), sedangkan `dev.maker` dan
+  # `dev.checker` di seed tidak cukup (checker tidak memegang izin produk). Password disalin dari
+  # seed supaya kredensialnya sama; penambahan ini hanya di DB uji.
+  execScript(db, """
+    INSERT INTO platform.app_user
+      (user_id, username, full_name, password_algo, password_hash, must_change_password)
+    SELECT md5('dev|dev.approver')::uuid, 'dev.approver', 'Uji Approver (dev)',
+           password_algo, password_hash, false
+      FROM platform.app_user WHERE username = 'dev.checker'
+    ON CONFLICT (username) DO UPDATE SET must_change_password = false, status = 'ACTIVE'
+  """)
   execScript(db, """
     INSERT INTO platform.user_role (user_id, role_id, branch_id)
     SELECT u.user_id, r.role_id, NULL
       FROM platform.app_user u, platform.role r
-     WHERE u.username = 'dev.maker' AND r.code = 'platform_admin'
+     WHERE u.username IN ('dev.maker', 'dev.approver') AND r.code = 'platform_admin'
     ON CONFLICT DO NOTHING
   """)
   dbPool.release(db)
@@ -133,6 +147,10 @@ proc tokenOf(reply: Reply): string =
       return item[CookieName.len + 1 .. ^1]
   ""
 
+proc fill(pathTemplate, code, versionId: string): string =
+  ## Isi placeholder path; kontrak divalidasi dengan template aslinya, bukan hasil isian.
+  pathTemplate.replace("{code}", code).replace("{versionId}", versionId)
+
 proc checkJson(path, verb, status: string, body: JsonNode) =
   let problems = contract.validateValue(contract.responseSchema(path, verb, status,
     "application/json"), body, "$")
@@ -171,10 +189,23 @@ proc productBody(code, name: string, ptype = "SAVINGS", fromIso = "2026-10-01",
   %*{"code": code, "name": name, "productType": ptype, "effectiveFrom": fromIso,
      "bindings": b}
 
+proc versionOf(body: JsonNode, versionNo: int): JsonNode =
+  for v in body["versions"]:
+    if v["versionNo"].getInt() == versionNo:
+      return v
+  newJNull()
+
 let makerToken = tokenOf(postJson(LoginPath,
   %*{"username": MakerUser, "password": DevPassword}))
+let approverToken = tokenOf(postJson(LoginPath,
+  %*{"username": ApproverUser, "password": DevPassword}))
 let checkerToken = tokenOf(postJson(LoginPath,
   %*{"username": CheckerUser, "password": DevPassword}))
+
+var
+  productId = ""
+  v1 = ""
+  v2 = ""
 
 suite "product: autentikasi & izin":
   test "tanpa sesi → 401":
@@ -186,57 +217,126 @@ suite "product: autentikasi & izin":
     check reply.code == 403
     checkProblem(ProductsPath, "GET", "403", reply.body)
 
-suite "product: katalog":
-  test "buat produk + versi 1, audit + event":
+  test "checker tanpa izin approve → 403":
+    # `dev.checker` (param_checker) tidak punya `product.catalog.approve`.
+    let reply = postJson(fill(ApprovePath, "TIDAKADA", "00000000-0000-0000-0000-000000000000"),
+      newJObject(), checkerToken)
+    check reply.code == 403
+
+suite "product: maker-checker":
+  test "submit → DRAFT, tanpa event; draft tidak bocor ke katalog":
     let reply = postJson(ProductsPath, productBody("SAV01", "Simpanan Sukarela"), makerToken)
     check reply.code == 201
     checkJson(ProductsPath, "POST", "201", reply.body)
     check reply.body["code"].getStr() == "SAV01"
-    check reply.body["productType"].getStr() == "SAVINGS"
-    check reply.body["versions"].len == 1
-    check reply.body["versions"][0]["versionNo"].getInt() == 1
-    check reply.body["versions"][0]["effectiveTo"].kind == JNull
-    check reply.body["versions"][0]["bindings"].len == 2
-    let productId = reply.body["productId"].getStr()
+    productId = reply.body["productId"].getStr()
+    let draft = versionOf(reply.body, 1)
+    check draft["status"].getStr() == "DRAFT"
+    check draft["effectiveTo"].kind == JNull
+    check draft["approvedAt"].kind == JNull
+    check draft["rejectReason"].kind == JNull
+    check draft["bindings"].len == 2
+    v1 = draft["versionId"].getStr()
 
     check dbValue(sql"""
       SELECT count(*)::text FROM platform.audit_log
-       WHERE action = 'product.publish' AND resource_id = ?""", productId) == "1"
+       WHERE action = 'product.draft' AND resource_id = ?""", productId) == "1"
     check dbValue(sql"""
       SELECT count(*)::text FROM platform.outbox
-       WHERE event_type = 'ProductPublished' AND aggregate_id = ?""", productId) == "1"
+       WHERE event_type = 'ProductPublished' AND aggregate_id = ?""", productId) == "0"
 
-  test "daftar memuat versi yang berlaku; asOf salah → 400":
     let list = getJson(ProductsPath & "?asOf=2026-10-15", makerToken)
     check list.code == 200
     checkJson(ProductsPath, "GET", "200", list.body)
-    var found = false
     for item in list.body["items"]:
       if item["code"].getStr() == "SAV01":
-        found = true
-        check item["currentVersion"]["versionNo"].getInt() == 1
-    check found
+        check item["currentVersion"].kind == JNull
 
-    let invalid = getJson(ProductsPath & "?asOf=2026-02-31", makerToken)
-    check invalid.code == 400
-    checkProblem(ProductsPath, "GET", "400", invalid.body)
+  test "maker meng-approve dirinya → 409 self_approval":
+    let path = fill(ApprovePath, "SAV01", v1)
+    let reply = postJson(path, newJObject(), makerToken)
+    check reply.code == 409
+    checkProblem(ApprovePath, "POST", "409", reply.body)
+    check reply.body["params"]["reason"].getStr() == "self_approval"
 
-  test "detail produk + versi":
-    let reply = getJson(DetailPath.replace("{code}", "SAV01"), makerToken)
+  test "checker approve → ACTIVE + audit + ProductPublished":
+    let path = fill(ApprovePath, "SAV01", v1)
+    let reply = postJson(path, newJObject(), approverToken)
     check reply.code == 200
-    checkJson(DetailPath, "GET", "200", reply.body)
-    check reply.body["versions"].len == 1
-    check reply.body["versions"][0]["bindings"][0]["paramKey"].getStr().startsWith("product.")
+    checkJson(ApprovePath, "POST", "200", reply.body)
+    let active = versionOf(reply.body, 1)
+    check active["status"].getStr() == "ACTIVE"
+    check active["approvedAt"].kind == JString
+    check active["rejectReason"].kind == JNull
 
-  test "versi baru menutup versi sebelumnya (inklusif)":
+    check dbValue(sql"""
+      SELECT count(*)::text FROM platform.audit_log
+       WHERE action = 'product.approve' AND resource_id = ?""", productId) == "1"
+    check dbValue(sql"""
+      SELECT count(*)::text FROM platform.outbox
+       WHERE event_type = 'ProductPublished' AND aggregate_id = ?""", productId) == "1"
+    check dbValue(sql"""
+      SELECT status FROM product.product_version WHERE version_id = ?""", v1) == "ACTIVE"
+
+    let list = getJson(ProductsPath & "?asOf=2026-10-15", makerToken)
+    for item in list.body["items"]:
+      if item["code"].getStr() == "SAV01":
+        check item["currentVersion"]["versionNo"].getInt() == 1
+
+  test "approve kedua → 409 not_draft":
+    let path = fill(ApprovePath, "SAV01", v1)
+    let reply = postJson(path, newJObject(), approverToken)
+    check reply.code == 409
+    check reply.body["params"]["reason"].getStr() == "not_draft"
+
+  test "reject tanpa reason → 400; dengan reason → REJECTED tanpa event":
+    let created = postJson(ProductsPath, productBody("SAV02", "Simpanan Dua"), makerToken)
+    check created.code == 201
+    let pid = created.body["productId"].getStr()
+    let vid = versionOf(created.body, 1)["versionId"].getStr()
+
+    let noReason = postJson(fill(RejectPath, "SAV02", vid), newJObject(), approverToken)
+    check noReason.code == 400
+    checkProblem(RejectPath, "POST", "400", noReason.body)
+
+    let rejected = postJson(fill(RejectPath, "SAV02", vid), %*{"reason": "atribut salah"},
+      approverToken)
+    check rejected.code == 200
+    checkJson(RejectPath, "POST", "200", rejected.body)
+    let rv = versionOf(rejected.body, 1)
+    check rv["status"].getStr() == "REJECTED"
+    check rv["rejectReason"].getStr() == "atribut salah"
+    check rv["approvedAt"].kind == JNull
+
+    check dbValue(sql"""
+      SELECT count(*)::text FROM platform.outbox
+       WHERE event_type = 'ProductPublished' AND aggregate_id = ?""", pid) == "0"
+    check dbValue(sql"""
+      SELECT count(*)::text FROM platform.audit_log
+       WHERE action = 'product.reject' AND resource_id = ?""", pid) == "1"
+
+    # Draft yang ditolak tidak muncul di katalog.
+    let list = getJson(ProductsPath & "?asOf=2026-10-15", makerToken)
+    for item in list.body["items"]:
+      if item["code"].getStr() == "SAV02":
+        check item["currentVersion"].kind == JNull
+
+  test "versi baru tetap DRAFT: tidak menutup versi ACTIVE berjalan":
     let reply = postJson(VersionsPath.replace("{code}", "SAV01"),
       %*{"effectiveFrom": "2026-11-01",
          "bindings": {"product.savings.min_balance": "10000.0000"}}, makerToken)
     check reply.code == 201
     checkJson(VersionsPath, "POST", "201", reply.body)
-    check reply.body["versions"].len == 2
-    check reply.body["versions"][0]["effectiveTo"].getStr() == "2026-10-31"
-    check reply.body["versions"][1]["versionNo"].getInt() == 2
+    check versionOf(reply.body, 1)["effectiveTo"].kind == JNull
+    check versionOf(reply.body, 2)["status"].getStr() == "DRAFT"
+    v2 = versionOf(reply.body, 2)["versionId"].getStr()
+
+  test "approve versi baru menutup versi ACTIVE lama (inklusif)":
+    let approval = postJson(fill(ApprovePath, "SAV01", v2), newJObject(), approverToken)
+    check approval.code == 200
+    checkJson(ApprovePath, "POST", "200", approval.body)
+    check versionOf(approval.body, 1)["effectiveTo"].getStr() == "2026-10-31"
+    check versionOf(approval.body, 2)["status"].getStr() == "ACTIVE"
 
     let october = getJson(ProductsPath & "?asOf=2026-10-31", makerToken)
     for item in october.body["items"]:
@@ -249,23 +349,23 @@ suite "product: katalog":
 
 suite "product: validasi & konflik":
   test "binding ke parameter tak terdaftar → 400":
-    let reply = postJson(ProductsPath, productBody("SAV02", "Simpanan Dua",
+    let reply = postJson(ProductsPath, productBody("SAV03", "Simpanan Tiga",
       bindings = %*{"product.tidak_ada": "1"}), makerToken)
     check reply.code == 400
     checkProblem(ProductsPath, "POST", "400", reply.body)
 
   test "tanpa binding / tipe salah / tanggal salah → 400":
-    let empty = postJson(ProductsPath, productBody("SAV03", "Kosong", bindings = %*{}),
+    let empty = postJson(ProductsPath, productBody("SAV04", "Kosong", bindings = %*{}),
       makerToken)
     check empty.code == 400
-    let badType = postJson(ProductsPath, productBody("SAV04", "Tipe", ptype = "DEPOSITO"),
+    let badType = postJson(ProductsPath, productBody("SAV05", "Tipe", ptype = "DEPOSITO"),
       makerToken)
     check badType.code == 400
-    let badDate = postJson(ProductsPath, productBody("SAV05", "Tanggal",
+    let badDate = postJson(ProductsPath, productBody("SAV06", "Tanggal",
       fromIso = "2026-02-31"), makerToken)
     check badDate.code == 400
 
-  test "versi mulai besok (H+1) sah, bukan 500":
+  test "versi mulai besok (H+1) sah sebagai draft, bukan 500":
     let created = postJson(ProductsPath, productBody("SAV-H1", "Versi Harian",
       fromIso = "2026-10-01"), makerToken)
     check created.code == 201
@@ -273,21 +373,21 @@ suite "product: validasi & konflik":
       %*{"effectiveFrom": "2026-10-02",
          "bindings": {"product.savings.min_balance": "0.0000"}}, makerToken)
     check next.code == 201
-    check next.body["versions"][0]["effectiveTo"].getStr() == "2026-10-01"
-    check next.body["versions"][1]["versionNo"].getInt() == 2
+    check versionOf(next.body, 1)["effectiveTo"].kind == JNull
+    check versionOf(next.body, 2)["status"].getStr() == "DRAFT"
 
   test "nilai di luar batas/overflow → 400, bukan 500":
-    let overflow = postJson(ProductsPath, productBody("SAV06", "Besar",
+    let overflow = postJson(ProductsPath, productBody("SAV07", "Besar",
       bindings = %*{"product.savings.min_balance": "922337203685478.0000"}), makerToken)
     check overflow.code == 400
     checkProblem(ProductsPath, "POST", "400", overflow.body)
-    let negative = postJson(ProductsPath, productBody("SAV07", "Negatif",
+    let negative = postJson(ProductsPath, productBody("SAV08", "Negatif",
       bindings = %*{"product.savings.min_balance": "-1.0000"}), makerToken)
     check negative.code == 400
-    let graceTooBig = postJson(ProductsPath, productBody("SAV08", "Grace",
+    let graceTooBig = postJson(ProductsPath, productBody("SAV10", "Grace",
       bindings = %*{"product.savings.grace_period_days": 999}), makerToken)
     check graceTooBig.code == 400
-    let wrongKind = postJson(ProductsPath, productBody("SAV10", "Tipe Nilai",
+    let wrongKind = postJson(ProductsPath, productBody("SAV11", "Tipe Nilai",
       bindings = %*{"product.savings.min_balance": 1000}), makerToken)
     check wrongKind.code == 400
 
@@ -313,7 +413,7 @@ suite "product: validasi & konflik":
     let ok = postJson(ProductsPath, productBody("SAV-R3", "Rate Pas",
       bindings = %*{"product.savings.__rate_test": "12"}), makerToken)
     check ok.code == 201
-    check ok.body["versions"][0]["bindings"][0]["value"].getStr() == "12"
+    check versionOf(ok.body, 1)["bindings"][0]["value"].getStr() == "12"
     execDb(sql"""DELETE FROM platform.param_definition
                   WHERE key = 'product.savings.__rate_test'""")
 
@@ -330,6 +430,15 @@ suite "product: validasi & konflik":
       makerToken)
     check version.code == 404
     checkProblem(VersionsPath, "POST", "404", version.body)
+
+  test "approve versi tak dikenal → 404, id bukan UUID → 404":
+    let unknown = postJson(fill(ApprovePath, "SAV01", "00000000-0000-0000-0000-000000000000"),
+      newJObject(), approverToken)
+    check unknown.code == 404
+    checkProblem(ApprovePath, "POST", "404", unknown.body)
+    let notUuid = postJson(fill(ApprovePath, "SAV01", "bukan-uuid"), newJObject(), approverToken)
+    check notUuid.code == 404
+    checkProblem(ApprovePath, "POST", "404", notUuid.body)
 
 suite "product: grant bercabang":
   test "grant dibatasi cabang → 403 pada baca & tulis":

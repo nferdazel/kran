@@ -27,12 +27,14 @@ const
   PartyPath = "/api/v1/parties"
   ProductsPath = "/api/v1/products"
   ProductsDetailPath = "/api/v1/products/{code}"
+  ProductApprovePath = "/api/v1/products/{code}/versions/{versionId}/approve"
   TrialBalancePath = "/api/v1/ledger/trial-balance"
   JournalsPath = "/api/v1/ledger/journals"
   JournalDetailPath = "/api/v1/ledger/journals/{journalId}"
   ReversalPath = "/api/v1/ledger/journals/{journalId}/reversal"
   LoginPath = "/api/v1/auth/login"
   MakerUser = "dev.maker"
+  ApproverUser = "dev.approver"
   DevPassword = "rahasia-panjang-123"
   CookieName = "kran_session"
   BranchId = "11111111-1111-7111-8111-111111111111"
@@ -57,11 +59,20 @@ block:
   execScript(db, readFile("packs/base/generated/param_definitions.sql"))
   execScript(db, readFile("packs/base/generated/param_values.sql"))
   execScript(db, readFile("packs/base/seed/0001_dev_users.sql"))
+  # Approver kedua: maker-checker produk (T-086) menuntut pemutus berbeda dari pengaju.
+  execScript(db, """
+    INSERT INTO platform.app_user
+      (user_id, username, full_name, password_algo, password_hash, must_change_password)
+    SELECT md5('dev|dev.approver')::uuid, 'dev.approver', 'Uji Approver (dev)',
+           password_algo, password_hash, false
+      FROM platform.app_user WHERE username = 'dev.checker'
+    ON CONFLICT (username) DO UPDATE SET must_change_password = false, status = 'ACTIVE'
+  """)
   execScript(db, """
     INSERT INTO platform.user_role (user_id, role_id, branch_id)
     SELECT u.user_id, r.role_id, NULL
       FROM platform.app_user u, platform.role r
-     WHERE u.username = 'dev.maker' AND r.code = 'platform_admin'
+     WHERE u.username IN ('dev.maker', 'dev.approver') AND r.code = 'platform_admin'
     ON CONFLICT DO NOTHING
   """)
   discard insertPeriod(db,
@@ -221,7 +232,7 @@ suite "Fase 1 end-to-end":
     let seq = parseBiggestInt(withDbValue(sql"SELECT last_value::text FROM party.cif_seq"))
     check cif == formatCif(pattern, seq)
 
-  test "product: katalog parametrik + versi 1":
+  test "product: katalog parametrik + versi 1 (maker submit, checker approve)":
     require partyToken.len > 0
     let created = postJson(ProductsPath, %*{
       "code": productCode, "name": "Simpanan Sukarela", "productType": "SAVINGS",
@@ -231,7 +242,22 @@ suite "Fase 1 end-to-end":
     check created.code == 201
     checkJson(ProductsPath, "POST", "201", created.body)
     check created.body["versions"].len == 1
+    check created.body["versions"][0]["status"].getStr() == "DRAFT"
     productId = created.body["productId"].getStr()
+    let versionId = created.body["versions"][0]["versionId"].getStr()
+
+    # Versi jadi ACTIVE hanya setelah disetujui operator lain (D-119); event terbit saat itu.
+    let approverLogin = postJson(LoginPath, %*{"username": ApproverUser, "password": DevPassword})
+    check approverLogin.code == 200
+    let approverToken = tokenOf(approverLogin)
+    check approverToken.len > 0
+    let approved = postJson(
+      ProductApprovePath.replace("{code}", productCode).replace("{versionId}", versionId),
+      %*{}, approverToken)
+    check approved.code == 200
+    checkJson(ProductApprovePath, "POST", "200", approved.body)
+    check approved.body["versions"][0]["status"].getStr() == "ACTIVE"
+
     let detail = getJson(ProductsDetailPath.replace("{code}", productCode), partyToken)
     check detail.code == 200
 

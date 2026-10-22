@@ -2,6 +2,7 @@
 
 import std/[json, strutils, unittest]
 
+import kernel/ids
 import ../api
 
 suite "product: identitas":
@@ -29,6 +30,29 @@ suite "product: identitas":
     check parseProductType("TIME_DEPOSIT") == ptTimeDeposit
     expect ValueError:
       discard parseProductType("DEPOSITO")
+
+suite "product: status versi (maker-checker)":
+  test "status dikenal dan dinormalisasi":
+    check parseVersionStatus("draft") == vsDraft
+    check parseVersionStatus(" ACTIVE ") == vsActive
+    check parseVersionStatus("Rejected") == vsRejected
+    expect ValueError:
+      discard parseVersionStatus("RETIRED")
+
+  test "transisi hanya DRAFT → ACTIVE/REJECTED":
+    check canTransition(vsDraft, vsActive)
+    check canTransition(vsDraft, vsRejected)
+    check not canTransition(vsActive, vsDraft)
+    check not canTransition(vsActive, vsRejected)
+    check not canTransition(vsRejected, vsActive)
+    check not canTransition(vsDraft, vsDraft)
+
+  test "self-approval ditolak domain":
+    let maker = Id("77777777-7777-7777-8777-777777777777")
+    let checker = Id("88888888-8888-7888-8888-888888888888")
+    assertDistinctActors(maker, checker)
+    expect ValueError:
+      assertDistinctActors(maker, maker)
 
 suite "product: jendela versi":
   test "terbuka ke atas bila effectiveTo kosong":
