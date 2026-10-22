@@ -392,16 +392,17 @@
    * `position: sticky` tidak berefek saat tabel muat penuh, jadi layar lebar tidak berubah.
    * Dibatasi `screen`: perilaku cetak tidak disentuh selama ADR-013 belum diputuskan. */
   @media screen {
+    /* Footer sengaja tidak ikut: sel pertamanya `colspan="2"` (label Total), jadi memakunya
+     * selebar kolom kode membuat tepi sticky footer tidak sejajar dengan body. Footer sudah
+     * sticky bawah lewat components.css. */
     .ledger-table thead tr:first-child th:first-child,
-    .ledger-table tbody th:first-child,
-    .ledger-table tfoot th:first-child {
+    .ledger-table tbody th:first-child {
       position: sticky;
       inset-inline-start: 0;
       background: var(--color-surface);
     }
 
-    .ledger-table thead tr:first-child th:first-child,
-    .ledger-table tfoot th:first-child {
+    .ledger-table thead tr:first-child th:first-child {
       z-index: 2;
     }
 
