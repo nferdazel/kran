@@ -589,9 +589,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ParamSubmitResponse"
         "201":
-          headers:
-            Idempotent-Replayed:
-              $ref: "#/components/headers/IdempotentReplayed"
           description: Pengajuan tercatat sebagai `PENDING`
           content:
             application/json:
@@ -607,13 +604,9 @@ paths:
           $ref: "#/components/responses/Problem"
         "409":
           description: |
-            Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda), atau
-            permintaan dengan kunci yang sama masih diproses (`Retry-After`).
-          headers:
-            Retry-After:
-              schema:
-                type: integer
-              description: Detik sampai permintaan sebelumnya selesai (hanya untuk klaim in-flight).
+            Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda). Duplikat
+            konkuren tidak sampai ke sini: permintaan kedua menunggu transaksi pemenang lalu
+            dijawab replay 200 (D-117).
           content:
             application/problem+json:
               schema:
@@ -821,9 +814,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/Party"
         "201":
-          headers:
-            Idempotent-Replayed:
-              $ref: "#/components/headers/IdempotentReplayed"
           description: Party dibuat
           content:
             application/json:
@@ -837,13 +827,9 @@ paths:
           $ref: "#/components/responses/Problem"
         "409":
           description: |
-            Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda), atau
-            permintaan dengan kunci yang sama masih diproses (`Retry-After`).
-          headers:
-            Retry-After:
-              schema:
-                type: integer
-              description: Detik sampai permintaan sebelumnya selesai (hanya untuk klaim in-flight).
+            Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda). Duplikat
+            konkuren tidak sampai ke sini: permintaan kedua menunggu transaksi pemenang lalu
+            dijawab replay 200 (D-117).
           content:
             application/problem+json:
               schema:
@@ -992,9 +978,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/RiskRatingView"
         "201":
-          headers:
-            Idempotent-Replayed:
-              $ref: "#/components/headers/IdempotentReplayed"
           description: Penilaian tersimpan
           content:
             application/json:
@@ -1010,13 +993,9 @@ paths:
           $ref: "#/components/responses/Problem"
         "409":
           description: |
-            Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda), atau
-            permintaan dengan kunci yang sama masih diproses (`Retry-After`).
-          headers:
-            Retry-After:
-              schema:
-                type: integer
-              description: Detik sampai permintaan sebelumnya selesai (hanya untuk klaim in-flight).
+            Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda). Duplikat
+            konkuren tidak sampai ke sini: permintaan kedua menunggu transaksi pemenang lalu
+            dijawab replay 200 (D-117).
           content:
             application/problem+json:
               schema:

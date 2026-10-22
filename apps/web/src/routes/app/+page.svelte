@@ -56,6 +56,8 @@
    * sukses atau kegagalan 4xx (isi permintaan berubah / tidak akan pernah valid).
    */
   let submitIdempotencyKey = $state("");
+  /** Sidik isi form yang memiliki kunci di atas; isi berubah → kunci baru (hindari 409 palsu). */
+  let submitKeyIdentity = $state("");
   let approvingId = $state("");
 
   /** Kunci yang bisa diajukan = kunci yang sedang punya nilai aktif (urutan dari server). */
@@ -188,27 +190,50 @@
     };
     if (formEffectiveFrom) body.effectiveFrom = formEffectiveFrom;
 
-    if (submitIdempotencyKey === "") submitIdempotencyKey = crypto.randomUUID();
-    const { response, error } = await api.POST("/api/v1/params/{key}/changes", {
-      params: {
-        path: { key: currentRow.key },
-        header: { "Idempotency-Key": submitIdempotencyKey },
-      },
-      body,
-    });
-    sending = false;
-
-    if (!response.ok) {
-      if (response.status < 500) submitIdempotencyKey = "";
-      errorMessage = errorFrom(error);
-      return;
+    // Kunci terikat pada isi yang diajukan: mengganti parameter/nilai/alasan setelah kegagalan
+    // 5xx harus memulai permintaan baru, bukan memakai ulang kunci dengan sidik jari berbeda.
+    const identity = JSON.stringify([
+      currentRow.key,
+      value,
+      formReason.trim(),
+      formEffectiveFrom,
+    ]);
+    if (submitIdempotencyKey === "" || submitKeyIdentity !== identity) {
+      submitIdempotencyKey = crypto.randomUUID();
+      submitKeyIdentity = identity;
     }
-    submitIdempotencyKey = "";
-    notice = m.params_submit_success();
-    formValue = "";
-    formReason = "";
-    formEffectiveFrom = "";
-    await refresh();
+
+    try {
+      const { response, error } = await api.POST("/api/v1/params/{key}/changes", {
+        params: {
+          path: { key: currentRow.key },
+          header: { "Idempotency-Key": submitIdempotencyKey },
+        },
+        body,
+      });
+
+      if (!response.ok) {
+        if (response.status < 500) {
+          submitIdempotencyKey = "";
+          submitKeyIdentity = "";
+        }
+        errorMessage = errorFrom(error);
+        return;
+      }
+
+      submitIdempotencyKey = "";
+      submitKeyIdentity = "";
+      notice = m.params_submit_success();
+      formValue = "";
+      formReason = "";
+      formEffectiveFrom = "";
+      await refresh();
+    } catch {
+      // Jaringan gagal: kunci dan `sending` harus pulih supaya operator bisa mencoba lagi.
+      errorMessage = m.app_error();
+    } finally {
+      sending = false;
+    }
   }
 
   async function approve(paramValueId: string): Promise<void> {

@@ -1882,7 +1882,6 @@ export interface operations {
             /** @description Pengajuan tercatat sebagai `PENDING` */
             201: {
                 headers: {
-                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -1894,13 +1893,12 @@ export interface operations {
             403: components["responses"]["Problem"];
             405: components["responses"]["Problem"];
             /**
-             * @description Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda), atau
-             *     permintaan dengan kunci yang sama masih diproses (`Retry-After`).
+             * @description Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda). Duplikat
+             *     konkuren tidak sampai ke sini: permintaan kedua menunggu transaksi pemenang lalu
+             *     dijawab replay 200 (D-117).
              */
             409: {
                 headers: {
-                    /** @description Detik sampai permintaan sebelumnya selesai (hanya untuk klaim in-flight). */
-                    "Retry-After"?: number;
                     [name: string]: unknown;
                 };
                 content: {
@@ -2087,7 +2085,6 @@ export interface operations {
             /** @description Party dibuat */
             201: {
                 headers: {
-                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -2098,13 +2095,12 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             /**
-             * @description Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda), atau
-             *     permintaan dengan kunci yang sama masih diproses (`Retry-After`).
+             * @description Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda). Duplikat
+             *     konkuren tidak sampai ke sini: permintaan kedua menunggu transaksi pemenang lalu
+             *     dijawab replay 200 (D-117).
              */
             409: {
                 headers: {
-                    /** @description Detik sampai permintaan sebelumnya selesai (hanya untuk klaim in-flight). */
-                    "Retry-After"?: number;
                     [name: string]: unknown;
                 };
                 content: {
@@ -2240,7 +2236,6 @@ export interface operations {
             /** @description Penilaian tersimpan */
             201: {
                 headers: {
-                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -2252,13 +2247,12 @@ export interface operations {
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
             /**
-             * @description Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda), atau
-             *     permintaan dengan kunci yang sama masih diproses (`Retry-After`).
+             * @description Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda). Duplikat
+             *     konkuren tidak sampai ke sini: permintaan kedua menunggu transaksi pemenang lalu
+             *     dijawab replay 200 (D-117).
              */
             409: {
                 headers: {
-                    /** @description Detik sampai permintaan sebelumnya selesai (hanya untuk klaim in-flight). */
-                    "Retry-After"?: number;
                     [name: string]: unknown;
                 };
                 content: {

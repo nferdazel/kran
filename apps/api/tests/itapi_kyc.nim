@@ -472,3 +472,17 @@ suite "kyc: idempotency":
 
     let noKey = postJson(path, body, makerToken, sendKey = false)
     check noKey.code == 400
+
+  test "parameter TTL hilang → 500 Problem, bukan 400":
+    let id = createParty("KYC TTL Hilang")["partyId"].getStr()
+    let path = RiskPath.replace("{partyId}", id)
+    let db = dbPool.acquire()
+    try:
+      execScript(db,
+        "DELETE FROM platform.param_value WHERE key = 'platform.idempotency.ttl_hours'")
+      let reply = postJson(path, %*{"level": "high", "reason": "uji konfigurasi"}, makerToken)
+      check reply.code == 500
+      checkProblem(RiskPath, "POST", "500", reply.body)
+    finally:
+      execScript(db, readFile("packs/base/generated/param_values.sql"))
+      dbPool.release(db)
