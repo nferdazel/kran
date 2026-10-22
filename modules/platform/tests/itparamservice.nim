@@ -104,3 +104,28 @@ suite "layanan parameter di atas DB":
     let hasil = service.get(keyIdle, "1969-12-31", instScope)
     check hasil.isErr
     check hasil.error().kind == pekNotFound
+
+suite "migrasi product/0005 (T-087)":
+  test "baris lama dipensiunkan, idempoten, dan tidak dilaporkan sebagai drift":
+    const graceKey = "product.savings.grace_period_days"
+    # Tiru deployment lama: definisi masih hidup sebelum migrasi.
+    db.exec(sql"""
+      INSERT INTO platform.param_definition
+        (key, module, value_type, json_schema, allowed_scopes, description_key,
+         regulatory_refs, sensitivity, requires_approval, since_version)
+      VALUES (?, 'product', 'integer', '{"minimum":0,"maximum":365}'::jsonb,
+              ARRAY['GLOBAL','INSTITUTION']::text[],
+              'param.product.savings.grace_period_days', ARRAY[]::text[],
+              'NORMAL', true, '0.1.0')
+      ON CONFLICT (key) DO UPDATE SET deprecated = false""", graceKey)
+    check definitionOf(db, graceKey).get().deprecated == false
+
+    let migrasi = readFile(repoRoot / "modules/product/migrations/0005_product_deprecate_grace.sql")
+    execScript(db, migrasi)
+    execScript(db, migrasi) # idempoten: tidak error, tidak mengubah lagi
+
+    check definitionOf(db, graceKey).get().deprecated == true
+    for d in dbDefinitions(db):
+      check d.key != graceKey
+    for p in driftAgainstDatabase(db, paramDefinitions):
+      check p.key != graceKey
