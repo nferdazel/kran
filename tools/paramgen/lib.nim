@@ -568,7 +568,7 @@ proc runCheck*(root: string, extraNote: var string): bool =
       if not dirExists(genDir):
         continue
       for genKind, f in walkDir(genDir):
-        if genKind != pcFile or not f.endsWith(".sql"):
+        if genKind != pcFile or not (f.endsWith(".sql") or f.endsWith(".md")):
           continue
         let rel = relativePath(f, root).replace('\\', '/')
         if rel notin expectedPaths:
