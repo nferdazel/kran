@@ -110,8 +110,8 @@ vendor_runtime_libs() {
 log "Deploy trigger received for: $REPO ref=${REF:-<none>}"
 
 # 1. Ref-guard fail-closed (spec §21.4 #1): hanya push ke main.
-if [ -n "$REF" ] && [ "$REF" != "refs/heads/main" ]; then
-  log "==> skip: ref=$REF (bukan refs/heads/main)"
+if [ "$REF" != "refs/heads/main" ]; then
+  log "==> skip: ref=${REF:-<kosong>} (bukan refs/heads/main)"
   exit 0
 fi
 
