@@ -6,7 +6,7 @@ disimpan satu baris per rekening sebagai cache untuk operasi teller.
 Status: **T-088a** (skema + buka/baca rekening) + **T-088b** (transaksi tunai setor/tarik + posting
 jurnal sinkron). PB (pemindahbukuan) = T-088c; UI teller = T-088d.
 
-## Tabel (migrasi `0001` schema+sequence, `0003` rekening, `0004` transaksi)
+## Tabel (migrasi `0001` schema+sequence, `0003` rekening, `0004` transaksi, `0005` immutability, `0006` grant runtime)
 
 | Tabel | Isi |
 |---|---|
@@ -26,6 +26,8 @@ akun ada di `0003`, bukan `0002`, karena urutan migrasi global `(seq, modul, ber
 
 - **Saldo tidak boleh negatif** di DB (`CHECK balance >= 0`) — backstop; operation yang menolak
   saldo negatif ada di jalur tulis (T-088b).
+- **Baris transaksi immutable** (`deposit/0005`): UPDATE/DELETE/TRUNCATE ditolak trigger yang
+  memakai `ledger.reject_mutation()`; koreksi = jurnal pembalik + baris baru.
 - **Uang tanpa float**: saldo `numeric(24,4)`; di kode lewat tipe `Money` (`kernel/money`), API
   selalu mengirim desimal string 4 desimal.
 - **Tanpa kolom `currency`**: asumsi satu mata uang (spec §2.2; T-088 §8 butir 6).

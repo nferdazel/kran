@@ -56,6 +56,7 @@ var fixtureActor: Id
 var
   PartyId: string
   AccountIds: array[6, string]
+  BrokenAccountId: string
 
 # --- penyiapan DB: skema bersih + seed pack + fixture party/produk/rekening --------------------
 block:
@@ -127,6 +128,25 @@ block:
   var accountIds: seq[Id]
   for _ in 0 ..< 6:
     accountIds.add seedAccount(party.partyId, prod.productId, ver.versionId)
+
+  # Produk dengan binding `min_balance` negatif (tidak sah): menguji pemetaan data server → 500.
+  let prodRusak = Product(productId: newId(fixtureClock), code: "SAV-BROKEN",
+    name: "Simpanan Rusak", productType: ptSavings)
+  let verRusak = ProductVersion(versionId: newId(fixtureClock), productId: prodRusak.productId,
+    versionNo: 1, effectiveFrom: "2020-01-01")
+  discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+    insertProduct(d, prodRusak, fixtureActor)
+    insertVersion(d, verRusak, fixtureActor)
+    insertBinding(d, verRusak.versionId, ParamBinding(paramKey: "product.savings.min_balance",
+      value: %"-5.0000"))
+    1)
+  doAssert approveVersion(db, verRusak.versionId, approver), "versi rusak gagal di-approve"
+  let akunRusak = newAccount(newId(fixtureClock), party.partyId, prodRusak.productId,
+    verRusak.versionId, "SAV-BROKEN", Id(BranchId), "2026-10-01", nextAccountSeq(db))
+  discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+    insertAccount(d, akunRusak, fixtureActor)
+    1)
+  BrokenAccountId = $akunRusak.accountId
 
   # Id rekening dipakai test lewat variabel global sederhana.
   for i, id in accountIds:
@@ -425,6 +445,8 @@ suite "teller: idempotency":
     let journalId = first.body["journalId"].getStr()
     check txCount(accountId) == 1
     check journalCount("DepositPosted") == journalsBefore + 1
+    let auditsAfterFirst = auditCount("deposit.transaction.post")
+    check auditsAfterFirst > 0
 
     let replay = postJson(CashPath, body, token, key)
     check replay.code == 200
@@ -432,11 +454,9 @@ suite "teller: idempotency":
     check replay.body["transactionId"].getStr() == txId
     check replay.body["journalId"].getStr() == journalId
     # Replay tidak menambah transaksi/jurnal/audit kedua.
-    let auditsBeforeReplay = auditCount("deposit.transaction.post")
-    check auditsBeforeReplay > 0
     check txCount(accountId) == 1
     check journalCount("DepositPosted") == journalsBefore + 1
-    check auditCount("deposit.transaction.post") == auditsBeforeReplay
+    check auditCount("deposit.transaction.post") == auditsAfterFirst
     check balanceOf(accountId) == "25.0000"
 
     # Isi beda pada kunci yang sama → 409.
@@ -478,6 +498,15 @@ suite "teller: otorisasi cabang & keadaan rekening":
       raised = true
     check raised
     check journalCount("EventTanpaRule") == 0
+
+suite "teller: konfigurasi produk rusak":
+  test "min_balance negatif → 500, bukan 400, tanpa mutasi":
+    let token = tokenOf(login(MakerUser))
+    let reply = postJson(CashPath, cashBody(BrokenAccountId, "DEPOSIT", "10.0000"), token)
+    check reply.code == 500
+    check reply.body["detail"].getStr().len > 0
+    check balanceOf(BrokenAccountId) == "0.0000"
+    check txCount(BrokenAccountId) == 0
 
 suite "teller: periode tertutup":
   test "periode CLOSED → 409 period_closed, tanpa perubahan (rollback)":
