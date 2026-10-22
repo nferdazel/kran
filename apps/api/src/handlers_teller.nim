@@ -36,6 +36,10 @@ import ./http_util
 import ./idempotency
 import ./problem
 
+type
+  DepositConfigError* = object of ValueError
+    ## Data server (binding/min_balance/saldo tersimpan) rusak: 500, bukan 400.
+
 const
   permissionTellerTransactionPost* = "teller.transaction.post"
   operationIdCashTransaction = "teller.cash_transaction.post"
@@ -49,11 +53,15 @@ proc minBalanceFor(db: DbConn, versionId: Id): Money =
     if binding.paramKey != minBalanceParamKey:
       continue
     if binding.value.isNil or binding.value.kind != JString:
-      raise newException(ValueError,
+      raise newException(DepositConfigError,
         "binding " & minBalanceParamKey & " bukan string desimal")
     let parsed = moneyFromString(binding.value.getStr())
     if parsed.isErr:
-      raise newException(ValueError, "binding " & minBalanceParamKey & " bukan nominal sah")
+      raise newException(DepositConfigError,
+        "binding " & minBalanceParamKey & " bukan nominal sah")
+    if parsed.value() < zero():
+      raise newException(DepositConfigError,
+        "binding " & minBalanceParamKey & " negatif (konfigurasi produk rusak)")
     return parsed.value()
   zero()
 
@@ -139,7 +147,13 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
         app.clock.now(),
         proc(): tuple[status: int, payload: JsonNode] {.gcsafe.} =
           dbCalls:
-            let accountOpt = accountById(db, accountId.value())
+            var accountOpt: Option[Account]
+            try:
+              accountOpt = accountById(db, accountId.value())
+            except ValueError:
+              status = 500
+              problem = "data rekening tersimpan tidak bisa dibaca"
+              raise newException(DepositConfigError, problem)
             if accountOpt.isNone:
               status = 404
               problem = "rekening tidak ditemukan"
@@ -172,15 +186,21 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
             except ValueError as e:
               status = 500
               problem = e.msg
-              raise newException(ValueError, problem)
+              raise newException(DepositConfigError, problem)
 
             let txId = newId(app.clock)
             let actor = parseId(principal.user.userId).value()
 
-            let balanceAfter =
-              case direction
-              of cdDeposit: increaseBalance(db, account.accountId, amount)
-              of cdWithdrawal: decreaseBalance(db, account.accountId, amount, minBalance)
+            var balanceAfter: Option[Money]
+            try:
+              balanceAfter =
+                case direction
+                of cdDeposit: increaseBalance(db, account.accountId, amount)
+                of cdWithdrawal: decreaseBalance(db, account.accountId, amount, minBalance)
+            except ValueError:
+              status = 500
+              problem = "data saldo rekening tidak bisa dibaca"
+              raise newException(DepositConfigError, problem)
             if balanceAfter.isNone:
               if direction == cdWithdrawal:
                 status = 409
@@ -255,6 +275,9 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
   except IdempotencyStateError:
     status = 500
     problem = "idempotensi gagal diselesaikan"
+  except DepositConfigError:
+    if status == 0:
+      status = 500
   except ValueError as e:
     if status == 0:
       status = 400

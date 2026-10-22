@@ -129,6 +129,21 @@ suite "deposit: mutasi saldo & baris transaksi":
     check rows[0].journalId == jid
     check transactionById(db, rows[0].transactionId).isSome
 
+  test "baris transaksi immutable: UPDATE/DELETE/TRUNCATE ditolak (review m7)":
+    let a = accountRow()
+    save(a)
+    let jid = saveJournal(money(50_0000))
+    discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+      discard increaseBalance(d, a.accountId, money(50_0000))
+      insertTransaction(d, txRow(a.accountId, jid, money(50_0000), ttCashDeposit), actor)
+      1)
+    let txId = $transactionsByAccount(db, a.accountId)[0].transactionId
+    expectDbError(proc() = db.exec(
+      sql"UPDATE deposit.transaction SET narration = 'ubah' WHERE transaction_id = ?", txId))
+    expectDbError(proc() = db.exec(
+      sql"DELETE FROM deposit.transaction WHERE transaction_id = ?", txId))
+    expectDbError(proc() = db.exec(sql"TRUNCATE deposit.transaction"))
+
   test "tarik mengurangi saldo sampai tepat minimum":
     let a = accountRow()
     save(a)
