@@ -6,9 +6,10 @@
 -- tindih. Migrasi tetap expand-friendly: kolom baru, backfill, lalu constraint; tidak ada data
 -- yang dihapus.
 --
--- Catatan rolling deploy: `maker` diisi trigger BEFORE INSERT dari `published_by` supaya binary
--- lama yang masih berjalan (masih menulis tanpa kolom baru) tidak gagal selama jendela restart.
--- Trigger itu bisa dihapus di migrasi contract setelah deploy selesai (T-090 di backlog).
+-- Catatan rolling deploy: `maker` diisi trigger BEFORE INSERT dari `published_by` dan `status`
+-- tetap punya DEFAULT 'DRAFT', supaya binary lama yang masih berjalan (menulis tanpa kolom baru)
+-- tidak gagal selama jendela restart. Keduanya dibersihkan di migrasi contract **T-090** setelah
+-- deploy selesai; migrasi ini sengaja tidak menghapus default.
 
 ALTER TABLE product.product_version
   ADD COLUMN status text NOT NULL DEFAULT 'DRAFT',
@@ -27,7 +28,6 @@ UPDATE product.product_version
 
 ALTER TABLE product.product_version
   ALTER COLUMN maker SET NOT NULL,
-  ALTER COLUMN status DROP DEFAULT,
   ADD CONSTRAINT product_version_status_chk
     CHECK (status IN ('DRAFT', 'ACTIVE', 'REJECTED')),
   ADD CONSTRAINT product_version_self_approval_chk
