@@ -2837,3 +2837,22 @@ menambah berkas/kerumitan tanpa manfaat.
 disengaja dan dijelaskan di `MODULE.md`. Aturan ini juga mengikat T-088b (`deposit/0004` +
 `ledger/0012`) dan modul Fase 2+ lainnya.
 
+
+---
+
+## D-123 — Nomor rekening simpanan provisoris (10 digit, tanpa check digit)
+
+**Konteks.** Spec §9.1(8) dan §10.5 mewajibkan format nomor bisnis dari parameter DB plus check
+digit. T-088a memakai sequence + zero-pad 10 digit di domain, tanpa parameter dan tanpa check digit,
+agar 088b (transaksi) tidak tertahan. Ini **deviasi sadar**, bukan bentuk final.
+
+**Keputusan.** (1) Bentuk sementara ditandai `NEEDS-COMPLIANCE-REVIEW` di kode dan `MODULE.md`.
+(2) Tidak ada kode lain (validasi input, PB, cetak, UI teller) yang boleh mengasumsikan lebar atau
+isi nomor sampai O-095 ditutup. (3) Sebelum data anggota nyata atau UI teller (088d), pemilik/
+compliance menetapkan format final; implementasinya memakai parameter
+`deposit.account.number_format` dengan token `{seq:N}`/`{check}` (pola `party.cif.format`, Luhn yang
+sudah ada di `party/domain/cif.nim`) plus migrasi data bila rekening sudah tercipta.
+(4) `account_no` tetap `UNIQUE` dan nomor tidak dipakai ulang.
+
+**Konsekuensi.** Nomor bisa berubah sebelum keputusan final; jangan mengukirnya di template cetak,
+dokumen, atau asumsi validasi. `MAX_ACCOUNT_NO_LENGTH` di domain hanya backstop, bukan kontrak.

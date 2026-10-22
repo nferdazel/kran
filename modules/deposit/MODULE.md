@@ -31,7 +31,7 @@ akun ada di `0003`, bukan `0002`, karena urutan migrasi global `(seq, modul, ber
 - **Ordinary FK** ke `party.party`, `product.product`, `product.product_version`; `branch_id` tanpa
   FK karena belum ada tabel cabang. Kesamaan cabang party↔rekening ditegakkan use case
   (`branch_mismatch`), bukan DB.
-- **Nomor rekening provisoris**: `{seq:10}` zero-padded dari `deposit.account_seq`, **tanpa check
+- **Nomor rekening provisoris** (D-123): `{seq:10}` zero-padded dari `deposit.account_seq`, **tanpa check
   digit**. Bentuk final (prefix/check digit) menunggu parameter `deposit.account.number_format`
   yang **belum dibuat** (tanpa konsumen di T-088a). Tanda **NEEDS-COMPLIANCE-REVIEW**;
   **jangan mengarang format bisnis lain** sebelum pemilik/compliance memutuskan (T-088 §8 butir 7).

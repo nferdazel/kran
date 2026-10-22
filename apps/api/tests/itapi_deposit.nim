@@ -67,6 +67,23 @@ block:
     ON CONFLICT DO NOTHING
   """)
 
+  # Pengguna ber-scope cabang untuk menguji gerbang `authorizedAtBranch` (bukan hanya
+  # `authorizedAnyBranch`). Password disalin dari dev.maker supaya login memakai kredensial dev.
+  execScript(db, """
+    INSERT INTO platform.app_user (user_id, username, full_name, password_algo, password_hash,
+                                   password_updated_at, must_change_password)
+    SELECT gen_random_uuid(), 'dev.branchmaker', 'Dev Branch Maker', password_algo, password_hash,
+           password_updated_at, false
+      FROM platform.app_user WHERE username = 'dev.maker'
+  """)
+  execScript(db, """
+    INSERT INTO platform.user_role (user_id, role_id, branch_id)
+    SELECT u.user_id, r.role_id, '""" & OtherBranchId & """'
+      FROM platform.app_user u, platform.role r
+     WHERE u.username = 'dev.branchmaker' AND r.code = 'platform_admin'
+    ON CONFLICT DO NOTHING
+  """)
+
   let fixtureClock = fakeClock(dateTime(2026, mOct, 22, 9, 0, 0))
   let actor = Id("77777777-7777-7777-8777-777777777777")
   let approver = Id("88888888-8888-7888-8888-888888888888")
@@ -238,6 +255,43 @@ suite "deposit: autentikasi & izin":
     let create = postJson(AccountsPath, accountBody(), tokenOf(checker))
     check create.code == 403
     checkProblem(AccountsPath, "POST", "403", create.body)
+
+suite "deposit: gerbang cabang":
+  test "pengguna ber-scope cabang lain ditolak saat membuat & membaca rekening":
+    let maker = login(MakerUser)
+    check maker.code == 200
+    let created = postJson(AccountsPath, accountBody(branchId = BranchId), tokenOf(maker))
+    check created.code == 201
+    let accountId = created.body["accountId"].getStr()
+
+    let scoped = login("dev.branchmaker")
+    check scoped.code == 200
+    let token = tokenOf(scoped)
+
+    let create = postJson(AccountsPath, accountBody(branchId = BranchId), token,
+      "branch-create-" & $epochTime())
+    check create.code == 403
+    checkProblem(AccountsPath, "POST", "403", create.body)
+    check create.body["params"]["reason"].getStr() == "branch_not_allowed"
+
+    let read = getJson(AccountsPath & "/" & accountId, token)
+    check read.code == 403
+    checkProblem(AccountItemPath, "GET", "403", read.body)
+    check read.body["params"]["reason"].getStr() == "branch_not_allowed"
+
+    let listed = getJson(AccountsPath & "?partyId=" & PartyId, token)
+    check listed.code == 200
+    checkJson(AccountsPath, "GET", "200", listed.body)
+    check listed.body["items"].len == 0
+
+  test "klaim idempotency tidak tersisa saat request gagal":
+    let maker = login(MakerUser)
+    check maker.code == 200
+    let key = "deposit-fail-claim-" & $epochTime()
+    let bad = postJson(AccountsPath, accountBody(branchId = OtherBranchId), tokenOf(maker), key)
+    check bad.code == 409
+    let good = postJson(AccountsPath, accountBody(branchId = BranchId), tokenOf(maker), key)
+    check good.code == 201
 
 suite "deposit: buka & baca rekening":
   test "buka rekening → 201, nomor provisoris, saldo 0":

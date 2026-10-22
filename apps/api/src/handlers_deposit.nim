@@ -223,7 +223,8 @@ proc handleGetDepositAccount*(app: AppContext, req: Request) {.gcsafe.} =
 
   case status
   of 200: req.respondJson(200, payload)
-  of 403: req.respondProblem(pkForbidden, "Forbidden", problem)
+  of 403: req.respondProblem(newProblem(pkForbidden, "Forbidden", problem,
+      traceId = traceIdFrom(req), params = @[("reason", "branch_not_allowed")]))
   of 404: req.respondProblem(pkNotFound, "Not Found", problem)
   else: req.respondProblem(pkInternal, "Internal Server Error", problem)
 

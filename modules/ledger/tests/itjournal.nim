@@ -23,9 +23,7 @@ if not databaseUrlSet(envT):
 let dbPool = newDbPool(dbConfigFromEnv(envT))
 let db = dbPool.acquire()
 
-discard applyAllMigrations(db, ".")
-db.exec(sql"DROP SCHEMA IF EXISTS ledger CASCADE")
-db.exec(sql"DELETE FROM platform.schema_migration WHERE migration_id LIKE 'ledger/%'")
+resetTestSchemas(db, ".")
 discard applyAllMigrations(db, ".")
 
 let

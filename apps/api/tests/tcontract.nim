@@ -57,7 +57,7 @@ suite "tiga endpoint pembuat objek memakai idempotensi":
     check header["in"].getStr() == "header"
     check header["required"].getBool() == true
 
-    for operationId in ["createParty", "ratePartyRisk", "submitParamChange"]:
+    for operationId in ["createParty", "ratePartyRisk", "submitParamChange", "openDepositAccount"]:
       let op = operationJson(doc, operationId)
       check op != nil
       var memakaiHeader = false

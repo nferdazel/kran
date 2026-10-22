@@ -26,9 +26,7 @@ let db = dbPool.acquire()
 
 # Reset schema modul dulu (migrasi produk masih dalam pengembangan); jangan menerapkan migrasi
 # yang checksum-nya berubah sebelum baris riwayatnya dibersihkan.
-if db.getValue(sql"SELECT to_regclass('platform.schema_migration')::text").len > 0:
-  db.exec(sql"DELETE FROM platform.schema_migration WHERE migration_id LIKE 'product/%'")
-db.exec(sql"DROP SCHEMA IF EXISTS product CASCADE")
+resetTestSchemas(db, ".")
 discard applyAllMigrations(db, ".")
 
 let
