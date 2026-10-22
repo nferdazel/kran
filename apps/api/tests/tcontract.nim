@@ -49,7 +49,7 @@ proc operationJson(doc: JsonNode, operationId: string): JsonNode =
         return op
   nil
 
-suite "tiga endpoint pembuat objek memakai idempotensi":
+suite "empat endpoint pembuat objek memakai idempotensi":
   test "header wajib, 409 terdeklarasi, replay 200, 201 tanpa header replay":
     let doc = loadContractFile(ContractPath).doc
     let header = doc["components"]["parameters"]["IdempotencyKey"]
