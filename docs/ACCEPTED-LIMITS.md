@@ -13,6 +13,7 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 | Batas | Dampak nyata | Cara mendeteksi | Pemilik |
 |---|---|---|---|
 | Metrics/observability belum ada (Prometheus-style: latensi, error rate, pool PG, antrean outbox, durasi task day-close) | Tidak ada pengukuran berkelanjutan; operator hanya punya log terstruktur | `/healthz`, `/readyz`, log JSON, dan kueri SQL manual | Fase 9 (spec §22, §23) |
+| Freeze katalog produk sebelum T-086 | Perubahan produk produksi dibekukan; pilot satu operator akan terblokir `checker <> maker` setelah maker-checker aktif | `ProductPublished` tidak terbit saat submit; approve tanpa operator kedua → 409 `self_approval` | T-086, D-099, D-119 |
 | Freeze gate day-close | Deploy tidak bisa diblokir karena EOD berjalan; `ctl daycloser-status` selalu "belum ada" | jalankan `ctl daycloser-status` — nilainya selalu 3 sampai `daycloser` ada | Fase 3 (framework `daycloser`); O-013 |
 | Uji restore & latihan DR | Tidak ada bukti backup bisa dipulihkan | belum pernah dijalankan | Di luar repo (akses server); O-002, O-007 |
 | Target performa (spec §1.4: EOD 100k rekening + 50k pinjaman < 30 menit) | Belum ada bukti skala; angka target belum pernah diuji | belum ada benchmark | Fase 3 (day-close) + Fase 9 |
