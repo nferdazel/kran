@@ -2060,3 +2060,14 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
   `itapi_fase1` 7, `itplatform` 25, `tdbtools` 31; reviewer r3 **APPROVE**.
 - Sisa: T-090 (bersihkan trigger/DEFAULT via contract baru setelah deploy), T-091 (race dua checker +
   imutabilitas), T-092 (gate contract saat restore/`/readyz`). Belum di-merge/deploy.
+
+### Deploy T-086 (22 Okt 2026)
+
+- **Push** `a18c99e..ddeb922` ke `main`. Penanda eksternal: `POST /api/v1/products/SAV01/versions/<uuid>/approve`
+  tanpa sesi menjawab **401** (rute baru ada) sementara path tak dikenal tetap 404 — artinya binary
+  baru sudah aktif, dan karena swap hanya terjadi setelah gate migrasi + contract + health gate,
+  `product/0003` (expand), `0004` (contract, lewat allowlist) dan migrasi platform `0022` sudah
+  diterapkan. `/readyz` 200.
+- **Catatan**: verifikasi ini tidak membaca jumlah migrasi di DB (tidak diekspos); buktinya adalah
+  urutan gate deploy, bukan kueri langsung. Contract berjalan sebelum health gate — bila health gate
+  gagal, skema tidak ikut rollback (ACCEPTED-LIMITS/T-090).
