@@ -35,6 +35,7 @@ let
   testClock = fakeClock(dateTime(2026, mOct, 20, 9, 0, 0))
   actor = Id("77777777-7777-7777-8777-777777777777")
   checker = Id("88888888-8888-7888-8888-888888888888")
+  checker2 = Id("99999999-9999-7999-8999-999999999999")
 
 proc newProduct(code = "SAV01", ptype = ptSavings): Product =
   Product(productId: newId(testClock), code: code, name: "Simpanan Sukarela",
@@ -236,3 +237,70 @@ suite "product: tumpang tindih & penutupan versi":
   test "kode produk unik":
     let dup = newProduct("SAV01")
     expectDbError(proc() = insertProduct(dup))
+
+suite "product: imutabilitas keputusan checker":
+  ## D-119: keputusan (`checker`/`approved_at`/`reject_reason`) dan seal tidak bisa diubah atau
+  ## dibuka setelah tercatat — dijaga trigger DB, bukan hanya konvensi repo. Tiap test memakai
+  ## produk sendiri supaya tidak bergantung urutan suite sebelumnya.
+
+  proc errorOfUpdate(query: SqlQuery, args: varargs[string, `$`]): string =
+    try:
+      db.exec(query, args)
+    except DbError as e:
+      return e.msg
+    ""
+
+  test "versi ACTIVE: checker/approved_at tidak bisa diubah, sealed tidak bisa dibuka":
+    let p = newProduct("SAV-LOCK")
+    insertProduct(p)
+    let v = saveVersion(p, 1, "2026-10-01")
+    check approveVersion(db, v.versionId, checker)
+
+    check errorOfUpdate(
+      sql"UPDATE product.product_version SET checker = ? WHERE version_id = ?",
+      $checker2, $v.versionId).contains("checker sudah tercatat")
+    check errorOfUpdate(
+      sql"UPDATE product.product_version SET approved_at = now() - interval '1 day' WHERE version_id = ?",
+      $v.versionId).contains("approved_at sudah tercatat")
+    check errorOfUpdate(
+      sql"UPDATE product.product_version SET sealed = false WHERE version_id = ?",
+      $v.versionId).contains("sealed")
+    check errorOfUpdate(
+      sql"UPDATE product.product_version SET checker = NULL WHERE version_id = ?",
+      $v.versionId).contains("checker sudah tercatat")
+
+    # Keputusan tetap utuh: ACTIVE, checker asli, sudah sealed.
+    check versionById(db, v.versionId).get().status == vsActive
+    check db.getValue(
+      sql"SELECT checker::text FROM product.product_version WHERE version_id = ?",
+      $v.versionId) == $checker
+    check db.getValue(
+      sql"SELECT sealed::text FROM product.product_version WHERE version_id = ?",
+      $v.versionId) == "true"
+
+  test "versi REJECTED: reject_reason/checker tidak bisa diubah, sealed tidak bisa dibuka":
+    let p = newProduct("SAV-LOCK-REJ")
+    insertProduct(p)
+    let v = saveVersion(p, 1, "2026-10-01")
+    check rejectVersion(db, v.versionId, checker, "alasan awal")
+
+    check errorOfUpdate(
+      sql"UPDATE product.product_version SET reject_reason = 'diubah' WHERE version_id = ?",
+      $v.versionId).contains("reject_reason sudah tercatat")
+    check errorOfUpdate(
+      sql"UPDATE product.product_version SET checker = ? WHERE version_id = ?",
+      $checker2, $v.versionId).contains("checker sudah tercatat")
+    # approved_at tidak boleh muncul pada versi REJECTED (CHECK keputusan).
+    check errorOfUpdate(
+      sql"UPDATE product.product_version SET approved_at = now() WHERE version_id = ?",
+      $v.versionId).contains("decision_chk")
+    check errorOfUpdate(
+      sql"UPDATE product.product_version SET sealed = false WHERE version_id = ?",
+      $v.versionId).contains("sealed")
+
+    let kept = versionById(db, v.versionId).get()
+    check kept.status == vsRejected
+    check kept.rejectReason == "alasan awal"
+    check db.getValue(
+      sql"SELECT sealed::text FROM product.product_version WHERE version_id = ?",
+      $v.versionId) == "true"

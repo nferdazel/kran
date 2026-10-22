@@ -179,6 +179,44 @@ proc dbValue(query: SqlQuery, args: varargs[string, `$`]): string =
   finally:
     dbPool.release(conn)
 
+type
+  ApproveRaceArgs = object
+    url: string
+    path: string
+    token: string
+    slot: int
+
+var
+  approRaceCode: array[2, int]
+  approRaceReason: array[2, string]
+
+proc approveRaceWorker(args: ApproveRaceArgs) {.thread.} =
+  ## Menjalankan approve lewat HTTP dari thread lain supaya test bisa menahan baris versi di antara
+  ## `SELECT` dan guard `UPDATE ... WHERE status = 'DRAFT'` handler (pola T-086, lihat itapi_journal).
+  let client = newHttpClient(timeout = 30_000)
+  try:
+    client.headers["Cookie"] = CookieName & "=" & args.token
+    client.headers["Content-Type"] = "application/json"
+    let response = client.post(args.url & args.path, "{}")
+    var reason = ""
+    if response.body.len > 0:
+      try:
+        let body = parseJson(response.body)
+        if body.kind == JObject and body.hasKey("params") and
+            body["params"].kind == JObject and body["params"].hasKey("reason"):
+          reason = body["params"]["reason"].getStr()
+      except JsonParsingError, ValueError:
+        discard
+    {.cast(gcsafe).}:
+      approRaceCode[args.slot] = response.code.int
+      approRaceReason[args.slot] = reason
+  except CatchableError as e:
+    {.cast(gcsafe).}:
+      approRaceCode[args.slot] = -1
+      approRaceReason[args.slot] = e.msg
+  finally:
+    client.close()
+
 proc productBody(code, name: string, ptype = "SAVINGS", fromIso = "2026-10-01",
                  bindings: JsonNode = nil): JsonNode =
   let b = if bindings.isNil:
@@ -539,3 +577,75 @@ suite "product: konflik jendela & reject self-approval":
     check reply.code == 409
     checkProblem(ApprovePath, "POST", "409", reply.body)
     check reply.body["params"]["reason"].getStr() == "no_bindings"
+
+suite "product: balapan dua checker":
+  test "dua approve serentak pada DRAFT sama → satu ACTIVE, satu not_draft, satu audit/event":
+    let created = postJson(ProductsPath, productBody("SAV-RACE", "Simpanan Balapan"), makerToken)
+    check created.code == 201
+    let pid = created.body["productId"].getStr()
+    let vid = versionOf(created.body, 1)["versionId"].getStr()
+    let path = fill(ApprovePath, "SAV-RACE", vid)
+
+    approRaceCode = [-1, -1]
+    approRaceReason = ["", ""]
+
+    # Tahan baris versi dari transaksi kedua supaya kedua permintaan benar-benar menunggu di guard
+    # UPDATE, bukan sekadar berurutan karena penjadwalan.
+    let side = dbPool.acquire()
+    var workers: array[2, Thread[ApproveRaceArgs]]
+    try:
+      side.exec(sql"BEGIN")
+      discard side.getValue(
+        sql"SELECT 1 FROM product.product_version WHERE version_id = ?::uuid FOR UPDATE", vid)
+      let sidePid = side.getValue(sql"SELECT pg_backend_pid()")
+
+      createThread(workers[0], approveRaceWorker,
+        ApproveRaceArgs(url: baseUrl, path: path, token: approverToken, slot: 0))
+      createThread(workers[1], approveRaceWorker,
+        ApproveRaceArgs(url: baseUrl, path: path, token: approverToken, slot: 1))
+
+      # Tunggu sampai KEDUA permintaan benar-benar menunggu di guard UPDATE, dengan rantai lock
+      # berakar pada baris versi yang dipegang `side`. Waiter kedua menunggu waiter pertama (tuple
+      # lock), bukan `side` langsung, jadi dihitung lewat CTE rekursif — bukan hanya blocker langsung.
+      var blocked = 0
+      let deadline = epochTime() + 10.0
+      while epochTime() < deadline and blocked < 2:
+        blocked = parseInt(dbValue(sql"""
+          WITH RECURSIVE waited(pid) AS (
+            SELECT pid FROM pg_stat_activity
+             WHERE datname = current_database() AND pid <> pg_backend_pid()
+               AND ?::int = ANY(pg_blocking_pids(pid))
+            UNION
+            SELECT a.pid FROM pg_stat_activity a
+             JOIN waited w ON w.pid = ANY(pg_blocking_pids(a.pid))
+          )
+          SELECT count(*)::text FROM waited""", sidePid))
+        if blocked < 2:
+          sleep(20)
+      side.exec(sql"COMMIT")
+      check blocked == 2
+    finally:
+      dbPool.release(side)
+
+    joinThread(workers[0])
+    joinThread(workers[1])
+
+    var approved = 0
+    var notDraft = 0
+    for slot in 0 .. 1:
+      if approRaceCode[slot] == 200:
+        inc approved
+      elif approRaceCode[slot] == 409 and approRaceReason[slot] == "not_draft":
+        inc notDraft
+    check approved == 1
+    check notDraft == 1
+
+    check dbValue(sql"""
+      SELECT status FROM product.product_version WHERE version_id = ?""", vid) == "ACTIVE"
+    # Yang kalah tidak boleh menambah audit/event kedua.
+    check dbValue(sql"""
+      SELECT count(*)::text FROM platform.audit_log
+       WHERE action = 'product.approve' AND resource_id = ?""", pid) == "1"
+    check dbValue(sql"""
+      SELECT count(*)::text FROM platform.outbox
+       WHERE event_type = 'ProductPublished' AND aggregate_id = ?""", pid) == "1"
