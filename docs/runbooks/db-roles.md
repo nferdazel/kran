@@ -47,13 +47,13 @@ PY
 
 # 3. Grant runtime (idempoten; jalankan sebagai superuser)
 podman exec -i qouver-postgres psql -U qouver -d kran <<'SQL'
-GRANT USAGE ON SCHEMA platform, ledger, party, product TO kran_runtime;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA platform, ledger, party, product
+GRANT USAGE ON SCHEMA platform, ledger, party, product, deposit TO kran_runtime;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA platform, ledger, party, product, deposit
   TO kran_runtime;
 GRANT SELECT, INSERT ON platform.audit_log TO kran_runtime;
 REVOKE UPDATE, DELETE, TRUNCATE ON platform.audit_log FROM kran_runtime;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA platform, ledger, party, product TO kran_runtime;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA platform, ledger, party, product TO kran_runtime;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA platform, ledger, party, product, deposit TO kran_runtime;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA platform, ledger, party, product, deposit TO kran_runtime;
 ALTER DEFAULT PRIVILEGES FOR ROLE kran_app IN SCHEMA platform
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO kran_runtime;
 ALTER DEFAULT PRIVILEGES FOR ROLE kran_app IN SCHEMA ledger
@@ -62,9 +62,13 @@ ALTER DEFAULT PRIVILEGES FOR ROLE kran_app IN SCHEMA party
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO kran_runtime;
 ALTER DEFAULT PRIVILEGES FOR ROLE kran_app IN SCHEMA product
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO kran_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE kran_app IN SCHEMA deposit
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO kran_runtime;
 ALTER DEFAULT PRIVILEGES FOR ROLE kran_app IN SCHEMA platform
   GRANT USAGE, SELECT ON SEQUENCES TO kran_runtime;
 ALTER DEFAULT PRIVILEGES FOR ROLE kran_app IN SCHEMA ledger
+  GRANT USAGE, SELECT ON SEQUENCES TO kran_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE kran_app IN SCHEMA deposit
   GRANT USAGE, SELECT ON SEQUENCES TO kran_runtime;
 SQL
 
