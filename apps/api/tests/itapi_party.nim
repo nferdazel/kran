@@ -338,20 +338,22 @@ test "idempotency: kunci sama replay, isi beda 409, tanpa header 400":
   check first.code == 201
   let partyId = first.body["partyId"].getStr()
 
-  check countSql(sql"SELECT count(*)::text FROM party.party WHERE party_id = ?::uuid",
-    partyId) == "1"
+  # Duplikat party memakai UUID baru, jadi hitung **total** — bukan per partyId.
+  let parties = "SELECT count(*)::text FROM party.party"
+  let audits = "SELECT count(*)::text FROM platform.audit_log WHERE action = 'party.create'"
+  let events = "SELECT count(*)::text FROM platform.outbox WHERE event_type = 'party.onboarded'"
+  let partiesBefore = countSql(sql(parties))
+  let auditsBefore = countSql(sql(audits))
+  let eventsBefore = countSql(sql(events))
 
   let replay = postJson(PartyPath, body, token, "idem-party-1")
   check replay.code == 200
   check replay.replayed == "true"
   check replay.body["partyId"].getStr() == partyId
   # Replay tidak menulis objek/audit/event kedua.
-  check countSql(sql"SELECT count(*)::text FROM party.party WHERE party_id = ?::uuid",
-    partyId) == "1"
-  check countSql(sql"""SELECT count(*)::text FROM platform.audit_log
-    WHERE action = 'party.create' AND resource_id = ?""", partyId) == "1"
-  check countSql(sql"""SELECT count(*)::text FROM platform.outbox
-    WHERE event_type = 'party.onboarded' AND aggregate_id = ?""", partyId) == "1"
+  check countSql(sql(parties)) == partiesBefore
+  check countSql(sql(audits)) == auditsBefore
+  check countSql(sql(events)) == eventsBefore
 
   let conflict = postJson(PartyPath, partyBody(name = "Idem Party Lain"), token,
     "idem-party-1")

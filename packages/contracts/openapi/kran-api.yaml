@@ -553,7 +553,8 @@ paths:
         `effectiveFrom` kosong = tanggal buku hari ini.
 
         Penolakan tingkat-field datang sebagai 400/403 dengan `params.reason` berkode stabil
-        (dipetakan UI, O-045): `value_missing`, `reason_missing`, `effective_from_invalid`,
+        (dipetakan UI, O-045): `idempotency_key_required` (header wajib tidak dikirim/kosong),
+        `value_missing`, `reason_missing`, `effective_from_invalid`,
         `effective_to_invalid`, `period_invalid`, `scope_id_required`, `scope_id_forbidden`,
         `value_invalid`, `invalid_combination` (bertentangan dengan parameter lain yang aktif),
         `effective_to_without_successor` (tanggal berakhir tidak ditutup nilai penerus, O-043), dan
