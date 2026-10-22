@@ -2738,3 +2738,24 @@ objek.
 (produksi penuh), wajib diputuskan masking/field allowlist **atau** enkripsi kolom plus retensi
 formal; perubahan itu ditandai `HUMAN-REVIEW-REQUIRED` dan butuh ADR. Pilot dev/demo boleh dengan
 penerimaan ini.
+
+---
+
+## D-119 — Amandemen D-099: status `REJECTED`, seal saat keputusan, `maker` rolling deploy
+
+**Keputusan (pemilik, 22 Okt 2026).**
+1. Status versi produk: `DRAFT | ACTIVE | REJECTED`. Reject wajib menyimpan `reject_reason`; draft
+   yang ditolak tidak dihapus (trigger lama melarang DELETE). D-099 diamandemen.
+2. `sealed` diisi saat **approve/reject**, bukan saat binding pertama masuk. Binding hanya boleh
+   masuk ke versi `DRAFT`; versi `ACTIVE`/`REJECTED` selalu `sealed = true` (CHECK).
+3. `maker` diisi saat insert (`published_by` untuk baris lama, aktor pengaju untuk versi baru).
+   Selama jendela rolling deploy, trigger `BEFORE INSERT` mengisi `maker = coalesce(maker,
+   published_by)` supaya binary lama tidak gagal; trigger dihapus di migrasi contract setelah
+   deploy (T-090).
+4. `docs/ACCEPTED-LIMITS.md` mencatat freeze katalog produk sebelum T-086 dan konsekuensinya
+   (pilot satu operator terblokir oleh `checker <> maker`).
+
+**Asumsi yang diratifikasi.** `maker` = pengaju, `checker` = penyetuju/penolak, `checker <> maker`
+berlaku juga untuk reject. `published_at` tetap berarti waktu pencatatan versi (nama historis;
+utang nama dicatat di `MODULE.md`). Event `ProductPublished` hanya terbit saat approve; reject
+hanya audit.
