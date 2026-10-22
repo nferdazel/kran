@@ -24,8 +24,8 @@ if not databaseUrlSet(envT):
 let dbPool = newDbPool(dbConfigFromEnv(envT))
 let db = dbPool.acquire()
 
-# Reset schema modul dulu (migrasi produk masih dalam pengembangan); jangan menerapkan migrasi
-# yang checksum-nya berubah sebelum baris riwayatnya dibersihkan.
+# Reset seluruh schema modul lalu terapkan ulang semua migrasi: migrasi produk masih dalam
+# pengembangan dan FK lintas modul harus tetap utuh (O-096).
 resetTestSchemas(db, ".")
 discard applyAllMigrations(db, ".")
 

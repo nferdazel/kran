@@ -865,10 +865,11 @@ export interface paths {
          *     `party_not_active`/`branch_mismatch`). Audit `deposit.account.open` ditulis dalam
          *     transaksi yang sama. Nomor rekening **provisoris**: 10 digit dari sequence, tanpa check
          *     digit (**NEEDS-COMPLIANCE-REVIEW**).
-         *     Izin `deposit.account.manage` harus dipegang di **cabang rekening**; tanpa itu 403 dengan
-         *     `params.reason=branch_not_allowed`. Konflik 409 memakai `params.reason`:
-         *     `party_not_active`, `branch_mismatch`, `product_not_active`, atau alasan idempotensi
-         *     (hash berbeda / masih diproses).
+         *     Izin `deposit.account.manage` harus dipegang di **cabang rekening**. Tanpa izin di cabang
+         *     mana pun → 403 dengan `params.permission`; izin hanya ada di cabang lain → 403 dengan
+         *     `params.reason=branch_not_allowed`. Konflik domain 409 memakai `params.reason`
+         *     (`party_not_active`, `branch_mismatch`, `product_not_active`); konflik idempotensi 409
+         *     tidak membawa `params`.
          */
         post: operations["openDepositAccount"];
         delete?: never;

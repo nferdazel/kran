@@ -2854,5 +2854,10 @@ compliance menetapkan format final; implementasinya memakai parameter
 sudah ada di `party/domain/cif.nim`) plus migrasi data bila rekening sudah tercipta.
 (4) `account_no` tetap `UNIQUE` dan nomor tidak dipakai ulang.
 
+**Status persetujuan.** Ini keputusan rekayasa untuk menjaga 088a tetap maju, **bukan** persetujuan
+pemilik/compliance atas format final. 088b/088d wajib berhenti untuk keputusan pemilik sebelum
+memakai bentuk nomor di UI/cetak; O-095 tetap terbuka.
+
 **Konsekuensi.** Nomor bisa berubah sebelum keputusan final; jangan mengukirnya di template cetak,
-dokumen, atau asumsi validasi. `MAX_ACCOUNT_NO_LENGTH` di domain hanya backstop, bukan kontrak.
+dokumen, atau asumsi validasi. `maxAccountNoLength` di domain hanya backstop, bukan kontrak. Test boleh mengunci bentuk
+sementara (mis. panjang 10) sebagai karakterisasi, bukan kontrak bisnis.

@@ -3,8 +3,8 @@
 ## Cakupan: CIF dari sequence, insert/baca, CIF unik, audit + outbox satu transaksi, dan
 ## rollback yang tidak meninggalkan party/audit/outbox.
 ##
-## Test ini hanya menghapus schema `party` (bukan `platform`) supaya data dev lain tidak ikut
-## hilang; ledger migrasi modul `party` dihapus agar migrasinya dijalankan ulang.
+## Test ini me-reset **seluruh** schema modul (termasuk `platform`) lalu menerapkan ulang semua
+## migrasi, supaya FK lintas modul tidak putus (O-096); data dev di DB uji memang sintetis.
 
 import std/[json, options, times, unittest]
 

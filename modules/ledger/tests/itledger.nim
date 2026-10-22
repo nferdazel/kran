@@ -23,8 +23,8 @@ if not databaseUrlSet(envT):
 let dbPool = newDbPool(dbConfigFromEnv(envT))
 let db = dbPool.acquire()
 
-# Hanya schema `ledger` yang dibuat ulang (COA seed ikut migrasi 0002). Schema `platform` dibiarkan
-# supaya migrasi platform lain tidak kehilangan ledger-nya di tengah run.
+# Seluruh schema modul (termasuk `platform`) dibuat ulang dari nol supaya migrasi, seed, dan FK
+# lintas modul konsisten; reset parsial pernah memutus FK modul lain (O-096).
 resetTestSchemas(db, ".")
 discard applyAllMigrations(db, ".")
 
