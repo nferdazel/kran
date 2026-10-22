@@ -2124,3 +2124,16 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
 - Migrasi `product/0005` (deprecate `grace_period_days`) berjalan lewat gate deploy sebelum swap
   biner; tidak ada contract tertunda. Bila health gate gagal, deploy tidak akan sampai swap —
   aset web baru + readyz 200 menandakan gate lolos.
+
+
+### T-088a — rekening simpanan (22 Okt 2026)
+
+- Modul `deposit`: `deposit/0001` (schema+sequence) + `deposit/0003` (akun + cache saldo,
+  `CHECK balance >= 0`), RBAC `platform/0023`, `POST/GET /api/v1/deposit/accounts`, idempotency
+  wajib, gerbang cabang `authorizedAtBranch`, audit `deposit.account.open`.
+- Nomor rekening provisoris 10 digit (D-123, `NEEDS-COMPLIANCE-REVIEW`, O-095).
+- Review 2 putaran: MAJOR (test gerbang cabang, format nomor, O-096) ditutup; r2 APPROVE.
+- O-096 ditutup: reset schema parsial di 6 suite diganti `resetTestSchemas(db, ".")`.
+- Bukti: `itaccount` 5, `itapi_deposit` 12, `taccount` 6, `tcontract` 5, `tparamgen` 24;
+  `./task ci` hijau (24 e2e).
+- Belum di-push. T-088b (setor/tarik + posting jurnal sinkron) berikutnya.
