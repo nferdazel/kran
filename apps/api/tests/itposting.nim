@@ -29,7 +29,7 @@ let db = dbPool.acquire()
 
 # POSTING_HARNESS_RESET
 resetTestSchemas(db, ".")
-discard applyMigrations(db, ".")
+discard applyAllMigrations(db, ".")
 execScript(db, readFile("packs/base/generated/param_definitions.sql"))
 execScript(db, readFile("packs/base/generated/param_values.sql"))
 

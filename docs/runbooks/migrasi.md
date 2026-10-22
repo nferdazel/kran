@@ -34,6 +34,12 @@ Catatan `--check`: migrasi contract yang belum dijalankan **tidak** dihitung seb
 contract memang menunggu keputusan operator, spec §21.4) — jadi merilis berkas contract tidak membuat
 gate deploy merah selamanya. Yang tetap masuk hitungan: expand tertunda dan checksum yang berubah.
 
+**Pengecualian terkontrol:** `deploy-vps.sh` menjalankan `--contract` otomatis **hanya** untuk id yang
+tercantum di `ops/migrations/contract-auto.txt`. Bila ada contract tertunda di luar allowlist, deploy
+berhenti (fail-closed) dan operator menjalankannya manual. Setelah contract, skrip mengulang
+`--check` dan menolak lanjut bila masih ada contract tertunda. Menambah id ke allowlist = perubahan
+repo yang ikut di-review, bukan flag di server.
+
 ## Urutan expand → contract
 
 1. Rilis migrasi expand, deploy biasa; versi lama dan baru hidup bersama.

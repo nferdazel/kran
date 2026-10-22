@@ -36,7 +36,7 @@ if not databaseUrlSet(envT):
 let dbPool = newDbPool(dbConfigFromEnv(envT))
 let db = dbPool.acquire()
 let sysClock = systemClock()
-discard applyMigrations(db, ".")
+discard applyAllMigrations(db, ".")
 
 var counter = 0
 

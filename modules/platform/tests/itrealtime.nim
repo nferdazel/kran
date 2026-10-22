@@ -27,7 +27,7 @@ let db = dbPool.acquire()
 let sysClock = systemClock()
 randomize(20261014)
 
-discard applyMigrations(db, ".")
+discard applyAllMigrations(db, ".")
 
 proc uniqueKey(prefix: string): string =
   prefix & ":" & $epochTime() & ":" & $rand(1_000_000)

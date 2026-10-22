@@ -22,10 +22,10 @@ if not databaseUrlSet(envT):
 let dbPool = newDbPool(dbConfigFromEnv(envT))
 let db = dbPool.acquire()
 
-discard applyMigrations(db, ".")
+discard applyAllMigrations(db, ".")
 db.exec(sql"DROP SCHEMA IF EXISTS ledger CASCADE")
 db.exec(sql"DELETE FROM platform.schema_migration WHERE migration_id LIKE 'ledger/%'")
-discard applyMigrations(db, ".")
+discard applyAllMigrations(db, ".")
 
 let
   testClock = fakeClock(dateTime(2026, mOct, 20, 9, 0, 0))

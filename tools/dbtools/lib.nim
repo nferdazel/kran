@@ -609,3 +609,9 @@ proc devSeedDbAllowed*(url: string): bool =
   ## 16 Okt 2026, O-062). Sebelumnya penjagaan hanya berupa flag `--dev` itu sendiri.
   let name = databaseNameOf(url)
   result = name.endsWith("_dev") or name.endsWith("_test")
+
+proc applyAllMigrations*(db: DbConn, root: string): MigrateReport =
+  ## Test memakai skema **final** (expand + contract). Contract tetap dipisah di jalur deploy;
+  ## helper ini hanya untuk harness supaya perilaku yang diuji sama dengan produksi setelah deploy.
+  result = applyMigrations(db, root)
+  discard applyMigrations(db, root, contract = true)
