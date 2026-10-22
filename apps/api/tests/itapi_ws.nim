@@ -129,7 +129,7 @@ proc paramTopicsOnly(identity: string; requested: seq[string]): seq[string] {.gc
 
 let dbPool = newDbPool(dbConfigFromEnv(envT))
 let db = dbPool.acquire()
-discard applyMigrations(db, ".")
+discard applyAllMigrations(db, ".")
 let sysClock = systemClock()
 
 let mainService = newEventService(TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics,

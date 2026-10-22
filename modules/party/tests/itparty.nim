@@ -27,10 +27,10 @@ if not databaseUrlSet(envT):
 let dbPool = newDbPool(dbConfigFromEnv(envT))
 let db = dbPool.acquire()
 
-discard applyMigrations(db, ".")
+discard applyAllMigrations(db, ".")
 db.exec(sql"DROP SCHEMA IF EXISTS party CASCADE")
 db.exec(sql"DELETE FROM platform.schema_migration WHERE migration_id LIKE 'party/%'")
-discard applyMigrations(db, ".")
+discard applyAllMigrations(db, ".")
 
 let
   testClock = fakeClock(dateTime(2026, mOct, 19, 9, 0, 0))

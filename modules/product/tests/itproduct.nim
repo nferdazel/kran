@@ -29,7 +29,7 @@ let db = dbPool.acquire()
 if db.getValue(sql"SELECT to_regclass('platform.schema_migration')::text").len > 0:
   db.exec(sql"DELETE FROM platform.schema_migration WHERE migration_id LIKE 'product/%'")
 db.exec(sql"DROP SCHEMA IF EXISTS product CASCADE")
-discard applyMigrations(db, ".")
+discard applyAllMigrations(db, ".")
 
 let
   testClock = fakeClock(dateTime(2026, mOct, 20, 9, 0, 0))

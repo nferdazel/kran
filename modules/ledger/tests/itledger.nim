@@ -25,10 +25,10 @@ let db = dbPool.acquire()
 
 # Hanya schema `ledger` yang dibuat ulang (COA seed ikut migrasi 0002). Schema `platform` dibiarkan
 # supaya migrasi platform lain tidak kehilangan ledger-nya di tengah run.
-discard applyMigrations(db, ".")
+discard applyAllMigrations(db, ".")
 db.exec(sql"DROP SCHEMA IF EXISTS ledger CASCADE")
 db.exec(sql"DELETE FROM platform.schema_migration WHERE migration_id LIKE 'ledger/%'")
-discard applyMigrations(db, ".")
+discard applyAllMigrations(db, ".")
 
 let
   testClock = fakeClock(dateTime(2026, mOct, 19, 9, 0, 0))

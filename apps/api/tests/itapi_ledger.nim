@@ -43,7 +43,7 @@ let dbPool = newDbPool(dbConfigFromEnv(envT))
 block:
   let db = dbPool.acquire()
   resetTestSchemas(db, ".")
-  discard applyMigrations(db, ".")
+  discard applyAllMigrations(db, ".")
   execScript(db, readFile("packs/base/generated/param_definitions.sql"))
   execScript(db, readFile("packs/base/generated/param_values.sql"))
   execScript(db, readFile("packs/base/seed/0001_dev_users.sql"))

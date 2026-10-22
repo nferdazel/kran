@@ -41,7 +41,7 @@ let db = dbPool.acquire()
 # membingungkan.
 block:
   try:
-    discard applyMigrations(db, ".")
+    discard applyAllMigrations(db, ".")
     for rel in seedFiles("."):
       execScript(db, readFile(rel))
     # Buktikan prasyaratnya benar-benar terpenuhi lewat pembaca yang sama dengan produksi.
@@ -139,7 +139,7 @@ suite "kran-api: peran CLI (O-013)":
     check runMigrate(".") == 0
     check runMigrate(".") == 0
     check runMigrate(".", "--up") == 0
-    check applyMigrations(db, ".").applied.len == 0
+    check applyAllMigrations(db, ".").applied.len == 0
 
   test "ctl reset-password: hash baru, wajib ganti, sesi dicabut, audit, lockout pulih (O-071)":
     let uid = $newId(systemClock())

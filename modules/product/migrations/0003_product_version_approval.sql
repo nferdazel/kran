@@ -1,15 +1,16 @@
--- Maker-checker versi produk (T-086, D-099 + D-119).
+-- Maker-checker versi produk — tahap EXPAND (T-086, D-099 + D-119).
 --
--- dbtools:destructive menambah kolom NOT NULL pada tabel berisi data dan mengganti constraint
--- EXCLUDE (dari semua versi → hanya versi ACTIVE). Alasannya: DRAFT yang bertumpang
--- tindih memang sah (dua pengajuan bersaing), sedangkan versi ACTIVE tetap tidak boleh tumpang
--- tindih. Migrasi tetap expand-friendly: kolom baru, backfill, lalu constraint; tidak ada data
--- yang dihapus.
+-- Aman untuk `migrate --up` (tanpa DROP/TRUNCATE): kolom baru, backfill, CHECK baru, index, dan
+-- penggantian badan fungsi trigger (`CREATE OR REPLACE`). Perubahan constraint EXCLUDE yang
+-- bersifat merusak dipisah ke `0004_product_version_contract.sql`.
 --
--- Catatan rolling deploy: `maker` diisi trigger BEFORE INSERT dari `published_by` dan `status`
--- tetap punya DEFAULT 'DRAFT', supaya binary lama yang masih berjalan (menulis tanpa kolom baru)
--- tidak gagal selama jendela restart. Keduanya dibersihkan di migrasi contract **T-090** setelah
--- deploy selesai; migrasi ini sengaja tidak menghapus default.
+-- Selama jendela antara expand dan contract, constraint lama (semua versi tidak boleh tumpang
+-- tindih) masih berlaku, jadi dua DRAFT bertumpang tindih belum bisa dibuat; deploy menjalankan
+-- contract segera setelah expand sebelum binary baru menerima trafik (lihat T-090).
+--
+-- Rolling deploy: `maker` diisi trigger BEFORE INSERT dan `status` tetap punya DEFAULT 'DRAFT',
+-- supaya binary lama yang masih berjalan (menulis tanpa kolom baru) tidak gagal. Keduanya
+-- dibersihkan di migrasi contract **T-090** setelah dipastikan tidak ada binary lama.
 
 ALTER TABLE product.product_version
   ADD COLUMN status text NOT NULL DEFAULT 'DRAFT',
@@ -44,22 +45,21 @@ COMMENT ON COLUMN product.product_version.checker IS
   'Penyetuju/penolak; wajib berbeda dari maker. Backfill baris lama memakai UUID nol sebagai '
   'sentinel "pack reviewer" (tidak ada aktor nyata sebelum maker-checker).';
 
-ALTER TABLE product.product_version
-  DROP CONSTRAINT product_version_no_overlap,
-  ADD CONSTRAINT product_version_active_no_overlap EXCLUDE USING gist (
-    product_id WITH =,
-    daterange(effective_from, effective_to, '[]') WITH &&
-  ) WHERE (status = 'ACTIVE');
-
 CREATE INDEX product_version_status_idx
   ON product.product_version (product_id, status, effective_from DESC);
 
--- Trigger lama membekukan versi begitu binding pertama masuk. Sekarang seal terjadi saat
--- approve/reject, dan binding hanya boleh masuk selama versi masih DRAFT.
-DROP TRIGGER product_version_has_bindings ON product.product_version;
-DROP FUNCTION product.assert_version_has_bindings();
+-- Trigger lama membekukan versi begitu binding pertama masuk. Badan fungsinya dinetralkan di
+-- expand; trigger-nya sendiri baru dihapus di contract (DROP = merusak).
+CREATE OR REPLACE FUNCTION product.assert_version_has_bindings() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  -- Seal kini terjadi saat approve/reject; invarian "ACTIVE wajib punya binding" ditegakkan
+  -- `guard_version_update` pada transisi status.
+  RETURN NEW;
+END;
+$$;
 
-CREATE OR REPLACE FUNCTION product.fill_version_maker() RETURNS trigger
+CREATE FUNCTION product.fill_version_maker() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
   -- Invarian yang dulu dijaga deferred trigger kini harus dijaga di INSERT: versi baru selalu

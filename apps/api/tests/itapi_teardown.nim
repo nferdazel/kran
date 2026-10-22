@@ -104,7 +104,7 @@ proc runTeardownCycle(): int =
   let dbPool = newDbPool(dbConfigFromEnv(envT))
   block:
     let db = dbPool.acquire()
-    discard applyMigrations(db, ".")
+    discard applyAllMigrations(db, ".")
     dbPool.release(db)
 
   let svc = newEventService(TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics,

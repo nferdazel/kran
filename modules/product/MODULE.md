@@ -80,10 +80,12 @@ semantik (T-087); jangan dipakai sebagai konsumen.
   penyetuju kedua (`checker <> maker`) — konsekuensi kebijakan, bukan bug (D-099, `ACCEPTED-LIMITS.md`).
 - `published_at` kini berarti **waktu pencatatan versi** (saat submit), bukan saat terbit; nama
   historis dipertahankan (utang nama, D-119). Waktu terbit yang sebenarnya = `approved_at`.
-- Migrasi `0003` bersifat **destruktif** (`-- dbtools:destructive`): mengganti constraint `EXCLUDE`
-  dan menambah kolom `NOT NULL`, jadi **bukan expand-only murni**. Trigger `fill_version_maker`
-  menjaga jendela rolling deploy (binary lama menulis tanpa `maker`); dihapus di migrasi contract
-  (T-090 di backlog).
+- Migrasi dipecah dua tahap: `0003` **expand** (kolom/backfill/CHECK/index/trigger, aman `--up`)
+  dan `0004` **contract** (`-- dbtools:contract` + `destructive`): menghapus deferred trigger lama
+  dan mengganti `EXCLUDE` menjadi hanya ACTIVE. Deploy menjalankan contract lewat allowlist
+  `ops/migrations/contract-auto.txt` sebelum binary baru menerima trafik; contract lain =
+  fail-closed. Trigger `fill_version_maker` + DEFAULT `status` menjaga jendela rolling deploy dan
+  dibersihkan di **T-090**.
 - Migrasi platform `0017` memuat grant no-op ke `product.read/manage` (kode lama); grant sebenarnya
   ada di `0018`. Dibiarkan karena `0017` sudah diterapkan (checksum).
 - Binding `pvtJson` dibatasi ukuran (16 KiB) tetapi bentuknya belum divalidasi schema; batas schema

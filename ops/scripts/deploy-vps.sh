@@ -311,6 +311,38 @@ if [ "$MIGRATIONS_CHANGED" -eq 1 ]; then
   fi
   log "==> MIGRATION GATE: --up"
   KRAN_DATABASE_URL="$MIGRATE_DB_URL_HOST" "$MIGRATE_BIN" --role=migrate --up || die "migrasi --up gagal"
+
+  # Contract (D-040) dijalankan **sebelum** binary baru menerima trafik, tetapi hanya untuk id yang
+  # ada di allowlist repo. Contract di luar allowlist = fail-closed: operator harus menjalankannya
+  # manual dengan review. `--check` setelah contract memastikan tidak ada yang tertunda.
+  log "==> MIGRATION GATE: contract"
+  contract_check="$(KRAN_DATABASE_URL="$MIGRATE_DB_URL_HOST" "$MIGRATE_BIN" --role=migrate --check 2>&1)" ||
+    die "migrate --check gagal setelah --up"
+  pending_contracts="$(sed -nE 's/.*contract menunggu .*: (.*)$/\1/p' <<<"$contract_check" | tail -1)"
+  if [ -n "${pending_contracts:-}" ]; then
+    allow_file="$MONO_DIR/ops/migrations/contract-auto.txt"
+    [ -f "$allow_file" ] || die "contract tertunda ($pending_contracts) tetapi $allow_file tidak ada"
+    IFS=',' read -r -a contract_ids <<<"$pending_contracts"
+    for raw_id in "${contract_ids[@]}"; do
+      contract_id="${raw_id# }"
+      contract_id="${contract_id% }"
+      [ -n "$contract_id" ] || continue
+      grep -qxF "$contract_id" "$allow_file" ||
+        die "contract $contract_id tidak ada di allowlist — jalankan migrate --contract manual"
+    done
+    log "    contract di-allowlist: $pending_contracts"
+    KRAN_DATABASE_URL="$MIGRATE_DB_URL_HOST" "$MIGRATE_BIN" --role=migrate --contract ||
+      die "migrasi --contract gagal"
+    after_contract="$(KRAN_DATABASE_URL="$MIGRATE_DB_URL_HOST" "$MIGRATE_BIN" --role=migrate --check 2>&1)" ||
+      die "migrate --check gagal setelah --contract"
+    if grep -q 'contract menunggu' <<<"$after_contract"; then
+      log "$after_contract"
+      die "contract masih tertunda setelah --contract (fail-closed)"
+    fi
+    log "    contract selesai"
+  else
+    log "    tidak ada contract tertunda"
+  fi
 else
   log "==> migrasi tidak berubah; gate dilewati"
 fi
