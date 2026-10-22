@@ -262,7 +262,7 @@ fi
 
 # 7. Build + ekstrak binary (spec §21.4 #7). Rebuild hanya bila input build berubah.
 if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|tools/|kran\.nimble|nimble\.lock)' <<<"$CHANGED_FILES"; then
-  log "==> Build API (podman, tag :local + :$REVID)..."
+  log "==> Build API (podman, tag :local)..."
   [ -d "$MONO_DIR/apps/api" ] || die "apps/api tidak ditemukan"
   # Konteks build = root monorepo, bukan apps/api: sumber Nim ada di shared/ + modules/ + tools/
   # (beda dari pola Skyward yang modulnya mandiri). Dockerfile-nya di apps/api/Dockerfile.
@@ -272,13 +272,13 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|tools/|kran\.
   if podman image exists localhost/kran-api:local; then
     podman tag localhost/kran-api:local localhost/kran-api:prev 2>/dev/null || true
   fi
-  podman build -f apps/api/Dockerfile -t localhost/kran-api:local -t "localhost/kran-api:$REVID" .
+  podman build -f apps/api/Dockerfile -t localhost/kran-api:local .
   mkdir -p "$APP_DIR/bin"
-  build_cid="$(podman create "localhost/kran-api:$REVID")"
+  build_cid="$(podman create localhost/kran-api:local)"
   podman cp "$build_cid:/usr/local/bin/kran-api" "$BIN_NEW"
   podman rm "$build_cid" >/dev/null
   chmod +x "$BIN_NEW"
-  vendor_runtime_libs "localhost/kran-api:$REVID"
+  vendor_runtime_libs localhost/kran-api:local
 else
   log "==> kode API tidak berubah; build dilewati"
 fi
