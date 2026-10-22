@@ -1241,10 +1241,15 @@ test "idempotency param submit: replay, konflik, tanpa header":
   check first.code == 201
   let paramValueId = first.body["paramValueId"].getStr()
 
+  let paramRows = """SELECT count(*)::text FROM platform.param_value
+    WHERE key = 'platform.realtime.max_topics'"""
+  let rowsBefore = dbValue(sql(paramRows))
+
   let replay = postJson(path, body, token, key = "idem-param-1")
   check replay.code == 200
   check replay.replayed == "true"
   check replay.body["paramValueId"].getStr() == paramValueId
+  check dbValue(sql(paramRows)) == rowsBefore
 
   let conflict = postJson(path, %*{"value": 41, "reason": "beda isi"}, token,
     key = "idem-param-1")

@@ -227,12 +227,6 @@ proc handleAddIdentityDoc*(app: AppContext, req: Request) {.gcsafe.} =
 
         status = 201
         payload = docJson(doc))
-  except IdempotencyConfigError:
-    status = 500
-    problem = "konfigurasi idempotensi di server tidak sah"
-  except IdempotencyStateError:
-    status = 500
-    problem = "idempotensi gagal diselesaikan"
   except KycConfigError as e:
     status = 500
     problem = "konfigurasi KYC/dokumen di server tidak sah: " & e.msg
@@ -428,6 +422,12 @@ proc handleRiskRating*(app: AppContext, req: Request) {.gcsafe.} =
               "nextReviewDue": due,
             }
             (status, payload)))
+  except IdempotencyConfigError:
+    status = 500
+    problem = "konfigurasi idempotensi di server tidak sah"
+  except IdempotencyStateError:
+    status = 500
+    problem = "idempotensi gagal diselesaikan"
   except KycConfigError as e:
     status = 500
     problem = "konfigurasi KYC di server tidak sah: " & e.msg
