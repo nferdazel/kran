@@ -64,6 +64,10 @@ tags:
     description: |
       Rekening simpanan (spec §9.2, T-088a): buka + baca rekening, saldo tidak boleh negatif.
       Transaksi tunai/PB + posting jurnal menyusul di T-088b/T-088c.
+  - name: teller
+    description: |
+      Teller (spec §9.2/§9.3, T-088b): transaksi tunai setor/tarik. Jurnal double-entry diposting
+      **sinkron** di transaksi DB yang sama dengan mutasi saldo; event outbox hanya non-akuntansi.
 
 paths:
   /healthz:
@@ -1793,6 +1797,65 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/teller/cash-transactions:
+    post:
+      operationId: postCashTransaction
+      tags: [teller]
+      summary: Setor atau tarik tunai
+      description: |
+        Mencatat transaksi tunai (`direction` = `DEPOSIT` atau `WITHDRAWAL`) pada satu rekening
+        simpanan. Mutasi saldo, jurnal double-entry (dari posting rule), baris transaksi, audit, dan
+        event outbox ditulis dalam **satu** transaksi DB; jurnal diposting **sinkron**, bukan lewat
+        worker outbox. Saldo minimum dari binding versi produk akun (`product.savings.min_balance`,
+        default 0).
+
+        `Idempotency-Key` wajib. Replay kunci+isi sama → 200 + `Idempotent-Replayed`; kunci sama isi
+        beda → 409. Izin `teller.transaction.post` harus dipegang di **cabang rekening**
+        (`params.reason=branch_not_allowed` bila hanya di cabang lain). Konflik domain 409 memakai
+        `params.reason`: `account_not_active`, `insufficient_funds`, `period_closed`.
+
+        **HUMAN-REVIEW-REQUIRED** (jalur finansial, AGENTS.md §8).
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CashTransactionCreate"
+      responses:
+        "200":
+          description: |
+            Replay permintaan sebelumnya: `Idempotency-Key` sama dengan isi yang sama. Body adalah
+            respons asli yang tersimpan; tidak ada transaksi/jurnal baru.
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CashTransaction"
+        "201":
+          description: Transaksi tercatat + jurnal diposting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CashTransaction"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -2962,3 +3025,50 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DepositAccount"
+
+    CashTransactionCreate:
+      type: object
+      additionalProperties: false
+      required: [accountId, direction, amount]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+          description: Rekening simpanan (harus berstatus `ACTIVE`).
+        direction:
+          type: string
+          enum: [DEPOSIT, WITHDRAWAL]
+          description: Setor (masuk kas) atau tarik (keluar kas).
+        amount:
+          type: string
+          description: Nominal desimal string > 0 (tanpa float), mis. `"100000.0000"`.
+        narration:
+          type: string
+          maxLength: 200
+          description: Keterangan opsional (batas teknis kolom 200 karakter).
+
+    CashTransaction:
+      type: object
+      additionalProperties: false
+      required: [transactionId, journalId, direction, amount, balanceAfter, businessDate]
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        journalId:
+          type: string
+          format: uuid
+          description: Jurnal double-entry yang diposting sinkron untuk transaksi ini.
+        direction:
+          type: string
+          enum: [DEPOSIT, WITHDRAWAL]
+        amount:
+          type: string
+          description: Nominal desimal string 4 desimal (tanpa float).
+        balanceAfter:
+          type: string
+          description: Saldo rekening setelah transaksi, desimal string 4 desimal.
+        businessDate:
+          type: string
+          format: date
+          description: Tanggal buku transaksi (`YYYY-MM-DD`).

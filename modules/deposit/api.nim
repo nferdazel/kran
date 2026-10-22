@@ -5,5 +5,7 @@
 ## composition root (`apps/api`) dan test modul.
 
 import ./domain/account
+import ./domain/transaction
 
 export account
+export transaction
