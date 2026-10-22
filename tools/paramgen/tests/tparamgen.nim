@@ -306,6 +306,15 @@ suite "paramgen: gen & check":
     check not runCheck(root, note)
     check note.contains("berbeda")
 
+  test "runCheck mendeteksi artefak .md yatim":
+    let root = freshWorkRoot()
+    discard runGen(root)
+    writeFile(root / "packs/base/generated/asing.md", "yatim\n")
+    var note = ""
+    check not runCheck(root, note)
+    check note.contains("asing.md")
+    check note.contains("yatim")
+
   test "runCheck gagal bila artefak belum ada":
     let root = freshWorkRoot()
     var note = ""
