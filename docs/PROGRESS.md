@@ -2033,3 +2033,12 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
   **APPROVE**, reviewer T-085 r2 **APPROVE**.
 - **Sisa**: T-089/O-094 (sapuan baris kedaluwarsa via daycloser) dan gate O-093/D-118 sebelum
   produksi berisi PII nyata.
+
+### Deploy T-084/T-085 (22 Okt 2026)
+
+- **Push** `b1c71d7..a18c99e` ke `main` (deploy otomatis). Aset web baru
+  `/_app/immutable/nodes/4.rLP1r9cD.js` (memuat `Idempotency-Key`) sudah dilayani
+  `https://cbs.qouver.com`; menurut `ops/scripts/deploy-vps.sh`, `web.prev` hanya dipulihkan bila
+  health gate gagal, jadi tersedianya aset baru = API sehat dan deploy selesai.
+- **Catatan jujur**: perilaku `400 Idempotency-Key wajib` di produksi belum diuji langsung karena
+  kredensial demo produksi berbeda dari dev; bukti perilaku ada di test HTTP CI + kontrak.
