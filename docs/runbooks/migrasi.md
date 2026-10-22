@@ -40,6 +40,13 @@ berhenti (fail-closed) dan operator menjalankannya manual. Setelah contract, skr
 `--check` dan menolak lanjut bila masih ada contract tertunda. Menambah id ke allowlist = perubahan
 repo yang ikut di-review, bukan flag di server.
 
+Contract dijalankan **sebelum** health gate dan swap binary final. Konsekuensinya: bila health gate
+gagal dan layanan di-rollback, **skema tidak ikut kembali** — contract tetap terpasang. Binary lama
+yang hidup dengan skema pasca-contract akan menyimpan versi produk sebagai DRAFT (trigger seal lama
+sudah dinetralkan/dihapus), sehingga versi dari periode itu perlu di-approve manual setelah binary
+baru pulih. Ini dicatat di `ACCEPTED-LIMITS.md` dan T-090; rollback skema hanya lewat `--down`
+dengan berkas pasangan yang di-review, bukan otomatis.
+
 ## Urutan expand → contract
 
 1. Rilis migrasi expand, deploy biasa; versi lama dan baru hidup bersama.

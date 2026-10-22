@@ -320,6 +320,9 @@ suite "product: maker-checker":
     check dbValue(sql"""
       SELECT count(*)::text FROM platform.audit_log
        WHERE action = 'product.reject' AND resource_id = ?""", pid) == "1"
+    check dbValue(sql"""
+      SELECT coalesce(reason, '') FROM platform.audit_log
+       WHERE action = 'product.reject' AND resource_id = ?""", pid) == "atribut salah"
 
     # Draft yang ditolak tidak muncul di katalog.
     let list = getJson(ProductsPath & "?asOf=2026-10-15", makerToken)
@@ -479,3 +482,39 @@ suite "product: grant bercabang":
            AND u.username = 'dev.maker' AND r.code = 'platform_admin'""")
       dbPool.release(conn)
     check getJson(ProductsPath, makerToken).code == 200
+
+
+suite "product: konflik jendela & reject self-approval":
+  test "approve draft yang mulai sebelum ACTIVE berjalan → 409 window_conflict":
+    let created = postJson(ProductsPath, productBody("SAV03", "Simpanan Tiga"), makerToken)
+    check created.code == 201
+    let v2 = postJson(VersionsPath.replace("{code}", "SAV03"),
+      %*{"effectiveFrom": "2026-11-01",
+         "bindings": {"product.savings.min_balance": "10000.0000"}}, makerToken)
+    check v2.code == 201
+    let v2id = versionOf(v2.body, 2)["versionId"].getStr()
+    # Draft ketiga dibuat sebelum v2 disetujui, jadi masih boleh mulai setelah v1 (10-01).
+    let v3 = postJson(VersionsPath.replace("{code}", "SAV03"),
+      %*{"effectiveFrom": "2026-10-15",
+         "bindings": {"product.savings.min_balance": "10000.0000"}}, makerToken)
+    check v3.code == 201
+    let v3id = versionOf(v3.body, 3)["versionId"].getStr()
+
+    let v2Approved = postJson(fill(ApprovePath, "SAV03", v2id), newJObject(), approverToken)
+    check v2Approved.code == 200
+
+    # v3 mulai 10-15, sedangkan ACTIVE berjalan (v2) mulai 11-01: approve harus ditolak handler,
+    # bukan lolos ke EXCLUDE lalu jadi 500.
+    let conflict = postJson(fill(ApprovePath, "SAV03", v3id), newJObject(), approverToken)
+    check conflict.code == 409
+    checkProblem(ApprovePath, "POST", "409", conflict.body)
+    check conflict.body["params"]["reason"].getStr() == "window_conflict"
+
+  test "reject oleh maker sendiri → 409 self_approval":
+    let created = postJson(ProductsPath, productBody("SAV04", "Simpanan Empat"), makerToken)
+    check created.code == 201
+    let vid = versionOf(created.body, 1)["versionId"].getStr()
+    let reply = postJson(fill(RejectPath, "SAV04", vid), %*{"reason": "coba"}, makerToken)
+    check reply.code == 409
+    checkProblem(RejectPath, "POST", "409", reply.body)
+    check reply.body["params"]["reason"].getStr() == "self_approval"

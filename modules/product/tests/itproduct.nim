@@ -5,7 +5,7 @@
 ## self-approval ditolak CHECK, `approved_at`/`reject_reason` hanya sekali, binding immutable, dan
 ## binding hanya boleh masuk selama versi masih DRAFT.
 
-import std/[json, options, times, unittest]
+import std/[json, options, strutils, times, unittest]
 
 import db_connector/db_postgres
 
@@ -184,19 +184,45 @@ suite "product: tumpang tindih & penutupan versi":
       $activeV1.versionId))
 
   test "INSERT langsung non-DRAFT atau maker palsu ditolak trigger":
-    let p = productByCode(db, "SAV-DRAFT").get()
-    # Seed/import SQL tidak boleh melewati jalur approve: ACTIVE tanpa binding tidak akan pernah
-    # bisa diberi binding karena binding hanya untuk DRAFT.
-    expectDbError(proc() = db.exec(sql"""
-      INSERT INTO product.product_version
-        (version_id, product_id, version_no, effective_from, published_by, status)
-      VALUES (gen_random_uuid(), ?, 99, '2027-01-01', ?, 'ACTIVE')""",
-      $p.productId, $actor))
-    expectDbError(proc() = db.exec(sql"""
-      INSERT INTO product.product_version
-        (version_id, product_id, version_no, effective_from, published_by, maker)
-      VALUES (gen_random_uuid(), ?, 98, '2027-02-01', ?, ?)""",
-      $p.productId, $actor, $checker))
+    # Produk baru tanpa ACTIVE supaya penolakan berasal dari guard, bukan EXCLUDE/CHECK lain.
+    let p = newProduct("SAV-GUARD")
+    insertProduct(p)
+    # Baris ACTIVE yang memenuhi seluruh CHECK (maker, checker, approved_at, sealed) tetap harus
+    # ditolak; tanpa guard status, baris ini akan diterima dan melewati approve/binding.
+    var pesan = ""
+    try:
+      db.exec(sql"""
+        INSERT INTO product.product_version
+          (version_id, product_id, version_no, effective_from, published_by, maker,
+           status, checker, approved_at, sealed)
+        VALUES (gen_random_uuid(), ?, 1, '2030-01-01', ?, ?, 'ACTIVE', ?, now(), true)""",
+        $p.productId, $actor, $actor, $checker)
+    except DbError as e:
+      pesan = e.msg
+    check pesan.contains("harus DRAFT")
+
+    pesan = ""
+    try:
+      db.exec(sql"""
+        INSERT INTO product.product_version
+          (version_id, product_id, version_no, effective_from, published_by, maker,
+           status, checker, reject_reason, sealed)
+        VALUES (gen_random_uuid(), ?, 2, '2030-02-01', ?, ?, 'REJECTED', ?, 'seed', true)""",
+        $p.productId, $actor, $actor, $checker)
+    except DbError as e:
+      pesan = e.msg
+    check pesan.contains("harus DRAFT")
+
+    var makerDitolak = false
+    try:
+      db.exec(sql"""
+        INSERT INTO product.product_version
+          (version_id, product_id, version_no, effective_from, published_by, maker)
+        VALUES (gen_random_uuid(), ?, 97, '2027-03-01', ?, ?)""",
+        $p.productId, $actor, $checker)
+    except DbError as e:
+      makerDitolak = e.msg.contains("maker")
+    check makerDitolak
 
   test "binding immutable":
     let p = productByCode(db, "SAV-DRAFT").get()

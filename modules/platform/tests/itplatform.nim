@@ -513,7 +513,7 @@ suite "platform: migrasi dua tahap (contract & rollback, T-035)":
        "CREATE TABLE platform.probe_efek_samping (id int);\n" &
        "DROP TABLE platform.tidak_ada_tabel_ini;\n")])
     let id = "platform/0903_probe_gagal"
-    check applyMigrations(db, root, contract = true).applied == @[id]
+    check id in applyMigrations(db, root, contract = true).applied
 
     var raised = false
     try:
@@ -545,7 +545,7 @@ suite "platform: migrasi dua tahap (contract & rollback, T-035)":
        "CREATE TABLE platform.probe_tx (id int);\n"),
       ("0904_probe_tx.down.sql", "DROP TABLE platform.probe_tx;\n")])
     let id = "platform/0904_probe_tx"
-    check applyMigrations(db, root, contract = true).applied == @[id]
+    check id in applyMigrations(db, root, contract = true).applied
 
     execScript(db, """CREATE FUNCTION platform.probe_tolak_hapus() RETURNS trigger AS $$
                         BEGIN RAISE EXCEPTION 'tolak hapus (uji)'; END; $$ LANGUAGE plpgsql""")

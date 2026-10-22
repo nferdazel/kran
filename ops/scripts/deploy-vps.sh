@@ -318,8 +318,13 @@ if [ "$MIGRATIONS_CHANGED" -eq 1 ]; then
   log "==> MIGRATION GATE: contract"
   contract_check="$(KRAN_DATABASE_URL="$MIGRATE_DB_URL_HOST" "$MIGRATE_BIN" --role=migrate --check 2>&1)" ||
     die "migrate --check gagal setelah --up"
-  pending_contracts="$(sed -nE 's/.*contract menunggu .*: (.*)$/\1/p' <<<"$contract_check" | tail -1)"
-  if [ -n "${pending_contracts:-}" ]; then
+  pending_count="$(sed -nE 's/^  contract_pending=([0-9]+)$/\1/p' <<<"$contract_check" | tail -1)"
+  [ -n "${pending_count:-}" ] ||
+    die "format --check tidak dikenal (contract_pending hilang) — gate contract fail-closed"
+  if [ "$pending_count" -gt 0 ]; then
+    pending_contracts="$(sed -nE 's/^  contract_ids=//p' <<<"$contract_check" | tail -1)"
+    [ -n "${pending_contracts:-}" ] ||
+      die "contract_pending=$pending_count tetapi contract_ids tidak ada — fail-closed"
     allow_file="$MONO_DIR/ops/migrations/contract-auto.txt"
     [ -f "$allow_file" ] || die "contract tertunda ($pending_contracts) tetapi $allow_file tidak ada"
     IFS=',' read -r -a contract_ids <<<"$pending_contracts"
@@ -335,7 +340,9 @@ if [ "$MIGRATIONS_CHANGED" -eq 1 ]; then
       die "migrasi --contract gagal"
     after_contract="$(KRAN_DATABASE_URL="$MIGRATE_DB_URL_HOST" "$MIGRATE_BIN" --role=migrate --check 2>&1)" ||
       die "migrate --check gagal setelah --contract"
-    if grep -q 'contract menunggu' <<<"$after_contract"; then
+    sisa="$(sed -nE 's/^  contract_pending=([0-9]+)$/\1/p' <<<"$after_contract" | tail -1)"
+    [ -n "${sisa:-}" ] || die "format --check setelah contract tidak dikenal — fail-closed"
+    if [ "$sisa" -ne 0 ]; then
       log "$after_contract"
       die "contract masih tertunda setelah --contract (fail-closed)"
     fi
