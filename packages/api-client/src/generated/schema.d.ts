@@ -844,6 +844,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/deposit/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daftar rekening simpanan milik satu party
+         * @description Rekening milik `partyId`, disaring per cabang: rekening di cabang yang izinnya tidak
+         *     dipegang pemanggil tidak dikembalikan. `partyId` wajib dan harus UUID (kalau tidak → 400).
+         */
+        get: operations["listDepositAccounts"];
+        put?: never;
+        /**
+         * Buka rekening simpanan
+         * @description Membuka rekening dari produk `SAVINGS` yang punya versi `ACTIVE` berlaku pada tanggal
+         *     bisnis. Party harus `ACTIVE` dan satu cabang dengan rekening (kalau tidak → 409
+         *     `party_not_active`/`branch_mismatch`). Audit `deposit.account.open` ditulis dalam
+         *     transaksi yang sama. Nomor rekening **provisoris**: 10 digit dari sequence, tanpa check
+         *     digit (**NEEDS-COMPLIANCE-REVIEW**).
+         */
+        post: operations["openDepositAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/deposit/accounts/{accountId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Baca satu rekening simpanan
+         * @description Mengembalikan rekening + saldo bila pemanggil memegang izin `deposit.account.read` di
+         *     cabang rekening. Rekening tidak ada → 404; di cabang lain → 403. Id yang bukan UUID → 404.
+         */
+        get: operations["getDepositAccount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1390,6 +1440,51 @@ export interface components {
         ProductVersionReject: {
             /** @description Alasan penolakan; tersimpan di audit dan pada versi (`rejectReason`). */
             reason: string;
+        };
+        DepositAccountCreate: {
+            /**
+             * Format: uuid
+             * @description Party pemilik rekening (harus berstatus `ACTIVE`).
+             */
+            partyId: string;
+            /** @description Kode produk berjenis `SAVINGS` yang punya versi `ACTIVE` berlaku. */
+            productCode: string;
+            /**
+             * Format: uuid
+             * @description Cabang rekening; harus sama dengan cabang party (kalau tidak → 409).
+             */
+            branchId: string;
+        };
+        DepositAccount: {
+            /** Format: uuid */
+            accountId: string;
+            /**
+             * @description Nomor rekening **provisoris**: 10 digit zero-padded dari sequence, tanpa check digit
+             *     (**NEEDS-COMPLIANCE-REVIEW** sampai bentuk final ditetapkan).
+             */
+            accountNo: string;
+            /** Format: uuid */
+            partyId: string;
+            /** Format: uuid */
+            productId: string;
+            productCode: string;
+            /** Format: uuid */
+            productVersionId: string;
+            /** Format: uuid */
+            branchId: string;
+            /** @enum {string} */
+            accountType: "SAVINGS";
+            /** @enum {string} */
+            status: "ACTIVE" | "CLOSED";
+            /** @description Saldo desimal string 4 desimal (tanpa float), mis. `"0.0000"`. */
+            balance: string;
+            /** Format: date */
+            openedOn: string;
+            /** @description ISO-8601 UTC. */
+            createdAt: string;
+        };
+        DepositAccountList: {
+            items: components["schemas"]["DepositAccount"][];
         };
     };
     responses: {
@@ -2820,6 +2915,107 @@ export interface operations {
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    listDepositAccounts: {
+        parameters: {
+            query: {
+                partyId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar rekening */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepositAccountList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    openDepositAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Kunci idempotensi per pemanggil (D-098). Wajib pada endpoint pembuat objek: kirim ulang
+                 *     dengan kunci yang sama untuk mengulang permintaan tanpa membuat objek ganda. Replay
+                 *     dijawab 200 + header `Idempotent-Replayed: true`; kunci sama dengan isi berbeda → 409.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepositAccountCreate"];
+            };
+        };
+        responses: {
+            /**
+             * @description Replay permintaan sebelumnya: `Idempotency-Key` sama dengan isi yang sama. Body adalah
+             *     respons asli yang tersimpan; tidak ada rekening/audit baru.
+             */
+            200: {
+                headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepositAccount"];
+                };
+            };
+            /** @description Rekening dibuat */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepositAccount"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    getDepositAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                accountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rekening */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepositAccount"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
         };
     };

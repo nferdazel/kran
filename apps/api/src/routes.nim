@@ -12,6 +12,7 @@ import mummy
 import ./events
 import ./handlers_audit
 import ./handlers_auth
+import ./handlers_deposit
 import ./handlers_journals
 import ./handlers_kyc
 import ./handlers_ledger
@@ -182,7 +183,18 @@ proc productRoutes*(): seq[RouteSpec] =
               operationId: "rejectProductVersion", handler: handleRejectProductVersion),
   ]
 
+proc depositRoutes*(): seq[RouteSpec] =
+  ## Rekening simpanan (T-088a): buka + baca. Objek ber-cabang → gerbang `authorizedAtBranch`.
+  @[
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/deposit/accounts",
+              operationId: "listDepositAccounts", handler: handleListDepositAccounts),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/deposit/accounts",
+              operationId: "openDepositAccount", handler: handleOpenDepositAccount),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/deposit/accounts/{accountId}",
+              operationId: "getDepositAccount", handler: handleGetDepositAccount),
+  ]
+
 proc allRoutes*(): seq[RouteSpec] =
   systemRoutes() & authRoutes() & mfaRoutes() & paramRoutes() & auditRoutes() &
     partyRoutes() & kycRoutes() & ledgerRoutes() & journalRoutes() & productRoutes() &
-    eventRoutes()
+    depositRoutes() & eventRoutes()
