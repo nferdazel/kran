@@ -4,14 +4,25 @@
 # disimpan di `product.product_param_binding` dan divalidasi terhadap definisi di sini
 # (tipe, enum, batas numerik). Tidak ada angka bisnis di kode.
 #
-# NEEDS-COMPLIANCE-REVIEW: nama/arti atribut di bawah masih contoh struktur untuk pilot; nilai
-# final (batas saldo minimum, biaya admin, grace period) menunggu keputusan pemilik/compliance.
+# `provenance.class` menandai asal-usul nilai seed (D-095); tabel hasilnya di
+# `packs/base/generated/param_provenance.md`.
+#
+# NEEDS-COMPLIANCE-REVIEW: nama/arti atribut di bawah masih contoh struktur untuk pilot; angka
+# final (batas saldo minimum, biaya admin, rate akrual) menunggu keputusan pemilik/compliance.
+#
+# `product.savings.grace_period_days` **dikeluarkan** dari katalog ini (T-087, D-095): tidak ada
+# konsumen dan semantik bisnisnya tidak boleh dikarang. Baris lama di DB ditandai deprecated oleh
+# migrasi `product/0005` supaya binding ke kunci itu ditolak, bukan dibiarkan hidup.
 
 - key: product.savings.min_balance
   type: money
   scopes: [GLOBAL, INSTITUTION]
   schema: { minimum: 0 }
   sensitivity: NORMAL
+  provenance:
+    class: komersial-konservatif
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: tidak menagih; angka final menunggu pemilik
   default_pack: { base: "0.0000" }
 
 - key: product.savings.admin_fee
@@ -19,14 +30,11 @@
   scopes: [GLOBAL, INSTITUTION]
   schema: { minimum: 0 }
   sensitivity: NORMAL
+  provenance:
+    class: komersial-konservatif
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: tidak menagih; angka final menunggu pemilik
   default_pack: { base: "0.0000" }
-
-- key: product.savings.grace_period_days
-  type: integer
-  scopes: [GLOBAL, INSTITUTION]
-  schema: { minimum: 0, maximum: 365 }
-  sensitivity: NORMAL
-  default_pack: { base: 0 }
 
 # --- Akrual simpanan (O-084, D-094): BENTUK tanpa nilai --------------------------------------
 # Kunci ini sengaja **tanpa `default_pack`**: angka rate/basis/pembulatan untuk produk nyata
@@ -38,6 +46,7 @@
   scopes: [GLOBAL, INSTITUTION]
   schema: { maxLength: 32 }
   sensitivity: NORMAL
+  provenance: { class: regulasi-tidak-disemai, compliance: NEEDS-COMPLIANCE-REVIEW }
 
 - key: product.savings.day_count_basis
   type: enum
@@ -45,6 +54,7 @@
   enum: [ACT_365, ACT_360, THIRTY_360]
   schema: { enum: [ACT_365, ACT_360, THIRTY_360] }
   sensitivity: NORMAL
+  provenance: { class: regulasi-tidak-disemai, compliance: NEEDS-COMPLIANCE-REVIEW }
 
 - key: product.savings.rounding_mode
   type: enum
@@ -52,12 +62,14 @@
   enum: [HALF_UP, HALF_EVEN]
   schema: { enum: [HALF_UP, HALF_EVEN] }
   sensitivity: NORMAL
+  provenance: { class: regulasi-tidak-disemai, compliance: NEEDS-COMPLIANCE-REVIEW }
 
 - key: product.savings.rounding_scale
   type: integer
   scopes: [GLOBAL, INSTITUTION]
   schema: { minimum: 0, maximum: 4 }
   sensitivity: NORMAL
+  provenance: { class: regulasi-tidak-disemai, compliance: NEEDS-COMPLIANCE-REVIEW }
 
 - key: product.savings.interest_posting
   type: enum
@@ -65,3 +77,4 @@
   enum: [NONE, MONTH_END]
   schema: { enum: [NONE, MONTH_END] }
   sensitivity: NORMAL
+  provenance: { class: regulasi-tidak-disemai, compliance: NEEDS-COMPLIANCE-REVIEW }

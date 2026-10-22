@@ -6,6 +6,7 @@
   schema: { minimum: 1, maximum: 365 }
   sensitivity: CRITICAL
   regulatory_refs: [REG-204]
+  provenance: { class: kebijakan }
   default_pack: { bpr: 91, koperasi: 91 }
   description_key: param.lending.collectibility.dpd.kl
 
@@ -15,4 +16,5 @@
   schema: { minimum: 0, maximum: 100 }
   sensitivity: CRITICAL
   regulatory_refs: [REG-204]
+  provenance: { class: kebijakan }
   default_pack: { bpr: "0.5", koperasi: "0.5" }

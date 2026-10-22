@@ -1,11 +1,13 @@
 ## Logika `paramgen` (spec §10.2–§10.4).
 ##
 ## Sumber kebenaran definisi parameter = `modules/<m>/seeds/params.yaml` (bentuknya seperti
-## contoh di spec §10.3). Tool ini menghasilkan tiga artefak:
+## contoh di spec §10.3). Tool ini menghasilkan lima jenis artefak:
 ##
-##   1. `shared/kernel/generated/paramkeys.nim`      — key bertipe + metadata (Nim)
-##   2. `packages/contracts/src/generated/params.ts` — katalog untuk UI Parameter Admin
-##   3. `packs/<pack>/generated/param_seed.sql`      — SQL seed idempotent per pack
+##   1. `shared/kernel/generated/paramkeys.nim`         — key bertipe + metadata (Nim)
+##   2. `packages/contracts/src/generated/params.ts`    — katalog untuk UI Parameter Admin
+##   3. `packs/base/generated/param_definitions.sql`     — definisi (pack-independent)
+##   4. `packs/<pack>/generated/param_values.sql`        — nilai awal idempotent per pack
+##   5. `packs/base/generated/param_provenance.md`       — tabel asal-usul nilai seed (D-095)
 ##
 ## Aturan: hasil generate **deterministik** (urut by key) dan `--check` dipakai `./task check`
 ## untuk mendeteksi drift antara kode dan definisi.
@@ -30,6 +32,11 @@ type
     sinceVersion*: string
     effectiveFrom*: string
     defaultPack*: OrderedTable[string, JsonNode]
+    ## Kelas asal-usul nilai seed (D-095, T-087). `class` wajib; `compliance` opsional;
+    ## `note` opsional (satu baris).
+    provenanceClass*: string
+    provenanceCompliance*: string
+    provenanceNote*: string
 
   Output* = object
     path*: string
@@ -44,6 +51,14 @@ const
   knownSchemaKeywords* = ["type", "minimum", "maximum", "minLength", "maxLength", "enum",
                           "description"]
   schemaTypeNames* = ["integer", "number", "string", "boolean", "object", "array"]
+  ## Kelas asal-usul nilai seed (D-095, T-087). Urutan tidak bermakna; `paramgen` memaksa tiap
+  ## definisi memilih salah satu supaya "nilai darimana" tidak menguap jadi asumsi.
+  allowedProvenanceClasses* = ["teknis", "kebijakan", "komersial-konservatif", "belum-bermakna",
+                               "regulasi-tidak-disemai"]
+  ## Penanda governance yang boleh menempel di kelas (D-095, AGENTS §1.8).
+  allowedComplianceMarkers* = ["NEEDS-COMPLIANCE-REVIEW", "HUMAN-REVIEW-REQUIRED"]
+  ## Kelas yang **tidak boleh** punya `default_pack`: nilainya memang tidak disemai.
+  nonSeededProvenanceClasses* = ["regulasi-tidak-disemai", "belum-bermakna"]
   nimGeneratedPath* = "shared/kernel/generated/paramkeys.nim"
   tsGeneratedPath* = "packages/contracts/src/generated/params.ts"
   ## UUID sistem untuk seed pack: pack berasal dari repo yang di-review pada commit, bukan
@@ -138,6 +153,16 @@ proc parseDefsFromJson*(module: string, node: JsonNode): seq[ParamDef] =
       of "enum":
         if v.kind == JArray:
           for s in v.items: d.enumValues.add s.getStr("")
+      of "provenance":
+        if v.kind != JObject:
+          fail(module & "." & d.key & ": `provenance` harus mapping (class/compliance/note)")
+        for pk, pv in v.pairs:
+          case pk
+          of "class": d.provenanceClass = pv.getStr("")
+          of "compliance": d.provenanceCompliance = pv.getStr("")
+          of "note": d.provenanceNote = pv.getStr("")
+          else:
+            fail(module & "." & d.key & ": kunci provenance tidak dikenal: " & pk)
       else:
         fail(module & "." & d.key & ": kunci tidak dikenal di params.yaml: " & k)
 
@@ -160,6 +185,24 @@ proc parseDefsFromJson*(module: string, node: JsonNode): seq[ParamDef] =
         fail(d.key & ": scope tidak dikenal: " & s)
     if d.sensitivity notin ["NORMAL", "CRITICAL"]:
       fail(d.key & ": sensitivity harus NORMAL atau CRITICAL, bukan " & d.sensitivity)
+
+    # Asal-usul nilai seed (D-095, T-087): tiap definisi wajib menyatakan kelasnya supaya
+    # "nilai darimana" bisa diverifikasi mesin, bukan jadi asumsi.
+    if d.provenanceClass.len == 0:
+      fail(d.key & ": `provenance.class` wajib (D-095) — tandai asal-usul nilai seed")
+    if d.provenanceClass notin allowedProvenanceClasses:
+      fail(d.key & ": provenance.class tidak dikenal: " & d.provenanceClass &
+        " (dikenal: " & allowedProvenanceClasses.join(", ") & ")")
+    if d.provenanceCompliance.len > 0 and d.provenanceCompliance notin allowedComplianceMarkers:
+      fail(d.key & ": provenance.compliance tidak dikenal: " & d.provenanceCompliance &
+        " (dikenal: " & allowedComplianceMarkers.join(", ") & ")")
+    if d.provenanceClass in nonSeededProvenanceClasses and d.defaultPack.len > 0:
+      fail(d.key & ": kelas `" & d.provenanceClass &
+        "` tidak boleh punya `default_pack` (D-095: nilainya memang tidak disemai)")
+    if d.provenanceClass in ["komersial-konservatif", "regulasi-tidak-disemai"] and
+        d.provenanceCompliance != "NEEDS-COMPLIANCE-REVIEW":
+      fail(d.key & ": kelas `" & d.provenanceClass &
+        "` wajib `provenance.compliance: NEEDS-COMPLIANCE-REVIEW` (D-095, angka final menunggu compliance)")
 
     for r in d.regulatoryRefs:
       if not (r.len == 7 and r.startsWith("REG-") and
@@ -361,6 +404,9 @@ proc seedScope*(d: ParamDef, pack: string): tuple[scopeType, scopeId: string] =
 proc definitionsPath*(): string =
   "packs/base/generated/param_definitions.sql"
 
+proc provenancePath*(): string =
+  "packs/base/generated/param_provenance.md"
+
 proc valuesPath*(pack: string): string =
   "packs/" & pack & "/generated/param_values.sql"
 
@@ -433,10 +479,43 @@ proc renderValuesSql*(pack: string, defs: seq[ParamDef]): string =
       pack & " @ " & scopeType & "')\n")
     result.add("ON CONFLICT (param_value_id) DO NOTHING;\n\n")
 
+proc mdCell*(s: string): string =
+  ## Sel tabel markdown: `|` dan baris baru di-escape supaya tabel tidak pecah.
+  s.replace("|", "\\|").replace("\n", " ")
+
+proc renderProvenance*(defs: seq[ParamDef]): string =
+  ## Tabel asal-usul nilai seed (D-095, T-087). Artefak hasil generate (diverifikasi
+  ## `paramgen --check` byte-per-byte), bukan tabel DB — kelasnya ikut definisi di `params.yaml`.
+  result = "<!-- " & banner & " -->\n"
+  result.add("<!-- Tabel asal-usul nilai seed (D-095). Jangan diedit: ubah `provenance` di -->\n")
+  result.add("<!-- `modules/*/seeds/params.yaml`, lalu jalankan `./task paramgen-gen`. -->\n\n")
+  result.add("# Asal-usul nilai seed parameter\n\n")
+  result.add("Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari\n")
+  result.add("`default_pack`; `-` berarti tidak disemai. Kelas `regulasi-tidak-disemai` dan\n")
+  result.add("`belum-bermakna` dilarang punya `default_pack` (ditegakkan `paramgen`).\n\n")
+  result.add("| key | kelas | disemai | penanda | catatan |\n")
+  result.add("|---|---|---|---|---|\n")
+  for d in defs:
+    var packs: seq[string]
+    for p in d.defaultPack.keys: packs.add p
+    let seeded = if packs.len == 0: "-" else: packs.join(", ")
+    let mark = if d.provenanceCompliance.len == 0: "-" else: "`" & d.provenanceCompliance & "`"
+    let note = if d.provenanceNote.len == 0: "-" else: mdCell(d.provenanceNote)
+    result.add("| `" & d.key & "` | " & d.provenanceClass & " | " & seeded & " | " & mark &
+      " | " & note & " |\n")
+  result.add("\n## Ringkasan per kelas\n\n")
+  result.add("| kelas | jumlah definisi |\n|---|---|\n")
+  for c in allowedProvenanceClasses:
+    var n = 0
+    for d in defs:
+      if d.provenanceClass == c: inc n
+    result.add("| " & c & " | " & $n & " |\n")
+
 proc outputsOf*(root: string, defs: seq[ParamDef]): seq[Output] =
   result.add Output(path: nimGeneratedPath, content: renderNim(defs))
   result.add Output(path: tsGeneratedPath, content: renderTs(defs))
   result.add Output(path: definitionsPath(), content: renderDefinitionSql(defs))
+  result.add Output(path: provenancePath(), content: renderProvenance(defs))
   for pack in packNames(defs):
     result.add Output(path: valuesPath(pack), content: renderValuesSql(pack, defs))
 

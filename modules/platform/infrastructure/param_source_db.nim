@@ -27,11 +27,16 @@ proc dbParamSource*(db: DbConn): ParamSource =
       valueType: definition.get().valueType, schema: definition.get().schema))
 
 proc dbDefinitions*(db: DbConn): seq[ParamDefinition] =
-  ## Definisi parameter yang benar-benar terpasang di DB (untuk guard drift).
+  ## Definisi parameter **hidup** yang terpasang di DB (untuk guard drift).
+  ##
+  ## Baris `deprecated` dikecualikan: definisi yang sengaja dipensiunkan (mis.
+  ## `product.savings.grace_period_days` lewat migrasi `product/0005`) memang tidak ada lagi di
+  ## katalog kode, jadi bukan drift. Kalau ikut dihitung, guard akan melaporkannya sebagai
+  ## "key yatim" palsu.
   for row in db.getAllRows(sql"""
     SELECT key, module, value_type, allowed_scopes, sensitivity, requires_approval,
            description_key, regulatory_refs
-      FROM platform.param_definition ORDER BY key"""):
+      FROM platform.param_definition WHERE NOT deprecated ORDER BY key"""):
     var scopes: set[ParamScopeType]
     for s in pgArrayItems(row[3]):
       scopes.incl parseScopeType(s)

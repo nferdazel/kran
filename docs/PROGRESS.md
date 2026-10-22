@@ -2086,3 +2086,16 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
   konsekuensi `--down` + allowlist) juga diperbaiki.
 - Bukti: `bash -n` + shellcheck ok, `task check-fast` hijau, `task ci` hijau (24 e2e).
 - Belum di-push: menunggu otorisasi deploy.
+
+### T-087 (22 Okt 2026) — asal-usul nilai seed + keluarkan `grace_period_days`
+
+- **D-121**: tiap definisi `modules/*/seeds/params.yaml` wajib `provenance.class` (taksonomi D-095);
+  `paramgen` menegakkan kelas non-seed tanpa `default_pack` dan kelas komersial/regulasi wajib
+  bertanda `NEEDS-COMPLIANCE-REVIEW`. Tabel hasilnya `packs/base/generated/param_provenance.md`,
+  **bukan** tabel DB (artefak generate + `./task check` cukup untuk verifikasi mesin).
+- `product.savings.grace_period_days` dikeluarkan dari katalog seed (tanpa konsumen, D-095); baris
+  katalog lama di-`deprecated` lewat migrasi **expand-only** `product/0005` (DB kosong = no-op).
+- Bukti **non-DB** (DB dev sedang dipakai proses CI lain; `./task test`/`ci` sengaja tidak dijalankan):
+  `./task paramgen` → `paramgen: sinkron (5 berkas seeds/params.yaml)`; `.build/bin/tparamgen` →
+  **23 [OK]**. **Perlu verifikasi CI**: penerapan `product/0005` di atas DB ber-seed, plus
+  `itproduct`/`itapi_product`/`itparamservice` hijau.

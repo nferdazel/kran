@@ -18,11 +18,14 @@ suite "paramgen: validasi key & tipe":
     # Penegakannya di `paramgen` (CLI), bukan di parser: fixture repo ini sengaja memuat `false`
     # untuk menguji plumbing parser dan emitter, jadi predikat inilah yang dipakai CLI.
     let defs = parseDefsFromJson("x", parseJson(
-      """[{"key":"x.param.thing","type":"integer","scopes":["GLOBAL"],"requires_approval":false},
-          {"key":"x.param.other","type":"integer","scopes":["GLOBAL"]}]"""))
+      """[{"key":"x.param.thing","type":"integer","scopes":["GLOBAL"],"requires_approval":false,
+            "provenance":{"class":"teknis"}},
+          {"key":"x.param.other","type":"integer","scopes":["GLOBAL"],
+            "provenance":{"class":"teknis"}}]"""))
     check disallowedApprovalSemantics(defs) == @["x.param.thing"]
     check disallowedApprovalSemantics(parseDefsFromJson("x", parseJson(
-      """[{"key":"x.param.thing","type":"integer","scopes":["GLOBAL"]}]"""))).len == 0
+      """[{"key":"x.param.thing","type":"integer","scopes":["GLOBAL"],
+            "provenance":{"class":"teknis"}}]"""))).len == 0
 
   test "isValidKey":
     check isValidKey("lending.collectibility.dpd.kl")
@@ -47,12 +50,15 @@ suite "paramgen: validasi key & tipe":
   test "scope ilegal, regex regulasi, dan enum kosong ditolak":
     var msgs: seq[string]
     for bad in [
-      """[{"key":"x.a.b","type":"integer","scopes":["MOON"]}]""",
-      """[{"key":"x.a.b","type":"integer","scopes":["GLOBAL"],"regulatory_refs":["REG-20"]}]""",
-      """[{"key":"x.a.b","type":"enum","scopes":["GLOBAL"]}]""",
-      """[{"key":"x.a.b","type":"integer","scopes":["GLOBAL"],"schema":{"minimum":10,"maximum":1}}]""",
-      """[{"key":"x.a.b","type":"integer","scopes":["GLOBAL"],"sensitivity":"MAYBE"}]""",
-      """[{"key":"y.a.b","type":"integer","scopes":["GLOBAL"]}]""",
+      """[{"key":"x.a.b","type":"integer","scopes":["MOON"],"provenance":{"class":"teknis"}}]""",
+      """[{"key":"x.a.b","type":"integer","scopes":["GLOBAL"],"regulatory_refs":["REG-20"],
+           "provenance":{"class":"teknis"}}]""",
+      """[{"key":"x.a.b","type":"enum","scopes":["GLOBAL"],"provenance":{"class":"teknis"}}]""",
+      """[{"key":"x.a.b","type":"integer","scopes":["GLOBAL"],"schema":{"minimum":10,"maximum":1},
+           "provenance":{"class":"teknis"}}]""",
+      """[{"key":"x.a.b","type":"integer","scopes":["GLOBAL"],"sensitivity":"MAYBE",
+           "provenance":{"class":"teknis"}}]""",
+      """[{"key":"y.a.b","type":"integer","scopes":["GLOBAL"],"provenance":{"class":"teknis"}}]""",
     ]:
       try:
         discard parseDefsFromJson("x", parseJson(bad))
@@ -63,11 +69,86 @@ suite "paramgen: validasi key & tipe":
 
   test "default: description_key diturunkan, requires_approval true":
     let defs = parseDefsFromJson("x", parseJson(
-      """[{"key":"x.a.b","type":"integer","scopes":["GLOBAL"]}]"""))
+      """[{"key":"x.a.b","type":"integer","scopes":["GLOBAL"],"provenance":{"class":"teknis"}}]"""))
     check defs[0].descriptionKey == "param.x.a.b"
     check defs[0].requiresApproval
     check defs[0].sinceVersion == "0.1.0"
     check defs[0].effectiveFrom == "1970-01-01"
+    check defs[0].provenanceClass == "teknis"
+
+  test "provenance: class wajib, harus dikenal, dan aturan kelas non-seed":
+    # class wajib (D-095) — tanpa itu definisi ditolak.
+    var raised = false
+    try:
+      discard parseDefsFromJson("x", parseJson(
+        """[{"key":"x.a.b","type":"integer","scopes":["GLOBAL"]}]"""))
+    except ParamgenError as e:
+      raised = true
+      check e.msg.contains("provenance.class")
+    check raised
+
+    # class di luar taksonomi D-095 ditolak.
+    raised = false
+    try:
+      discard parseDefsFromJson("x", parseJson(
+        """[{"key":"x.a.b","type":"integer","scopes":["GLOBAL"],
+             "provenance":{"class":"entah"}}]"""))
+    except ParamgenError as e:
+      raised = true
+      check e.msg.contains("provenance.class tidak dikenal")
+    check raised
+
+    # kelas `regulasi-tidak-disemai`/`belum-bermakna` tidak boleh disemai (punya default_pack).
+    raised = false
+    try:
+      discard parseDefsFromJson("x", parseJson(
+        """[{"key":"x.a.b","type":"integer","scopes":["GLOBAL"],
+             "provenance":{"class":"regulasi-tidak-disemai"},
+             "default_pack":{"base":1}}]"""))
+    except ParamgenError as e:
+      raised = true
+      check e.msg.contains("default_pack")
+    check raised
+
+    # kelas komersial wajib bertanda NEEDS-COMPLIANCE-REVIEW.
+    raised = false
+    try:
+      discard parseDefsFromJson("x", parseJson(
+        """[{"key":"x.a.b","type":"integer","scopes":["GLOBAL"],
+             "provenance":{"class":"komersial-konservatif"}}]"""))
+    except ParamgenError as e:
+      raised = true
+      check e.msg.contains("NEEDS-COMPLIANCE-REVIEW")
+    check raised
+
+    # compliance di luar daftar penanda ditolak.
+    raised = false
+    try:
+      discard parseDefsFromJson("x", parseJson(
+        """[{"key":"x.a.b","type":"integer","scopes":["GLOBAL"],
+             "provenance":{"class":"teknis","compliance":"MUNGKIN"}}]"""))
+    except ParamgenError as e:
+      raised = true
+      check e.msg.contains("provenance.compliance")
+    check raised
+
+    # kunci provenance asing ditolak.
+    raised = false
+    try:
+      discard parseDefsFromJson("x", parseJson(
+        """[{"key":"x.a.b","type":"integer","scopes":["GLOBAL"],
+             "provenance":{"class":"teknis","warna":"biru"}}]"""))
+    except ParamgenError as e:
+      raised = true
+      check e.msg.contains("provenance")
+    check raised
+
+    # regulasi-tidak-disemai tanpa default_pack + NEEDS-COMPLIANCE-REVIEW = sah.
+    let ok = parseDefsFromJson("x", parseJson(
+      """[{"key":"x.a.b","type":"integer","scopes":["GLOBAL"],
+           "provenance":{"class":"regulasi-tidak-disemai","compliance":"NEEDS-COMPLIANCE-REVIEW"}}]"""))
+    check ok[0].provenanceClass == "regulasi-tidak-disemai"
+    check ok[0].provenanceCompliance == "NEEDS-COMPLIANCE-REVIEW"
 
 suite "paramgen: generate":
   test "loadAllDefs membaca YAML fixture, urut & lengkap":
@@ -86,6 +167,9 @@ suite "paramgen: generate":
     check lending.scopes == @["INSTITUTION", "SEGMENT"]
     check lending.defaultPack["bpr"].kind == JInt
     check lending.defaultPack["bpr"].getInt == 91
+    check minBalance.provenanceClass == "komersial-konservatif"
+    check minBalance.provenanceCompliance == "NEEDS-COMPLIANCE-REVIEW"
+    check lending.provenanceClass == "kebijakan"
 
   test "render Nim: const bertipe, metadata, dan import yang perlu saja":
     let nim = renderNim(loadAllDefs(fixtureRoot))
@@ -127,6 +211,19 @@ suite "paramgen: generate":
     check sql.contains("NEEDS-COMPLIANCE-REVIEW")
     check not sql.contains("platform.param_value")
 
+  test "render provenance: tabel asal-usul + kelas + disemai + penanda (D-095)":
+    let md = renderProvenance(loadAllDefs(fixtureRoot))
+    check md.contains("| key | kelas | disemai | penanda | catatan |")
+    check md.contains("`deposit.savings.min_balance` | komersial-konservatif | base | " &
+      "`NEEDS-COMPLIANCE-REVIEW`")
+    check md.contains("`lending.collectibility.dpd.kl` | kebijakan | bpr, koperasi | -")
+    check md.contains("JANGAN EDIT")
+    # ringkasan per kelas memuat seluruh taksonomi D-095
+    for kelas in allowedProvenanceClasses:
+      check md.contains("| " & kelas & " |")
+    # escape sel markdown tidak membiarkan `|` di catatan memecah tabel
+    check mdCell("a|b\nc") == "a\\|b c"
+
   test "render SQL nilai pack: hanya nilai pack itu, idempotent":
     let defs = loadAllDefs(fixtureRoot)
     let sql = renderValuesSql("bpr", defs)
@@ -167,7 +264,7 @@ suite "paramgen: generate":
     check packNames(loadAllDefs(fixtureRoot)) == @["base", "bpr", "koperasi"]
 
 suite "paramgen: gen & check":
-  test "runGen menulis 3 jenis artefak lalu runCheck hijau":
+  test "runGen menulis seluruh artefak lalu runCheck hijau":
     let root = freshWorkRoot()
     let written = runGen(root)
     var paths: seq[string]
@@ -175,14 +272,24 @@ suite "paramgen: gen & check":
     check nimGeneratedPath in paths
     check tsGeneratedPath in paths
     check definitionsPath() in paths
+    check provenancePath() in paths
     check valuesPath("bpr") in paths
     check fileExists(root / nimGeneratedPath)
     check fileExists(root / tsGeneratedPath)
     check fileExists(root / definitionsPath())
+    check fileExists(root / provenancePath())
     check fileExists(root / valuesPath("koperasi"))
     var note = ""
     check runCheck(root, note)
     check note.len == 0
+
+  test "runCheck mendeteksi drift tabel provenance":
+    let root = freshWorkRoot()
+    discard runGen(root)
+    writeFile(root / provenancePath(), readFile(root / provenancePath()) & "\ndrift\n")
+    var note = ""
+    check not runCheck(root, note)
+    check note.contains(provenancePath())
 
   test "determinisme: generate dua kali identik":
     let root = freshWorkRoot()
@@ -215,6 +322,7 @@ suite "paramgen: gen & check":
   type: money
   scopes: [GLOBAL]
   schema: { minimum: 0 }
+  provenance: { class: komersial-konservatif, compliance: NEEDS-COMPLIANCE-REVIEW }
   default_pack: { base: "1000.00" }
 """)
     var note = ""
@@ -228,6 +336,7 @@ suite "paramgen: gen & check":
 - key: platform.calendar.fiscal_year_start_month
   type: integer
   scopes: [GLOBAL]
+  provenance: { class: kebijakan }
   default_pack: { base: 1 }
 """)
     var raised = false

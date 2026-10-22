@@ -2782,3 +2782,32 @@ kalau tidak deploy akan memasangnya lagi.
 **Konsekuensi.** Deviasi dari spec tercatat di sini dan di runbook; allowlist menambah satu langkah
 review saat contract baru dipakai. Rollback layanan tetap tidak mengembalikan skema
 (ACCEPTED-LIMITS).
+
+---
+
+## D-121 — T-087: asal-usul nilai seed sebagai artefak generate, bukan tabel DB
+
+**Konteks.** O-066 meminta nilai seed dipakai pilot dengan kelas eksplisit (D-095). "Nilai darimana"
+sebelumnya hanya komentar prosa di `params.yaml` — tidak bisa diverifikasi mesin — dan
+`product.savings.grace_period_days` (kelas "belum punya semantik") masih disemai tanpa konsumen.
+
+**Keputusan.** (1) Tiap definisi di `modules/*/seeds/params.yaml` **wajib** punya `provenance`:
+`class` (taksonomi D-095: `teknis`, `kebijakan`, `komersial-konservatif`, `belum-bermakna`,
+`regulasi-tidak-disemai`), `compliance` opsional (`NEEDS-COMPLIANCE-REVIEW`/`HUMAN-REVIEW-REQUIRED`),
+`note` opsional. (2) `paramgen` menegakkan aturan: kelas `regulasi-tidak-disemai`/`belum-bermakna`
+**dilarang** punya `default_pack`; kelas `komersial-konservatif`/`regulasi-tidak-disemai` wajib
+`NEEDS-COMPLIANCE-REVIEW`. (3) Tabel asal-usulnya `packs/base/generated/param_provenance.md`,
+dihasilkan `paramgen` dan diverifikasi `./task check` byte-per-byte — **bukan** tabel DB. (4)
+`product.savings.grace_period_days` dikeluarkan dari katalog seed; baris katalog lama ditandai
+`deprecated = true` lewat migrasi expand-only `product/0005` (DB kosong: no-op).
+
+**Ditolak.** Tabel `platform.seed_provenance` (kolom `deprecated` di `param_definition` sudah ada,
+dan artefak generate + `paramgen --check` cukup untuk verifikasi mesin tanpa skema/migrasi baru).
+Mengarang semantik `grace_period_days` (D-095). Mengubah/menghapus `param_value` yang pernah
+tersemai (riwayat effective-dated; definisinya sudah deprecated sehingga nilainya inert).
+
+**Konsekuensi.** Menambah parameter tanpa kelas = `paramgen` gagal. Kelas `belum-bermakna` saat ini
+kosong (0 definisi) — disediakan untuk parameter yang didefinisikan tetapi belum bermakna. Kelas
+`regulasi-tidak-disemai` memuat lima kunci akrual produk (O-084). Guard drift hanya membandingkan
+definisi **hidup**: `dbDefinitions` mengabaikan baris `deprecated` supaya definisi pensiun tidak
+dilaporkan sebagai "key yatim".

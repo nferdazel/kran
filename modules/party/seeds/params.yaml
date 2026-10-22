@@ -11,6 +11,7 @@
   scopes: [GLOBAL, INSTITUTION]
   schema: { minLength: 5, maxLength: 24 }
   sensitivity: NORMAL
+  provenance: { class: kebijakan }
   default_pack: { base: "{seq:6}{check}" }
 
 # --- Identitas & KYC (T-071, spec §9.2/§10.5/§18.2) ---------------------------------------
@@ -25,6 +26,7 @@
   scopes: [GLOBAL, INSTITUTION]
   schema: { type: array }
   sensitivity: NORMAL
+  provenance: { class: kebijakan, compliance: NEEDS-COMPLIANCE-REVIEW }
   default_pack: { base: ["KTP", "NPWP", "PASSPORT"] } # NEEDS-COMPLIANCE-REVIEW
 
 # Panjang nomor **tepat** per jenis dokumen (setelah normalisasi: huruf besar, hanya A-Z0-9).
@@ -34,6 +36,7 @@
   scopes: [GLOBAL, INSTITUTION]
   schema: { type: object }
   sensitivity: NORMAL
+  provenance: { class: kebijakan, compliance: NEEDS-COMPLIANCE-REVIEW }
   default_pack: { base: { "KTP": 16, "NPWP": 15, "PASSPORT": 9 } } # NEEDS-COMPLIANCE-REVIEW
 
 # Batas panjang nomor untuk jenis dokumen yang tidak punya panjang tetap.
@@ -42,6 +45,7 @@
   scopes: [GLOBAL, INSTITUTION]
   schema: { minimum: 4, maximum: 64 }
   sensitivity: NORMAL
+  provenance: { class: kebijakan }
   default_pack: { base: 32 }
 
 # Tingkat risiko yang dikenal sistem (rating manual oleh petugas; urutan = ringan → berat).
@@ -50,6 +54,7 @@
   scopes: [GLOBAL, INSTITUTION]
   schema: { type: array }
   sensitivity: NORMAL
+  provenance: { class: kebijakan, compliance: NEEDS-COMPLIANCE-REVIEW }
   default_pack: { base: ["LOW", "MEDIUM", "HIGH"] } # NEEDS-COMPLIANCE-REVIEW
 
 # Tingkat risiko awal saat party dibuat tanpa penilaian.
@@ -58,6 +63,7 @@
   scopes: [GLOBAL, INSTITUTION]
   schema: { minLength: 1, maxLength: 32 }
   sensitivity: NORMAL
+  provenance: { class: kebijakan, compliance: NEEDS-COMPLIANCE-REVIEW }
   default_pack: { base: "LOW" } # NEEDS-COMPLIANCE-REVIEW
 
 # Jeda re-KYC (bulan) per tingkat risiko — dipakai menghitung `next_review_due`; eksekusinya
@@ -67,4 +73,5 @@
   scopes: [GLOBAL, INSTITUTION]
   schema: { type: object }
   sensitivity: NORMAL
+  provenance: { class: kebijakan, compliance: NEEDS-COMPLIANCE-REVIEW }
   default_pack: { base: { "LOW": 36, "MEDIUM": 12, "HIGH": 6 } } # NEEDS-COMPLIANCE-REVIEW
