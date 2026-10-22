@@ -183,6 +183,21 @@ suite "product: tumpang tindih & penutupan versi":
              VALUES (?, 'product.savings.grace_period_days', '0'::jsonb)""",
       $activeV1.versionId))
 
+  test "INSERT langsung non-DRAFT atau maker palsu ditolak trigger":
+    let p = productByCode(db, "SAV-DRAFT").get()
+    # Seed/import SQL tidak boleh melewati jalur approve: ACTIVE tanpa binding tidak akan pernah
+    # bisa diberi binding karena binding hanya untuk DRAFT.
+    expectDbError(proc() = db.exec(sql"""
+      INSERT INTO product.product_version
+        (version_id, product_id, version_no, effective_from, published_by, status)
+      VALUES (gen_random_uuid(), ?, 99, '2027-01-01', ?, 'ACTIVE')""",
+      $p.productId, $actor))
+    expectDbError(proc() = db.exec(sql"""
+      INSERT INTO product.product_version
+        (version_id, product_id, version_no, effective_from, published_by, maker)
+      VALUES (gen_random_uuid(), ?, 98, '2027-02-01', ?, ?)""",
+      $p.productId, $actor, $checker))
+
   test "binding immutable":
     let p = productByCode(db, "SAV-DRAFT").get()
     let v2 = versionsOf(db, p.productId)[1]

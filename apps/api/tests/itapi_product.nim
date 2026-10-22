@@ -248,9 +248,12 @@ suite "product: maker-checker":
     let list = getJson(ProductsPath & "?asOf=2026-10-15", makerToken)
     check list.code == 200
     checkJson(ProductsPath, "GET", "200", list.body)
+    var found = false
     for item in list.body["items"]:
       if item["code"].getStr() == "SAV01":
+        found = true
         check item["currentVersion"].kind == JNull
+    check found
 
   test "maker meng-approve dirinya → 409 self_approval":
     let path = fill(ApprovePath, "SAV01", v1)
@@ -279,9 +282,12 @@ suite "product: maker-checker":
       SELECT status FROM product.product_version WHERE version_id = ?""", v1) == "ACTIVE"
 
     let list = getJson(ProductsPath & "?asOf=2026-10-15", makerToken)
+    var found = false
     for item in list.body["items"]:
       if item["code"].getStr() == "SAV01":
+        found = true
         check item["currentVersion"]["versionNo"].getInt() == 1
+    check found
 
   test "approve kedua → 409 not_draft":
     let path = fill(ApprovePath, "SAV01", v1)
@@ -317,9 +323,12 @@ suite "product: maker-checker":
 
     # Draft yang ditolak tidak muncul di katalog.
     let list = getJson(ProductsPath & "?asOf=2026-10-15", makerToken)
+    var found = false
     for item in list.body["items"]:
       if item["code"].getStr() == "SAV02":
+        found = true
         check item["currentVersion"].kind == JNull
+    check found
 
   test "versi baru tetap DRAFT: tidak menutup versi ACTIVE berjalan":
     let reply = postJson(VersionsPath.replace("{code}", "SAV01"),
@@ -339,13 +348,19 @@ suite "product: maker-checker":
     check versionOf(approval.body, 2)["status"].getStr() == "ACTIVE"
 
     let october = getJson(ProductsPath & "?asOf=2026-10-31", makerToken)
+    var foundOctober = false
     for item in october.body["items"]:
       if item["code"].getStr() == "SAV01":
+        foundOctober = true
         check item["currentVersion"]["versionNo"].getInt() == 1
+    check foundOctober
     let november = getJson(ProductsPath & "?asOf=2026-11-01", makerToken)
+    var foundNovember = false
     for item in november.body["items"]:
       if item["code"].getStr() == "SAV01":
+        foundNovember = true
         check item["currentVersion"]["versionNo"].getInt() == 2
+    check foundNovember
 
 suite "product: validasi & konflik":
   test "binding ke parameter tak terdaftar → 400":

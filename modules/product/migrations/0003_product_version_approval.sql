@@ -62,6 +62,21 @@ DROP FUNCTION product.assert_version_has_bindings();
 CREATE OR REPLACE FUNCTION product.fill_version_maker() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
+  -- Invarian yang dulu dijaga deferred trigger kini harus dijaga di INSERT: versi baru selalu
+  -- DRAFT dan belum sealed. Tanpa ini seed/import SQL bisa membuat ACTIVE tanpa binding yang
+  -- tidak akan pernah bisa diberi binding (binding hanya untuk DRAFT).
+  IF NEW.status <> 'DRAFT' THEN
+    RAISE EXCEPTION 'product: versi baru harus DRAFT (bukan %)', NEW.status;
+  END IF;
+  IF NEW.sealed THEN
+    RAISE EXCEPTION 'product: versi baru tidak boleh langsung sealed';
+  END IF;
+  IF NEW.checker IS NOT NULL OR NEW.approved_at IS NOT NULL OR NEW.reject_reason IS NOT NULL THEN
+    RAISE EXCEPTION 'product: keputusan approve/reject hanya lewat transisi status';
+  END IF;
+  IF NEW.maker IS NOT NULL AND NEW.maker <> NEW.published_by THEN
+    RAISE EXCEPTION 'product: maker versi baru harus sama dengan published_by (pengaju)';
+  END IF;
   NEW.maker := coalesce(NEW.maker, NEW.published_by);
   RETURN NEW;
 END;
