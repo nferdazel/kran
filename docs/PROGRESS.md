@@ -2042,3 +2042,21 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
   health gate gagal, jadi tersedianya aset baru = API sehat dan deploy selesai.
 - **Catatan jujur**: perilaku `400 Idempotency-Key wajib` di produksi belum diuji langsung karena
   kredensial demo produksi berbeda dari dev; bukti perilaku ada di test HTTP CI + kontrak.
+
+
+### T-086: maker-checker versi produk (22 Okt 2026)
+
+- Versi produk kini `DRAFT → ACTIVE` (approve) atau `REJECTED` (reject + alasan); event
+  `ProductPublished` hanya saat approve, reject hanya audit. `checker <> maker` ditegakkan CHECK DB
+  dan handler; binding hanya boleh masuk DRAFT; seal saat keputusan.
+- Migrasi dipecah **expand** (`product/0003`: kolom/backfill/CHECK/trigger/index) dan **contract**
+  (`0004`: hapus deferred seal lama, EXCLUDE hanya ACTIVE) supaya bisa lewat `migrate --up` +
+  `--contract`. `deploy-vps.sh` menjalankan contract hanya untuk id di
+  `ops/migrations/contract-auto.txt`, fail-closed untuk contract lain, dan memverifikasi ulang
+  `contract_pending=0` sebelum binary baru menerima trafik.
+- Trigger INSERT menolak versi non-DRAFT/sealed/keputusan awal/maker palsu (seed/import tidak bisa
+  melewati approve); approve DRAFT tanpa binding → 409 `no_bindings`.
+- Bukti: `task ci` hijau (`ci=0`, e2e 24), `tproduct` 11, `itproduct` 11, `itapi_product` 22,
+  `itapi_fase1` 7, `itplatform` 25, `tdbtools` 31; reviewer r3 **APPROVE**.
+- Sisa: T-090 (bersihkan trigger/DEFAULT via contract baru setelah deploy), T-091 (race dua checker +
+  imutabilitas), T-092 (gate contract saat restore/`/readyz`). Belum di-merge/deploy.

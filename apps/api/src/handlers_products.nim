@@ -575,6 +575,12 @@ proc handleApproveProductVersion*(app: AppContext, req: Request) {.gcsafe.} =
       status = 409
       reasonParam = "window_conflict"
       problemText = "jendela versi tidak sah"
+    elif e.msg.contains("minimal satu binding"):
+      # State sah di DB (seed/import), tidak bisa dibuat lewat API: tolak sebagai konflik, bukan
+      # 500 yang menyembunyikan penyebab.
+      status = 409
+      reasonParam = "no_bindings"
+      problemText = "versi belum punya binding parameter; lengkapi sebagai DRAFT baru"
     elif e.msg.contains("transisi status") or e.msg.contains("product_version_decision_chk"):
       status = 409
       reasonParam = "not_draft"
