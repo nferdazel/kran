@@ -2099,3 +2099,18 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
   `./task paramgen` → `paramgen: sinkron (5 berkas seeds/params.yaml)`; `.build/bin/tparamgen` →
   **23 [OK]**. **Perlu verifikasi CI**: penerapan `product/0005` di atas DB ber-seed, plus
   `itproduct`/`itapi_product`/`itparamservice` hijau.
+
+
+### T-079 sisa + T-087 (22 Okt 2026)
+
+- **T-079 (bagian tidak terblokir)**: kolom kode buku besar sticky saat gulir mendatar, hanya
+  `@media screen` (`6b8ed2b`, `a99a618`). Bukti: 110 vitest, 25 Playwright, axe 2 tema tanpa
+  serious/critical, kontras 17.21:1 / 14.03:1, 1366x768 + 125% tanpa overflow. Cetak/PDF tetap
+  menunggu ADR-013. Sisa: test axe permanen `/app/ledger` (butuh seed user viewer), verifikasi
+  Firefox/Safari.
+- **T-087 DONE** (`03b5609` + `523b000` + `f3e4437`): tiap definisi seed wajib `provenance`
+  (kelas D-095) dan `paramgen` menegakkannya; artefak `param_pack/generated/param_provenance.md`
+  dicek byte-per-byte. `product.savings.grace_period_days` dikeluarkan dari katalog dan baris lama
+  di-`deprecated` lewat migrasi expand-only `product/0005`. Test integrasi menjalankan migrasi itu
+  dua kali dan memastikan filter `deprecated` + guard drift. Reviewer 3 putaran (r3 APPROVE).
+- Bukti akhir: `./task ci` hijau (24 e2e). Belum di-push.
