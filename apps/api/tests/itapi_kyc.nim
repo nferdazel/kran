@@ -460,11 +460,20 @@ suite "kyc: idempotency":
     check first.code == 201
     check ratingCount(id) == "1"
 
+    let auditSql = """SELECT count(*)::text FROM platform.audit_log
+      WHERE action = 'party.risk.change' AND resource_id = ?"""
+    let eventSql = """SELECT count(*)::text FROM platform.outbox
+      WHERE event_type = 'party.risk_changed' AND aggregate_id = ?"""
+    let auditsBefore = dbValue(sql(auditSql), first.body["ratingId"].getStr())
+    let eventsBefore = dbValue(sql(eventSql), id)
+
     let replay = postJson(path, body, makerToken, key = "idem-risk-1")
     check replay.code == 200
     check replay.replayed == "true"
     check replay.body["ratingId"].getStr() == first.body["ratingId"].getStr()
     check ratingCount(id) == "1"
+    check dbValue(sql(auditSql), first.body["ratingId"].getStr()) == auditsBefore
+    check dbValue(sql(eventSql), id) == eventsBefore
 
     let conflict = postJson(path, %*{"level": "medium", "reason": "beda isi"}, makerToken,
       key = "idem-risk-1")
