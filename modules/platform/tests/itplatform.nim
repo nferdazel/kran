@@ -71,7 +71,10 @@ suite "platform: migrasi":
       sql"SELECT (to_regclass('platform.schema_migration') IS NULL)::text") == "true"
 
   test "menerapkan semua, lalu idempotent (up 2x aman)":
-    let jumlahMigrasi = migrationsOf(repoRoot).len
+    # Jalur expand tidak menerapkan berkas contract; hitung hanya expand.
+    var jumlahMigrasi = 0
+    for m in migrationsOf(repoRoot):
+      if not m.contract: inc jumlahMigrasi
     check jumlahMigrasi > 0
     let first = applyMigrations(db, repoRoot)
     check first.applied.len == jumlahMigrasi
@@ -115,9 +118,11 @@ suite "platform: migrasi":
     check raised
     check db.getValue(
       sql"SELECT (to_regclass('platform.probe_broken') IS NULL)::text") == "true"
-    # semua migrasi asli sudah tercatat pada test pertama; probe yang gagal tidak tercatat
-    check db.getValue(sql"SELECT count(*) FROM platform.schema_migration") ==
-      $migrationsOf(repoRoot).len
+    # semua migrasi expand asli sudah tercatat pada test pertama; probe yang gagal tidak tercatat
+    var jumlahExpand = 0
+    for m in migrationsOf(repoRoot):
+      if not m.contract: inc jumlahExpand
+    check db.getValue(sql"SELECT count(*) FROM platform.schema_migration") == $jumlahExpand
 
 suite "platform: outbox":
   test "de-dup: publisher yang di-retry tidak menggandakan peristiwa":
@@ -464,7 +469,9 @@ suite "platform: migrasi dua tahap (contract & rollback, T-035)":
       "true"
 
     let tahapDua = applyMigrations(db, root, contract = true)
-    check tahapDua.applied == @[id]
+    # Repo nyata bisa punya contract tertunda lain (mis. product/0004); yang penting probe ini ikut
+    # diterapkan, bukan daftar persisnya.
+    check id in tahapDua.applied
     check db.getValue(
       sql"SELECT (to_regclass('platform.probe_dua_tahap') IS NOT NULL)::text") == "true"
     # sudah diterapkan: tidak ikut lagi di jalur mana pun (idempoten di kedua mode)
