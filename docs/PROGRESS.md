@@ -2071,3 +2071,18 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
 - **Catatan**: verifikasi ini tidak membaca jumlah migrasi di DB (tidak diekspos); buktinya adalah
   urutan gate deploy, bukan kueri langsung. Contract berjalan sebelum health gate — bila health gate
   gagal, skema tidak ikut rollback (ACCEPTED-LIMITS/T-090).
+
+### T-091 + T-092 (22 Okt 2026)
+
+- **T-091 DONE** (commit `9ceb0b3`): test race dua request approve + imutabilitas keputusan checker
+  di level DB. `itproduct` 13 `[OK]`, `itapi_product` 23 `[OK]`. Reviewer **APPROVE**; minor
+  "satu token = dua request, bukan dua aktor" dicatat sebagai T-097.
+- **T-092 DONE**: `deploy-vps.sh` memeriksa contract pada **setiap** deploy, bukan hanya saat repo
+  mengubah migrasi. Allowlist tetap satu-satunya auto-apply; `--check` gagal (expand tertunda/drift)
+  dan marker `contract_pending` hilang = fail-closed dengan pesan manual.
+- Reviewer menemukan **MAJOR**: `--contract` bisa berjalan tanpa dump pra-deploy pada deploy yang
+  tidak mengubah kode. Diperbaiki: dump `pre-contract` diambil bila deploy itu belum punya dump;
+  skrip backup tidak ada = deploy berhenti. Minor lain (biner `.new` basi, pesan error, dokumentasi
+  konsekuensi `--down` + allowlist) juga diperbaiki.
+- Bukti: `bash -n` + shellcheck ok, `task check-fast` hijau, `task ci` hijau (24 e2e).
+- Belum di-push: menunggu otorisasi deploy.

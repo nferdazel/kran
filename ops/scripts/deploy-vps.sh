@@ -251,10 +251,12 @@ fi
 # 5 (rebuild selektif) diterapkan lewat kondisi grep per komponen di bawah.
 # 6. Pre-migration dump bila ada perubahan migrasi (spec §21.4 #6).
 MIGRATIONS_CHANGED=0
+DUMP_TAKEN=0
 if [ "$IS_FIRST" -eq 1 ] || grep -qE 'migrations/' <<<"$CHANGED_FILES"; then
   MIGRATIONS_CHANGED=1
   if [ -x "$APP_DIR/scripts/backup-pre-deploy.sh" ]; then
     "$APP_DIR/scripts/backup-pre-deploy.sh" "$REVID" || die "pre-migration dump gagal; deploy dibatalkan"
+    DUMP_TAKEN=1
   else
     log "==> WARN: scripts/backup-pre-deploy.sh belum terpasang; pre-migration dump dilewati"
   fi
@@ -281,6 +283,11 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|tools/|kran\.
   vendor_runtime_libs localhost/kran-api:local
 else
   log "==> kode API tidak berubah; build dilewati"
+  # Sisa `.new` dari deploy yang gagal setelah build tidak boleh dipakai gate/swap pada deploy ini.
+  if [ -f "$BIN_NEW" ]; then
+    log "    hapus biner baru basi: $BIN_NEW"
+    rm -f "$BIN_NEW"
+  fi
 fi
 
 # 8. MIGRATION GATE (spec §21.4 #8, expand-only) memakai binary BARU, sebelum
@@ -323,11 +330,11 @@ fi
 log "==> MIGRATION GATE: contract"
 if ! contract_check="$(KRAN_DATABASE_URL="$MIGRATE_DB_URL_HOST" "$MIGRATE_BIN" --role=migrate --check 2>&1)"; then
   log "$contract_check"
-  die "migrate --check gagal (expand tertunda/drift) — periksa manual sebelum deploy"
+  die "migrate --check gagal (expand tertunda/drift) — jalankan migrate --up manual lalu push ulang"
 fi
 pending_count="$(sed -nE 's/^  contract_pending=([0-9]+)$/\1/p' <<<"$contract_check" | tail -1)"
 [ -n "${pending_count:-}" ] ||
-  die "format --check tidak dikenal (contract_pending hilang) — gate contract fail-closed"
+  die "format --check tidak dikenal (contract_pending hilang) — biner ini pra-T-086; jalankan migrate --check manual, gate contract fail-closed"
 if [ "$pending_count" -gt 0 ]; then
   pending_contracts="$(sed -nE 's/^  contract_ids=//p' <<<"$contract_check" | tail -1)"
   [ -n "${pending_contracts:-}" ] ||
@@ -343,6 +350,15 @@ if [ "$pending_count" -gt 0 ]; then
       die "contract $contract_id tidak ada di allowlist — jalankan migrate --contract manual"
   done
   log "    contract di-allowlist: $pending_contracts"
+  if [ "$DUMP_TAKEN" -eq 0 ]; then
+    # Contract = DDL merusak (drop constraint/trigger) dan bisa muncul walau kode tidak berubah
+    # (restore dump/--down manual): jaring rollback wajib ada sebelum dijalankan.
+    log "==> pre-contract dump (wajib: contract tanpa perubahan kode)"
+    [ -x "$APP_DIR/scripts/backup-pre-deploy.sh" ] ||
+      die "contract tertunda tetapi scripts/backup-pre-deploy.sh tidak ada — fail-closed"
+    "$APP_DIR/scripts/backup-pre-deploy.sh" "$REVID-contract" || die "pre-contract dump gagal; --contract dibatalkan"
+    DUMP_TAKEN=1
+  fi
   KRAN_DATABASE_URL="$MIGRATE_DB_URL_HOST" "$MIGRATE_BIN" --role=migrate --contract ||
     die "migrasi --contract gagal"
   after_contract="$(KRAN_DATABASE_URL="$MIGRATE_DB_URL_HOST" "$MIGRATE_BIN" --role=migrate --check 2>&1)" ||

@@ -42,6 +42,19 @@ berhenti (fail-closed) dan operator menjalankannya manual. Setelah contract, skr
 `--check` dan menolak lanjut bila masih ada contract tertunda. Menambah id ke allowlist = perubahan
 repo yang ikut di-review, bukan flag di server.
 
+Karena contract bisa tertunda pada deploy yang **tidak** mengubah kode, skrip mengambil dump
+pra-deploy tambahan (`pre-contract`) bila deploy itu belum punya dump. Bila `backup-pre-deploy.sh`
+tidak tersedia, deploy berhenti — contract tidak dijalankan tanpa jaring rollback.
+
+Konsekuensi allowlist: bila operator membatalkan contract dengan `--down` (misal binary lama masih
+hidup), push berikutnya akan **memasangnya lagi** selama id-nya masih di allowlist. Sebelum push
+perbaikan, keluarkan dulu id itu dari `ops/migrations/contract-auto.txt` (lewat PR) atau revert
+barisnya.
+
+Pada jalur "migrasi tidak berubah", `--check` juga bisa gagal karena **expand** tertunda/drift.
+Deploy berhenti (fail-closed) tanpa menjalankan `--up`; jalankan `migrate.sh --up` manual, lalu push
+ulang.
+
 Contract dijalankan **sebelum** health gate dan swap binary final. Konsekuensinya: bila health gate
 gagal dan layanan di-rollback, **skema tidak ikut kembali** — contract tetap terpasang. Binary lama
 yang hidup dengan skema pasca-contract akan menyimpan versi produk sebagai DRAFT (trigger seal lama
