@@ -221,6 +221,39 @@
     <p class="kran-muted">{m.ledger_empty_hint()}</p>
   </div>
 {:else if balances}
+  <!-- Ringkasan metrik buku besar: memudahkan auditor & operator melihat total mutasi dan keseimbangan buku besar seketika -->
+  <div class="kran-metric-strip">
+    <div class="kran-metric-card">
+      <span class="kran-metric-card__label">{m.ledger_group_movement()} {m.ledger_debit()} (IDR)</span>
+      <span class="kran-metric-card__value kran-money">{formatMoney(totals.periodDebit)}</span>
+      <span class="kran-metric-card__sub">{m.ledger_total()} {m.ledger_debit().toLowerCase()} periode</span>
+    </div>
+
+    <div class="kran-metric-card">
+      <span class="kran-metric-card__label">{m.ledger_group_movement()} {m.ledger_credit()} (IDR)</span>
+      <span class="kran-metric-card__value kran-money">{formatMoney(totals.periodCredit)}</span>
+      <span class="kran-metric-card__sub">{m.ledger_total()} {m.ledger_credit().toLowerCase()} periode</span>
+    </div>
+
+    <div class="kran-metric-card">
+      <span class="kran-metric-card__label">{m.ledger_group_closing()} (IDR)</span>
+      <span class="kran-metric-card__value kran-money">{formatMoney(totals.closingDebit)}</span>
+      <div class="kran-metric-card__sub">
+        {#if totals.periodDebit === totals.periodCredit}
+          <span class="kran-badge kran-badge--ok">
+            <span aria-hidden="true">✔</span>
+            <span>Seimbang (D = K)</span>
+          </span>
+        {:else}
+          <span class="kran-badge kran-badge--warning">
+            <span aria-hidden="true">▲</span>
+            <span>Tidak seimbang</span>
+          </span>
+        {/if}
+      </div>
+    </div>
+  </div>
+
   <!-- Area bergulir harus bisa difokus supaya bisa digeser dengan keyboard (WCAG 2.1.1);
        svelte-check menganggap `region` selalu noninteraktif. Pengecualian ini dicatat di D-116. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -287,9 +320,12 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--space-4);
-    align-items: end;
-    padding-block-end: var(--space-3);
-    border-block-end: 1px solid var(--color-hairline);
+    align-items: center;
+    padding-block: var(--space-4);
+    padding-inline: var(--space-4);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-raised);
     margin-block-end: var(--space-4);
   }
 
@@ -313,7 +349,7 @@
     gap: var(--space-2);
     align-items: center;
     margin: var(--space-2) 0 0;
-    font-size: var(--text-sm);
+    font-size: var(--text-xs);
     color: var(--color-text-muted);
   }
 
@@ -328,6 +364,10 @@
     gap: var(--space-2);
     align-items: end;
     justify-content: end;
+    padding: var(--space-2);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg);
   }
 
   .ledger-field {

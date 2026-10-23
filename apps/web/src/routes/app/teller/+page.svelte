@@ -1532,7 +1532,7 @@
             <fieldset class="teller-gate" disabled={postingBlocked}>
               <fieldset class="teller-fieldset">
                 <legend class="kran-label">{m.teller_direction_label()}</legend>
-                <div class="kran-radio-group">
+                <div class="kran-radio-group kran-segmented">
                   {#each modeOptions as option (option.value)}
                     <label class="kran-radio">
                       <input type="radio" name="teller-mode" value={option.value} bind:group={mode} />
@@ -1614,8 +1614,11 @@
 
 <style>
   .teller-head {
-    padding-block-end: var(--space-3);
-    border-block-end: 1px solid var(--color-hairline);
+    padding-block: var(--space-4);
+    padding-inline: var(--space-4);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-raised);
     margin-block-end: var(--space-4);
   }
 
@@ -1633,16 +1636,22 @@
     font-size: var(--text-sm);
   }
 
-  /* Kiri = rekening, kanan = transaksi; di bawah 1100 px panel kanan turun (DESIGN §4). */
+  /* Kiri = rekening & identitas nasabah, kanan = sesi kas & formulir transaksi (DESIGN §4). */
   .teller-work {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 22rem;
+    grid-template-columns: minmax(19rem, 23rem) minmax(0, 1fr);
     gap: var(--space-5);
     align-items: start;
   }
 
   .teller-panel {
     min-inline-size: 0;
+    padding-block: var(--space-4);
+    padding-inline: var(--space-4);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-raised);
+    box-shadow: var(--shadow-1);
   }
 
   /* Kolom kanan: sesi kas di atas form transaksi, urutan DOM = urutan visual (DESIGN §10). */
@@ -1679,20 +1688,31 @@
   /* Pasangan kunci/nilai: garis rambut antar baris, tanpa zebra atau kartu (DESIGN §6). */
   .teller-facts {
     display: grid;
-    grid-template-columns: minmax(0, 12rem) minmax(0, 1fr);
-    gap: var(--space-2) var(--space-4);
-    margin: 0 0 var(--space-3);
+    grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+    gap: var(--space-2) var(--space-3);
+    margin: 0 0 var(--space-4);
+    padding-block-end: var(--space-3);
+    border-block-end: 1px solid var(--color-hairline);
   }
 
   .teller-facts dt {
     color: var(--color-text-muted);
-    font-size: var(--text-sm);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    font-weight: 500;
   }
 
   .teller-facts dd {
     margin: 0;
     min-inline-size: 0;
     overflow-wrap: anywhere;
+    font-size: var(--text-sm);
+  }
+
+  .teller-facts dd.kran-money {
+    font-size: var(--text-md);
+    font-weight: 600;
   }
 
   .teller-fieldset {

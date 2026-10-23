@@ -75,18 +75,22 @@
 
 <div class="kran-shell" data-resolved-theme={resolved}>
   <header class="kran-header">
-    <p class="kran-header__brand">
-      <span>{m.common_app_title()}</span>
-    </p>
+    <div class="kran-header__brand">
+      <span class="kran-header__badge" aria-hidden="true">K</span>
+      <p class="kran-header__title">
+        <span>{m.common_app_title()}</span>
+      </p>
+    </div>
 
     <div class="kran-header__meta">
       <!-- Indikator business date selalu tampak (spec §14.3). Nilainya menyusul pada T-012. -->
       <p class="kran-business-date">
+        <span class="kran-status-dot" aria-hidden="true"></span>
         <span class="kran-muted">{m.common_business_date_label()}:</span>
-        <span>{m.common_business_date_unknown()}</span>
+        <span class="kran-num">{m.common_business_date_unknown()}</span>
       </p>
 
-      <fieldset class="kran-fieldset">
+      <fieldset class="kran-fieldset kran-segmented">
         <legend>{m.common_theme_label()}</legend>
         {#each themeChoices as value (value)}
           <label class="kran-radio">
@@ -105,7 +109,7 @@
       <!-- Bahasa lewat grup radio (bukan `<select>`): sama-sama native, tetapi urutan fokus dan
            pergantian pilihan lewat panah dapat diuji keyboard-only tanpa bergantung pada popup
            bawaan browser (spec §17.2). -->
-      <fieldset class="kran-fieldset">
+      <fieldset class="kran-fieldset kran-segmented">
         <legend>{m.common_locale_label()}</legend>
         {#each supportedLocales as value (value)}
           <label class="kran-radio">
@@ -124,24 +128,33 @@
   </header>
 
   <nav class="kran-nav" aria-label={m.common_nav_label()}>
-    <ul>
-      {#each appNavLinks as link (link.href)}
-        <li>
-          <a
-            class="kran-link"
-            href={link.href}
-            aria-current={isActiveHref(page.url.pathname, link.href) ? "page" : undefined}
-          >
-            {link.label()}
-          </a>
-        </li>
-      {/each}
-      <!-- Tautan masuk (O-033) hanya di halaman publik; di area kerja tempatnya di toolbar `/app`
-           bersama aksi "Keluar" (yang punya konteks sesi). -->
-      {#if !page.url.pathname.startsWith("/app")}
-        <li><a class="kran-link" href="/login">{m.common_nav_login()}</a></li>
+    <div class="kran-nav__inner">
+      <ul>
+        {#each appNavLinks as link (link.href)}
+          <li>
+            <a
+              class="kran-link"
+              href={link.href}
+              aria-current={isActiveHref(page.url.pathname, link.href) ? "page" : undefined}
+            >
+              {link.label()}
+            </a>
+          </li>
+        {/each}
+        <!-- Tautan masuk (O-033) hanya di halaman publik; di area kerja tempatnya di toolbar `/app`
+             bersama aksi "Keluar" (yang punya konteks sesi). -->
+        {#if !page.url.pathname.startsWith("/app")}
+          <li><a class="kran-link" href="/login">{m.common_nav_login()}</a></li>
+        {/if}
+      </ul>
+
+      {#if page.url.pathname.startsWith("/app")}
+        <div class="kran-nav__shortcut" aria-hidden="true">
+          <span class="kran-muted">{m.palette_heading()}</span>
+          <span class="kran-kbd">Ctrl K</span>
+        </div>
       {/if}
-    </ul>
+    </div>
   </nav>
 
   <main id="main" class="kran-main" tabindex="-1">
@@ -151,7 +164,14 @@
   </main>
 
   <footer class="kran-footer">
-    <p class="kran-muted">{m.common_app_title()}</p>
+    <div class="kran-footer__inner">
+      <p class="kran-muted">{m.common_app_title()}</p>
+      <p class="kran-footer__legal kran-muted">
+        <span>Standar Koperasi & Bank Indonesia</span>
+        <span aria-hidden="true">·</span>
+        <span>WCAG 2.2 AA</span>
+      </p>
+    </div>
   </footer>
 </div>
 
