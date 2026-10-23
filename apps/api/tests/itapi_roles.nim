@@ -108,6 +108,29 @@ suite "kran-api: peran CLI (O-013)":
     # pakai) dan bukan 0 (seolah-olah berhasil).
     check runCtl(bootstrapAdminCmd, ".", "itapi-admin-baru") == 3
 
+  test "ctl create-user: argument contract + teller provisioning (T-115)":
+    # Missing arguments must not create a half-provisioned account.
+    check runCtl(createUserCmd, ".", "") == 2
+    check runCtl(createUserCmd, ".", "itapi-teller-x") == 2
+    check CtlUsage.contains(createUserCmd)
+
+    let uname = "itapi-teller-" & $newId(systemClock())
+    # Unknown role is rejected (code 3) before a user row is written.
+    check runCtl(createUserCmd, ".", uname, "", "role-tidak-ada") == 3
+    check userByUsername(db, uname).isNone
+
+    let code = runCtl(createUserCmd, ".", uname, "", "teller", "", "Uji Teller")
+    check code == 0
+    let created = userByUsername(db, uname)
+    check created.isSome
+    defer:
+      discard db.execAffectedRows(sql"DELETE FROM platform.user_role WHERE user_id = ?::uuid",
+        created.get().userId)
+      discard db.execAffectedRows(sql"DELETE FROM platform.app_user WHERE user_id = ?::uuid",
+        created.get().userId)
+    check created.get().mustChangePassword
+    check "teller" in roleCodesOfUser(db, created.get().userId)
+
   test "withRoleDb(useTx = true): kegagalan di tengah membatalkan seluruh tulisan":
     # Bootstrap menulis tiga hal (pengguna, role, audit). Kalau salah satunya gagal dan transaksinya
     # tidak membatalkan yang lain, yang tersisa adalah pengguna setengah jadi tanpa role — dan itu

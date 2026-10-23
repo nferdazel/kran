@@ -222,6 +222,11 @@ proc conflictsOfUser*(db: DbConn, userId: string): seq[RolePair] =
   ## Pasangan SoD yang benar-benar dipegang pengguna ini.
   conflictingPairs(roleCodesOfUser(db, userId).toHashSet, conflictPairs(db))
 
+proc roleExists*(db: DbConn, roleCode: string): bool =
+  ## True bila role ada di katalog. Dipakai jalur provisioning pengguna supaya role yang salah
+  ## ketik ditolak dengan pesan jelas, bukan pengguna tanpa izin.
+  db.getAllRows(sql"SELECT 1 FROM platform.role WHERE code = lower(?)", roleCode).len > 0
+
 proc grantRole*(db: DbConn, userId, roleCode, branchId, grantedBy: string): bool =
   ## Menugaskan role ke pengguna. **Menolak** bila penugasan itu melahirkan pasangan SoD
   ## (spec §18.2) — penjagaan utama; `authorize` hanya pertahanan berlapis.

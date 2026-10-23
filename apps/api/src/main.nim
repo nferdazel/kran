@@ -60,6 +60,10 @@ const
   ## Perintah `ctl` yang menyimpan kepala rantai audit ke berkas terpisah (O-009).
   auditAnchorCmd* = "audit-anchor"
 
+  ## Provision an operational user (teller/checker) after the first admin exists. The first admin
+  ## itself is still created by `bootstrap-admin`.
+  createUserCmd* = "create-user"
+
   ## Role yang diberikan `bootstrap-admin`. `platform_admin` diisi migrasi
   ## `0008_platform_rbac_catalogue.sql` beserta seluruh izin yang dikenal, jadi admin pertama
   ## memang bisa bekerja — tanpa itu perintahnya hanya menghasilkan pengguna tanpa izin.
@@ -78,7 +82,8 @@ const
 const Usage =
   "pemakaian: kran-api --role=api|migrate|ctl|worker [--root=<dir>] [--port=8080] " &
   "[--address=127.0.0.1] [--version=<string>] [--check|--up|--seed|--contract|--down N] " &
-  "[--username=<nama>] [--out=<berkas>] [<perintah ctl>]"
+  "[--username=<nama>] [--user-role=<peran>] [--branch=<uuid>] [--full-name=<nama>] " &
+  "[--out=<berkas>] [<perintah ctl>]"
 
 type
   CliOptions = object
@@ -91,6 +96,9 @@ type
     sub: string      ## subperintah `--role=migrate`: --check | --up | --seed | --contract | --down
     subArg: string   ## angka `N` untuk `--role=migrate --down N`
     username: string ## `--role=ctl bootstrap-admin`: nama admin pertama
+    userRole: string ## `--role=ctl create-user`: role RBAC yang diberikan
+    branchId: string ## `--role=ctl create-user`: cabang penugasan role (opsional)
+    fullName: string ## `--role=ctl create-user`: nama tampilan (opsional)
     outPath: string  ## `--role=ctl audit-anchor`: berkas tujuan (append)
 
 proc die(msg: string) =
@@ -120,6 +128,12 @@ proc parseArgs(argv: seq[string]): CliOptions =
       result.version = arg["--version=".len .. ^1]
     elif arg.startsWith("--username="):
       result.username = arg["--username=".len .. ^1]
+    elif arg.startsWith("--user-role="):
+      result.userRole = arg["--user-role=".len .. ^1]
+    elif arg.startsWith("--branch="):
+      result.branchId = arg["--branch=".len .. ^1]
+    elif arg.startsWith("--full-name="):
+      result.fullName = arg["--full-name=".len .. ^1]
     elif arg.startsWith("--out="):
       result.outPath = arg["--out=".len .. ^1]
     elif arg.startsWith("--root="):
@@ -148,9 +162,14 @@ proc parseArgs(argv: seq[string]): CliOptions =
      not (result.role == roleCtl and result.cmd == auditAnchorCmd):
     die("--out hanya untuk `--role=ctl " & auditAnchorCmd & "`")
   if result.username.len > 0 and
-     not (result.role == roleCtl and result.cmd in [bootstrapAdminCmd, resetPasswordCmd]):
-    die("--username hanya untuk `--role=ctl " & bootstrapAdminCmd & "` atau `" &
-      resetPasswordCmd & "`")
+     not (result.role == roleCtl and result.cmd in
+          [bootstrapAdminCmd, resetPasswordCmd, createUserCmd]):
+    die("--username hanya untuk `--role=ctl " & bootstrapAdminCmd & "`, `" &
+      resetPasswordCmd & "`, atau `" & createUserCmd & "`")
+  if (result.userRole.len > 0 or result.branchId.len > 0 or result.fullName.len > 0) and
+     not (result.role == roleCtl and result.cmd == createUserCmd):
+    die("--user-role, --branch, dan --full-name hanya untuk `--role=ctl " &
+      createUserCmd & "`")
 
 var shutdownRequested: Atomic[bool]
 
@@ -210,6 +229,9 @@ const CtlUsage* =
   "  reset-password  : setel kata sandi baru acak untuk pengguna yang ada (butuh --username=<nama>;\n" &
   "                    dicetak sekali, wajib diganti, semua sesi dicabut, audit user.password_reset)\n" &
   "  audit-anchor    : catat kepala rantai audit (seq + hash) ke stdout dan/atau --out=<berkas>\n" &
+  "  create-user     : provision an operator account (requires --username=<name>,\n" &
+  "                    --user-role=<role>; optional --branch=<uuid>, --full-name=<name>; the\n" &
+  "                    initial password is printed once and must be changed at first login)\n" &
   "  daycloser-status: (belum ada di Fase 0 → kode 3)\n" &
   "  help            : tampilkan bantuan ini"
 
@@ -331,6 +353,49 @@ proc runBootstrapAdmin(db: DbConn, username: string, clock: Clock): int =
   echo "bisa memakai /auth/session, /auth/password, dan /auth/logout."
   0
 
+proc runCreateUser*(db: DbConn, username, roleCode, branchId, fullName: string,
+                    clock: Clock): tuple[code: int, password: string] =
+  ## Provision an operator account with one RBAC role and print its initial password once.
+  ##
+  ## Codes: 0 success, 1 write/random failure, 2 missing arguments, 3 username/role rejected.
+  ## The caller must run this inside `withRoleDb(..., useTx = true)`; user, role grant, and audit
+  ## are committed together.
+  if username.len == 0 or roleCode.len == 0:
+    stderr.writeLine "kran-api: `ctl " & createUserCmd &
+      "` requires --username=<name> and --user-role=<role>"
+    return (2, "")
+
+  let displayName = if fullName.len > 0: fullName else: username
+  if userByUsername(db, username).isSome:
+    stderr.writeLine "kran-api: user '" & username & "' already exists"
+    return (3, "")
+  if not roleExists(db, roleCode):
+    stderr.writeLine "kran-api: unknown role '" & roleCode & "'"
+    return (3, "")
+
+  let instScope = institutionScope()
+  let now = clock.now()
+  let nowIso = utcIso(now)
+  let settings = settingsOf(db, instScope, nowIso[0 .. 9])
+  let password = randomPassword(max(20, settings.minPasswordLength + 8),
+    settings.minPasswordClasses)
+  if password.len == 0:
+    stderr.writeLine "kran-api: failed to read the system random source (urandom)"
+    return (1, "")
+  let problems = passwordProblems(settings.minPasswordLength, settings.minPasswordClasses,
+    username, password)
+  if problems.len > 0:
+    stderr.writeLine "kran-api: generated password does not satisfy policy: " & $problems
+    return (1, "")
+
+  let ctx = newAuditContext(Id(""), device = "kran-api ctl",
+    reason = "create operator user", startedAt = now)
+  if not createUserWithRole(db, ctx, clock, instScope, username, displayName, roleCode,
+                            branchId, password, settings.pbkdf2Iterations):
+    stderr.writeLine "kran-api: user provisioning was rejected (username taken or role unknown)"
+    return (3, "")
+  (0, password)
+
 proc resetUserPassword*(db: DbConn, username: string, clock: Clock): tuple[code: int,
     password: string] =
   ## Setel kata sandi acak baru untuk pengguna yang **sudah ada**.
@@ -411,10 +476,12 @@ proc runAuditAnchor*(db: DbConn, clock: Clock, outPath: string): string =
     finally:
       f.close()
 
-proc runCtl*(command, root: string, username = "", outPath = ""): int =
+proc runCtl*(command, root: string, username = "", outPath = "", userRole = "",
+             branchId = "", fullName = ""): int =
   ## Peran `ctl`: perintah operasional yang aman (read-only), dipakai skrip ops dan freeze gate.
-  ## Dua pengecualian yang memang menulis: `bootstrap-admin` (sekali-jalan) dan `reset-password`
-  ## (pemulihan darurat, dengan audit + pencabutan sesi + wajib ganti).
+  ## Tiga pengecualian yang memang menulis: `bootstrap-admin` (sekali-jalan), `create-user`
+  ## (provisioning akun operator), dan `reset-password` (pemulihan darurat, dengan audit +
+  ## pencabutan sesi + wajib ganti).
   if command.len == 0 or command == "help":
     echo CtlUsage
     return 0
@@ -423,6 +490,19 @@ proc runCtl*(command, root: string, username = "", outPath = ""): int =
     # `useTx = true`: pengguna, role, dan audit harus lahir bersama — lihat `bootstrapFirstAdmin`.
     withRoleDb(proc(db: DbConn): int {.closure.} =
       runBootstrapAdmin(db, username, systemClock()), useTx = true)
+  of createUserCmd:
+    # Password is printed after COMMIT, like `reset-password`: a credential that never took effect
+    # must not reach the operator.
+    var password = ""
+    let code = withRoleDb(proc(db: DbConn): int {.closure.} =
+      let r = runCreateUser(db, username, userRole, branchId, fullName, systemClock())
+      password = r.password
+      r.code, useTx = true)
+    if code == 0:
+      echo "initial password for '" & username & "' (shown once, not stored):"
+      echo password
+      echo "Sign in with it and change it when prompted."
+    code
   of resetPasswordCmd:
     # Kata sandi dicetak **setelah** transaksi selesai: kalau COMMIT/audit gagal, operator tidak
     # boleh menerima kredensial yang sebenarnya tidak berlaku.
@@ -611,7 +691,8 @@ proc main() =
   if opts.role == roleMigrate:
     quit(runMigrate(opts.root, opts.sub, opts.subArg))
   if opts.role == roleCtl:
-    quit(runCtl(opts.cmd, opts.root, opts.username, opts.outPath))
+    quit(runCtl(opts.cmd, opts.root, opts.username, opts.outPath, opts.userRole,
+      opts.branchId, opts.fullName))
   if opts.role == roleWorker:
     quit(runWorker())
 
