@@ -2356,3 +2356,21 @@ Batasan yang dibuka: O-097 (GL kas teller), O-098 (top-up vault = T-107), O-099 
   0000000003 mengembalikan 2 baris (setoran gaji, PB keluar) lewat `cbs.qouver.com`.
 - **Gate**: PR #1 CI hijau (Nim 4m41s, DB 8m16s, Web 42s, gitleaks 8s). Runbook:
   `docs/runbooks/pilot-provisioning.md`. Sisa batas: O-097/O-098/O-099/O-101.
+
+## 23 Okt 2026 — T-079 lanjutan: tabel buku besar keyboard-only + layout 125%
+
+- **Kode**: tabel saldo `/app/ledger` kini `<table role="grid" tabindex="0">` dengan
+  `aria-activedescendant`; panah pindah sel, Home/End ke tepi baris, Ctrl+Home/Ctrl+End ke ujung
+  tabel, Tab masuk/keluar (tanpa trap), Enter/Space tidak memicu apa pun. Instruksi tombol
+  tersembunyi (`ledger_table_help`, id+en) dihubungkan `aria-describedby`; sel aktif diberi cincin
+  fokus dari token. Region tidak lagi tab-stop (D-116 diamendemen). Kolom kode sticky tidak berubah.
+- **Data uji**: seed dev `packs/base/seed/0003_dev_ledger.sql` — izin baca buku besar untuk
+  `param_maker` + satu periode tahun berjalan + satu jurnal demo seimbang; idempoten.
+- **Test**: `apps/web/tests/e2e/ledger.spec.ts` (axe `/app/ledger` × 2 tema × 2 locale + keyboard)
+  dan `zoom-125.spec.ts` dengan project Playwright `zoom-125` (viewport 1093×614 ≈ 1366×768 @125%,
+  tanpa gulir mendatar + kolom kode sticky + tabel tetap bisa dijangkau keyboard).
+- **Bukti lokal** (tanpa e2e/DB): `svelte-check --fail-on-warnings` 0 error/0 warning; vitest
+  `packages/ui` 117 + `apps/web` 57 hijau; `playwright test --list` 43 test membuktikan berkas baru
+  ter-compile dan `zoom-125` hanya di project-nya; `./task i18n` hijau (329 key/locale); `pnpm build`
+  web hijau. **Verifikasi e2e (login + tabel berisi) menunggu run pusat** karena DB/API dev dipakai
+  agen lain.

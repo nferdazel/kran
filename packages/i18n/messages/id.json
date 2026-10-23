@@ -141,6 +141,7 @@
   "ledger_source_snapshot": "Cocok dengan snapshot",
   "ledger_computed": "Dihitung {time}",
   "ledger_caption": "Saldo akun buku besar untuk {period}",
+  "ledger_table_help": "Tabel saldo: Tab masuk ke tabel, tombol panah berpindah sel, Home/End ke tepi baris, Ctrl+Home/Ctrl+End ke sel pertama/terakhir, Tab berikutnya keluar dari tabel.",
   "teller_title": "Teller",
   "teller_intro": "Setor, tarik, dan pindah buku pada rekening simpanan.",
   "teller_account_heading": "Rekening",

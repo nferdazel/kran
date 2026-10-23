@@ -155,6 +155,75 @@
   function printPage(): void {
     window.print();
   }
+
+  // Navigasi keyboard tabel (DESIGN §10: satu tab-stop per komponen komposit — Tab masuk, panah
+  // pindah sel). Fokus DOM tetap di `<table role="grid" tabindex="0">`; sel aktif ditunjuk
+  // `aria-activedescendant` + kelas visual. Pola ini dipilih daripada roving tabindex supaya tiap
+  // `td`/`th` tidak menjadi tab-stop sendiri (dan `svelte-check` tetap 0 warning), serta semantik
+  // tabel native (`th scope`, `<caption>`) tidak diganti. Enter/Space sengaja tidak ditangani:
+  // tabel ini hanya membaca, jadi tidak ada aksi destruktif yang bisa tersulut dari sel.
+  const LEDGER_COLUMNS = 8;
+
+  let activeRow = $state(0);
+  let activeColumn = $state(0);
+
+  // Baris aktif yang benar-benar tampak; filter kategori bisa memangkas daftar di bawah `activeRow`.
+  const visibleRow = $derived(
+    filteredLines.length === 0 ? 0 : Math.min(activeRow, filteredLines.length - 1),
+  );
+
+  function ledgerCellId(row: number, column: number): string {
+    return `ledger-cell-${row}-${column}`;
+  }
+
+  const activeDescendant = $derived(
+    filteredLines.length === 0 ? undefined : ledgerCellId(visibleRow, activeColumn),
+  );
+
+  function isActiveCell(row: number, column: number): boolean {
+    return filteredLines.length > 0 && row === visibleRow && column === activeColumn;
+  }
+
+  function moveActiveCell(row: number, column: number): void {
+    const rows = filteredLines.length;
+    if (rows === 0) return;
+    activeRow = Math.min(Math.max(row, 0), rows - 1);
+    activeColumn = Math.min(Math.max(column, 0), LEDGER_COLUMNS - 1);
+    // Sel aktif harus benar-benar terlihat: gulirkan region mendatar/vertikal ke sel baru
+    // (WCAG 2.1.1 — menggantikan tabindex region ala D-116).
+    document
+      .getElementById(ledgerCellId(activeRow, activeColumn))
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+
+  function onTableKeydown(event: KeyboardEvent): void {
+    if (filteredLines.length === 0) return;
+    const row = visibleRow;
+    const column = activeColumn;
+    switch (event.key) {
+      case "ArrowRight":
+        moveActiveCell(row, column + 1);
+        break;
+      case "ArrowLeft":
+        moveActiveCell(row, column - 1);
+        break;
+      case "ArrowDown":
+        moveActiveCell(row + 1, column);
+        break;
+      case "ArrowUp":
+        moveActiveCell(row - 1, column);
+        break;
+      case "Home":
+        moveActiveCell(event.ctrlKey ? 0 : row, 0);
+        break;
+      case "End":
+        moveActiveCell(event.ctrlKey ? filteredLines.length - 1 : row, LEDGER_COLUMNS - 1);
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+  }
 </script>
 
 <svelte:head>
@@ -318,16 +387,19 @@
     </button>
   </div>
 
-  <!-- Area bergulir harus bisa difokus supaya bisa digeser dengan keyboard (WCAG 2.1.1);
-       svelte-check menganggap `region` selalu noninteraktif. Pengecualian ini dicatat di D-116. -->
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <div
-    class="kran-table-wrap ledger-region"
-    role="region"
-    tabindex="0"
-    aria-label={m.ledger_title()}
-  >
-    <table class="kran-table ledger-table">
+  <!-- Area bergulir tetap region berlabel; tab-stop tunggal ada di `<table role="grid">` di dalamnya
+       (D-116 diamandemen di T-079). Instruksi tombol untuk pengguna keyboard diumumkan lewat
+       `aria-describedby` (teks tersembunyi secara visual, tetap terbaca pembaca layar). -->
+  <div class="kran-table-wrap ledger-region" role="region" aria-label={m.ledger_title()}>
+    <p class="kran-visually-hidden" id="ledger-table-help">{m.ledger_table_help()}</p>
+    <table
+      class="kran-table ledger-table"
+      role="grid"
+      tabindex="0"
+      aria-describedby="ledger-table-help"
+      aria-activedescendant={activeDescendant}
+      onkeydown={onTableKeydown}
+    >
       <caption class="kran-visually-hidden">
         {m.ledger_caption({
           period: `${formatDate(balances.startsOn)} – ${formatDate(balances.endsOn)}`,
@@ -351,16 +423,56 @@
         </tr>
       </thead>
       <tbody>
-        {#each filteredLines as line (line.accountCode)}
+        {#each filteredLines as line, rowIndex (line.accountCode)}
+          {@const rowActive = rowIndex === visibleRow}
           <tr>
-            <th scope="row" class="ledger-code">{line.accountCode}</th>
-            <td class="ledger-account">{line.accountName}</td>
-            <td class="ledger-num kran-money">{formatMoney(line.openingDebit)}</td>
-            <td class="ledger-num kran-money">{formatMoney(line.openingCredit)}</td>
-            <td class="ledger-num kran-money">{formatMoney(line.periodDebit)}</td>
-            <td class="ledger-num kran-money">{formatMoney(line.periodCredit)}</td>
-            <td class="ledger-num kran-money">{formatMoney(line.closingDebit)}</td>
-            <td class="ledger-num kran-money">{formatMoney(line.closingCredit)}</td>
+            <th
+              scope="row"
+              id={ledgerCellId(rowIndex, 0)}
+              class="ledger-code"
+              class:ledger-cell--active={rowActive && activeColumn === 0}>{line.accountCode}</th
+            >
+            <td
+              id={ledgerCellId(rowIndex, 1)}
+              class="ledger-account"
+              class:ledger-cell--active={rowActive && activeColumn === 1}>{line.accountName}</td
+            >
+            <td
+              id={ledgerCellId(rowIndex, 2)}
+              class="ledger-num kran-money"
+              class:ledger-cell--active={rowActive && activeColumn === 2}
+              >{formatMoney(line.openingDebit)}</td
+            >
+            <td
+              id={ledgerCellId(rowIndex, 3)}
+              class="ledger-num kran-money"
+              class:ledger-cell--active={rowActive && activeColumn === 3}
+              >{formatMoney(line.openingCredit)}</td
+            >
+            <td
+              id={ledgerCellId(rowIndex, 4)}
+              class="ledger-num kran-money"
+              class:ledger-cell--active={rowActive && activeColumn === 4}
+              >{formatMoney(line.periodDebit)}</td
+            >
+            <td
+              id={ledgerCellId(rowIndex, 5)}
+              class="ledger-num kran-money"
+              class:ledger-cell--active={rowActive && activeColumn === 5}
+              >{formatMoney(line.periodCredit)}</td
+            >
+            <td
+              id={ledgerCellId(rowIndex, 6)}
+              class="ledger-num kran-money"
+              class:ledger-cell--active={rowActive && activeColumn === 6}
+              >{formatMoney(line.closingDebit)}</td
+            >
+            <td
+              id={ledgerCellId(rowIndex, 7)}
+              class="ledger-num kran-money"
+              class:ledger-cell--active={rowActive && activeColumn === 7}
+              >{formatMoney(line.closingCredit)}</td
+            >
           </tr>
         {/each}
         {#if filteredLines.length === 0}
@@ -498,6 +610,13 @@
     font-variant-numeric: tabular-nums;
     font-weight: 500;
     white-space: nowrap;
+  }
+
+  /* Sel aktif pola `aria-activedescendant` (DESIGN §10). Hanya ditampilkan saat grid difokus, dan
+   * cincin digambar di dalam sel (`outline-offset: -2px`) supaya tidak terpotong `overflow-x`. */
+  .ledger-table:focus .ledger-cell--active {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: -2px;
   }
 
   /* Kolom kode akun tetap terlihat saat tabel digulir mendatar (DESIGN §10). Latar memakai
