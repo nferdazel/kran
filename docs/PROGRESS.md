@@ -2292,6 +2292,14 @@ Batasan yang dibuka: O-097 (GL kas teller), O-098 (top-up vault = T-107), O-099 
   `itapi_deposit` 16, `itapi_teller_vault` 10, `itproduct` 19, `itparamservice` 9, `ittransfer` 6,
   `tcontract` 6. Reviewer putaran 2 **APPROVE** (tanpa BLOCKER/MAJOR); minor ditunda ke T-112
   (test batas 500 statement) dan T-113 (test konkurensi vault).
-- **Deploy**: menunggu otorisasi. Rilis ini membawa contract `product/0006` (auto-apply + dump
-  pra-contract) serta migrasi expand `product/0007`, `ledger/0014`, `platform/0026`.
+- **Deploy produksi** (23 Okt 2026, disetujui pemilik): `b7416c0..29fd8e3`, `.deployed_rev =
+  29fd8e3a7d00`, `/readyz` 200 (port 8095). Bukti pasca-deploy: kolom `product.savings_kind` ada;
+  trigger `product_version_fill_maker` hilang dan `product_version_guard_insert` ada (contract
+  `product/0006` diterapkan); COA `301.1`/`301.2` + 2 rule `savingsKind`; izin
+  `teller.vault.read/topup`; migrasi `product/0007`, `ledger/0014`, `platform/0026` tercatat.
+  Rute baru hidup (401 tanpa sesi): `/api/v1/teller/vault`, `/api/v1/deposit/accounts/{id}/statement`;
+  bundle web memuat tautan cetak + `savings_kind_locked`.
+- **Batas pasca-deploy**: vault produksi belum diisi → sesi kas tetap `vault_not_configured`
+  sampai runbook dijalankan. Rollback melewati rilis ini akan mengembalikan setoran POKOK/WAJIB ke
+  `201` (lihat ACCEPTED-LIMITS §4a).
 
