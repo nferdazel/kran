@@ -81,14 +81,16 @@ proc accountByNo*(db: DbConn, accountNo: string): Option[Account] =
     return none(Account)
   some(accountOf(rows[0]))
 
-proc accountsByParty*(db: DbConn, partyId: Id): seq[Account] =
-  ## Semua rekening milik satu party, urut nomor rekening. Penyaringan cabang dilakukan pemanggil
-  ## (composition root) per baris — repo tidak menebak izin.
+proc accountsByParty*(db: DbConn, partyId: Id, limit = 200): seq[Account] =
+  ## Rekening milik satu party, urut nomor rekening, dibatasi `limit` (batas teknis, bukan aturan
+  ## bisnis). Penyaringan cabang dilakukan pemanggil per baris — hasil bisa kurang dari `limit`
+  ## bila sebagian berada di cabang yang tidak berizin; pemanggil tidak boleh menganggapnya paginasi.
   for row in db.getAllRows(sql("SELECT " & accountColumns &
       """
         FROM deposit.account a
         JOIN product.product p ON p.product_id = a.product_id
         LEFT JOIN deposit.account_balance b ON b.account_id = a.account_id
        WHERE a.party_id = ?
-       ORDER BY a.account_no"""), $partyId):
+       ORDER BY a.account_no
+       LIMIT ?::int"""), $partyId, $limit):
     result.add accountOf(row)

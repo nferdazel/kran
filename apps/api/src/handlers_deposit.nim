@@ -308,7 +308,7 @@ proc handleListDepositAccounts*(app: AppContext, req: Request) {.gcsafe.} =
         # Gerbang cabang per baris: rekening di cabang yang tidak dipegang izinnya tidak
         # dikembalikan (bukan 403 seluruh daftar — hasilnya disaring per baris, pola D-062).
         if partyId.isSome:
-          for account in accountsByParty(db, partyId.get()):
+          for account in accountsByParty(db, partyId.get(), maxAccountListLimit):
             # Batas respons (T-100): daftar party besar tidak mengembalikan ribuan baris sekaligus.
             if items.len >= maxAccountListLimit:
               break

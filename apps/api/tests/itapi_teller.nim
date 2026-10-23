@@ -1133,18 +1133,47 @@ suite "teller: klasifikasi simpanan koperasi (T-111)":
     checkProblem(TransferPath, "POST", "409", fromPokok.body)
     check fromPokok.body["params"]["reason"].getStr() == "savings_kind_locked"
 
-    # Sumber SUKARELA (tidak terkunci) ke tujuan POKOK: yang menolak adalah beda jenis, bukan kunci.
+    # Sumber SUKARELA (tidak terkunci) ke tujuan POKOK: tujuan yang terkunci menolak lebih dulu.
     let cross = postJson(TransferPath,
       transferBody(SukarelaKindAccountId, PokokAccountId, "1.0000"), token)
     check cross.code == 409
     checkProblem(TransferPath, "POST", "409", cross.body)
-    check cross.body["params"]["reason"].getStr() == "transfer_kind_mismatch"
+    check cross.body["params"]["reason"].getStr() == "savings_kind_locked"
 
     # Rollback: tidak ada mutasi saldo/baris transfer di kedua sisi.
     check balanceOf(SukarelaKindAccountId) == "0.0000"
     check balanceOf(PokokTransferAccountId) == "0.0000"
     check transferCount(SukarelaKindAccountId) == 0
     check transferCount(PokokTransferAccountId) == 0
+
+  test "PB NULL (produk lama) <-> SUKARELA boleh; tujuan POKOK tetap diblokir":
+    let token = tokenOf(login(MakerUser))
+    proc saldo(accountId: string): Money = moneyFromString(balanceOf(accountId)).value()
+    # Rekening dari produk tanpa `savings_kind` (NULL) diperlakukan sebagai simpanan generik.
+    let nullAccount = AccountIds[0]
+    let awalNull = saldo(nullAccount)
+    let awalSukarela = saldo(SukarelaKindAccountId)
+    let setor = postJson(CashPath, cashBody(nullAccount, "DEPOSIT", "10.0000"), token)
+    check setor.code == 201
+
+    let keSukarela = postJson(TransferPath,
+      transferBody(nullAccount, SukarelaKindAccountId, "3.0000"), token)
+    check keSukarela.code == 201
+    check saldo(nullAccount) == awalNull + money(70_000)
+    check saldo(SukarelaKindAccountId) == awalSukarela + money(30_000)
+
+    let balik = postJson(TransferPath,
+      transferBody(SukarelaKindAccountId, nullAccount, "1.0000"), token)
+    check balik.code == 201
+    check saldo(nullAccount) == awalNull + money(80_000)
+    check saldo(SukarelaKindAccountId) == awalSukarela + money(20_000)
+
+    # Tujuan POKOK diblokir walaupun sumbernya NULL: dana tidak boleh masuk ekuitas lewat PB.
+    let kePokok = postJson(TransferPath,
+      transferBody(nullAccount, PokokAccountId, "1.0000"), token)
+    check kePokok.code == 409
+    check kePokok.body["params"]["reason"].getStr() == "savings_kind_locked"
+    check saldo(nullAccount) == awalNull + money(80_000)
 
 suite "teller: slip cetak ulang (T-094a)":
   test "baca transaksi tunai → 200, field slip, tanpa saldo":

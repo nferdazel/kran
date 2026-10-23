@@ -562,15 +562,17 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
               problem = "rekening sumber atau tujuan tidak berstatus ACTIVE"
               raise newException(ValueError, problem)
 
-            # PB **dari** POKOK/WAJIB diblokir, dan PB lintas jenis diblokir: template satu D/K tidak
-            # bisa memindahkan liabilitas ke ekuitas (T-111). NULL dianggap berbeda bila lawannya
-            # berjenis, jadi hanya pasangan berjenis sama (atau keduanya NULL) yang lolos.
-            if lockedSavingsKind(source.savingsKind):
+            # PB yang menyentuh POKOK/WAJIB (sumber **atau** tujuan) diblokir: template satu D/K
+            # tidak bisa memindahkan liabilitas ke ekuitas (T-111). PB lintas jenis juga diblokir,
+            # tetapi NULL (produk lama, belum terklasifikasi) diperlakukan sebagai simpanan generik
+            # sehingga NULL <-> SUKARELA/TABUNGAN tetap boleh (D-127/ACCEPTED-LIMITS §4a).
+            if lockedSavingsKind(source.savingsKind) or lockedSavingsKind(destination.savingsKind):
               status = 409
               reason = "savings_kind_locked"
-              problem = "pemindahbukuan dari simpanan pokok/wajib belum didukung"
+              problem = "pemindahbukuan yang menyentuh simpanan pokok/wajib belum didukung"
               raise newException(ValueError, problem)
-            if source.savingsKind != destination.savingsKind:
+            if source.savingsKind != "" and destination.savingsKind != "" and
+                source.savingsKind != destination.savingsKind:
               status = 409
               reason = "transfer_kind_mismatch"
               problem = "jenis simpanan rekening sumber dan tujuan berbeda"

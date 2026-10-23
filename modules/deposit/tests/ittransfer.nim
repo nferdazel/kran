@@ -235,13 +235,20 @@ proc transferWorker(args: TransferArgs) {.thread.} =
       workerFailed.store(true)
 
 proc blockedByHolder(pid: string): int =
-  ## Jumlah sesi lain yang menunggu lock yang dipegang `pid` (pola `ittransaction`): sinkronisasi
-  ## deterministik tanpa `sleep` yang bisa lolos saat pekerja belum benar-benar bersaing.
+  ## Jumlah sesi yang menunggu lock `pid`, **transitif**. `pg_blocking_pids` hanya memberi
+  ## penghalang langsung: penunggu kedua bisa mengantre di belakang penunggu pertama (tuple lock),
+  ## jadi rantainya ditelusuri rekursif. Sinkronisasi deterministik tanpa `sleep` yang bisa lolos
+  ## saat pekerja belum benar-benar bersaing.
   parseInt(db.getValue(sql"""
-    SELECT count(*)::text FROM pg_stat_activity
-     WHERE datname = current_database() AND pid <> pg_backend_pid()
-       AND wait_event_type = 'Lock'
-       AND ?::int = ANY(pg_blocking_pids(pid))""", pid))
+    WITH RECURSIVE blocked(pid) AS (
+      SELECT a.pid FROM pg_stat_activity a
+       WHERE a.datname = current_database() AND a.pid <> pg_backend_pid()
+         AND ?::int = ANY(pg_blocking_pids(a.pid))
+      UNION
+      SELECT a.pid FROM pg_stat_activity a
+        JOIN blocked b ON b.pid = ANY(pg_blocking_pids(a.pid))
+    )
+    SELECT count(*)::text FROM blocked""", pid))
 
 suite "deposit: PB berlawanan arah bersamaan tidak deadlock":
   test "urutan kunci `account_id` menaik: kedua arah selesai tanpa deadlock":
@@ -282,10 +289,7 @@ suite "deposit: PB berlawanan arah bersamaan tidak deadlock":
       blocked = blockedByHolder(holderPid)
       if blocked < 2:
         sleep(20)
-    # Minimal satu pekerja terbukti menunggu lock holder. Menuntut dua bisa rapuh karena salah
-    # satu pekerja bisa tertahan lebih dulu di lapisan pool/serialisasi; invarian yang sebenarnya
-    # diuji ada di bawah: tidak ada worker gagal (deadlock) dan saldo akhir benar.
-    check blocked >= 1
+    check blocked == 2
 
     # Lepas lock: kedua pekerja lanjut; dengan urutan menaik keduanya terserialisasi dan selesai.
     exec(side, sql"COMMIT")

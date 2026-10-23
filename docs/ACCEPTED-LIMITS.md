@@ -115,6 +115,21 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 - Produk lama tidak di-backfill: `savings_kind = NULL` berarti belum terklasifikasi dan diperlakukan
   seperti simpanan generik.
 
+## 4b. Cetak Fase 2 (T-094) — browser print, bukan PDF server
+
+- Slip dan statement dicetak dari browser (`@media print` + `window.print`). **Tidak ada** PDF
+  server, penyimpanan PDF, hash, retensi, atau tanda tangan; ADR-013b (Typst di worker) ditunda.
+- Bukan pengganti buku tabungan dot-matrix/passbook. Layout bisa berbeda antar printer/browser;
+  header/footer browser (URL/ID) tidak bisa dipaksa hilang lewat CSS.
+- Tidak ada audit cetak: klik Cetak bukan bukti tercetak, dan dialog bisa dibatalkan. Tidak ada
+  kop/identitas lembaga (belum ada master cabang/parameter `institution.*`) — slip bersifat internal.
+- Statement adalah **subledger** (transaksi tunai + PB), bukan rekonsiliasi GL, dan **tanpa saldo
+  berjalan per baris**. Batas 500 baris ditolak (bukan dipotong); pemilik bisa mempersempit rentang.
+- PII di kertas/spool di luar kendali sistem: dokumen memuat nomor rekening, nominal, dan narasi
+  apa adanya. Jangan menyimpan hasil cetak sebagai PDF di server.
+- Template cetak ada di kode, bukan DB (deviasi sadar spec §16.2); parameterisasi letterhead = task
+  terpisah.
+
 ## 5. Cara memakai dokumen ini
 
 - Menemukan batas baru saat mengerjakan task → tambahkan baris (dampak, cara deteksi, pemilik), jangan

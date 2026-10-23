@@ -95,6 +95,9 @@ export default defineConfig({
   // membuat CI merah sesekali. Assertion tidak dilonggarkan; hanya batas waktunya (T-031).
   expect: { timeout: 10_000 },
   fullyParallel: false,
+  // Test berbagi DB dev dan satu teller/branch (sesi kas unik); menjalankan berkas secara paralel
+  // membuat print/teller saling membuka/menutup sesi. Serial = deterministik, tetap < 1 menit.
+  workers: 1,
   forbidOnly: true,
   retries: 0,
   reporter: [["list"]],
