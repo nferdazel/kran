@@ -27,7 +27,7 @@ concurrency:
 jobs:
   nim-check:
     name: Nim (check + unit/property test)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -72,7 +72,7 @@ jobs:
 
   db-tests:
     name: DB (integrasi, Postgres 18)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     services:
       postgres:
@@ -132,7 +132,7 @@ jobs:
 
   web-e2e:
     name: Web (svelte-check + axe + Playwright)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -162,7 +162,13 @@ jobs:
         # `playwright` adalah devDependency `apps/web`, bukan root: `pnpm exec` di root tidak
         # menemukannya (ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL: Command "playwright" not found), jadi
         # eksplisit lewat filter paketnya.
-        run: pnpm --filter @kran/web exec playwright install --with-deps chromium
+        #
+        # Tanpa `--with-deps`: langkah itu menjalankan `apt-get update/install` di setiap run dan
+        # pernah menghabiskan 14m47s sampai job 15 menit dibatalkan (run 39962254127), padahal
+        # browser-nya sudah ada di cache. Lib sistem Chromium sudah tersedia di image runner
+        # `ubuntu-24.04`; runner dipin (bukan `ubuntu-latest`) supaya migrasi label tidak
+        # diam-diam mengganti set lib itu.
+        run: pnpm --filter @kran/web exec playwright install chromium
 
       - name: ./task openapi
         # lint kontrak OpenAPI + klien TS sinkron + typecheck paket klien
@@ -174,7 +180,7 @@ jobs:
 
   security:
     name: Security (gitleaks)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout
