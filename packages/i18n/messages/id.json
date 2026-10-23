@@ -304,5 +304,9 @@
   "statement_total_out": "Total keluar (IDR)",
   "statement_total_net": "Selisih (IDR)",
   "statement_empty": "Tidak ada transaksi pada rentang ini.",
-  "statement_no_running_balance": "Statement ini subledger: tidak ada saldo berjalan per baris, dan bukan rekonsiliasi buku besar."
+  "statement_no_running_balance": "Statement ini subledger: tidak ada saldo berjalan per baris, dan bukan rekonsiliasi buku besar.",
+  "palette_heading": "Palet perintah",
+  "palette_search_label": "Cari perintah",
+  "palette_hint": "Panah atas dan bawah memilih, Enter membuka, Esc menutup.",
+  "palette_empty": "Tidak ada perintah yang cocok."
 }

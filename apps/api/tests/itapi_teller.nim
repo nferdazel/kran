@@ -481,6 +481,82 @@ proc transferBody(sourceId, destinationId, amount: string, narration = ""): Json
 proc statementUrl(accountId, fromDate, toDate: string): string =
   StatementPath.replace("{accountId}", accountId) & "?from=" & fromDate & "&to=" & toDate
 
+proc seedStatementBulk(tag, accountId, otherId: string, cashCount, transferCount: int) =
+  ## Menanam baris statement **langsung** lewat SQL (bukan ratusan request HTTP, T-112):
+  ## `cashCount` transaksi tunai + `transferCount` PB pada `BusinessDate`, masing-masing dengan
+  ## jurnal **seimbang** (2 baris, akun 201) karena FK `*.journal_id` menuntutnya. Satu skrip =
+  ## satu transaksi implisit `pqexec` (pernyataan gagal membatalkan seluruh batch). `tag`
+  ## membedakan batch supaya `ledger.journal.idempotency_key` tidak bentrok.
+  ##
+  ## Beware: baris ditanam untuk rekening yang **khusus** test ini; memakai rekening fixture milik
+  ## test lain akan membocorkan baris ke statement-nya (semua test memakai `BusinessDate`).
+  const actor = "77777777-7777-7777-8777-777777777777"
+  let db = dbPool.acquire()
+  try:
+    execScript(db, """
+      INSERT INTO ledger.journal
+        (journal_id, business_date, value_date, source_event, source_ref, idempotency_key, created_by)
+      SELECT gen_random_uuid(), '""" & BusinessDate & """'::date, '""" & BusinessDate &
+        """'::date,
+             'test.statement.bulk.cash', gen_random_uuid(),
+             't112-""" & tag & """-cash-' || g, '""" & actor &
+        """'::uuid
+        FROM generate_series(1, """ & $cashCount &
+        """) g;
+
+      INSERT INTO ledger.journal_line (journal_id, line_no, gl_account, branch_id, debit, credit)
+      SELECT journal_id, 1, '201', '""" & BranchId &
+        """'::uuid, 1, 0
+        FROM ledger.journal WHERE idempotency_key LIKE 't112-""" & tag &
+        """-cash-%'
+      UNION ALL
+      SELECT journal_id, 2, '201', '""" & BranchId &
+        """'::uuid, 0, 1
+        FROM ledger.journal WHERE idempotency_key LIKE 't112-""" & tag &
+        """-cash-%';
+
+      INSERT INTO deposit.transaction
+        (transaction_id, tx_type, account_id, amount, business_date, narration, journal_id, created_by)
+      SELECT gen_random_uuid(), 'CASH_DEPOSIT', '""" & accountId &
+        """', 1,
+             '""" & BusinessDate & """'::date, 'bulk', journal_id, '""" & actor &
+        """'::uuid
+        FROM ledger.journal WHERE idempotency_key LIKE 't112-""" & tag &
+        """-cash-%';
+
+      INSERT INTO ledger.journal
+        (journal_id, business_date, value_date, source_event, source_ref, idempotency_key, created_by)
+      SELECT gen_random_uuid(), '""" & BusinessDate & """'::date, '""" & BusinessDate &
+        """'::date,
+             'test.statement.bulk.pb', gen_random_uuid(),
+             't112-""" & tag & """-pb-' || g, '""" & actor &
+        """'::uuid
+        FROM generate_series(1, """ & $transferCount &
+        """) g;
+
+      INSERT INTO ledger.journal_line (journal_id, line_no, gl_account, branch_id, debit, credit)
+      SELECT journal_id, 1, '201', '""" & BranchId &
+        """'::uuid, 1, 0
+        FROM ledger.journal WHERE idempotency_key LIKE 't112-""" & tag &
+        """-pb-%'
+      UNION ALL
+      SELECT journal_id, 2, '201', '""" & BranchId &
+        """'::uuid, 0, 1
+        FROM ledger.journal WHERE idempotency_key LIKE 't112-""" & tag &
+        """-pb-%';
+
+      INSERT INTO deposit.transfer
+        (transfer_id, source_account_id, destination_account_id, amount, business_date, narration,
+         journal_id, created_by)
+      SELECT gen_random_uuid(), '""" & accountId & """', '""" & otherId &
+        """', 1,
+             '""" & BusinessDate & """'::date, 'bulk', journal_id, '""" & actor &
+        """'::uuid
+        FROM ledger.journal WHERE idempotency_key LIKE 't112-""" & tag & """-pb-%';
+    """)
+  finally:
+    dbPool.release(db)
+
 # --- suite ------------------------------------------------------------------------------------
 
 suite "teller: autentikasi & izin":
@@ -1339,3 +1415,30 @@ suite "deposit: statement subledger (T-094b)":
       statementUrl("99999999-9999-7999-8999-999999999999", BusinessDate, BusinessDate), "", token)
     check missing.code == 404
     checkProblem(StatementPath, "GET", "404", missing.body)
+
+  test "di atas batas 500 gabungan kas + PB (tiap sumber < 501) → 400, bukan potong diam-diam":
+    let token = tokenOf(login(MakerUser))
+    let accountId = freshAccount()
+    let otherId = freshAccount() # hanya agar PB punya tujuan berbeda (account_source <> dest)
+
+    # 250 kas + 250 PB = 500 baris: **tepat** di batas `maxStatementRows` → 200 dengan 500 baris.
+    # Tiap kueri sumber hanya mengembalikan 250 (< probeLimit 501), jadi 200 membuktikan batas
+    # dihitung dari **gabungan**, bukan per sumber.
+    seedStatementBulk("b500", accountId, otherId, 250, 250)
+    let atLimit = call("GET", statementUrl(accountId, BusinessDate, BusinessDate), "", token)
+    check atLimit.code == 200
+    checkJson(StatementPath, "GET", "200", atLimit.body)
+    check atLimit.body["rows"].len == 500
+
+    # +1 kas → 251 kas + 250 PB = 501 (> 500) padahal **setiap** sumber < 501. Inilah inti
+    # `probeLimit = maxStatementRows + 1`: batas per kueri tidak cukup; handler harus menolak
+    # gabungan yang melewati batas, bukan memotong separuh.
+    seedStatementBulk("b501", accountId, otherId, 1, 0)
+    let over = call("GET", statementUrl(accountId, BusinessDate, BusinessDate), "", token)
+    check over.code == 400
+    checkProblem(StatementPath, "GET", "400", over.body)
+    # Handler tidak memakai `params.reason` untuk 400 ini (lihat `handleGetAccountStatement`):
+    # pembedanya ada di `detail`. Jangan mengarang reason yang tidak ditulis kode.
+    check over.body["detail"].getStr().contains("500")
+    # Tanpa respons separuh: 400 hanya problem+json, tidak membawa `rows`.
+    check not over.body.hasKey("rows")
