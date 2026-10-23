@@ -62,72 +62,127 @@
 
 <div class="login">
   <aside class="login-identity">
+    <div class="login-badge-seal" aria-hidden="true">
+      <span>KRAN</span>
+    </div>
     <p class="login-brand">{m.common_brand_short()}</p>
     <p class="login-line">{m.login_intro()}</p>
+
+    <div class="login-pillars" aria-hidden="true">
+      <div class="login-pillar">
+        <span class="login-pillar__icon">🏛️</span>
+        <div>
+          <strong class="login-pillar__title">Standar Regulasi Indonesia</strong>
+          <p class="login-pillar__desc">Kepatuhan UU PPSK, Permenkop & regulasi BPR/BMT</p>
+        </div>
+      </div>
+
+      <div class="login-pillar">
+        <span class="login-pillar__icon">🛡️</span>
+        <div>
+          <strong class="login-pillar__title">Integritas Buku Besar</strong>
+          <p class="login-pillar__desc">Ledger imutabel, zero-float uang, & audit hash-chain</p>
+        </div>
+      </div>
+
+      <div class="login-pillar">
+        <span class="login-pillar__icon">⚡</span>
+        <div>
+          <strong class="login-pillar__title">Terminal Efisiensi Tinggi</strong>
+          <p class="login-pillar__desc">Alur kerja keyboard-first & palet perintah cepat</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="login-status-badge">
+      <span class="kran-status-dot" aria-hidden="true"></span>
+      <span class="kran-muted">Sistem Operasional · Enkripsi Aktif</span>
+    </div>
   </aside>
 
   <section class="login-panel">
-    <h1 class="login-title">{m.login_title()}</h1>
+    <div class="login-card">
+      <div class="login-card__head">
+        <h1 class="login-title">{m.login_title()}</h1>
+        <p class="kran-muted login-subtitle">Autentikasi sesi operator institusi</p>
+      </div>
 
+      <form class="kran-form login-form" onsubmit={submit} novalidate>
+        <div class="kran-field">
+          <label class="kran-label" for="login-username">{m.login_username_label()}</label>
+          <input
+            class="kran-input"
+            id="login-username"
+            name="username"
+            type="text"
+            autocomplete="username"
+            autocapitalize="none"
+            spellcheck="false"
+            bind:value={username}
+            required
+          />
+        </div>
 
-  <form class="kran-form" onsubmit={submit} novalidate>
-    <div class="kran-field">
-      <label class="kran-label" for="login-username">{m.login_username_label()}</label>
-      <input
-        class="kran-input"
-        id="login-username"
-        name="username"
-        type="text"
-        autocomplete="username"
-        autocapitalize="none"
-        spellcheck="false"
-        bind:value={username}
-        required
-      />
+        <div class="kran-field">
+          <label class="kran-label" for="login-password">{m.login_password_label()}</label>
+          <input
+            class="kran-input"
+            id="login-password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            bind:value={password}
+            required
+          />
+        </div>
+
+        {#if errorMessage}
+          <p class="kran-alert" role="alert">{errorMessage}</p>
+        {/if}
+
+        <p class="login-submit-row">
+          <button class="kran-button kran-button--primary login-button" type="submit" disabled={submitting}>
+            {submitting ? m.login_submitting() : m.login_submit()}
+          </button>
+        </p>
+      </form>
     </div>
-
-    <div class="kran-field">
-      <label class="kran-label" for="login-password">{m.login_password_label()}</label>
-      <input
-        class="kran-input"
-        id="login-password"
-        name="password"
-        type="password"
-        autocomplete="current-password"
-        bind:value={password}
-        required
-      />
-    </div>
-
-    {#if errorMessage}
-      <p class="kran-alert" role="alert">{errorMessage}</p>
-    {/if}
-
-    <p>
-      <button class="kran-button kran-button--primary" type="submit" disabled={submitting}>
-        {submitting ? m.login_submitting() : m.login_submit()}
-      </button>
-    </p>
-  </form>
   </section>
 </div>
 
 <style>
   .login {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
+    grid-template-columns: minmax(0, 1.2fr) minmax(20rem, 26rem);
     gap: var(--space-7);
-    align-items: start;
-    max-inline-size: 64rem;
+    align-items: center;
+    max-inline-size: 68rem;
     margin-inline: auto;
-    padding-block: var(--space-6);
+    padding-block: var(--space-7);
+    min-block-size: calc(100vh - 180px);
   }
 
   .login-identity {
-    padding-block-start: var(--space-2);
-    padding-inline-end: var(--space-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding-block: var(--space-4);
+    padding-inline-end: var(--space-6);
     border-inline-end: 1px solid var(--color-hairline);
-    min-block-size: 18rem;
+  }
+
+  .login-badge-seal {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 3rem;
+    block-size: 3rem;
+    border-radius: var(--radius-sm);
+    background: var(--color-primary);
+    color: var(--color-text-on-primary);
+    font-weight: 700;
+    font-size: var(--text-sm);
+    letter-spacing: 0.05em;
   }
 
   .login-brand {
@@ -138,15 +193,76 @@
   }
 
   .login-line {
-    margin-block-start: var(--space-2);
-    max-inline-size: 34ch;
+    max-inline-size: 38ch;
     color: var(--color-text-muted);
+    font-size: var(--text-base);
+    line-height: 1.5;
+  }
+
+  .login-pillars {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-block-start: var(--space-4);
+    padding-block-start: var(--space-4);
+    border-block-start: 1px solid var(--color-hairline);
+  }
+
+  .login-pillar {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  .login-pillar__icon {
+    font-size: var(--text-md);
+    line-height: 1.2;
+  }
+
+  .login-pillar__title {
+    display: block;
     font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .login-pillar__desc {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+  }
+
+  .login-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-block-start: var(--space-3);
+    padding-block: 4px;
+    padding-inline: var(--space-3);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    font-size: var(--text-xs);
+    width: fit-content;
   }
 
   .login-panel {
-    display: grid;
-    gap: var(--space-4);
+    display: flex;
+    justify-content: center;
+  }
+
+  .login-card {
+    width: 100%;
+    padding-block: var(--space-6);
+    padding-inline: var(--space-6);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface-raised);
+    box-shadow: var(--shadow-1);
+  }
+
+  .login-card__head {
+    margin-block-end: var(--space-5);
   }
 
   .login-title {
@@ -155,17 +271,39 @@
     font-weight: 600;
   }
 
+  .login-subtitle {
+    margin-block-start: var(--space-1);
+    font-size: var(--text-xs);
+  }
+
+  .login-form {
+    max-inline-size: none;
+    width: 100%;
+  }
+
+  .login-submit-row {
+    margin-block-start: var(--space-2);
+    margin-block-end: 0;
+  }
+
+  .login-button {
+    width: 100%;
+    justify-content: center;
+  }
+
   @media (max-width: 900px) {
     .login {
       grid-template-columns: minmax(0, 1fr);
-      gap: var(--space-4);
+      gap: var(--space-5);
       padding-block: var(--space-4);
+      min-block-size: 0;
     }
 
     .login-identity {
       border-inline-end: 0;
       padding-inline-end: 0;
-      min-block-size: 0;
+      border-block-end: 1px solid var(--color-hairline);
+      padding-block-end: var(--space-4);
     }
   }
 </style>

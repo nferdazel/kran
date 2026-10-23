@@ -265,35 +265,39 @@
   <title>{m.common_app_title()} — {m.app_title()}</title>
 </svelte:head>
 
-<div class="kran-toolbar">
-  <h1>{m.app_title()}</h1>
-  <p>
-    <span class="kran-muted">{m.app_signed_in_as({ name: session.fullName })}</span>
+<div class="kran-toolbar app-toolbar">
+  <div>
+    <h1 class="app-title">{m.app_title()}</h1>
+    <!-- Denyut realtime (spec §19.2): status + kapan data terakhir disegarkan, diumumkan halus. -->
+    <p class="app-realtime" role="status" aria-live="polite">
+      <span class="kran-muted">{m.realtime_label()}:</span>
+      {#if realtimeState === "connected"}
+        <span class="kran-badge kran-badge--ok">
+          <span class="kran-status-dot" aria-hidden="true"></span>
+          <span>{m.realtime_connected()}</span>
+        </span>
+      {:else if realtimeState === "reconnecting"}
+        <span class="kran-badge kran-badge--warning">
+          <span aria-hidden="true">▲</span>
+          <span>{m.realtime_reconnecting()}</span>
+        </span>
+      {:else}
+        <span class="kran-badge">
+          <span>{m.realtime_connecting()}</span>
+        </span>
+      {/if}
+      {#if updatedAt}
+        <span class="kran-muted">{m.realtime_updated({ time: formatClock(updatedAt) })}</span>
+      {/if}
+    </p>
+  </div>
+
+  <div class="app-session-actions">
+    <span class="kran-badge kran-badge--primary">{m.app_signed_in_as({ name: session.fullName })}</span>
     <a class="kran-button" href="/app/password">{m.app_change_password()}</a>
     <button class="kran-button" type="button" onclick={logout}>{m.app_logout()}</button>
-  </p>
+  </div>
 </div>
-
-<!-- Denyut realtime (spec §19.2): status + kapan data terakhir disegarkan, diumumkan halus. -->
-<p role="status" aria-live="polite">
-  <span class="kran-muted">{m.realtime_label()}:</span>
-  {#if realtimeState === "connected"}
-    <span class="kran-status kran-status--ok">
-      <span class="kran-status__icon" aria-hidden="true">✔</span>
-      {m.realtime_connected()}
-    </span>
-  {:else if realtimeState === "reconnecting"}
-    <span class="kran-status kran-status--warning">
-      <span class="kran-status__icon" aria-hidden="true">▲</span>
-      {m.realtime_reconnecting()}
-    </span>
-  {:else}
-    <span class="kran-muted">{m.realtime_connecting()}</span>
-  {/if}
-  {#if updatedAt}
-    <span class="kran-muted">{m.realtime_updated({ time: formatClock(updatedAt) })}</span>
-  {/if}
-</p>
 
 {#if loading}
   <p role="status">{m.app_loading()}</p>
@@ -305,6 +309,33 @@
   {#if notice}
     <p role="status">{notice}</p>
   {/if}
+
+  <!-- Strip ringkasan parameter & audit -->
+  <div class="kran-metric-strip">
+    <div class="kran-metric-card">
+      <span class="kran-metric-card__label">{m.params_active_heading()}</span>
+      <span class="kran-metric-card__value kran-num">{active.length}</span>
+      <span class="kran-metric-card__sub">Konfigurasi operasional aktif</span>
+    </div>
+
+    <div class="kran-metric-card">
+      <span class="kran-metric-card__label">{m.params_pending_heading()}</span>
+      <span class="kran-metric-card__value kran-num">{pending.length}</span>
+      <div class="kran-metric-card__sub">
+        {#if pending.length > 0}
+          <span class="kran-badge kran-badge--warning">Perlu tindakan checker</span>
+        {:else}
+          <span class="kran-badge kran-badge--ok">Tidak ada antrean</span>
+        {/if}
+      </div>
+    </div>
+
+    <div class="kran-metric-card">
+      <span class="kran-metric-card__label">{m.audit_heading()}</span>
+      <span class="kran-metric-card__value kran-num">{audit.length}</span>
+      <span class="kran-metric-card__sub">Aktivitas terlacak</span>
+    </div>
+  </div>
 
   {#if canSubmit}
     <section class="kran-card" aria-labelledby="submit-heading">
@@ -480,3 +511,38 @@
     {/if}
   </section>
 {/if}
+
+<style>
+  .app-toolbar {
+    padding-block: var(--space-4);
+    padding-inline: var(--space-4);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-raised);
+    margin-block-end: var(--space-4);
+  }
+
+  .app-title {
+    margin: 0;
+    font-size: var(--text-xl);
+    line-height: var(--line-height-tight);
+    font-weight: 600;
+  }
+
+  .app-realtime {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-block-start: var(--space-1);
+    margin-block-end: 0;
+    font-size: var(--text-xs);
+  }
+
+  .app-session-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+</style>

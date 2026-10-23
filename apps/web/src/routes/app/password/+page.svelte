@@ -57,15 +57,17 @@
   <title>{m.common_app_title()} — {m.password_title()}</title>
 </svelte:head>
 
-<div class="kran-toolbar">
-  <h1>{m.password_title()}</h1>
-  <p>
-    <span class="kran-muted">{m.app_signed_in_as({ name: session.fullName })}</span>
+<div class="kran-toolbar password-toolbar">
+  <div>
+    <h1 class="password-title">{m.password_title()}</h1>
+  </div>
+  <div class="password-session-actions">
+    <span class="kran-badge kran-badge--primary">{m.app_signed_in_as({ name: session.fullName })}</span>
     <button class="kran-button" type="button" onclick={logout}>{m.app_logout()}</button>
-  </p>
+  </div>
 </div>
 
-<section class="kran-card" aria-labelledby="ganti-kata-sandi">
+<section class="kran-card password-card" aria-labelledby="ganti-kata-sandi">
   <h2 id="ganti-kata-sandi">{m.password_title()}</h2>
   <p class="kran-muted">{m.password_intro()}</p>
 
@@ -120,3 +122,32 @@
     </form>
   {/if}
 </section>
+
+<style>
+  .password-toolbar {
+    padding-block: var(--space-4);
+    padding-inline: var(--space-4);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-raised);
+    margin-block-end: var(--space-4);
+  }
+
+  .password-title {
+    margin: 0;
+    font-size: var(--text-xl);
+    line-height: var(--line-height-tight);
+    font-weight: 600;
+  }
+
+  .password-session-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .password-card {
+    max-inline-size: 36rem;
+  }
+</style>
