@@ -17,6 +17,7 @@ import {
   cashIdentity,
   isAccountId,
   previewAmount,
+  shortcutModeForKey,
   tellerProblemMessage,
   transferIdentity,
   validateAmount,
@@ -249,5 +250,22 @@ describe("tellerProblemMessage: params.reason", () => {
     expect(tellerProblemMessage(problem(500, undefined, "error_internal_error"))).toBe(
       m.error_internal_error(),
     );
+  });
+});
+
+describe("shortcutModeForKey", () => {
+  const shortcuts = { DEPOSIT: "F4", WITHDRAWAL: "F5", TRANSFER: "F9" };
+
+  it("memetakan tombol yang dikonfigurasi, tanpa peduli huruf besar/kecil", () => {
+    expect(shortcutModeForKey(shortcuts, "F4")).toBe("DEPOSIT");
+    expect(shortcutModeForKey(shortcuts, "f5")).toBe("WITHDRAWAL");
+    expect(shortcutModeForKey(shortcuts, " F9 ")).toBe("TRANSFER");
+  });
+
+  it("tombol lain atau parameter kosong tidak memicu mode", () => {
+    expect(shortcutModeForKey(shortcuts, "F6")).toBeNull();
+    expect(shortcutModeForKey(shortcuts, "")).toBeNull();
+    expect(shortcutModeForKey({}, "F4")).toBeNull();
+    expect(shortcutModeForKey({ DEPOSIT: "" }, "")).toBeNull();
   });
 });

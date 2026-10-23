@@ -47,6 +47,7 @@
   } from "#lib/app/teller-session.js";
   import {
     NARRATION_MAX_LENGTH,
+    SHORTCUT_PARAM_KEYS,
     cashIdentity,
     ACCOUNT_NO_MAX_LENGTH,
     loadDepositAccountByNo,
@@ -54,6 +55,7 @@
     postCashTransaction,
     postTransfer,
     previewAmount,
+    shortcutModeForKey,
     tellerProblemMessage,
     transferIdentity,
     validateCashForm,
@@ -114,6 +116,9 @@
   let accountLoading = $state(false);
   let accountError = $state("");
   let loadedAtMs = $state<number | null>(null);
+
+  // Pintasan papan tunai (T-095), dibaca dari parameter; kosong = tidak aktif.
+  let shortcuts = $state<Partial<Record<TellerMode, string>>>({});
 
   // Form transaksi.
   let mode = $state<TellerMode>("DEPOSIT");
@@ -261,6 +266,23 @@
     errorKind = "none";
     idempotencyKey = "";
     idempotencyIdentity = "";
+  }
+
+  async function loadShortcuts(): Promise<void> {
+    try {
+      const { data, response } = await api.GET("/api/v1/params");
+      if (!response.ok || !data) return;
+      const next: Partial<Record<TellerMode, string>> = {};
+      for (const item of data.items) {
+        const mode = (Object.keys(SHORTCUT_PARAM_KEYS) as TellerMode[]).find(
+          (candidate) => SHORTCUT_PARAM_KEYS[candidate] === item.key,
+        );
+        if (mode !== undefined && typeof item.value === "string") next[mode] = item.value;
+      }
+      shortcuts = next;
+    } catch {
+      // Pintasan opsional: tanpa parameter yang terbaca, tombol biasa tetap bekerja.
+    }
   }
 
   async function focusField(field: TellerField): Promise<void> {
@@ -784,13 +806,20 @@
         return;
       }
     }
-    // TODO(T-095): pintasan papan tunai (F2 cari anggota, F4 setor, F5 tarik, F9 PB) akan dibaca dari
-    // parameter `platform.ui.shortcut.<action>`. Belum diikat di sini: role teller belum boleh membaca
-    // parameter platform, dan tombol tidak boleh dikarang sebagai konstanta yang mengaku terkonfigurasi.
+    // Pintasan papan tunai (T-095): hanya di form, tanpa modifier, dan hanya bila parameternya
+    // terbaca. F2 (cari anggota) belum ada karena pencarian anggota belum ada.
+    if (phase !== "edit" || account === null || event.metaKey || event.ctrlKey || event.altKey) return;
+    const shortcut = shortcutModeForKey(shortcuts, event.key);
+    if (shortcut !== null) {
+      event.preventDefault();
+      mode = shortcut;
+      void focusField("amount");
+    }
   }
 
   onMount(() => {
     if (!canPost) return;
+    void loadShortcuts();
     // Deep link `?accountNo=` (brief §2.4): layar bisa dibuka dari tautan rekening.
     const deepLinkNo = page.url.searchParams.get("accountNo");
     if (deepLinkNo !== null && deepLinkNo.trim() !== "") {

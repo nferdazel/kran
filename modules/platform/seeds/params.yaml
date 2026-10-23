@@ -188,3 +188,31 @@
   sensitivity: NORMAL
   provenance: { class: teknis }
   default_pack: { base: 24 }
+
+# --- Pintasan papan tunai teller (T-095) ----------------------------------------------------
+# Nilai = nama tombol KeyboardEvent.key (mis. `F4`). UI tidak punya fallback hardcode: bila
+# parameter tidak terbaca (mis. role teller tanpa `platform.param.read`), pintasan tidak aktif dan
+# tombol biasa tetap dipakai. Perubahan nilai mengikuti alur maker-checker parameter.
+- key: platform.ui.shortcut.deposit
+  type: string
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { maxLength: 16 }
+  sensitivity: NORMAL
+  provenance: { class: kebijakan }
+  default_pack: { base: F4 }
+
+- key: platform.ui.shortcut.withdrawal
+  type: string
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { maxLength: 16 }
+  sensitivity: NORMAL
+  provenance: { class: kebijakan }
+  default_pack: { base: F5 }
+
+- key: platform.ui.shortcut.transfer
+  type: string
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { maxLength: 16 }
+  sensitivity: NORMAL
+  provenance: { class: kebijakan }
+  default_pack: { base: F9 }

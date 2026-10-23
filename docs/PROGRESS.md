@@ -2247,3 +2247,19 @@ Batasan yang dibuka: O-097 (GL kas teller), O-098 (top-up vault = T-107), O-099 
 - **Belum operasional**: `teller.vault` produksi belum diisi dan T-107 (top-up) belum ada; sesi kas
   tidak bisa dibuka sampai runbook §vault dijalankan. UI teller menampilkan galat yang jujur.
 - Sisa Fase 2: T-109 (seed dev + e2e teller), T-095 (keyboard-only), O-097 (GL kas teller).
+
+## 23 Okt 2026 — Fase 2 SELESAI (T-095/T-109, gate penuh hijau)
+
+- T-109: seed dev `packs/base/seed/0002_dev_teller.sql` (grant dev + vault cabang uji) dan
+  `apps/web/tests/e2e/teller.spec.ts` (alur keyboard-only buka sesi → setor → tutup + axe 3 keadaan
+  x 2 tema x 2 locale; cleanup sesi sisa supaya run ulang deterministik).
+- T-095: parameter `platform.ui.shortcut.{deposit,withdrawal,transfer}` (F4/F5/F9), dibaca
+  `GET /api/v1/params` saat mount, tanpa fallback hardcode; unit test pemetaan + e2e F5/F9/F4.
+- Gate: `./task ci` **hijau** (`/tmp/ci-fase2.log`, `== CI hijau`), termasuk `task e2e` 26 test.
+  `./task check-fast` hijau setelah perubahan skrip ops.
+- Ops: `kran-alert.sh` tidak lagi memprobe saat lock deploy dipegang (alert "migrasi expand
+  tertunda" saat deploy = jendela normal). Skrip sudah disalin ke server dan diuji dry-run +
+  simulasi lock (`852dc9d`).
+- Milestone report: `docs/milestones/M2-report.md`. Batas: cetak/PDF (ADR-013), GL kas (O-097),
+  top-up vault (T-107), format nomor (D-123).
+- **Belum di-deploy** ke produksi setelah commit terakhir; menunggu keputusan pemilik.

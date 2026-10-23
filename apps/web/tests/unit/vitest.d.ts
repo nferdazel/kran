@@ -26,6 +26,7 @@ declare module "vitest" {
     toContain(item: unknown): void;
     toMatch(pattern: RegExp | string): void;
     toBeGreaterThan(value: number): void;
+    toBeNull(): void;
   }
 
   export function expect<T = unknown>(actual: T): Matchers;
