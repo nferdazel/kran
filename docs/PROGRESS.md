@@ -2318,3 +2318,15 @@ Batasan yang dibuka: O-097 (GL kas teller), O-098 (top-up vault = T-107), O-099 
 - **Deploy produksi**: `6f3871f..5884a17`, `.deployed_rev = 5884a17f6463`, `/readyz` 200; bundle web
   memuat teks login baru (i18n) — revamp live. Vault pilot Rp10.000.000 (D-129) tetap.
 
+## 23 Okt 2026 — Revamp arsitektur layout (sidebar workstation, ledger console, teller cockpit)
+
+- Branch `feat/frontend-architecture-revamp` (basis `d13aa12`) di-review sebelum merge. Perbaikan:
+  teks hardcoded (sidebar, pencarian parameter, filter COA, passbook) → i18n id+en (12 key);
+  tombol nominal cepat hardcoded dihapus; total ledger dihitung dari baris terfilter; duplikasi
+  nomor/status passbook dihapus (memperbaiki e2e strict locator); emoji nav + CSS mati dibuang;
+  sidebar brand hanya desktop (tidak dobel di mobile); komentar penjelas grid shell dikembalikan.
+- Verifikasi: `check-fast` hijau, i18n 331 key, svelte-check 0/0, vitest web 57 + ui 117,
+  `./task e2e` **37 passed**.
+- **Deploy produksi**: `d13aa12..c998462`, `.deployed_rev = c9984625ff36`, `/readyz` 200; bundle web
+  memuat teks sidebar baru — revamp arsitektur live.
+
