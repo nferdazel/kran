@@ -38,6 +38,14 @@ export const appNavLinks: readonly NavLink[] = [
     permissions: ["ledger.journal.read"],
   },
   {
+    // Satu pintu untuk kerja admin buku besar (T-116). Izinnya `ledger.period.manage` supaya
+    // pengguna baca-saja tidak melihatnya; seksi di dalam layar disaring sendiri oleh
+    // `ledger.period.manage` / `ledger.coa.manage` / `ledger.journal.reverse`.
+    href: "/app/ledger/admin",
+    label: (locale) => m.common_nav_ledger_admin({}, { locale }),
+    permissions: ["ledger.period.manage"],
+  },
+  {
     href: "/app/teller",
     label: (locale) => m.common_nav_teller({}, { locale }),
     permissions: ["teller.transaction.post"],
