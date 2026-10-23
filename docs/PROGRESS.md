@@ -2174,3 +2174,41 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
 - Bukti: `ttransfer` 3, `ittransfer` 6, `itapi_teller` 23, `tcontract` 5; `./task ci` hijau;
   mutation check guard saldo gagal saat dihapus.
 - Batas GL net-nol + atribusi cabang sumber: D-124, ACCEPTED-LIMITS, T-101.
+
+---
+
+## 2026-10-23 — T-093 sesi teller + vault + `cash_movement`
+
+**Konteks**: branch `feat/fase2`. Implementasi modul baru `teller` (schema + API sesi + gerbang
+transaksi tunai 093b), keputusan lengkap di `docs/DECISIONS.md` D-125, rencana di
+`docs/tasks/T-093.md`.
+
+**Status: IN_PROGRESS — belum DONE.** `./task ci` belum dijalankan (gate dipegang pemilik sesi);
+yang dijalankan gate terfokus + `./task check-fast`/`./task openapi`. Label
+**HUMAN-REVIEW-REQUIRED** (mutasi vault + variance kas, AGENTS.md §8). Tinjauan independen belum.
+
+**Bukti (perintah + ringkasan, 23 Okt 2026)**:
+
+```
+./task check-fast      → format 206 berkas ok; archcheck ok; lint-nomagic ok; paramgen ok; i18n ok;
+                         shellcheck 8 skrip ok
+./task openapi         → lint kontrak (fail-severity warn) ok; klien TS sinkron; typecheck ok
+./task dbtools validate→ urutan aman: teller/0006 @seq6 setelah platform/0006 + deposit/0004
+./task test tsession              → 13 [OK]
+./task test itsession             → 11 [OK]
+./task test itapi_teller          → 26 [OK] (23 lama + 3 sesi baru)
+./task test itapi_teller_sessions → 11 [OK]
+./task test tcontract             → 5 [OK]
+```
+
+**Mutation check** (perbaikan dibalik → uji harus FAILED, lalu dipulihkan):
+
+- hapus gerbang sesi di `handlers_teller.nim` → `itapi_teller` **FAILED** (2 test sesi);
+- hapus partial unique `teller_session_one_open_uq` → `itsession` **FAILED**;
+- hapus `AND balance >= ?` di `debitVault` → `itsession` **FAILED**;
+- hapus `FOR UPDATE` di `sessionByIdForUpdate` → `itsession` baru (transaksi vs penutupan
+  bersamaan) **FAILED**; tanpa test itu mutasi ini lolos karena `WHERE status='OPEN'` sudah
+  mengamankan tutup-ganda — test ditambahkan justru untuk menutup celah kunci itu.
+
+**Sisa**: `./task ci` penuh + tinjauan independen (AGENTS §4 langkah 4–7); tandai DONE setelah itu.
+Batasan yang dibuka: O-097 (GL kas teller), O-098 (top-up vault = T-107), O-099 (limit kas).

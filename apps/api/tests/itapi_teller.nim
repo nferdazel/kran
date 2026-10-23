@@ -9,7 +9,7 @@
 ## `SAV-DEP` ber-versi ACTIVE, periode Oktober OPEN, dan beberapa rekening sintetis. Business date
 ## dikunci lewat `FakeClock` (2026-10-22) supaya periode uji deterministik.
 
-import std/[httpclient, json, net, os, strutils, times, unittest]
+import std/[httpclient, json, net, options, os, strutils, times, unittest]
 
 import mummy
 import db_connector/db_postgres
@@ -28,6 +28,8 @@ import party/domain/party
 import party/infrastructure/party_repo
 import product/domain/product
 import product/infrastructure/product_repo
+import teller/domain/session
+import teller/infrastructure/session_repo
 
 import ../src/[context, deposit_posting, readiness, server]
 
@@ -35,13 +37,17 @@ const
   ContractPath = "packages/contracts/openapi/kran-api.yaml"
   CashPath = "/api/v1/teller/cash-transactions"
   TransferPath = "/api/v1/teller/transfers"
+  SessionsPath = "/api/v1/teller/sessions"
+  SessionClosePath = "/api/v1/teller/sessions/{sessionId}/close"
   LoginPath = "/api/v1/auth/login"
   MakerUser = "dev.maker"
   CheckerUser = "dev.checker"
+  SessionTellerUser = "dev.sessionteller"
   DevPassword = "rahasia-panjang-123"
   CookieName = "kran_session"
   BranchId = "11111111-1111-7111-8111-111111111111"
   OtherBranchId = "22222222-2222-7222-8222-222222222222"
+  SessionBranchId = "33333333-3333-7333-8333-333333333333"
   ProductCode = "SAV-DEP"
   BusinessDate = "2026-10-22"
   ## Cukup untuk seluruh suite (tiap test memakai rekening segar); fixture di bawah menyiapkan
@@ -63,6 +69,7 @@ var
   BrokenAccountId: string
   OtherBranchAccountId: string
   HighMinAccountId: string
+  SessionBranchAccountId: string
 
 # --- penyiapan DB: skema bersih + seed pack + fixture party/produk/rekening --------------------
 block:
@@ -194,6 +201,38 @@ block:
   doAssert approveVersion(db, verDest.versionId, approver), "versi tujuan gagal di-approve"
   HighMinAccountId = $seedAccount(party.partyId, prodDest.productId, verDest.versionId,
     Id(BranchId), "SAV-DEST")
+
+  # --- T-093b: sesi kas. Transaksi tunai WAJIB sesi OPEN, jadi fixture membukanya lewat
+  # repo/domain (bukan flag bypass gate). `dev.maker` (aktor test sukses) memakai `BranchId`;
+  # `dev.sessionteller` memakai `SessionBranchId` untuk kasus tanpa sesi / tutup / replay.
+  execScript(db, """
+    INSERT INTO platform.app_user (user_id, username, full_name, password_algo, password_hash,
+                                   must_change_password)
+    SELECT gen_random_uuid(), 'dev.sessionteller', 'Dev Session Teller', password_algo,
+           password_hash, false
+      FROM platform.app_user WHERE username = 'dev.maker'
+  """)
+  execScript(db, """
+    INSERT INTO platform.user_role (user_id, role_id, branch_id)
+    SELECT u.user_id, r.role_id, NULL
+      FROM platform.app_user u, platform.role r
+     WHERE u.username = 'dev.sessionteller' AND r.code = 'platform_admin'
+    ON CONFLICT DO NOTHING
+  """)
+  for branch in [BranchId, SessionBranchId]:
+    execScript(db, "INSERT INTO teller.vault (branch_id, balance) VALUES ('" & branch &
+      "', '1000000.0000') ON CONFLICT (branch_id) DO UPDATE SET balance = EXCLUDED.balance")
+  SessionBranchAccountId = $seedAccount(party.partyId, prod.productId, ver.versionId,
+    Id(SessionBranchId))
+
+  let makerUserId = parseId(db.getValue(
+    sql"SELECT user_id::text FROM platform.app_user WHERE username = 'dev.maker'")).value()
+  let makerSession = newOpenSession(newId(fixtureClock), Id(BranchId), makerUserId, BusinessDate,
+    zero(), makerUserId)
+  discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+    doAssert debitVault(d, Id(BranchId), zero()).isSome
+    doAssert insertOpenSession(d, makerSession), "sesi fixture dev.maker gagal dibuka"
+    1)
 
   # Id rekening dipakai test lewat variabel global sederhana.
   AccountIds = newSeq[string](accountIds.len)
@@ -356,6 +395,13 @@ proc transferCount(accountId: string): int =
   dbCount(sql"""
     SELECT count(*)::text FROM deposit.transfer
      WHERE source_account_id = ? OR destination_account_id = ?""", accountId, accountId)
+
+proc cashMovementCount(sessionId: string): int =
+  dbCount(sql"SELECT count(*)::text FROM teller.cash_movement WHERE session_id = ?", sessionId)
+
+proc cashMovementTypeCount(sessionId, movementType: string): int =
+  dbCount(sql"""SELECT count(*)::text FROM teller.cash_movement
+                 WHERE session_id = ? AND movement_type = ?""", sessionId, movementType)
 
 proc journalCount(eventType: string): int =
   dbCount(sql"SELECT count(*)::text FROM ledger.journal WHERE source_event = ?", eventType)
@@ -816,4 +862,96 @@ suite "teller: periode tertutup":
         UPDATE ledger.period SET status = 'OPEN', closed_at = NULL, closed_by = NULL
          WHERE starts_on <= '2026-10-22'::date AND ends_on >= '2026-10-22'::date""")
       1)
+
+suite "teller: sesi kas menggerbang transaksi tunai (T-093b)":
+  test "tanpa sesi OPEN → 409 no_open_session, saldo & jurnal tidak berubah":
+    let token = tokenOf(login(SessionTellerUser))
+    check token.len > 0
+    let accountId = SessionBranchAccountId
+    let journalsBefore = journalCount("DepositPosted")
+
+    let reply = postJson(CashPath, cashBody(accountId, "DEPOSIT", "10.0000"), token)
+    check reply.code == 409
+    checkProblem(CashPath, "POST", "409", reply.body)
+    check reply.body["params"]["reason"].getStr() == "no_open_session"
+    check balanceOf(accountId) == "0.0000"
+    check txCount(accountId) == 0
+    check journalCount("DepositPosted") == journalsBefore
+
+  test "sesi dibuka → transaksi mencatat CASH_IN/CASH_OUT; tutup menghitung expected":
+    let token = tokenOf(login(SessionTellerUser))
+    let openResp = postJson(SessionsPath,
+      %*{"branchId": SessionBranchId, "openingFloat": "100.0000"}, token)
+    check openResp.code == 201
+    checkJson(SessionsPath, "POST", "201", openResp.body)
+    check openResp.body["status"].getStr() == "OPEN"
+    check openResp.body["branchId"].getStr() == SessionBranchId
+    let sessionId = openResp.body["sessionId"].getStr()
+
+    # Sesi kedua di cabang yang sama untuk teller yang sama ditolak.
+    let dup = postJson(SessionsPath, %*{"branchId": SessionBranchId, "openingFloat": "0.0000"},
+      token)
+    check dup.code == 409
+    check dup.body["params"]["reason"].getStr() == "session_already_open"
+
+    let deposit = postJson(CashPath, cashBody(SessionBranchAccountId, "DEPOSIT", "50.0000"), token)
+    check deposit.code == 201
+    let withdraw = postJson(CashPath,
+      cashBody(SessionBranchAccountId, "WITHDRAWAL", "20.0000"), token)
+    check withdraw.code == 201
+
+    check cashMovementCount(sessionId) == 2
+    check cashMovementTypeCount(sessionId, "CASH_IN") == 1
+    check cashMovementTypeCount(sessionId, "CASH_OUT") == 1
+
+    # expected = 100 float + 50 masuk - 20 keluar = 130.
+    let closeResp = postJson(SessionsPath & "/" & sessionId & "/close",
+      %*{"countedCash": "130.0000"}, token)
+    check closeResp.code == 200
+    checkJson(SessionClosePath, "POST", "200", closeResp.body)
+    check closeResp.body["expectedCash"].getStr() == "130.0000"
+    check closeResp.body["countedCash"].getStr() == "130.0000"
+    check closeResp.body["variance"].getStr() == "0.0000"
+    check closeResp.body["status"].getStr() == "CLOSED"
+
+    # Tutup kedua ditolak.
+    let closeAgain = postJson(SessionsPath & "/" & sessionId & "/close",
+      %*{"countedCash": "130.0000"}, token)
+    check closeAgain.code == 409
+    check closeAgain.body["params"]["reason"].getStr() == "session_not_open"
+
+  test "setelah tutup: transaksi baru 409, replay transaksi lama tetap 200":
+    let token = tokenOf(login(SessionTellerUser))
+    let openResp = postJson(SessionsPath,
+      %*{"branchId": SessionBranchId, "openingFloat": "0.0000"}, token)
+    check openResp.code == 201
+    let sessionId = openResp.body["sessionId"].getStr()
+
+    let body = cashBody(SessionBranchAccountId, "DEPOSIT", "10.0000")
+    let key = "teller-session-replay-1"
+    let first = postJson(CashPath, body, token, key)
+    check first.code == 201
+    let transactionId = first.body["transactionId"].getStr()
+    check cashMovementCount(sessionId) == 1
+
+    let closeResp = postJson(SessionsPath & "/" & sessionId & "/close",
+      %*{"countedCash": "10.0000"}, token)
+    check closeResp.code == 200
+    check closeResp.body["expectedCash"].getStr() == "10.0000"
+
+    # Sesi sudah CLOSED: transaksi tunai baru ditolak dan tidak menyentuh jurnal.
+    let journalsBefore = journalCount("DepositPosted")
+    let afterClose = postJson(CashPath, cashBody(SessionBranchAccountId, "DEPOSIT", "5.0000"),
+      token)
+    check afterClose.code == 409
+    checkProblem(CashPath, "POST", "409", afterClose.body)
+    check afterClose.body["params"]["reason"].getStr() == "no_open_session"
+    check journalCount("DepositPosted") == journalsBefore
+
+    # Replay yang sah setelah tutup harus mengembalikan respons tersimpan (bukan 409):
+    # gerbang sesi berada DI DALAM blok idempotensi.
+    let replay = postJson(CashPath, body, token, key)
+    check replay.code == 200
+    check replay.replayed == "true"
+    check replay.body["transactionId"].getStr() == transactionId
 

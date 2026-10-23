@@ -1,5 +1,9 @@
 ## Handler REST transaksi teller (T-088b tunai, T-088c pemindahbukuan; spec §9.2/§9.3/§13).
 ##
+## **Gerbang sesi kas (T-093b):** transaksi tunai wajib punya sesi `OPEN` milik pemanggil di cabang
+## rekening pada tanggal bisnis yang sama (`no_open_session` bila tidak) dan menulis satu baris
+## `teller.cash_movement`. PB **tidak** digerbang sesi (tidak menggerakkan uang fisik).
+##
 ## Composition root: validasi lintas-modul (rekening, binding versi produk, periode), posting jurnal
 ## **sinkron**, dan audit ditulis di sini dalam **satu** `withDbTx`. Modul `deposit`/`ledger` tetap
 ## murni (domain + repo SQL).
@@ -29,6 +33,8 @@ import deposit/infrastructure/transfer_repo
 import ledger/infrastructure/journal_repo
 import product/domain/product
 import product/infrastructure/product_repo
+import teller/domain/session
+import teller/infrastructure/session_repo
 
 import ./access
 import ./context
@@ -183,6 +189,20 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
               problem = "periode tanggal bisnis sudah ditutup"
               raise newException(ValueError, problem)
 
+            # Gerbang sesi kas (T-093b): transaksi tunai **wajib** punya sesi OPEN hari ini milik
+            # pemanggil di cabang rekening. Diletakkan **di dalam** blok idempotensi (bukan sebelum):
+            # replay yang sah setelah sesi ditutup harus mengembalikan respons tersimpan, bukan
+            # 409 palsu. `FOR KEY SHARE` membuat penutupan menunggu transaksi in-flight sehingga
+            # movement ini tidak hilang dari `expected_cash`.
+            let cashSessionOpt = lockOpenSession(db, account.branchId,
+              parseId(principal.user.userId).value(), businessDate)
+            if cashSessionOpt.isNone:
+              status = 409
+              reason = "no_open_session"
+              problem = "tidak ada sesi kas OPEN untuk teller ini di cabang rekening"
+              raise newException(ValueError, problem)
+            let cashSession = cashSessionOpt.get()
+
             var minBalance: Money
             try:
               minBalance = minBalanceFor(db, account.productVersionId)
@@ -243,6 +263,13 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
               narration: narration,
               journalId: journalId)
             insertTransaction(db, tx, actor)
+
+            # Arus kas laci: setor = uang masuk laci (CASH_IN), tarik = keluar (CASH_OUT). Satu
+            # baris per transaksi tunai (UNIQUE `transaction_id`), ditulis di transaksi DB yang sama
+            # supaya `expected_cash` saat tutup tidak pernah kehilangan transaksi ini.
+            let movementType = if direction == cdDeposit: cmCashIn else: cmCashOut
+            insertMovement(db, newCashMovement(newId(app.clock), cashSession.sessionId,
+              movementType, amount, txId, businessDate, $actor))
 
             let ctx = auditContextFor(principal, req, app.clock, "transaksi tunai " & $direction,
               $account.branchId)

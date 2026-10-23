@@ -1798,6 +1798,167 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/teller/sessions:
+    post:
+      operationId: openTellerSession
+      tags: [teller]
+      summary: Buka sesi kas teller
+      description: |
+        Membuka sesi kas untuk **pemanggil** di cabang `branchId`. Opening float didebit dari
+        `teller.vault` cabang (saldo tidak boleh negatif) dan menjadi float awal laci. Satu sesi
+        `OPEN` per (teller, cabang) — partial unique index; sesi `OPEN` lain → 409
+        `session_already_open`.
+
+        Tutup sesi (`POST …/sessions/{sessionId}/close`) mencatat `expected_cash`, `counted_cash`,
+        dan `variance`. **Tidak ada jurnal GL** untuk kas teller/variance (keputusan akuntansi
+        belum diambil; lihat `docs/ACCEPTED-LIMITS.md`).
+
+        `Idempotency-Key` wajib. Replay kunci+isi sama → 200 + `Idempotent-Replayed`; kunci sama isi
+        beda → 409. Izin `teller.session.open` harus dipegang di cabang ini
+        (`params.reason=branch_not_allowed` bila hanya di cabang lain). Konflik domain 409 memakai
+        `params.reason`: `session_already_open`, `insufficient_vault`, `vault_not_configured`.
+
+        **HUMAN-REVIEW-REQUIRED** (mutasi vault + variance kas, AGENTS.md §8).
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TellerSessionOpenRequest"
+      responses:
+        "200":
+          description: |
+            Replay permintaan sebelumnya: `Idempotency-Key` sama dengan isi yang sama. Body adalah
+            respons asli yang tersimpan; vault tidak didebit lagi.
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TellerSession"
+        "201":
+          description: Sesi kas dibuka + vault didebit opening float
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TellerSession"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/teller/sessions/current:
+    get:
+      operationId: getCurrentTellerSession
+      tags: [teller]
+      summary: Sesi kas OPEN pemanggil di cabang
+      description: |
+        Mengembalikan sesi kas `OPEN` milik **pemanggil** di cabang `branchId`. Bila tidak ada,
+        balasannya **404** dengan `params.reason=session_not_open` (bukan 200 dengan sesi `null`):
+        konsisten dengan konvensi repo yang memakai `params.reason` eksplisit. Izin
+        `teller.session.read` harus dipegang di cabang ini.
+
+        **HUMAN-REVIEW-REQUIRED** (jalur kas teller, AGENTS.md §8).
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: branchId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Cabang sesi kas.
+      responses:
+        "200":
+          description: Sesi kas OPEN milik pemanggil
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TellerSession"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/teller/sessions/{sessionId}/close:
+    post:
+      operationId: closeTellerSession
+      tags: [teller]
+      summary: Tutup sesi kas teller
+      description: |
+        Menutup sesi kas: `expected_cash = opening_float + Σ CASH_IN − Σ CASH_OUT` (dari
+        `teller.cash_movement`), `counted_cash` dari penghitungan fisik, dan
+        `variance = counted_cash − expected_cash` (positif = kas lebih, negatif = kas kurang).
+        Vault cabang bertambah sebesar **counted_cash** (uang fisik yang masuk vault, bukan
+        expected). Selisih **bukan** 409: variance dicatat + diaudit.
+
+        `sessionId` yang tidak dikenal → 404; sesi yang sudah `CLOSED` → 409 `session_not_open`;
+        sesi milik teller lain → 409 `session_not_owned`. Izin `teller.session.close` harus dipegang
+        di cabang sesi.
+
+        `Idempotency-Key` wajib (operasi kas). Dua penutupan bersamaan diserialisasi `FOR UPDATE`:
+        satu 200, satu 409, vault bertambah sekali.
+
+        **HUMAN-REVIEW-REQUIRED** (mutasi vault + variance kas, AGENTS.md §8).
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TellerSessionCloseRequest"
+      responses:
+        "200":
+          description: |
+            Sesi ditutup + vault bertambah sebesar `countedCash`. Body replay (`Idempotency-Key`
+            sama) juga 200 dengan `Idempotent-Replayed: true`.
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TellerSessionClose"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
   /api/v1/teller/cash-transactions:
     post:
       operationId: postCashTransaction
@@ -1814,7 +1975,8 @@ paths:
         beda → 409. Panjang efektif kunci maksimal **156** karakter (kunci jurnal menambah 44
         karakter: `teller:` + UUID pemanggil + `:`); lebih dari itu → 400. Izin `teller.transaction.post` harus dipegang di **cabang rekening**
         (`params.reason=branch_not_allowed` bila hanya di cabang lain). Konflik domain 409 memakai
-        `params.reason`: `account_not_active`, `insufficient_funds`, `period_closed`.
+        `params.reason`: `no_open_session` (tidak ada sesi kas `OPEN` hari ini untuk teller di cabang
+        rekening), `account_not_active`, `insufficient_funds`, `period_closed`.
 
         **HUMAN-REVIEW-REQUIRED** (jalur finansial, AGENTS.md §8).
       security:
@@ -3200,3 +3362,88 @@ components:
           type: string
           format: date
           description: Tanggal buku PB (`YYYY-MM-DD`).
+
+    TellerSessionOpenRequest:
+      type: object
+      additionalProperties: false
+      required: [branchId, openingFloat]
+      properties:
+        branchId:
+          type: string
+          format: uuid
+          description: Cabang sesi kas; izin `teller.session.open` harus dipegang di sini.
+        openingFloat:
+          type: string
+          description: Float awal laci sebagai desimal string ≥ 0 (tanpa float), mis. `"500000.0000"`.
+        note:
+          type: string
+          maxLength: 200
+          description: Catatan opsional (batas teknis kolom 200 karakter).
+
+    TellerSession:
+      type: object
+      additionalProperties: false
+      required: [sessionId, tellerId, branchId, status, openingFloat, openedAt]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        tellerId:
+          type: string
+          format: uuid
+          description: Pengguna teller pemilik sesi.
+        branchId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [OPEN]
+        openingFloat:
+          type: string
+          description: Float awal laci, desimal string 4 desimal (tanpa float).
+        openedAt:
+          type: string
+          description: ISO-8601 UTC.
+
+    TellerSessionCloseRequest:
+      type: object
+      additionalProperties: false
+      required: [countedCash]
+      properties:
+        countedCash:
+          type: string
+          description: Kas fisik hasil hitung sebagai desimal string ≥ 0 (tanpa float).
+        note:
+          type: string
+          maxLength: 200
+          description: Catatan opsional (mis. alasan selisih kas).
+
+    TellerSessionClose:
+      type: object
+      additionalProperties: false
+      required: [sessionId, status, openingFloat, countedCash, expectedCash, variance, closedAt]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [CLOSED]
+        openingFloat:
+          type: string
+          description: Float awal laci, desimal string 4 desimal (tanpa float).
+        countedCash:
+          type: string
+          description: Kas fisik yang dihitung, desimal string 4 desimal.
+        expectedCash:
+          type: string
+          description: |
+            Kas yang seharusnya ada: `openingFloat` + Σ `CASH_IN` − Σ `CASH_OUT`, desimal string.
+        variance:
+          type: string
+          description: |
+            `countedCash − expectedCash` sebagai desimal string; positif = kas lebih, negatif =
+            kas kurang. Bukan error: selisih dicatat + diaudit.
+        closedAt:
+          type: string
+          description: ISO-8601 UTC.

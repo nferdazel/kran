@@ -22,6 +22,7 @@ import ./handlers_reports
 import ./handlers_param
 import ./handlers_party
 import ./handlers_teller
+import ./handlers_teller_sessions
 import ./health
 import ./problem
 
@@ -205,7 +206,19 @@ proc tellerRoutes*(): seq[RouteSpec] =
               operationId: "postTransfer", handler: handleTransfer),
   ]
 
+proc tellerSessionRoutes*(): seq[RouteSpec] =
+  ## Sesi kas teller + vault (T-093): buka/tutup + baca sesi berjalan. Izin `teller.session.*`
+  ## harus dipegang di cabang sesi (`authorizedAtBranch`).
+  @[
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/teller/sessions",
+              operationId: "openTellerSession", handler: handleOpenTellerSession),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/teller/sessions/current",
+              operationId: "getCurrentTellerSession", handler: handleGetCurrentTellerSession),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/teller/sessions/{sessionId}/close",
+              operationId: "closeTellerSession", handler: handleCloseTellerSession),
+  ]
+
 proc allRoutes*(): seq[RouteSpec] =
   systemRoutes() & authRoutes() & mfaRoutes() & paramRoutes() & auditRoutes() &
     partyRoutes() & kycRoutes() & ledgerRoutes() & journalRoutes() & productRoutes() &
-    depositRoutes() & tellerRoutes() & eventRoutes()
+    depositRoutes() & tellerRoutes() & tellerSessionRoutes() & eventRoutes()
