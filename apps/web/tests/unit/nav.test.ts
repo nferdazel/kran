@@ -54,10 +54,22 @@ describe("visibleNavLinks", () => {
   it("maker parameter (tanpa ledger.journal.read) tidak melihat buku besar", () => {
     const maker = ALL_PERMISSIONS.filter((code) => code !== "ledger.journal.read");
     expect(hrefs(visibleNavLinks(appNavLinks, maker))).toEqual([
+      "/app/ledger/admin",
       "/app/teller",
       "/app",
       "/app/products",
     ]);
+  });
+
+  it("hanya izin baca buku besar: item admin buku besar tersembunyi", () => {
+    const reader = ["ledger.journal.read", "ledger.period.read", "ledger.coa.read"];
+    expect(hrefs(visibleNavLinks(appNavLinks, reader))).toEqual(["/app/ledger"]);
+  });
+
+  it("tanpa izin mana pun tidak ada item admin buku besar", () => {
+    const codes = appNavLinks.find((link) => link.href === "/app/ledger/admin");
+    expect(codes?.permissions).toEqual(["ledger.period.manage"]);
+    expect(visibleNavLinks(appNavLinks, ["ledger.coa.manage"])).toEqual([]);
   });
 });
 
