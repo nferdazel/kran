@@ -2162,3 +2162,15 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
   (dump → `--up` → contract check → seed → restart → health). `deposit/0006` memberi
   `kran_runtime` akses schema `deposit`.
 - Endpoint belum dipakai UI; label HUMAN-REVIEW-REQUIRED tetap untuk jalur finansial.
+
+
+### T-088c — pemindahbukuan (23 Okt 2026)
+
+- `deposit/0007` tabel `transfer` + immutability, `deposit/0008` grant runtime, `ledger/0013` rule
+  `DepositTransferred` (D 201/K 201, net-nol di GL).
+- Anti-deadlock: kunci kedua saldo `FOR UPDATE` berurutan `account_id`; saldo sumber wajib
+  `balance - amount >= min_balance` versi produk **sumber**.
+- Review 2 putaran: authz cabang tujuan + min_balance sumber dibuktikan test; r2 APPROVE.
+- Bukti: `ttransfer` 3, `ittransfer` 6, `itapi_teller` 23, `tcontract` 5; `./task ci` hijau;
+  mutation check guard saldo gagal saat dihapus.
+- Batas GL net-nol + atribusi cabang sumber: D-124, ACCEPTED-LIMITS, T-101.
