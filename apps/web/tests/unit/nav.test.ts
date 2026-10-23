@@ -56,6 +56,7 @@ describe("visibleNavLinks", () => {
     expect(hrefs(visibleNavLinks(appNavLinks, maker))).toEqual([
       "/app/ledger/admin",
       "/app/teller",
+      "/app/accounts/open",
       "/app",
       "/app/products",
     ]);

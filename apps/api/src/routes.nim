@@ -117,10 +117,12 @@ proc auditRoutes*(): seq[RouteSpec] =
   ]
 
 proc partyRoutes*(): seq[RouteSpec] =
-  ## party: CIF + identitas dasar (T-070).
+  ## party: CIF + identitas dasar (T-070). Pencarian ringkas untuk pemilih pemilik rekening (T-115).
   @[
     RouteSpec(httpMethod: hmPost, path: "/api/v1/parties", operationId: "createParty",
               handler: handleCreateParty),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/parties", operationId: "searchParties",
+              handler: handleSearchParties),
     RouteSpec(httpMethod: hmGet, path: "/api/v1/parties/{partyId}",
               operationId: "getParty", handler: handleGetParty),
   ]
