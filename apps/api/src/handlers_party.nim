@@ -4,15 +4,15 @@
 ## parameter) karena transaksi harus atomik. Modul `party` sendiri tidak mengimpor internal
 ## `platform` (archcheck rule C); ia hanya menyediakan domain + repo SQL.
 
-import std/[json, options]
+import std/[json, options, sets, strutils]
 
 import mummy
 import db_connector/db_postgres
 
 import kernel/[clock, ids, paramkey, result]
 import kernel/generated/paramkeys
-import platform/domain/[audit, event, idempotency, scope]
-import platform/infrastructure/[audit_repo, auth_service, outbox_repo, param_repo]
+import platform/domain/[audit, authz, event, idempotency, scope]
+import platform/infrastructure/[audit_repo, auth_repo, auth_service, outbox_repo, param_repo]
 import party/domain/[cif, jsonparam, kyc, party]
 import party/infrastructure/[kyc_repo, party_repo]
 
@@ -26,6 +26,11 @@ import ./problem
 const
   permissionPartyCreate* = "party.party.create"
   permissionPartyRead* = "party.party.read"
+  ## Pencarian party (T-115): ambang panjang query & batas jumlah baris — nilai **teknis** (ukuran
+  ## respons/pencarian), bukan aturan bisnis.
+  minPartySearchQueryLength* = 2 # nomagic:ok ambang teknis panjang pencarian
+  defaultPartySearchLimit* = 20 # nomagic:ok ukuran halaman default
+  maxPartySearchLimit* = 50 # nomagic:ok batas atas ukuran respons
 
 type
   ## Kegagalan **konfigurasi/operasional** party (parameter CIF/KYC hilang atau salah bentuk,
@@ -42,6 +47,18 @@ proc partyJson(row: PartyRow): JsonNode =
     "status": $row.status,
     "branchId": $row.branchId,
     "createdAt": row.createdAt,
+  }
+
+proc partySummaryJson(row: PartyRow): JsonNode =
+  ## Bentuk **ringkas** untuk pencarian (T-115): hanya yang dibutuhkan pemilih pemilik rekening.
+  ## Tanpa `createdAt`, tanpa identitas/KYC — data pribadi tidak ikut keluar jalur ini.
+  %*{
+    "partyId": $row.partyId,
+    "cif": row.cif,
+    "kind": $row.kind,
+    "displayName": row.displayName,
+    "status": $row.status,
+    "branchId": $row.branchId,
   }
 
 proc handleCreateParty*(app: AppContext, req: Request) {.gcsafe.} =
@@ -254,4 +271,76 @@ proc handleGetParty*(app: AppContext, req: Request) {.gcsafe.} =
   of 200: req.respondJson(200, payload)
   of 404: req.respondProblem(pkNotFound, "Not Found", problem)
   of 403: req.respondProblem(pkForbidden, "Forbidden", problem)
+  else: req.respondProblem(pkInternal, "Internal Server Error", problem)
+
+proc handleSearchParties*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `GET /api/v1/parties?query=&branchId=&limit=` — cari party untuk pemilih pemilik rekening
+  ## (T-115). Hasil **ringkas** (tanpa identitas/KYC).
+  ##
+  ## Cabang: bila `branchId` diberikan, izin `party.party.read` harus dipegang di cabang itu
+  ## (kalau tidak → 403 `branch_not_allowed`); bila tidak, hasil dibatasi cabang yang boleh dibaca
+  ## pemanggil (`readableScopeFilter`) supaya cabang lain tidak bocor. Pemanggil tanpa grant
+  ## berbatas cabang melihat semua cabang.
+  let principal = requirePrincipal(app, req)
+  if principal.isNone:
+    return
+  if not requirePermission(app, req, principal.get(), permissionPartyRead):
+    return
+
+  let query = queryValue(req, "query").strip
+  if query.len < minPartySearchQueryLength:
+    req.respondProblem(pkBadRequest, "Bad Request",
+      "query minimal " & $minPartySearchQueryLength & " karakter")
+    return
+
+  var limit = defaultPartySearchLimit
+  let limitRaw = queryValue(req, "limit").strip
+  if limitRaw.len > 0:
+    try:
+      limit = parseInt(limitRaw)
+    except ValueError:
+      req.respondProblem(pkBadRequest, "Bad Request", "limit harus angka")
+      return
+    if limit < 1 or limit > maxPartySearchLimit:
+      req.respondProblem(pkBadRequest, "Bad Request",
+        "limit harus antara 1 dan " & $maxPartySearchLimit)
+      return
+
+  let branchRaw = queryValue(req, "branchId").strip
+  if branchRaw.len > 0 and parseId(branchRaw).isErr:
+    req.respondProblem(pkBadRequest, "Bad Request", "branchId harus UUID yang sah")
+    return
+
+  var status = 0
+  var problem = ""
+  var items = newJArray()
+  try:
+    withDbConn(app.pool, proc(db: DbConn) {.gcsafe.} =
+      dbCalls:
+        var allBranches = false
+        var branches: seq[string]
+        if branchRaw.len > 0:
+          if not authorizedAtBranch(db, principal.get(), branchRaw, permissionPartyRead):
+            status = 403
+            problem = "izin " & permissionPartyRead & " tidak dipegang di cabang ini"
+            return
+          branches = @[branchRaw]
+        else:
+          let scope = readableScopeFilter(grantsOf(db, principal.get().user.userId),
+            permissionPartyRead)
+          allBranches = scope.allBranches
+          for b in scope.branches:
+            branches.add b
+        for row in searchParties(db, query, allBranches, branches, limit):
+          items.add partySummaryJson(row)
+        status = 200)
+  except DbError:
+    status = 500
+    problem = "pencarian party gagal"
+
+  case status
+  of 200: req.respondJson(200, %*{"items": items})
+  of 403: req.respondProblem(newProblem(pkForbidden, "Forbidden", problem,
+      traceId = traceIdFrom(req), params = @[("reason", "branch_not_allowed")]))
+  of 400: req.respondProblem(pkBadRequest, "Bad Request", problem)
   else: req.respondProblem(pkInternal, "Internal Server Error", problem)

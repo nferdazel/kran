@@ -8,7 +8,7 @@
 ## seed pack `base`, seed pengguna dev, dan satu pemberian role `platform_admin` untuk `dev.maker`.
 ## Data dev murni sintetis.
 
-import std/[httpclient, json, net, os, strutils, times, unittest]
+import std/[httpclient, json, net, os, strutils, times, unittest, uri]
 
 import mummy
 import db_connector/db_postgres
@@ -33,6 +33,7 @@ const
   DevPassword = "rahasia-panjang-123"
   CookieName = "kran_session"
   BranchId = "11111111-1111-7111-8111-111111111111"
+  OtherBranchId = "22222222-2222-7222-8222-222222222222"
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
@@ -57,6 +58,23 @@ block:
     SELECT u.user_id, r.role_id, NULL
       FROM platform.app_user u, platform.role r
      WHERE u.username = 'dev.maker' AND r.code = 'platform_admin'
+    ON CONFLICT DO NOTHING
+  """)
+  # Pengguna ber-scope cabang (T-115): menguji penyaringan cabang pencarian — party di cabang lain
+  # tidak boleh ikut terlihat, dan izin di cabang itu tidak boleh dipegang. Password disalin dari
+  # dev.maker supaya login memakai kredensial dev.
+  execScript(db, """
+    INSERT INTO platform.app_user (user_id, username, full_name, password_algo, password_hash,
+                                   password_updated_at, must_change_password)
+    SELECT gen_random_uuid(), 'dev.branchmaker', 'Dev Branch Maker', password_algo, password_hash,
+           password_updated_at, false
+      FROM platform.app_user WHERE username = 'dev.maker'
+  """)
+  execScript(db, """
+    INSERT INTO platform.user_role (user_id, role_id, branch_id)
+    SELECT u.user_id, r.role_id, '""" & OtherBranchId & """'
+      FROM platform.app_user u, platform.role r
+     WHERE u.username = 'dev.branchmaker' AND r.code = 'platform_admin'
     ON CONFLICT DO NOTHING
   """)
 
@@ -149,6 +167,14 @@ proc call(verb, path, payload, token: string, idempotencyKey = "",
 proc getJson(path: string, token = ""): Reply =
   call("GET", path, "", token)
 
+proc searchPath(query: string, branchId = "", limit = ""): string =
+  ## Jalur pencarian party dengan query ter-encode (nama bisa memuat spasi).
+  result = PartyPath & "?query=" & encodeUrl(query)
+  if branchId.len > 0:
+    result.add "&branchId=" & branchId
+  if limit.len > 0:
+    result.add "&limit=" & limit
+
 proc postJson(path: string, payload: JsonNode, token = "", key = "",
     sendKey = true): Reply =
   call("POST", path, $payload, token, key, sendKey)
@@ -185,6 +211,19 @@ proc dbCount(query: SqlQuery, args: varargs[string, `$`]): int =
 
 proc partyBody(kind = "PERSON", name = "Budi Santoso"): JsonNode =
   %*{"kind": kind, "displayName": name, "branchId": BranchId}
+
+proc itemIds(reply: Reply): seq[string] =
+  if reply.body.kind != JObject or not reply.body.hasKey("items"):
+    return @[]
+  for item in reply.body["items"]:
+    result.add item["partyId"].getStr()
+
+proc itemByParty(reply: Reply, partyId: string): JsonNode =
+  if reply.body.kind == JObject and reply.body.hasKey("items"):
+    for item in reply.body["items"]:
+      if item["partyId"].getStr() == partyId:
+        return item
+  nil
 
 proc setCifPatternDirect(raw: string) =
   ## Jalan pintas uji: mengubah nilai aktif parameter langsung di DB. Jalur resmi (maker-checker)
@@ -364,3 +403,75 @@ test "idempotency: kunci sama replay, isi beda 409, tanpa header 400":
     sendKey = false)
   check tanpaKunci.code == 400
   checkProblem(PartyPath, "POST", "400", tanpaKunci.body)
+
+suite "party: pencarian pemilik rekening (T-115)":
+  test "cari lewat nama & awalan CIF, bentuk ringkas tanpa createdAt":
+    let token = tokenOf(login(MakerUser))
+    let created = postJson(PartyPath, partyBody(name = "Siti Aminah"), token)
+    check created.code == 201
+    let partyId = created.body["partyId"].getStr()
+    let cif = created.body["cif"].getStr()
+
+    let byName = getJson(searchPath("Siti"), token)
+    check byName.code == 200
+    checkJson(PartyPath, "GET", "200", byName.body)
+    let item = itemByParty(byName, partyId)
+    check not item.isNil
+    check item["cif"].getStr() == cif
+    check item["displayName"].getStr() == "Siti Aminah"
+    check item["status"].getStr() == "ACTIVE"
+    check item["branchId"].getStr() == BranchId
+    # Bentuk ringkas (kontrak `PartySummary`): tanpa `createdAt`.
+    check not item.hasKey("createdAt")
+
+    let byCif = getJson(searchPath(cif[0 ..< 3]), token)
+    check byCif.code == 200
+    check partyId in itemIds(byCif)
+
+  test "query terlalu pendek atau limit tidak sah → 400":
+    let token = tokenOf(login(MakerUser))
+    for path in [searchPath("a"), searchPath(" "), searchPath("si", limit = "0"),
+                 searchPath("si", limit = "999"), searchPath("si", limit = "abc")]:
+      let reply = getJson(path, token)
+      check reply.code == 400
+      checkProblem(PartyPath, "GET", "400", reply.body)
+
+  test "tanpa sesi → 401":
+    let reply = getJson(searchPath("Siti"))
+    check reply.code == 401
+    checkProblem(PartyPath, "GET", "401", reply.body)
+
+  test "branchId membatasi hasil ke satu cabang":
+    let token = tokenOf(login(MakerUser))
+    let here = postJson(PartyPath, partyBody(name = "Cari Cabang Satu"), token)
+    check here.code == 201
+    let hereId = here.body["partyId"].getStr()
+    let other = postJson(PartyPath, %*{"kind": "PERSON", "displayName": "Cari Cabang Dua",
+      "branchId": OtherBranchId}, token)
+    check other.code == 201
+    let otherId = other.body["partyId"].getStr()
+
+    let scoped = getJson(searchPath("Cari Cabang", branchId = BranchId), token)
+    check scoped.code == 200
+    checkJson(PartyPath, "GET", "200", scoped.body)
+    check hereId in itemIds(scoped)
+    check otherId notin itemIds(scoped)
+    for item in scoped.body["items"]:
+      check item["branchId"].getStr() == BranchId
+
+  test "pemanggil berbatas cabang: cabang lain tidak bocor, izin cabang lain → 403":
+    let token = tokenOf(login("dev.branchmaker"))
+    check token.len > 0
+
+    # Tanpa `branchId`: hanya cabang yang izinnya dipegang (OtherBranchId) yang terlihat.
+    let all = getJson(searchPath("Cari Cabang"), token)
+    check all.code == 200
+    check itemIds(all).len >= 1
+    for item in all.body["items"]:
+      check item["branchId"].getStr() == OtherBranchId
+
+    # Dengan `branchId` di cabang yang izinnya tidak dipegang → 403.
+    let denied = getJson(searchPath("Siti", branchId = BranchId), token)
+    check denied.code == 403
+    checkProblem(PartyPath, "GET", "403", denied.body)
+    check denied.body["params"]["reason"].getStr() == "branch_not_allowed"
