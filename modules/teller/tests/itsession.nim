@@ -359,7 +359,7 @@ proc gateWorker(args: GateArgs) {.thread.} =
           if locked.isNone:
             return false
           gateLocked.store(true)
-          sleep(500)
+          sleep(1500)
           insertMovement(d, newCashMovement(Id(args.movementId), Id(args.sessionId), cmCashIn,
             moneyFromString(args.amount).value(), Id(args.transactionId), businessDate, $actor))
           gateInserted.store(true)
@@ -381,8 +381,12 @@ suite "teller: transaksi tunai vs penutupan bersamaan":
     createThread(w, gateWorker, GateArgs(pool: dbPool, branch: branchF, teller: tellerB,
       sessionId: $sid, transactionId: $txId, movementId: $movementId,
       amount: money(25_0000).toDecimalString))
-    while not gateLocked.load():
+    var waited = 0
+    while not gateLocked.load() and waited < 2500:
       sleep(2)
+      inc waited
+    # Jangan menggantung bila worker gagal mengunci; gagal terlihat lebih baik daripada hang.
+    check gateLocked.load()
 
     # Penutupan dari koneksi lain HARUS menunggu `FOR UPDATE` vs `FOR KEY SHARE`; setelah transaksi
     # commit, `expected_cash` sudah memuat movement itu (tanpa ini movement bisa hilang).

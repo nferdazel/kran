@@ -3383,11 +3383,18 @@ components:
     TellerSession:
       type: object
       additionalProperties: false
-      required: [sessionId, tellerId, branchId, status, openingFloat, openedAt]
+      required: [sessionId, tellerId, branchId, businessDate, status, openingFloat, openedAt, note]
       properties:
         sessionId:
           type: string
           format: uuid
+        businessDate:
+          type: string
+          format: date
+          description: |
+            Tanggal bisnis sesi. `GET /sessions/current` mengembalikan sesi OPEN apa pun tanggalnya;
+            bila tanggalnya bukan tanggal bisnis hari ini, transaksi tunai ditolak
+            `session_business_date_mismatch` sampai sesi itu ditutup.
         tellerId:
           type: string
           format: uuid
@@ -3404,6 +3411,10 @@ components:
         openedAt:
           type: string
           description: ISO-8601 UTC.
+        note:
+          type: string
+          maxLength: 200
+          description: Catatan sesi ("" bila tidak diisi).
 
     TellerSessionCloseRequest:
       type: object
@@ -3421,11 +3432,14 @@ components:
     TellerSessionClose:
       type: object
       additionalProperties: false
-      required: [sessionId, status, openingFloat, countedCash, expectedCash, variance, closedAt]
+      required: [sessionId, businessDate, status, openingFloat, countedCash, expectedCash, variance, closedAt, note]
       properties:
         sessionId:
           type: string
           format: uuid
+        businessDate:
+          type: string
+          format: date
         status:
           type: string
           enum: [CLOSED]
@@ -3447,3 +3461,7 @@ components:
         closedAt:
           type: string
           description: ISO-8601 UTC.
+        note:
+          type: string
+          maxLength: 200
+          description: Catatan sesi ("" bila tidak diisi).

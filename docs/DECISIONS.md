@@ -2894,13 +2894,18 @@ punya arti tanpa sesi + arus laci. T-093 menambahkan itu di modul baru `teller`.
 
 **Keputusan.**
 1. **Transaksi tunai wajib sesi `OPEN`** milik pemanggil di cabang rekening pada `business_date`
-   yang sama; tanpanya 409 `no_open_session`. **PB tidak wajib sesi** (tidak menggerakkan uang fisik).
+   yang sama; tanpanya 409 `no_open_session`. Bila sesi OPEN ada tetapi tanggal bisnisnya lain →
+   409 `session_business_date_mismatch` (sesi lama harus ditutup dulu; `GET current` sengaja
+   menampilkannya dan menyertakan `businessDate`). **PB tidak wajib sesi** (tidak menggerakkan uang fisik).
 2. **Gerbang berada di dalam blok `withIdempotency`**: replay yang sah setelah sesi ditutup harus
    mengembalikan respons tersimpan, bukan 409 palsu. Gerbang membaca sesi `FOR KEY SHARE` supaya
    penutupan (`FOR UPDATE`) menunggu transaksi in-flight dan movement tidak hilang dari `expected_cash`.
 3. **`cash_movement` hanya 2 tipe** (`CASH_IN`/`CASH_OUT`); opening float & counted cash adalah kolom
    sesi (D-095: tidak ada tipe tanpa pemakai). Satu transaksi tunai = satu baris movement
    (`transaction_id` UNIQUE FK `deposit.transaction`), ditulis dalam satu `withDbTx` dengan transaksi.
+4. **`note` sesi dipersist** saat buka dan tutup (kolom 200 karakter); respons buka/current/tutup
+   menyertakan `businessDate` dan `note`. Tutup memeriksa kepemilikan **sebelum** status, supaya
+   `session_not_owned` deterministik untuk non-pemilik.
 4. **Satu sesi `OPEN` per (cabang, teller)** dijaga partial unique index; jalur repo memakai
    `INSERT ... ON CONFLICT ... WHERE status='OPEN' DO NOTHING` agar balapan dua buka → 409, bukan 500.
 5. **Vault `FOR UPDATE` implisit** (`UPDATE ... WHERE balance >= ?`, satu baris per cabang), tidak

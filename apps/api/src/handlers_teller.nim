@@ -198,8 +198,15 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
               parseId(principal.user.userId).value(), businessDate)
             if cashSessionOpt.isNone:
               status = 409
-              reason = "no_open_session"
-              problem = "tidak ada sesi kas OPEN untuk teller ini di cabang rekening"
+              # Sesi OPEN milik tanggal bisnis lain harus ditutup dulu; pesan "tidak ada sesi" akan
+              # menyesatkan karena `GET /sessions/current` memang menampilkannya.
+              if openSessionFor(db, account.branchId,
+                  parseId(principal.user.userId).value()).isSome:
+                reason = "session_business_date_mismatch"
+                problem = "sesi kas OPEN milik tanggal bisnis lain; tutup sesi itu dulu"
+              else:
+                reason = "no_open_session"
+                problem = "tidak ada sesi kas OPEN untuk teller ini di cabang rekening"
               raise newException(ValueError, problem)
             let cashSession = cashSessionOpt.get()
 

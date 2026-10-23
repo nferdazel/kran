@@ -878,6 +878,33 @@ suite "teller: sesi kas menggerbang transaksi tunai (T-093b)":
     check txCount(accountId) == 0
     check journalCount("DepositPosted") == journalsBefore
 
+  test "sesi OPEN tanggal bisnis lain → 409 session_business_date_mismatch":
+    let token = tokenOf(login(MakerUser))
+    let accountId = freshAccount()
+    let tellerId = dbText(sql"""
+      SELECT teller_user_id::text FROM teller.teller_session
+       WHERE status = 'OPEN' AND branch_id = ?
+         AND teller_user_id = (SELECT user_id FROM platform.app_user WHERE username = 'dev.maker')""",
+      BranchId)
+    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+      exec(d, sql"""
+        UPDATE teller.teller_session SET business_date = '2026-10-21'
+         WHERE teller_user_id = ?::uuid AND status = 'OPEN'""", tellerId)
+      1)
+    let current = call("GET", SessionsPath & "/current?branchId=" & BranchId, "", token)
+    check current.code == 200
+    check current.body["businessDate"].getStr() == "2026-10-21"
+    let reply = postJson(CashPath, cashBody(accountId, "DEPOSIT", "10.0000"), token)
+    check reply.code == 409
+    checkProblem(CashPath, "POST", "409", reply.body)
+    check reply.body["params"]["reason"].getStr() == "session_business_date_mismatch"
+    check balanceOf(accountId) == "0.0000"
+    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+      exec(d, sql"""
+        UPDATE teller.teller_session SET business_date = ?::date
+         WHERE teller_user_id = ?::uuid AND status = 'OPEN'""", BusinessDate, tellerId)
+      1)
+
   test "sesi dibuka → transaksi mencatat CASH_IN/CASH_OUT; tutup menghitung expected":
     let token = tokenOf(login(SessionTellerUser))
     let openResp = postJson(SessionsPath,

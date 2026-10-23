@@ -99,11 +99,12 @@ proc insertOpenSession*(db: DbConn, s: TellerSession): bool =
   ## dua buka diselesaikan index, bukan error DB.
   db.execAffectedRows(sql"""
       INSERT INTO teller.teller_session
-        (session_id, branch_id, teller_user_id, business_date, status, opening_float, opened_by)
-      VALUES (?, ?, ?, ?::date, 'OPEN', ?::numeric, ?)
+        (session_id, branch_id, teller_user_id, business_date, status, opening_float, opened_by,
+         note)
+      VALUES (?, ?, ?, ?::date, 'OPEN', ?::numeric, ?, NULLIF(?, ''))
       ON CONFLICT (branch_id, teller_user_id) WHERE status = 'OPEN' DO NOTHING""",
     $s.sessionId, $s.branchId, $s.tellerUserId, s.businessDate, s.openingFloat.toDecimalString,
-    $s.openedBy) == 1
+    $s.openedBy, s.note) == 1
 
 proc sessionById*(db: DbConn, sessionId: Id): Option[TellerSession] =
   let rows = db.getAllRows(

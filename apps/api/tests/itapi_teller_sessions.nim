@@ -34,6 +34,7 @@ const
   OtherTellerUser = "dev.teller2"
   BranchMakerUser = "dev.branchmaker"
   DevPassword = "rahasia-panjang-123"
+  BusinessDate = "2026-10-22"
   CookieName = "kran_session"
   BranchA = "11111111-1111-7111-8111-111111111111"
   BranchB = "22222222-2222-7222-8222-222222222222"
@@ -231,6 +232,19 @@ proc openSession(token, branch, openingFloat: string, key = ""): Reply =
 proc closeSession(token, sessionId, countedCash: string, key = ""): Reply =
   postJson(SessionsPath & "/" & sessionId & "/close", %*{"countedCash": countedCash}, token, key)
 
+proc dbCount(query: SqlQuery, args: varargs[string, `$`]): int =
+  let conn = dbPool.acquire()
+  try:
+    parseInt(conn.getValue(query, args))
+  finally:
+    dbPool.release(conn)
+
+proc auditCount(action: string): int =
+  dbCount(sql"SELECT count(*)::text FROM platform.audit_log WHERE action = ?", action)
+
+proc outboxCount(eventType: string): int =
+  dbCount(sql"SELECT count(*)::text FROM platform.outbox WHERE event_type = ?", eventType)
+
 proc reasonOf(reply: Reply): string =
   reply.body["params"]["reason"].getStr()
 
@@ -302,18 +316,29 @@ suite "sessions: buka & vault":
     let token = tokenOf(login(MakerUser))
     let before = vaultOf(BranchB)
 
-    let open = openSession(token, BranchB, "40.0000", "sess-debit-" & $epochTime())
+    let opensBefore = auditCount("teller.session.open")
+    let openEventsBefore = outboxCount("TellerSessionOpened")
+    let open = postJson(SessionsPath, openBody(BranchB, "40.0000", "shift pagi"), token,
+      "sess-debit-" & $epochTime())
     check open.code == 201
     checkJson(SessionsPath, "POST", "201", open.body)
     check open.body["status"].getStr() == "OPEN"
     check open.body["branchId"].getStr() == BranchB
     check open.body["openingFloat"].getStr() == "40.0000"
     check open.body["openedAt"].getStr().len > 0
+    check open.body["businessDate"].getStr() == BusinessDate
+    check open.body["note"].getStr() == "shift pagi"
+    check auditCount("teller.session.open") == opensBefore + 1
+    check outboxCount("TellerSessionOpened") == openEventsBefore + 1
     check vaultOf(BranchB) == "10.0000"
     let sessionId = open.body["sessionId"].getStr()
 
     # expected = opening float (tanpa movement) = 40; counted 36 → variance -4 (kas kurang).
-    let close = closeSession(token, sessionId, "36.0000", "sess-debit-close-" & $epochTime())
+    let closesBefore = auditCount("teller.session.close")
+    let closeEventsBefore = outboxCount("TellerSessionClosed")
+    let close = postJson(SessionsPath & "/" & sessionId & "/close",
+      %*{"countedCash": "36.0000", "note": "kurang 4"}, token,
+      "sess-debit-close-" & $epochTime())
     check close.code == 200
     checkJson(ClosePath, "POST", "200", close.body)
     check close.body["status"].getStr() == "CLOSED"
@@ -322,6 +347,10 @@ suite "sessions: buka & vault":
     check close.body["countedCash"].getStr() == "36.0000"
     check close.body["variance"].getStr() == "-4.0000"
     check close.body["closedAt"].getStr().len > 0
+    check close.body["businessDate"].getStr() == BusinessDate
+    check close.body["note"].getStr() == "kurang 4"
+    check auditCount("teller.session.close") == closesBefore + 1
+    check outboxCount("TellerSessionClosed") == closeEventsBefore + 1
     # Vault = 50 - 40 (buka) + 36 (counted fisik) = 46.
     check vaultOf(BranchB) == "46.0000"
 

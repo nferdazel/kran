@@ -88,7 +88,7 @@ Vault tidak punya API top-up di T-093 (T-107). Mengisi saldo awal dilakukan lewa
 
 ```sql
 INSERT INTO teller.vault (branch_id, balance) VALUES ('<branch-uuid>', '10000000.0000')
-ON CONFLICT (branch_id) DO UPDATE SET balance = EXCLUDED.balance, updated_at = now();
+ON CONFLICT (branch_id) DO NOTHING;
 ```
 
 Tanpa baris vault, sesi tidak bisa dibuka (`vault_not_configured`) — fail-closed, bukan bug.
