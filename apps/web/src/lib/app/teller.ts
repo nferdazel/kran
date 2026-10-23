@@ -10,8 +10,8 @@
  *    `branch_not_allowed`, `no_open_session`, `session_business_date_mismatch`). Karena itu
  *    pemetaannya per `reason`, bukan lewat `i18nKey` (pola `paramProblemMessage` di `errors.ts`).
  *  - Endpoint sesi kas (T-093) tersedia, tetapi panel buka/tutup belum ada di layar ini (T-108).
- *  - Pencarian nomor rekening belum ada: UI menerima `accountId` (UUID) apa adanya. Lihat TODO
- *    di halaman teller.
+ *  - Rekening dimuat lewat nomor (`GET /deposit/accounts?accountNo=`, T-105); `accountId` hanya
+ *    dipakai setelah rekening ditemukan (untuk transaksi) dan untuk rekening tujuan PB.
  */
 import type { Problem } from "@kran/api-client";
 import type { components } from "@kran/api-client/schema";
@@ -43,7 +43,10 @@ export interface TellerFormError {
   message: string;
 }
 
-/** Nomor rekening belum bisa dicari (T-105); untuk sekarang UI menerima UUID rekening. */
+/** Batas teknis kolom `deposit.account.account_no`; bentuk nomor belum diputuskan (D-123). */
+export const ACCOUNT_NO_MAX_LENGTH = 32;
+
+/** UUID hanya untuk `accountId` yang sudah dimuat dan rekening tujuan PB. */
 export function isAccountId(value: string): boolean {
   return UUID_PATTERN.test(value.trim());
 }
@@ -227,6 +230,10 @@ export function tellerProblemMessage(problem: Problem): string {
   if (problem.status === 404) return m.teller_not_found();
   if (problem.status === 403) return m.teller_denied();
   return problemMessage(problem);
+}
+
+export function loadDepositAccountByNo(accountNo: string) {
+  return api.GET("/api/v1/deposit/accounts", { params: { query: { accountNo } } });
 }
 
 export function loadDepositAccount(accountId: string) {
