@@ -134,7 +134,7 @@
           <span class="kran-header__badge">K</span>
           <div>
             <strong class="kran-sidebar-title">{m.common_brand_short()}</strong>
-            <span class="kran-sidebar-subtitle">Terminal Konsol</span>
+            <span class="kran-sidebar-subtitle">{m.app_sidebar_subtitle()}</span>
           </div>
         </div>
       {/if}
@@ -147,11 +147,6 @@
               href={link.href}
               aria-current={isActiveHref(page.url.pathname, link.href) ? "page" : undefined}
             >
-              {#if page.url.pathname.startsWith("/app")}
-                <span class="kran-nav-icon" aria-hidden="true">
-                  {#if link.href.includes("ledger")}🏛️{:else if link.href.includes("teller")}💵{:else}⚙️{/if}
-                </span>
-              {/if}
               <span>{link.label()}</span>
             </a>
           </li>

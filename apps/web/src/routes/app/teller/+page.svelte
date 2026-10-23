@@ -787,15 +787,6 @@
     }
   }
 
-  function addQuickAmount(delta: number): void {
-    const current = Number(amountRaw.replace(/\D/g, "")) || 0;
-    amountRaw = String(current + delta);
-  }
-
-  function clearAmount(): void {
-    amountRaw = "";
-  }
-
   function saveFromReview(event: SubmitEvent): void {
     event.preventDefault();
     void saveTransaction();
@@ -893,8 +884,8 @@
         <div class="kran-passbook">
           <div class="kran-passbook__header">
             <div>
-              <p class="kran-passbook__title">Buku Simpanan Anggota</p>
-              <span class="teller-id" style="font-size: var(--text-base); font-weight: 600;">{loaded.accountNo}</span>
+              <p class="kran-passbook__title">{m.teller_passbook_title()}</p>
+              <span class="teller-id passbook-account">{loaded.accountNo}</span>
             </div>
             <span class={loaded.status === "ACTIVE" ? "kran-badge kran-badge--ok" : "kran-badge"}>
               <span aria-hidden="true">{loaded.status === "ACTIVE" ? "✔" : "○"}</span>
@@ -907,25 +898,18 @@
             <span class="kran-passbook__balance-value kran-money">{accountBalanceText}</span>
           </div>
 
-          <dl class="teller-facts" style="margin-block-end: 0; padding-block-end: 0; border: 0;">
-            <dt>{m.teller_account_no_label()}</dt>
-            <dd class="teller-id">{loaded.accountNo}</dd>
-            <dt>{m.teller_account_status_label()}</dt>
-            <dd>
-              <span class={loaded.status === "ACTIVE" ? "kran-badge kran-badge--ok" : "kran-badge"}>
-                <span aria-hidden="true">{loaded.status === "ACTIVE" ? "✔" : "○"}</span>
-                <span>{loaded.status === "ACTIVE" ? m.teller_account_status_active() : m.teller_account_status_closed()}</span>
-              </span>
-            </dd>
+          <!-- Nomor rekening & status sudah tampil di header passbook; jangan duplikasi di sini
+               (duplikasi juga membuat locator e2e ambigu). -->
+          <dl class="teller-facts passbook-facts">
             <dt>{m.teller_account_kind_label()}</dt>
             <dd><span class="kran-badge kran-badge--info">{savingsKindLabel(loaded.savingsKind)}</span></dd>
           </dl>
 
           {#if loadedAtText !== ""}
-            <p class="kran-muted" style="margin: 0; font-size: var(--text-xs);">{m.teller_account_balance_at({ time: loadedAtText })}</p>
+            <p class="kran-muted passbook-updated">{m.teller_account_balance_at({ time: loadedAtText })}</p>
           {/if}
 
-          <p style="margin: 0;">
+          <p class="passbook-actions">
             <a class="kran-button" href={`/app/print/statement/${loaded.accountId}`}>
               {m.teller_print_statement()}
             </a>
@@ -1601,16 +1585,6 @@
                     ? "teller-amount-hint teller-field-error"
                     : "teller-amount-hint"}
                 />
-                <div class="kran-quick-amounts" aria-label="Nominal cepat">
-                  <button class="kran-quick-amount-btn" type="button" onclick={() => addQuickAmount(50000)}>+50rb</button>
-                  <button class="kran-quick-amount-btn" type="button" onclick={() => addQuickAmount(100000)}>+100rb</button>
-                  <button class="kran-quick-amount-btn" type="button" onclick={() => addQuickAmount(500000)}>+500rb</button>
-                  <button class="kran-quick-amount-btn" type="button" onclick={() => addQuickAmount(1000000)}>+1jt</button>
-                  <button class="kran-quick-amount-btn" type="button" onclick={() => addQuickAmount(5000000)}>+5jt</button>
-                  {#if amountRaw !== ""}
-                    <button class="kran-quick-amount-btn" type="button" onclick={clearAmount}>✕ Hapus</button>
-                  {/if}
-                </div>
                 <p class="kran-muted" id="teller-amount-hint">{m.teller_amount_hint()}</p>
                 {#if amountPreviewText !== ""}
                   <p class="teller-preview">{m.teller_amount_preview({ amount: amountPreviewText })}</p>
@@ -1814,6 +1788,26 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-2);
+  }
+
+  .passbook-account {
+    font-size: var(--text-base);
+    font-weight: 600;
+  }
+
+  .passbook-facts {
+    margin-block-end: 0;
+    padding-block-end: 0;
+    border: 0;
+  }
+
+  .passbook-updated {
+    margin: 0;
+    font-size: var(--text-xs);
+  }
+
+  .passbook-actions {
+    margin: 0;
   }
 
   @media (max-width: 1100px) {
