@@ -230,6 +230,27 @@ INSERT INTO platform.param_value
   (param_value_id, key, scope_type, scope_id, value, effective_from, status,
    maker, checker, reason)
 VALUES
+  (md5('platform.ui.shortcut.deposit|base')::uuid, 'platform.ui.shortcut.deposit', 'GLOBAL', NULL, '"F4"'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+ON CONFLICT (param_value_id) DO NOTHING;
+
+INSERT INTO platform.param_value
+  (param_value_id, key, scope_type, scope_id, value, effective_from, status,
+   maker, checker, reason)
+VALUES
+  (md5('platform.ui.shortcut.transfer|base')::uuid, 'platform.ui.shortcut.transfer', 'GLOBAL', NULL, '"F9"'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+ON CONFLICT (param_value_id) DO NOTHING;
+
+INSERT INTO platform.param_value
+  (param_value_id, key, scope_type, scope_id, value, effective_from, status,
+   maker, checker, reason)
+VALUES
+  (md5('platform.ui.shortcut.withdrawal|base')::uuid, 'platform.ui.shortcut.withdrawal', 'GLOBAL', NULL, '"F5"'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+ON CONFLICT (param_value_id) DO NOTHING;
+
+INSERT INTO platform.param_value
+  (param_value_id, key, scope_type, scope_id, value, effective_from, status,
+   maker, checker, reason)
+VALUES
   (md5('product.savings.admin_fee|base')::uuid, 'product.savings.admin_fee', 'GLOBAL', NULL, '"0.0000"'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
 ON CONFLICT (param_value_id) DO NOTHING;
 

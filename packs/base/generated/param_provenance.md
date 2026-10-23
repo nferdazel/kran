@@ -41,6 +41,9 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | `platform.security.password_pbkdf2_iterations` | teknis | base | `HUMAN-REVIEW-REQUIRED` | kripto — biaya PBKDF2; wajib ditinjau ulang, bukan angka final |
 | `platform.security.session_absolute_minutes` | kebijakan | base | - | - |
 | `platform.security.session_idle_minutes` | kebijakan | base | - | - |
+| `platform.ui.shortcut.deposit` | kebijakan | base | - | - |
+| `platform.ui.shortcut.transfer` | kebijakan | base | - | - |
+| `platform.ui.shortcut.withdrawal` | kebijakan | base | - | - |
 | `product.savings.admin_fee` | komersial-konservatif | base | `NEEDS-COMPLIANCE-REVIEW` | tidak menagih; angka final menunggu pemilik |
 | `product.savings.day_count_basis` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
 | `product.savings.interest_posting` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
@@ -54,7 +57,7 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | kelas | jumlah definisi |
 |---|---|
 | teknis | 15 |
-| kebijakan | 16 |
+| kebijakan | 19 |
 | komersial-konservatif | 2 |
 | belum-bermakna | 0 |
 | regulasi-tidak-disemai | 5 |

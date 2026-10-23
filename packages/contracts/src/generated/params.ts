@@ -563,6 +563,57 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "platform.ui.shortcut.deposit",
+    "module": "platform",
+    "valueType": "string",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.ui.shortcut.deposit",
+    "jsonSchema": {
+      "maxLength": 16
+    }
+  },
+  {
+    "key": "platform.ui.shortcut.transfer",
+    "module": "platform",
+    "valueType": "string",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.ui.shortcut.transfer",
+    "jsonSchema": {
+      "maxLength": 16
+    }
+  },
+  {
+    "key": "platform.ui.shortcut.withdrawal",
+    "module": "platform",
+    "valueType": "string",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.ui.shortcut.withdrawal",
+    "jsonSchema": {
+      "maxLength": 16
+    }
+  },
+  {
     "key": "product.savings.admin_fee",
     "module": "product",
     "valueType": "money",

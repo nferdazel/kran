@@ -39,6 +39,9 @@ const paramKeys*: seq[string] = @[
   "platform.security.password_pbkdf2_iterations",
   "platform.security.session_absolute_minutes",
   "platform.security.session_idle_minutes",
+  "platform.ui.shortcut.deposit",
+  "platform.ui.shortcut.transfer",
+  "platform.ui.shortcut.withdrawal",
   "product.savings.admin_fee",
   "product.savings.day_count_basis",
   "product.savings.interest_posting",
@@ -109,6 +112,12 @@ const P_platform_security_password_pbkdf2_iterations* = ParamKey[int64]("platfor
 const P_platform_security_session_absolute_minutes* = ParamKey[int64]("platform.security.session_absolute_minutes")
 
 const P_platform_security_session_idle_minutes* = ParamKey[int64]("platform.security.session_idle_minutes")
+
+const P_platform_ui_shortcut_deposit* = ParamKey[string]("platform.ui.shortcut.deposit")
+
+const P_platform_ui_shortcut_transfer* = ParamKey[string]("platform.ui.shortcut.transfer")
+
+const P_platform_ui_shortcut_withdrawal* = ParamKey[string]("platform.ui.shortcut.withdrawal")
 
 const P_product_savings_admin_fee* = ParamKey[Money]("product.savings.admin_fee")
 
@@ -464,6 +473,39 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.platform.security.session_idle_minutes",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "platform.ui.shortcut.deposit",
+    module: "platform",
+    valueType: pvtString,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.platform.ui.shortcut.deposit",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "platform.ui.shortcut.transfer",
+    module: "platform",
+    valueType: pvtString,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.platform.ui.shortcut.transfer",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "platform.ui.shortcut.withdrawal",
+    module: "platform",
+    valueType: pvtString,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.platform.ui.shortcut.withdrawal",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(

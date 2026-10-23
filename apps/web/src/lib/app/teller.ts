@@ -43,6 +43,29 @@ export interface TellerFormError {
   message: string;
 }
 
+/**
+ * Parameter pintasan papan tunai (T-095). Nilainya nama `KeyboardEvent.key`; tidak ada fallback
+ * di kode, jadi parameter yang tidak terbaca berarti pintasan mati, bukan tombol karangan.
+ */
+export const SHORTCUT_PARAM_KEYS: Record<TellerMode, string> = {
+  DEPOSIT: "platform.ui.shortcut.deposit",
+  WITHDRAWAL: "platform.ui.shortcut.withdrawal",
+  TRANSFER: "platform.ui.shortcut.transfer",
+};
+
+/** Tombol yang ditekan → mode transaksi, hanya bila persis salah satu nilai parameter aktif. */
+export function shortcutModeForKey(
+  shortcuts: Partial<Record<TellerMode, string>>,
+  key: string,
+): TellerMode | null {
+  const pressed = key.trim().toUpperCase();
+  if (pressed === "") return null;
+  for (const mode of ["DEPOSIT", "WITHDRAWAL", "TRANSFER"] as const) {
+    if ((shortcuts[mode] ?? "").trim().toUpperCase() === pressed) return mode;
+  }
+  return null;
+}
+
 /** Batas teknis kolom `deposit.account.account_no`; bentuk nomor belum diputuskan (D-123). */
 export const ACCOUNT_NO_MAX_LENGTH = 32;
 
