@@ -2940,3 +2940,24 @@ bisa dipakai menebak keberadaan rekening di cabang lain. Bentuk nomor **tidak** 
 **Konsekuensi.** Tidak ada rate-limit pada pencarian; enumerasi nomor provisoris murah dan dicatat
 sebagai open item untuk masa data nyata. Endpoint ini memerlukan `deposit.account.read` dan tetap
 menyaring cabang per baris.
+
+## D-127 — Cetak Fase 2 memakai browser print; mesin PDF server ditunda (ADR-013a/013b)
+
+**Konteks.** ADR-013 (mesin PDF) tetap terbuka dan memblokir T-094, padahal spec §23 Fase 2
+menyebut "cetak". SME arsitektur membandingkan browser print, HTML→PDF (Chromium), dan Typst.
+
+**Keputusan (rekomendasi SME, diadopsi; owner dapat menimpa).**
+1. Fase 2 memakai **browser print** (`@media print`) untuk slip transaksi dan statement A4.
+   Tidak ada PDF server, tidak ada penyimpanan PDF.
+2. **ADR-013b** (mesin PDF server) tetap terbuka; kandidat tunggal **Typst di worker terpisah**,
+   dipicu hanya bila ada kebutuhan arsip/regulasi/e-sign. Chromium server ditolak (image/RAM/CVE).
+3. Cetak ulang wajib: slip dibaca lewat `GET /api/v1/teller/cash-transactions/{id}` (izin
+   `deposit.account.read` + gerbang cabang), bukan dari respons POST.
+4. Statement: `GET /api/v1/deposit/accounts/{accountId}/statement?from&to`, subledger (bukan GL),
+   tanpa kolom saldo berjalan.
+5. Batas yang tidak diklaim: bukan dot-matrix/passbook, bukan PDF resmi/arsip/tagged, bukan audit
+   cetak, bukan kop lembaga (belum ada master cabang/`institution.*`), layout bisa berbeda antar
+   printer. Template di kode, bukan DB (deviasi sadar spec §16.2).
+
+**Konsekuensi.** T-094 dipecah 094a (slip), 094b (statement A4), 094c (PDF server, ditunda).
+Tidak ada migrasi. PII di kertas tidak terlacak; jangan menyimpan PDF.
