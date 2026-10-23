@@ -27,6 +27,7 @@
     syncDocumentLanguage,
     type AppLocale,
   } from "#lib/app/i18n.js";
+  import { appNavLinks, isActiveHref } from "#lib/app/nav.js";
 
   let { children } = $props();
 
@@ -124,33 +125,17 @@
 
   <nav class="kran-nav" aria-label={m.common_nav_label()}>
     <ul>
-      <li>
-        <a
-          class="kran-link"
-          href="/app/ledger"
-          aria-current={page.url.pathname.startsWith("/app/ledger") ? "page" : undefined}
-        >
-          {m.common_nav_ledger()}
-        </a>
-      </li>
-      <li>
-        <a
-          class="kran-link"
-          href="/app/teller"
-          aria-current={page.url.pathname.startsWith("/app/teller") ? "page" : undefined}
-        >
-          {m.common_nav_teller()}
-        </a>
-      </li>
-      <li>
-        <a
-          class="kran-link"
-          href="/app"
-          aria-current={page.url.pathname === "/app" ? "page" : undefined}
-        >
-          {m.common_nav_params()}
-        </a>
-      </li>
+      {#each appNavLinks as link (link.href)}
+        <li>
+          <a
+            class="kran-link"
+            href={link.href}
+            aria-current={isActiveHref(page.url.pathname, link.href) ? "page" : undefined}
+          >
+            {link.label()}
+          </a>
+        </li>
+      {/each}
       <!-- Tautan masuk (O-033) hanya di halaman publik; di area kerja tempatnya di toolbar `/app`
            bersama aksi "Keluar" (yang punya konteks sesi). -->
       {#if !page.url.pathname.startsWith("/app")}

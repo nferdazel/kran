@@ -304,5 +304,9 @@
   "statement_total_out": "Total out (IDR)",
   "statement_total_net": "Net (IDR)",
   "statement_empty": "No transactions in this range.",
-  "statement_no_running_balance": "This statement is a subledger: it has no running balance per row and is not a general-ledger reconciliation."
+  "statement_no_running_balance": "This statement is a subledger: it has no running balance per row and is not a general-ledger reconciliation.",
+  "palette_heading": "Command palette",
+  "palette_search_label": "Search commands",
+  "palette_hint": "Arrow keys choose, Enter opens, Esc closes.",
+  "palette_empty": "No matching command."
 }

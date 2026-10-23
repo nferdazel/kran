@@ -355,22 +355,82 @@ proc topUpWorker(args: TopUpArgs) {.thread.} =
     topUpCodes[args.slot] = response.code.int
     client.close()
 
-suite "vault: dua top-up bersamaan":
-  test "dua 201, vault bertambah jumlah keduanya (increment atomik)":
+proc blockedByHolder(pid: string): int =
+  ## Jumlah sesi yang menunggu lock `pid`, **transitif** (pola `ittransfer`): `pg_blocking_pids`
+  ## hanya memberi penghalang langsung (penunggu kedua bisa mengantre di belakang penunggu pertama),
+  ## jadi rantainya ditelusuri rekursif. Ini sinkronisasi deterministik tanpa `sleep` sebagai penentu.
+  let conn = dbPool.acquire()
+  try:
+    parseInt(conn.getValue(sql"""
+      WITH RECURSIVE blocked(pid) AS (
+        SELECT a.pid FROM pg_stat_activity a
+         WHERE a.datname = current_database() AND a.pid <> pg_backend_pid()
+           AND ?::int = ANY(pg_blocking_pids(a.pid))
+        UNION
+        SELECT a.pid FROM pg_stat_activity a
+          JOIN blocked b ON b.pid = ANY(pg_blocking_pids(a.pid))
+      )
+      SELECT count(*)::text FROM blocked""", pid))
+  finally:
+    dbPool.release(conn)
+
+suite "vault: dua top-up bersamaan deterministik (T-113)":
+  test "kedua top-up menunggu lock baris vault yang sama; increment atomik dijumlahkan":
     let token = tokenOf(login(MakerUser))
+    check token.len > 0
+
+    # Saldo awal dipatok eksplisit supaya assertion tidak bergantung urutan suite lain.
+    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+      exec(d, sql"UPDATE teller.vault SET balance = 100.0000 WHERE branch_id = ?", BranchRace)
+      1)
     check vaultOf(BranchRace) == "100.0000"
+
+    let key1 = "vault-det-1-" & $epochTime()
+    let key2 = "vault-det-2-" & $epochTime()
+
+    # Koneksi penahan lock: memegang baris vault `FOR UPDATE`. Selama dipegang, `creditVault`
+    # (`UPDATE teller.vault SET balance = balance + ?`) pada pekerja mana pun **wajib menunggu** di
+    # baris ini — bukan sekadar kebetulan berurutan. Inilah yang membuat uji atomisitas deterministik
+    # (klaim T-113: dua request tanpa penahanan bisa berurutan dan tidak membuktikan apa pun).
+    let side = dbPool.acquire()
+    defer: dbPool.release(side)
+    exec(side, sql"BEGIN")
+    discard side.getValue(sql"""
+      SELECT 1 FROM teller.vault WHERE branch_id = ? FOR UPDATE""", BranchRace)
+    let holderPid = side.getValue(sql"SELECT pg_backend_pid()")
 
     topUpCodes = [0, 0]
     var w1, w2: Thread[TopUpArgs]
     createThread(w1, topUpWorker, TopUpArgs(token: token,
-      payload: $topUpBody(BranchRace, "30.0000"), key: "vault-race-1-" & $epochTime(), slot: 0))
+      payload: $topUpBody(BranchRace, "30.0000"), key: key1, slot: 0))
     createThread(w2, topUpWorker, TopUpArgs(token: token,
-      payload: $topUpBody(BranchRace, "20.0000"), key: "vault-race-2-" & $epochTime(), slot: 1))
+      payload: $topUpBody(BranchRace, "20.0000"), key: key2, slot: 1))
+
+    # Tunggu **kedua** pekerja benar-benar menunggu lock penahan (transitif), bukan menebak timing.
+    var blocked = 0
+    let deadline = epochTime() + 5.0
+    while epochTime() < deadline and blocked < 2:
+      blocked = blockedByHolder(holderPid)
+      if blocked < 2:
+        sleep(20)
+
+    # Lepaskan lock lebih dulu (tanpa syarat) supaya pekerja tidak pernah menggantung, baru nilai.
+    exec(side, sql"COMMIT")
     joinThread(w1)
     joinThread(w2)
 
+    check blocked == 2
     var codes = @[topUpCodes[0], topUpCodes[1]]
     codes.sort()
     check codes == @[201, 201]
-    # 100 + 30 + 20 = 150; kalau ada lost update jadi 130 atau 120.
+    # 100 + 30 + 20 = 150. **Mutation check** (jangan dijalankan): ganti `balance = balance + ?`
+    # menjadi read-then-write (`balance = ?`). Kedua pekerja membaca 100 sebelum menunggu lock lalu
+    # menulis 130/120 → saldo akhir != 150, dan assertion ini GAGAL (lost update). Karena lock
+    # ditahan sampai keduanya menunggu, jalur balapan itu benar-benar terekspos.
+    check vaultOf(BranchRace) == "150.0000"
+
+    # Idempotensi tetap berlaku di jalur paralel: replay `key1` tidak menambah saldo lagi.
+    let replay = topUp(token, BranchRace, "30.0000", key1)
+    check replay.code == 200
+    check replay.replayed == "true"
     check vaultOf(BranchRace) == "150.0000"

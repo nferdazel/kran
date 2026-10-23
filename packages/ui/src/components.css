@@ -478,6 +478,64 @@
   font-weight: 500;
 }
 
+/* Command palette (T-110, spec §14.3 "keyboard-first"): satu lapisan overlay, bukan halaman.
+ * Elevasi hanya untuk overlay (DESIGN §5) dan seluruh warna dari token, jadi tema light/dark dan
+ * `prefers-contrast` bekerja tanpa aturan tambahan. */
+.kran-palette {
+  inline-size: min(32rem, calc(100vw - var(--space-6)));
+  max-block-size: min(80vh, 32rem);
+  padding-block: var(--space-4);
+  padding-inline: var(--space-4);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  box-shadow: var(--shadow-2);
+  font: inherit;
+}
+
+.kran-palette::backdrop {
+  background: color-mix(in srgb, var(--color-text) 40%, transparent);
+}
+
+.kran-palette__heading {
+  margin-block: 0 var(--space-3);
+  margin-inline: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.kran-palette__list {
+  display: grid;
+  gap: var(--space-1);
+  margin-block: var(--space-3) 0;
+  margin-inline: 0;
+  padding: 0;
+  list-style: none;
+  max-block-size: 18rem;
+  overflow-y: auto;
+}
+
+.kran-palette__option {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--control-height);
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.kran-palette__option:hover {
+  background: var(--color-selected);
+}
+
+.kran-palette__empty,
+.kran-palette__hint {
+  margin-block: var(--space-3) 0;
+  margin-inline: 0;
+}
+
 /* Dokumen cetak (T-094): kerangka dokumen A4. Di layar tampil seperti kertas; saat dicetak hanya
  * badan dokumen yang tinggal (lihat blok `@media print`). */
 .kran-print-toolbar {
