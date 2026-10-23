@@ -2228,3 +2228,11 @@ Batasan yang dibuka: O-097 (GL kas teller), O-098 (top-up vault = T-107), O-099 
   `tcontract` 5.
 - Batas tetap: tanpa jurnal GL kas/variance (O-097), tanpa top-up vault (T-107), tanpa limit kas
   (O-099), UI teller wajib T-108 sebelum dipakai.
+
+## 23 Okt 2026 — T-105 (lookup nomor rekening) + T-108 (panel sesi kas)
+
+- `27e96d9` backend T-105 (D-126); UI nomor rekening + panel sesi dalam satu commit setelahnya.
+- Panel sesi: buka/tutup/current, tinjauan inline, gerbang hanya untuk setor/tarik (PB tetap).
+- Bukti: `itapi_deposit` 13, `tcontract` 5, svelte-check 0 warning, unit web 33, build web,
+  `task i18n` 247 key/locale.
+- Belum: e2e/axe/screenshot teller — butuh seed dev (T-109); `./task ci` penuh menyusul.
