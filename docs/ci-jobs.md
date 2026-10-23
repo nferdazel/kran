@@ -1,4 +1,4 @@
-# .github/workflows/ci.yml — Fase 0 (bertahap)
+# .github/workflows/ci.yml — job dan kontrak runner
 
 Job ditambahkan **bersamaan dengan komponennya**, bukan di awal sebagai gate kosong:
 job kosong yang selalu hijau adalah "hijau palsu". Per tanggal T-001 hanya ada
@@ -19,6 +19,22 @@ Catatan status (17 Okt 2026, T-050): job yang benar-benar ada di `ci.yml` sekara
 `db-tests`, `web-e2e`, dan `security`. Yang masih selisih dari spec §21.3: `traceability`
 (requirement ↔ kontrol/test) — dicatat sebagai item terbuka (`O-027`) supaya tidak terlihat
 seperti sudah lengkap.
+
+## Runner yang dipin, timeout, dan install browser Playwright (23 Okt 2026)
+
+Tiga hal di bawah berlaku untuk **semua** job, bukan saran:
+
+- **Runner dipin ke `ubuntu-24.04`, bukan `ubuntu-latest`.** Migrasi label `latest` bisa diam-diam
+  mengganti set lib sistem yang dibutuhkan Playwright Chromium, tanpa perubahan di repo. Karena itu
+  runner ditulis eksplisit di setiap job.
+- **`timeout-minutes: 15` adalah kontrak (AGENTS §2), bukan sekadar anggaran.** Job tanpa timeout
+  dilarang, dan job yang menembus 15 menit dianggap jebol — bukan "cuma lambat".
+- **Browser Playwright: hanya browser dari cache, tanpa `apt-get`.** Langkahnya
+  `pnpm --filter @kran/web exec playwright install chromium`, **tanpa `--with-deps`**.
+  `--with-deps` menjalankan `apt-get update/install` di setiap run dan pernah menghabiskan
+  **14m47s** sampai job 15 menit dibatalkan (run `39962254127`), padahal browser sudah ada di cache
+  `~/.cache/ms-playwright`. Lib sistem Chromium sudah tersedia di image `ubuntu-24.04`; runner dipin
+  justru supaya set lib itu tidak berubah di bawah kaki.
 
 ## Job `db-tests` (T-050, 17 Okt 2026)
 
@@ -72,7 +88,7 @@ untuk kode yang benar:
 
 Kedua job yang menjalankan test Nim memasang `libpcre3`: `std/re` (validasi pola COA) membuka
 `libpcre.so.3` lewat dynlib saat jalan. macOS membawanya, image runtime produksi juga
-(`apps/api/Dockerfile`), tetapi runner `ubuntu-latest` tidak — gejalanya
+(`apps/api/Dockerfile`), tetapi runner `ubuntu-24.04` tidak — gejalanya
 `could not load: libpcre.so(.3|.1|)` di awal binary test, bukan kegagalan assertion.
 
 ## Anggaran waktu test stress pool (O-074, D-102)
