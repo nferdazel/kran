@@ -1,26 +1,26 @@
 #!/usr/bin/env sh
 #
-# KRAN - satu pintu perintah (AGENTS.md 2).
+# KRAN — single entry point task runner (AGENTS.md §5).
 #
 #   ./task check   format + lint + archcheck + lint-nomagic + paramgen --check + i18n check
-#   ./task check-fast  seperti check tanpa `nim check` penuh (loop pengembangan, D-077)
-#   ./task verify [filter]  check-fast + openapi + build + test modul terpilih (D-077)
+#   ./task check-fast  like check without full `nim check` (dev iteration loop, D-077)
+#   ./task verify [filter]  check-fast + openapi + build + test selected modules (D-077)
 #   ./task test    unit + property + integration (Postgres) + contract
-#   ./task e2e     web: kontras token + svelte-check + Playwright (axe 2 tema x 2 locale, keyboard,
-#                   alur login/maker-checker/realtime bila KRAN_DATABASE_URL tersedia)
-#   ./task openapi lint kontrak OpenAPI + cek klien TS sinkron (openapi-gen = tulis ulang)
-#   ./task ci      semua di atas
-#   ./task ci-repeat [N]  ulangi gate penuh N kali (bawaan 3) - gate kestabilan (T-031)
-#   ./task build   bangun binary apps/api
-#   ./task fmt     rapikan format (menulis ulang berkas)
-#   ./task devdb   kelola DB dev di server (tunnel) - lihat tools/devdb.sh
-#   ./task dbtools migrate|status|validate   migrasi SQL (butuh KRAN_DATABASE_URL)
-#   ./task scaffold <nama> [--dry-run]       buat kerangka modul baru (spec §5.5)
-#   ./task bench-password [--iterations N]   ukur biaya ganti kata sandi (T-060)
+#   ./task e2e     web: token contrast + svelte-check + Playwright (axe 2 themes x 2 locales, keyboard,
+#                   login/maker-checker/realtime flows if KRAN_DATABASE_URL is available)
+#   ./task openapi lint OpenAPI contract + verify TS client sync (openapi-gen = rewrite)
+#   ./task ci      all gates above
+#   ./task ci-repeat [N]  repeat full gate N times (default 3) - stability gate (T-031)
+#   ./task build   build apps/api binary
+#   ./task fmt     format code (rewrites files in place)
+#   ./task devdb   manage dev DB tunnel to server - see tools/devdb.sh
+#   ./task dbtools migrate|status|validate   SQL migrations (requires KRAN_DATABASE_URL)
+#   ./task scaffold <name> [--dry-run]       scaffold a new module (spec §5.5)
+#   ./task bench-password [--iterations N]   benchmark password hashing cost (T-060)
 #   ./task help
 #
-# Skrip POSIX sengaja dipilih alih-alih Taskfile/just: tanpa dependensi tooling baru,
-# perintah yang sama dipakai laptop dan CI. Lihat docs/DECISIONS.md D-001.
+# Pure POSIX script chosen over Taskfile/just: zero new tooling dependencies,
+# identical commands used on developer machines and CI. See docs/DECISIONS.md D-001.
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -30,12 +30,12 @@ BUILD="$ROOT/.build"
 BIN="$BUILD/bin"
 NIMPATH="-p:$ROOT/shared -p:$ROOT/modules -p:$ROOT/apps -p:$ROOT/tools -p:$ROOT/tools/dbtools"
 NIMFLAGS="--hints:off --warnings:on --path:$ROOT/shared --path:$ROOT/modules --path:$ROOT/apps --path:$ROOT/tools"
-# Test dikompilasi (dan di-check) dengan `--threads:on`, sama seperti biner API: beberapa test
-# integrasi mereproduksi interleaving dua koneksi DB (balapan double-approve, invarian kursor
-# outbox) yang hanya mungkin dengan thread nyata (O-040).
+# Tests are compiled (and checked) with `--threads:on`, matching API binary: several integration
+# tests reproduce interleaving between two DB connections (double-approve races, outbox cursor invariants)
+# which are only possible with real threads (O-040).
 TESTFLAGS="$NIMFLAGS --threads:on"
 
-# Bootstrap config lokal (bukan nilai bisnis): KRAN_DATABASE_URL untuk test integrasi.
+# Bootstrap local config (non-business value): KRAN_DATABASE_URL for integration tests.
 if [ -f "$ROOT/.local/dev.env" ]; then
   set -a
   . "$ROOT/.local/dev.env"
@@ -50,18 +50,18 @@ SKIPS=""
 log()  { printf '\n== %s\n' "$*"; }
 info() { printf '   %s\n' "$*"; }
 ok()   { printf '   ok: %s\n' "$*"; }
-die()  { printf '\n!! GAGAL: %s\n' "$*" >&2; exit 1; }
+die()  { printf '\n!! FAILED: %s\n' "$*" >&2; exit 1; }
 skip() { printf '\n-- SKIP: %s\n' "$*"; SKIPS="$SKIPS
    - $*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 nim_files() {
-  # Fixture test tidak pernah dikompilasi: banyak yang sengaja tidak valid.
+  # Test fixtures are never compiled: many are intentionally invalid.
   find apps modules shared tools -name '*.nim' -not -path '*/tests/fixtures/*' 2>/dev/null | sort
 }
 fmt_files() {
-  # Kode hasil generate (paramgen) milik generator, bukan tangan: nimpretty dilewati supaya
-  # `paramgen --check` tetap bisa menuntut kesamaan byte-per-byte. Tetap di-nim-check.
+  # Generated code (paramgen) belongs to generator, not hand-edited: nimpretty is skipped so
+  # `paramgen --check` can still enforce byte-for-byte equality. Still checked via nim check.
   nim_files | grep -v '/generated/' || true
 }
 test_files() {
@@ -71,22 +71,22 @@ it_files() {
   find apps modules shared tools -path '*/tests/it*.nim' 2>/dev/null | sort
 }
 
-build_tool() { # build_tool <dir berisi main.nim> -> cetak path binary
+build_tool() { # build_tool <dir containing main.nim> -> print binary path
   mkdir -p "$BIN"
   name=$(basename "$1")
-  nim c $NIMFLAGS --out:"$BIN/$name" "$1/main.nim" >/dev/null || die "gagal build tool $1"
+  nim c $NIMFLAGS --out:"$BIN/$name" "$1/main.nim" >/dev/null || die "failed to build tool $1"
   printf '%s/%s' "$BIN" "$name"
 }
 
 cmd_fmt() {
-  have nimpretty || die "nimpretty tidak ada di PATH (bagian dari Nim)"
+  have nimpretty || die "nimpretty not found in PATH (part of Nim)"
   for f in $(fmt_files); do nimpretty --indent:2 --maxLineLen:100 "$f" >/dev/null; done
-  printf '   ok: format diterapkan\n'
+  printf '   ok: formatting applied\n'
 }
 
 cmd_fmt_check() {
   log "format (nimpretty)"
-  have nimpretty || die "nimpretty tidak ada di PATH (bagian dari Nim)"
+  have nimpretty || die "nimpretty not found in PATH (part of Nim)"
   n=0
   bad=""
   for f in $(fmt_files); do
@@ -96,18 +96,18 @@ cmd_fmt_check() {
    - $f"
     fi
   done
-  [ -z "$bad" ] || die "berkas berikut tidak nimpretty-clean:$bad
-   jalankan: ./task fmt"
-  ok "$n berkas"
+  [ -z "$bad" ] || die "following files are not nimpretty-clean:$bad
+   run: ./task fmt"
+  ok "$n files"
 }
 
 cmd_lint() {
   jobs="${KRAN_LINT_JOBS:-4}"
-  log "lint (nim check, paralel $jobs)"
+  log "lint (nim check, parallel $jobs)"
   files=$(nim_files)
   n=$(printf '%s\n' "$files" | wc -l | tr -d ' ')
-  # Tiap berkas di `nim check` terpisah, log per berkas, hanya kegagalan yang dicetak.
-  # Ini hanya mengubah cara menjalankan; cakupan gate tetap seluruh berkas (D-077).
+  # Each file nim check-ed separately, per-file log, only failures printed.
+  # This only changes execution mechanics; gate coverage remains all files (D-077).
   export NIMFLAGS TESTFLAGS
   LINTDIR=$BUILD
   export LINTDIR
@@ -125,36 +125,36 @@ cmd_lint() {
   ' _ {} >"$BUILD/lint-failures.txt" || true
   if [ -s "$BUILD/lint-failures.txt" ]; then
     while IFS= read -r f; do
-      printf -- "--- nim check gagal: %s\n" "$f" >&2
+      printf -- "--- nim check failed: %s\n" "$f" >&2
       cat "$BUILD/check.$(printf "%s" "$f" | tr "/ " "__").log" >&2 || true
     done <"$BUILD/lint-failures.txt"
-    die "nim check gagal: $(wc -l <"$BUILD/lint-failures.txt" | tr -d ' ') berkas"
+    die "nim check failed: $(wc -l <"$BUILD/lint-failures.txt" | tr -d ' ') files"
   fi
-  ok "$n berkas"
+  ok "$n files"
 }
 
 cmd_archcheck() {
-  log "archcheck (batas arsitektur modul)"
-  [ -d "$ROOT/tools/archcheck" ] || { skip "tools/archcheck belum ada (T-003)"; return 0; }
+  log "archcheck (module architecture boundaries)"
+  [ -d "$ROOT/tools/archcheck" ] || { skip "tools/archcheck not found (T-003)"; return 0; }
   tool=$(build_tool "$ROOT/tools/archcheck")
-  "$tool" "$ROOT" || die "pelanggaran batas arsitektur"
-  ok "batas modul bersih"
+  "$tool" "$ROOT" || die "architecture boundary violation"
+  ok "clean module boundaries"
 }
 
 cmd_nomagic() {
-  log "lint-nomagic (nilai bisnis tidak boleh di kode)"
-  [ -d "$ROOT/tools/lint-nomagic" ] || { skip "tools/lint-nomagic belum ada (T-003)"; return 0; }
+  log "lint-nomagic (business values must not be hardcoded)"
+  [ -d "$ROOT/tools/lint-nomagic" ] || { skip "tools/lint-nomagic not found (T-003)"; return 0; }
   tool=$(build_tool "$ROOT/tools/lint-nomagic")
-  "$tool" "$ROOT" || die "magic number bisnis terdeteksi"
-  ok "tidak ada magic number bisnis"
+  "$tool" "$ROOT" || die "business magic number detected"
+  ok "no business magic numbers found"
 }
 
 cmd_paramgen() {
-  log "paramgen --check (kode == definisi parameter)"
-  [ -d "$ROOT/tools/paramgen" ] || { skip "tools/paramgen belum ada (T-003)"; return 0; }
+  log "paramgen --check (code == parameter definitions)"
+  [ -d "$ROOT/tools/paramgen" ] || { skip "tools/paramgen not found (T-003)"; return 0; }
   tool=$(build_tool "$ROOT/tools/paramgen")
-  "$tool" --root "$ROOT" --check || die "kode dan definisi parameter tidak sinkron (jalankan: ./task paramgen-gen)"
-  ok "sinkron"
+  "$tool" --root "$ROOT" --check || die "code and parameter definitions out of sync (run: ./task paramgen-gen)"
+  ok "in sync"
 }
 
 cmd_paramgen_gen() {
@@ -163,54 +163,54 @@ cmd_paramgen_gen() {
 }
 
 cmd_i18n() {
-  log "i18n check (key id+en lengkap, tanpa key yatim)"
+  log "i18n check (key id+en complete, no orphan keys)"
   if [ ! -d "$ROOT/packages/i18n/messages" ]; then
-    skip "packages/i18n/messages belum ada (T-010)"
+    skip "packages/i18n/messages not found (T-010)"
     return 0
   fi
   tool=$(build_tool "$ROOT/tools/i18ncheck")
-  "$tool" "$ROOT" || die "katalog i18n tidak lengkap"
-  ok "katalog i18n lengkap"
+  "$tool" "$ROOT" || die "i18n catalog incomplete"
+  ok "i18n catalog complete"
 }
 
-# Binary lokal dipakai langsung (bukan lewat `pnpm run`) supaya tidak ada install tersembunyi;
-# lihat docs/runbooks/dev-web.md.
-web_bin() { # web_bin <nama> -> cetak path binary workspace root bila ada
+# Local binaries used directly (not via `pnpm run`) to avoid implicit installs;
+# see docs/runbooks/dev-web.md.
+web_bin() { # web_bin <name> -> print binary path from workspace root if present
   b="$ROOT/node_modules/.bin/$1"
   [ -x "$b" ] && printf '%s' "$b"
 }
 
 cmd_openapi() {
-  log "openapi (lint kontrak + klien TS sinkron dengan kontrak)"
+  log "openapi (contract lint + TS client in sync with contract)"
   yaml="$ROOT/packages/contracts/openapi/kran-api.yaml"
   ruleset="$ROOT/packages/contracts/openapi/.spectral.yaml"
   generated="$ROOT/packages/api-client/src/generated/schema.d.ts"
   if [ ! -f "$yaml" ]; then
-    skip "kontrak OpenAPI belum ada (T-008)"
+    skip "OpenAPI contract not found (T-008)"
     return 0
   fi
   spectral=$(web_bin spectral || true)
   gen=$(web_bin openapi-typescript || true)
   if [ -z "$spectral" ] || [ -z "$gen" ]; then
-    skip "dependency JS belum terpasang (pnpm install) — lint/generate dilewati"
+    skip "JS dependencies not installed (pnpm install) — lint/generate skipped"
     return 0
   fi
 
   "$spectral" lint --ruleset "$ruleset" --fail-severity warn "$yaml" \
-    || die "lint OpenAPI gagal"
-  ok "kontrak lolos lint (fail-severity warn)"
+    || die "OpenAPI lint failed"
+  ok "contract passed lint (fail-severity warn)"
 
   tmp="$BUILD/schema.d.ts"
-  "$gen" "$yaml" -o "$tmp" >/dev/null || die "generate klien TS gagal"
+  "$gen" "$yaml" -o "$tmp" >/dev/null || die "TS client generation failed"
   if ! diff -q "$tmp" "$generated" >/dev/null 2>&1; then
-    die "klien TS tidak sinkron dengan kontrak — jalankan: ./task openapi-gen"
+    die "TS client out of sync with contract — run: ./task openapi-gen"
   fi
-  ok "klien TS sinkron dengan kontrak"
+  ok "TS client in sync with contract"
 
   tsc=$(web_bin tsc || true)
   if [ -n "$tsc" ]; then
-    "$tsc" -p "$ROOT/packages/api-client" --noEmit || die "typecheck paket klien API gagal"
-    ok "paket klien API lolos typecheck"
+    "$tsc" -p "$ROOT/packages/api-client" --noEmit || die "API client package typecheck failed"
+    ok "API client package passed typecheck"
   fi
 }
 
@@ -218,33 +218,31 @@ cmd_openapi_gen() {
   yaml="$ROOT/packages/contracts/openapi/kran-api.yaml"
   generated="$ROOT/packages/api-client/src/generated/schema.d.ts"
   gen=$(web_bin openapi-typescript || true)
-  [ -n "$gen" ] || die "dependency JS belum terpasang (pnpm install)"
-  "$gen" "$yaml" -o "$generated" || die "generate klien TS gagal"
+  [ -n "$gen" ] || die "JS dependencies not installed (pnpm install)"
+  "$gen" "$yaml" -o "$generated" || die "TS client generation failed"
   ok "$generated"
 }
 
 cmd_shlint() {
-  log "shell sintaks skrip ops (bash -n + shellcheck)"
+  log "ops script shell syntax (bash -n + shellcheck)"
   files=$(find "$ROOT/ops" -type f -name '*.sh' 2>/dev/null | sort)
   if [ -z "$files" ]; then
-    skip "belum ada skrip ops (T-013)"
+    skip "no ops scripts found (T-013)"
     return 0
   fi
-  for f in $files; do bash -n "$f" || die "sintaks bash salah: $f"; done
+  for f in $files; do bash -n "$f" || die "bash syntax error: $f"; done
   if have shellcheck; then
-    # Level `warning` memblokir sejak T-050(b)/O-014: `shellcheck -S warning ops/scripts/*.sh`
-    # sudah dijalankan di mesin pengembang dan bersih untuk ketujuh skrip (17 Okt 2026). Sebelum
-    # itu hanya level `error` yang memblokir karena kelayakan lint penuh belum pernah diuji.
+    # `warning` level blocks since T-050(b)/O-014: `shellcheck -S warning ops/scripts/*.sh`
+    # was verified clean on dev machines across all 7 scripts (17 Oct 2026).
     for f in $files; do
-      shellcheck -S warning "$f" || die "shellcheck (level warning): $f"
+      shellcheck -S warning "$f" || die "shellcheck (warning level): $f"
     done
   elif [ "${KRAN_SKIP_SHELLCHECK:-0}" = "1" ]; then
-    # Pelepasan sadar, bukan senyap: gate ini pernah "hijau" semata karena toolnya tidak ada.
-    info "shellcheck dilewati (KRAN_SKIP_SHELLCHECK=1) — hanya bash -n"
+    info "shellcheck skipped (KRAN_SKIP_SHELLCHECK=1) — bash -n only"
   else
-    die "shellcheck tidak ada di PATH (pasang: brew install shellcheck / apt-get install shellcheck); set KRAN_SKIP_SHELLCHECK=1 untuk melewatinya dengan sadar"
+    die "shellcheck not found in PATH (install: brew install shellcheck / apt-get install shellcheck); set KRAN_SKIP_SHELLCHECK=1 to skip intentionally"
   fi
-  ok "$(printf '%s\n' "$files" | wc -l | tr -d ' ') skrip lolos bash -n + shellcheck (level warning)"
+  ok "$(printf '%s\n' "$files" | wc -l | tr -d ' ') scripts passed bash -n + shellcheck (warning level)"
 }
 
 cmd_check_fast() {
@@ -276,17 +274,16 @@ cmd_check() {
   cmd_shlint
 }
 
-run_nim_test() { # run_nim_test <berkas>
+run_nim_test() { # run_nim_test <file>
   f="$1"
   name=$(basename "$f" .nim)
-  nim c $TESTFLAGS --out:"$BIN/$name" "$f" >/dev/null || die "gagal kompilasi test $f"
-  "$BIN/$name" || die "test gagal: $f"
+  nim c $TESTFLAGS --out:"$BIN/$name" "$f" >/dev/null || die "failed to compile test $f"
+  "$BIN/$name" || die "test failed: $f"
 }
 
 select_tests() {
-  # `strict=1` = filter cocok persis dengan nama berkas di suite mana pun, jadi hanya berkas
-  # persis itu yang dijalankan (tproduct ≠ itproduct). `strict=0` = substring, untuk filter lebar
-  # seperti `product` (D-077). Keputusan strict diambil sekali di cmd_test, bukan per daftar.
+  # `strict=1` = filter matches exact filename in any suite, so only that file is run (tproduct != itproduct).
+  # `strict=0` = substring match, for broad filters like `product` (D-077).
   all="$1"
   filter="$2"
   strict="$3"
@@ -318,12 +315,11 @@ cmd_test() {
   list=$(test_files)
   list=$(select_tests "$list" "$filter" "$strict")
   if [ -z "$list" ]; then
-    # Gate ini sengaja asimetris: repo kosong boleh (Fase 0 baru mulai), tetapi kode yang
-    # ada tanpa satu pun test = kegagalan. Dengan filter, daftar kosong itu wajar (mis. filter
-    # hanya cocok untuk integration test); filter yang tidak cocok dengan test mana pun
-    # diperiksa di akhir fungsi.
-    [ -z "$(nim_files)" ] || [ -n "$filter" ] || die "ada kode Nim tetapi tidak ada test (cari */tests/t*.nim)"
-    [ -n "$filter" ] || skip "belum ada kode maupun test Nim (mulai T-002)"
+    # This gate is intentionally asymmetric: empty repo is allowed (Phase 0 starting), but
+    # existing code without any test is a failure. With filter, empty list is normal;
+    # non-matching filter is checked at end of function.
+    [ -z "$(nim_files)" ] || [ -n "$filter" ] || die "Nim code present but no tests found (search */tests/t*.nim)"
+    [ -n "$filter" ] || skip "no Nim code or tests yet (start T-002)"
   else
     matched=1
     for f in $list; do info "$f"; run_nim_test "$f"; done
@@ -333,91 +329,87 @@ cmd_test() {
   its=$(it_files)
   its=$(select_tests "$its" "$filter" "$strict")
   if [ -z "$its" ]; then
-    [ -n "$filter" ] || skip "belum ada test integrasi (T-004)"
+    [ -n "$filter" ] || skip "no integration tests yet (T-004)"
   elif [ -z "$KRAN_DATABASE_URL" ]; then
-    skip "KRAN_DATABASE_URL kosong - test integrasi melewati dirinya sendiri (lihat .local/dev.env / ./task devdb up)"
+    skip "KRAN_DATABASE_URL is empty - integration tests skip themselves (see .local/dev.env / ./task devdb up)"
   else
     matched=1
     for f in $its; do info "$f"; run_nim_test "$f"; done
   fi
 
   if [ -n "$filter" ] && [ "$matched" -eq 0 ]; then
-    die "filter '$filter' tidak cocok dengan test mana pun"
+    die "filter '$filter' did not match any tests"
   fi
 }
 
 cmd_e2e() {
   if [ ! -f "$ROOT/apps/web/package.json" ]; then
-    skip "apps/web/package.json belum ada (T-010)"
+    skip "apps/web/package.json not found (T-010)"
     return 0
   fi
-  # Binary lokal dipakai langsung, bukan lewat `pnpm run`: pnpm 10+ memasang ulang dependency
-  # lebih dulu bila lockfile/package.json dirasa tidak sinkron, dan install itu butuh registry.
-  # Di mesin pengembangan registry privat (artifactory) tidak resolve, sehingga `pnpm run` bisa
-  # menggantung. Binary lokal deterministik dan tetap benar di CI setelah `pnpm install`.
+  # Local binaries used directly, not via `pnpm run`: pnpm 10+ reinstalls dependencies
+  # if lockfile/package.json appears out of sync, which requires registry access.
   web_bin="$ROOT/apps/web/node_modules/.bin"
   ui_bin="$ROOT/packages/ui/node_modules/.bin"
   if [ ! -x "$web_bin/playwright" ] || [ ! -x "$ui_bin/vitest" ]; then
-    skip "dependency JS belum terpasang (jalankan: pnpm install) — e2e/a11y dilewati"
+    skip "JS dependencies not installed (run: pnpm install) — e2e/a11y skipped"
     return 0
   fi
 
-  log "kontras token (vitest, packages/ui)"
-  (cd "$ROOT/packages/ui" && "$ui_bin/vitest" run) || die "test kontras token gagal"
-  ok "pasangan token lolos ambang kontras (light + dark)"
+  log "token contrast (vitest, packages/ui)"
+  (cd "$ROOT/packages/ui" && "$ui_bin/vitest" run) || die "token contrast test failed"
+  ok "token pairs passed contrast threshold (light + dark)"
 
-  log "i18n: kompilasi Paraglide + tipe pesan"
+  log "i18n: compile Paraglide + message types"
   (cd "$ROOT/apps/web" && "$web_bin/paraglide-js" compile \
     --project ../../packages/i18n/project.inlang \
     --outdir ./src/lib/paraglide \
-    --emit-ts-declarations >/dev/null) || die "kompilasi Paraglide gagal"
-  ok "pesan terkompilasi"
+    --emit-ts-declarations >/dev/null) || die "Paraglide compilation failed"
+  ok "messages compiled"
 
-  log "svelte-check (tipe + diagnostik a11y komponen)"
-  # `--fail-on-warnings` (D-053): warning kompilator — termasuk seluruh diagnostik `a11y_*` —
-  # memblokir. Sebelumnya hanya `error` yang memblokir, sehingga warning a11y bisa menumpuk
-  # tanpa pernah menggagalkan gate. Terbukti bersih saat diaktifkan (17 Okt 2026: 0 error,
-  # 0 warning), jadi ini penguatan gate, bukan pelonggaran.
+  log "svelte-check (types + component a11y diagnostics)"
+  # `--fail-on-warnings` (D-053): compiler warnings — including all `a11y_*` diagnostics —
+  # block.
   (cd "$ROOT/apps/web" && "$web_bin/svelte-kit" sync >/dev/null && "$web_bin/svelte-check" --tsconfig ./tsconfig.json --fail-on-warnings) \
-    || die "svelte-check menemukan error atau warning"
+    || die "svelte-check found errors or warnings"
   ok "0 error, 0 warning"
 
-  # API e2e (spec §17.2): hanya bila ada DB. Migrasi + seed dev idempoten dulu, baru Playwright
-  # mengangkat binary hasil build di port 8099 (lihat apps/web/playwright.config.ts).
+  # API e2e (spec §17.2): only when DB is available. Idempotent migrate + seed dev first,
+  # then Playwright starts the compiled binary on port 8099 (see apps/web/playwright.config.ts).
   if [ -z "$KRAN_DATABASE_URL" ]; then
-    skip "KRAN_DATABASE_URL kosong — API e2e tidak dijalankan, spec alur login/maker-checker dilewati"
+    skip "KRAN_DATABASE_URL is empty — API e2e not run, login/maker-checker flow spec skipped"
   else
-    log "API e2e: build + migrasi + seed dev"
+    log "API e2e: build + migrate + dev seed"
     cmd_build
     mkdir -p "$BUILD"
     dbt=$(build_tool "$ROOT/tools/dbtools")
-    "$dbt" --root "$ROOT" migrate || die "migrasi DB dev gagal"
-    "$dbt" --root "$ROOT" seed --dev || die "seed dev gagal"
-    ok "API e2e siap (migrasi + seed dev idempoten)"
+    "$dbt" --root "$ROOT" migrate || die "dev DB migration failed"
+    "$dbt" --root "$ROOT" seed --dev || die "dev seed failed"
+    ok "API e2e ready (idempotent migration + dev seed)"
   fi
 
-  log "e2e (Playwright): axe 2 tema x 2 locale + alur keyboard-only + alur login/maker-checker"
-  (cd "$ROOT/apps/web" && "$web_bin/playwright" test) || die "e2e gagal"
-  ok "e2e hijau"
+  log "e2e (Playwright): axe 2 themes x 2 locales + keyboard-only flow + login/maker-checker flow"
+  (cd "$ROOT/apps/web" && "$web_bin/playwright" test) || die "e2e failed"
+  ok "e2e green"
 }
 
 cmd_build() {
   mkdir -p "$BIN"
-  [ -f "$ROOT/apps/api/src/main.nim" ] || die "apps/api/src/main.nim belum ada (T-004)"
+  [ -f "$ROOT/apps/api/src/main.nim" ] || die "apps/api/src/main.nim not found (T-004)"
   nim c $NIMFLAGS --mm:orc --threads:on --out:"$BIN/kran-api" "$ROOT/apps/api/src/main.nim"
   ok "$BIN/kran-api"
 }
 
-cmd_scaffold() { # cmd_scaffold <nama> [--dry-run]
-  log "scaffold modul baru"
-  [ -d "$ROOT/tools/scaffold" ] || die "tools/scaffold belum ada (T-011)"
+cmd_scaffold() { # cmd_scaffold <name> [--dry-run]
+  log "scaffold new module"
+  [ -d "$ROOT/tools/scaffold" ] || die "tools/scaffold not found (T-011)"
   tool=$(build_tool "$ROOT/tools/scaffold")
-  "$tool" --root "$ROOT" "$@" || die "scaffold gagal"
+  "$tool" --root "$ROOT" "$@" || die "scaffold failed"
 }
 
 summarize() {
   if [ -n "$SKIPS" ]; then
-    printf '\n== catatan: target yang dilewati (belum ada / menunggu keputusan):%s\n' "$SKIPS"
+    printf '\n== note: targets skipped (not yet present / pending decision):%s\n' "$SKIPS"
   fi
 }
 
@@ -428,30 +420,29 @@ cmd_ci() {
   cmd_test
   cmd_e2e
   summarize
-  printf '\n== CI hijau\n'
+  printf '\n== CI green\n'
 }
 
-# Gate kestabilan: `./task ci` menjawab "lulus sekarang", bukan "stabil". Flake hanya terlihat saat
-# diulang, jadi gate penuh dijalankan N kali berturut-turut dan berhenti pada putaran pertama yang
-# merah (T-031). Sengaja tidak dipakai di setiap task: satu putaran sudah ~8 menit.
-cmd_ci_repeat() { # cmd_ci_repeat [jumlah-putaran]
-  putaran_total=${1:-3}
-  case "$putaran_total" in
-    '' | *[!0-9]*) die "jumlah putaran harus angka (mis. ./task ci-repeat 3)" ;;
+# Stability gate: `./task ci` answers "passes now", not "stable". Flakes only show on repeat,
+# so the full gate runs N times consecutively and halts at the first red round (T-031).
+cmd_ci_repeat() { # cmd_ci_repeat [round-count]
+  total_rounds=${1:-3}
+  case "$total_rounds" in
+    '' | *[!0-9]*) die "repeat count must be a number (e.g. ./task ci-repeat 3)" ;;
   esac
-  [ "$putaran_total" -ge 1 ] || die "jumlah putaran minimal 1"
-  putaran=1
-  while [ "$putaran" -le "$putaran_total" ]; do
-    log "ci-repeat: putaran $putaran/$putaran_total"
-    cmd_ci || die "ci-repeat gagal pada putaran $putaran/$putaran_total"
-    putaran=$((putaran + 1))
+  [ "$total_rounds" -ge 1 ] || die "repeat count must be at least 1"
+  round=1
+  while [ "$round" -le "$total_rounds" ]; do
+    log "ci-repeat: round $round/$total_rounds"
+    cmd_ci || die "ci-repeat failed on round $round/$total_rounds"
+    round=$((round + 1))
   done
-  printf '\n== ci-repeat hijau: %s putaran berturut-turut\n' "$putaran_total"
+  printf '\n== ci-repeat green: %s consecutive rounds\n' "$total_rounds"
 }
 
 cmd_help() {
-  # Cetak blok komentar kepala berkas: dari baris 2 sampai baris pertama yang bukan komentar.
-  # Tidak memakai nomor baris tetap supaya menambah perintah tidak memotong bantuan diam-diam.
+  # Print file header comment block: from line 2 to first non-comment line.
+  # Does not use fixed line numbers so adding commands won't truncate help silently.
   sed -n '2,/^[^#]/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'
 }
 
@@ -477,14 +468,13 @@ case "${1:-help}" in
   dbtools) shift; mkdir -p "$BUILD"; tool=$(build_tool "$ROOT/tools/dbtools"); "$tool" --root "$ROOT" "$@" ;;
   scaffold) shift; mkdir -p "$BUILD"; cmd_scaffold "$@" ;;
   bench-password)
-    # `-d:release` disengaja: biner produksi juga release (`apps/api/Dockerfile:41`). Dengan build
-    # bawaan (debug) PBKDF2 ~20x lebih lambat dan angkanya tidak menggambarkan apa pun yang nyata.
+    # `-d:release` is intentional: production binary is also release (`apps/api/Dockerfile:41`).
     shift
     mkdir -p "$BIN"
     nim c -d:release $NIMFLAGS --out:"$BIN/bench-password" "$ROOT/tools/bench-password/main.nim" >/dev/null \
-      || die "gagal build tool bench-password"
+      || die "failed to build bench-password tool"
     exec "$BIN/bench-password" "$@"
     ;;
   help | -h | --help) cmd_help ;;
-  *) die "perintah tidak dikenal: $1 (coba ./task help)" ;;
+  *) die "unknown command: $1 (try ./task help)" ;;
 esac
