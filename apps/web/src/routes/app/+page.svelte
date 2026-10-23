@@ -315,7 +315,7 @@
     <div class="kran-metric-card">
       <span class="kran-metric-card__label">{m.params_active_heading()}</span>
       <span class="kran-metric-card__value kran-num">{active.length}</span>
-      <span class="kran-metric-card__sub">Konfigurasi operasional aktif</span>
+      <span class="kran-metric-card__sub">{m.app_metric_active_sub()}</span>
     </div>
 
     <div class="kran-metric-card">
@@ -323,9 +323,9 @@
       <span class="kran-metric-card__value kran-num">{pending.length}</span>
       <div class="kran-metric-card__sub">
         {#if pending.length > 0}
-          <span class="kran-badge kran-badge--warning">Perlu tindakan checker</span>
+          <span class="kran-badge kran-badge--warning">{m.app_metric_pending_action()}</span>
         {:else}
-          <span class="kran-badge kran-badge--ok">Tidak ada antrean</span>
+          <span class="kran-badge kran-badge--ok">{m.app_metric_pending_none()}</span>
         {/if}
       </div>
     </div>
@@ -333,7 +333,7 @@
     <div class="kran-metric-card">
       <span class="kran-metric-card__label">{m.audit_heading()}</span>
       <span class="kran-metric-card__value kran-num">{audit.length}</span>
-      <span class="kran-metric-card__sub">Aktivitas terlacak</span>
+      <span class="kran-metric-card__sub">{m.app_metric_audit_sub()}</span>
     </div>
   </div>
 

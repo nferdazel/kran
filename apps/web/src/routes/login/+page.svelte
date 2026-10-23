@@ -68,43 +68,13 @@
     <p class="login-brand">{m.common_brand_short()}</p>
     <p class="login-line">{m.login_intro()}</p>
 
-    <div class="login-pillars" aria-hidden="true">
-      <div class="login-pillar">
-        <span class="login-pillar__icon">🏛️</span>
-        <div>
-          <strong class="login-pillar__title">Standar Regulasi Indonesia</strong>
-          <p class="login-pillar__desc">Kepatuhan UU PPSK, Permenkop & regulasi BPR/BMT</p>
-        </div>
-      </div>
-
-      <div class="login-pillar">
-        <span class="login-pillar__icon">🛡️</span>
-        <div>
-          <strong class="login-pillar__title">Integritas Buku Besar</strong>
-          <p class="login-pillar__desc">Ledger imutabel, zero-float uang, & audit hash-chain</p>
-        </div>
-      </div>
-
-      <div class="login-pillar">
-        <span class="login-pillar__icon">⚡</span>
-        <div>
-          <strong class="login-pillar__title">Terminal Efisiensi Tinggi</strong>
-          <p class="login-pillar__desc">Alur kerja keyboard-first & palet perintah cepat</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="login-status-badge">
-      <span class="kran-status-dot" aria-hidden="true"></span>
-      <span class="kran-muted">Sistem Operasional · Enkripsi Aktif</span>
-    </div>
   </aside>
 
   <section class="login-panel">
     <div class="login-card">
       <div class="login-card__head">
         <h1 class="login-title">{m.login_title()}</h1>
-        <p class="kran-muted login-subtitle">Autentikasi sesi operator institusi</p>
+        <p class="kran-muted login-subtitle">{m.login_subtitle()}</p>
       </div>
 
       <form class="kran-form login-form" onsubmit={submit} novalidate>
@@ -199,52 +169,7 @@
     line-height: 1.5;
   }
 
-  .login-pillars {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    margin-block-start: var(--space-4);
-    padding-block-start: var(--space-4);
-    border-block-start: 1px solid var(--color-hairline);
-  }
 
-  .login-pillar {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--space-3);
-  }
-
-  .login-pillar__icon {
-    font-size: var(--text-md);
-    line-height: 1.2;
-  }
-
-  .login-pillar__title {
-    display: block;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: var(--color-text);
-  }
-
-  .login-pillar__desc {
-    margin: 0;
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-  }
-
-  .login-status-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin-block-start: var(--space-3);
-    padding-block: 4px;
-    padding-inline: var(--space-3);
-    border: 1px solid var(--color-hairline);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface);
-    font-size: var(--text-xs);
-    width: fit-content;
-  }
 
   .login-panel {
     display: flex;

@@ -226,13 +226,13 @@
     <div class="kran-metric-card">
       <span class="kran-metric-card__label">{m.ledger_group_movement()} {m.ledger_debit()} (IDR)</span>
       <span class="kran-metric-card__value kran-money">{formatMoney(totals.periodDebit)}</span>
-      <span class="kran-metric-card__sub">{m.ledger_total()} {m.ledger_debit().toLowerCase()} periode</span>
+      <span class="kran-metric-card__sub">{m.ledger_metric_debit_sub()}</span>
     </div>
 
     <div class="kran-metric-card">
       <span class="kran-metric-card__label">{m.ledger_group_movement()} {m.ledger_credit()} (IDR)</span>
       <span class="kran-metric-card__value kran-money">{formatMoney(totals.periodCredit)}</span>
-      <span class="kran-metric-card__sub">{m.ledger_total()} {m.ledger_credit().toLowerCase()} periode</span>
+      <span class="kran-metric-card__sub">{m.ledger_metric_credit_sub()}</span>
     </div>
 
     <div class="kran-metric-card">
@@ -242,12 +242,12 @@
         {#if totals.periodDebit === totals.periodCredit}
           <span class="kran-badge kran-badge--ok">
             <span aria-hidden="true">✔</span>
-            <span>Seimbang (D = K)</span>
+            <span>{m.ledger_balanced()}</span>
           </span>
         {:else}
           <span class="kran-badge kran-badge--warning">
             <span aria-hidden="true">▲</span>
-            <span>Tidak seimbang</span>
+            <span>{m.ledger_unbalanced()}</span>
           </span>
         {/if}
       </div>
