@@ -2983,3 +2983,20 @@ perubahan CHECK destruktif dan tidak membantu pemilihan posting rule.
 `NEEDS-COMPLIANCE-REVIEW` (O-100, REG-101). Rollback layanan ke image sebelum T-111 membuat
 setoran POKOK/WAJIB kembali ke `201` tanpa error (salah klasifikasi GL); migrasi expand tidak
 membatalkan ini. Catat di runbook deploy bila rollback melewati rilis ini.
+
+## D-129 — Cabang pilot produksi & vault kas awal
+
+**Konteks.** Belum ada tabel master cabang; `branch_id` adalah UUID bebas yang dipakai konsisten
+oleh rekening, teller, dan vault. Produksi belum punya rekening, jadi belum ada UUID yang baku.
+Runbook vault membutuhkan `branch_id` sebelum sesi kas bisa dibuka.
+
+**Keputusan (disetujui pemilik 23 Okt 2026).**
+1. Cabang pilot produksi memakai UUID tetap `b0000000-0000-4000-8000-000000000001` sampai master
+   cabang dibuat (O-101). Semua rekening/sesi pilot harus memakai UUID ini.
+2. Float vault awal **Rp10.000.000** (`10000000.0000`), dibuat lewat SQL satu kali
+   (`docs/runbooks/vault-produksi.md`), bukan lewat API top-up.
+3. Top-up berikutnya lewat `POST /teller/vault/topups`; tanpa GL (O-097) dan tanpa maker-checker
+   (O-098) sampai keputusan pemilik berikutnya.
+
+**Konsekuensi.** Neraca tidak mencerminkan kas pilot (O-097). Nomor/identitas cabang ini bukan
+fakta organisasi; jangan dipakai sebagai kode cabang final.
