@@ -80,6 +80,45 @@ export function addMoney(a: string, b: string, decimals: MoneyDecimals = 4): str
   return `${negative ? "-" : ""}${intPart}.${fracPart}`;
 }
 
+export type MoneyInputError = "empty" | "invalid_format" | "not_positive" | "too_precise";
+
+export type MoneyInputResult =
+  | { ok: true; value: string }
+  | { ok: false; error: MoneyInputError };
+
+/**
+ * Membaca nominal yang diketik teller menjadi desimal polos 4 desimal (spec §13, D-097).
+ *
+ * Aturan, sengaja ketat supaya tidak ada tebakan: digit saja, satu pemisah desimal (`,` atau `.`),
+ * maksimum 2 desimal, tanpa pemisah ribuan, tanpa tanda. Nilai `> 0`. Tidak menyentuh `Number`:
+ * keluaran dibentuk dari string, jadi tidak ada pembulatan float dan digit besar tetap utuh.
+ *
+ * `,` diterima karena teller mengetik nominal tunai dengan koma desimal; `.` diterima supaya
+ * nilai yang disalin dari dokumen lain tidak perlu diubah tangan.
+ */
+export function parseMoneyInput(raw: string): MoneyInputResult {
+  const text = raw.trim();
+  if (text === "") {
+    return { ok: false, error: "empty" };
+  }
+
+  const match = /^(\d+)(?:[.,](\d+))?$/.exec(text);
+  if (!match) {
+    return { ok: false, error: "invalid_format" };
+  }
+  const [, intDigits = "0", fraction = ""] = match;
+  if (fraction.length > 2) {
+    return { ok: false, error: "too_precise" };
+  }
+
+  const intPart = intDigits.replace(/^0+(?=\d)/, "");
+  const value = `${intPart}.${fraction.padEnd(4, "0")}`;
+  if (intPart === "0" && /^0*$/.test(fraction)) {
+    return { ok: false, error: "not_positive" };
+  }
+  return { ok: true, value };
+}
+
 function scaledValue(decimal: string, decimals: MoneyDecimals): bigint {
   const match = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(decimal.trim());
   if (!match) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addMoney, formatMoney } from "../src/money.js";
+import { addMoney, formatMoney, parseMoneyInput } from "../src/money.js";
 
 /**
  * T-083 / D-097: uang diformat dari string desimal tanpa float.
@@ -80,3 +80,50 @@ describe("addMoney: total laporan tanpa float", () => {
     expect(() => addMoney("1,5", "2")).toThrow(/bukan desimal/);
   });
 });
+
+/**
+ * Input nominal tunai (T-088d). Parser menerima yang diketik teller (digit + satu pemisah
+ * desimal, maksimum 2 desimal) dan mengeluarkan desimal polos 4 desimal untuk kontrak API.
+ */
+describe("parseMoneyInput: bentuk yang diterima", () => {
+  it("digit saja dan satu desimal", () => {
+    expect(parseMoneyInput("150000")).toEqual({ ok: true, value: "150000.0000" });
+    expect(parseMoneyInput("150000.5")).toEqual({ ok: true, value: "150000.5000" });
+    expect(parseMoneyInput("150000,25")).toEqual({ ok: true, value: "150000.2500" });
+  });
+
+  it("spasi di tepi diabaikan, nol di depan dibuang", () => {
+    expect(parseMoneyInput("  150000  ")).toEqual({ ok: true, value: "150000.0000" });
+    expect(parseMoneyInput("0007")).toEqual({ ok: true, value: "7.0000" });
+  });
+
+  it("nilai kurang dari satu", () => {
+    expect(parseMoneyInput("0,5")).toEqual({ ok: true, value: "0.5000" });
+    expect(parseMoneyInput("0.01")).toEqual({ ok: true, value: "0.0100" });
+  });
+});
+
+describe("parseMoneyInput: bentuk yang ditolak", () => {
+  it("kosong", () => {
+    expect(parseMoneyInput("")).toEqual({ ok: false, error: "empty" });
+    expect(parseMoneyInput("   ")).toEqual({ ok: false, error: "empty" });
+  });
+
+  it("nol dan bentuk nol", () => {
+    expect(parseMoneyInput("0")).toEqual({ ok: false, error: "not_positive" });
+    expect(parseMoneyInput("000")).toEqual({ ok: false, error: "not_positive" });
+    expect(parseMoneyInput("0,00")).toEqual({ ok: false, error: "not_positive" });
+  });
+
+  it("bukan digit / pemisah ganda / pemisah menggantung", () => {
+    for (const bad of ["abc", "1e6", "-5", "1.2.3", "1,2,3", "150,", ",5", "1 500", "+5"]) {
+      expect(parseMoneyInput(bad)).toEqual({ ok: false, error: "invalid_format" });
+    }
+  });
+
+  it("lebih dari 2 desimal", () => {
+    expect(parseMoneyInput("150000,005")).toEqual({ ok: false, error: "too_precise" });
+    expect(parseMoneyInput("150.000")).toEqual({ ok: false, error: "too_precise" });
+  });
+});
+

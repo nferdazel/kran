@@ -136,6 +136,15 @@
       <li>
         <a
           class="kran-link"
+          href="/app/teller"
+          aria-current={page.url.pathname.startsWith("/app/teller") ? "page" : undefined}
+        >
+          {m.common_nav_teller()}
+        </a>
+      </li>
+      <li>
+        <a
+          class="kran-link"
           href="/app"
           aria-current={page.url.pathname === "/app" ? "page" : undefined}
         >
