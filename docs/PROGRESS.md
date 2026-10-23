@@ -2299,7 +2299,11 @@ Batasan yang dibuka: O-097 (GL kas teller), O-098 (top-up vault = T-107), O-099 
   `teller.vault.read/topup`; migrasi `product/0007`, `ledger/0014`, `platform/0026` tercatat.
   Rute baru hidup (401 tanpa sesi): `/api/v1/teller/vault`, `/api/v1/deposit/accounts/{id}/statement`;
   bundle web memuat tautan cetak + `savings_kind_locked`.
-- **Batas pasca-deploy**: vault produksi belum diisi → sesi kas tetap `vault_not_configured`
-  sampai runbook dijalankan. Rollback melewati rilis ini akan mengembalikan setoran POKOK/WAJIB ke
-  `201` (lihat ACCEPTED-LIMITS §4a).
+- **Vault produksi diisi** (D-129, disetujui pemilik): cabang pilot
+  `b0000000-0000-4000-8000-000000000001`, float awal **Rp10.000.000**
+  (`10000000.0000`) lewat SQL satu kali (`docs/runbooks/vault-produksi.md`). Hasil `INSERT 0 1`;
+  verifikasi `SELECT` menunjukkan satu baris. Tanpa GL (O-097), tanpa maker-checker (O-098).
+- **Batas pasca-deploy**: master cabang belum ada (O-101) — semua rekening/sesi pilot harus memakai
+  UUID cabang tersebut. Rollback melewati rilis ini akan mengembalikan setoran POKOK/WAJIB ke `201`
+  (lihat ACCEPTED-LIMITS §4a).
 
