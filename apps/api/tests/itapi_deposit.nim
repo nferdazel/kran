@@ -345,6 +345,36 @@ suite "deposit: buka & baca rekening":
     check badUuid.code == 400
     checkProblem(AccountsPath, "GET", "400", badUuid.body)
 
+  test "cari rekening per nomor: sendiri, cabang lain, tidak ada, validasi":
+    let token = tokenOf(login(MakerUser))
+    let created = postJson(AccountsPath, accountBody(), token)
+    check created.code == 201
+    let accountNo = created.body["accountNo"].getStr()
+
+    let own = getJson(AccountsPath & "?accountNo=" & accountNo, token)
+    check own.code == 200
+    checkJson(AccountsPath, "GET", "200", own.body)
+    check own.body["items"].len == 1
+    check own.body["items"][0]["accountId"].getStr() == created.body["accountId"].getStr()
+
+    # Cabang lain: hasil kosong, bukan 403/404 (tidak membocorkan keberadaan).
+    let scoped = tokenOf(login("dev.branchmaker"))
+    let hidden = getJson(AccountsPath & "?accountNo=" & accountNo, scoped)
+    check hidden.code == 200
+    check hidden.body["items"].len == 0
+
+    let missing = getJson(AccountsPath & "?accountNo=9999999999", token)
+    check missing.code == 200
+    check missing.body["items"].len == 0
+
+    let both = getJson(AccountsPath & "?partyId=" & PartyId & "&accountNo=" & accountNo, token)
+    check both.code == 400
+    checkProblem(AccountsPath, "GET", "400", both.body)
+
+    let tooLong = getJson(AccountsPath & "?accountNo=" & "9".repeat(33), token)
+    check tooLong.code == 400
+    checkProblem(AccountsPath, "GET", "400", tooLong.body)
+
   test "rekening tidak ada → 404":
     let token = tokenOf(login(MakerUser))
     let missing = getJson(AccountsPath & "/99999999-9999-7999-8999-999999999999", token)
