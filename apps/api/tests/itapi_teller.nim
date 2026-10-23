@@ -439,6 +439,7 @@ suite "teller: idempotency":
     let key = "idem-teller-1"
 
     let journalsBefore = journalCount("DepositPosted")
+    let auditsBefore = auditCount("deposit.transaction.post")
     let first = postJson(CashPath, body, token, key)
     check first.code == 201
     let txId = first.body["transactionId"].getStr()
@@ -446,7 +447,7 @@ suite "teller: idempotency":
     check txCount(accountId) == 1
     check journalCount("DepositPosted") == journalsBefore + 1
     let auditsAfterFirst = auditCount("deposit.transaction.post")
-    check auditsAfterFirst > 0
+    check auditsAfterFirst == auditsBefore + 1
 
     let replay = postJson(CashPath, body, token, key)
     check replay.code == 200
