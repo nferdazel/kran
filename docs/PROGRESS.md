@@ -2330,3 +2330,29 @@ Batasan yang dibuka: O-097 (GL kas teller), O-098 (top-up vault = T-107), O-099 
 - **Deploy produksi**: `d13aa12..c998462`, `.deployed_rev = c9984625ff36`, `/readyz` 200; bundle web
   memuat teks sidebar baru — revamp arsitektur live.
 
+
+## 23 Okt 2026 — Provisioning pilot produksi (T-114)
+
+- **Kode** (PR #1, merge `77c7e8e`, deploy `.deployed_rev = 77c7e8e98ee8`, `/readyz` 200):
+  `ctl create-user` (satu role, audit `user.create`, wajib ganti sandi) + migrasi `platform/0027`
+  (`teller`, `product_checker`). `param_checker` tetap ditolak pada katalog produk.
+- **Akun**: `admin` (`platform_admin`), `checker.pilot` (`product_checker`), `teller.pilot`
+  (`teller`, cabang pilot). Ketiganya sudah melewati ganti sandi; `must_change_password=false`.
+- **Cabang**: 12 party demo dipindah ke `b0000000-0000-4000-8000-000000000001` (D-129) sebelum
+  rekening pertama; `UPDATE 12`, tidak ada baris di cabang demo lama.
+- **Periode**: `2026-10-01..2026-10-31` OPEN (satu-satunya).
+- **Produk** (maker `admin`, checker `checker.pilot`, semua v1 ACTIVE): `SIMP-POKOK` (POKOK),
+  `SIMP-WAJIB` (WAJIB), `SIMP-SUKARELA` (SUKARELA, min 10.000), `TABUNGAN` (TABUNGAN, min 25.000).
+  `interest_posting=NONE`, `interest_rate=0` — mesin bunga belum ada di Fase 2.
+- **Rekening** (5): 0000000001 Agus/POKOK 100.000; 0000000002 Agus/WAJIB 50.000;
+  0000000003 Budi/TABUNGAN 1.250.000; 0000000004 Dewi/TABUNGAN 550.000;
+  0000000005 Siti/SUKARELA 750.000.
+- **Kas teller**: sesi `teller.pilot` float 2.000.000; 5 setoran tunai 2.700.000; 1 PB
+  250.000 (Budi→Dewi); tutup `expected=counted=4.700.000`, variance 0. Vault akhir
+  **12.700.000**.
+- **Bukti**: 6 jurnal/12 baris, debit = credit = 2.950.000 (imbalance 0); 5
+  `deposit.transaction`, 1 `deposit.transfer`; audit `user.create` 2, `product.approve` 4,
+  `deposit.account.open` 5, `teller.session.open/close` 1. Login teller + statement rekening
+  0000000003 mengembalikan 2 baris (setoran gaji, PB keluar) lewat `cbs.qouver.com`.
+- **Gate**: PR #1 CI hijau (Nim 4m41s, DB 8m16s, Web 42s, gitleaks 8s). Runbook:
+  `docs/runbooks/pilot-provisioning.md`. Sisa batas: O-097/O-098/O-099/O-101.
