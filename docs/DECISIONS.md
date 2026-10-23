@@ -2882,3 +2882,39 @@ tidak menerima baris jurnal sendiri (batas dicatat di `ACCEPTED-LIMITS.md`).
 **Konsekuensi.** Rekonsiliasi per rekening (T-101) wajib membaca `deposit.transfer`, bukan hanya
 `journal_line`. Lintas cabang hanya boleh bila pemanggil memegang izin di kedua cabang; atribusi
 cabang tujuan menunggu kebutuhan audit viewer (088d/audit).
+
+
+---
+
+## D-125 — Sesi kas teller: gerbang transaksi tunai, cash_movement, dan batas tanpa jurnal
+
+**Konteks.** T-088b menulis transaksi tunai langsung (saldo + jurnal sinkron) tanpa konsep sesi.
+Spec §11.6 menuntut gate EOD "semua sesi teller tutup & kas seimbang", dan `expected_cash` tidak
+punya arti tanpa sesi + arus laci. T-093 menambahkan itu di modul baru `teller`.
+
+**Keputusan.**
+1. **Transaksi tunai wajib sesi `OPEN`** milik pemanggil di cabang rekening pada `business_date`
+   yang sama; tanpanya 409 `no_open_session`. **PB tidak wajib sesi** (tidak menggerakkan uang fisik).
+2. **Gerbang berada di dalam blok `withIdempotency`**: replay yang sah setelah sesi ditutup harus
+   mengembalikan respons tersimpan, bukan 409 palsu. Gerbang membaca sesi `FOR KEY SHARE` supaya
+   penutupan (`FOR UPDATE`) menunggu transaksi in-flight dan movement tidak hilang dari `expected_cash`.
+3. **`cash_movement` hanya 2 tipe** (`CASH_IN`/`CASH_OUT`); opening float & counted cash adalah kolom
+   sesi (D-095: tidak ada tipe tanpa pemakai). Satu transaksi tunai = satu baris movement
+   (`transaction_id` UNIQUE FK `deposit.transaction`), ditulis dalam satu `withDbTx` dengan transaksi.
+4. **Satu sesi `OPEN` per (cabang, teller)** dijaga partial unique index; jalur repo memakai
+   `INSERT ... ON CONFLICT ... WHERE status='OPEN' DO NOTHING` agar balapan dua buka → 409, bukan 500.
+5. **Vault `FOR UPDATE` implisit** (`UPDATE ... WHERE balance >= ?`, satu baris per cabang), tidak
+   boleh negatif; tutup menambah vault sebesar `counted_cash` (uang fisik), bukan `expected_cash`.
+6. **Tanpa jurnal GL** untuk kas teller/variance: COA baru adalah keputusan akuntansi (batas di
+   `ACCEPTED-LIMITS.md`, item O-097). Top-up vault di luar scope (T-107).
+7. `GET /teller/sessions/current` tanpa sesi memilih **404** `session_not_open` (bukan 200 `null`).
+
+**Alternatif yang ditolak.** Kolom `session_id` di `deposit.transaction` (menambah konsep teller ke
+modul `deposit`, melanggar pemisahan D-124) dan menghitung sesi dari waktu transaksi (tidak bisa
+membedakan sesi pagi/siang, tanpa audit arus laci). Menaruh gate sesi di luar `withIdempotency`
+(ditolak karena replay sah jadi 409).
+
+**Konsekuensi.** `expected_cash` hanya benar bila **setiap** transaksi tunai menulis movement →
+dijaga satu `withDbTx` + test paritas. Rollback binary setelah 093b memerlukan tutup-sesi dahulu
+(batas dicatat). Deploy 093a/093b harus satu rilis bila belum ada klien teller; di repo ini memang
+belum ada.
