@@ -19,6 +19,8 @@
   import { api } from "#lib/app/api.js";
   import { paramProblemMessage } from "#lib/app/errors.js";
   import { formatClock, formatDate, formatDateTime } from "#lib/app/format.js";
+  import { landingAccess } from "#lib/app/landing.js";
+  import { roleLabel } from "#lib/app/roles.js";
   import {
     connectRealtime,
     type RealtimeClient,
@@ -34,6 +36,12 @@
   const session: SessionInfo = $derived(data.session);
   const canSubmit = $derived(session.permissions.includes("platform.param.submit"));
   const canApprove = $derived(session.permissions.includes("platform.param.approve"));
+  // Panel opsional dibaca per izin: pemakai tanpa `platform.param.read`/`platform.audit.read`
+  // (mis. teller) tetap mendapat halaman yang utuh, bukan galat 403 dari satu panel.
+  const access = $derived(landingAccess(session.permissions));
+  const canReadParams = $derived(access.params);
+  const canReadAudit = $derived(access.audit);
+  const roleLabels = $derived(session.roles.map((code) => roleLabel(code)));
 
   let active = $state<ParamValue[]>([]);
   let pending = $state<ParamValue[]>([]);
@@ -106,26 +114,33 @@
 
   async function refresh(): Promise<void> {
     // Kegagalan jaringan (bukan amplop `problem` dari server) ditangkap di sini: pesannya
-    // "gagal memuat data" + tombol coba lagi, bukan galat aksi.
-    const responses = await Promise.all([
-      api.GET("/api/v1/params", { params: { query: { status: "ACTIVE" } } }),
-      api.GET("/api/v1/params", { params: { query: { status: "PENDING" } } }),
-      api.GET("/api/v1/audit", { params: { query: { limit: 20 } } }),
+    // "gagal memuat data" + tombol coba lagi, bukan galat aksi. Panel yang izinnya tidak dipegang
+    // tidak diminta sama sekali, jadi 403 bukan lagi kegagalan halaman (spec §13).
+    errorMessage = "";
+    const results = await Promise.all([
+      canReadParams
+        ? api.GET("/api/v1/params", { params: { query: { status: "ACTIVE" } } })
+        : Promise.resolve(null),
+      canReadParams
+        ? api.GET("/api/v1/params", { params: { query: { status: "PENDING" } } })
+        : Promise.resolve(null),
+      canReadAudit
+        ? api.GET("/api/v1/audit", { params: { query: { limit: 20 } } })
+        : Promise.resolve(null),
     ]).catch(() => null);
-    if (responses === null) {
+    if (results === null) {
       errorMessage = m.app_error();
       return;
     }
-    const [activeRes, pendingRes, auditRes] = responses;
-    const firstProblem = activeRes.error ?? pendingRes.error ?? auditRes.error ?? null;
+    const [activeRes, pendingRes, auditRes] = results;
+    const firstProblem = activeRes?.error ?? pendingRes?.error ?? auditRes?.error ?? null;
     if (firstProblem) {
       errorMessage = errorFrom(firstProblem);
       return;
     }
-    active = activeRes.data?.items ?? [];
-    pending = pendingRes.data?.items ?? [];
-    audit = auditRes.data?.items ?? [];
-    errorMessage = "";
+    active = activeRes?.data?.items ?? [];
+    pending = pendingRes?.data?.items ?? [];
+    audit = auditRes?.data?.items ?? [];
     updatedAt = new Date();
     const firstKey = selectableKeys[0];
     if (!formKey && firstKey !== undefined) formKey = firstKey;
@@ -135,6 +150,10 @@
     void refresh().finally(() => {
       loading = false;
     });
+
+    // Tanpa izin baca parameter, langganan `param.changed` hanya akan menyulut refresh yang tidak
+    // menghasilkan apa pun (dan bisa ditolak server), jadi hub tidak dibuka.
+    if (!canReadParams) return;
 
     const realtime: RealtimeClient = connectRealtime(["param.changed"], {
       onEvent: () => {
@@ -303,6 +322,15 @@
 
   <div class="app-session-actions">
     <span class="kran-badge kran-badge--primary">{m.app_signed_in_as({ name: session.fullName })}</span>
+    <!-- Peran ditampilkan sebagai label nyata (kode peran diterjemahkan katalog), bukan kode mentah. -->
+    {#if roleLabels.length > 0}
+      <span class="app-roles">
+        <span class="kran-muted">{m.app_roles_label()}:</span>
+        {#each roleLabels as role (role)}
+          <span class="kran-badge">{role}</span>
+        {/each}
+      </span>
+    {/if}
     <a class="kran-button" href="/app/password">{m.app_change_password()}</a>
     <button class="kran-button" type="button" onclick={logout}>{m.app_logout()}</button>
   </div>
@@ -319,219 +347,249 @@
     <p role="status">{notice}</p>
   {/if}
 
-  <!-- Strip ringkasan parameter & audit -->
-  <div class="kran-metric-strip">
-    <div class="kran-metric-card">
-      <span class="kran-metric-card__label">{m.params_active_heading()}</span>
-      <span class="kran-metric-card__value kran-num">{active.length}</span>
-      <span class="kran-metric-card__sub">{m.app_metric_active_sub()}</span>
+  <!-- Strip ringkasan parameter & audit; kartu hanya tampil bila izin panelnya dipegang. -->
+  {#if canReadParams || canReadAudit}
+    <div class="kran-metric-strip">
+      {#if canReadParams}
+        <div class="kran-metric-card">
+          <span class="kran-metric-card__label">{m.params_active_heading()}</span>
+          <span class="kran-metric-card__value kran-num">{active.length}</span>
+          <span class="kran-metric-card__sub">{m.app_metric_active_sub()}</span>
+        </div>
+
+        <div class="kran-metric-card">
+          <span class="kran-metric-card__label">{m.params_pending_heading()}</span>
+          <span class="kran-metric-card__value kran-num">{pending.length}</span>
+          <div class="kran-metric-card__sub">
+            {#if pending.length > 0}
+              <span class="kran-badge kran-badge--warning">{m.app_metric_pending_action()}</span>
+            {:else}
+              <span class="kran-badge kran-badge--ok">{m.app_metric_pending_none()}</span>
+            {/if}
+          </div>
+        </div>
+      {/if}
+
+      {#if canReadAudit}
+        <div class="kran-metric-card">
+          <span class="kran-metric-card__label">{m.audit_heading()}</span>
+          <span class="kran-metric-card__value kran-num">{audit.length}</span>
+          <span class="kran-metric-card__sub">{m.app_metric_audit_sub()}</span>
+        </div>
+      {/if}
     </div>
-
-    <div class="kran-metric-card">
-      <span class="kran-metric-card__label">{m.params_pending_heading()}</span>
-      <span class="kran-metric-card__value kran-num">{pending.length}</span>
-      <div class="kran-metric-card__sub">
-        {#if pending.length > 0}
-          <span class="kran-badge kran-badge--warning">{m.app_metric_pending_action()}</span>
-        {:else}
-          <span class="kran-badge kran-badge--ok">{m.app_metric_pending_none()}</span>
-        {/if}
-      </div>
-    </div>
-
-    <div class="kran-metric-card">
-      <span class="kran-metric-card__label">{m.audit_heading()}</span>
-      <span class="kran-metric-card__value kran-num">{audit.length}</span>
-      <span class="kran-metric-card__sub">{m.app_metric_audit_sub()}</span>
-    </div>
-  </div>
-
-  {#if canSubmit}
-    <section class="kran-card" aria-labelledby="submit-heading">
-      <h2 id="submit-heading">{m.params_submit_heading()}</h2>
-      <p class="kran-muted">{m.params_submit_effective_from_hint()}</p>
-
-      <form class="kran-form" onsubmit={submitChange} novalidate>
-        <div class="kran-field">
-          <label class="kran-label" for="param-key">{m.params_submit_key_label()}</label>
-          <select class="kran-select" id="param-key" bind:value={formKey}>
-            {#each selectableKeys as key (key)}
-              <option value={key}>{key}</option>
-            {/each}
-          </select>
-        </div>
-
-        <div class="kran-field">
-          <label class="kran-label" for="param-value">{m.params_submit_value_label()}</label>
-          <input class="kran-input" id="param-value" name="value" bind:value={formValue} required />
-        </div>
-
-        <div class="kran-field">
-          <label class="kran-label" for="param-reason">{m.params_submit_reason_label()}</label>
-          <input
-            class="kran-input"
-            id="param-reason"
-            name="reason"
-            bind:value={formReason}
-            required
-          />
-        </div>
-
-        <div class="kran-field">
-          <label class="kran-label" for="param-effective-from"
-            >{m.params_submit_effective_from_label()}</label
-          >
-          <input
-            class="kran-input"
-            id="param-effective-from"
-            name="effectiveFrom"
-            type="date"
-            bind:value={formEffectiveFrom}
-          />
-        </div>
-
-        <p>
-          <button
-            class="kran-button kran-button--primary"
-            type="submit"
-            disabled={sending || formKey === ""}
-          >
-            {sending ? m.params_submit_sending() : m.params_submit_submit()}
-          </button>
-        </p>
-      </form>
-    </section>
   {/if}
 
-  <section class="kran-card" aria-labelledby="pending-heading">
-    <h2 id="pending-heading">{m.params_pending_heading()}</h2>
-    {#if pending.length === 0}
-      <p class="kran-muted">{m.params_pending_empty()}</p>
-    {:else}
-      <div class="kran-table-wrap">
-        <table class="kran-table">
-          <thead>
-            <tr>
-              <th scope="col">{m.params_col_key()}</th>
-              <th scope="col">{m.params_col_value()}</th>
-              <th scope="col">{m.params_col_effective_from()}</th>
-              <th scope="col">{m.params_col_maker()}</th>
-              <th scope="col">{m.params_col_status()}</th>
-              {#if canApprove}<th scope="col">{m.params_col_action()}</th>{/if}
-            </tr>
-          </thead>
-          <tbody>
-            {#each pending as row (row.paramValueId)}
-              <tr>
-                <th scope="row">{row.key}</th>
-                <td>{displayValue(row.value)}</td>
-                <td>{formatDate(row.effectiveFrom)}</td>
-                <td>{row.maker}</td>
-                <td>
-                  <span class={statusClass(row.status)}>
-                    <span class="kran-status__icon" aria-hidden="true">{statusIcon(row.status)}</span
-                    >
-                    {statusText(row.status)}
-                  </span>
-                </td>
-                {#if canApprove}
-                  <td>
-                    <button
-                      class="kran-button kran-button--primary"
-                      type="button"
-                      disabled={approvingId === row.paramValueId}
-                      onclick={() => void approve(row.paramValueId)}
-                    >
-                      {approvingId === row.paramValueId ? m.params_approving() : m.params_approve()}
-                    </button>
-                  </td>
+  {#if !canReadParams && !canReadAudit}
+    <!-- Tak ada panel yang boleh dibaca: satu penjelasan jujur, bukan dua daftar kosong. -->
+    <section class="kran-card" aria-labelledby="app-denied-heading">
+      <h2 id="app-denied-heading">{m.app_denied_heading()}</h2>
+      <p class="kran-muted">{m.app_denied_both()}</p>
+    </section>
+  {:else}
+    {#if canReadParams}
+      {#if canSubmit}
+        <section class="kran-card" aria-labelledby="submit-heading">
+          <h2 id="submit-heading">{m.params_submit_heading()}</h2>
+          <p class="kran-muted">{m.params_submit_effective_from_hint()}</p>
+
+          <form class="kran-form" onsubmit={submitChange} novalidate>
+            <div class="kran-field">
+              <label class="kran-label" for="param-key">{m.params_submit_key_label()}</label>
+              <select class="kran-select" id="param-key" bind:value={formKey}>
+                {#each selectableKeys as key (key)}
+                  <option value={key}>{key}</option>
+                {/each}
+              </select>
+            </div>
+
+            <div class="kran-field">
+              <label class="kran-label" for="param-value">{m.params_submit_value_label()}</label>
+              <input class="kran-input" id="param-value" name="value" bind:value={formValue} required />
+            </div>
+
+            <div class="kran-field">
+              <label class="kran-label" for="param-reason">{m.params_submit_reason_label()}</label>
+              <input
+                class="kran-input"
+                id="param-reason"
+                name="reason"
+                bind:value={formReason}
+                required
+              />
+            </div>
+
+            <div class="kran-field">
+              <label class="kran-label" for="param-effective-from"
+                >{m.params_submit_effective_from_label()}</label
+              >
+              <input
+                class="kran-input"
+                id="param-effective-from"
+                name="effectiveFrom"
+                type="date"
+                bind:value={formEffectiveFrom}
+              />
+            </div>
+
+            <p>
+              <button
+                class="kran-button kran-button--primary"
+                type="submit"
+                disabled={sending || formKey === ""}
+              >
+                {sending ? m.params_submit_sending() : m.params_submit_submit()}
+              </button>
+            </p>
+          </form>
+        </section>
+      {/if}
+
+      <section class="kran-card" aria-labelledby="pending-heading">
+        <h2 id="pending-heading">{m.params_pending_heading()}</h2>
+        {#if pending.length === 0}
+          <p class="kran-muted">{m.params_pending_empty()}</p>
+        {:else}
+          <div class="kran-table-wrap">
+            <table class="kran-table">
+              <thead>
+                <tr>
+                  <th scope="col">{m.params_col_key()}</th>
+                  <th scope="col">{m.params_col_value()}</th>
+                  <th scope="col">{m.params_col_effective_from()}</th>
+                  <th scope="col">{m.params_col_maker()}</th>
+                  <th scope="col">{m.params_col_status()}</th>
+                  {#if canApprove}<th scope="col">{m.params_col_action()}</th>{/if}
+                </tr>
+              </thead>
+              <tbody>
+                {#each pending as row (row.paramValueId)}
+                  <tr>
+                    <th scope="row">{row.key}</th>
+                    <td>{displayValue(row.value)}</td>
+                    <td>{formatDate(row.effectiveFrom)}</td>
+                    <td>{row.maker}</td>
+                    <td>
+                      <span class={statusClass(row.status)}>
+                        <span class="kran-status__icon" aria-hidden="true">{statusIcon(row.status)}</span
+                        >
+                        {statusText(row.status)}
+                      </span>
+                    </td>
+                    {#if canApprove}
+                      <td>
+                        <button
+                          class="kran-button kran-button--primary"
+                          type="button"
+                          disabled={approvingId === row.paramValueId}
+                          onclick={() => void approve(row.paramValueId)}
+                        >
+                          {approvingId === row.paramValueId ? m.params_approving() : m.params_approve()}
+                        </button>
+                      </td>
+                    {/if}
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+      </section>
+
+      <section class="kran-card" aria-labelledby="active-heading">
+        <div class="params-active-head">
+          <h2 id="active-heading">{m.params_active_heading()}</h2>
+          <input
+            class="kran-input params-search"
+            type="search"
+            placeholder={m.params_search_placeholder()}
+            aria-label={m.params_search_label()}
+            bind:value={searchFilter}
+          />
+        </div>
+        {#if active.length === 0}
+          <p class="kran-muted">{m.params_active_empty()}</p>
+        {:else}
+          <div class="kran-table-wrap">
+            <table class="kran-table">
+              <thead>
+                <tr>
+                  <th scope="col">{m.params_col_key()}</th>
+                  <th scope="col">{m.params_col_value()}</th>
+                  <th scope="col">{m.params_col_effective_from()}</th>
+                  <th scope="col">{m.params_col_status()}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#if filteredActive.length === 0}
+                  <tr>
+                    <td colspan="4" class="kran-muted params-empty">{m.params_search_empty()}</td>
+                  </tr>
                 {/if}
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-    {/if}
-  </section>
-
-  <section class="kran-card" aria-labelledby="active-heading">
-    <div class="params-active-head">
-      <h2 id="active-heading">{m.params_active_heading()}</h2>
-      <input
-        class="kran-input params-search"
-        type="search"
-        placeholder={m.params_search_placeholder()}
-        aria-label={m.params_search_label()}
-        bind:value={searchFilter}
-      />
-    </div>
-    {#if active.length === 0}
-      <p class="kran-muted">{m.params_active_empty()}</p>
+                {#each filteredActive as row (row.paramValueId)}
+                  <tr>
+                    <th scope="row">{row.key}</th>
+                    <td>{displayValue(row.value)}</td>
+                    <td>{formatDate(row.effectiveFrom)}</td>
+                    <td>
+                      <span class={statusClass(row.status)}>
+                        <span class="kran-status__icon" aria-hidden="true">{statusIcon(row.status)}</span>
+                        {statusText(row.status)}
+                      </span>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+      </section>
     {:else}
-      <div class="kran-table-wrap">
-        <table class="kran-table">
-          <thead>
-            <tr>
-              <th scope="col">{m.params_col_key()}</th>
-              <th scope="col">{m.params_col_value()}</th>
-              <th scope="col">{m.params_col_effective_from()}</th>
-              <th scope="col">{m.params_col_status()}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#if filteredActive.length === 0}
-              <tr>
-                <td colspan="4" class="kran-muted params-empty">{m.params_search_empty()}</td>
-              </tr>
-            {/if}
-            {#each filteredActive as row (row.paramValueId)}
-              <tr>
-                <th scope="row">{row.key}</th>
-                <td>{displayValue(row.value)}</td>
-                <td>{formatDate(row.effectiveFrom)}</td>
-                <td>
-                  <span class={statusClass(row.status)}>
-                    <span class="kran-status__icon" aria-hidden="true">{statusIcon(row.status)}</span>
-                    {statusText(row.status)}
-                  </span>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+      <!-- Izin baca parameter tidak dipegang: panel parameter diganti penjelasan jujur. -->
+      <section class="kran-card" aria-labelledby="app-denied-params-heading">
+        <h2 id="app-denied-params-heading">{m.app_denied_heading()}</h2>
+        <p class="kran-muted">{m.app_denied_params()}</p>
+      </section>
     {/if}
-  </section>
 
-  <section class="kran-card" aria-labelledby="audit-heading">
-    <h2 id="audit-heading">{m.audit_heading()}</h2>
-    {#if audit.length === 0}
-      <p class="kran-muted">{m.audit_empty()}</p>
+    {#if canReadAudit}
+      <section class="kran-card" aria-labelledby="audit-heading">
+        <h2 id="audit-heading">{m.audit_heading()}</h2>
+        {#if audit.length === 0}
+          <p class="kran-muted">{m.audit_empty()}</p>
+        {:else}
+          <div class="kran-table-wrap">
+            <table class="kran-table">
+              <thead>
+                <tr>
+                  <th scope="col">{m.audit_col_time()}</th>
+                  <th scope="col">{m.audit_col_action()}</th>
+                  <th scope="col">{m.audit_col_actor()}</th>
+                  <th scope="col">{m.audit_col_reason()}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each audit as entry (entry.seq)}
+                  <tr>
+                    <th scope="row">{formatDateTime(entry.recordedAt)}</th>
+                    <td>{entry.action}</td>
+                    <td>{entry.actorUserId}</td>
+                    <td>{entry.reason}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+      </section>
     {:else}
-      <div class="kran-table-wrap">
-        <table class="kran-table">
-          <thead>
-            <tr>
-              <th scope="col">{m.audit_col_time()}</th>
-              <th scope="col">{m.audit_col_action()}</th>
-              <th scope="col">{m.audit_col_actor()}</th>
-              <th scope="col">{m.audit_col_reason()}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each audit as entry (entry.seq)}
-              <tr>
-                <th scope="row">{formatDateTime(entry.recordedAt)}</th>
-                <td>{entry.action}</td>
-                <td>{entry.actorUserId}</td>
-                <td>{entry.reason}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+      <!-- Izin baca audit tidak dipegang: panel audit diganti penjelasan jujur. -->
+      <section class="kran-card" aria-labelledby="app-denied-audit-heading">
+        <h2 id="app-denied-audit-heading">{m.app_denied_heading()}</h2>
+        <p class="kran-muted">{m.app_denied_audit()}</p>
+      </section>
     {/if}
-  </section>
+  {/if}
 {/if}
 
 <style>
@@ -588,5 +646,13 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
+  }
+
+  .app-roles {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--text-xs);
   }
 </style>

@@ -29,6 +29,7 @@ type Text = {
   ledger: string;
   teller: string;
   params: string;
+  products: string;
   paramsTitle: string;
   newValue: string;
 };
@@ -43,6 +44,7 @@ const T: Record<"id" | "en", Text> = {
     ledger: "Buku besar",
     teller: "Teller",
     params: "Parameter",
+    products: "Produk",
     paramsTitle: "Parameter & jejak audit",
     newValue: "Nilai baru",
   },
@@ -55,6 +57,7 @@ const T: Record<"id" | "en", Text> = {
     ledger: "Ledger",
     teller: "Teller",
     params: "Parameters",
+    products: "Products",
     paramsTitle: "Parameters & audit trail",
     newValue: "New value",
   },
@@ -107,15 +110,16 @@ test.describe.serial("command palette", () => {
     // Substring tanpa peduli huruf besar/kecil, lewat label bahasa aktif maupun bahasa lain.
     await page.keyboard.type("tell");
     await expect(dialog.getByRole("link", { name: T.id.teller, exact: true })).toBeVisible();
-    await expect(dialog.getByRole("link", { name: T.id.ledger, exact: true })).toHaveCount(0);
-    await dialog.getByLabel(T.id.searchLabel, { exact: true }).fill("ledger");
-    await expect(dialog.getByRole("link", { name: T.id.ledger, exact: true })).toBeVisible();
+    await expect(dialog.getByRole("link", { name: T.id.products, exact: true })).toHaveCount(0);
+    // "products" (en) menemukan "Produk" (id): kata kunci mencakup seluruh locale.
+    await dialog.getByLabel(T.id.searchLabel, { exact: true }).fill("products");
+    await expect(dialog.getByRole("link", { name: T.id.products, exact: true })).toBeVisible();
 
     // Panah memindahkan fokus ke aksi; Enter membuka tautan (navigasi native).
     await page.keyboard.press("ArrowDown");
-    await expect(dialog.getByRole("link", { name: T.id.ledger, exact: true })).toBeFocused();
+    await expect(dialog.getByRole("link", { name: T.id.products, exact: true })).toBeFocused();
     await page.keyboard.press("Enter");
-    await expect(page).toHaveURL(/\/app\/ledger$/);
+    await expect(page).toHaveURL(/\/app\/products$/);
     await expect(dialog).toBeHidden();
   });
 
@@ -153,9 +157,11 @@ test.describe.serial("command palette", () => {
     await expect(dialog.getByText(T.id.empty)).toBeVisible();
     await expect(dialog.getByRole("link")).toHaveCount(0);
 
-    // Kueri kosong mengembalikan seluruh daftar (tiga tab menu yang ada).
+    // Kueri kosong mengembalikan seluruh daftar untuk operator maker: teller, parameter, produk
+    // (buku besar tidak muncul karena maker tidak memegang `ledger.journal.read`).
     await dialog.getByLabel(T.id.searchLabel, { exact: true }).fill("");
     await expect(dialog.getByRole("link")).toHaveCount(3);
+    await expect(dialog.getByRole("link", { name: T.id.ledger, exact: true })).toHaveCount(0);
 
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
@@ -226,7 +232,7 @@ test.describe.serial("command palette", () => {
         await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
         const dialog = await openPalette(page, text);
-        await expect(dialog.getByRole("link", { name: text.ledger, exact: true })).toBeVisible();
+        await expect(dialog.getByRole("link", { name: text.teller, exact: true })).toBeVisible();
 
         const results = await new AxeBuilder({ page }).analyze();
         const serious = results.violations.filter(
