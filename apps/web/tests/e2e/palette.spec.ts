@@ -157,11 +157,12 @@ test.describe.serial("command palette", () => {
     await expect(dialog.getByText(T.id.empty)).toBeVisible();
     await expect(dialog.getByRole("link")).toHaveCount(0);
 
-    // Kueri kosong mengembalikan seluruh daftar untuk operator maker: teller, parameter, produk
-    // (buku besar tidak muncul karena maker tidak memegang `ledger.journal.read`).
+    // Kueri kosong mengembalikan seluruh daftar untuk operator maker: buku besar, teller,
+    // parameter, produk. Seed dev `0003_dev_ledger.sql` memberi `dev.maker` izin baca buku besar
+    // supaya tabel ledger punya fixture untuk gate axe/keyboard T-079.
     await dialog.getByLabel(T.id.searchLabel, { exact: true }).fill("");
-    await expect(dialog.getByRole("link")).toHaveCount(3);
-    await expect(dialog.getByRole("link", { name: T.id.ledger, exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole("link")).toHaveCount(4);
+    await expect(dialog.getByRole("link", { name: T.id.ledger, exact: true })).toBeVisible();
 
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
