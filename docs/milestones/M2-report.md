@@ -62,3 +62,15 @@ keyboard-only lulus a11y"), dengan batas yang dicatat di bawah.
 2. Lanjut Fase 3: `daycloser` (EOD/EOM/EOY), lalu T-101 rekonsiliasi dan T-089/T-090 yang masih
    tertunda.
 3. ADR-013b: putuskan mesin PDF server (Typst di worker) bila kebutuhan arsip/e-sign muncul.
+
+## 7. Tindak lanjut pilot (23 Okt 2026)
+
+- **Penerimaan Fase 2 terpenuhi** untuk deposit + teller: kriteria spec §23 (transaksi tunai & PB,
+  saldo realtime, alur teller keyboard-only lulus a11y) tercatat di §1–§2 dan tidak diubah.
+- Yang **belum** ada dan diterima untuk pilot: setup operator hanya API/CLI — tidak ada UI/API
+  manajemen pengguna/peran, pembukaan rekening, administrasi periode/COA/pembalik, atau top-up vault;
+  top-up vault tanpa penyetuju kedua (O-098) dan tanpa jurnal GL (O-097); satu `platform_admin` di
+  produksi memegang maker + checker + kas + vault (O-102). Batas ini tercatat di
+  `docs/ACCEPTED-LIMITS.md` §4c dan task lanjutan T-115…T-118 (`docs/BACKLOG.md`).
+- Keputusan pemilik yang masih terbuka: bentuk final nomor rekening (O-095/D-123, kini sudah dipakai
+  data pilot — O-104) dan pasangan SoD tambahan (O-102). Tidak ada keputusan semula yang diubah.

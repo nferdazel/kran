@@ -11,7 +11,7 @@ sintetis, bukan data anggota nyata.
 
 - Biner `kran-api` versi yang memuat `ctl create-user` sudah ter-deploy.
 - Migrasi `platform/0027_platform_rbac_pilot_roles.sql` sudah diterapkan (role `teller`,
-  izin produk untuk `param_checker`).
+  izin produk untuk `product_checker`).
 - Akses DB produksi untuk satu penyesuaian data: memindahkan party demo ke cabang pilot.
 
 ## 2. Akun operator

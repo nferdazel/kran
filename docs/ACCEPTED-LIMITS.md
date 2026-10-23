@@ -136,6 +136,32 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 - Template cetak ada di kode, bukan DB (deviasi sadar spec §16.2); parameterisasi letterhead = task
   terpisah.
 
+## 4c. Permukaan operator pilot (23 Okt 2026) — batas yang diterima
+
+Batas berikut **hanya berlaku untuk pilot saat ini** (1 koperasi, 1 cabang, data sintetis; O-004/D-046).
+Ia bukan klaim pekerjaan selesai: celah UI-nya dicatat sebagai task backlog T-115…T-117, dan keputusan
+tata kelolanya menunggu pemilik (O-102).
+
+- **Tidak ada UI pembukaan rekening / administrasi periode/COA/pembalik / top-up vault.** Setup
+  operator berjalan lewat CLI/API saja: akun dan peran lewat `kran-api --role=ctl bootstrap-admin` /
+  `create-user` (satu role) / `reset-password`; pekerjaan bisnis lewat `curl` ke endpoint yang sudah ada
+  (`POST /api/v1/deposit/accounts`, `POST /api/v1/ledger/periods`, `POST /api/v1/ledger/coa`,
+  `POST /api/v1/ledger/journals/{journalId}/reversal`, `POST /api/v1/teller/vault/topups`) atau SQL
+  runbook. Dampak: operasi harian tidak bisa dilakukan operator non-teknis. Cara deteksi: tidak ada rute
+  UI di `apps/web` untuk alur itu; daftar permukaan yang ada di `apps/api/src/routes.nim`. Pemilik:
+  O-103, T-115…T-117.
+- **Vault top-up lewat API/runbook, tanpa UI dan tanpa maker-checker.** `POST /teller/vault/topups`
+  (izin `teller.vault.topup`) menaikkan saldo tanpa persetujuan operator kedua dan tanpa jurnal GL;
+  baris vault awal tetap diisi lewat seed/runbook. Dampak: injeksi kas tak terbatas oleh satu pemegang
+  izin dan neraca tidak mencerminkan kas. Cara deteksi: `platform.audit_log` (`action =
+  'teller.vault.topup'`) + event `TellerVaultTopedUp`; `teller.vault` vs `journal_line` akun kas.
+  Pemilik: O-098, O-097, T-107.
+- **Risiko tata kelola satu admin.** `platform_admin` memegang maker + checker + kas + vault sekaligus;
+  satu-satunya pasangan SoD tersemai adalah `param_maker`/`param_checker`, sehingga pemisahan tugas
+  efektif tidak ada di produksi. Diterima hanya karena pilot memakai data sintetis dan satu operator.
+  Cara deteksi: `platform.role_permission` untuk `platform_admin`; `platform.role_conflict` hanya
+  memuat `param_*`. Pemilik: O-102, O-097, O-098.
+
 ## 5. Cara memakai dokumen ini
 
 - Menemukan batas baru saat mengerjakan task → tambahkan baris (dampak, cara deteksi, pemilik), jangan
