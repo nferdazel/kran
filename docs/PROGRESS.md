@@ -2267,3 +2267,31 @@ Batasan yang dibuka: O-097 (GL kas teller), O-098 (top-up vault = T-107), O-099 
   dijalankan, web swapped, `/readyz` OK). Bukti web baru: chunk teller di server memuat
   `platform.ui.shortcut.deposit` dan `session_business_date_mismatch`; `/readyz` 200;
   `GET /api/v1/teller/sessions/current` 401 (rute hidup).
+
+## 23 Okt 2026 — Sisa Fase 2 tuntas: review fixes, simpanan koperasi, cetak, vault
+
+- **Utang review T-088a/b/c + T-091/T-087**: T-099 (error server → 500), T-100 (`LIMIT 200` di SQL),
+  T-102 (replay TTL → 409 `idempotency_replay_expired`), T-103 (aturan saldo satu tempat),
+  T-104 (payload rule produk terkirim), T-106 (test PB deterministik via `pg_blocking_pids`
+  transitif + `blocked == 2`). T-097 dua aktor checker, T-098 parameter deprecated fail-closed.
+- **T-090 DONE**: contract `product/0006` + guard insert, allowlist; akan auto-apply saat deploy.
+- **T-107 DONE**: `POST /teller/vault/topups` + `GET /teller/vault`, izin `teller.vault.*`,
+  kredit atomik, audit/outbox per event, replay idempoten. Tanpa GL (O-097).
+- **T-111 DONE** (D-128): `product.savings_kind` (nullable, immutable), rekening mewarisi lewat
+  produk; setoran POKOK/WAJIB → ekuitas provisoris `301.1`/`301.2`
+  (`NEEDS-COMPLIANCE-REVIEW`); tarik/PB yang menyentuh POKOK/WAJIB dan PB beda jenis → 409;
+  NULL ↔ SUKARELA/TABUNGAN tetap boleh. Iuran belum ditegakkan (Fase 5, O-100).
+- **T-094a/094b DONE** (D-127): `GET /teller/cash-transactions/{id}` (slip cetak ulang) +
+  `GET /deposit/accounts/{id}/statement` (subledger A4, batas 500, tanpa saldo berjalan); rute
+  `/app/print/*`, tautan dari layar teller, CSS print, i18n id+en, e2e/axe. PDF server (Typst)
+  ditunda ADR-013b; dot-matrix/passbook dan audit cetak tidak diklaim.
+- **Seed dev**: grant dipisah per peran (`param_maker` tanpa `product.catalog.approve`), cleanup
+  idempoten; e2e "maker tidak boleh menyetujui" kembali bermakna. Playwright `workers: 1` karena
+  berkas berbagi DB dev/sesi teller.
+- **Gate**: `./task ci` hijau (check, openapi, test, e2e), termasuk `itapi_teller` 41,
+  `itapi_deposit` 16, `itapi_teller_vault` 10, `itproduct` 19, `itparamservice` 9, `ittransfer` 6,
+  `tcontract` 6. Reviewer putaran 2 **APPROVE** (tanpa BLOCKER/MAJOR); minor ditunda ke T-112
+  (test batas 500 statement) dan T-113 (test konkurensi vault).
+- **Deploy**: menunggu otorisasi. Rilis ini membawa contract `product/0006` (auto-apply + dump
+  pra-contract) serta migrasi expand `product/0007`, `ledger/0014`, `platform/0026`.
+

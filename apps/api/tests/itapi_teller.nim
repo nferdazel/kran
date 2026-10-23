@@ -77,6 +77,7 @@ var
   PokokTransferAccountId: string
   WajibAccountId: string
   SukarelaKindAccountId: string
+  TabunganKindAccountId: string
 
 # --- penyiapan DB: skema bersih + seed pack + fixture party/produk/rekening --------------------
 block:
@@ -253,6 +254,7 @@ block:
   PokokTransferAccountId = $seedKindProduct("SAV-POKOK-2", skPokok)
   WajibAccountId = $seedKindProduct("SAV-WAJIB", skWajib)
   SukarelaKindAccountId = $seedKindProduct("SAV-SUKA", skSukarela)
+  TabunganKindAccountId = $seedKindProduct("SAV-TAB", skTabungan)
 
   # --- T-093b: sesi kas. Transaksi tunai WAJIB sesi OPEN, jadi fixture membukanya lewat
   # repo/domain (bukan flag bypass gate). `dev.maker` (aktor test sukses) memakai `BranchId`;
@@ -1124,7 +1126,7 @@ suite "teller: klasifikasi simpanan koperasi (T-111)":
     check wajib.body["params"]["reason"].getStr() == "savings_kind_locked"
     check balanceOf(WajibAccountId) == wajibBefore
 
-  test "PB dari POKOK → 409 locked; PB lintas jenis → 409 transfer_kind_mismatch":
+  test "PB menyentuh POKOK/WAJIB → 409 locked; PB SUKARELA↔TABUNGAN → 409 mismatch":
     let token = tokenOf(login(MakerUser))
 
     let fromPokok = postJson(TransferPath,
@@ -1139,6 +1141,15 @@ suite "teller: klasifikasi simpanan koperasi (T-111)":
     check cross.code == 409
     checkProblem(TransferPath, "POST", "409", cross.body)
     check cross.body["params"]["reason"].getStr() == "savings_kind_locked"
+
+    # Dua jenis yang sama-sama liabilitas tetapi berbeda label (SUKARELA vs TABUNGAN): aturan
+    # "satu jenis" tetap berlaku, dan inilah satu-satunya cabang yang memakai `transfer_kind_mismatch`.
+    let bedaLabel = postJson(TransferPath,
+      transferBody(SukarelaKindAccountId, TabunganKindAccountId, "1.0000"), token)
+    check bedaLabel.code == 409
+    checkProblem(TransferPath, "POST", "409", bedaLabel.body)
+    check bedaLabel.body["params"]["reason"].getStr() == "transfer_kind_mismatch"
+    check balanceOf(TabunganKindAccountId) == "0.0000"
 
     # Rollback: tidak ada mutasi saldo/baris transfer di kedua sisi.
     check balanceOf(SukarelaKindAccountId) == "0.0000"

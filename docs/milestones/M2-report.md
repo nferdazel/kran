@@ -26,14 +26,15 @@ keyboard-only lulus a11y"), dengan batas yang dicatat di bawah.
 
 ## 3. Deviasi dari rencana
 
-1. **Cetak/PDF** (T-094) tidak dikerjakan: terblokir ADR-013 (mesin PDF). Spec §23 menyebut
-   "cetak" sebagai deliverable, jadi ini batas milestone, bukan kelalaian.
+1. **Cetak/PDF**: T-094a/094b **DONE** sebagai browser print (slip + statement A4, D-127);
+   PDF server (Typst) tetap ditunda ADR-013b. Dot-matrix/passbook, audit cetak, dan kop lembaga
+   tidak diklaim (`ACCEPTED-LIMITS §4b`).
 2. **Pintasan F2 cari anggota** belum ada karena pencarian anggota belum ada. Command palette
    Ctrl+K dicatat T-110.
 3. **Lookup nomor rekening** memakai endpoint daftar `?accountNo=` (D-126), bukan path baru;
    bentuk nomor tidak dipatok (D-123).
-4. **Variance kas tanpa jurnal GL** (O-097) dan **top-up vault belum ada API** (T-107): operasional
-   produksi masih bergantung pada seed vault manual.
+4. **Variance kas tanpa jurnal GL** (O-097) dan **top-up vault** sudah punya API (T-107) tetapi
+   masih **tanpa jurnal GL**; vault produksi tetap harus diisi lewat runbook sebelum sesi kas.
 5. **Format nomor rekening provisoris** (D-123/O-095): keputusan pemilik/compliance diperlukan
    sebelum data nyata.
 
@@ -43,8 +44,8 @@ keyboard-only lulus a11y"), dengan batas yang dicatat di bawah.
 |---|---|
 | O-095 / D-123 | Format nomor rekening belum final |
 | O-097 | Kas teller & variance belum masuk GL |
-| T-107 | Top-up vault teller belum ada |
-| T-094 | Cetak buku/slip menunggu ADR-013 |
+| T-107 | Top-up vault teller tanpa GL (O-097) |
+| T-094 | Cetak: browser print DONE; PDF server/dot-matrix ditunda |
 | T-101 | Rekonsiliasi cache saldo vs ledger (Fase 3) |
 | T-110 | Command palette Ctrl+K |
 
@@ -60,4 +61,4 @@ keyboard-only lulus a11y"), dengan batas yang dicatat di bawah.
 1. Isi vault produksi lewat runbook dan sepakati format nomor rekening sebelum pilot data nyata.
 2. Lanjut Fase 3: `daycloser` (EOD/EOM/EOY), lalu T-101 rekonsiliasi dan T-089/T-090 yang masih
    tertunda.
-3. Putuskan ADR-013 agar T-094 bisa masuk.
+3. ADR-013b: putuskan mesin PDF server (Typst di worker) bila kebutuhan arsip/e-sign muncul.
