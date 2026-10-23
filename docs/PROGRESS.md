@@ -2262,4 +2262,8 @@ Batasan yang dibuka: O-097 (GL kas teller), O-098 (top-up vault = T-107), O-099 
   simulasi lock (`852dc9d`).
 - Milestone report: `docs/milestones/M2-report.md`. Batas: cetak/PDF (ADR-013), GL kas (O-097),
   top-up vault (T-107), format nomor (D-123).
-- **Belum di-deploy** ke produksi setelah commit terakhir; menunggu keputusan pemilik.
+- **Deploy produksi**: push `088305e..7b3641a`; `.deployed_rev = 7b3641a026b5`, deploy selesai
+  11:29:07 (log server: migrasi --up dilewati karena tidak berubah, contract bersih, seed parameter
+  dijalankan, web swapped, `/readyz` OK). Bukti web baru: chunk teller di server memuat
+  `platform.ui.shortcut.deposit` dan `session_business_date_mismatch`; `/readyz` 200;
+  `GET /api/v1/teller/sessions/current` 401 (rute hidup).
