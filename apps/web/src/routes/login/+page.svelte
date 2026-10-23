@@ -13,6 +13,7 @@
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
   import { problemMessage } from "#lib/app/errors.js";
+  import { appNavLinks, sessionPermissions, visibleNavLinks } from "#lib/app/nav.js";
 
   let username = $state("");
   let password = $state("");
@@ -46,8 +47,14 @@
     });
 
     if (response.ok) {
-      // Cookie sesi sudah terpasang oleh respons ini; lanjut ke shell aplikasi.
-      await goto("/app/ledger");
+      // Cookie sesi sudah terpasang. Landing harus mengikuti izin: `teller` tidak punya
+      // `ledger.journal.read`, jadi mengarahkannya ke `/app/ledger` hanya menampilkan halaman
+      // "tidak berizin". Ambil sesi sekali, lalu pilih tautan nav pertama yang boleh dibuka;
+      // admin tetap mendarat di buku besar (tautan pertama).
+      const { data: session } = await api.GET("/api/v1/auth/session");
+      const target =
+        visibleNavLinks(appNavLinks, sessionPermissions(session))[0]?.href ?? "/app";
+      await goto(target);
       return;
     }
 
