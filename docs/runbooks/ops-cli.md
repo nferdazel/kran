@@ -118,4 +118,10 @@ tindakan host, bukan dari repo.
 - pengiriman lewat `tg-notify.sh` (kanal Telegram yang sama dengan backup), hanya saat status
   berubah dan diulang tiap 6 jam selama masih bermasalah;
 - status terakhir di `~/.local/state/kran-alert/last`, log di `~/kran-alert.log`;
+- **tidak memprobe saat deploy berjalan** (lock `/srv/qouver/apps/kran/.deploy.lock` dipegang):
+  selagi repo disinkronkan sebelum `migrate --up`, API lama bisa sesaat melaporkan
+  "migrasi expand tertunda"; itu normal dan tidak dikirim sebagai alert. Status tersimpan tidak
+  diubah, jadi deploy yang gagal tetap memicu alert pada probe berikutnya;
+- skrip yang dijalankan timer ada di `/srv/qouver/scripts/kran-alert.sh` (salinan manual, bukan
+  hasil deploy). Setelah mengubah `ops/scripts/kran-alert.sh` di repo, salin ulang ke path itu;
 - uji tanpa kirim: `/srv/qouver/scripts/kran-alert.sh --dry-run`.
