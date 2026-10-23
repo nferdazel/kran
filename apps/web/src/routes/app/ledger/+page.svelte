@@ -68,7 +68,9 @@
   const selectedPeriod = $derived(periods.find((p) => p.periodId === selectedId) ?? null);
 
   const totals = $derived.by(() => {
-    const lines = balances?.lines ?? [];
+    // Total harus mengikuti baris yang terlihat; kalau memakai seluruh `balances.lines`, footer
+    // menampilkan angka yang tidak cocok dengan tabel saat filter kategori aktif.
+    const lines = filteredLines;
     let openingDebit = "0.0000";
     let openingCredit = "0.0000";
     let periodDebit = "0.0000";
@@ -271,7 +273,7 @@
       aria-pressed={activeCategory === "ALL"}
       onclick={() => (activeCategory = "ALL")}
     >
-      <span>Semua Akun</span>
+      <span>{m.ledger_filter_all()}</span>
       <span class="kran-badge">{balances.lines.length}</span>
     </button>
     <button
@@ -280,7 +282,7 @@
       aria-pressed={activeCategory === "1"}
       onclick={() => (activeCategory = "1")}
     >
-      <span>1 - Aset</span>
+      <span>{m.ledger_filter_assets()}</span>
     </button>
     <button
       class="kran-filter-button"
@@ -288,7 +290,7 @@
       aria-pressed={activeCategory === "2"}
       onclick={() => (activeCategory = "2")}
     >
-      <span>2 - Liabilitas</span>
+      <span>{m.ledger_filter_liabilities()}</span>
     </button>
     <button
       class="kran-filter-button"
@@ -296,7 +298,7 @@
       aria-pressed={activeCategory === "3"}
       onclick={() => (activeCategory = "3")}
     >
-      <span>3 - Ekuitas</span>
+      <span>{m.ledger_filter_equity()}</span>
     </button>
     <button
       class="kran-filter-button"
@@ -304,7 +306,7 @@
       aria-pressed={activeCategory === "4"}
       onclick={() => (activeCategory = "4")}
     >
-      <span>4 - Pendapatan</span>
+      <span>{m.ledger_filter_revenue()}</span>
     </button>
     <button
       class="kran-filter-button"
@@ -312,7 +314,7 @@
       aria-pressed={activeCategory === "5"}
       onclick={() => (activeCategory = "5")}
     >
-      <span>5 - Beban</span>
+      <span>{m.ledger_filter_expense()}</span>
     </button>
   </div>
 
@@ -363,9 +365,7 @@
         {/each}
         {#if filteredLines.length === 0}
           <tr>
-            <td colspan="8" class="kran-muted" style="text-align: center; padding: var(--space-5);">
-              Tidak ada akun pada kategori ini.
-            </td>
+            <td colspan="8" class="kran-muted ledger-empty">{m.ledger_filter_empty()}</td>
           </tr>
         {/if}
       </tbody>
@@ -385,6 +385,11 @@
 {/if}
 
 <style>
+  .ledger-empty {
+    text-align: center;
+    padding-block: var(--space-5);
+  }
+
   .ledger-head {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;

@@ -455,15 +455,14 @@
   </section>
 
   <section class="kran-card" aria-labelledby="active-heading">
-    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--space-3); margin-block-end: var(--space-3);">
-      <h2 id="active-heading" style="margin: 0;">{m.params_active_heading()}</h2>
+    <div class="params-active-head">
+      <h2 id="active-heading">{m.params_active_heading()}</h2>
       <input
-        class="kran-input"
+        class="kran-input params-search"
         type="search"
-        placeholder="Cari parameter..."
-        aria-label="Cari parameter aktif"
+        placeholder={m.params_search_placeholder()}
+        aria-label={m.params_search_label()}
         bind:value={searchFilter}
-        style="min-inline-size: 14rem;"
       />
     </div>
     {#if active.length === 0}
@@ -480,6 +479,11 @@
             </tr>
           </thead>
           <tbody>
+            {#if filteredActive.length === 0}
+              <tr>
+                <td colspan="4" class="kran-muted params-empty">{m.params_search_empty()}</td>
+              </tr>
+            {/if}
             {#each filteredActive as row (row.paramValueId)}
               <tr>
                 <th scope="row">{row.key}</th>
@@ -531,6 +535,28 @@
 {/if}
 
 <style>
+  .params-active-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-block-end: var(--space-3);
+  }
+
+  .params-active-head h2 {
+    margin: 0;
+  }
+
+  .params-search {
+    min-inline-size: 14rem;
+  }
+
+  .params-empty {
+    text-align: center;
+    padding-block: var(--space-5);
+  }
+
   .app-toolbar {
     padding-block: var(--space-4);
     padding-inline: var(--space-4);
