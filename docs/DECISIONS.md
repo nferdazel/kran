@@ -2925,3 +2925,18 @@ membedakan sesi pagi/siang, tanpa audit arus laci). Menaruh gate sesi di luar `w
 dijaga satu `withDbTx` + test paritas. Rollback binary setelah 093b memerlukan tutup-sesi dahulu
 (batas dicatat). Deploy 093a/093b dan UI teller (T-088d) harus satu rilis **bersama T-108**
 (panel sesi): tanpa panel itu, layar `/app/teller` tidak bisa menyelesaikan transaksi tunai.
+
+## D-126 — Cari rekening lewat daftar: `?accountNo=` (tepat satu dengan `partyId`)
+
+**Konteks.** UI teller memegang nomor rekening dari nasabah, bukan UUID (`T-105`). Endpoint daftar
+`GET /deposit/accounts?partyId=` sudah ada beserta gerbang cabang per baris (D-062).
+
+**Keputusan.** Perluas endpoint daftar, bukan menambah path baru: tepat satu dari `partyId` atau
+`accountNo` wajib diisi; keduanya kosong/terisi → 400. Nomor tidak ditemukan **atau** rekening di
+cabang yang izinnya tidak dipegang → 200 dengan `items: []` (bukan 403/404), supaya nomor tidak
+bisa dipakai menebak keberadaan rekening di cabang lain. Bentuk nomor **tidak** divalidasi sebagai
+10 digit: format masih provisoris (D-123); yang ditegakkan hanya batas teknis kolom (32).
+
+**Konsekuensi.** Tidak ada rate-limit pada pencarian; enumerasi nomor provisoris murah dan dicatat
+sebagai open item untuk masa data nyata. Endpoint ini memerlukan `deposit.account.read` dan tetap
+menyaring cabang per baris.

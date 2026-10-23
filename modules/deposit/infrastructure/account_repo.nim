@@ -67,6 +67,18 @@ proc accountById*(db: DbConn, accountId: Id): Option[Account] =
     return none(Account)
   some(accountOf(rows[0]))
 
+proc accountByNo*(db: DbConn, accountNo: string): Option[Account] =
+  ## Satu rekening dari nomor (UNIQUE). Penyaringan cabang tetap tugas pemanggil.
+  let rows = db.getAllRows(sql("SELECT " & accountColumns &
+      """
+        FROM deposit.account a
+        JOIN product.product p ON p.product_id = a.product_id
+        LEFT JOIN deposit.account_balance b ON b.account_id = a.account_id
+       WHERE a.account_no = ?"""), accountNo)
+  if rows.len == 0:
+    return none(Account)
+  some(accountOf(rows[0]))
+
 proc accountsByParty*(db: DbConn, partyId: Id): seq[Account] =
   ## Semua rekening milik satu party, urut nomor rekening. Penyaringan cabang dilakukan pemanggil
   ## (composition root) per baris — repo tidak menebak izin.

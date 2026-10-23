@@ -1683,19 +1683,28 @@ paths:
     get:
       operationId: listDepositAccounts
       tags: [deposit]
-      summary: Daftar rekening simpanan milik satu party
+      summary: Daftar rekening simpanan per party atau nomor rekening
       description: |
-        Rekening milik `partyId`, disaring per cabang: rekening di cabang yang izinnya tidak
-        dipegang pemanggil tidak dikembalikan. `partyId` wajib dan harus UUID (kalau tidak → 400).
+        Tepat satu dari `partyId` atau `accountNo` wajib diisi (keduanya kosong atau keduanya
+        terisi → 400). Hasil disaring per cabang: rekening di cabang yang izinnya tidak dipegang
+        pemanggil tidak dikembalikan. Nomor yang tidak ada **atau** berada di cabang lain
+        menghasilkan `items` kosong (200), bukan 404, supaya nomor tidak membocorkan keberadaan
+        rekening. Bentuk nomor masih provisoris (D-123); batas panjang mengikuti kolom.
       security:
         - sessionCookie: []
       parameters:
         - name: partyId
           in: query
-          required: true
+          required: false
           schema:
             type: string
             format: uuid
+        - name: accountNo
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 32
       responses:
         "200":
           description: Daftar rekening

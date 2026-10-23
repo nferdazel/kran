@@ -852,9 +852,12 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Daftar rekening simpanan milik satu party
-         * @description Rekening milik `partyId`, disaring per cabang: rekening di cabang yang izinnya tidak
-         *     dipegang pemanggil tidak dikembalikan. `partyId` wajib dan harus UUID (kalau tidak → 400).
+         * Daftar rekening simpanan per party atau nomor rekening
+         * @description Tepat satu dari `partyId` atau `accountNo` wajib diisi (keduanya kosong atau keduanya
+         *     terisi → 400). Hasil disaring per cabang: rekening di cabang yang izinnya tidak dipegang
+         *     pemanggil tidak dikembalikan. Nomor yang tidak ada **atau** berada di cabang lain
+         *     menghasilkan `items` kosong (200), bukan 404, supaya nomor tidak membocorkan keberadaan
+         *     rekening. Bentuk nomor masih provisoris (D-123); batas panjang mengikuti kolom.
          */
         get: operations["listDepositAccounts"];
         put?: never;
@@ -3230,8 +3233,9 @@ export interface operations {
     };
     listDepositAccounts: {
         parameters: {
-            query: {
-                partyId: string;
+            query?: {
+                partyId?: string;
+                accountNo?: string;
             };
             header?: never;
             path?: never;

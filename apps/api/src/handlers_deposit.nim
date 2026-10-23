@@ -237,13 +237,23 @@ proc handleListDepositAccounts*(app: AppContext, req: Request) {.gcsafe.} =
   if not requirePermission(app, req, principal, permissionDepositAccountRead):
     return
 
+  ## Tepat satu: `partyId` atau `accountNo`. Tidak menebak prioritas bila keduanya diisi.
   let partyRaw = queryValue(req, "partyId").strip
-  if partyRaw.len == 0:
-    req.respondProblem(pkBadRequest, "Bad Request", "partyId wajib diisi")
+  let accountNoRaw = queryValue(req, "accountNo").strip
+  if (partyRaw.len == 0) == (accountNoRaw.len == 0):
+    req.respondProblem(pkBadRequest, "Bad Request", "isi tepat satu: partyId atau accountNo")
     return
-  let partyId = parseId(partyRaw)
-  if partyId.isErr:
-    req.respondProblem(pkBadRequest, "Bad Request", "partyId harus UUID yang sah")
+
+  var partyId = none(Id)
+  if partyRaw.len > 0:
+    let parsed = parseId(partyRaw)
+    if parsed.isErr:
+      req.respondProblem(pkBadRequest, "Bad Request", "partyId harus UUID yang sah")
+      return
+    partyId = some(parsed.value())
+  elif accountNoRaw.len > maxAccountNoLength:
+    # Batas teknis kolom (32), bukan format bisnis: bentuk nomor belum diputuskan (D-123).
+    req.respondProblem(pkBadRequest, "Bad Request", "accountNo terlalu panjang")
     return
 
   var status = 0
@@ -253,9 +263,18 @@ proc handleListDepositAccounts*(app: AppContext, req: Request) {.gcsafe.} =
       dbCalls:
         # Gerbang cabang per baris: rekening di cabang yang tidak dipegang izinnya tidak
         # dikembalikan (bukan 403 seluruh daftar — hasilnya disaring per baris, pola D-062).
-        for account in accountsByParty(db, partyId.value()):
-          if authorizedAtBranch(db, principal, $account.branchId, permissionDepositAccountRead):
-            items.add accountJson(account)
+        if partyId.isSome:
+          for account in accountsByParty(db, partyId.get()):
+            if authorizedAtBranch(db, principal, $account.branchId, permissionDepositAccountRead):
+              items.add accountJson(account)
+        else:
+          # Tidak ditemukan dan "tidak berizin" sengaja sama (items kosong), supaya nomor rekening
+          # tidak bisa dipakai menebak keberadaan rekening di cabang lain.
+          let accountOpt = accountByNo(db, accountNoRaw)
+          if accountOpt.isSome and
+              authorizedAtBranch(db, principal, $accountOpt.get().branchId,
+                permissionDepositAccountRead):
+            items.add accountJson(accountOpt.get())
         status = 200)
   except DbError:
     status = 500
