@@ -2151,3 +2151,14 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
 - Bukti: `ttransaction` 9, `ittransaction` 8, `itapi_teller` 12, `tcontract` 5; `./task ci` hijau
   (24 e2e); mutation check guard saldo gagal saat klausa dihapus.
 - Belum di-push. Sisa T-088: PB (088c) + UI teller (088d).
+
+### Deploy batch deposit T-088a/T-088b (23 Okt 2026)
+
+- **Push** `2fa7c3a..3a41818` ke `main`; webhook deploy selesai.
+- Verifikasi eksternal: `/readyz` 200, `/login` 200, `GET /api/v1/deposit/accounts` dan
+  `POST /api/v1/teller/cash-transactions` tanpa sesi **401** (rute baru live), path tak dikenal
+  404. Aset web tetap `nodes/0.oZFEaok4.js` (tidak ada perubahan UI).
+- Migrasi `deposit/0001`–`0006`, `ledger/0012`, `platform/0023`–`0024` berjalan lewat gate deploy
+  (dump → `--up` → contract check → seed → restart → health). `deposit/0006` memberi
+  `kran_runtime` akses schema `deposit`.
+- Endpoint belum dipakai UI; label HUMAN-REVIEW-REQUIRED tetap untuk jalur finansial.
