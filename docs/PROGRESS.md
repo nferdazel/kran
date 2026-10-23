@@ -2307,3 +2307,14 @@ Batasan yang dibuka: O-097 (GL kas teller), O-098 (top-up vault = T-107), O-099 
   UUID cabang tersebut. Rollback melewati rilis ini akan mengembalikan setoran POKOK/WAJIB ke `201`
   (lihat ACCEPTED-LIMITS §4a).
 
+## 23 Okt 2026 — Revamp UI/UX (branch `feat/frontend-revamp`) + deploy
+
+- Revamp visual shell/login/beranda/buku besar/teller dari agen frontend, di-review sebelum merge.
+  Temuan yang diperbaiki: teks hardcoded (login pillars, footer legal, metrik beranda/buku besar)
+  dipindah ke i18n id+en; klaim regulasi ("UU PPSK/Permenkop") dan emoji dekoratif dihapus; CSS mati
+  dibersihkan. Palette T-110 tetap berfungsi (`bind:this` diganti query DOM).
+- Verifikasi: `check-fast` hijau, i18n 319 key, svelte-check 0/0, vitest web 57 + ui 117,
+  `./task e2e` **37 passed** (axe 2 tema × 2 locale).
+- **Deploy produksi**: `6f3871f..5884a17`, `.deployed_rev = 5884a17f6463`, `/readyz` 200; bundle web
+  memuat teks login baru (i18n) — revamp live. Vault pilot Rp10.000.000 (D-129) tetap.
+
