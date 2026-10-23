@@ -2212,3 +2212,19 @@ yang dijalankan gate terfokus + `./task check-fast`/`./task openapi`. Label
 
 **Sisa**: `./task ci` penuh + tinjauan independen (AGENTS §4 langkah 4–7); tandai DONE setelah itu.
 Batasan yang dibuka: O-097 (GL kas teller), O-098 (top-up vault = T-107), O-099 (limit kas).
+
+## 23 Okt 2026 — T-093 DONE (sesi kas teller) + fondasi UI teller T-088d
+
+**Status:** T-093 DONE; UI teller baru fondasi (T-108 belum).
+
+- Commit `a9ba78f` (implementasi), `87d2399` (perbaikan review r1), `52414f8` (minor review r2),
+  `744b846` (UI teller setor/tarik/PB, belum punya panel sesi).
+- Review independen r2: **APPROVE** tanpa BLOCKER/MAJOR. Temuan r1 yang diperbaiki: `businessDate`
+  diekspos, gate membedakan `session_business_date_mismatch`, note dipersist (tutup kosong tidak
+  menghapus note buka), urutan cek kepemilikan, test audit/outbox sesi, test mismatch dengan
+  restore `finally`, seed vault `DO NOTHING`.
+- `./task ci` penuh hijau untuk `52414f8` (log `/tmp/ci-t093-3.log`, `== CI hijau`).
+- Targeted: `tsession` 13, `itsession` 11, `itapi_teller` 27, `itapi_teller_sessions` 12,
+  `tcontract` 5.
+- Batas tetap: tanpa jurnal GL kas/variance (O-097), tanpa top-up vault (T-107), tanpa limit kas
+  (O-099), UI teller wajib T-108 sebelum dipakai.
