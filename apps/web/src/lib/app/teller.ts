@@ -7,9 +7,9 @@
  *  - `POST /teller/cash-transactions` dan `POST /teller/transfers` mewajibkan `Idempotency-Key`.
  *  - Konflik domain 409 selalu datang sebagai `i18nKey: "error_conflict"`; sebabnya ada di
  *    `params.reason` (`insufficient_funds`, `period_closed`, `account_not_active`,
- *    `branch_not_allowed`, `no_open_session`). Karena itu pemetaannya per `reason`, bukan lewat
- *    `i18nKey` (pola `paramProblemMessage` di `errors.ts`).
- *  - API sesi kas teller (T-093) belum ada: modul ini tidak mengarang status sesi.
+ *    `branch_not_allowed`, `no_open_session`, `session_business_date_mismatch`). Karena itu
+ *    pemetaannya per `reason`, bukan lewat `i18nKey` (pola `paramProblemMessage` di `errors.ts`).
+ *  - Endpoint sesi kas (T-093) tersedia, tetapi panel buka/tutup belum ada di layar ini (T-108).
  *  - Pencarian nomor rekening belum ada: UI menerima `accountId` (UUID) apa adanya. Lihat TODO
  *    di halaman teller.
  */
@@ -212,6 +212,7 @@ const PROBLEM_REASON_MESSAGES: Record<string, () => string> = {
   account_not_active: () => m.teller_error_account_not_active(),
   branch_not_allowed: () => m.teller_error_branch_not_allowed(),
   no_open_session: () => m.teller_error_no_open_session(),
+  session_business_date_mismatch: () => m.teller_error_session_business_date_mismatch(),
 };
 
 /**

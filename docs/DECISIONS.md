@@ -2905,14 +2905,16 @@ punya arti tanpa sesi + arus laci. T-093 menambahkan itu di modul baru `teller`.
    (`transaction_id` UNIQUE FK `deposit.transaction`), ditulis dalam satu `withDbTx` dengan transaksi.
 4. **`note` sesi dipersist** saat buka dan tutup (kolom 200 karakter); respons buka/current/tutup
    menyertakan `businessDate` dan `note`. Tutup memeriksa kepemilikan **sebelum** status, supaya
-   `session_not_owned` deterministik untuk non-pemilik.
-4. **Satu sesi `OPEN` per (cabang, teller)** dijaga partial unique index; jalur repo memakai
+   `session_not_owned` deterministik untuk non-pemilik. Note tutup kosong **tidak** menghapus note
+   buka (`COALESCE(NULLIF(?, ''), note)`), tetapi audit `teller.session.close` memuat note yang
+   dikirim penutup apa adanya.
+5. **Satu sesi `OPEN` per (cabang, teller)** dijaga partial unique index; jalur repo memakai
    `INSERT ... ON CONFLICT ... WHERE status='OPEN' DO NOTHING` agar balapan dua buka → 409, bukan 500.
-5. **Vault `FOR UPDATE` implisit** (`UPDATE ... WHERE balance >= ?`, satu baris per cabang), tidak
+6. **Vault `FOR UPDATE` implisit** (`UPDATE ... WHERE balance >= ?`, satu baris per cabang), tidak
    boleh negatif; tutup menambah vault sebesar `counted_cash` (uang fisik), bukan `expected_cash`.
-6. **Tanpa jurnal GL** untuk kas teller/variance: COA baru adalah keputusan akuntansi (batas di
+7. **Tanpa jurnal GL** untuk kas teller/variance: COA baru adalah keputusan akuntansi (batas di
    `ACCEPTED-LIMITS.md`, item O-097). Top-up vault di luar scope (T-107).
-7. `GET /teller/sessions/current` tanpa sesi memilih **404** `session_not_open` (bukan 200 `null`).
+8. `GET /teller/sessions/current` tanpa sesi memilih **404** `session_not_open` (bukan 200 `null`).
 
 **Alternatif yang ditolak.** Kolom `session_id` di `deposit.transaction` (menambah konsep teller ke
 modul `deposit`, melanggar pemisahan D-124) dan menghitung sesi dari waktu transaksi (tidak bisa
@@ -2921,5 +2923,5 @@ membedakan sesi pagi/siang, tanpa audit arus laci). Menaruh gate sesi di luar `w
 
 **Konsekuensi.** `expected_cash` hanya benar bila **setiap** transaksi tunai menulis movement →
 dijaga satu `withDbTx` + test paritas. Rollback binary setelah 093b memerlukan tutup-sesi dahulu
-(batas dicatat). Deploy 093a/093b harus satu rilis bila belum ada klien teller; di repo ini memang
-belum ada.
+(batas dicatat). Deploy 093a/093b dan UI teller (T-088d) harus satu rilis **bersama T-108**
+(panel sesi): tanpa panel itu, layar `/app/teller` tidak bisa menyelesaikan transaksi tunai.

@@ -193,6 +193,7 @@
   "teller_error_account_not_active": "The account is not active. The transaction was not saved.",
   "teller_error_branch_not_allowed": "This account is outside your branch authority. The transaction was not saved.",
   "teller_error_no_open_session": "No cash session is open. Open a cash session first.",
+  "teller_error_session_business_date_mismatch": "A cash session from another business date is still open. Close it first, then open today's session.",
   "teller_error_unknown_state": "The transaction status is unknown. Do not retry with a different amount. Keep the reference, then check the account statement.",
   "teller_error_with_trace": "Reference {trace}.",
   "teller_retry": "Try again",

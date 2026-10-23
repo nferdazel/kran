@@ -1012,8 +1012,9 @@ export interface paths {
          *     beda → 409. Panjang efektif kunci maksimal **156** karakter (kunci jurnal menambah 44
          *     karakter: `teller:` + UUID pemanggil + `:`); lebih dari itu → 400. Izin `teller.transaction.post` harus dipegang di **cabang rekening**
          *     (`params.reason=branch_not_allowed` bila hanya di cabang lain). Konflik domain 409 memakai
-         *     `params.reason`: `no_open_session` (tidak ada sesi kas `OPEN` hari ini untuk teller di cabang
-         *     rekening), `account_not_active`, `insufficient_funds`, `period_closed`.
+         *     `params.reason`: `no_open_session` (tidak ada sesi kas `OPEN` untuk teller di cabang rekening),
+         *     `session_business_date_mismatch` (sesi `OPEN` ada tetapi untuk tanggal bisnis lain; tutup
+         *     sesi itu dulu), `account_not_active`, `insufficient_funds`, `period_closed`.
          *
          *     **HUMAN-REVIEW-REQUIRED** (jalur finansial, AGENTS.md §8).
          */

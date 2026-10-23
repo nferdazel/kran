@@ -158,7 +158,8 @@ proc closeSession*(db: DbConn, sessionId: Id, expectedCash, countedCash, varianc
   db.execAffectedRows(sql"""
       UPDATE teller.teller_session
          SET status = 'CLOSED', expected_cash = ?::numeric, counted_cash = ?::numeric,
-             variance = ?::numeric, note = NULLIF(?, ''), closed_at = now(), closed_by = ?
+             variance = ?::numeric, note = COALESCE(NULLIF(?, ''), note),
+             closed_at = now(), closed_by = ?
        WHERE session_id = ? AND status = 'OPEN'""",
     expectedCash.toDecimalString, countedCash.toDecimalString, variance.toDecimalString, note,
     $closedBy, $sessionId) == 1
