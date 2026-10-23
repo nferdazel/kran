@@ -48,7 +48,12 @@ proc userFromRow(row: Row): UserRow =
     failedAttempts: parseInt(row[6]), lockedUntil: row[7])
 
 proc insertUser*(db: DbConn, user: NewUser): bool =
-  ## Mengembalikan `false` bila username sudah dipakai (unique index).
+  ## Mengembalikan `false` **hanya** bila `user_id` sudah ada (`ON CONFLICT (user_id)`).
+  ##
+  ## Keunikan `username` ditegakkan index unik dan **tidak** ditangkap di sini: bentrokan username
+  ## menaikkan `DbError`, bukan `false`. Pemanggil provisioning memeriksa username lebih dulu
+  ## (`userByUsername`) di dalam kunci advisori, jadi bentrokan itu tidak seharusnya terjadi; bila
+  ## tetap terjadi, transaksi dibatalkan dan `withRoleDb` melaporkannya sebagai galat basis data.
   let algo = user.passwordHash.split('$')[0]
   db.execAffectedRows(sql"""
     INSERT INTO platform.app_user
@@ -114,6 +119,23 @@ proc setUserStatus*(db: DbConn, userId, status: string): bool =
   db.execAffectedRows(sql"""
     UPDATE platform.app_user SET status = ?, updated_at = now()
      WHERE user_id = ?::uuid""", status, userId) == 1
+
+proc enableInactiveUser*(db: DbConn, userId: string): bool =
+  ## Mengaktifkan kembali akun yang **dinonaktifkan**: hanya `INACTIVE` → `ACTIVE` (CAS).
+  ## `LOCKED`/`SUSPENDED` sengaja tidak ikut — yang pertama punya jalur `unlockUser`, yang kedua
+  ## butuh keputusan berbeda (kebijakan konservatif). `true` = baris berubah.
+  db.execAffectedRows(sql"""
+    UPDATE platform.app_user SET status = 'ACTIVE', updated_at = now()
+     WHERE user_id = ?::uuid AND status = 'INACTIVE'""", userId) == 1
+
+proc unlockUser*(db: DbConn, userId: string): bool =
+  ## Membuka akun yang terkunci: **hanya** `LOCKED` → `ACTIVE` (CAS), sekaligus mengosongkan
+  ## penghitung gagal dan `locked_until`. Akun `INACTIVE`/`SUSPENDED` tidak ikut diaktifkan —
+  ## percampuran keduanya pernah jadi sumber kesalahan (lihat `resetUserPassword` di ctl).
+  db.execAffectedRows(sql"""
+    UPDATE platform.app_user
+       SET status = 'ACTIVE', failed_attempts = 0, locked_until = NULL, updated_at = now()
+     WHERE user_id = ?::uuid AND status = 'LOCKED'""", userId) == 1
 
 # --- riwayat kata sandi (O-052) -------------------------------------------------------
 # **HUMAN-REVIEW-REQUIRED**: hanya hash yang disimpan (tidak pernah kata sandi mentah), tetapi ini
@@ -226,6 +248,15 @@ proc roleExists*(db: DbConn, roleCode: string): bool =
   ## True bila role ada di katalog. Dipakai jalur provisioning pengguna supaya role yang salah
   ## ketik ditolak dengan pesan jelas, bukan pengguna tanpa izin.
   db.getAllRows(sql"SELECT 1 FROM platform.role WHERE code = lower(?)", roleCode).len > 0
+
+proc roleScope*(db: DbConn, roleCode: string): Option[string] =
+  ## Scope penugasan role (`platform.role.scope`): `some("INSTITUTION")` atau `some("BRANCH")`.
+  ## `none` bila role tidak ada — pemanggil memutuskan pesannya (bukan menganggapnya institusi).
+  let found = db.singleRow(sql"SELECT scope FROM platform.role WHERE code = lower(?)", roleCode)
+  if found.isNone:
+    none(string)
+  else:
+    some(found.get()[0])
 
 proc grantRole*(db: DbConn, userId, roleCode, branchId, grantedBy: string): bool =
   ## Menugaskan role ke pengguna. **Menolak** bila penugasan itu melahirkan pasangan SoD

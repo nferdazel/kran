@@ -114,12 +114,13 @@ suite "kran-api: peran CLI (O-013)":
     check runCtl(createUserCmd, ".", "itapi-teller-x") == 2
     check CtlUsage.contains(createUserCmd)
 
+    let branch = "b0000000-0000-4000-8000-000000000001"
     let uname = "itapi-teller-" & $newId(systemClock())
     # Unknown role is rejected (code 3) before a user row is written.
     check runCtl(createUserCmd, ".", uname, "", "role-tidak-ada") == 3
     check userByUsername(db, uname).isNone
 
-    let code = runCtl(createUserCmd, ".", uname, "", "teller", "", "Uji Teller")
+    let code = runCtl(createUserCmd, ".", uname, "", "teller", branch, "Uji Teller")
     check code == 0
     let created = userByUsername(db, uname)
     check created.isSome
@@ -130,6 +131,198 @@ suite "kran-api: peran CLI (O-013)":
         created.get().userId)
     check created.get().mustChangePassword
     check "teller" in roleCodesOfUser(db, created.get().userId)
+    # The branch grant is the one that was asked for — not a global grant.
+    check db.getValue(sql"""
+      SELECT coalesce(branch_id, 'schema-null') FROM platform.user_role
+       WHERE user_id = ?::uuid""", created.get().userId) == branch
+
+  test "create-user enforces role scope before inserting (RBAC hardening)":
+    let branch = "b0000000-0000-4000-8000-000000000001"
+    # Branch role without a branch must be rejected, and must leave no user row behind: the grant
+    # would otherwise be global and the account would see every branch.
+    let tellerName = "itapi-scope-teller-" & $newId(systemClock())
+    check runCtl(createUserCmd, ".", tellerName, "", "teller", "", "Uji Teller") == 3
+    check userByUsername(db, tellerName).isNone
+    # Institution role with a branch is a dead account (institution routes authorize at branch "");
+    # rejected before insert.
+    let checkerName = "itapi-scope-checker-" & $newId(systemClock())
+    check runCtl(createUserCmd, ".", checkerName, "", "product_checker", branch,
+      "Uji Checker") == 3
+    check userByUsername(db, checkerName).isNone
+    # Invalid branch shape is rejected too.
+    let badBranch = "itapi-scope-bad-" & $newId(systemClock())
+    check runCtl(createUserCmd, ".", badBranch, "", "teller", "bukan-uuid") == 3
+    check userByUsername(db, badBranch).isNone
+
+    # Valid institution role without a branch still works.
+    let okName = "itapi-scope-ok-" & $newId(systemClock())
+    check runCtl(createUserCmd, ".", okName, "", "product_checker") == 0
+    let okUser = userByUsername(db, okName)
+    check okUser.isSome
+    defer:
+      discard db.execAffectedRows(sql"DELETE FROM platform.user_role WHERE user_id = ?::uuid",
+        okUser.get().userId)
+      discard db.execAffectedRows(sql"DELETE FROM platform.app_user WHERE user_id = ?::uuid",
+        okUser.get().userId)
+    check "product_checker" in roleCodesOfUser(db, okUser.get().userId)
+    check db.getValue(sql"""
+      SELECT coalesce(branch_id, 'schema-null') FROM platform.user_role
+       WHERE user_id = ?::uuid""", okUser.get().userId) == "schema-null"
+
+  test "0028: teller reads parameters and role scopes are catalogued":
+    # UI renders the configured F4/F5/F9 shortcuts from `platform.ui.shortcut.*`, which require
+    # the parameter read permission; without it the shortcuts never load.
+    check "platform.param.read" in rolePermissions(db, "teller")
+    # Read-only: no submit/approve leaks into the teller role.
+    check "platform.param.submit" notin rolePermissions(db, "teller")
+    check "platform.param.approve" notin rolePermissions(db, "teller")
+    check roleScope(db, "teller").get() == roleScopeBranch
+    check roleScope(db, "product_checker").get() == roleScopeInstitution
+    check roleScope(db, "platform_admin").get() == roleScopeInstitution
+    check roleScope(db, "param_maker").get() == roleScopeInstitution
+
+  test "ctl assign-role/revoke-role: branch vs institution scope (RBAC hardening)":
+    let branch = "b0000000-0000-4000-8000-000000000001"
+    let other = "b0000000-0000-4000-8000-000000000009"
+    let uid = $newId(systemClock())
+    let uname = "itapi-life-" & uid[0 .. 7]
+    check insertUser(db, NewUser(userId: uid, username: uname, fullName: "Uji Lifecycle",
+      passwordHash: "x"))
+    defer: discard db.execAffectedRows(
+      sql"DELETE FROM platform.app_user WHERE user_id = ?::uuid", uid)
+
+    # Missing arguments / unknown target.
+    check runCtl(assignRoleCmd, ".", "") == 2
+    check runCtl(assignRoleCmd, ".", uname) == 2
+    check runCtl(revokeRoleCmd, ".", "") == 2
+    check runCtl(assignRoleCmd, ".", "tidak-ada", "", "teller", branch) == 3
+    check runCtl(assignRoleCmd, ".", uname, "", "role-tidak-ada") == 3
+
+    # Scope is enforced: branch role needs a branch, institution role must not have one. Nothing is
+    # granted on rejection.
+    check runCtl(assignRoleCmd, ".", uname, "", "teller") == 3
+    check runCtl(assignRoleCmd, ".", uname, "", "teller", "bukan-uuid") == 3
+    check runCtl(assignRoleCmd, ".", uname, "", "product_checker", branch) == 3
+    check roleCodesOfUser(db, uid).len == 0
+
+    # Valid grants.
+    check runCtl(assignRoleCmd, ".", uname, "", "teller", branch) == 0
+    check "teller" in roleCodesOfUser(db, uid)
+    check runCtl(assignRoleCmd, ".", uname, "", "product_checker") == 0
+    check "product_checker" in roleCodesOfUser(db, uid)
+    # Granting the same role+branch again is a no-op, not an error code 0.
+    check runCtl(assignRoleCmd, ".", uname, "", "teller", branch) == 3
+    # Audit carries username/role/branch.
+    check db.getValue(sql"""
+      SELECT count(*) FROM platform.audit_log
+       WHERE action = 'user.role_grant' AND after_value->>'username' = ?
+         AND after_value->>'role' = 'teller' AND after_value->>'branch' = ?""",
+      uname, branch) == "1"
+
+    # Revoke targets the exact branch: a different branch does not match, the asked branch does.
+    check runCtl(revokeRoleCmd, ".", uname, "", "teller", other) == 3
+    check runCtl(revokeRoleCmd, ".", uname, "", "teller", branch) == 0
+    check "teller" notin roleCodesOfUser(db, uid)
+    check runCtl(revokeRoleCmd, ".", uname, "", "product_checker") == 0
+    check roleCodesOfUser(db, uid).len == 0
+    # Revoking something not held is rejected (not silently successful).
+    check runCtl(revokeRoleCmd, ".", uname, "", "teller", branch) == 3
+    check db.getValue(sql"""
+      SELECT count(*) FROM platform.audit_log
+       WHERE action = 'user.role_revoke' AND after_value->>'username' = ?""", uname) == "2"
+
+  test "ctl disable-user/enable-user: status and session revocation":
+    let uid = $newId(systemClock())
+    let uname = "itapi-disable-" & uid[0 .. 7]
+    check insertUser(db, NewUser(userId: uid, username: uname, fullName: "Uji Disable",
+      passwordHash: "x"))
+    defer: discard db.execAffectedRows(
+      sql"DELETE FROM platform.app_user WHERE user_id = ?::uuid", uid)
+    let nowIso = utcIso(systemClock().now())
+    for i in 1 .. 2:
+      check createSession(db, $newId(systemClock()), uid, "token-disable-" & uid & "-" & $i,
+        nowIso, nowIso, "", "", "")
+    check db.getValue(sql"""SELECT count(*) FROM platform.session
+                             WHERE user_id = ?::uuid AND revoked_at IS NULL""", uid) == "2"
+
+    check runCtl(disableUserCmd, ".", "") == 2
+    check runCtl(disableUserCmd, ".", "tidak-ada") == 3
+    check runCtl(disableUserCmd, ".", uname) == 0
+    check userById(db, uid).get().status == "INACTIVE"
+    # Every session revoked, so an offboarded account cannot keep working.
+    check db.getValue(sql"""SELECT count(*) FROM platform.session
+                             WHERE user_id = ?::uuid AND revoked_at IS NULL""", uid) == "0"
+    check db.getValue(sql"""SELECT count(*) FROM platform.audit_log
+                             WHERE action = 'user.disable' AND after_value->>'username' = ?""",
+      uname) == "1"
+
+    # Re-enable only restores INACTIVE accounts.
+    check runCtl(enableUserCmd, ".", uname) == 0
+    check userById(db, uid).get().status == "ACTIVE"
+    check runCtl(enableUserCmd, ".", uname) == 3 # already ACTIVE
+    check setUserStatus(db, uid, "SUSPENDED")
+    check runCtl(enableUserCmd, ".", uname) == 3 # SUSPENDED is not silently revived
+    check db.getValue(sql"""
+      SELECT count(*) FROM platform.audit_log
+       WHERE action = 'user.enable' AND after_value->>'username' = ?""", uname) == "1"
+
+  test "ctl unlock-user: only LOCKED -> ACTIVE, clears failure counter":
+    let uid = $newId(systemClock())
+    let uname = "itapi-unlock-" & uid[0 .. 7]
+    check insertUser(db, NewUser(userId: uid, username: uname, fullName: "Uji Unlock",
+      passwordHash: "x"))
+    defer: discard db.execAffectedRows(
+      sql"DELETE FROM platform.app_user WHERE user_id = ?::uuid", uid)
+    # Not locked: rejected.
+    check runCtl(unlockUserCmd, ".", "") == 2
+    check runCtl(unlockUserCmd, ".", uname) == 3
+    # Lock it the way login does (one allowed failure → LOCKED with counter and deadline set).
+    discard recordLoginFailure(db, uid, 1, 30, utcIso(systemClock().now()))
+    let locked = userById(db, uid).get()
+    check locked.status == "LOCKED"
+    check locked.failedAttempts == 1
+    check locked.lockedUntil.len > 0
+
+    check runCtl(unlockUserCmd, ".", uname) == 0
+    let after = userById(db, uid).get()
+    check after.status == "ACTIVE"
+    check after.failedAttempts == 0
+    check after.lockedUntil.len == 0
+    check runCtl(unlockUserCmd, ".", uname) == 3 # no longer LOCKED
+    # INACTIVE is not touched by unlock (that is enable-user's job).
+    check setUserStatus(db, uid, "INACTIVE")
+    check runCtl(unlockUserCmd, ".", uname) == 3
+    check userById(db, uid).get().status == "INACTIVE"
+    check db.getValue(sql"""
+      SELECT count(*) FROM platform.audit_log
+       WHERE action = 'user.unlock' AND after_value->>'username' = ?""", uname) == "1"
+
+  test "ctl revoke-role: refuses to revoke the last platform_admin (lockout guard)":
+    # Make the precondition deterministic regardless of what earlier suites left behind: park any
+    # pre-existing platform_admin grant, restore it afterwards.
+    var parked: seq[tuple[userId, branchId: string]]
+    for row in db.getAllRows(sql"""
+      SELECT ur.user_id::text, coalesce(ur.branch_id, '')
+        FROM platform.user_role ur JOIN platform.role r ON r.role_id = ur.role_id
+       WHERE r.code = ?""", bootstrapAdminRole):
+      parked.add (row[0], row[1])
+    for (uid, branchId) in parked:
+      discard revokeRole(db, uid, bootstrapAdminRole, branchId)
+    defer:
+      for (uid, branchId) in parked:
+        discard grantRole(db, uid, bootstrapAdminRole, branchId, "")
+
+    let uid = $newId(systemClock())
+    let uname = "itapi-lastadmin-" & uid[0 .. 7]
+    check insertUser(db, NewUser(userId: uid, username: uname, fullName: "Uji Admin Terakhir",
+      passwordHash: "x"))
+    defer: discard db.execAffectedRows(
+      sql"DELETE FROM platform.app_user WHERE user_id = ?::uuid", uid)
+    check grantRole(db, uid, bootstrapAdminRole, "", "")
+    check countUsersWithRole(db, bootstrapAdminRole) == 1
+
+    check runCtl(revokeRoleCmd, ".", uname, "", bootstrapAdminRole) == 3
+    check bootstrapAdminRole in roleCodesOfUser(db, uid)
 
   test "withRoleDb(useTx = true): kegagalan di tengah membatalkan seluruh tulisan":
     # Bootstrap menulis tiga hal (pengguna, role, audit). Kalau salah satunya gagal dan transaksinya

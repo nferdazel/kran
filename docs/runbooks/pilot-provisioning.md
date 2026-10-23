@@ -12,6 +12,10 @@ sintetis, bukan data anggota nyata.
 - Biner `kran-api` versi yang memuat `ctl create-user` sudah ter-deploy.
 - Migrasi `platform/0027_platform_rbac_pilot_roles.sql` sudah diterapkan (role `teller`,
   izin produk untuk `product_checker`).
+- Migrasi `platform/0028_platform_rbac_role_scope.sql` sudah diterapkan: menambahkan kolom
+  `platform.role.scope` (`INSTITUTION`/`BRANCH`, `teller` = `BRANCH`), memberi `teller` izin
+  `platform.param.read` (agar pintasan F4/F5/F9 dari `platform.ui.shortcut.*` bisa dimuat UI),
+  dan menyediakan perintah siklus hidup akun di bawah.
 - Akses DB produksi untuk satu penyesuaian data: memindahkan party demo ke cabang pilot.
 
 ## 2. Akun operator
@@ -37,6 +41,37 @@ podman exec kran-api /usr/local/bin/kran-api --role=ctl create-user \
 
 Kata sandi awal dicetak **sekali** (`must_change_password = true`). Login lalu ganti lewat
 `POST /api/v1/auth/password` sebelum dipakai; tanpa itu semua rute lain menjawab 403.
+
+### Scope role (ditegakkan sejak 0028)
+
+- Role `BRANCH` (hanya `teller`) **wajib** diberi `--branch=<uuid>`; tanpa itu perintahnya ditolak
+  (kode 3) — bukan diberi grant global yang melihat semua cabang.
+- Role `INSTITUTION` (`product_checker`, `platform_admin`, `param_*`) **wajib tanpa** `--branch`;
+  memberinya cabang ditolak (kode 3) — sebelumnya menghasilkan akun mati karena rute institusi
+  mengotorisasi pada cabang kosong.
+
+### Siklus hidup akun
+
+Perintah berikut memakai disiplin yang sama dengan `create-user`/`reset-password` (satu transaksi,
+audit, pencabutan sesi bila relevan). Kode keluar: 2 salah pakai, 3 ditolak/tidak ditemukan.
+
+```sh
+# Menugaskan/mencabut role (role BRANCH butuh --branch; role INSTITUTION tanpa --branch)
+podman exec kran-api /usr/local/bin/kran-api --role=ctl assign-role \
+  --username=teller.pilot --user-role=teller --branch=b0000000-0000-4000-8000-000000000001
+podman exec kran-api /usr/local/bin/kran-api --role=ctl revoke-role \
+  --username=teller.pilot --user-role=teller --branch=b0000000-0000-4000-8000-000000000001
+
+# Offboarding: nonaktifkan + cabut semua sesi. Mengaktifkan kembali hanya untuk akun INACTIVE.
+podman exec kran-api /usr/local/bin/kran-api --role=ctl disable-user --username=teller.pilot
+podman exec kran-api /usr/local/bin/kran-api --role=ctl enable-user --username=teller.pilot
+
+# Membuka akun yang terkunci lockout (hanya LOCKED -> ACTIVE; mengosongkan penghitung gagal).
+podman exec kran-api /usr/local/bin/kran-api --role=ctl unlock-user --username=teller.pilot
+```
+
+`revoke-role` menolak mencabut `platform_admin` terakhir (kode 3) supaya tidak ada keadaan tanpa
+admin. `enable-user` tidak menyentuh akun `LOCKED`/`SUSPENDED` — pakai `unlock-user` untuk lockout.
 
 ## 3. Cabang pilot
 

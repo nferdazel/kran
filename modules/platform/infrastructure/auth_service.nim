@@ -13,7 +13,7 @@ import db_connector/db_postgres
 
 import ../domain/[audit, authz, scope]
 import ./[audit_repo, auth_repo, calendar_repo, param_repo, password_hasher]
-import kernel/[auditcontext, clock, ids, paramkey]
+import kernel/[auditcontext, clock, ids, paramkey, result]
 import kernel/generated/paramkeys
 
 type
@@ -337,6 +337,40 @@ proc changePassword*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRe
     %*{"username": user.username, "otherSessionsRevoked": revoked})
   true
 
+const
+  roleScopeInstitution* = "INSTITUTION" ## grant role tanpa cabang
+  roleScopeBranch* = "BRANCH"           ## grant role harus menamai satu cabang
+
+proc roleAssignmentProblem*(db: DbConn, roleCode, branchId: string): string =
+  ## `""` bila pasangan role+cabang sah menurut scope role; pesan masalah bila tidak.
+  ##
+  ## Aturan (RBAC hardening): role `BRANCH` wajib diberi **tepat satu** cabang berbentuk UUID,
+  ## role `INSTITUTION` wajib **tanpa** cabang. Sebelum ini kombinasi yang salah diterima begitu
+  ## saja: role bercabang tanpa cabang mendapat grant global (melihat semua cabang), dan role
+  ## institusi dengan cabang menghasilkan akun mati karena rute institusi mengotorisasi pada
+  ## `targetBranch = ""` dan grant berbatas cabang tidak menutupinya.
+  ##
+  ## UUID cabang diperiksa di sini supaya nilai salah bentuk ditolak dengan pesan jelas, bukan
+  ## gagal di cast DB (meski `user_role.branch_id` bertipe text, jejaknya harus konsisten bentuk).
+  ##
+  ## `roleCode` diasumsikan sudah lolos `roleExists`; bila tidak (scope `none`), pesannya "role
+  ## tidak ada" supaya pemanggil baru pun tetap ditolak, bukan dilewatkan.
+  if branchId.len > 0 and parseId(branchId).isErr():
+    return "branch bukan UUID yang sah: " & branchId
+  let scope = roleScope(db, roleCode)
+  if scope.isNone:
+    return "role tidak ada: " & roleCode
+  case scope.get()
+  of roleScopeBranch:
+    if branchId.len == 0:
+      return "role '" & roleCode & "' bercabang: --branch=<uuid> wajib diisi"
+  of roleScopeInstitution:
+    if branchId.len > 0:
+      return "role '" & roleCode & "' tingkat institusi: --branch harus kosong"
+  else:
+    return "scope role tidak dikenal: " & scope.get()
+  ""
+
 proc createUserWithRole*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
                          username, fullName, roleCode, branchId, password: string,
                          iterations: int): bool =
@@ -347,18 +381,28 @@ proc createUserWithRole*(db: DbConn, ctx: AuditContext, clock: Clock, scope: Sco
   ## and only its hash is stored. `must_change_password` is set so the printed password can be
   ## used exactly once.
   ##
-  ## Returns `false` when the username is already taken or the role does not exist. Callers must
-  ## wrap this in a transaction (user + role + audit must land together); the advisory lock closes
-  ## the check-then-act gap between two concurrent provisioning runs.
+  ## Returns `false` when the username is already taken, the role does not exist, or the
+  ## role/branch combination violates the role scope (`roleAssignmentProblem`). All of those are
+  ## checked **before** any row is written, so a `false` return leaves nothing behind.
+  ##
+  ## A role-grant failure **after** `insertUser` raises instead of returning `false`: the caller
+  ## wraps this in `withRoleDb(..., useTx = true)`, and `withTx` COMMITs whatever the body wrote
+  ## whenever it returns normally (`shared/platform-lib/db/pool.nim`) — so returning `false` there
+  ## would commit a half-provisioned account. Raising rolls the user row back.
+  ##
+  ## The advisory lock closes the check-then-act gap between two concurrent provisioning runs.
   discard db.getValue(sql"SELECT pg_advisory_xact_lock(hashtext('kran:create_user'))")
   if userByUsername(db, username).isSome or not roleExists(db, roleCode):
+    return false
+  if roleAssignmentProblem(db, roleCode, branchId).len > 0:
     return false
   let userId = $newId(clock)
   if not insertUser(db, NewUser(userId: userId, username: username, fullName: fullName,
     passwordHash: $hashPassword(password, iterations), mustChangePassword: true)):
     return false
   if not grantRole(db, userId, roleCode, branchId, ""):
-    return false
+    raise newException(ValueError,
+      "penugasan role '" & roleCode & "' gagal setelah pengguna '" & username & "' dibuat")
   auditAuth(db, ctx, clock, scope, "user.create", userId,
     %*{"username": username, "role": roleCode, "branchId": branchId,
        "mustChangePassword": true})
