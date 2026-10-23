@@ -2398,3 +2398,46 @@ Batasan yang dibuka: O-097 (GL kas teller), O-098 (top-up vault = T-107), O-099 
 - **Gate**: CI PR #4/#5/#6 hijau (Nim, DB integrasi, Web, gitleaks); e2e lokal 43 passed.
 - **Sisa keputusan/pekerjaan**: O-102 (governance/SoD), O-103 (UI setup operator), O-104 (format
   nomor rekening), T-115…T-118.
+
+## 24 Okt 2026 — permukaan operator T-115/T-116/T-117 (PR #7–#9)
+
+Tiga celah O-103 ditutup; semuanya dirilis ke produksi (`d6b0552`, `/readyz` 200).
+
+- **T-115** (merge `7138b3d`, PR #8): `GET /api/v1/parties?query=&branchId=&limit=` (izin
+  `party.party.read`, min 2 karakter, limit 20/50, filter cabang di SQL agar `LIMIT` berlaku
+  setelah penyaringan, hasil ringkas tanpa KYC) dan layar `/app/accounts/open` (pencarian
+  ber-debounce, produk SAVINGS berversi aktif, `Idempotency-Key`, pesan 409/403).
+- **T-116** (merge `dd8237b`, PR #7): `/app/ledger/admin` — periode (buka/tutup dengan alasan
+  wajib dan konfirmasi inline), COA (daftar/buat), pembalik jurnal (alasan wajib, idempoten);
+  seksi disaring `ledger.period.manage`/`ledger.coa.manage`/`ledger.journal.reverse`, nav butuh
+  `ledger.period.manage`.
+- **T-117** (merge `2a202b2`, PR #9, **HUMAN-REVIEW-REQUIRED**): migrasi `0029` menambah
+  `platform.user.manage` (grant eksplisit ke `platform_admin`); kebijakan siklus hidup (grant/
+  revoke/disable/enable/unlock + penjagaan admin terakhir) dipusatkan di `auth_service` dan
+  dipakai **ctl maupun HTTP**; rute `GET /users`, `GET /roles`, `POST /users/{id}/roles`,
+  `DELETE /users/{id}/roles/{role}`, `POST /users/{id}/disable|enable|unlock` dengan
+  `params.reason`; layar `/app/users` dengan tabel + panel kelola inline.
+
+### Bukti
+
+- `./task check-fast` hijau di `main`; `svelte-check --fail-on-warnings` 0/0; vitest web 111 test
+  (9 berkas); `./task openapi` sinkron; `tcontract`/`tapi` hijau.
+- **Integrasi DB dev**: `itapi_party` 13 `[OK]`, `itapi_users` 6 `[OK]`.
+- **E2E pusat** (`./task e2e`, DB dev): **43 passed** (palette diperbarui: `param_maker` memegang
+  `deposit.account.manage`, jadi lima tujuan).
+- **Produksi**: migrasi `0029` terpasang (`platform_admin` memegang `platform.user.manage`);
+  nav admin 7 entri (Ledger, Ledger admin, Teller, Open account, Parameters, Products, Users);
+  axe `/app/users`, `/app/accounts/open`, `/app/ledger/admin` 0 serious/critical;
+  pencarian party (`budi`, CIF `9000007`) mengembalikan bentuk ringkas, query 1 karakter → 400;
+  **rekening 0000000006 dibuka lewat UI** untuk Ahmad Fauzi (saldo 0);
+  `POST /users/{checker}/roles {"role":"teller"}` → 400 `role_scope` tanpa grant baru;
+  `DELETE .../roles/param_checker` → 409 `not_granted`; user tak dikenal → 404 `user_not_found`;
+  periode tumpang tindih → 409 (pesan UI memakai fallback per aksi karena handler ledger belum
+  mengirim `params.reason`).
+
+### Sisa
+
+- Keputusan pemilik: **O-102/T-118** (SoD & governance kas/vault), **O-104** (format nomor
+  rekening final).
+- Nice-to-have: handler ledger mengirim `params.reason` (`period_no_overlap`, `coa_code_uq`,
+  jurnal sudah dibalik) supaya UI tidak perlu fallback per aksi.
