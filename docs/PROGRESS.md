@@ -2137,3 +2137,17 @@ laptop/server), verifikasi autostart lewat reboot, alert backlog worker (O-081).
 - Bukti: `itaccount` 5, `itapi_deposit` 12, `taccount` 6, `tcontract` 5, `tparamgen` 24;
   `./task ci` hijau (24 e2e).
 - Belum di-push. T-088b (setor/tarik + posting jurnal sinkron) berikutnya.
+
+
+### T-088b — setor/tarik tunai (23 Okt 2026)
+
+- `deposit/0004` (transaksi + FK jurnal), `deposit/0005` (immutability via `ledger.reject_mutation`),
+  `deposit/0006` (grant `kran_runtime`), `ledger/0012` (rule `DepositWithdrawn`), `platform/0024`
+  (izin `teller.transaction.post`).
+- Satu `withDbTx` + `withIdempotency`: saldo (`UPDATE ... WHERE balance - amount >= min_balance`),
+  jurnal sinkron dari posting rule, transaksi, audit, outbox non-akuntansi.
+- Review 3 putaran: M1 (bukti double-entry) + M2 (penjaga outbox) ditutup dengan assertion
+  `journal_line` dan `jsonb_exists(headers,'accounting')`; r3 APPROVE.
+- Bukti: `ttransaction` 9, `ittransaction` 8, `itapi_teller` 12, `tcontract` 5; `./task ci` hijau
+  (24 e2e); mutation check guard saldo gagal saat klausa dihapus.
+- Belum di-push. Sisa T-088: PB (088c) + UI teller (088d).
