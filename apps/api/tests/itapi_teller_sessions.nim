@@ -354,6 +354,19 @@ suite "sessions: buka & vault":
     # Vault = 50 - 40 (buka) + 36 (counted fisik) = 46.
     check vaultOf(BranchB) == "46.0000"
 
+  test "note buka tidak hilang saat tutup tanpa note":
+    let token = tokenOf(login(MakerUser))
+    let open = postJson(SessionsPath, openBody(BranchB, "10.0000", "kas shift malam"), token,
+      "sess-note-" & $epochTime())
+    check open.code == 201
+    check open.body["note"].getStr() == "kas shift malam"
+    let sessionId = open.body["sessionId"].getStr()
+
+    let close = postJson(SessionsPath & "/" & sessionId & "/close",
+      %*{"countedCash": "10.0000"}, token, "sess-note-close-" & $epochTime())
+    check close.code == 200
+    check close.body["note"].getStr() == "kas shift malam"
+
   test "buka 201 → current 200; sesi kedua → 409; idempotensi & tutup":
     let token = tokenOf(login(MakerUser))
     let openKey = "sess-open-idem-" & $epochTime()

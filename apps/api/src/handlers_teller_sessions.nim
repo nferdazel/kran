@@ -317,6 +317,7 @@ proc handleCloseTellerSession*(app: AppContext, req: Request) {.gcsafe.} =
                 "expectedCash": expectedCash.toDecimalString,
                 "countedCash": countedCash.toDecimalString,
                 "variance": variance.toDecimalString,
+                "note": note,
               }))
 
             discard appendEvent(db, newOutboxEvent(newId(app.clock), "TellerSessionClosed",

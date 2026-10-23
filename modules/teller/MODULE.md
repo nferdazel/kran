@@ -44,7 +44,7 @@ runtime (pola `deposit/0006`/`0008`: `ON ALL TABLES` hanya mencakup tabel yang a
 | `POST /api/v1/teller/sessions` | `teller.session.open` @cabang | 201 `TellerSession` | 400 body/nominal/note/kunci; 403 (cabang); 409 `session_already_open`/`insufficient_vault`/`vault_not_configured`; 409 idempotensi |
 | `GET /api/v1/teller/sessions/current?branchId=` | `teller.session.read` @cabang | 200 `TellerSession` | 400 `branchId`; 403 (cabang); 404 `session_not_open` |
 | `POST /api/v1/teller/sessions/{sessionId}/close` | `teller.session.close` @cabang sesi | 200 `TellerSessionClose` | 400 `countedCash`/note/kunci; 403 (cabang); 404 tak dikenal; 409 `session_not_open`/`session_not_owned`; 409 idempotensi |
-| `POST /api/v1/teller/cash-transactions` | `teller.transaction.post` @cabang rekening | 201 `CashTransaction` | **409 `no_open_session`** bila tidak ada sesi `OPEN` hari itu; sisanya seperti T-088b |
+| `POST /api/v1/teller/cash-transactions` | `teller.transaction.post` @cabang rekening | 201 `CashTransaction` | **409 `no_open_session`** bila tidak ada sesi `OPEN` hari itu, atau **409 `session_business_date_mismatch`** bila sesi `OPEN` ada tetapi untuk tanggal bisnis lain (tutup dulu); sisanya seperti T-088b |
 
 - `Idempotency-Key` **wajib** pada buka & tutup (operasi kas, D-098): retry tidak boleh mendebit
   vault / menutup sesi dua kali. Replay = 200 + `Idempotent-Replayed`; isi beda = 409.
@@ -57,7 +57,8 @@ runtime (pola `deposit/0006`/`0008`: `ON ALL TABLES` hanya mencakup tabel yang a
 ## Gerbang transaksi tunai (T-093b)
 
 - Transaksi tunai (`POST /teller/cash-transactions`) **wajib** punya sesi `OPEN` milik pemanggil di
-  cabang rekening **pada `business_date` yang sama**; kalau tidak → 409 `no_open_session`, dan
+  cabang rekening **pada `business_date` yang sama**; kalau tidak → 409 `no_open_session` (atau
+`session_business_date_mismatch` bila sesi OPEN bertanggal lain), dan
   saldo/jurnal tidak berubah.
 - Gerbang berada **di dalam** blok `withIdempotency`: replay yang sah setelah sesi ditutup tetap
   mengembalikan respons tersimpan (bukan 409 palsu).
