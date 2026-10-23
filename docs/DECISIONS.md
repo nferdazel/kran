@@ -2699,6 +2699,14 @@ memperingatkan `a11y_no_noninteractive_tabindex` untuk pola ini; peringatan dite
 **Konsekuensi.** Gate svelte-check kembali 0 warning. Kalau nanti wadah itu berisi kontrol
 interaktif langsung, `tabindex` harus ditinjau ulang agar tidak menambah tab stop ganda.
 
+**Amandemen 23 Okt 2026 (T-079).** Region tidak lagi menjadi tab-stop. Navigasi sel memakai pola
+`aria-activedescendant` pada `<table role="grid" tabindex="0">` (satu tab-stop komposit: Tab masuk,
+panah pindah sel, Tab keluar — DESIGN §10), sehingga `tabindex` region dan `svelte-ignore` dihapus.
+Roving tabindex ditolak karena memberi tiap `td`/`th` tab-stop sendiri dan memicu
+`a11y_no_noninteractive_tabindex` (`role` implisit sel tidak dihitung). Gulir keyboard (WCAG 2.1.1)
+tetap terjaga: perpindahan sel aktif memanggil `scrollIntoView` pada region. Region tetap
+`role="region"` berlabel sebagai landmark, hanya tanpa tab-stop.
+
 ---
 
 ## D-117 — Amandemen D-098: duplikat konkuren menunggu lalu replay; `Retry-After` dibatasi
