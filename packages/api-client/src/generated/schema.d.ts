@@ -1199,6 +1199,163 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daftar akun operator
+         * @description Daftar akun operator beserta role efektifnya (kode + cabang; `branchId: null` = grant
+         *     tingkat institusi). **Tanpa** password hash dan tanpa data sesi. Hasil tidak disaring per
+         *     cabang: pengelolaan pengguna adalah aksi tingkat institusi (izin `platform.user.manage`
+         *     harus dipegang tanpa batas cabang; `403` `params.reason=branch_not_allowed` bila hanya
+         *     grant bercabang yang dimiliki).
+         */
+        get: operations["listUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Katalog role
+         * @description Katalog role (kode, scope, dan penanda role sistem). Dipakai layar administrasi untuk
+         *     memutuskan bentuk penugasan: role `BRANCH` wajib menyertakan cabang, role `INSTITUTION`
+         *     tidak boleh. Izin per role tidak dibuka di sini.
+         */
+        get: operations["listRoles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{userId}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tugaskan role ke pengguna
+         * @description Menugaskan `role` (opsional `branchId`) ke pengguna. Scope ditegakkan
+         *     (`roleAssignmentProblem`): role `BRANCH` butuh cabang, role `INSTITUTION` menolaknya (`400`
+         *     `role_scope`). Konflik pemisahan tugas ditolak `409` `sod_conflict`; role yang sudah
+         *     dipegang `409` `already_granted`; kode role tak dikenal `400` `role_not_found`; pengguna
+         *     tak ada `404` `user_not_found`. Audit `user.role_grant` ditulis dengan aktor dari sesi.
+         *     **HUMAN-REVIEW-REQUIRED** (administrasi pengguna/RBAC).
+         */
+        post: operations["assignUserRole"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{userId}/roles/{role}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Cabut role dari pengguna
+         * @description Mencabut **persis** grant yang cocok: `branchId` kosong = grant tingkat institusi, terisi =
+         *     grant cabang itu. Role `platform_admin` terakhir tidak boleh dicabut (`409` `last_admin`)
+         *     supaya sistem tidak kehilangan pengelola RBAC. Grant yang tidak dipegang `409`
+         *     `not_granted`. Audit `user.role_revoke`.
+         */
+        delete: operations["revokeUserRole"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{userId}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Nonaktifkan akun (cabut seluruh sesi)
+         * @description Menonaktifkan akun (`INACTIVE`) dan mencabut seluruh sesinya. Admin terakhir tidak boleh
+         *     dinonaktifkan (`409` `last_admin`). Audit `user.disable`. **HUMAN-REVIEW-REQUIRED**.
+         */
+        post: operations["disableUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{userId}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Aktifkan kembali akun yang dinonaktifkan
+         * @description Hanya `INACTIVE` → `ACTIVE`; `LOCKED`/`SUSPENDED` ditolak `409` `not_inactive` (yang
+         *     pertama memakai `unlockUser`, yang kedua butuh keputusan berbeda). Audit `user.enable`.
+         */
+        post: operations["enableUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{userId}/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Buka akun yang terkunci
+         * @description Hanya `LOCKED` → `ACTIVE`, sekaligus mengosongkan penghitung gagal. Akun dengan status lain
+         *     ditolak `409` `not_locked`. Audit `user.unlock`.
+         */
+        post: operations["unlockUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1300,6 +1457,61 @@ export interface components {
             permissions: string[];
             /** @description Batas idle sesi (ISO-8601 UTC); batas absolut tidak pernah dilampaui. */
             expiresAt: string;
+        };
+        UserRoleGrant: {
+            /** @description Kode role (`platform.role.code`). */
+            role: string;
+            /**
+             * Format: uuid
+             * @description Cabang grant; `null` = grant tingkat institusi.
+             */
+            branchId: string | null;
+        };
+        UserSummary: {
+            /** Format: uuid */
+            userId: string;
+            username: string;
+            fullName: string;
+            /** @enum {string} */
+            status: "ACTIVE" | "INACTIVE" | "LOCKED" | "SUSPENDED";
+            mustChangePassword: boolean;
+            roles: components["schemas"]["UserRoleGrant"][];
+        };
+        UserList: {
+            items: components["schemas"]["UserSummary"][];
+        };
+        RoleSummary: {
+            code: string;
+            /**
+             * @description INSTITUTION = grant tanpa cabang; BRANCH = grant wajib bercabang.
+             * @enum {string}
+             */
+            scope: "INSTITUTION" | "BRANCH";
+            isSystem: boolean;
+        };
+        RoleList: {
+            items: components["schemas"]["RoleSummary"][];
+        };
+        UserRoleAssignRequest: {
+            role: string;
+            /**
+             * Format: uuid
+             * @description Wajib untuk role ber-scope BRANCH; harus kosong untuk role INSTITUTION.
+             */
+            branchId?: string | null;
+        };
+        UserRoleAssignment: {
+            /** Format: uuid */
+            userId: string;
+            role: string;
+            /** Format: uuid */
+            branchId: string | null;
+        };
+        UserStatusChange: {
+            /** Format: uuid */
+            userId: string;
+            /** @enum {string} */
+            status: "ACTIVE" | "INACTIVE" | "LOCKED" | "SUSPENDED";
         };
         ParamValue: {
             /** Format: uuid */
@@ -2089,6 +2301,8 @@ export interface components {
         IdempotencyKey: string;
         /** @description Id party (UUID). */
         PartyId: string;
+        /** @description Id pengguna (UUID). */
+        UserId: string;
     };
     requestBodies: never;
     headers: {
@@ -3982,6 +4196,202 @@ export interface operations {
                 };
             };
             400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    listUsers: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar akun */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    listRoles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Katalog role */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleList"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    assignUserRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Id pengguna (UUID). */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserRoleAssignRequest"];
+            };
+        };
+        responses: {
+            /** @description Role ditugaskan */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserRoleAssignment"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    revokeUserRole: {
+        parameters: {
+            query?: {
+                branchId?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Id pengguna (UUID). */
+                userId: components["parameters"]["UserId"];
+                role: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Grant dicabut */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    disableUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Id pengguna (UUID). */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Akun dinonaktifkan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserStatusChange"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    enableUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Id pengguna (UUID). */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Akun diaktifkan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserStatusChange"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    unlockUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Id pengguna (UUID). */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Akun dibuka */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserStatusChange"];
+                };
+            };
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];

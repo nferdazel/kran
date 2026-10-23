@@ -59,6 +59,7 @@ describe("visibleNavLinks", () => {
       "/app/accounts/open",
       "/app",
       "/app/products",
+      "/app/users",
     ]);
   });
 
@@ -71,6 +72,11 @@ describe("visibleNavLinks", () => {
     const codes = appNavLinks.find((link) => link.href === "/app/ledger/admin");
     expect(codes?.permissions).toEqual(["ledger.period.manage"]);
     expect(visibleNavLinks(appNavLinks, ["ledger.coa.manage"])).toEqual([]);
+  });
+
+  it("layar pengguna hanya tampil dengan platform.user.manage", () => {
+    expect(hrefs(visibleNavLinks(appNavLinks, ["platform.user.manage"]))).toEqual(["/app/users"]);
+    expect(hrefs(visibleNavLinks(appNavLinks, []))).toEqual([]);
   });
 });
 

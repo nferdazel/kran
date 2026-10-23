@@ -7,7 +7,7 @@
 ## Semua angka kebijakan (panjang password, iterasi KDF, lockout, umur sesi) datang dari
 ## parameter DB — tidak ada default di kode (spec §10.6).
 
-import std/[algorithm, json, options, times]
+import std/[algorithm, json, options, strutils, times]
 
 import db_connector/db_postgres
 
@@ -436,3 +436,117 @@ proc bootstrapFirstAdmin*(db: DbConn, ctx: AuditContext, clock: Clock, scope: Sc
   auditAuth(db, ctx, clock, scope, "user.bootstrap", userId,
     %*{"username": username, "role": roleCode, "mustChangePassword": true})
   true
+
+# --- administrasi pengguna (T-117) ------------------------------------------------------------
+# Aturan siklus hidup akun (kuat-sandi, status, dan penjagaan admin terakhir) **satu definisi** di
+# sini, dipakai dua jalur: perintah `ctl` di `apps/api` dan rute HTTP `/api/v1/users*`. Pemanggil
+# menyelesaikan pengguna lebih dulu (nama untuk CLI, id untuk HTTP) lalu memetakan hasilnya ke kode
+# keluar atau status HTTP — bukan menyalin aturannya.
+
+const platformAdminRole* = "platform_admin"
+
+type
+  UserAdminOutcome* = enum
+    uaoOk
+    uaoRoleNotFound ## kode role tidak ada di katalog (salah ketik), bukan konflik.
+    uaoRejected     ## ditolak aturan: scope role, SoD, admin terakhir, atau status salah.
+    uaoWriteFailed  ## perubahan status gagal ditulis (mis. baris hilang di tengah transaksi).
+
+  UserAdminResult* = object
+    outcome*: UserAdminOutcome
+    reason*: string ## kode stabil untuk pemetaan HTTP (`already_granted`, `sod_conflict`, …).
+    detail*: string ## pesan untuk operator (dipakai CLI; boleh dibawa HTTP sebagai `detail`).
+
+proc locksOutLastAdmin*(db: DbConn, user: UserRow): bool =
+  ## True bila `user` satu-satunya pemegang `platform_admin`: mencabut role itu atau
+  ## menonaktifkan akunnya membuat tidak ada lagi yang bisa mengelola RBAC (satu pintu keluar
+  ## tanpa akses shell). Sama dengan penjagaan `ctl` — dipakai kedua jalur.
+  platformAdminRole in roleCodesOfUser(db, user.userId) and
+    countUsersWithRole(db, platformAdminRole) <= 1
+
+proc grantUserRole*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
+                    user: UserRow, roleCode, branchId: string): UserAdminResult =
+  ## Menugaskan role ke pengguna yang sudah ada. Menolak role tak dikenal, pasangan role/cabang
+  ## yang melanggar scope (`roleAssignmentProblem`), role yang sudah dipegang, dan pasangan SoD
+  ## (`grantRole` melempar). Audit `user.role_grant` ditulis dalam transaksi yang sama.
+  if not roleExists(db, roleCode):
+    return UserAdminResult(outcome: uaoRoleNotFound, reason: "role_not_found",
+      detail: "role tidak dikenal: " & roleCode)
+  let problem = roleAssignmentProblem(db, roleCode, branchId)
+  if problem.len > 0:
+    return UserAdminResult(outcome: uaoRejected, reason: "role_scope", detail: problem)
+  try:
+    if not grantRole(db, user.userId, roleCode, branchId, ""):
+      return UserAdminResult(outcome: uaoRejected, reason: "already_granted",
+        detail: "pengguna sudah memegang role '" & roleCode & "' pada cabang itu")
+  except ValueError as e:
+    return UserAdminResult(outcome: uaoRejected, reason: "sod_conflict", detail: e.msg)
+  let now = clock.now()
+  discard appendAudit(db, newAuditEntry(ctx, "user.role_grant", "app_user", user.userId, clock,
+    businessDate = businessDateFor(db, scope, utcIso(now)),
+    after = %*{"username": user.username, "role": roleCode, "branch": branchId}))
+  UserAdminResult(outcome: uaoOk)
+
+proc revokeUserRole*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
+                     user: UserRow, roleCode, branchId: string): UserAdminResult =
+  ## Mencabut **persis** grant yang cocok: cabang kosong = grant institusi, cabang terisi = grant
+  ## cabang itu. Role `platform_admin` terakhir tidak boleh dicabut. Audit `user.role_revoke`.
+  if not roleExists(db, roleCode):
+    return UserAdminResult(outcome: uaoRoleNotFound, reason: "role_not_found",
+      detail: "role tidak dikenal: " & roleCode)
+  let problem = roleAssignmentProblem(db, roleCode, branchId)
+  if problem.len > 0:
+    return UserAdminResult(outcome: uaoRejected, reason: "role_scope", detail: problem)
+  if roleCode.toLowerAscii == platformAdminRole and locksOutLastAdmin(db, user):
+    return UserAdminResult(outcome: uaoRejected, reason: "last_admin",
+      detail: "menolak mencabut role '" & platformAdminRole & "' terakhir")
+  if not revokeRole(db, user.userId, roleCode, branchId):
+    return UserAdminResult(outcome: uaoRejected, reason: "not_granted",
+      detail: "pengguna tidak memegang role '" & roleCode & "' pada cabang itu")
+  let now = clock.now()
+  discard appendAudit(db, newAuditEntry(ctx, "user.role_revoke", "app_user", user.userId, clock,
+    businessDate = businessDateFor(db, scope, utcIso(now)),
+    after = %*{"username": user.username, "role": roleCode, "branch": branchId}))
+  UserAdminResult(outcome: uaoOk)
+
+proc disableUserAccount*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
+                         user: UserRow): UserAdminResult =
+  ## Menonaktifkan akun dan mencabut seluruh sesinya; admin terakhir dijaga. Audit `user.disable`.
+  if locksOutLastAdmin(db, user):
+    return UserAdminResult(outcome: uaoRejected, reason: "last_admin",
+      detail: "menolak menonaktifkan role '" & platformAdminRole & "' terakhir")
+  let now = clock.now()
+  let nowIso = utcIso(now)
+  if not setUserStatus(db, user.userId, "INACTIVE"):
+    return UserAdminResult(outcome: uaoWriteFailed, detail: "gagal menonaktifkan akun")
+  let revoked = revokeSessionsOfUser(db, user.userId, nowIso, "akun dinonaktifkan operator")
+  discard appendAudit(db, newAuditEntry(ctx, "user.disable", "app_user", user.userId, clock,
+    businessDate = businessDateFor(db, scope, nowIso),
+    after = %*{"username": user.username, "sessions_revoked": revoked}))
+  UserAdminResult(outcome: uaoOk)
+
+proc enableUserAccount*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
+                        user: UserRow): UserAdminResult =
+  ## Mengaktifkan kembali akun yang **dinonaktifkan**: hanya `INACTIVE` → `ACTIVE` (CAS). Audit
+  ## `user.enable`.
+  if not enableInactiveUser(db, user.userId):
+    return UserAdminResult(outcome: uaoRejected, reason: "not_inactive",
+      detail: "akun tidak dalam status INACTIVE")
+  let now = clock.now()
+  discard appendAudit(db, newAuditEntry(ctx, "user.enable", "app_user", user.userId, clock,
+    businessDate = businessDateFor(db, scope, utcIso(now)),
+    after = %*{"username": user.username}))
+  UserAdminResult(outcome: uaoOk)
+
+proc unlockUserAccount*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
+                        user: UserRow): UserAdminResult =
+  ## Membuka akun terkunci: hanya `LOCKED` → `ACTIVE` (CAS), penghitung gagal dikosongkan. Audit
+  ## `user.unlock`.
+  if not unlockUser(db, user.userId):
+    return UserAdminResult(outcome: uaoRejected, reason: "not_locked",
+      detail: "akun tidak dalam status LOCKED")
+  let now = clock.now()
+  discard appendAudit(db, newAuditEntry(ctx, "user.unlock", "app_user", user.userId, clock,
+    businessDate = businessDateFor(db, scope, utcIso(now)),
+    after = %*{"username": user.username}))
+  UserAdminResult(outcome: uaoOk)

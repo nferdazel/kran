@@ -35,6 +35,17 @@ type
     absoluteExpiresAt*: string
     revoked*: bool
 
+  RoleGrant* = object
+    ## Satu pemberian role ke pengguna: kode role + cabangnya ("" = tingkat institusi).
+    roleCode*: string
+    branchId*: string
+
+  RoleCatalogue* = object
+    ## Baris katalog role untuk layar administrasi (T-117).
+    code*: string
+    scope*: string
+    isSystem*: bool
+
 ## Konvensi waktu: semua timestamp dibaca sebagai UTC dengan bentuk tetap `...Z`, sehingga
 ## perbandingan string = perbandingan waktu (dipakai service, bukan `now()` di SQL).
 const userColumns = """
@@ -76,6 +87,14 @@ proc userById*(db: DbConn, userId: string): Option[UserRow] =
   if found.isNone:
     return none(UserRow)
   some(userFromRow(found.get()))
+
+proc listUsers*(db: DbConn, limit: int): seq[UserRow] =
+  ## Akun operator untuk layar administrasi (T-117), urut username. Batas baris datang dari
+  ## pemanggil (batas ukuran respons, bukan aturan bisnis); password hash tidak pernah ikut keluar
+  ## dari sini — handler yang memilih field (spec §13).
+  for row in db.getAllRows(sql("SELECT " & userColumns &
+    " FROM platform.app_user ORDER BY lower(username), user_id LIMIT ?::int"), limit):
+    result.add userFromRow(row)
 
 proc recordLoginFailure*(db: DbConn, userId: string, maxFailedLogins, lockoutMinutes: int,
                          nowIso: string): UserRow =
@@ -240,6 +259,17 @@ proc roleCodesOfUser*(db: DbConn, userId: string): seq[string] =
      WHERE ur.user_id = ?::uuid ORDER BY r.code""", userId):
     result.add row[0]
 
+proc roleGrantsOfUser*(db: DbConn, userId: string): seq[RoleGrant] =
+  ## Pemberian role pengguna sebagai pasangan role+cabang (bukan per izin): bentuk yang dipakai
+  ## layar administrasi. Diurut agar keluaran deterministik.
+  for row in db.getAllRows(sql"""
+    SELECT r.code, coalesce(ur.branch_id, '')
+      FROM platform.user_role ur
+      JOIN platform.role r ON r.role_id = ur.role_id
+     WHERE ur.user_id = ?::uuid
+     ORDER BY r.code, coalesce(ur.branch_id, '')""", userId):
+    result.add RoleGrant(roleCode: row[0], branchId: row[1])
+
 proc conflictsOfUser*(db: DbConn, userId: string): seq[RolePair] =
   ## Pasangan SoD yang benar-benar dipegang pengguna ini.
   conflictingPairs(roleCodesOfUser(db, userId).toHashSet, conflictPairs(db))
@@ -257,6 +287,13 @@ proc roleScope*(db: DbConn, roleCode: string): Option[string] =
     none(string)
   else:
     some(found.get()[0])
+
+proc listRoles*(db: DbConn): seq[RoleCatalogue] =
+  ## Katalog role (kode, scope, sistem) untuk layar administrasi (T-117), urut kode. Izin per role
+  ## **tidak** ikut: layar hanya butuh scope untuk memutuskan bentuk penugasan.
+  for row in db.getAllRows(sql"""
+    SELECT code, scope, is_system FROM platform.role ORDER BY code"""):
+    result.add RoleCatalogue(code: row[0], scope: row[1], isSystem: row[2] == "t")
 
 proc grantRole*(db: DbConn, userId, roleCode, branchId, grantedBy: string): bool =
   ## Menugaskan role ke pengguna. **Menolak** bila penugasan itu melahirkan pasangan SoD

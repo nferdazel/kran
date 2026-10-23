@@ -65,6 +65,11 @@ export const appNavLinks: readonly NavLink[] = [
     label: (locale) => m.common_nav_products({}, { locale }),
     permissions: ["product.catalog.read"],
   },
+  {
+    href: "/app/users",
+    label: (locale) => m.common_nav_users({}, { locale }),
+    permissions: ["platform.user.manage"],
+  },
 ];
 
 /**
