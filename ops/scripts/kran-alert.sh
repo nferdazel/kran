@@ -19,6 +19,20 @@ DRY_RUN=0
 
 mkdir -p "$STATE_DIR"
 
+# Jangan kirim alert selama deploy. Deploy menyinkronkan repo (`git reset --hard`) SEBELUM
+# `migrate --up`, sehingga API lama yang masih jalan membaca berkas migrasi baru dan `/readyz`
+# melaporkan "migrasi expand tertunda" selama beberapa detik. Itu kondisi normal, bukan insiden:
+# status terakhir sengaja tidak diubah supaya tidak ada pesan ALERT/OK palsu. Bila deploy gagal
+# dan `/readyz` tetap 503, probe berikutnya (lock sudah lepas) mengirim alert seperti biasa.
+DEPLOY_LOCK="${KRAN_DEPLOY_LOCK:-/srv/qouver/apps/kran/.deploy.lock}"
+if [ -e "$DEPLOY_LOCK" ] && command -v flock >/dev/null 2>&1; then
+  if exec 8>>"$DEPLOY_LOCK" && ! flock -n 8; then
+    printf '[%s] status=deploy code=- dead=- send=0 (deploy berjalan)\n' \
+      "$(date '+%Y-%m-%d %H:%M:%S')"
+    exit 0
+  fi
+fi
+
 if [ -r /usr/local/sbin/tg-notify.sh ]; then
   # shellcheck disable=SC1091
   . /usr/local/sbin/tg-notify.sh
