@@ -1,157 +1,164 @@
 # KRAN
 
-Core banking untuk standar Indonesia: koperasi (KSP/USP/KSPPS), BPR/BPRS, dan BMT. Satu
-codebase melayani ketiga rumpun lewat *product & regulatory pack*: beda aturan ditaruh di
-parameter dan pack, bukan di cabang kode.
+Core banking for the Indonesian standard: koperasi (KSP/USP/KSPPS), BPR/BPRS, and BMT. One
+codebase serves all three families through *product & regulatory packs*: differences between them
+live in parameters and packs, not in branches of code.
 
-Produk ini masih di permulaan. **Fase 0 (Fondasi) selesai; belum ada fitur bisnis.** Yang ada
-adalah fondasi yang membuat aturan sulit dilanggar tanpa sengaja: platform (pool DB, migrasi,
-outbox, audit hash-chain), parameter dengan maker-checker, auth + RBAC, kalender, hub realtime,
-dan shell web (tema, i18n, a11y). Belum ada pilot, UAT, atau data nyata. Laporan penutup fase:
-[`docs/milestones/M0-report.md`](docs/milestones/M0-report.md).
+The product is early but past the foundation. **Fase 0 (foundation), Fase 1 (core ledger & party),
+and Fase 2 (deposit + teller) are delivered**, and Fase 2 runs in a production pilot with synthetic
+data. What exists today: the platform (DB pool, migrations, outbox, hash-chain audit), effective-dated
+parameters with maker-checker, auth + RBAC + branch scoping, the working calendar, the realtime hub,
+an immutable double-entry ledger with reversals and trial balance, deposits (accounts, cash deposit/
+withdrawal, transfer), teller cash sessions, and the SvelteKit back-office (dark/light themes, i18n
+id/en, WCAG 2.2 AA gate). Phase close-out reports: [`M0`](docs/milestones/M0-report.md),
+[`M1`](docs/milestones/M1-report.md), [`M2`](docs/milestones/M2-report.md).
 
-Nilai dan pasal regulasi yang belum terverifikasi ditandai `NEEDS-COMPLIANCE-REVIEW` di
-kode/seed, dan area kritis (bunga, akrual, PPAP, pajak, rekonsiliasi, enkripsi, authz) ditandai
-`HUMAN-REVIEW-REQUIRED` (`AGENTS.md` §1.8 dan §8). Repo ini tidak mengklaim kepatuhan apa pun;
-register regulasi menunggu verifikasi compliance officer.
+Values and regulatory clauses that are not yet verified are tagged `NEEDS-COMPLIANCE-REVIEW` in
+code/seed, and critical areas (interest, accrual, PPAP, tax, reconciliation, encryption, authz) are
+tagged `HUMAN-REVIEW-REQUIRED` (`AGENTS.md` §1.8 and §8). This repo does not claim any compliance;
+the regulatory register awaits verification by a compliance officer. The pilot data is synthetic and
+deliberately kept (approved by the owner, 23 Oct 2026) — see
+[`docs/runbooks/pilot-provisioning.md`](docs/runbooks/pilot-provisioning.md).
 
-Nama produknya **KRAN**; seluruh identifier teknis mengikutinya: biner `kran-api`, env `KRAN_*`,
-unit systemd `kran-*`, kontrak `kran-api.yaml`, paket npm `@kran/*` (D-039). Hanya `cbs-core`,
-sistem lama yang masih berjalan dan akan di-cutover, yang tetap memakai namanya sendiri.
+The product name is **KRAN**; every technical identifier follows it: binary `kran-api`, env `KRAN_*`,
+systemd unit `kran-*`, contract `kran-api.yaml`, npm scope `@kran/*` (D-039). Only `cbs-core`, the
+legacy system that still runs and is awaiting cutover, keeps its own name.
 
-Stack: PostgreSQL 18 · Nim 2.2 (API; versi dipin persis di [`kran.nimble`](kran.nimble)) ·
-SvelteKit + TypeScript (back-office). UI dibangun dengan WCAG 2.2 AA di dua tema (dark/light)
-dan i18n id/en sejak fondasi.
+Stack: PostgreSQL 18 · Nim 2.2 (API; the version range is pinned in [`kran.nimble`](kran.nimble)) ·
+SvelteKit + TypeScript (back-office). The UI is built against WCAG 2.2 AA in two themes (dark/light)
+with i18n id/en from the foundation on.
 
-Satu sumber kebenaran: [`docs/spec/kran-prd-techspec.md`](docs/spec/kran-prd-techspec.md)
-(PRD + technical spec). Aturan kerja untuk manusia maupun agen: [`AGENTS.md`](AGENTS.md).
+Single source of truth: [`docs/spec/kran-prd-techspec.md`](docs/spec/kran-prd-techspec.md) (PRD +
+technical spec). Working rules for humans and agents: [`AGENTS.md`](AGENTS.md).
 
-## Sejauh mana sekarang
+## Where it stands now
 
-Snapshot `./task ci` di mesin dev, 15 Oktober 2026:
+Every task must end with `./task ci` green; that is the only evidence that counts. Recorded gate
+evidence per phase lives in the milestone reports and in [`docs/PROGRESS.md`](docs/PROGRESS.md); the
+counts move with every task, so they are kept there rather than duplicated here.
 
-| Ukuran | Nilai |
-|---|---|
-| Pemeriksaan lulus (`[OK]`) | 482 (unit, property, integrasi Postgres, kontrak OpenAPI) |
-| Uji browser (Playwright, axe 2 tema) | 23 |
-| Berkas lolos `nim check` | 110 |
-| Migrasi SQL | 9 |
+Fase 2 (deposit + teller) is deployed and exercised end-to-end in the pilot: book period, savings
+products approved by a second account, member accounts, and a teller cash day, all through the public
+API so maker-checker, audit, and posting rules run like a real operator. Provisioning is scripted in
+[`docs/runbooks/pilot-provisioning.md`](docs/runbooks/pilot-provisioning.md). Product maker-checker
+requires **a second operator account** (role `product_checker`) distinct from the maker — a single
+account cannot approve the product it created. Planned work, progress, and what is still open are in
+[`docs/BACKLOG.md`](docs/BACKLOG.md), [`docs/PROGRESS.md`](docs/PROGRESS.md), and
+[`docs/OPEN_ITEMS.md`](docs/OPEN_ITEMS.md) (items there really are open, not assumed done).
 
-Angka itu bergerak setiap task, dan hanya menggambarkan mesin itu. Yang tetap: `./task ci` harus
-hijau sebelum sebuah task disebut selesai. Rencana, kemajuan, dan sisanya ada di
-[`docs/BACKLOG.md`](docs/BACKLOG.md), [`docs/PROGRESS.md`](docs/PROGRESS.md), dan
-[`docs/OPEN_ITEMS.md`](docs/OPEN_ITEMS.md) (item di sana memang masih terbuka, bukan dianggap selesai).
+## Architecture
 
-## Arsitektur
+Clean architecture per module: `domain` → `application` → `infrastructure`/`interface`. Modules talk
+only through `api.nim` and events, and that boundary is enforced by
+[`tools/archcheck`](tools/archcheck). Three rules shape most decisions in this repo:
 
-Clean architecture per modul: `domain` → `application` → `infrastructure`/`interface`. Antar
-modul hanya bicara lewat `api.nim` dan event, dan batas itu ditegakkan
-[`tools/archcheck`](tools/archcheck). Tiga aturan membentuk sebagian besar keputusan di repo
-ini:
+- **Money and rates have their own types** (`Money`, `Rate` in `shared/kernel`), with no float.
+  Float rounds money unpredictably and the error accumulates in the ledger; fixed-point types make
+  that fail at compile time, not at reconciliation.
+- **Business values do not live in code.** Rates, limits, fees, calendar, and thresholds come from
+  DB parameters, and parameter keys may only be produced by [`tools/paramgen`](tools/paramgen).
+  Business constants in code fail `lint-nomagic`. The reason: changing a value must go through
+  maker-checker at runtime, not through a deploy.
+- **The ledger is immutable; corrections go through reversal journals.** Book entries are never
+  edited or deleted; a fix is written as a new journal (ADR-006). This is implemented in
+  `modules/ledger` and covered by property/integration tests.
 
-- **Uang dan rate punya tipe sendiri** (`Money`, `Rate` di `shared/kernel`), tanpa float.
-  Float membulatkan angka uang secara tak terduga dan galatnya menumpuk di ledger; tipe
-  fixed-point membuat itu gagal saat kompilasi, bukan saat rekonsiliasi.
-- **Nilai bisnis tidak ada di kode.** Rate, limit, fee, kalender, dan ambang diambil dari
-  parameter DB, dan kunci parameter hanya boleh lahir dari [`tools/paramgen`](tools/paramgen).
-  Konstanta bisnis di kode gagal `lint-nomagic`. Alasannya: mengubah nilai harus lewat
-  maker-checker saat berjalan, bukan lewat deploy.
-- **Ledger immutable, koreksi lewat jurnal pembalik.** Batang buku tidak diubah atau dihapus;
-  perbaikan ditulis sebagai jurnal baru. Prinsipnya sudah ditetapkan (ADR-006), tetapi modul
-  ledger belum dibangun, jadi penegak mekanisnya belum ada.
-
-Peta direktori:
+Directory map:
 
 ```
-apps/api        entrypoint Nim; satu biner, empat peran (api | migrate | ctl | worker)
+apps/api        Nim entrypoint; one binary, four roles (api | migrate | ctl | worker)
 apps/web        SvelteKit (back-office)
 modules/<m>     bounded context: domain/ application/ infrastructure/ interface/ migrations/ seeds/ tests/ api.nim MODULE.md
-shared/kernel   Money, Rate, BusinessDate, Result, Clock, Id (kecil dan stabil)
-shared/platform-lib  http, pool Postgres, logging, bootstrap config
-packages/       sisi TS: contracts (OpenAPI), api-client (generated), ui, i18n, config
-packs/          segment dan regulatory pack (seed ter-versi)
+shared/kernel   Money, Rate, BusinessDate, Result, Clock, Id (small and stable)
+shared/platform-lib  http, Postgres pool, logging, bootstrap config
+packages/       TS side: contracts (OpenAPI), api-client (generated), ui, i18n, config
+packs/          segment and regulatory packs (versioned seed)
 tools/          archcheck, lint-nomagic, paramgen, i18ncheck, openapi, dbtools, scaffold
 docs/           spec, adr, tasks, backlog, runbooks, spikes, milestones
-ops/            artefak deploy (ditulis di repo, dijalankan di server oleh manusia)
+ops/            deploy artifacts (written in-repo, run on the server by humans)
 ```
 
-Peristiwa bisnis keluar lewat tabel outbox (transaksional, dengan de-dup dan dead-letter), lalu
-disebarkan ke klien realtime lewat WebSocket dengan langganan yang izinnya diperiksa per topik.
-Hal yang tidak bisa ditebak dari kode dijelaskan di `MODULE.md` tiap modul dan
+Business events leave through an outbox table (transactional, with de-dup and dead-letter), then are
+pushed to realtime clients over WebSocket with per-topic authorization. Things that cannot be guessed
+from the code are explained in each module's `MODULE.md` and in
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
-## Penegak mekanis
+## Mechanical enforcement
 
-Aturan yang hanya ditulis di dokumen akan dilanggar, jadi sebagian besar aturan di atas punya
-penegak, dan penegaknya ikut diuji: [`tools/archcheck`](tools/archcheck) (batas modul),
-[`tools/lint-nomagic`](tools/lint-nomagic) + [`tools/paramgen`](tools/paramgen) `--check` (nilai
-bisnis), [`tools/i18ncheck`](tools/i18ncheck) (teks UI), [`tools/openapi`](tools/openapi) dengan
-contract test (kontrak dan klien TS), dan [`tools/dbtools`](tools/dbtools) (migrasi expand-only).
-Uang/rate ditegakkan tipe kernel dan tesnya. Aturan yang belum punya penegak (ledger immutable,
-day-close lewat `daycloser`) dicatat terbuka dan baru datang bersama modulnya.
+A rule that only lives in a document will be broken, so most rules above have an enforcer, and the
+enforcers are themselves tested: [`tools/archcheck`](tools/archcheck) (module boundaries),
+[`tools/lint-nomagic`](tools/lint-nomagic) + [`tools/paramgen`](tools/paramgen) `--check` (business
+values), [`tools/i18ncheck`](tools/i18ncheck) (UI text), [`tools/openapi`](tools/openapi) with a
+contract test (contract and TS client), and [`tools/dbtools`](tools/dbtools) (expand-only migrations).
+Money/rate are enforced by kernel types and their tests. The rules that do not yet have an enforcer
+(day-close via `daycloser`) are tracked as open items and arrive together with their modules.
 
-## Menjalankan dan menguji
+## Running and testing
 
-Mulai cepat dari akar repo (`./task devdb up` membuka tunnel ke DB dev; runbooknya di
+Quick start from the repo root (`./task devdb up` opens the tunnel to the dev DB; runbook in
 [`docs/runbooks/dev-db.md`](docs/runbooks/dev-db.md)):
 
 ```sh
-./task devdb up                  # tunnel DB dev
-./task dbtools migrate           # terapkan migrasi (idempoten)
-./task dbtools seed --dev        # user + parameter contoh
-./task build                     # binary ke .build/bin/kran-api
-.build/bin/kran-api --role=api --port=8080 --address=127.0.0.1   # butuh KRAN_DATABASE_URL
-pnpm install && pnpm --filter @kran/web dev   # back-office di http://127.0.0.1:5173 (registry: docs/runbooks/dev-web.md)
+./task devdb up                  # dev DB tunnel
+./task dbtools migrate           # apply migrations (idempotent)
+./task dbtools seed --dev        # sample users + parameters
+./task build                     # binary to .build/bin/kran-api
+.build/bin/kran-api --role=api --port=8080 --address=127.0.0.1   # needs KRAN_DATABASE_URL
+pnpm install && pnpm --filter @kran/web dev   # back-office at http://127.0.0.1:5173 (registry: docs/runbooks/dev-web.md)
 ```
 
-User hasil seed dev: `dev.maker` (mengajukan perubahan parameter) dan `dev.checker`
-(menyetujui). Kata sandinya ada di
-[`packs/base/seed/0001_dev_users.sql`](packs/base/seed/0001_dev_users.sql).
+Dev seed users: `dev.maker` (proposes parameter changes) and `dev.checker` (approves them). Their
+passwords are in [`packs/base/seed/0001_dev_users.sql`](packs/base/seed/0001_dev_users.sql).
 
-Satu pintu perintah: `./task` (skrip POSIX, tanpa dependensi tooling tambahan; D-001).
+One command entry point: `./task` (POSIX script, no extra tooling dependencies; D-001).
 
-| Perintah | Isi |
+| Command | Contents |
 |---|---|
 | `./task check` | format + `nim check` + archcheck + lint-nomagic + paramgen `--check` + i18n check |
+| `./task check-fast` | like `check` without the full `nim check` (daily iteration loop, D-077) |
+| `./task verify [filter]` | `check-fast` + openapi + build + tests for the selected modules (D-077) |
 | `./task test` | unit + property + integration (Postgres) + contract |
-| `./task e2e` | kontras token + svelte-check + Playwright (e2e, axe 2 tema, keyboard) |
-| `./task openapi` | lint kontrak OpenAPI + cek klien TS sinkron |
-| `./task ci` | semua di atas; harus hijau sebelum sebuah task dianggap selesai |
-| `./task ci-repeat [N]` | ulangi gate penuh N kali (bawaan 3), untuk menangkap flake |
-| `./task build` | bangun binary `kran-api` ke `.build/bin/` |
-| `./task dbtools migrate\|status\|validate\|seed` | migrasi dan seed SQL (butuh `KRAN_DATABASE_URL`) |
-| `./task scaffold <nama> [--dry-run]` | buat kerangka modul baru |
-| `./task devdb up\|down\|status\|psql` | kelola tunnel ke DB dev |
+| `./task e2e` | token contrast + svelte-check + Playwright (e2e, axe 2 themes, keyboard) |
+| `./task openapi` | lint the OpenAPI contract + check the TS client is in sync |
+| `./task ci` | every gate above; must be green before a task is called done |
+| `./task ci-repeat [N]` | repeat the full gate N times (default 3), to catch flake |
+| `./task build` | build the `kran-api` binary into `.build/bin/` |
+| `./task fmt` | format code (rewrites files in place) |
+| `./task dbtools migrate\|status\|validate\|seed` | SQL migrations and seed (needs `KRAN_DATABASE_URL`) |
+| `./task scaffold <name> [--dry-run]` | scaffold a new module |
+| `./task bench-password [--iterations N]` | benchmark password hashing cost |
+| `./task devdb up\|down\|status\|psql` | manage the tunnel to the dev DB |
 
-Prasyarat:
+Prerequisites:
 
-- Nim 2.2 (`nimble install -d -y` untuk dependensi).
-- PostgreSQL 18 untuk uji integrasi, **bukan di lokal**: pakai `./task devdb up` (D-004).
-  Tanpa `KRAN_DATABASE_URL`, uji integrasi (dan sebagian e2e) melewati dirinya sendiri, jadi
-  hasilnya bukan bukti.
-- Node 24 + pnpm untuk `apps/web` (catatan registry:
+- Nim 2.2 (`nimble install -d -y` for dependencies). CI pins 2.2.12; `kran.nimble` requires
+  `>= 2.2.0 & < 2.3.0`.
+- PostgreSQL 18 for integration tests, **not local**: use `./task devdb up` (D-004). Without
+  `KRAN_DATABASE_URL`, integration tests (and part of e2e) skip themselves, so the result is not
+  evidence.
+- Node 24 + pnpm for `apps/web` (registry notes:
   [`docs/runbooks/dev-web.md`](docs/runbooks/dev-web.md)).
 
-## Alur kerja git dan rilis
+## Git workflow and release
 
-Kerja di branch `feat/<id>-<slug>`, commit kecil (conventional commits), lalu buka PR atau
-tinggalkan branch siap-review; merge ke `main` selalu keputusan manusia. Sejak repo ini punya
-hook deploy (D-043), push ke `main` **men-deploy** lewat webhook dengan health gate dan
-auto-rollback; branch lain ditolak ref-guard. Jangan push secret atau data nyata (data uji selalu
-sintetis), dan jangan sentuh server, webhook, Caddy, atau `ops/` produksi kecuali sebuah task
-eksplisit memintanya.
+Work on a branch `feat/<id>-<slug>`, keep commits small (conventional commits), then open a PR or
+leave the branch ready for review; merging to `main` is always a human decision. Since the repo has
+a deploy hook (D-043), pushing to `main` **deploys** through the webhook with a health gate and
+auto-rollback; other branches are rejected by the ref-guard. Do not push secrets or real data (test
+data is always synthetic), and do not touch the server, webhook, Caddy, or production `ops/` unless a
+task explicitly asks for it.
 
-## Lisensi
+## License
 
-Repo ini **publik agar dapat dibaca dan diaudit**, bukan untuk dipakai ulang: hak cipta
-dipertahankan, dan lisensi apa pun hanya sah bila diberikan tertulis ([`LICENSE`](LICENSE),
-D-044). Metadata `kran.nimble` bukan pemberian lisensi.
+This repo is **public so it can be read and audited**, not for reuse: copyright is retained, and any
+license is valid only when granted in writing ([`LICENSE`](LICENSE), D-044). The `kran.nimble`
+metadata is not a license grant.
 
-## Ke mana membaca selanjutnya
+## Where to read next
 
-- [`docs/spec/kran-prd-techspec.md`](docs/spec/kran-prd-techspec.md): kontrak produk dan teknis (§23 = daftar fase).
-- [`docs/DECISIONS.md`](docs/DECISIONS.md): keputusan engineering beserta alasannya.
-- [`docs/BACKLOG.md`](docs/BACKLOG.md): rencana dan status task.
-- [`docs/OPEN_ITEMS.md`](docs/OPEN_ITEMS.md): yang belum selesai dan butuh keputusan.
-- [`docs/runbooks/`](docs/runbooks): prosedur operasional (dev DB, web, migrasi, CLI ops, deploy).
-- [`AGENTS.md`](AGENTS.md): aturan kerja agen dan manusia, termasuk protokol per task.
+- [`docs/spec/kran-prd-techspec.md`](docs/spec/kran-prd-techspec.md): product and technical contract (§23 = phase list).
+- [`docs/DECISIONS.md`](docs/DECISIONS.md): engineering decisions with their rationale.
+- [`docs/BACKLOG.md`](docs/BACKLOG.md): plan and task status.
+- [`docs/OPEN_ITEMS.md`](docs/OPEN_ITEMS.md): what is unfinished and needs a decision.
+- [`docs/runbooks/`](docs/runbooks): operational procedures (dev DB, web, migrations, CLI ops, deploy, pilot provisioning).
+- [`AGENTS.md`](AGENTS.md): working rules for agents and humans, including the per-task protocol.
