@@ -302,3 +302,49 @@ suite "product: imutabilitas keputusan checker":
     check db.getValue(
       sql"SELECT sealed::text FROM product.product_version WHERE version_id = ?",
       $v.versionId) == "true"
+
+suite "product: contract 0006 (T-090)":
+  ## `0006` melepas jaring rolling deploy `0003` (DEFAULT `status` + trigger pengisi `maker`).
+  ## Setelah contract, INSERT gaya binary lama (tanpa kolom itu) harus gagal — bukan diam-diam
+  ## memakai DEFAULT/jaring pengisi. Invarian versi-baru (DRAFT/sealed/maker) tetap berlaku lewat
+  ## trigger `product_version_guard_insert`.
+
+  test "DEFAULT status dan trigger fill-maker sudah dilepas":
+    check db.getValue(sql"""
+      SELECT count(*)::text FROM pg_trigger
+       WHERE tgname = 'product_version_fill_maker' AND NOT tgisinternal""") == "0"
+    check db.getValue(sql"""
+      SELECT count(*)::text FROM pg_trigger
+       WHERE tgname = 'product_version_guard_insert' AND NOT tgisinternal""") == "1"
+    check db.getValue(sql"""
+      SELECT count(*)::text FROM information_schema.columns
+       WHERE table_schema = 'product' AND table_name = 'product_version'
+         AND column_name = 'status' AND column_default IS NOT NULL""") == "0"
+
+  test "INSERT tanpa kolom status/maker gagal NOT NULL":
+    let p = newProduct("SAV-CONTRACT6")
+    insertProduct(p)
+
+    # Tanpa `status`: DEFAULT sudah dilepas → NOT NULL (binary lama tidak bisa menulis lagi).
+    var tanpaStatus = ""
+    try:
+      db.exec(sql"""
+        INSERT INTO product.product_version
+          (version_id, product_id, version_no, effective_from, published_by, maker)
+        VALUES (gen_random_uuid(), ?, 1, '2030-01-01', ?, ?)""",
+        $p.productId, $actor, $actor)
+    except DbError as e:
+      tanpaStatus = e.msg
+    check tanpaStatus.contains("status")
+
+    # Tanpa `maker`: trigger pengisi sudah dilepas → NOT NULL.
+    var tanpaMaker = ""
+    try:
+      db.exec(sql"""
+        INSERT INTO product.product_version
+          (version_id, product_id, version_no, effective_from, published_by, status)
+        VALUES (gen_random_uuid(), ?, 2, '2030-02-01', ?, 'DRAFT')""",
+        $p.productId, $actor)
+    except DbError as e:
+      tanpaMaker = e.msg
+    check tanpaMaker.contains("maker")

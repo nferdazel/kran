@@ -21,6 +21,8 @@ type
     pekPeriodConflict
     pekApprovalRequired
     pekNotPending
+    pekDeprecated ## definisi parameter sengaja dipensiunkan (`param_definition.deprecated`); jalur
+                  ## baca fail-closed (T-098) supaya key pensiun tidak pernah dipakai lagi.
 
   ParamError* = object
     kind*: ParamErrorKind

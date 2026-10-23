@@ -261,6 +261,11 @@ proc submitValue*(db: DbConn, paramValueId, key, scopeType, scopeId: string,
   let def = definitionOf(db, key)
   if def.isNone:
     raise newException(ValueError, "definisi parameter tidak dikenal: " & key)
+  if def.get().deprecated:
+    # Fail-closed untuk key yang sengaja dipensiunkan (T-098, D-121): pengajuan nilai baru ditolak
+    # di sini, bukan hanya di handler, supaya pemanggil lain tidak diam-diam menghidupkannya lagi.
+    raise newException(ValueError,
+      "definisi parameter " & key & " sudah deprecated (pensiun): pengajuan perubahan ditolak")
   if parseScopeType(scopeType) notin def.get().allowedScopes:
     raise newException(ValueError,
       "scope " & scopeType & " tidak diizinkan untuk " & key & " (allowed: " &

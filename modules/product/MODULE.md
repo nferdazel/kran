@@ -4,7 +4,7 @@ Katalog produk untuk koperasi/BPR/BMT (spec §8, §9, §23). Atribut produk **ti
 kode: setiap nilai adalah binding ke parameter terdaftar, dan perubahan atribut diterbitkan sebagai
 **versi baru** yang effective-dated.
 
-## Tabel (migrasi `0001` schema, `0002` katalog, `0003` maker-checker)
+## Tabel (migrasi `0001` schema, `0002` katalog, `0003` maker-checker expand, `0004`/`0006` contract)
 
 | Tabel | Isi |
 |---|---|
@@ -91,8 +91,9 @@ dan semantiknya tidak boleh dikarang. Baris lama di DB ditandai `deprecated` ole
   dan `0004` **contract** (`-- dbtools:contract` + `destructive`): menghapus deferred trigger lama
   dan mengganti `EXCLUDE` menjadi hanya ACTIVE. Deploy menjalankan contract lewat allowlist
   `ops/migrations/contract-auto.txt` sebelum binary baru menerima trafik; contract lain =
-  fail-closed. Trigger `fill_version_maker` + DEFAULT `status` menjaga jendela rolling deploy dan
-  dibersihkan di **T-090**.
+  fail-closed. Contract kedua `0006` (T-090) melepas jaring rolling deploy dari `0003`: DEFAULT
+  `status` + trigger pengisi `maker` dihapus setelah dipastikan tidak ada binary lama; invarian
+  versi-baru tetap dijaga trigger `product_version_guard_insert`.
 - Migrasi platform `0017` memuat grant no-op ke `product.read/manage` (kode lama); grant sebenarnya
   ada di `0018`. Dibiarkan karena `0017` sudah diterapkan (checksum).
 - Binding `pvtJson` dibatasi ukuran (16 KiB) tetapi bentuknya belum divalidasi schema; batas schema

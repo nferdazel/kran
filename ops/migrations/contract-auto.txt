@@ -4,3 +4,4 @@
 # fail-closed: bila ada contract tertunda yang tidak ada di daftar ini, deploy berhenti dan
 # operator harus menjalankan `migrate --contract` manual.
 product/0004_product_version_contract
+product/0006_product_version_contract

@@ -19,6 +19,12 @@ proc dbParamSource*(db: DbConn): ParamSource =
     if definition.isNone:
       return err[ParamSnapshot, ParamError](
         paramError(pekNotFound, key, "definisi parameter tidak ada di platform.param_definition"))
+    if definition.get().deprecated:
+      # Fail-closed untuk definisi yang sengaja dipensiunkan (T-098, D-121): nilainya mungkin masih
+      # ada di `param_value` (riwayat effective-dated), tetapi key pensiun tidak boleh lagi dibaca.
+      # Mengembalikan nilai lama akan menyembunyikan bahwa definisinya sudah tidak berlaku.
+      return err[ParamSnapshot, ParamError](paramError(pekDeprecated, key,
+        "definisi parameter sudah deprecated (pensiun) di platform.param_definition"))
     let picked = resolveCandidate(candidatesOf(db, key, asOf), lookupFor(scope))
     if picked.isNone:
       return err[ParamSnapshot, ParamError](paramError(pekNotFound, key,
