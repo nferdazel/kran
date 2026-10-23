@@ -63,6 +63,15 @@
   /** Kunci yang bisa diajukan = kunci yang sedang punya nilai aktif (urutan dari server). */
   const selectableKeys = $derived([...new Set(active.map((row) => row.key))]);
 
+  let searchFilter = $state("");
+  const filteredActive = $derived.by(() => {
+    const q = searchFilter.trim().toLowerCase();
+    if (!q) return active;
+    return active.filter(
+      (row) => row.key.toLowerCase().includes(q) || String(row.value).toLowerCase().includes(q),
+    );
+  });
+
   function statusText(status: string): string {
     if (status === "ACTIVE") return m.param_status_active();
     if (status === "PENDING") return m.param_status_pending();
@@ -446,7 +455,17 @@
   </section>
 
   <section class="kran-card" aria-labelledby="active-heading">
-    <h2 id="active-heading">{m.params_active_heading()}</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--space-3); margin-block-end: var(--space-3);">
+      <h2 id="active-heading" style="margin: 0;">{m.params_active_heading()}</h2>
+      <input
+        class="kran-input"
+        type="search"
+        placeholder="Cari parameter..."
+        aria-label="Cari parameter aktif"
+        bind:value={searchFilter}
+        style="min-inline-size: 14rem;"
+      />
+    </div>
     {#if active.length === 0}
       <p class="kran-muted">{m.params_active_empty()}</p>
     {:else}
@@ -461,15 +480,14 @@
             </tr>
           </thead>
           <tbody>
-            {#each active as row (row.paramValueId)}
+            {#each filteredActive as row (row.paramValueId)}
               <tr>
                 <th scope="row">{row.key}</th>
                 <td>{displayValue(row.value)}</td>
                 <td>{formatDate(row.effectiveFrom)}</td>
                 <td>
                   <span class={statusClass(row.status)}>
-                    <span class="kran-status__icon" aria-hidden="true">{statusIcon(row.status)}</span
-                    >
+                    <span class="kran-status__icon" aria-hidden="true">{statusIcon(row.status)}</span>
                     {statusText(row.status)}
                   </span>
                 </td>

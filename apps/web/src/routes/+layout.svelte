@@ -73,7 +73,7 @@
 
 <a class="kran-skip-link" href="#main">{m.common_skip_to_content()}</a>
 
-<div class="kran-shell" data-resolved-theme={resolved}>
+<div class="kran-shell {page.url.pathname.startsWith('/app') ? 'kran-shell--app' : 'kran-shell--public'}" data-resolved-theme={resolved}>
   <header class="kran-header">
     <div class="kran-header__brand">
       <span class="kran-header__badge" aria-hidden="true">K</span>
@@ -129,6 +129,16 @@
 
   <nav class="kran-nav" aria-label={m.common_nav_label()}>
     <div class="kran-nav__inner">
+      {#if page.url.pathname.startsWith("/app")}
+        <div class="kran-sidebar-brand" aria-hidden="true">
+          <span class="kran-header__badge">K</span>
+          <div>
+            <strong class="kran-sidebar-title">{m.common_brand_short()}</strong>
+            <span class="kran-sidebar-subtitle">Terminal Konsol</span>
+          </div>
+        </div>
+      {/if}
+
       <ul>
         {#each appNavLinks as link (link.href)}
           <li>
@@ -137,7 +147,12 @@
               href={link.href}
               aria-current={isActiveHref(page.url.pathname, link.href) ? "page" : undefined}
             >
-              {link.label()}
+              {#if page.url.pathname.startsWith("/app")}
+                <span class="kran-nav-icon" aria-hidden="true">
+                  {#if link.href.includes("ledger")}🏛️{:else if link.href.includes("teller")}💵{:else}⚙️{/if}
+                </span>
+              {/if}
+              <span>{link.label()}</span>
             </a>
           </li>
         {/each}
