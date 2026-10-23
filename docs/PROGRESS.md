@@ -2235,4 +2235,5 @@ Batasan yang dibuka: O-097 (GL kas teller), O-098 (top-up vault = T-107), O-099 
 - Panel sesi: buka/tutup/current, tinjauan inline, gerbang hanya untuk setor/tarik (PB tetap).
 - Bukti: `itapi_deposit` 13, `tcontract` 5, svelte-check 0 warning, unit web 33, build web,
   `task i18n` 247 key/locale.
-- Belum: e2e/axe/screenshot teller — butuh seed dev (T-109); `./task ci` penuh menyusul.
+- `./task ci` penuh hijau untuk `f59ba84` (`/tmp/ci-t105.log`, `== CI hijau`).
+- Belum: e2e/axe/screenshot teller — butuh seed dev (T-109).
