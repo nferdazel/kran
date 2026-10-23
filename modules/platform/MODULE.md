@@ -193,8 +193,8 @@ Catatan penempatan: `CloseLevel` masih di `domain/calendar.nim`. Saat modul `day
 | Domain scope | `domain/scope.nim` — `ScopeRef` + konvensi lookup parameter (dipakai kalender & auth) |
 | Hash password | `infrastructure/password_hasher.nim` — PBKDF2-HMAC-SHA256; hash token sesi (SHA-256) |
 | Repo | `infrastructure/auth_repo.nim` — user/lockout, role/permission/SoD, sesi |
-| Alur | `infrastructure/auth_service.nim` — `authenticate`, `sessionFor`, `touch`, `logout`, `logoutAll`, `authorizeUser`, `changePassword`, `bootstrapFirstAdmin` |
-| Migrasi | `0006_platform_auth.sql` (tabel) + `0008_platform_rbac_catalogue.sql` (katalog izin & role sistem) + `0010_platform_password_history.sql` (riwayat hash kata sandi) |
+| Alur | `infrastructure/auth_service.nim` — `authenticate`, `sessionFor`, `touch`, `logout`, `logoutAll`, `authorizeUser`, `changePassword`, `bootstrapFirstAdmin`, `createUserWithRole`, `roleAssignmentProblem` |
+| Migrasi | `0006_platform_auth.sql` (tabel) + `0008_platform_rbac_catalogue.sql` (katalog izin & role sistem) + `0010_platform_password_history.sql` (riwayat hash kata sandi) + `0028_platform_rbac_role_scope.sql` (kolom `role.scope` + izin baca parameter teller) |
 
 Invarian tambahan:
 
@@ -256,6 +256,18 @@ Invarian tambahan:
     tetap tanpa cabang (kolomnya bertipe uuid, O-017) tanpa cast paksa — cast akan melempar dan
     mengubah permintaan sah menjadi 500. Langganan realtime sengaja **tetap** tingkat institusi
     (fail-closed) sampai peristiwanya disaring per cabang (O-070).
+23. **Scope role ditegakkan saat pemberian, bukan ditebak dari cabang** (RBAC hardening).
+    `platform.role.scope` bernilai `INSTITUTION` atau `BRANCH` (0028). Role `BRANCH` (hanya
+    `teller`) wajib diberi **tepat satu** cabang berbentuk UUID; role `INSTITUTION` wajib
+    **tanpa** cabang. `roleAssignmentProblem` memeriksa pasangan itu **sebelum** baris apa pun
+    ditulis, dan `createUserWithRole` mengembalikan `false` bila tidak sah — tanpa itu role
+    bercabang tanpa cabang mendapat grant global (melihat semua cabang), dan role institusi dengan
+    cabang menghasilkan akun mati (rute institusi mengotorisasi pada `targetBranch = ""`). Bila
+    pemberian role gagal **setelah** pengguna disisipkan, `createUserWithRole` melempar galat
+    (bukan `false`) supaya pembungkus transaksi `withRoleDb` me-rollback baris itu — `withTx`
+    COMMIT begitu `body` kembali normal, jadi `false` akan meng-commit akun setengah jadi.
+    Siklus hidup (assign/revoke role, disable/enable/unlock) dilakukan lewat `ctl` dengan audit +
+    pencabutan sesi dalam satu transaksi; `revoke-role` menolak mencabut `platform_admin` terakhir.
 
 Catatan: alur auth tinggal di `infrastructure` (butuh DB). Saat port/use case lapisan
 `application` lahir (pola T-016), isi `auth_service.nim` pindah ke `application/`.
