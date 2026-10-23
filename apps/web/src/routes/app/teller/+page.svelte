@@ -55,6 +55,7 @@
     postCashTransaction,
     postTransfer,
     previewAmount,
+    savingsKindLabel,
     shortcutModeForKey,
     tellerProblemMessage,
     transferIdentity,
@@ -894,6 +895,8 @@
                 : m.teller_account_status_closed()}
             </span>
           </dd>
+          <dt>{m.teller_account_kind_label()}</dt>
+          <dd>{savingsKindLabel(loaded.savingsKind)}</dd>
           <dt>{m.teller_account_balance_label()}</dt>
           <dd class="kran-money">{accountBalanceText}</dd>
         </dl>

@@ -36,7 +36,9 @@ import ../src/[context, deposit_posting, readiness, server]
 const
   ContractPath = "packages/contracts/openapi/kran-api.yaml"
   CashPath = "/api/v1/teller/cash-transactions"
+  SlipPath = "/api/v1/teller/cash-transactions/{transactionId}"
   TransferPath = "/api/v1/teller/transfers"
+  StatementPath = "/api/v1/deposit/accounts/{accountId}/statement"
   SessionsPath = "/api/v1/teller/sessions"
   SessionClosePath = "/api/v1/teller/sessions/{sessionId}/close"
   LoginPath = "/api/v1/auth/login"
@@ -52,7 +54,7 @@ const
   BusinessDate = "2026-10-22"
   ## Cukup untuk seluruh suite (tiap test memakai rekening segar); fixture di bawah menyiapkan
   ## sebanyak ini.
-  AccountFixtures = 30
+  AccountFixtures = 48
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
@@ -71,6 +73,10 @@ var
   HighMinAccountId: string
   SessionBranchAccountId: string
   ProductRuleAccountId: string
+  PokokAccountId: string
+  PokokTransferAccountId: string
+  WajibAccountId: string
+  SukarelaKindAccountId: string
 
 # --- penyiapan DB: skema bersih + seed pack + fixture party/produk/rekening --------------------
 block:
@@ -226,6 +232,27 @@ block:
         PostingRuleLine(lineNo: 1, side: nsDebit, glAccount: "102"),
         PostingRuleLine(lineNo: 2, side: nsCredit, glAccount: "202")]), fixtureActor)
     1)
+
+  # T-111: produk berklasifikasi simpanan (POKOK/WAJIB/SUKARELA). Rekening POKOK/WAJIB disetor ke
+  # akun ekuitas 301.1/301.2 (rule berkondisi), dan tarik/PB **dari** keduanya diblokir.
+  proc seedKindProduct(code: string, kind: SavingsKind): Id =
+    var p = Product(productId: newId(fixtureClock), code: code, name: "Simpanan " & code,
+      productType: ptSavings, savingsKind: some(kind))
+    let v = ProductVersion(versionId: newId(fixtureClock), productId: p.productId,
+      versionNo: 1, effectiveFrom: "2020-01-01")
+    discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+      insertProduct(d, p, fixtureActor)
+      insertVersion(d, v, fixtureActor)
+      insertBinding(d, v.versionId, ParamBinding(paramKey: "product.savings.min_balance",
+        value: %"0.0000"))
+      1)
+    doAssert approveVersion(db, v.versionId, approver), "versi " & code & " gagal di-approve"
+    seedAccount(party.partyId, p.productId, v.versionId, Id(BranchId), code)
+
+  PokokAccountId = $seedKindProduct("SAV-POKOK", skPokok)
+  PokokTransferAccountId = $seedKindProduct("SAV-POKOK-2", skPokok)
+  WajibAccountId = $seedKindProduct("SAV-WAJIB", skWajib)
+  SukarelaKindAccountId = $seedKindProduct("SAV-SUKA", skSukarela)
 
   # --- T-093b: sesi kas. Transaksi tunai WAJIB sesi OPEN, jadi fixture membukanya lewat
   # repo/domain (bukan flag bypass gate). `dev.maker` (aktor test sukses) memakai `BranchId`;
@@ -448,6 +475,9 @@ proc transferBody(sourceId, destinationId, amount: string, narration = ""): Json
     "amount": amount}
   if narration.len > 0:
     result["narration"] = %narration
+
+proc statementUrl(accountId, fromDate, toDate: string): string =
+  StatementPath.replace("{accountId}", accountId) & "?from=" & fromDate & "&to=" & toDate
 
 # --- suite ------------------------------------------------------------------------------------
 
@@ -850,7 +880,7 @@ suite "teller: otorisasi cabang & keadaan rekening":
       discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
         discard postJournalSync(d, app.clock, "EventTanpaRule", moneyFromString("1.0000").value(),
           parseId(BranchId).value(), newId(app.clock), BusinessDate, "tanpa-rule-1",
-          fixtureActor, "SAV-DEP")
+          fixtureActor, "SAV-DEP", "SAVINGS", "")
         1)
     except ValueError:
       raised = true
@@ -1058,3 +1088,214 @@ suite "teller: posting rule produk-spesifik (T-104)":
     let lines = journalLines(reply.body["journalId"].getStr())
     check lines == @[("102", "10.0000", "0.0000"), ("202", "0.0000", "10.0000")]
 
+suite "teller: klasifikasi simpanan koperasi (T-111)":
+  test "setor POKOK → ekuitas 301.1 (rule generik tidak terpilih)":
+    let token = tokenOf(login(MakerUser))
+    let reply = postJson(CashPath, cashBody(PokokAccountId, "DEPOSIT", "50.0000"), token)
+    check reply.code == 201
+    checkJson(CashPath, "POST", "201", reply.body)
+    check balanceOf(PokokAccountId) == "50.0000"
+    # Tanpa rule berkondisi yang terpilih, jurnal akan memakai 101/201 (generik).
+    let lines = journalLines(reply.body["journalId"].getStr())
+    check lines == @[("101", "50.0000", "0.0000"), ("301.1", "0.0000", "50.0000")]
+
+  test "setor WAJIB → ekuitas 301.2":
+    let token = tokenOf(login(MakerUser))
+    let reply = postJson(CashPath, cashBody(WajibAccountId, "DEPOSIT", "25.0000"), token)
+    check reply.code == 201
+    checkJson(CashPath, "POST", "201", reply.body)
+    let lines = journalLines(reply.body["journalId"].getStr())
+    check lines == @[("101", "25.0000", "0.0000"), ("301.2", "0.0000", "25.0000")]
+
+  test "tarik dari POKOK/WAJIB → 409 savings_kind_locked tanpa ubah saldo":
+    let token = tokenOf(login(MakerUser))
+    let pokokBefore = balanceOf(PokokAccountId)
+    let pokokTxBefore = txCount(PokokAccountId)
+    let pokok = postJson(CashPath, cashBody(PokokAccountId, "WITHDRAWAL", "10.0000"), token)
+    check pokok.code == 409
+    checkProblem(CashPath, "POST", "409", pokok.body)
+    check pokok.body["params"]["reason"].getStr() == "savings_kind_locked"
+    check balanceOf(PokokAccountId) == pokokBefore
+    check txCount(PokokAccountId) == pokokTxBefore
+
+    let wajibBefore = balanceOf(WajibAccountId)
+    let wajib = postJson(CashPath, cashBody(WajibAccountId, "WITHDRAWAL", "5.0000"), token)
+    check wajib.code == 409
+    check wajib.body["params"]["reason"].getStr() == "savings_kind_locked"
+    check balanceOf(WajibAccountId) == wajibBefore
+
+  test "PB dari POKOK → 409 locked; PB lintas jenis → 409 transfer_kind_mismatch":
+    let token = tokenOf(login(MakerUser))
+
+    let fromPokok = postJson(TransferPath,
+      transferBody(PokokTransferAccountId, SukarelaKindAccountId, "1.0000"), token)
+    check fromPokok.code == 409
+    checkProblem(TransferPath, "POST", "409", fromPokok.body)
+    check fromPokok.body["params"]["reason"].getStr() == "savings_kind_locked"
+
+    # Sumber SUKARELA (tidak terkunci) ke tujuan POKOK: yang menolak adalah beda jenis, bukan kunci.
+    let cross = postJson(TransferPath,
+      transferBody(SukarelaKindAccountId, PokokAccountId, "1.0000"), token)
+    check cross.code == 409
+    checkProblem(TransferPath, "POST", "409", cross.body)
+    check cross.body["params"]["reason"].getStr() == "transfer_kind_mismatch"
+
+    # Rollback: tidak ada mutasi saldo/baris transfer di kedua sisi.
+    check balanceOf(SukarelaKindAccountId) == "0.0000"
+    check balanceOf(PokokTransferAccountId) == "0.0000"
+    check transferCount(SukarelaKindAccountId) == 0
+    check transferCount(PokokTransferAccountId) == 0
+
+suite "teller: slip cetak ulang (T-094a)":
+  test "baca transaksi tunai → 200, field slip, tanpa saldo":
+    let token = tokenOf(login(MakerUser))
+    let accountId = freshAccount()
+    let created = postJson(CashPath, cashBody(accountId, "DEPOSIT", "40.0000", "setor slip"),
+      token)
+    check created.code == 201
+    let txId = created.body["transactionId"].getStr()
+
+    let reply = call("GET", CashPath & "/" & txId, "", token)
+    check reply.code == 200
+    checkJson(SlipPath, "GET", "200", reply.body)
+    check reply.body["transactionId"].getStr() == txId
+    check reply.body["journalId"].getStr() == created.body["journalId"].getStr()
+    check reply.body["direction"].getStr() == "DEPOSIT"
+    check reply.body["amount"].getStr() == "40.0000"
+    check reply.body["businessDate"].getStr() == BusinessDate
+    check reply.body["narration"].getStr() == "setor slip"
+    # `balanceAfter` sengaja tidak ada: saldo per transaksi tidak disimpan (D-127).
+    check not reply.body.hasKey("balanceAfter")
+
+  test "tanpa sesi → 401":
+    let token = tokenOf(login(MakerUser))
+    let accountId = freshAccount()
+    let created = postJson(CashPath, cashBody(accountId, "DEPOSIT", "5.0000"), token)
+    check created.code == 201
+    let reply = call("GET", CashPath & "/" & created.body["transactionId"].getStr(), "", "")
+    check reply.code == 401
+    checkProblem(SlipPath, "GET", "401", reply.body)
+
+  test "cabang lain → 403; id tidak ada / id PB → 404":
+    let token = tokenOf(login(MakerUser))
+    let accountId = freshAccount()
+    let created = postJson(CashPath, cashBody(accountId, "DEPOSIT", "5.0000"), token)
+    check created.code == 201
+    let txId = created.body["transactionId"].getStr()
+
+    let branchToken = tokenOf(login("dev.branchmaker"))
+    check branchToken.len > 0
+    let denied = call("GET", CashPath & "/" & txId, "", branchToken)
+    check denied.code == 403
+    checkProblem(SlipPath, "GET", "403", denied.body)
+    check denied.body["params"]["reason"].getStr() == "branch_not_allowed"
+
+    let missing = call("GET", CashPath & "/99999999-9999-7999-8999-999999999999", "", token)
+    check missing.code == 404
+    checkProblem(SlipPath, "GET", "404", missing.body)
+
+    # Id PB bukan baris `deposit.transaction`: endpoint slip tidak menemukannya (404, bukan PB).
+    let source = freshAccount()
+    let destination = freshAccount()
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "20.0000"), token).code == 201
+    let pb = postJson(TransferPath, transferBody(source, destination, "5.0000"), token)
+    check pb.code == 201
+    let pbAsSlip = call("GET", CashPath & "/" & pb.body["transferId"].getStr(), "", token)
+    check pbAsSlip.code == 404
+
+suite "deposit: statement subledger (T-094b)":
+  test "gabungan tunai + PB, arah relatif rekening, urut tanggal, hanya rekening itu":
+    let token = tokenOf(login(MakerUser))
+    let accountId = freshAccount()
+    let otherId = freshAccount()
+
+    check postJson(CashPath, cashBody(accountId, "DEPOSIT", "100.0000", "setor"), token).code == 201
+    check postJson(CashPath, cashBody(accountId, "WITHDRAWAL", "40.0000", "tarik"), token).code ==
+      201
+    let outbound = postJson(TransferPath, transferBody(accountId, otherId, "10.0000", "pb keluar"),
+      token)
+    check outbound.code == 201
+    let inbound = postJson(TransferPath, transferBody(otherId, accountId, "3.0000", "pb masuk"),
+      token)
+    check inbound.code == 201
+
+    let reply = call("GET", statementUrl(accountId, BusinessDate, BusinessDate), "", token)
+    check reply.code == 200
+    checkJson(StatementPath, "GET", "200", reply.body)
+    check reply.body["accountNo"].getStr().len == 10
+    check reply.body["status"].getStr() == "ACTIVE"
+    check reply.body["from"].getStr() == BusinessDate
+    check reply.body["to"].getStr() == BusinessDate
+    check reply.body["rows"].len == 4
+
+    # Tanggal tidak menurun (urut) dan tiap baris persis satu referensi terisi.
+    var previous = ""
+    var inflow = 0
+    var outflow = 0
+    var foundOutbound = false
+    var foundInbound = false
+    for row in reply.body["rows"]:
+      let businessDate = row["businessDate"].getStr()
+      check businessDate >= previous
+      previous = businessDate
+      let hasTx = row["transactionId"].kind == JString
+      let hasTransfer = row["transferId"].kind == JString
+      check hasTx xor hasTransfer
+      if row["direction"].getStr() == "IN": inc inflow
+      else: inc outflow
+      if hasTransfer and row["transferId"].getStr() == outbound.body["transferId"].getStr():
+        check row["direction"].getStr() == "OUT"
+        foundOutbound = true
+      if hasTransfer and row["transferId"].getStr() == inbound.body["transferId"].getStr():
+        check row["direction"].getStr() == "IN"
+        foundInbound = true
+    check inflow == 2
+    check outflow == 2
+    check foundOutbound
+    check foundInbound
+    # Baris rekening lain tidak bocor: rekening tujuan hanya punya PB masuk (tidak muncul di sini).
+
+  test "rumah: rekening lain jadi barisnya sendiri (PB di kedua sisi)":
+    let token = tokenOf(login(MakerUser))
+    let source = freshAccount()
+    let destination = freshAccount()
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "30.0000"), token).code == 201
+    check postJson(TransferPath, transferBody(source, destination, "7.0000"), token).code == 201
+
+    let destinationStatement =
+      call("GET", statementUrl(destination, BusinessDate, BusinessDate), "", token)
+    check destinationStatement.code == 200
+    check destinationStatement.body["rows"].len == 1
+    check destinationStatement.body["rows"][0]["direction"].getStr() == "IN"
+    check destinationStatement.body["rows"][0]["kind"].getStr() == "TRANSFER"
+    check destinationStatement.body["rows"][0]["transactionId"].kind == JNull
+    check destinationStatement.body["rows"][0]["transferId"].kind == JString
+
+  test "rentang wajib/format salah/terbalik → 400":
+    let token = tokenOf(login(MakerUser))
+    let accountId = freshAccount()
+    for query in ["", "?from=" & BusinessDate, "?to=" & BusinessDate,
+                  "?from=2026-02-31&to=2026-03-01",
+                  "?from=" & BusinessDate & "&to=2026-01-01"]:
+      let reply = call("GET", StatementPath.replace("{accountId}", accountId) & query, "", token)
+      check reply.code == 400
+      checkProblem(StatementPath, "GET", "400", reply.body)
+
+  test "tanpa sesi → 401; cabang lain → 403; rekening tidak ada → 404":
+    let token = tokenOf(login(MakerUser))
+    let accountId = freshAccount()
+
+    let anonymous = call("GET", statementUrl(accountId, BusinessDate, BusinessDate), "", "")
+    check anonymous.code == 401
+    checkProblem(StatementPath, "GET", "401", anonymous.body)
+
+    let branchToken = tokenOf(login("dev.branchmaker"))
+    let denied = call("GET", statementUrl(accountId, BusinessDate, BusinessDate), "", branchToken)
+    check denied.code == 403
+    checkProblem(StatementPath, "GET", "403", denied.body)
+    check denied.body["params"]["reason"].getStr() == "branch_not_allowed"
+
+    let missing = call("GET",
+      statementUrl("99999999-9999-7999-8999-999999999999", BusinessDate, BusinessDate), "", token)
+    check missing.code == 404
+    checkProblem(StatementPath, "GET", "404", missing.body)

@@ -102,6 +102,19 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 - Uji yang **bukan** bermutasi dinyatakan apa adanya di task-nya sendiri (T-033 paralel pool,
   T-034 penjaga regresi Mummy).
 
+## 4a. Simpanan koperasi (T-111) — batas yang disengaja
+
+- `product.savings_kind` hanya **klasifikasi** produk/rekening. Aturan iuran pokok/wajib (nominal
+  tetap, sekali/periodik, auto-debit, tunggakan, refund saat keluar anggota) **belum ditegakkan**;
+  itu Fase 5 (coop pack) dan butuh keputusan AD/ART.
+- Setoran POKOK/WAJIB diposting ke akun ekuitas provisoris `301.1`/`301.2`. Nomor akun dan
+  klasifikasi ekuitas vs liabilitas **belum final**; wajib `NEEDS-COMPLIANCE-REVIEW` (REG-101)
+  sebelum laporan/pilot data nyata.
+- Tarik dan PB dari rekening POKOK/WAJIB diblokir 409; PB lintas jenis diblokir 409. Alur keluar
+  anggota/refund belum ada.
+- Produk lama tidak di-backfill: `savings_kind = NULL` berarti belum terklasifikasi dan diperlakukan
+  seperti simpanan generik.
+
 ## 5. Cara memakai dokumen ini
 
 - Menemukan batas baru saat mengerjakan task → tambahkan baris (dampak, cara deteksi, pemilik), jangan

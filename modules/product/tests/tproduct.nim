@@ -1,6 +1,6 @@
 ## Unit test domain `product` (T-076): bentuk kode, tipe, jendela versi, binding.
 
-import std/[json, strutils, unittest]
+import std/[json, options, strutils, unittest]
 
 import kernel/ids
 import ../api
@@ -92,3 +92,30 @@ suite "product: binding parameter":
         binding("product.savings.admin_fee", %"1.0000")])
     expect ValueError:
       discard validateBindings(@[binding("product.savings.admin_fee", newJNull())])
+
+suite "product: klasifikasi simpanan (T-111)":
+  test "savingsKind dikenal dan dinormalisasi":
+    check parseSavingsKind("pokok") == skPokok
+    check parseSavingsKind(" WAJIB ") == skWajib
+    check parseSavingsKind("Sukarela") == skSukarela
+    check parseSavingsKind("tabungan") == skTabungan
+    expect ValueError:
+      discard parseSavingsKind("MANDIRI")
+
+  test "kolom kosong = belum terklasifikasi, bukan enum pertama":
+    check savingsKindFromDb("").isNone
+    check savingsKindFromDb("   ").isNone
+    check savingsKindFromDb("POKOK").get() == skPokok
+    check savingsKindText(none(SavingsKind)) == ""
+    check savingsKindText(some(skTabungan)) == "TABUNGAN"
+
+  test "klasifikasi hanya sah untuk produk SAVINGS":
+    check validateSavingsKind(ptSavings, some(skPokok)) == some(skPokok)
+    check validateSavingsKind(ptTimeDeposit, none(SavingsKind)).isNone
+    expect ValueError:
+      discard validateSavingsKind(ptLoan, some(skSukarela))
+
+  test "produk tanpa klasifikasi default kosong":
+    let p = Product(productId: Id("33333333-3333-7333-8333-333333333333"),
+      code: "SAV01", name: "Simpanan Sukarela", productType: ptSavings)
+    check p.savingsKind.isNone

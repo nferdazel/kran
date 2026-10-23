@@ -348,3 +348,36 @@ suite "product: contract 0006 (T-090)":
     except DbError as e:
       tanpaMaker = e.msg
     check tanpaMaker.contains("maker")
+
+suite "product: klasifikasi simpanan (T-111)":
+  ## Invarian DB: kolom nullable, hanya SAVINGS yang boleh berklasifikasi, dan nilainya immutable
+  ## (reklasifikasi = produk baru).
+
+  test "savings_kind tersimpan/dibaca; NULL = none":
+    var pokok = newProduct("SAV-POKOK")
+    pokok.savingsKind = some(skPokok)
+    insertProduct(pokok)
+    check productByCode(db, "SAV-POKOK").get().savingsKind == some(skPokok)
+    # Produk tanpa klasifikasi tetap kosong (tidak diisi enum pertama).
+    check productByCode(db, "SAV01").get().savingsKind.isNone
+
+  test "non-SAVINGS dengan savings_kind ditolak CHECK":
+    var loan = newProduct("LOAN-KIND", ptLoan)
+    loan.savingsKind = some(skSukarela)
+    expectDbError(proc() = insertProduct(loan))
+
+  test "nilai di luar enum ditolak CHECK":
+    # INSERT langsung (bukan lewat repo) supaya yang menolak murni CHECK DB, bukan trigger
+    # immutability (yang hanya berlaku saat UPDATE).
+    expectDbError(proc() = db.exec(sql"""
+      INSERT INTO product.product
+        (product_id, code, name, product_type, savings_kind, created_by, updated_by)
+      VALUES (gen_random_uuid(), 'SAV-JANGGAL', 'Simpanan Janggal', 'SAVINGS', 'DEPOSITO', ?, ?)""",
+      $actor, $actor))
+
+  test "savings_kind immutable (ubah/isi-kosong-kembali ditolak)":
+    expectDbError(proc() = db.exec(
+      sql"UPDATE product.product SET savings_kind = 'WAJIB' WHERE code = 'SAV-POKOK'"))
+    expectDbError(proc() = db.exec(
+      sql"UPDATE product.product SET savings_kind = NULL WHERE code = 'SAV-POKOK'"))
+    check productByCode(db, "SAV-POKOK").get().savingsKind == some(skPokok)

@@ -4,7 +4,7 @@
 ## parameter). **Tidak ada angka bisnis**: nilai atribut datang dari parameter (binding) dan
 ## divalidasi terhadap definisi parameter di composition root.
 
-import std/[json, strutils]
+import std/[json, options, strutils]
 
 import kernel/[businessdate, ids, result]
 
@@ -14,6 +14,15 @@ type
     ptTimeDeposit = "TIME_DEPOSIT"
     ptLoan = "LOAN"
     ptFinancing = "FINANCING"
+
+  SavingsKind* = enum
+    ## Klasifikasi simpanan koperasi (T-111, memo SME). Sah **hanya** untuk produk `SAVINGS`.
+    ## "Belum terklasifikasi" diwakili `none` pada `Product.savingsKind` (kolom `NULL`), **bukan**
+    ## nilai enum pertama — jangan menebak jenis dari kode/nama produk.
+    skPokok = "POKOK"
+    skWajib = "WAJIB"
+    skSukarela = "SUKARELA"
+    skTabungan = "TABUNGAN"
 
   VersionStatus* = enum
     ## Siklus hidup versi (D-099 + D-119): diajukan `DRAFT`, lalu diputuskan sekali menjadi
@@ -27,6 +36,7 @@ type
     code*: string
     name*: string
     productType*: ProductType
+    savingsKind*: Option[SavingsKind] ## `none` = belum terklasifikasi (kolom `NULL`)
     createdAt*: string
 
   ProductVersion* = object
@@ -57,6 +67,30 @@ proc parseProductType*(raw: string): ProductType =
     if $t == s:
       return t
   raise newException(ValueError, "productType tidak dikenal: " & raw)
+
+proc parseSavingsKind*(raw: string): SavingsKind =
+  let s = raw.strip.toUpperAscii()
+  for k in SavingsKind:
+    if $k == s:
+      return k
+  raise newException(ValueError, "savingsKind tidak dikenal: " & raw)
+
+proc savingsKindFromDb*(raw: string): Option[SavingsKind] =
+  ## `""` (kolom `NULL` setelah `coalesce`) = belum terklasifikasi. Nilai lain wajib salah satu enum.
+  if raw.strip.len == 0:
+    return none(SavingsKind)
+  some(parseSavingsKind(raw))
+
+proc savingsKindText*(kind: Option[SavingsKind]): string =
+  ## Kebalikan `savingsKindFromDb`: `none` → `""` (dipakai untuk kolom & representasi teks).
+  if kind.isSome: $kind.get() else: ""
+
+proc validateSavingsKind*(productType: ProductType,
+    kind: Option[SavingsKind]): Option[SavingsKind] =
+  ## Cermin CHECK DB: klasifikasi hanya sah untuk produk `SAVINGS`; tipe lain wajib kosong.
+  if kind.isSome and productType != ptSavings:
+    raise newException(ValueError, "savingsKind hanya boleh diisi untuk produk SAVINGS")
+  kind
 
 proc parseVersionStatus*(raw: string): VersionStatus =
   let s = raw.strip.toUpperAscii()

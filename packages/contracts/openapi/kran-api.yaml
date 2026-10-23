@@ -1807,6 +1807,61 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/deposit/accounts/{accountId}/statement:
+    get:
+      operationId: getAccountStatement
+      tags: [deposit]
+      summary: Statement subledger satu rekening
+      description: |
+        Baris transaksi tunai (masuk/keluar) dan pemindahbukuan (sumber/tujuan) satu rekening dalam
+        rentang `from`..`to`, urut tanggal. `from`/`to` wajib, format `YYYY-MM-DD`, dan `from <= to`
+        (kalau tidak → 400). Izin `deposit.account.read` harus dipegang di cabang rekening; rekening
+        tidak ada → 404, di cabang lain → 403 (`params.reason=branch_not_allowed`).
+
+        Ini **subledger**, bukan rekonsiliasi GL: rincian jurnal tidak ada di sini (lihat
+        `GET /api/v1/ledger/journals/{journalId}`), dan **tidak ada** kolom saldo berjalan per baris.
+        Batas **teknis** 500 baris per respons (bukan nilai bisnis); rentang yang melewatinya → 400.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Awal rentang (inklusif), `YYYY-MM-DD`.
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Akhir rentang (inklusif), `YYYY-MM-DD`.
+      responses:
+        "200":
+          description: Statement rekening untuk rentang tanggal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountStatement"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
   /api/v1/teller/sessions:
     post:
       operationId: openTellerSession
@@ -2091,7 +2146,13 @@ paths:
         (`params.reason=branch_not_allowed` bila hanya di cabang lain). Konflik domain 409 memakai
         `params.reason`: `no_open_session` (tidak ada sesi kas `OPEN` untuk teller di cabang rekening),
         `session_business_date_mismatch` (sesi `OPEN` ada tetapi untuk tanggal bisnis lain; tutup
-        sesi itu dulu), `account_not_active`, `insufficient_funds`, `period_closed`.
+        sesi itu dulu), `account_not_active`, `insufficient_funds`, `period_closed`,
+        `savings_kind_locked` (penarikan dari rekening bersimpanan pokok/wajib belum didukung;
+        saldo & jurnal tidak berubah).
+
+        Rekening bersimpanan pokok/wajib (`savingsKind` POKOK/WAJIB) memakai akun ekuitas terpisah
+        (`301.1`/`301.2`, **provisional**, `NEEDS-COMPLIANCE-REVIEW`) untuk setoran; rekening lain
+        tetap `201`.
 
         **HUMAN-REVIEW-REQUIRED** (jalur finansial, AGENTS.md §8).
       security:
@@ -2135,6 +2196,44 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/teller/cash-transactions/{transactionId}:
+    get:
+      operationId: getCashTransactionSlip
+      tags: [teller]
+      summary: Baca satu transaksi tunai untuk cetak ulang slip
+      description: |
+        Transaksi tunai yang sudah tercatat, untuk cetak ulang slip (mis. printer macet) **tanpa**
+        mengulang transaksi. Izin `deposit.account.read` harus dipegang di cabang rekening; id tidak
+        ada — atau id bukan transaksi tunai (mis. id PB) — → 404.
+
+        `balanceAfter` sengaja **tidak** ada: saldo per transaksi tidak disimpan, dan saldo berjalan
+        dihitung dari jurnal (bukan subledger). Isi yang dikembalikan: nomor rekening, arah, nominal,
+        tanggal buku, jurnal, dan narasi.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Transaksi tunai untuk slip
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CashTransactionSlip"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
   /api/v1/teller/transfers:
     post:
       operationId: postTransfer
@@ -2156,7 +2255,10 @@ paths:
         karakter: `teller:` + UUID pemanggil + `:`); lebih dari itu → 400. Izin
         `teller.transaction.post` harus dipegang di **kedua** cabang rekening
         (`params.reason=branch_not_allowed` bila hanya di cabang lain). Konflik domain 409 memakai
-        `params.reason`: `account_not_active`, `insufficient_funds`, `period_closed`.
+        `params.reason`: `account_not_active`, `insufficient_funds`, `period_closed`,
+        `savings_kind_locked` (PB dari rekening bersimpanan pokok/wajib belum didukung),
+        `transfer_kind_mismatch` (jenis simpanan sumber dan tujuan berbeda). Saat 409 saldo & jurnal
+        tidak berubah.
 
         **HUMAN-REVIEW-REQUIRED** (jalur finansial, AGENTS.md §8).
       security:
@@ -3198,6 +3300,15 @@ components:
           type: string
           format: date
 
+    SavingsKind:
+      description: |
+        Klasifikasi simpanan koperasi (T-111): `POKOK`, `WAJIB`, `SUKARELA`, atau `TABUNGAN`.
+        `null` = **belum terklasifikasi** (rekening/produk lama) — jangan memberi label palsu.
+        Hanya sah untuk produk berjenis `SAVINGS`; mengisinya untuk tipe lain → 400, dan
+        reklasifikasi = produk baru (nilai immutable).
+      type: [ "string", "null" ]
+      enum: [POKOK, WAJIB, SUKARELA, TABUNGAN, null]
+
     Product:
       type: object
       additionalProperties: false
@@ -3213,6 +3324,8 @@ components:
         productType:
           type: string
           enum: [SAVINGS, TIME_DEPOSIT, LOAN, FINANCING]
+        savingsKind:
+          $ref: "#/components/schemas/SavingsKind"
         createdAt:
           type: string
         versions:
@@ -3235,6 +3348,8 @@ components:
         productType:
           type: string
           enum: [SAVINGS, TIME_DEPOSIT, LOAN, FINANCING]
+        savingsKind:
+          $ref: "#/components/schemas/SavingsKind"
         createdAt:
           type: string
         currentVersion:
@@ -3268,6 +3383,8 @@ components:
         productType:
           type: string
           enum: [SAVINGS, TIME_DEPOSIT, LOAN, FINANCING]
+        savingsKind:
+          $ref: "#/components/schemas/SavingsKind"
         effectiveFrom:
           type: string
           format: date
@@ -3347,6 +3464,8 @@ components:
         accountType:
           type: string
           enum: [SAVINGS]
+        savingsKind:
+          $ref: "#/components/schemas/SavingsKind"
         status:
           type: string
           enum: [ACTIVE, CLOSED]
@@ -3416,6 +3535,107 @@ components:
           type: string
           format: date
           description: Tanggal buku transaksi (`YYYY-MM-DD`).
+
+    CashTransactionSlip:
+      type: object
+      additionalProperties: false
+      description: |
+        Transaksi tunai untuk cetak ulang slip (T-094a). **Tanpa** `balanceAfter`: saldo per transaksi
+        tidak disimpan, dan menghitung saldo berjalan dari subledger akan mengarang data (D-127).
+      required: [transactionId, journalId, direction, amount, businessDate, accountNo, narration]
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        journalId:
+          type: string
+          format: uuid
+          description: Jurnal double-entry yang diposting sinkron untuk transaksi ini.
+        direction:
+          type: string
+          enum: [DEPOSIT, WITHDRAWAL]
+        amount:
+          type: string
+          description: Nominal desimal string 4 desimal (tanpa float).
+        businessDate:
+          type: string
+          format: date
+          description: Tanggal buku transaksi (`YYYY-MM-DD`).
+        accountNo:
+          type: string
+          description: |
+            Nomor rekening **provisoris** (10 digit) seperti pada `DepositAccount`
+            (**NEEDS-COMPLIANCE-REVIEW** sampai bentuk final ditetapkan).
+        narration:
+          type: string
+          description: Keterangan transaksi; `""` bila tidak diisi.
+
+    AccountStatement:
+      type: object
+      additionalProperties: false
+      description: |
+        Subledger satu rekening untuk rentang tanggal (T-094b). **Bukan** rekonsiliasi GL dan
+        **tanpa** saldo berjalan per baris.
+      required: [accountNo, status, branchId, from, to, rows]
+      properties:
+        accountNo:
+          type: string
+          description: Nomor rekening **provisoris** (10 digit).
+        status:
+          type: string
+          enum: [ACTIVE, CLOSED]
+        branchId:
+          type: string
+          format: uuid
+        from:
+          type: string
+          format: date
+          description: Awal rentang (inklusif).
+        to:
+          type: string
+          format: date
+          description: Akhir rentang (inklusif).
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatementRow"
+
+    StatementRow:
+      type: object
+      additionalProperties: false
+      description: |
+        Satu baris statement. `kind` membedakan sumber; tepat satu dari `transactionId` (CASH) atau
+        `transferId` (TRANSFER) terisi, yang lain `null`. `direction` relatif ke rekening yang
+        diminta: `IN` = masuk, `OUT` = keluar.
+      required: [kind, direction, amount, businessDate, journalId, narration, transactionId,
+                 transferId]
+      properties:
+        kind:
+          type: string
+          enum: [CASH, TRANSFER]
+        direction:
+          type: string
+          enum: [IN, OUT]
+        amount:
+          type: string
+          description: Nominal desimal string 4 desimal (tanpa float).
+        businessDate:
+          type: string
+          format: date
+        journalId:
+          type: string
+          format: uuid
+        narration:
+          type: string
+          description: Keterangan transaksi; `""` bila tidak diisi.
+        transactionId:
+          type: [ "string", "null" ]
+          format: uuid
+          description: Id transaksi tunai (kind `CASH`); `null` untuk baris PB.
+        transferId:
+          type: [ "string", "null" ]
+          format: uuid
+          description: Id pemindahbukuan (kind `TRANSFER`); `null` untuk baris tunai.
 
     TransferCreate:
       type: object

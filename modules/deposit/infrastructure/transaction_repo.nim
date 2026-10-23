@@ -82,3 +82,18 @@ proc transactionsByAccount*(db: DbConn, accountId: Id): seq[Transaction] =
        WHERE account_id = ?
        ORDER BY business_date DESC, created_at DESC"""), $accountId):
     result.add transactionOf(row)
+
+proc transactionsForStatement*(db: DbConn, accountId: Id, fromDate, toDate: string,
+    limit: int): seq[Transaction] =
+  ## Baris transaksi tunai satu rekening dalam rentang tanggal (inklusif), urut tanggal **naik**
+  ## untuk statement (T-094b). Subledger: tidak ada perhitungan saldo berjalan di sini. `limit`
+  ## adalah batas teknis ukuran respons, bukan nilai bisnis.
+  for row in db.getAllRows(sql("SELECT " & transactionColumns &
+      """
+        FROM deposit.transaction
+       WHERE account_id = ?
+         AND business_date >= ?::date
+         AND business_date <= ?::date
+       ORDER BY business_date, created_at
+       LIMIT ?::int"""), $accountId, fromDate, toDate, $limit):
+    result.add transactionOf(row)

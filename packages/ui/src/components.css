@@ -478,11 +478,91 @@
   font-weight: 500;
 }
 
+/* Dokumen cetak (T-094): kerangka dokumen A4. Di layar tampil seperti kertas; saat dicetak hanya
+ * badan dokumen yang tinggal (lihat blok `@media print`). */
+.kran-print-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  margin-block-end: var(--space-4);
+}
+
+.kran-print-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.kran-print-doc {
+  padding-block: var(--space-5);
+  padding-inline: var(--space-5);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
+.kran-print-title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.kran-print-meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-4);
+  margin-block: var(--space-3);
+}
+
+.kran-print-meta dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.kran-print-meta dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Pengenal (nomor rekening/id) boleh membungkus di kolom sempit, tetap mono + digit tetap. */
+.kran-print-ref {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.kran-print-note {
+  margin-block-start: var(--space-3);
+}
+
+/* Halaman cetak A4 dengan margin 12mm (T-094). */
+@page {
+  size: A4;
+  margin: 12mm;
+}
+
 @media print {
   .kran-nav,
+  .kran-header,
+  .kran-footer,
   .kran-toolbar,
-  .kran-skip-link {
+  .kran-skip-link,
+  .kran-print-toolbar,
+  .kran-form,
+  .kran-alert {
     display: none !important;
+  }
+  .kran-main {
+    max-inline-size: none;
+    padding-block: 0;
+    padding-inline: 0;
+  }
+  .kran-print-doc {
+    border: 0;
+    border-radius: 0;
+    padding-block: 0;
+    padding-inline: 0;
   }
   .kran-table thead {
     display: table-header-group;
@@ -490,7 +570,19 @@
   .kran-table tr {
     break-inside: avoid;
   }
+  .kran-table tfoot {
+    display: table-row-group;
+  }
+  .kran-table tfoot td,
+  .kran-table tfoot th {
+    position: static;
+  }
   .kran-table-wrap {
     overflow: visible;
+  }
+  .kran-print-meta,
+  .kran-print-title,
+  .kran-table tfoot {
+    break-inside: avoid;
   }
 }

@@ -7,7 +7,7 @@
 ## bukan tingkat institusi. Nomor rekening provisoris (10 digit dari sequence) — lihat
 ## `deposit/domain/account.nim` (**NEEDS-COMPLIANCE-REVIEW**).
 
-import std/[json, options, strutils]
+import std/[algorithm, json, options, strutils]
 
 import mummy
 import db_connector/db_postgres
@@ -18,7 +18,11 @@ import kernel/[clock, ids, money, result]
 import platform/domain/[audit, idempotency, scope]
 import platform/infrastructure/[audit_repo, auth_service]
 import deposit/domain/account
+import deposit/domain/transaction
+import deposit/domain/transfer
 import deposit/infrastructure/account_repo
+import deposit/infrastructure/transaction_repo
+import deposit/infrastructure/transfer_repo
 import party/domain/party
 import party/infrastructure/party_repo
 import product/domain/product
@@ -37,6 +41,10 @@ const
   ## Batas jumlah baris daftar rekening (nilai **teknis**, ukuran respons — pola daftar audit/param,
   ## T-100). Bukan ambang bisnis.
   maxAccountListLimit* = 200 # nomagic:ok batas ukuran respons daftar
+  ## Batas jumlah baris statement per respons (nilai **teknis**, ukuran respons). Rentang tanggal
+  ## yang melewatinya ditolak dengan 400, bukan dipotong diam-diam (statement yang terpotong =
+  ## dokumen menyesatkan). T-094b.
+  maxStatementRows* = 500 # nomagic:ok batas ukuran respons statement
 
 type
   ## Data server rusak pada jalur rekening (nomor urut sequence melewati lebar, baris DB tidak bisa
@@ -54,6 +62,7 @@ proc accountJson(a: Account): JsonNode =
     "productVersionId": $a.productVersionId,
     "branchId": $a.branchId,
     "accountType": $a.accountType,
+    "savingsKind": if a.savingsKind.len == 0: newJNull() else: %a.savingsKind,
     "status": $a.status,
     "balance": a.balance.toDecimalString(),
     "openedOn": a.openedOn,
@@ -322,3 +331,122 @@ proc handleListDepositAccounts*(app: AppContext, req: Request) {.gcsafe.} =
   case status
   of 200: req.respondJson(200, %*{"items": items})
   else: req.respondProblem(pkInternal, "Internal Server Error", "rekening gagal dibaca")
+
+type
+  StatementItem = object
+    ## Baris statement + kunci urut internal (tanggal, waktu, jenis) supaya urutan deterministik
+    ## saat menggabungkan dua sumber (transaksi tunai & PB).
+    sortKey: string
+    row: JsonNode
+
+proc statementRowJson(kind, direction, amount, businessDate, journalId, narration: string,
+    transactionId, transferId: string): JsonNode =
+  ## Satu baris statement. `transactionId`/`transferId` selalu ada sebagai kunci; yang tidak
+  ## berlaku bernilai `null` (kontrak menuntut keduanya, salah satu terisi).
+  %*{
+    "kind": kind,
+    "direction": direction,
+    "amount": amount,
+    "businessDate": businessDate,
+    "journalId": journalId,
+    "narration": narration,
+    "transactionId": if transactionId.len == 0: newJNull() else: %transactionId,
+    "transferId": if transferId.len == 0: newJNull() else: %transferId,
+  }
+
+proc handleGetAccountStatement*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `GET /api/v1/deposit/accounts/{accountId}/statement?from&to` — subledger satu rekening
+  ## (T-094b): baris transaksi tunai (masuk/keluar) dan PB (sumber/tujuan), urut tanggal.
+  ## **Tanpa** saldo berjalan per baris dan **bukan** rekonsiliasi GL (jurnal tidak dirinci di
+  ## sini). Izin `deposit.account.read` harus dipegang di cabang rekening.
+  let principalOpt = requirePrincipal(app, req)
+  if principalOpt.isNone:
+    return
+  let principal = principalOpt.get()
+  if not requirePermission(app, req, principal, permissionDepositAccountRead):
+    return
+
+  let accountId = parseId(pathParam(req, "accountId"))
+  if accountId.isErr:
+    req.respondProblem(pkNotFound, "Not Found", "rekening tidak ditemukan")
+    return
+
+  let fromDate = queryValue(req, "from").strip
+  let toDate = queryValue(req, "to").strip
+  if not isIsoDate(fromDate) or not isIsoDate(toDate):
+    req.respondProblem(pkBadRequest, "Bad Request",
+      "from dan to wajib tanggal YYYY-MM-DD yang sah")
+    return
+  if fromDate > toDate:
+    req.respondProblem(pkBadRequest, "Bad Request", "from harus lebih awal atau sama dengan to")
+    return
+
+  var status = 0
+  var problem = ""
+  var payload = newJObject()
+  try:
+    withDbConn(app.pool, proc(db: DbConn) {.gcsafe.} =
+      dbCalls:
+        let accountOpt = accountById(db, accountId.value())
+        if accountOpt.isNone:
+          status = 404
+          problem = "rekening tidak ditemukan"
+          return
+        let account = accountOpt.get()
+        if not authorizedAtBranch(db, principal, $account.branchId, permissionDepositAccountRead):
+          status = 403
+          problem = "izin " & permissionDepositAccountRead &
+            " tidak dipegang di cabang rekening ini"
+          return
+
+        # Ambil satu baris lebih dari batas supaya rentang yang terlalu lebar terdeteksi pasti
+        # (bukan dipotong diam-diam).
+        let probeLimit = maxStatementRows + 1
+        var items: seq[StatementItem]
+        for tx in transactionsForStatement(db, account.accountId, fromDate, toDate, probeLimit):
+          let direction = if tx.txType == ttCashDeposit: "IN" else: "OUT"
+          items.add StatementItem(
+            sortKey: tx.businessDate & "/" & tx.createdAt & "/0",
+            row: statementRowJson("CASH", direction, tx.amount.toDecimalString,
+              tx.businessDate, $tx.journalId, tx.narration, $tx.transactionId, ""))
+        for tr in transfersForStatement(db, account.accountId, fromDate, toDate, probeLimit):
+          let direction = if $tr.sourceAccountId == $account.accountId: "OUT" else: "IN"
+          items.add StatementItem(
+            sortKey: tr.businessDate & "/" & tr.createdAt & "/1",
+            row: statementRowJson("TRANSFER", direction, tr.amount.toDecimalString,
+              tr.businessDate, $tr.journalId, tr.narration, "", $tr.transferId))
+
+        if items.len > maxStatementRows:
+          status = 400
+          problem = "rentang tanggal melebihi " & $maxStatementRows &
+            " baris; persempit rentang"
+          return
+
+        items.sort(proc(a, b: StatementItem): int = cmp(a.sortKey, b.sortKey))
+        var rows = newJArray()
+        for item in items:
+          rows.add item.row
+
+        payload = %*{
+          "accountNo": account.accountNo,
+          "status": $account.status,
+          "branchId": $account.branchId,
+          "from": fromDate,
+          "to": toDate,
+          "rows": rows,
+        }
+        status = 200)
+  except DbError:
+    status = 500
+    problem = "statement rekening gagal dibaca"
+  except ValueError:
+    status = 500
+    problem = "data rekening atau transaksi tersimpan tidak bisa dibaca"
+
+  case status
+  of 200: req.respondJson(200, payload)
+  of 400: req.respondProblem(pkBadRequest, "Bad Request", problem)
+  of 403: req.respondProblem(newProblem(pkForbidden, "Forbidden", problem,
+      traceId = traceIdFrom(req), params = @[("reason", "branch_not_allowed")]))
+  of 404: req.respondProblem(pkNotFound, "Not Found", problem)
+  else: req.respondProblem(pkInternal, "Internal Server Error", problem)

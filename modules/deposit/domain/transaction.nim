@@ -64,6 +64,13 @@ proc txTypeOf*(d: CashDirection): TransactionType =
   of cdDeposit: ttCashDeposit
   of cdWithdrawal: ttCashWithdrawal
 
+proc cashDirectionOf*(t: TransactionType): CashDirection =
+  ## Kebalikan `txTypeOf`: baris transaksi tunai → arah API. Dipakai endpoint baca slip
+  ## (T-094a) yang membaca baris tersimpan, bukan permintaan masuk.
+  case t
+  of ttCashDeposit: cdDeposit
+  of ttCashWithdrawal: cdWithdrawal
+
 proc sourceEventOf*(d: CashDirection): string =
   ## Event ledger yang dipakai posting rule: setor = `DepositPosted` (D 101/K 201),
   ## tarik = `DepositWithdrawn` (D 201/K 101). Keduanya dari data (`ledger.posting_rule`).

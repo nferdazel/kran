@@ -36,6 +36,10 @@ type
     openedOn*: string ## ISO `yyyy-MM-dd`
     createdAt*: string
     balance*: Money
+    ## Klasifikasi simpanan dari produk yang di-pin rekening (join `product.product.savings_kind`,
+    ## T-111). `""` = belum terklasifikasi (`NULL` di DB); jenis **tidak** disimpan di
+    ## `deposit.account` supaya klasifikasi tetap properti produk, bukan rekening.
+    savingsKind*: string
 
 proc parseAccountType*(raw: string): AccountType =
   let s = raw.strip.toUpperAscii()

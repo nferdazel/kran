@@ -60,6 +60,7 @@ proc productJson(p: Product): JsonNode =
     "code": p.code,
     "name": p.name,
     "productType": $p.productType,
+    "savingsKind": if p.savingsKind.isNone: newJNull() else: %savingsKindText(p.savingsKind),
     "createdAt": p.createdAt,
   }
 
@@ -290,6 +291,7 @@ proc handleCreateProduct*(app: AppContext, req: Request) {.gcsafe.} =
   let node = body.get()
   var code, name: string
   var ptype: ProductType
+  var savingsKind: Option[SavingsKind]
   var window: tuple[fromIso, toIso: string]
   var bindings: seq[ParamBinding]
   try:
@@ -299,6 +301,12 @@ proc handleCreateProduct*(app: AppContext, req: Request) {.gcsafe.} =
     code = validateCode(node["code"].getStr())
     name = validateName(node["name"].getStr())
     ptype = parseProductType(node["productType"].getStr())
+    # `savingsKind` opsional; `null`/tidak ada = belum terklasifikasi. Hanya sah untuk SAVINGS.
+    if node.hasKey("savingsKind") and node["savingsKind"].kind != JNull:
+      if node["savingsKind"].kind != JString:
+        raise newException(ValueError, "savingsKind wajib berupa teks atau null")
+      savingsKind = some(parseSavingsKind(node["savingsKind"].getStr()))
+    savingsKind = validateSavingsKind(ptype, savingsKind)
     window = parseWindowFields(node)
     bindings = validateBindings(parseBindings(node))
   except ValueError as e:
@@ -325,7 +333,7 @@ proc handleCreateProduct*(app: AppContext, req: Request) {.gcsafe.} =
           raise newException(ValueError, problemText)
 
         let p = Product(productId: newId(app.clock), code: code, name: name,
-          productType: ptype)
+          productType: ptype, savingsKind: savingsKind)
         insertProduct(db, p, parseId(principal.user.userId).value())
         let v = ProductVersion(versionId: newId(app.clock), productId: p.productId,
           versionNo: 1, effectiveFrom: window.fromIso)

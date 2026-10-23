@@ -95,3 +95,17 @@ proc transfersByAccount*(db: DbConn, accountId: Id): seq[Transfer] =
        WHERE source_account_id = ? OR destination_account_id = ?
        ORDER BY business_date DESC, created_at DESC"""), $accountId, $accountId):
     result.add transferOf(row)
+
+proc transfersForStatement*(db: DbConn, accountId: Id, fromDate, toDate: string,
+    limit: int): seq[Transfer] =
+  ## Baris PB yang menyentuh satu rekening dalam rentang tanggal (inklusif), urut tanggal **naik**
+  ## untuk statement (T-094b). `limit` batas teknis ukuran respons, bukan nilai bisnis.
+  for row in db.getAllRows(sql("SELECT " & transferColumns &
+      """
+        FROM deposit.transfer
+       WHERE (source_account_id = ? OR destination_account_id = ?)
+         AND business_date >= ?::date
+         AND business_date <= ?::date
+       ORDER BY business_date, created_at
+       LIMIT ?::int"""), $accountId, $accountId, fromDate, toDate, $limit):
+    result.add transferOf(row)

@@ -40,6 +40,7 @@ import ./access
 import ./context
 import ./db_bridge
 import ./deposit_posting
+import ./handlers_deposit
 import ./http_util
 import ./idempotency
 import ./problem
@@ -79,6 +80,11 @@ proc respondConflict(req: Request, reason, detail: string) =
   req.respondProblem(newProblem(pkConflict, "Conflict", detail, traceId = traceIdFrom(req),
     params = @[("reason", reason)]))
 
+proc lockedSavingsKind(kind: string): bool =
+  ## Tarik & PB **dari** simpanan pokok/wajib diblokir di Fase 2 (T-111, memo SME): alur keluar
+  ## anggota belum ada. Nilai diambil dari enum produk (satu sumber), bukan literal kedua.
+  kind == $skPokok or kind == $skWajib
+
 proc cashTransactionJson(tx: Transaction, direction: CashDirection, balanceAfter: Money): JsonNode =
   %*{
     "transactionId": $tx.transactionId,
@@ -88,6 +94,75 @@ proc cashTransactionJson(tx: Transaction, direction: CashDirection, balanceAfter
     "balanceAfter": balanceAfter.toDecimalString,
     "businessDate": tx.businessDate,
   }
+
+proc cashTransactionSlipJson(tx: Transaction, accountNo: string): JsonNode =
+  ## Slip cetak ulang (T-094a). **Tanpa** `balanceAfter`: saldo per transaksi tidak disimpan, dan
+  ## menghitung saldo berjalan dari subledger akan mengarang data (batas D-127).
+  %*{
+    "transactionId": $tx.transactionId,
+    "journalId": $tx.journalId,
+    "direction": $cashDirectionOf(tx.txType),
+    "amount": tx.amount.toDecimalString,
+    "businessDate": tx.businessDate,
+    "accountNo": accountNo,
+    "narration": tx.narration,
+  }
+
+proc handleGetCashTransactionSlip*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `GET /api/v1/teller/cash-transactions/{transactionId}` — baca ulang satu transaksi tunai
+  ## untuk cetak slip tanpa mengulang transaksi (T-094a, D-127). Izin `deposit.account.read`
+  ## harus dipegang di cabang rekening; tidak ada (atau id PB) → 404.
+  let principalOpt = requirePrincipal(app, req)
+  if principalOpt.isNone:
+    return
+  let principal = principalOpt.get()
+  if not requirePermission(app, req, principal, permissionDepositAccountRead):
+    return
+
+  let transactionId = parseId(pathParam(req, "transactionId"))
+  if transactionId.isErr:
+    req.respondProblem(pkNotFound, "Not Found", "transaksi tunai tidak ditemukan")
+    return
+
+  var status = 0
+  var problem = ""
+  var payload = newJObject()
+  try:
+    withDbConn(app.pool, proc(db: DbConn) {.gcsafe.} =
+      dbCalls:
+        let txOpt = transactionById(db, transactionId.value())
+        if txOpt.isNone:
+          # Id PB atau id acak sama-sama "tidak ada di sini": transaksi tunai saja.
+          status = 404
+          problem = "transaksi tunai tidak ditemukan"
+          return
+        let tx = txOpt.get()
+        let accountOpt = accountById(db, tx.accountId)
+        if accountOpt.isNone:
+          status = 500
+          problem = "data rekening transaksi tidak bisa dibaca"
+          return
+        let account = accountOpt.get()
+        if not authorizedAtBranch(db, principal, $account.branchId, permissionDepositAccountRead):
+          status = 403
+          problem = "izin " & permissionDepositAccountRead &
+            " tidak dipegang di cabang rekening ini"
+          return
+        status = 200
+        payload = cashTransactionSlipJson(tx, account.accountNo))
+  except DbError:
+    status = 500
+    problem = "transaksi tunai gagal dibaca"
+  except ValueError:
+    status = 500
+    problem = "data transaksi tersimpan tidak bisa dibaca"
+
+  case status
+  of 200: req.respondJson(200, payload)
+  of 403: req.respondProblem(newProblem(pkForbidden, "Forbidden", problem,
+      traceId = traceIdFrom(req), params = @[("reason", "branch_not_allowed")]))
+  of 404: req.respondProblem(pkNotFound, "Not Found", problem)
+  else: req.respondProblem(pkInternal, "Internal Server Error", problem)
 
 proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
   ## `POST /api/v1/teller/cash-transactions` — setor atau tarik tunai satu rekening.
@@ -188,6 +263,13 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
               problem = "rekening tidak berstatus ACTIVE"
               raise newException(ValueError, problem)
 
+            # Tarik dari POKOK/WAJIB diblokir (setor tetap boleh): keluar anggota belum ada (T-111).
+            if direction == cdWithdrawal and lockedSavingsKind(account.savingsKind):
+              status = 409
+              reason = "savings_kind_locked"
+              problem = "penarikan dari simpanan pokok/wajib belum didukung"
+              raise newException(ValueError, problem)
+
             let businessDate = businessDateFor(db, institutionScope(), asOf)
             if not periodOpenFor(db, businessDate):
               status = 409
@@ -252,7 +334,8 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
             var journalId: Id
             try:
               journalId = postJournalSync(db, app.clock, sourceEventOf(direction), amount,
-                account.branchId, txId, businessDate, journalKey, actor, account.productCode)
+                account.branchId, txId, businessDate, journalKey, actor, account.productCode,
+                $account.accountType, account.savingsKind)
             except DbError as e:
               if "periode OPEN" in e.msg:
                 status = 409
@@ -479,6 +562,20 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
               problem = "rekening sumber atau tujuan tidak berstatus ACTIVE"
               raise newException(ValueError, problem)
 
+            # PB **dari** POKOK/WAJIB diblokir, dan PB lintas jenis diblokir: template satu D/K tidak
+            # bisa memindahkan liabilitas ke ekuitas (T-111). NULL dianggap berbeda bila lawannya
+            # berjenis, jadi hanya pasangan berjenis sama (atau keduanya NULL) yang lolos.
+            if lockedSavingsKind(source.savingsKind):
+              status = 409
+              reason = "savings_kind_locked"
+              problem = "pemindahbukuan dari simpanan pokok/wajib belum didukung"
+              raise newException(ValueError, problem)
+            if source.savingsKind != destination.savingsKind:
+              status = 409
+              reason = "transfer_kind_mismatch"
+              problem = "jenis simpanan rekening sumber dan tujuan berbeda"
+              raise newException(ValueError, problem)
+
             let businessDate = businessDateFor(db, institutionScope(), asOf)
             if not periodOpenFor(db, businessDate):
               status = 409
@@ -517,7 +614,8 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
             var journalId: Id
             try:
               journalId = postJournalSync(db, app.clock, transferSourceEvent, amount,
-                source.branchId, transferId, businessDate, journalKey, actor, source.productCode)
+                source.branchId, transferId, businessDate, journalKey, actor, source.productCode,
+                $source.accountType, source.savingsKind)
             except DbError as e:
               if "periode OPEN" in e.msg:
                 status = 409
