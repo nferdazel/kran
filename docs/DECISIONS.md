@@ -2961,3 +2961,25 @@ menyebut "cetak". SME arsitektur membandingkan browser print, HTML→PDF (Chromi
 
 **Konsekuensi.** T-094 dipecah 094a (slip), 094b (statement A4), 094c (PDF server, ditunda).
 Tidak ada migrasi. PII di kertas tidak terlacak; jangan menyimpan PDF.
+
+## D-128 — Klasifikasi simpanan koperasi: `savings_kind` di produk + ekuitas provisoris
+
+**Konteks.** Spec Fase 2 menyebut simpanan pokok/wajib/sukarela, tetapi model hanya punya
+`product_type = SAVINGS` dan `account_type = SAVINGS`. Menambah nilai `account_type` memaksa
+perubahan CHECK destruktif dan tidak membantu pemilihan posting rule.
+
+**Keputusan (memo SME, diadopsi; accounting owner dapat menimpa).**
+1. `product.product.savings_kind` nullable `POKOK|WAJIB|SUKARELA|TABUNGAN`, hanya untuk
+   `product_type='SAVINGS'`, immutable. Rekening mewarisi lewat produk; tidak ada kolom baru.
+2. `NULL` = belum terklasifikasi, diperlakukan sebagai simpanan generik. Tanpa backfill.
+3. Setoran POKOK/WAJIB → akun ekuitas provisoris `301.1`/`301.2` lewat rule `DepositPosted`
+   berkondisi `savingsKind`; SUKARELA/TABUNGAN/NULL tetap `201`.
+4. Tarik/PB yang menyentuh POKOK/WAJIB diblokir 409; PB beda jenis (keduanya terisi) 409.
+   Alur keluar anggota/refund belum ada.
+5. Iuran pokok/wajib (nominal, kadens, auto-debit, tunggakan) **tidak** ditegakkan di Fase 2;
+   parameter tidak diberi default. Itu Fase 5 + keputusan AD/ART.
+
+**Konsekuensi.** Nomor akun dan klasifikasi ekuitas/liabilitas belum final:
+`NEEDS-COMPLIANCE-REVIEW` (O-100, REG-101). Rollback layanan ke image sebelum T-111 membuat
+setoran POKOK/WAJIB kembali ke `201` tanpa error (salah klasifikasi GL); migrasi expand tidak
+membatalkan ini. Catat di runbook deploy bila rollback melewati rilis ini.

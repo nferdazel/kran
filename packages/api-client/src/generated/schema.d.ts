@@ -1176,7 +1176,7 @@ export interface paths {
          *     `teller.transaction.post` harus dipegang di **kedua** cabang rekening
          *     (`params.reason=branch_not_allowed` bila hanya di cabang lain). Konflik domain 409 memakai
          *     `params.reason`: `account_not_active`, `insufficient_funds`, `period_closed`,
-         *     `savings_kind_locked` (PB dari rekening bersimpanan pokok/wajib belum didukung),
+         *     `savings_kind_locked` (PB yang menyentuh rekening bersimpanan pokok/wajib, di sisi mana pun, belum didukung),
          *     `transfer_kind_mismatch` (jenis simpanan sumber dan tujuan berbeda). Saat 409 saldo & jurnal
          *     tidak berubah.
          *

@@ -565,7 +565,7 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
             # PB yang menyentuh POKOK/WAJIB (sumber **atau** tujuan) diblokir: template satu D/K
             # tidak bisa memindahkan liabilitas ke ekuitas (T-111). PB lintas jenis juga diblokir,
             # tetapi NULL (produk lama, belum terklasifikasi) diperlakukan sebagai simpanan generik
-            # sehingga NULL <-> SUKARELA/TABUNGAN tetap boleh (D-127/ACCEPTED-LIMITS §4a).
+            # sehingga NULL <-> SUKARELA/TABUNGAN tetap boleh (D-128/ACCEPTED-LIMITS §4a).
             if lockedSavingsKind(source.savingsKind) or lockedSavingsKind(destination.savingsKind):
               status = 409
               reason = "savings_kind_locked"

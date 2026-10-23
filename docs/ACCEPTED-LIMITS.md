@@ -114,6 +114,12 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
   anggota/refund belum ada.
 - Produk lama tidak di-backfill: `savings_kind = NULL` berarti belum terklasifikasi dan diperlakukan
   seperti simpanan generik.
+- **Rollback layanan**: image sebelum T-111 tidak mengirim `savingsKind` dan tidak punya guard PB.
+  Selama rollback, setoran POKOK/WAJIB kembali ke `201` dan PB keluar dari POKOK/WAJIB bisa lolos;
+  migrasi expand tidak membatalkan ini. Jangan rollback melewati rilis T-111 tanpa rekonsiliasi GL.
+- Daftar rekening per party dibatasi **200 baris pertama** (urutan nomor rekening) **sebelum**
+  gerbang cabang; party dengan lebih dari 200 rekening lintas cabang bisa kehilangan rekening
+  berizin yang nomornya lebih besar. Batas wajar untuk pilot; bila perlu, saring cabang di SQL.
 
 ## 4b. Cetak Fase 2 (T-094) — browser print, bukan PDF server
 
