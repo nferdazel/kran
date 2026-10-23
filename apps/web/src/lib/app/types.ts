@@ -11,3 +11,6 @@ export type AuditItem = components["schemas"]["AuditItem"];
 export type Product = components["schemas"]["Product"];
 export type ProductSummary = components["schemas"]["ProductSummary"];
 export type ProductVersion = components["schemas"]["ProductVersion"];
+export type UserSummary = components["schemas"]["UserSummary"];
+export type UserRoleGrant = components["schemas"]["UserRoleGrant"];
+export type RoleSummary = components["schemas"]["RoleSummary"];
