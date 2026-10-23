@@ -138,7 +138,6 @@
     gap: var(--space-3);
     padding-block: var(--space-4);
     padding-inline-end: var(--space-6);
-    border-inline-end: 1px solid var(--color-hairline);
   }
 
   .login-badge-seal {

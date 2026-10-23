@@ -89,7 +89,8 @@ test("struktur shell: landmark, judul halaman, dan indikator business date", asy
   await gotoApp(page, "id");
 
   await expect(page.locator("header")).toBeVisible();
-  await expect(page.locator("nav[aria-label]")).toBeVisible();
+  // Halaman publik sengaja tidak menampilkan menu tujuan area kerja; nav hanya ada di `/app`.
+  await expect(page.locator("nav[aria-label]")).toHaveCount(0);
   await expect(page.locator("main#main")).toBeVisible();
   await expect(page.locator("footer")).toBeVisible();
 

@@ -127,9 +127,11 @@
     </div>
   </header>
 
-  <nav class="kran-nav" aria-label={m.common_nav_label()}>
-    <div class="kran-nav__inner">
-      {#if page.url.pathname.startsWith("/app")}
+  <!-- App navigation belongs to the workspace only. Public pages (login) must not advertise
+       destinations that require a session; the header still carries theme/language. -->
+  {#if page.url.pathname.startsWith("/app")}
+    <nav class="kran-nav" aria-label={m.common_nav_label()}>
+      <div class="kran-nav__inner">
         <div class="kran-sidebar-brand" aria-hidden="true">
           <span class="kran-header__badge">K</span>
           <div>
@@ -137,35 +139,28 @@
             <span class="kran-sidebar-subtitle">{m.app_sidebar_subtitle()}</span>
           </div>
         </div>
-      {/if}
 
-      <ul>
-        {#each appNavLinks as link (link.href)}
-          <li>
-            <a
-              class="kran-link"
-              href={link.href}
-              aria-current={isActiveHref(page.url.pathname, link.href) ? "page" : undefined}
-            >
-              <span>{link.label()}</span>
-            </a>
-          </li>
-        {/each}
-        <!-- Tautan masuk (O-033) hanya di halaman publik; di area kerja tempatnya di toolbar `/app`
-             bersama aksi "Keluar" (yang punya konteks sesi). -->
-        {#if !page.url.pathname.startsWith("/app")}
-          <li><a class="kran-link" href="/login">{m.common_nav_login()}</a></li>
-        {/if}
-      </ul>
+        <ul>
+          {#each appNavLinks as link (link.href)}
+            <li>
+              <a
+                class="kran-link"
+                href={link.href}
+                aria-current={isActiveHref(page.url.pathname, link.href) ? "page" : undefined}
+              >
+                {link.label()}
+              </a>
+            </li>
+          {/each}
+        </ul>
 
-      {#if page.url.pathname.startsWith("/app")}
         <div class="kran-nav__shortcut" aria-hidden="true">
           <span class="kran-muted">{m.palette_heading()}</span>
           <span class="kran-kbd">Ctrl K</span>
         </div>
-      {/if}
-    </div>
-  </nav>
+      </div>
+    </nav>
+  {/if}
 
   <main id="main" class="kran-main" tabindex="-1">
     {#key locale}
