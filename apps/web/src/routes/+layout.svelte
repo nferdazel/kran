@@ -166,11 +166,6 @@
   <footer class="kran-footer">
     <div class="kran-footer__inner">
       <p class="kran-muted">{m.common_app_title()}</p>
-      <p class="kran-footer__legal kran-muted">
-        <span>Standar Koperasi & Bank Indonesia</span>
-        <span aria-hidden="true">·</span>
-        <span>WCAG 2.2 AA</span>
-      </p>
     </div>
   </footer>
 </div>
