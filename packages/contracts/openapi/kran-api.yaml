@@ -794,6 +794,60 @@ paths:
           $ref: "#/components/responses/Problem"
 
   /api/v1/parties:
+    get:
+      operationId: searchParties
+      tags: [party]
+      summary: Cari party untuk pemilih pemilik rekening
+      description: |
+        Mencari party berdasarkan CIF (awalan) **atau** nama tampil (mengandung teks, tanpa peduli
+        besar/kecil huruf). Respons **ringkas** (tanpa identitas/KYC) supaya jalur pencarian tidak
+        membocorkan data pribadi. `query` wajib, minimal 2 karakter setelah dipangkas → 400 bila
+        kurang. Hasil dibatasi per cabang: bila `branchId` diisi, izin `party.party.read` harus
+        dipegang di cabang itu (kalau tidak → 403 `branch_not_allowed`); bila tidak, hanya cabang
+        yang boleh dibaca pemanggil yang dikembalikan. `limit` opsional (default 20, maksimum 50);
+        nilai di luar rentang → 400.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 200
+          description: Teks CIF (awalan) atau nama tampil (mengandung). Minimal 2 karakter.
+        - name: branchId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Batasi ke satu cabang (izin wajib di cabang itu).
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+          description: Jumlah baris maksimum (batas teknis ukuran respons).
+      responses:
+        "200":
+          description: Daftar party ringkas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartyList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
     post:
       operationId: createParty
       tags: [party]
@@ -2764,6 +2818,41 @@ components:
         createdAt:
           type: string
           description: ISO-8601 UTC.
+
+    PartySummary:
+      type: object
+      additionalProperties: false
+      description: |
+        Bentuk ringkas party untuk pencarian (T-115): hanya field yang dibutuhkan pemilih pemilik
+        rekening. Tanpa identitas/KYC dan tanpa `createdAt`.
+      required: [partyId, cif, kind, displayName, status, branchId]
+      properties:
+        partyId:
+          type: string
+          format: uuid
+        cif:
+          type: string
+        kind:
+          type: string
+          enum: [PERSON, ORG]
+        displayName:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED, CLOSED]
+        branchId:
+          type: string
+          format: uuid
+
+    PartyList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartySummary"
 
     IdentityDocCreate:
       type: object

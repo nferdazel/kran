@@ -402,7 +402,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Cari party untuk pemilih pemilik rekening
+         * @description Mencari party berdasarkan CIF (awalan) **atau** nama tampil (mengandung teks, tanpa peduli
+         *     besar/kecil huruf). Respons **ringkas** (tanpa identitas/KYC) supaya jalur pencarian tidak
+         *     membocorkan data pribadi. `query` wajib, minimal 2 karakter setelah dipangkas → 400 bila
+         *     kurang. Hasil dibatasi per cabang: bila `branchId` diisi, izin `party.party.read` harus
+         *     dipegang di cabang itu (kalau tidak → 403 `branch_not_allowed`); bila tidak, hanya cabang
+         *     yang boleh dibaca pemanggil yang dikembalikan. `limit` opsional (default 20, maksimum 50);
+         *     nilai di luar rentang → 400.
+         */
+        get: operations["searchParties"];
         put?: never;
         /**
          * Buat party baru (CIF)
@@ -1406,6 +1416,25 @@ export interface components {
             branchId: string;
             /** @description ISO-8601 UTC. */
             createdAt: string;
+        };
+        /**
+         * @description Bentuk ringkas party untuk pencarian (T-115): hanya field yang dibutuhkan pemilih pemilik
+         *     rekening. Tanpa identitas/KYC dan tanpa `createdAt`.
+         */
+        PartySummary: {
+            /** Format: uuid */
+            partyId: string;
+            cif: string;
+            /** @enum {string} */
+            kind: "PERSON" | "ORG";
+            displayName: string;
+            /** @enum {string} */
+            status: "ACTIVE" | "SUSPENDED" | "CLOSED";
+            /** Format: uuid */
+            branchId: string;
+        };
+        PartyList: {
+            items: components["schemas"]["PartySummary"][];
         };
         IdentityDocCreate: {
             /** @description Harus termasuk daftar parameter `party.identity.doc_types`. */
@@ -2757,6 +2786,37 @@ export interface operations {
             405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+        };
+    };
+    searchParties: {
+        parameters: {
+            query: {
+                /** @description Teks CIF (awalan) atau nama tampil (mengandung). Minimal 2 karakter. */
+                query: string;
+                /** @description Batasi ke satu cabang (izin wajib di cabang itu). */
+                branchId?: string;
+                /** @description Jumlah baris maksimum (batas teknis ukuran respons). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar party ringkas */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartyList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
         };
     };
     createParty: {

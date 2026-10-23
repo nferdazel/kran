@@ -3,7 +3,7 @@
 ## Modul ini sengaja tidak mengimpor internal `platform` (archcheck rule C): audit dan outbox
 ## ditulis pemanggil (composition root `apps/api`) dalam transaksi yang sama.
 
-import std/[options, strutils]
+import std/[json, options, strutils]
 
 import db_connector/db_postgres
 
@@ -54,3 +54,39 @@ proc partyById*(db: DbConn, partyId: Id): Option[PartyRow] =
     branchId: Id(row[5]),
     createdAt: row[6],
   ))
+
+proc searchParties*(db: DbConn, query: string, allBranches: bool,
+    branches: seq[string], limit: int): seq[PartyRow] =
+  ## Pencarian party untuk pemilih pemilik rekening (T-115): CIF berawalan `query` **atau** nama
+  ## tampil memuat `query` (ILIKE). Bentuk ringkas (kolom sama dengan `partyById`) — tidak ada
+  ## identitas/KYC di sini.
+  ##
+  ## Penyaringan cabang dilakukan di SQL supaya `LIMIT` berlaku **setelah** penyaringan: kalau
+  ## disaring di pemanggil, baris cabang lain memakan jatah halaman dan hasil bisa tampak kosong
+  ## (pola `listAudit`). `allBranches` = pemanggil memegang grant tanpa batas cabang; `branches` =
+  ## cabang yang ditutup grant terbatas. Daftar cabang dioper sebagai JSONB supaya SQL tidak pernah
+  ## dibangun dari nilai yang datang dari pemanggil.
+  let all = if allBranches: "1" else: "0"
+  var branchList: seq[string]
+  for b in branches:
+    branchList.add b
+  let readableBranches = $ %* branchList
+  for row in db.getAllRows(sql"""
+    SELECT party_id, cif, kind, display_name, status, branch_id,
+           to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+      FROM party.party
+     WHERE (cif LIKE ? || '%' OR display_name ILIKE '%' || ? || '%')
+       AND (?::int = 1
+            OR branch_id::text IN
+               (SELECT value FROM jsonb_array_elements_text(?::jsonb)))
+     ORDER BY display_name, cif
+     LIMIT ?::int""", query, query, all, readableBranches, $limit):
+    result.add PartyRow(
+      partyId: Id(row[0]),
+      cif: row[1],
+      kind: kindOf(row[2]),
+      displayName: row[3],
+      status: statusOf(row[4]),
+      branchId: Id(row[5]),
+      createdAt: row[6],
+    )
