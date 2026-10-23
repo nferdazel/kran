@@ -56,6 +56,15 @@
   let loading = $state(true);
   let errorMessage = $state("");
 
+  type AccountCategory = "ALL" | "1" | "2" | "3" | "4" | "5";
+  let activeCategory = $state<AccountCategory>("ALL");
+
+  const filteredLines = $derived.by(() => {
+    const lines = balances?.lines ?? [];
+    if (activeCategory === "ALL") return lines;
+    return lines.filter((line) => line.accountCode.startsWith(activeCategory));
+  });
+
   const selectedPeriod = $derived(periods.find((p) => p.periodId === selectedId) ?? null);
 
   const totals = $derived.by(() => {
@@ -254,6 +263,59 @@
     </div>
   </div>
 
+  <!-- Filter Kategori Akun COA -->
+  <div class="kran-filter-bar">
+    <button
+      class="kran-filter-button"
+      type="button"
+      aria-pressed={activeCategory === "ALL"}
+      onclick={() => (activeCategory = "ALL")}
+    >
+      <span>Semua Akun</span>
+      <span class="kran-badge">{balances.lines.length}</span>
+    </button>
+    <button
+      class="kran-filter-button"
+      type="button"
+      aria-pressed={activeCategory === "1"}
+      onclick={() => (activeCategory = "1")}
+    >
+      <span>1 - Aset</span>
+    </button>
+    <button
+      class="kran-filter-button"
+      type="button"
+      aria-pressed={activeCategory === "2"}
+      onclick={() => (activeCategory = "2")}
+    >
+      <span>2 - Liabilitas</span>
+    </button>
+    <button
+      class="kran-filter-button"
+      type="button"
+      aria-pressed={activeCategory === "3"}
+      onclick={() => (activeCategory = "3")}
+    >
+      <span>3 - Ekuitas</span>
+    </button>
+    <button
+      class="kran-filter-button"
+      type="button"
+      aria-pressed={activeCategory === "4"}
+      onclick={() => (activeCategory = "4")}
+    >
+      <span>4 - Pendapatan</span>
+    </button>
+    <button
+      class="kran-filter-button"
+      type="button"
+      aria-pressed={activeCategory === "5"}
+      onclick={() => (activeCategory = "5")}
+    >
+      <span>5 - Beban</span>
+    </button>
+  </div>
+
   <!-- Area bergulir harus bisa difokus supaya bisa digeser dengan keyboard (WCAG 2.1.1);
        svelte-check menganggap `region` selalu noninteraktif. Pengecualian ini dicatat di D-116. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -287,7 +349,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each balances.lines as line (line.accountCode)}
+        {#each filteredLines as line (line.accountCode)}
           <tr>
             <th scope="row" class="ledger-code">{line.accountCode}</th>
             <td class="ledger-account">{line.accountName}</td>
@@ -299,6 +361,13 @@
             <td class="ledger-num kran-money">{formatMoney(line.closingCredit)}</td>
           </tr>
         {/each}
+        {#if filteredLines.length === 0}
+          <tr>
+            <td colspan="8" class="kran-muted" style="text-align: center; padding: var(--space-5);">
+              Tidak ada akun pada kategori ini.
+            </td>
+          </tr>
+        {/if}
       </tbody>
       <tfoot>
         <tr>
