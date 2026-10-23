@@ -61,6 +61,8 @@ var
   PartyId: string
   AccountIds: seq[string]
   BrokenAccountId: string
+  OtherBranchAccountId: string
+  HighMinAccountId: string
 
 # --- penyiapan DB: skema bersih + seed pack + fixture party/produk/rekening --------------------
 block:
@@ -97,6 +99,23 @@ block:
     ON CONFLICT DO NOTHING
   """)
 
+  # Pengguna yang izin teller-nya hanya di `BranchId`: dipakai membuktikan gerbang cabang
+  # **tujuan** PB (sumber boleh, tujuan cabang lain harus 403).
+  execScript(db, """
+    INSERT INTO platform.app_user (user_id, username, full_name, password_algo, password_hash,
+                                   password_updated_at, must_change_password)
+    SELECT gen_random_uuid(), 'dev.branchmaker2', 'Dev Branch Maker 2', password_algo,
+           password_hash, password_updated_at, false
+      FROM platform.app_user WHERE username = 'dev.maker'
+  """)
+  execScript(db, """
+    INSERT INTO platform.user_role (user_id, role_id, branch_id)
+    SELECT u.user_id, r.role_id, '""" & BranchId & """'
+      FROM platform.app_user u, platform.role r
+     WHERE u.username = 'dev.branchmaker2' AND r.code = 'platform_admin'
+    ON CONFLICT DO NOTHING
+  """)
+
   let fixtureClock = fakeClock(dateTime(2026, mOct, 22, 9, 0, 0))
   fixtureActor = Id("77777777-7777-7777-8777-777777777777")
   let approver = Id("88888888-8888-7888-8888-888888888888")
@@ -121,9 +140,10 @@ block:
     fixtureActor)
 
   # Rekening sintetis untuk diuji; saldo awal 0. Dibuat lewat repo (bukan HTTP) supaya id stabil.
-  proc seedAccount(partyId: Id, productId: Id, versionId: Id): Id =
-    let a = newAccount(newId(fixtureClock), partyId, productId, versionId, ProductCode,
-      Id(BranchId), "2026-10-01", nextAccountSeq(db))
+  proc seedAccount(partyId: Id, productId: Id, versionId: Id, branch = Id(BranchId),
+      code = ProductCode): Id =
+    let a = newAccount(newId(fixtureClock), partyId, productId, versionId, code,
+      branch, "2026-10-01", nextAccountSeq(db))
     discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
       insertAccount(d, a, fixtureActor)
       1)
@@ -151,6 +171,29 @@ block:
     insertAccount(d, akunRusak, fixtureActor)
     1)
   BrokenAccountId = $akunRusak.accountId
+
+  # Party + rekening di cabang lain: tujuan PB untuk menguji gerbang cabang tujuan.
+  let otherParty = newParty(newId(fixtureClock), pkPerson, "Siti Aminah", Id(OtherBranchId),
+    "{seq:6}{check}", nextCifSeq(db))
+  discard insertParty(db, otherParty, fixtureActor)
+  OtherBranchAccountId = $seedAccount(otherParty.partyId, prod.productId, ver.versionId,
+    Id(OtherBranchId))
+
+  # Produk tujuan dengan min_balance tinggi: membuktikan aturan memakai min_balance versi
+  # produk **sumber**, bukan tujuan (kalau salah, PB 100 dari sumber min 0 akan 409).
+  let prodDest = Product(productId: newId(fixtureClock), code: "SAV-DEST",
+    name: "Simpanan Tujuan", productType: ptSavings)
+  let verDest = ProductVersion(versionId: newId(fixtureClock), productId: prodDest.productId,
+    versionNo: 1, effectiveFrom: "2020-01-01")
+  discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+    insertProduct(d, prodDest, fixtureActor)
+    insertVersion(d, verDest, fixtureActor)
+    insertBinding(d, verDest.versionId, ParamBinding(paramKey: "product.savings.min_balance",
+      value: %"1000.0000"))
+    1)
+  doAssert approveVersion(db, verDest.versionId, approver), "versi tujuan gagal di-approve"
+  HighMinAccountId = $seedAccount(party.partyId, prodDest.productId, verDest.versionId,
+    Id(BranchId), "SAV-DEST")
 
   # Id rekening dipakai test lewat variabel global sederhana.
   AccountIds = newSeq[string](accountIds.len)
@@ -560,6 +603,53 @@ suite "teller: pemindahbukuan (PB)":
     checkProblem(TransferPath, "POST", "403", reply.body)
     check reply.body["params"]["reason"].getStr() == "branch_not_allowed"
 
+  test "izin hanya di cabang sumber, tujuan cabang lain → 403 tanpa mutasi":
+    let token = tokenOf(login("dev.branchmaker2"))
+    let source = freshAccount()
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "50.0000"), tokenOf(login(
+        MakerUser))).code == 201
+    let reply = postJson(TransferPath, transferBody(source, OtherBranchAccountId, "10.0000"),
+      token, "branch-dest-" & $epochTime())
+    check reply.code == 403
+    checkProblem(TransferPath, "POST", "403", reply.body)
+    check reply.body["params"]["reason"].getStr() == "branch_not_allowed"
+    check balanceOf(source) == "50.0000"
+    check balanceOf(OtherBranchAccountId) == "0.0000"
+    check transferCount(source) == 0
+
+  test "min_balance memakai versi produk sumber, bukan tujuan":
+    let token = tokenOf(login(MakerUser))
+    let source = freshAccount()
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "100.0000"), token).code == 201
+    # Tujuan punya min_balance 1000; kalau handler salah memakainya, PB 100 akan 409.
+    let reply = postJson(TransferPath, transferBody(source, HighMinAccountId, "100.0000"), token,
+      "highmin-" & $epochTime())
+    check reply.code == 201
+    check reply.body["sourceBalanceAfter"].getStr() == "0.0000"
+    check balanceOf(source) == "0.0000"
+    check balanceOf(HighMinAccountId) == "100.0000"
+
+  test "rekening sumber CLOSED → 409 account_not_active":
+    let token = tokenOf(login(MakerUser))
+    let source = freshAccount()
+    let destination = freshAccount()
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "50.0000"), token).code == 201
+    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+      exec(d, sql"UPDATE deposit.account SET status = 'CLOSED' WHERE account_id = ?", source)
+      1)
+    let reply = postJson(TransferPath, transferBody(source, destination, "10.0000"), token)
+    check reply.code == 409
+    check reply.body["params"]["reason"].getStr() == "account_not_active"
+    check balanceOf(source) == "50.0000"
+    check transferCount(source) == 0
+
+  test "rekening tidak ada → 404":
+    let token = tokenOf(login(MakerUser))
+    let reply = postJson(TransferPath,
+      transferBody("99999999-9999-7999-8999-999999999999", freshAccount(), "1.0000"), token)
+    check reply.code == 404
+    checkProblem(TransferPath, "POST", "404", reply.body)
+
   test "saldo sumber kurang → 409 insufficient_funds tanpa perubahan":
     let token = tokenOf(login(MakerUser))
     let source = freshAccount()
@@ -601,6 +691,7 @@ suite "teller: pemindahbukuan (PB)":
     let body = transferBody(source, destination, "25.0000")
     let key = "idem-transfer-1"
     let journalsBefore = journalCount("DepositTransferred")
+    let auditsBefore = auditCount("deposit.transfer.post")
 
     let first = postJson(TransferPath, body, token, key)
     check first.code == 201
@@ -608,6 +699,7 @@ suite "teller: pemindahbukuan (PB)":
     let journalId = first.body["journalId"].getStr()
     check transferCount(source) == 1
     check journalCount("DepositTransferred") == journalsBefore + 1
+    check auditCount("deposit.transfer.post") == auditsBefore + 1
 
     let replay = postJson(TransferPath, body, token, key)
     check replay.code == 200
@@ -617,6 +709,7 @@ suite "teller: pemindahbukuan (PB)":
     # Replay tidak menambah baris/jurnal kedua dan tidak menggeser saldo lagi.
     check transferCount(source) == 1
     check journalCount("DepositTransferred") == journalsBefore + 1
+    check auditCount("deposit.transfer.post") == auditsBefore + 1
     check balanceOf(source) == "75.0000"
     check balanceOf(destination) == "25.0000"
 

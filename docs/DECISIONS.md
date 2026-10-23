@@ -2861,3 +2861,24 @@ memakai bentuk nomor di UI/cetak; O-095 tetap terbuka.
 **Konsekuensi.** Nomor bisa berubah sebelum keputusan final; jangan mengukirnya di template cetak,
 dokumen, atau asumsi validasi. `maxAccountNoLength` di domain hanya backstop, bukan kontrak. Test boleh mengunci bentuk
 sementara (mis. panjang 10) sebagai karakterisasi, bukan kontrak bisnis.
+
+---
+
+## D-124 — PB memakai tabel `deposit.transfer`, bukan `transaction` + `counter_account_id`
+
+**Konteks.** Rencana T-088 menaruh PB di `deposit.transaction` dengan `tx_type='TRANSFER'` dan
+`counter_account_id`. Tabel itu sudah live (`deposit/0004`) dengan CHECK yang hanya mengizinkan
+`CASH_DEPOSIT`/`CASH_WITHDRAWAL`; menambah tipe berarti `DROP CONSTRAINT` + CHECK baru, yang
+dikategorikan destruktif oleh `dbtools` dan butuh jalur contract. Rencana juga mengasumsikan
+jurnal bisa merepresentasikan perpindahan per rekening.
+
+**Keputusan.** (1) PB punya tabel sendiri `deposit.transfer` (migrasi expand-only `0007`) dengan
+`source_account_id`, `destination_account_id`, `amount`, `journal_id` UNIQUE, dan trigger
+immutability. (2) Jurnal `DepositTransferred` memakai D 201 / K 201; di GL keduanya akun yang sama,
+jadi jurnal **net-nol** — perpindahan per rekening hanya tercatat di `deposit.transfer`.
+(3) Audit, jurnal, dan event `TransferPosted` diatribusikan ke cabang **sumber**; cabang tujuan
+tidak menerima baris jurnal sendiri (batas dicatat di `ACCEPTED-LIMITS.md`).
+
+**Konsekuensi.** Rekonsiliasi per rekening (T-101) wajib membaca `deposit.transfer`, bukan hanya
+`journal_line`. Lintas cabang hanya boleh bila pemanggil memegang izin di kedua cabang; atribusi
+cabang tujuan menunggu kebutuhan audit viewer (088d/audit).
