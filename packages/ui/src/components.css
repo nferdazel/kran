@@ -495,7 +495,9 @@
 }
 
 .kran-palette::backdrop {
-  background: color-mix(in srgb, var(--color-text) 40%, transparent);
+  /* Scrim sengaja hitam di kedua tema: memakai `--color-text` membuat tema gelap punya tirai
+     terang. Nilai ini bukan token teks; tujuannya meredupkan latar, bukan mewarnai. */
+  background: rgb(0 0 0 / 0.45);
 }
 
 .kran-palette__heading {
