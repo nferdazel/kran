@@ -34,6 +34,7 @@ import ../src/[context, deposit_posting, readiness, server]
 const
   ContractPath = "packages/contracts/openapi/kran-api.yaml"
   CashPath = "/api/v1/teller/cash-transactions"
+  TransferPath = "/api/v1/teller/transfers"
   LoginPath = "/api/v1/auth/login"
   MakerUser = "dev.maker"
   CheckerUser = "dev.checker"
@@ -43,6 +44,9 @@ const
   OtherBranchId = "22222222-2222-7222-8222-222222222222"
   ProductCode = "SAV-DEP"
   BusinessDate = "2026-10-22"
+  ## Cukup untuk seluruh suite (tiap test memakai rekening segar); fixture di bawah menyiapkan
+  ## sebanyak ini.
+  AccountFixtures = 24
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
@@ -55,7 +59,7 @@ let dbPool = newDbPool(dbConfigFromEnv(envT))
 var fixtureActor: Id
 var
   PartyId: string
-  AccountIds: array[6, string]
+  AccountIds: seq[string]
   BrokenAccountId: string
 
 # --- penyiapan DB: skema bersih + seed pack + fixture party/produk/rekening --------------------
@@ -126,7 +130,7 @@ block:
     a.accountId
 
   var accountIds: seq[Id]
-  for _ in 0 ..< 6:
+  for _ in 0 ..< AccountFixtures:
     accountIds.add seedAccount(party.partyId, prod.productId, ver.versionId)
 
   # Produk dengan binding `min_balance` negatif (tidak sah): menguji pemetaan data server → 500.
@@ -149,6 +153,7 @@ block:
   BrokenAccountId = $akunRusak.accountId
 
   # Id rekening dipakai test lewat variabel global sederhana.
+  AccountIds = newSeq[string](accountIds.len)
   for i, id in accountIds:
     AccountIds[i] = $id
   PartyId = $party.partyId
@@ -304,17 +309,29 @@ proc auditCount(action: string): int =
 proc txCount(accountId: string): int =
   dbCount(sql"SELECT count(*)::text FROM deposit.transaction WHERE account_id = ?", accountId)
 
+proc transferCount(accountId: string): int =
+  dbCount(sql"""
+    SELECT count(*)::text FROM deposit.transfer
+     WHERE source_account_id = ? OR destination_account_id = ?""", accountId, accountId)
+
 proc journalCount(eventType: string): int =
   dbCount(sql"SELECT count(*)::text FROM ledger.journal WHERE source_event = ?", eventType)
 
 var accountCursor = 0
 
 proc freshAccount(): string =
+  doAssert accountCursor < AccountIds.len, "rekening fixture habis"
   result = AccountIds[accountCursor]
   inc accountCursor
 
 proc cashBody(accountId, direction, amount: string, narration = ""): JsonNode =
   result = %*{"accountId": accountId, "direction": direction, "amount": amount}
+  if narration.len > 0:
+    result["narration"] = %narration
+
+proc transferBody(sourceId, destinationId, amount: string, narration = ""): JsonNode =
+  result = %*{"sourceAccountId": sourceId, "destinationAccountId": destinationId,
+    "amount": amount}
   if narration.len > 0:
     result["narration"] = %narration
 
@@ -465,6 +482,148 @@ suite "teller: idempotency":
     check mismatch.code == 409
     checkProblem(CashPath, "POST", "409", mismatch.body)
 
+suite "teller: pemindahbukuan (PB)":
+  test "PB 201 → saldo kedua sisi benar, satu jurnal (D=K=amount), satu baris transfer":
+    let token = tokenOf(login(MakerUser))
+    let source = freshAccount()
+    let destination = freshAccount()
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "100.0000"), token).code == 201
+    let journalsBefore = journalCount("DepositTransferred")
+
+    let reply = postJson(TransferPath,
+      transferBody(source, destination, "60.0000", "PB uji"), token)
+    check reply.code == 201
+    checkJson(TransferPath, "POST", "201", reply.body)
+    check reply.body["sourceAccountId"].getStr() == source
+    check reply.body["destinationAccountId"].getStr() == destination
+    check reply.body["amount"].getStr() == "60.0000"
+    check reply.body["sourceBalanceAfter"].getStr() == "40.0000"
+    check reply.body["destinationBalanceAfter"].getStr() == "60.0000"
+    check reply.body["businessDate"].getStr() == BusinessDate
+    check balanceOf(source) == "40.0000"
+    check balanceOf(destination) == "60.0000"
+    check transferCount(source) == 1
+    check transferCount(destination) == 1
+    check journalCount("DepositTransferred") == journalsBefore + 1
+    # Kedua sisi GL akun 201 (net-nol di GL); yang pindah per rekening = baris `deposit.transfer`.
+    let lines = journalLines(reply.body["journalId"].getStr())
+    check lines == @[("201", "60.0000", "0.0000"), ("201", "0.0000", "60.0000")]
+
+    let transferId = reply.body["transferId"].getStr()
+    let journalId = reply.body["journalId"].getStr()
+    check outboxAccountingHeaders(transferId) == 0
+    check outboxAccountingHeaders(journalId) == 0
+    check dbCount(sql"""
+      SELECT count(*)::text FROM platform.outbox
+       WHERE aggregate_id = ? AND event_type = 'TransferPosted'""", transferId) == 1
+    check dbCount(sql"""
+      SELECT count(*)::text FROM platform.outbox
+       WHERE aggregate_id = ? AND event_type = 'journal.posted'""", journalId) == 1
+    check auditCount("deposit.transfer.post") >= 1
+    check dbText(sql"SELECT journal_id::text FROM deposit.transfer WHERE transfer_id = ?",
+      transferId) == journalId
+
+  test "akun sama / nominal / kunci tidak sah → 400":
+    let token = tokenOf(login(MakerUser))
+    let a = freshAccount()
+    let b = freshAccount()
+
+    let same = postJson(TransferPath, transferBody(a, a, "10.0000"), token)
+    check same.code == 400
+    checkProblem(TransferPath, "POST", "400", same.body)
+
+    for bad in ["0.0000", "-5.0000", "abc", "1.00001"]:
+      let reply = postJson(TransferPath, transferBody(a, b, bad), token)
+      check reply.code == 400
+      checkProblem(TransferPath, "POST", "400", reply.body)
+
+    let badId = postJson(TransferPath,
+      %*{"sourceAccountId": "bukan-uuid", "destinationAccountId": b, "amount": "1.0000"}, token)
+    check badId.code == 400
+    checkProblem(TransferPath, "POST", "400", badId.body)
+
+    let longNarration = postJson(TransferPath,
+      transferBody(a, b, "10.0000", repeat('n', 201)), token)
+    check longNarration.code == 400
+
+    let tanpaKunci = postJson(TransferPath, transferBody(a, b, "10.0000"), token, sendKey = false)
+    check tanpaKunci.code == 400
+    checkProblem(TransferPath, "POST", "400", tanpaKunci.body)
+
+  test "izin hanya di cabang lain → 403 branch_not_allowed":
+    let token = tokenOf(login("dev.branchmaker"))
+    let a = freshAccount()
+    let b = freshAccount()
+    let reply = postJson(TransferPath, transferBody(a, b, "1.0000"), token,
+      "branch-transfer-" & $epochTime())
+    check reply.code == 403
+    checkProblem(TransferPath, "POST", "403", reply.body)
+    check reply.body["params"]["reason"].getStr() == "branch_not_allowed"
+
+  test "saldo sumber kurang → 409 insufficient_funds tanpa perubahan":
+    let token = tokenOf(login(MakerUser))
+    let source = freshAccount()
+    let destination = freshAccount()
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "30.0000"), token).code == 201
+    let before = transferCount(source)
+
+    let reply = postJson(TransferPath, transferBody(source, destination, "40.0000"), token)
+    check reply.code == 409
+    checkProblem(TransferPath, "POST", "409", reply.body)
+    check reply.body["params"]["reason"].getStr() == "insufficient_funds"
+    # Rollback: saldo kedua sisi & baris transfer tidak berubah.
+    check balanceOf(source) == "30.0000"
+    check balanceOf(destination) == "0.0000"
+    check transferCount(source) == before
+
+  test "rekening tujuan CLOSED → 409 account_not_active tanpa mutasi":
+    let token = tokenOf(login(MakerUser))
+    let source = freshAccount()
+    let destination = freshAccount()
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "50.0000"), token).code == 201
+    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+      exec(d, sql"UPDATE deposit.account SET status = 'CLOSED' WHERE account_id = ?", destination)
+      1)
+
+    let reply = postJson(TransferPath, transferBody(source, destination, "10.0000"), token)
+    check reply.code == 409
+    checkProblem(TransferPath, "POST", "409", reply.body)
+    check reply.body["params"]["reason"].getStr() == "account_not_active"
+    check balanceOf(source) == "50.0000"
+    check balanceOf(destination) == "0.0000"
+    check transferCount(destination) == 0
+
+  test "replay 200 + Idempotent-Replayed, tepat satu jurnal/transfer; isi beda 409":
+    let token = tokenOf(login(MakerUser))
+    let source = freshAccount()
+    let destination = freshAccount()
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "100.0000"), token).code == 201
+    let body = transferBody(source, destination, "25.0000")
+    let key = "idem-transfer-1"
+    let journalsBefore = journalCount("DepositTransferred")
+
+    let first = postJson(TransferPath, body, token, key)
+    check first.code == 201
+    let transferId = first.body["transferId"].getStr()
+    let journalId = first.body["journalId"].getStr()
+    check transferCount(source) == 1
+    check journalCount("DepositTransferred") == journalsBefore + 1
+
+    let replay = postJson(TransferPath, body, token, key)
+    check replay.code == 200
+    check replay.replayed == "true"
+    check replay.body["transferId"].getStr() == transferId
+    check replay.body["journalId"].getStr() == journalId
+    # Replay tidak menambah baris/jurnal kedua dan tidak menggeser saldo lagi.
+    check transferCount(source) == 1
+    check journalCount("DepositTransferred") == journalsBefore + 1
+    check balanceOf(source) == "75.0000"
+    check balanceOf(destination) == "25.0000"
+
+    let mismatch = postJson(TransferPath, transferBody(source, destination, "30.0000"), token, key)
+    check mismatch.code == 409
+    checkProblem(TransferPath, "POST", "409", mismatch.body)
+
 suite "teller: otorisasi cabang & keadaan rekening":
   test "izin hanya di cabang lain → 403 branch_not_allowed":
     let token = tokenOf(login("dev.branchmaker"))
@@ -529,6 +688,35 @@ suite "teller: periode tertutup":
     check balanceOf(accountId) == "0.0000"
     check txCount(accountId) == 0
     check journalCount("DepositPosted") == journalsBefore
+
+    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+      exec(d, sql"""
+        UPDATE ledger.period SET status = 'OPEN', closed_at = NULL, closed_by = NULL
+         WHERE starts_on <= '2026-10-22'::date AND ends_on >= '2026-10-22'::date""")
+      1)
+
+  test "PB saat periode CLOSED → 409 period_closed, tanpa perubahan (rollback)":
+    let token = tokenOf(login(MakerUser))
+    let source = freshAccount()
+    let destination = freshAccount()
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "100.0000"), token).code == 201
+    let journalsBefore = journalCount("DepositTransferred")
+
+    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+      exec(d, sql"""
+        UPDATE ledger.period SET status = 'CLOSED', closed_at = now(), closed_by = ?
+         WHERE starts_on <= '2026-10-22'::date AND ends_on >= '2026-10-22'::date""",
+        $fixtureActor)
+      1)
+
+    let reply = postJson(TransferPath, transferBody(source, destination, "10.0000"), token)
+    check reply.code == 409
+    checkProblem(TransferPath, "POST", "409", reply.body)
+    check reply.body["params"]["reason"].getStr() == "period_closed"
+    check balanceOf(source) == "100.0000"
+    check balanceOf(destination) == "0.0000"
+    check transferCount(source) == 0
+    check journalCount("DepositTransferred") == journalsBefore
 
     discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
       exec(d, sql"""

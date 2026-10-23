@@ -4,23 +4,25 @@ Rekening simpanan anggota (spec §9.2, §23 Fase 2). Nomor rekening dibentuk dar
 disimpan satu baris per rekening sebagai cache untuk operasi teller.
 
 Status: **T-088a** (skema + buka/baca rekening) + **T-088b** (transaksi tunai setor/tarik + posting
-jurnal sinkron). PB (pemindahbukuan) = T-088c; UI teller = T-088d.
+jurnal sinkron) + **T-088c** (pemindahbukuan/PB antar rekening). UI teller = T-088d.
 
-## Tabel (migrasi `0001` schema+sequence, `0003` rekening, `0004` transaksi, `0005` immutability, `0006` grant runtime)
+## Tabel (migrasi `0001` schema+sequence, `0003` rekening, `0004` transaksi, `0005` immutability, `0006` grant runtime, `0007` transfer, `0008` grant transfer)
 
 | Tabel | Isi |
 |---|---|
 | `deposit.account` | Identitas rekening: `account_no` (unik), `party_id`, `product_id`, `product_version_id`, `branch_id`, `account_type` (`SAVINGS`), `status` (`ACTIVE`/`CLOSED`), `opened_on`. Satu cabang per rekening. |
 | `deposit.account_balance` | Satu baris per rekening: `balance numeric(24,4)` dengan CHECK `balance >= 0`. Cache; sumber kebenaran tetap jurnal ledger (spec §9.1(4)). |
 | `deposit.transaction` | Transaksi tunai (T-088b): `tx_type` (`CASH_DEPOSIT`/`CASH_WITHDRAWAL`), `account_id`, `amount numeric(24,4) > 0`, `business_date`, `narration`, `journal_id` (UNIQUE, FK `ledger.journal`). Satu baris = satu jurnal. |
+| `deposit.transfer` | Pemindahbukuan/PB (T-088c): `source_account_id` + `destination_account_id` (FK `deposit.account`, CHECK berbeda), `amount numeric(24,4) > 0`, `business_date`, `narration`, `journal_id` (UNIQUE, FK `ledger.journal`). Satu baris = satu perpindahan = satu jurnal. |
 
 `deposit.account_seq` memberi nomor urut rekening. **Nomor berkas tidak berurutan rapat**: tabel
 akun ada di `0003`, bukan `0002`, karena urutan migrasi global `(seq, modul, berkas)` menjalankan
 `deposit/*` **sebelum** `product/*` pada seq yang sama — sedangkan tabel ini mem-FK
 `product.product`/`product.product_version` yang dibuat `product/0002`. `0002` sengaja dilewati
-(diverifikasi `./task dbtools validate`). `deposit.transaction` ada di `0004` karena mem-FK
-`ledger.journal` yang baru dibuat `ledger/0003` pada seq 3 (dan `deposit/0003` berjalan **sebelum**
-`ledger/0003`).
+(diverifikasi `./task dbtools validate`). `deposit.transaction` ada di `0004` dan `deposit.transfer`
+di `0007` karena mem-FK `ledger.journal` yang baru dibuat `ledger/0003` pada seq 3 (dan `deposit/0003`
+berjalan **sebelum** `ledger/0003`). `deposit/0008` menambah grant runtime untuk tabel `0007`
+(`0006` hanya mencakup tabel yang ada saat itu).
 
 ## Invarian
 
@@ -48,6 +50,7 @@ akun ada di `0003`, bukan `0002`, karena urutan migrasi global `(seq, modul, ber
 | `GET /api/v1/deposit/accounts/{accountId}` | `deposit.account.read` | 200 `DepositAccount` | 403 (cabang), 404 |
 | `GET /api/v1/deposit/accounts?partyId=` | `deposit.account.read` | 200 `{items:[]}` | 400 uuid, 403 |
 | `POST /api/v1/teller/cash-transactions` | `teller.transaction.post` | 201 `CashTransaction` | 400 arah/nominal/narration; 403 (cabang); 404 akun; 409 `insufficient_funds`/`period_closed`/`account_not_active`; 409 idempotensi |
+| `POST /api/v1/teller/transfers` | `teller.transaction.post` (**kedua** cabang) | 201 `Transfer` | 400 akun sama/nominal/narration; 403 (cabang); 404 akun; 409 `insufficient_funds`/`period_closed`/`account_not_active`; 409 idempotensi |
 
 - `Idempotency-Key` **wajib** di `POST` (pola T-085: `requireIdempotencyKey`/`withIdempotency`);
   replay 200 + `Idempotent-Replayed: true`, hash beda 409.
@@ -70,6 +73,22 @@ akun ada di `0003`, bukan `0002`, karena urutan migrasi global `(seq, modul, ber
   konsumen `ledger` tidak memposting jurnal kedua.
 - **HUMAN-REVIEW-REQUIRED**: mutasi saldo + jurnal double-entry (AGENTS.md §8).
 
+## Pemindahbukuan / PB (T-088c)
+
+- **Satu transaksi DB** (`withDbTx` + `withIdempotency`): kunci kedua baris saldo, kurangi sumber,
+  tambah tujuan, jurnal sinkron, baris `deposit.transfer`, audit, event non-akuntansi.
+- **Anti-deadlock**: baris saldo kedua rekening dikunci `SELECT ... FOR UPDATE` dalam urutan
+  `account_id` **naik**. Dua PB berlawanan arah (A→B dan B→A) selalu mengunci baris terkecil dulu,
+  jadi tidak ada siklus tunggu. Syarat saldo (`UPDATE ... WHERE balance - ? >= min`) dievaluasi
+  **setelah** kedua baris terkunci, jadi 0 baris = 409 `insufficient_funds` tanpa kredit nyangkut di
+  tujuan. `min_balance` dari binding versi produk rekening **sumber**.
+- **Jurnal** dari posting rule `DepositTransferred` (migrasi `ledger/0013`): D 201 / K 201. **Batas:**
+  kedua sisi GL akun `201` yang sama, jadi jurnal PB **net-nol di buku besar**; perpindahan **per
+  rekening** dicatat di `deposit.transfer` (sumber & tujuan). Rekonsiliasi & GL per pemilik =
+  T-101/Fase 3 (lihat `docs/ACCEPTED-LIMITS.md`).
+- **Izin** `teller.transaction.post` diperiksa di **kedua** cabang rekening (sumber & tujuan).
+- **HUMAN-REVIEW-REQUIRED**: mutasi dua saldo + jurnal (AGENTS.md §8).
+
 ## Event
 
 - **Buka rekening**: tanpa event outbox — hanya audit `deposit.account.open` (belum ada konsumen,
@@ -77,6 +96,8 @@ akun ada di `0003`, bukan `0002`, karena urutan migrasi global `(seq, modul, ber
 - **Transaksi tunai** (T-088b): `CashTransactionPosted` (payload transaksi) + `journal.posted`,
   keduanya **non-akuntansi** (tanpa header `accounting`) agar konsumen `ledger` tidak memposting
   jurnal kedua. Jurnal sudah ditulis sinkron di transaksi DB yang sama.
+- **Pemindahbukuan** (T-088c): `TransferPosted` (payload sumber/tujuan) + `journal.posted`,
+  keduanya **non-akuntansi** (alasan sama). Jurnal `DepositTransferred` ditulis sinkron.
 
 ## Parameter
 
@@ -88,8 +109,9 @@ Tidak ada parameter baru di seed/packs untuk T-088b:
 
 ## Batas
 
-- PB (pemindahbukuan antar rekening) = T-088c; UI teller = T-088d. Belum ada di `0004` (tanpa kolom
-  `counter_account_id`).
+- PB (pemindahbukuan antar rekening) = T-088c: **stuktur** ada (tabel `deposit.transfer` + endpoint),
+  tetapi **GL per pemilik belum terpisah** — kedua sisi jurnal akun `201` (net-nol); perpindahan
+  per rekening ada di `deposit.transfer`. Pemodelan GL per pemilik = T-101/Fase 3.
 - Nomor rekening provisoris (lihat di atas) — **NEEDS-COMPLIANCE-REVIEW**.
 - Satu cabang per rekening; pindah cabang belum dimodelkan.
 - Batas nominal/limit transaksi tunai belum ada (menunggu parameter T-093) —

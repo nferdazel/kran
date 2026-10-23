@@ -63,11 +63,12 @@ tags:
   - name: deposit
     description: |
       Rekening simpanan (spec §9.2, T-088a): buka + baca rekening, saldo tidak boleh negatif.
-      Transaksi tunai/PB + posting jurnal menyusul di T-088b/T-088c.
+      Transaksi tunai (T-088b) & pemindahbukuan (T-088c) memposting jurnal sinkron.
   - name: teller
     description: |
-      Teller (spec §9.2/§9.3, T-088b): transaksi tunai setor/tarik. Jurnal double-entry diposting
-      **sinkron** di transaksi DB yang sama dengan mutasi saldo; event outbox hanya non-akuntansi.
+      Teller (spec §9.2/§9.3, T-088b/T-088c): transaksi tunai setor/tarik + pemindahbukuan (PB)
+      antar rekening simpanan. Jurnal double-entry diposting **sinkron** di transaksi DB yang sama
+      dengan mutasi saldo; event outbox hanya non-akuntansi.
 
 paths:
   /healthz:
@@ -1857,6 +1858,71 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/teller/transfers:
+    post:
+      operationId: postTransfer
+      tags: [teller]
+      summary: Pemindahbukuan (PB) antar rekening simpanan
+      description: |
+        Memindahbukukan saldo dari `sourceAccountId` ke `destinationAccountId` (keduanya rekening
+        simpanan `ACTIVE` dan berbeda). Saldo sumber & tujuan, jurnal double-entry (dari posting
+        rule `DepositTransferred`), baris `deposit.transfer`, audit, dan event outbox ditulis dalam
+        **satu** transaksi DB; jurnal diposting **sinkron**, bukan lewat worker outbox.
+
+        **Batas akuntansi:** kedua sisi GL memakai akun `201` (kewajiban simpanan) yang sama, jadi
+        jurnal PB net-nol di buku besar; perpindahan per rekening dicatat di `deposit.transfer`
+        (lihat `MODULE.md` + `docs/ACCEPTED-LIMITS.md`). Saldo minimum dari binding versi produk
+        rekening **sumber** (`product.savings.min_balance`, default 0).
+
+        `Idempotency-Key` wajib. Replay kunci+isi sama → 200 + `Idempotent-Replayed`; kunci sama isi
+        beda → 409. Panjang efektif kunci maksimal **156** karakter (kunci jurnal menambah 44
+        karakter: `teller:` + UUID pemanggil + `:`); lebih dari itu → 400. Izin
+        `teller.transaction.post` harus dipegang di **kedua** cabang rekening
+        (`params.reason=branch_not_allowed` bila hanya di cabang lain). Konflik domain 409 memakai
+        `params.reason`: `account_not_active`, `insufficient_funds`, `period_closed`.
+
+        **HUMAN-REVIEW-REQUIRED** (jalur finansial, AGENTS.md §8).
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransferCreate"
+      responses:
+        "200":
+          description: |
+            Replay permintaan sebelumnya: `Idempotency-Key` sama dengan isi yang sama. Body adalah
+            respons asli yang tersimpan; tidak ada transfer/jurnal baru.
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transfer"
+        "201":
+          description: Pemindahbukuan tercatat + jurnal diposting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transfer"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -3073,3 +3139,64 @@ components:
           type: string
           format: date
           description: Tanggal buku transaksi (`YYYY-MM-DD`).
+
+    TransferCreate:
+      type: object
+      additionalProperties: false
+      required: [sourceAccountId, destinationAccountId, amount]
+      properties:
+        sourceAccountId:
+          type: string
+          format: uuid
+          description: Rekening sumber dana (harus berstatus `ACTIVE`).
+        destinationAccountId:
+          type: string
+          format: uuid
+          description: Rekening tujuan (harus `ACTIVE` dan **berbeda** dari sumber).
+        amount:
+          type: string
+          description: Nominal desimal string > 0 (tanpa float), mis. `"100000.0000"`.
+        narration:
+          type: string
+          maxLength: 200
+          description: Keterangan opsional (batas teknis kolom 200 karakter).
+
+    Transfer:
+      type: object
+      additionalProperties: false
+      required:
+        - transferId
+        - journalId
+        - sourceAccountId
+        - destinationAccountId
+        - amount
+        - sourceBalanceAfter
+        - destinationBalanceAfter
+        - businessDate
+      properties:
+        transferId:
+          type: string
+          format: uuid
+        journalId:
+          type: string
+          format: uuid
+          description: Jurnal double-entry yang diposting sinkron untuk PB ini.
+        sourceAccountId:
+          type: string
+          format: uuid
+        destinationAccountId:
+          type: string
+          format: uuid
+        amount:
+          type: string
+          description: Nominal desimal string 4 desimal (tanpa float).
+        sourceBalanceAfter:
+          type: string
+          description: Saldo rekening sumber setelah PB, desimal string 4 desimal.
+        destinationBalanceAfter:
+          type: string
+          description: Saldo rekening tujuan setelah PB, desimal string 4 desimal.
+        businessDate:
+          type: string
+          format: date
+          description: Tanggal buku PB (`YYYY-MM-DD`).

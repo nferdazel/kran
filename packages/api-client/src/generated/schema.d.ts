@@ -931,6 +931,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/teller/transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pemindahbukuan (PB) antar rekening simpanan
+         * @description Memindahbukukan saldo dari `sourceAccountId` ke `destinationAccountId` (keduanya rekening
+         *     simpanan `ACTIVE` dan berbeda). Saldo sumber & tujuan, jurnal double-entry (dari posting
+         *     rule `DepositTransferred`), baris `deposit.transfer`, audit, dan event outbox ditulis dalam
+         *     **satu** transaksi DB; jurnal diposting **sinkron**, bukan lewat worker outbox.
+         *
+         *     **Batas akuntansi:** kedua sisi GL memakai akun `201` (kewajiban simpanan) yang sama, jadi
+         *     jurnal PB net-nol di buku besar; perpindahan per rekening dicatat di `deposit.transfer`
+         *     (lihat `MODULE.md` + `docs/ACCEPTED-LIMITS.md`). Saldo minimum dari binding versi produk
+         *     rekening **sumber** (`product.savings.min_balance`, default 0).
+         *
+         *     `Idempotency-Key` wajib. Replay kunci+isi sama → 200 + `Idempotent-Replayed`; kunci sama isi
+         *     beda → 409. Panjang efektif kunci maksimal **156** karakter (kunci jurnal menambah 44
+         *     karakter: `teller:` + UUID pemanggil + `:`); lebih dari itu → 400. Izin
+         *     `teller.transaction.post` harus dipegang di **kedua** cabang rekening
+         *     (`params.reason=branch_not_allowed` bila hanya di cabang lain). Konflik domain 409 memakai
+         *     `params.reason`: `account_not_active`, `insufficient_funds`, `period_closed`.
+         *
+         *     **HUMAN-REVIEW-REQUIRED** (jalur finansial, AGENTS.md §8).
+         */
+        post: operations["postTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1556,6 +1593,46 @@ export interface components {
             /**
              * Format: date
              * @description Tanggal buku transaksi (`YYYY-MM-DD`).
+             */
+            businessDate: string;
+        };
+        TransferCreate: {
+            /**
+             * Format: uuid
+             * @description Rekening sumber dana (harus berstatus `ACTIVE`).
+             */
+            sourceAccountId: string;
+            /**
+             * Format: uuid
+             * @description Rekening tujuan (harus `ACTIVE` dan **berbeda** dari sumber).
+             */
+            destinationAccountId: string;
+            /** @description Nominal desimal string > 0 (tanpa float), mis. `"100000.0000"`. */
+            amount: string;
+            /** @description Keterangan opsional (batas teknis kolom 200 karakter). */
+            narration?: string;
+        };
+        Transfer: {
+            /** Format: uuid */
+            transferId: string;
+            /**
+             * Format: uuid
+             * @description Jurnal double-entry yang diposting sinkron untuk PB ini.
+             */
+            journalId: string;
+            /** Format: uuid */
+            sourceAccountId: string;
+            /** Format: uuid */
+            destinationAccountId: string;
+            /** @description Nominal desimal string 4 desimal (tanpa float). */
+            amount: string;
+            /** @description Saldo rekening sumber setelah PB, desimal string 4 desimal. */
+            sourceBalanceAfter: string;
+            /** @description Saldo rekening tujuan setelah PB, desimal string 4 desimal. */
+            destinationBalanceAfter: string;
+            /**
+             * Format: date
+             * @description Tanggal buku PB (`YYYY-MM-DD`).
              */
             businessDate: string;
         };
@@ -3132,6 +3209,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CashTransaction"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    postTransfer: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Kunci idempotensi per pemanggil (D-098). Wajib pada endpoint pembuat objek: kirim ulang
+                 *     dengan kunci yang sama untuk mengulang permintaan tanpa membuat objek ganda. Replay
+                 *     dijawab 200 + header `Idempotent-Replayed: true`; kunci sama dengan isi berbeda → 409.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferCreate"];
+            };
+        };
+        responses: {
+            /**
+             * @description Replay permintaan sebelumnya: `Idempotency-Key` sama dengan isi yang sama. Body adalah
+             *     respons asli yang tersimpan; tidak ada transfer/jurnal baru.
+             */
+            200: {
+                headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transfer"];
+                };
+            };
+            /** @description Pemindahbukuan tercatat + jurnal diposting */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transfer"];
                 };
             };
             400: components["responses"]["Problem"];
