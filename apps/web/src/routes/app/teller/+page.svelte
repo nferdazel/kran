@@ -898,8 +898,8 @@
             <span class="kran-passbook__balance-value kran-money">{accountBalanceText}</span>
           </div>
 
-          <!-- Nomor rekening & status sudah tampil di header passbook; jangan duplikasi di sini
-               (duplikasi juga membuat locator e2e ambigu). -->
+          <!-- Account number and status already appear in the passbook header; do not duplicate
+               them here (it also made the e2e locator ambiguous). -->
           <dl class="teller-facts passbook-facts">
             <dt>{m.teller_account_kind_label()}</dt>
             <dd><span class="kran-badge kran-badge--info">{savingsKindLabel(loaded.savingsKind)}</span></dd>

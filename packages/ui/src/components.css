@@ -66,24 +66,32 @@
     padding-inline: var(--space-3);
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
-    min-block-size: 100vh;
+    /* Menu starts at the top; only the palette shortcut is pushed to the bottom. */
+    justify-content: flex-start;
+    align-self: stretch;
   }
 
   .kran-shell--app .kran-nav__inner {
     flex-direction: column;
     align-items: stretch;
+    justify-content: flex-start;
     gap: var(--space-4);
     block-size: 100%;
   }
 
   .kran-shell--app .kran-nav ul {
     flex-direction: column;
+    align-items: stretch;
     gap: var(--space-1);
+  }
+
+  .kran-shell--app .kran-nav__shortcut {
+    margin-block-start: auto;
   }
 
   .kran-shell--app .kran-nav a {
     display: flex;
+    inline-size: 100%;
     align-items: center;
     gap: var(--space-3);
     padding-block: var(--space-2);
@@ -236,6 +244,22 @@
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+@media (max-width: 1023px) {
+  /* Compact top bar: labels stay on one line; the palette shortcut is desktop-only chrome. */
+  .kran-nav__shortcut {
+    display: none;
+  }
+
+  .kran-nav ul {
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
+  }
+
+  .kran-nav a {
+    white-space: nowrap;
+  }
 }
 
 .kran-nav a {

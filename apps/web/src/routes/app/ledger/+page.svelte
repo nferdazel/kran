@@ -68,8 +68,8 @@
   const selectedPeriod = $derived(periods.find((p) => p.periodId === selectedId) ?? null);
 
   const totals = $derived.by(() => {
-    // Total harus mengikuti baris yang terlihat; kalau memakai seluruh `balances.lines`, footer
-    // menampilkan angka yang tidak cocok dengan tabel saat filter kategori aktif.
+    // Totals must follow the visible rows. Using all `balances.lines` would show figures that do
+    // not match the table while a category filter is active.
     const lines = filteredLines;
     let openingDebit = "0.0000";
     let openingCredit = "0.0000";

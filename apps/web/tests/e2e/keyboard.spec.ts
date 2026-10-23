@@ -5,8 +5,8 @@ import { expect, test, type Page } from "@playwright/test";
  * Tab/Enter/panah, termasuk skip link, grup radio tema, dan select bahasa.
  *
  * Urutan fokus yang diuji adalah urutan DOM yang sebenarnya:
- *   skip link → radio tema (3) → grup radio bahasa → tautan navigasi (Buku besar, Teller,
- *   Parameter, Masuk) → konten utama.
+ *   skip link → radio tema (3) → grup radio bahasa → field formulir login. Halaman publik tidak
+ *   menampilkan menu area kerja (nav hanya untuk `/app`).
  */
 
 async function gotoApp(page: Page, locale = "id", theme = "light"): Promise<void> {
@@ -79,23 +79,12 @@ test("setiap kontrol dapat dijangkau keyboard dalam urutan logis", async ({ page
   await expect(page.locator("a.kran-skip-link")).toBeFocused();
 
   const urutan: string[] = [];
-  for (let i = 0; i < 6; i += 1) {
+  for (let i = 0; i < 3; i += 1) {
     await page.keyboard.press("Tab");
     urutan.push(await activeElement(page));
   }
 
-  // Tiap grup radio punya satu tab stop (radio terpilih), lalu empat tautan navigasi
-  // (Buku besar, Teller, Parameter, Masuk); setelah itu tidak ada yang bisa difokus di shell
-  // halaman masuk sebelum field form (tidak ada focus trap).
-  expect(urutan).toEqual([
-    "input:radio:theme",
-    "input:radio:locale",
-    expect.stringMatching(/^a:/) as unknown as string,
-    expect.stringMatching(/^a:/) as unknown as string,
-    expect.stringMatching(/^a:/) as unknown as string,
-    expect.stringMatching(/^a:/) as unknown as string,
-  ]);
-  // Sesudah navigasi, fokus masuk ke form halaman (halaman publik tidak punya focus trap).
-  await page.keyboard.press("Tab");
-  expect(await activeElement(page)).toBe("input:text:username");
+  // Tiap grup radio punya satu tab stop (radio terpilih), lalu langsung field form login:
+  // header publik tidak merender tautan navigasi area kerja.
+  expect(urutan).toEqual(["input:radio:theme", "input:radio:locale", "input:text:username"]);
 });
