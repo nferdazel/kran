@@ -272,6 +272,22 @@ Invarian tambahan:
 Catatan: alur auth tinggal di `infrastructure` (butuh DB). Saat port/use case lapisan
 `application` lahir (pola T-016), isi `auth_service.nim` pindah ke `application/`.
 
+## Administrasi pengguna (T-117)
+
+| Bagian | Berkas |
+|---|---|
+| Layanan | `infrastructure/auth_service.nim` — `grantUserRole`, `revokeUserRole`, `disableUserAccount`, `enableUserAccount`, `unlockUserAccount` (+ `locksOutLastAdmin`); aturan siklus hidup **satu definisi**, dipakai `ctl` dan rute HTTP |
+| Repo | `infrastructure/auth_repo.nim` — `listUsers`, `roleGrantsOfUser`, `listRoles` (di samping `countUsersWithRole`) |
+| HTTP | `apps/api/src/handlers_users.nim` — `GET /api/v1/users`, `GET /api/v1/roles`, `POST /api/v1/users/{userId}/roles`, `DELETE …/roles/{role}`, `POST …/disable|enable|unlock` |
+| Migrasi | `0029_platform_rbac_user_admin.sql` — izin `platform.user.manage` untuk `platform_admin` |
+
+Izin `platform.user.manage` adalah aksi **tingkat institusi**: kedua gerbang `requirePermission`
+(izin dipegang) **dan** `authorizedAtBranch(..., "")` (grant tanpa batas cabang) harus lolos. Audit
+memakai action yang sama dengan `ctl` (`user.role_grant`, `user.role_revoke`, `user.disable`,
+`user.enable`, `user.unlock`) dengan aktor dari sesi; penolakan dipetakan ke 409 dengan
+`params.reason` stabil (`last_admin`, `sod_conflict`, `already_granted`, `not_granted`,
+`not_inactive`, `not_locked`). **HUMAN-REVIEW-REQUIRED** (administrasi pengguna/RBAC, AGENTS.md §8).
+
 ## MFA TOTP (T-046, spec §13/§18.2)
 
 | Bagian | Berkas | Catatan |
