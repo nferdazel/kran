@@ -24,6 +24,7 @@ import ./handlers_party
 import ./handlers_teller
 import ./handlers_teller_sessions
 import ./handlers_teller_vault
+import ./handlers_users
 import ./health
 import ./problem
 
@@ -235,8 +236,29 @@ proc tellerVaultRoutes*(): seq[RouteSpec] =
               operationId: "topUpTellerVault", handler: handleTopUpTellerVault),
   ]
 
+proc userRoutes*(): seq[RouteSpec] =
+  ## Administrasi pengguna & role (T-117): daftar akun, katalog role, dan siklus hidup akun.
+  ## Institusi (bukan cabang) → izin `platform.user.manage` **dan** grant tanpa batas cabang di
+  ## handler (`authorizedAtBranch(..., "")`).
+  @[
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/users", operationId: "listUsers",
+              handler: handleListUsers),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/roles", operationId: "listRoles",
+              handler: handleListRoles),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/users/{userId}/roles",
+              operationId: "assignUserRole", handler: handleAssignRole),
+    RouteSpec(httpMethod: hmDelete, path: "/api/v1/users/{userId}/roles/{role}",
+              operationId: "revokeUserRole", handler: handleRevokeRole),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/users/{userId}/disable",
+              operationId: "disableUser", handler: handleDisableUser),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/users/{userId}/enable",
+              operationId: "enableUser", handler: handleEnableUser),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/users/{userId}/unlock",
+              operationId: "unlockUser", handler: handleUnlockUser),
+  ]
+
 proc allRoutes*(): seq[RouteSpec] =
   systemRoutes() & authRoutes() & mfaRoutes() & paramRoutes() & auditRoutes() &
     partyRoutes() & kycRoutes() & ledgerRoutes() & journalRoutes() & productRoutes() &
     depositRoutes() & tellerRoutes() & tellerSessionRoutes() & tellerVaultRoutes() &
-    eventRoutes()
+    userRoutes() & eventRoutes()
