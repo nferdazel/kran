@@ -23,9 +23,17 @@
 
   let open = $state(false);
   let query = $state("");
-  let dialogEl = $state<HTMLDialogElement | undefined>(undefined);
-  let inputEl = $state<HTMLInputElement | undefined>(undefined);
-  let listEl = $state<HTMLUListElement | undefined>(undefined);
+  // Elemen dicari lewat id, bukan `bind:this`: pada rute ini binding tidak terpasang saat
+  // handler jendela aktif (dialogEl tetap undefined), sehingga showModal/fokus tidak pernah jalan.
+  function dialogElement(): HTMLDialogElement | null {
+    return document.getElementById("palette-dialog") as HTMLDialogElement | null;
+  }
+  function inputElement(): HTMLInputElement | null {
+    return document.getElementById("palette-search") as HTMLInputElement | null;
+  }
+  function listElement(): HTMLUListElement | null {
+    return document.getElementById("palette-list") as HTMLUListElement | null;
+  }
   /** Elemen pemegang fokus sebelum palette dibuka; dikembalikan saat ditutup (spec §17.1). */
   let restoreFocusTo: HTMLElement | null = null;
 
@@ -46,8 +54,8 @@
   }
 
   function optionElements(): HTMLElement[] {
-    if (listEl === undefined) return [];
-    return [...listEl.querySelectorAll<HTMLElement>("a[href]")];
+    const list = listElement();
+    return list === null ? [] : [...list.querySelectorAll<HTMLElement>("a[href]")];
   }
 
   async function openPalette(): Promise<void> {
@@ -56,12 +64,13 @@
     query = "";
     open = true;
     await tick();
-    if (dialogEl !== undefined && !dialogEl.open) dialogEl.showModal();
-    inputEl?.focus();
+    const dialog = dialogElement();
+    if (dialog !== null && !dialog.open) dialog.showModal();
+    inputElement()?.focus();
   }
 
   function closePalette(): void {
-    dialogEl?.close();
+    dialogElement()?.close();
   }
 
   /** `close` datang dari Esc, klik aksi, atau `closePalette()` — satu jalur pemulihan fokus. */
@@ -83,15 +92,16 @@
 
   /** Tab membungkus di dalam palette: `input` ↔ aksi terakhir. */
   function trapTab(event: KeyboardEvent): void {
-    const focusables = [inputEl, ...optionElements()].filter(
-      (element): element is HTMLElement => element !== undefined,
+    const focusables = [inputElement(), ...optionElements()].filter(
+      (element): element is HTMLElement => element !== null,
     );
     const first = focusables[0];
     const last = focusables[focusables.length - 1];
     if (first === undefined || last === undefined) return;
     const active = document.activeElement;
     if (event.shiftKey) {
-      const inside = active instanceof Node && dialogEl !== undefined && dialogEl.contains(active);
+      const dialog = dialogElement();
+      const inside = active instanceof Node && dialog !== null && dialog.contains(active);
       if (!inside || active === first) {
         event.preventDefault();
         last.focus();
@@ -136,7 +146,7 @@
       moveFocus(event.key === "ArrowDown" ? 1 : -1);
       return;
     }
-    if (event.key === "Enter" && event.target === inputEl) {
+    if (event.key === "Enter" && event.target === inputElement()) {
       event.preventDefault();
       optionElements()[0]?.click();
     }
@@ -148,8 +158,8 @@
 {@render children()}
 
 <dialog
+  id="palette-dialog"
   class="kran-palette"
-  aria-modal="true"
   aria-labelledby="palette-heading"
   onkeydown={onDialogKeydown}
   onclose={onDialogClose}
@@ -162,7 +172,6 @@
       class="kran-input"
       id="palette-search"
       type="search"
-      bind:this={inputEl}
       bind:value={query}
       autocomplete="off"
       spellcheck="false"
@@ -173,7 +182,7 @@
   {#if matches.length === 0}
     <p class="kran-palette__empty kran-muted" role="status">{m.palette_empty()}</p>
   {:else}
-    <ul class="kran-palette__list" bind:this={listEl}>
+    <ul class="kran-palette__list" id="palette-list">
       {#each matches as action (action.href)}
         <li>
           <a class="kran-palette__option" href={action.href} onclick={closePalette}>

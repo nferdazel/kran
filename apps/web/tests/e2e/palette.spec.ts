@@ -9,8 +9,8 @@ import { expect, test, type Page } from "@playwright/test";
  * Batas yang diuji: aksi palette = **navigasi** ke halaman yang sudah ada (tanpa aksi mutasi), dan
  * `Ctrl+K` tidak direbut saat fokus ada di field teks (keputusan di `docs/tasks/T-110.md`).
  *
- * Butuh DB + seed user dev (`./task e2e` menyiapkannya). Tanpa `KRAN_DATABASE_URL` berkas ini
- * dilewati; spesifikasi tanpa API (a11y/keyboard) tetap berjalan.
+ * Butuh DB + seed user dev (`./task e2e` menyiapkannya). Tanpa `KRAN_DATABASE_URL` **seluruh**
+ * berkas dilewati karena semua skenario butuh login.
  */
 
 test.skip(!process.env.KRAN_DATABASE_URL, "KRAN_DATABASE_URL kosong — API e2e tidak dijalankan");
