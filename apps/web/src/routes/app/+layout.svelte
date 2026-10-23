@@ -13,10 +13,11 @@
    *    arti sendiri (pengeditan, pencarian peramban) dan tidak boleh direbut.
    */
   import { tick } from "svelte";
+  import { page } from "$app/state";
 
   import * as m from "#lib/paraglide/messages.js";
   import { currentLocale, supportedLocales } from "#lib/app/i18n.js";
-  import { appNavLinks } from "#lib/app/nav.js";
+  import { appNavLinks, sessionPermissions, visibleNavLinks } from "#lib/app/nav.js";
   import { filterActions, paletteActions } from "#lib/app/palette.js";
 
   let { children } = $props();
@@ -37,9 +38,16 @@
   /** Elemen pemegang fokus sebelum palette dibuka; dikembalikan saat ditutup (spec §17.1). */
   let restoreFocusTo: HTMLElement | null = null;
 
-  // Bahasa dibaca saat mount: ganti bahasa membangun ulang subtree `/app` (`{#key locale}` di
-  // layout akar), jadi komponen ini tidak pernah melihat locale basi.
-  const actions = paletteActions(appNavLinks, currentLocale(), supportedLocales);
+  // Sumber aksi = nav yang sudah disaring izin, jadi palette tidak pernah menawarkan tujuan yang
+  // akan ditolak server (spec §13). Bahasa dibaca saat mount: ganti bahasa membangun ulang subtree
+  // `/app` (`{#key locale}` di layout akar), jadi komponen ini tidak pernah melihat locale basi.
+  const actions = $derived(
+    paletteActions(
+      visibleNavLinks(appNavLinks, sessionPermissions(page.data.session)),
+      currentLocale(),
+      supportedLocales,
+    ),
+  );
   const matches = $derived(filterActions(actions, query));
 
   /** Tombol ketik: di sanalah Ctrl+K tidak boleh direbut palette. */

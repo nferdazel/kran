@@ -27,9 +27,21 @@
     syncDocumentLanguage,
     type AppLocale,
   } from "#lib/app/i18n.js";
-  import { appNavLinks, isActiveHref } from "#lib/app/nav.js";
+  import {
+    appNavLinks,
+    isActiveHref,
+    sessionPermissions,
+    visibleNavLinks,
+  } from "#lib/app/nav.js";
 
   let { children } = $props();
+
+  /**
+   * Menu disaring per izin (spec §13). `page.data` adalah gabungan data seluruh `load` rute ini,
+   * jadi `session` dari `routes/app/+layout.ts` tersedia di sini; selama belum termuat, izin
+   * dianggap kosong (tautan berizin disembunyikan, bukan ditampilkan lalu ditolak server).
+   */
+  const navLinks = $derived(visibleNavLinks(appNavLinks, sessionPermissions(page.data.session)));
 
   const themeChoices: readonly ThemeChoice[] = ["system", "light", "dark"];
 
@@ -141,7 +153,7 @@
         </div>
 
         <ul>
-          {#each appNavLinks as link (link.href)}
+          {#each navLinks as link (link.href)}
             <li>
               <a
                 class="kran-link"
