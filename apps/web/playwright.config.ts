@@ -110,6 +110,17 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+      // Zoom 125% dijalankan sebagai project sendiri supaya viewport-nya tidak ikut mengubah
+      // suite lain (lihat `zoom-125` di bawah).
+      testIgnore: /zoom-125\.spec\.ts$/,
+    },
+    {
+      // DESIGN §4/§12 menetapkan target **1366×768 pada zoom 100–125%**. Playwright tidak bisa
+      // menyetel zoom peramban, jadi zoom diemulasi lewat viewport dalam **CSS px** hasil bagi:
+      // 1366 / 1.25 ≈ 1093 dan 768 / 1.25 ≈ 614 (device pixel ratio tetap 1).
+      name: "zoom-125",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1093, height: 614 } },
+      testMatch: /zoom-125\.spec\.ts$/,
     },
   ],
   webServer: servers,
