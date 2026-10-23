@@ -117,10 +117,16 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
     return
 
   let amountParsed = moneyFromString(node.jsonField("amount"))
-  if amountParsed.isErr or amountParsed.value() <= zero():
+  if amountParsed.isErr:
     req.respondProblem(pkBadRequest, "Bad Request", "amount harus nominal desimal positif")
     return
-  let amount = amountParsed.value()
+  # Positivitas dari domain (`validateAmount`) — satu tempat aturan, bukan cek inline terpisah.
+  var amount: Money
+  try:
+    amount = validateAmount(amountParsed.value())
+  except ValueError as e:
+    req.respondProblem(pkBadRequest, "Bad Request", e.msg)
+    return
 
   var narration = ""
   try:
@@ -246,12 +252,20 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
             var journalId: Id
             try:
               journalId = postJournalSync(db, app.clock, sourceEventOf(direction), amount,
-                account.branchId, txId, businessDate, journalKey, actor)
+                account.branchId, txId, businessDate, journalKey, actor, account.productCode)
             except DbError as e:
               if "periode OPEN" in e.msg:
                 status = 409
                 reason = "period_closed"
                 problem = "periode tanggal bisnis sudah ditutup"
+              elif "journal_idempotency_uq" in e.msg:
+                # Klaim idempotensi platform kedaluwarsa (TTL) lalu permintaan diulang: kunci jurnal
+                # unik selamanya menolak jurnal kedua. Perilaku terdefinisi = 409 dengan reason,
+                # bukan 500 (T-102). Rollback membatalkan mutasi saldo.
+                status = 409
+                reason = "idempotency_replay_expired"
+                problem = "Idempotency-Key ini sudah pernah diproses; respons replay sudah " &
+                  "kedaluwarsa"
               else:
                 status = 500
                 problem = "jurnal transaksi gagal disimpan"
@@ -384,13 +398,13 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
   let destinationId = destinationParsed.value()
 
   let amountParsed = moneyFromString(node.jsonField("amount"))
-  if amountParsed.isErr or amountParsed.value() <= zero():
+  if amountParsed.isErr:
     req.respondProblem(pkBadRequest, "Bad Request", "amount harus nominal desimal positif")
     return
   let amount = amountParsed.value()
 
   # Akun sama / nominal tidak positif = permintaan tidak sah (400), bukan konflik: tidak ada mutasi
-  # yang mungkin. Dicek sebelum menyentuh DB.
+  # yang mungkin. Dicek sebelum menyentuh DB (positivitas termasuk `validateTransfer`).
   try:
     validateTransfer(sourceId, destinationId, amount)
   except ValueError as e:
@@ -503,12 +517,18 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
             var journalId: Id
             try:
               journalId = postJournalSync(db, app.clock, transferSourceEvent, amount,
-                source.branchId, transferId, businessDate, journalKey, actor)
+                source.branchId, transferId, businessDate, journalKey, actor, source.productCode)
             except DbError as e:
               if "periode OPEN" in e.msg:
                 status = 409
                 reason = "period_closed"
                 problem = "periode tanggal bisnis sudah ditutup"
+              elif "journal_idempotency_uq" in e.msg:
+                # Sama seperti transaksi tunai (T-102): replay setelah TTL → 409 terdefinisi.
+                status = 409
+                reason = "idempotency_replay_expired"
+                problem = "Idempotency-Key ini sudah pernah diproses; respons replay sudah " &
+                  "kedaluwarsa"
               else:
                 status = 500
                 problem = "jurnal pemindahbukuan gagal disimpan"

@@ -22,8 +22,8 @@ import "platform-lib/db/pool"
 
 import deposit/domain/account
 import deposit/infrastructure/account_repo
-import ledger/domain/period
-import ledger/infrastructure/ledger_repo
+import ledger/domain/[coa, period, posting]
+import ledger/infrastructure/[ledger_repo, posting_repo]
 import party/domain/party
 import party/infrastructure/party_repo
 import product/domain/product
@@ -70,6 +70,7 @@ var
   OtherBranchAccountId: string
   HighMinAccountId: string
   SessionBranchAccountId: string
+  ProductRuleAccountId: string
 
 # --- penyiapan DB: skema bersih + seed pack + fixture party/produk/rekening --------------------
 block:
@@ -201,6 +202,30 @@ block:
   doAssert approveVersion(db, verDest.versionId, approver), "versi tujuan gagal di-approve"
   HighMinAccountId = $seedAccount(party.partyId, prodDest.productId, verDest.versionId,
     Id(BranchId), "SAV-DEST")
+
+  # Produk + akun + rule posting **produk-spesifik** (T-104): membuktikan `postJournalSync` mengirim
+  # konteks produk sehingga rule ber-`product_code` benar-benar terpilih, bukan rule generik.
+  let prodRule = Product(productId: newId(fixtureClock), code: "SAV-PROD",
+    name: "Simpanan Aturan Khusus", productType: ptSavings)
+  let verRule = ProductVersion(versionId: newId(fixtureClock), productId: prodRule.productId,
+    versionNo: 1, effectiveFrom: "2020-01-01")
+  discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+    insertProduct(d, prodRule, fixtureActor)
+    insertVersion(d, verRule, fixtureActor)
+    insertBinding(d, verRule.versionId, ParamBinding(paramKey: "product.savings.min_balance",
+      value: %"0.0000"))
+    1)
+  doAssert approveVersion(db, verRule.versionId, approver), "versi rule produk gagal di-approve"
+  ProductRuleAccountId = $seedAccount(party.partyId, prodRule.productId, verRule.versionId,
+    Id(BranchId), "SAV-PROD")
+  # GL 102/202 (bukan 101/201 rule generik) supaya pemilihan rule produk bisa dibedakan di test.
+  discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+    insertRule(d, PostingRule(ruleId: newId(fixtureClock), eventType: "DepositPosted",
+      productCode: "SAV-PROD", conditions: %*{}, priority: 100,
+      lines: @[
+        PostingRuleLine(lineNo: 1, side: nsDebit, glAccount: "102"),
+        PostingRuleLine(lineNo: 2, side: nsCredit, glAccount: "202")]), fixtureActor)
+    1)
 
   # --- T-093b: sesi kas. Transaksi tunai WAJIB sesi OPEN, jadi fixture membukanya lewat
   # repo/domain (bukan flag bypass gate). `dev.maker` (aktor test sukses) memakai `BranchId`;
@@ -571,6 +596,40 @@ suite "teller: idempotency":
     check mismatch.code == 409
     checkProblem(CashPath, "POST", "409", mismatch.body)
 
+  test "replay setelah TTL idempotensi lewat → 409 terdefinisi, bukan 500 (T-102)":
+    let token = tokenOf(login(MakerUser))
+    let accountId = freshAccount()
+    let body = cashBody(accountId, "DEPOSIT", "25.0000")
+    let key = "idem-expire-1"
+    let journalsBefore = journalCount("DepositPosted")
+
+    let first = postJson(CashPath, body, token, key)
+    check first.code == 201
+    check balanceOf(accountId) == "25.0000"
+    check txCount(accountId) == 1
+
+    # Paksa klaim platform kedaluwarsa (TTL lewat): geser `created_at`/`expires_at` ke masa lalu.
+    # Kunci jurnal `teller:<principal>:<key>` tetap unik selamanya — tanpa pemetaan, replay ini
+    # menabrak `journal_idempotency_uq` dan jadi 500.
+    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+      exec(d, sql"""
+        UPDATE platform.idempotency_key
+           SET created_at = created_at - interval '2 days',
+               expires_at = created_at - interval '1 day'
+         WHERE key = ?
+           AND principal_id =
+             (SELECT user_id FROM platform.app_user WHERE username = 'dev.maker')""", key)
+      1)
+
+    let replay = postJson(CashPath, body, token, key)
+    check replay.code == 409
+    checkProblem(CashPath, "POST", "409", replay.body)
+    check replay.body["params"]["reason"].getStr() == "idempotency_replay_expired"
+    # Rollback: tidak ada mutasi saldo / baris / jurnal kedua.
+    check balanceOf(accountId) == "25.0000"
+    check txCount(accountId) == 1
+    check journalCount("DepositPosted") == journalsBefore + 1
+
 suite "teller: pemindahbukuan (PB)":
   test "PB 201 → saldo kedua sisi benar, satu jurnal (D=K=amount), satu baris transfer":
     let token = tokenOf(login(MakerUser))
@@ -791,7 +850,7 @@ suite "teller: otorisasi cabang & keadaan rekening":
       discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
         discard postJournalSync(d, app.clock, "EventTanpaRule", moneyFromString("1.0000").value(),
           parseId(BranchId).value(), newId(app.clock), BusinessDate, "tanpa-rule-1",
-          fixtureActor)
+          fixtureActor, "SAV-DEP")
         1)
     except ValueError:
       raised = true
@@ -987,4 +1046,15 @@ suite "teller: sesi kas menggerbang transaksi tunai (T-093b)":
     check replay.code == 200
     check replay.replayed == "true"
     check replay.body["transactionId"].getStr() == transactionId
+
+suite "teller: posting rule produk-spesifik (T-104)":
+  test "setor memakai rule `product_code` akun, bukan rule generik":
+    let token = tokenOf(login(MakerUser))
+    let reply = postJson(CashPath, cashBody(ProductRuleAccountId, "DEPOSIT", "10.0000"), token)
+    check reply.code == 201
+    checkJson(CashPath, "POST", "201", reply.body)
+    # Rule produk SAV-PROD (D 102 / K 202) harus terpilih. Bila `postJournalSync` mengirim payload
+    # kosong, rule produk tidak cocok dan rule generik (101/201) yang dipakai → assertion gagal.
+    let lines = journalLines(reply.body["journalId"].getStr())
+    check lines == @[("102", "10.0000", "0.0000"), ("202", "0.0000", "10.0000")]
 

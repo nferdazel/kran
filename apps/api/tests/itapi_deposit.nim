@@ -19,6 +19,8 @@ import openapi/lib
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
 
+import deposit/domain/account
+import deposit/infrastructure/account_repo
 import party/domain/party
 import party/infrastructure/party_repo
 import product/domain/product
@@ -446,3 +448,56 @@ test "idempotency: kunci sama replay, isi beda 409, tanpa header 400":
   let tanpaKunci = postJson(AccountsPath, accountBody(), token, sendKey = false)
   check tanpaKunci.code == 400
   checkProblem(AccountsPath, "POST", "400", tanpaKunci.body)
+
+suite "deposit: data server rusak → 500 (T-099)":
+  test "nomor urut sequence melebihi lebar → 500, bukan 400, tanpa rekening baru":
+    let token = tokenOf(login(MakerUser))
+    let accountsBefore = dbCount(sql"SELECT count(*)::text FROM deposit.account")
+    let seqBefore = dbText(sql"SELECT last_value::text FROM deposit.account_seq")
+    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+      exec(d, sql"SELECT setval('deposit.account_seq', 9999999999)")
+      1)
+    try:
+      let reply = postJson(AccountsPath, accountBody(), token, "overflow-seq-" & $epochTime())
+      check reply.code == 500
+      checkProblem(AccountsPath, "POST", "500", reply.body)
+      # Transaksi di-rollback: tidak ada rekening setengah jadi.
+      check dbCount(sql"SELECT count(*)::text FROM deposit.account") == accountsBefore
+    finally:
+      discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+        exec(d, sql"SELECT setval('deposit.account_seq', ?::bigint)", seqBefore)
+        1)
+
+suite "deposit: batas daftar rekening (T-100)":
+  test "?partyId= dibatasi 200 baris walau party punya lebih banyak rekening":
+    let token = tokenOf(login(MakerUser))
+    let actor = Id("77777777-7777-7777-8777-777777777777")
+    let clock = fakeClock(dateTime(2026, mOct, 22, 9, 0, 0))
+    let productId = Id(dbText(sql"""
+      SELECT product_id::text FROM product.product WHERE code = ?""", ProductCode))
+    let versionId = Id(dbText(sql"""
+      SELECT v.version_id::text
+        FROM product.product_version v
+        JOIN product.product p ON p.product_id = v.product_id
+       WHERE p.code = ?
+       ORDER BY v.version_no DESC
+       LIMIT 1""", ProductCode))
+
+    # Seed langsung lewat repo: 205 POST HTTP jauh lebih lambat dan tidak menambah cakupan.
+    let seedConn = dbPool.acquire()
+    try:
+      exec(seedConn, sql"BEGIN")
+      for _ in 0 ..< 205:
+        let a = newAccount(newId(clock), Id(PartyId), productId, versionId, ProductCode,
+          Id(BranchId), "2026-10-01", nextAccountSeq(seedConn))
+        insertAccount(seedConn, a, actor)
+      exec(seedConn, sql"COMMIT")
+    finally:
+      dbPool.release(seedConn)
+
+    check dbCount(sql"SELECT count(*)::text FROM deposit.account WHERE party_id = ?",
+      PartyId) > 200
+    let listed = getJson(AccountsPath & "?partyId=" & PartyId, token)
+    check listed.code == 200
+    checkJson(AccountsPath, "GET", "200", listed.body)
+    check listed.body["items"].len == 200

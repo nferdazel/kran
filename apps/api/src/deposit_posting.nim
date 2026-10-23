@@ -21,12 +21,17 @@ import ledger/infrastructure/[journal_repo, posting_repo]
 
 proc postJournalSync*(db: DbConn, clock: Clock, eventType: string, amount: Money,
     branchId: Id, sourceRef: Id, businessDate, idempotencyKey: string,
-    actor: Id): Id =
+    actor: Id, productCode: string): Id =
   ## Menulis satu jurnal double-entry dari posting rule `eventType` di transaksi pemanggil dan
   ## mengembalikan `journal_id`. Tidak ada rule/ambigu → `ValueError`; periode tertutup/tidak ada →
   ## `DbError` dari trigger `ledger` (pemanggil memetakannya ke 409 `period_closed`).
   ## `idempotencyKey` unik per transaksi (lapis kedua anti-jurnal-ganda pada replay).
-  let rule = selectRule(activeRules(db, eventType, businessDate), eventType, %*{})
+  ##
+  ## Payload pemilihan rule **wajib** memuat konteks produk: `ruleMatches` mencocokkan
+  ## `product_code` rule dengan `payload.product`, jadi tanpa ini rule produk-spesifik tidak pernah
+  ## terpilih (T-104, regresi review T-088b m1). Kondisi lain (`conditions`) tetap subset payload.
+  let payload = %*{"product": productCode}
+  let rule = selectRule(activeRules(db, eventType, businessDate), eventType, payload)
   let lines = buildLines(rule, amount, branchId)
   let journal = Journal(
     journalId: newId(clock),
