@@ -1968,6 +1968,111 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/teller/vault:
+    get:
+      operationId: getTellerVault
+      tags: [teller]
+      summary: Saldo vault kas satu cabang
+      description: |
+        Mengembalikan saldo `teller.vault` cabang `branchId`. Bila baris vault belum ada, balasannya
+        **404** dengan `params.reason=vault_not_configured` — absennya konfigurasi adalah "tidak
+        ada", bukan saldo nol yang menyesatkan. Izin `teller.vault.read` harus dipegang di cabang
+        ini (`params.reason=branch_not_allowed` bila hanya di cabang lain).
+
+        **Tanpa jurnal GL**: saldo vault bukan cerminan akun buku besar (O-097).
+
+        **HUMAN-REVIEW-REQUIRED** (jalur kas teller, AGENTS.md §8).
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: branchId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Cabang vault.
+      responses:
+        "200":
+          description: Saldo vault cabang
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TellerVault"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/teller/vault/topups:
+    post:
+      operationId: topUpTellerVault
+      tags: [teller]
+      summary: Top-up kas vault cabang
+      description: |
+        Menambah saldo `teller.vault` cabang `branchId` sebesar `amount` (injeksi kas operasional).
+        Vault **harus sudah ada** (seed/runbook T-093): baris hilang → 404 `vault_not_configured`,
+        bukan pembuatan baris diam-diam. Increment atomik satu baris per cabang; dua top-up
+        bersamaan dijumlahkan, bukan saling menimpa.
+
+        `amount` wajib desimal string > 0 (tanpa float). Tidak ada batas atas **bisnis**: limit kas
+        adalah kebijakan pemilik (O-099). Batas teknisnya adalah kapasitas `Money` (int64 unit 10⁻⁴).
+
+        `Idempotency-Key` wajib. Replay kunci+isi sama → 200 + `Idempotent-Replayed`; kunci sama isi
+        beda → 409. Izin `teller.vault.topup` harus dipegang di cabang ini
+        (`params.reason=branch_not_allowed` bila hanya di cabang lain).
+
+        **Tanpa jurnal GL.** Top-up menaikkan kas fisik tanpa akun buku besar lawan yang sah; ini
+        batas yang diakui (O-097, `docs/ACCEPTED-LIMITS.md`), bukan jurnal yang ditunda diam-diam.
+
+        **HUMAN-REVIEW-REQUIRED** (mutasi saldo vault kas, AGENTS.md §8).
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TellerVaultTopUpRequest"
+      responses:
+        "200":
+          description: |
+            Replay permintaan sebelumnya: `Idempotency-Key` sama dengan isi yang sama. Body adalah
+            respons asli yang tersimpan; vault tidak ditambah lagi.
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TellerVaultTopUp"
+        "201":
+          description: Vault cabang ditambah sebesar `amount`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TellerVaultTopUp"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
   /api/v1/teller/cash-transactions:
     post:
       operationId: postCashTransaction
@@ -3475,3 +3580,44 @@ components:
           type: string
           maxLength: 200
           description: Catatan sesi ("" bila tidak diisi).
+
+    TellerVault:
+      type: object
+      additionalProperties: false
+      required: [branchId, balance]
+      properties:
+        branchId:
+          type: string
+          format: uuid
+        balance:
+          type: string
+          description: Saldo kas fisik vault cabang, desimal string 4 desimal (tanpa float).
+
+    TellerVaultTopUpRequest:
+      type: object
+      additionalProperties: false
+      required: [branchId, amount]
+      properties:
+        branchId:
+          type: string
+          format: uuid
+          description: Cabang yang vault-nya ditambah; izin `teller.vault.topup` harus dipegang di sini.
+        amount:
+          type: string
+          description: Nominal top-up sebagai desimal string > 0 (tanpa float), mis. `"5000000.0000"`.
+        note:
+          type: string
+          maxLength: 200
+          description: Catatan opsional (batas teknis kolom 200 karakter).
+
+    TellerVaultTopUp:
+      type: object
+      additionalProperties: false
+      required: [branchId, balanceAfter]
+      properties:
+        branchId:
+          type: string
+          format: uuid
+        balanceAfter:
+          type: string
+          description: Saldo vault setelah top-up, desimal string 4 desimal (tanpa float).

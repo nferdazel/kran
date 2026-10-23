@@ -80,6 +80,15 @@ proc validateCountedCash*(amount: Money): Money =
     raise newException(ValueError, "countedCash tidak boleh negatif")
   amount
 
+proc validateTopUpAmount*(amount: Money): Money =
+  ## Nominal top-up vault (T-107) wajib **positif**: menambah nol tidak mengubah apa pun (salah
+  ## pakai) dan nominal negatif adalah penarikan — operasi yang tidak punya endpoint.
+  ## Batas atas tidak ditetapkan di sini: limit kas adalah kebijakan pemilik (O-099), dan batas
+  ## teknisnya adalah kapasitas `Money` (int64 unit 10⁻⁴) yang sudah ditolak `moneyFromString`.
+  if not amount.isPositive():
+    raise newException(ValueError, "amount top-up harus lebih besar dari nol")
+  amount
+
 proc validateSessionNote*(raw: string): string =
   let s = raw.strip
   if s.len > maxSessionNoteLength:

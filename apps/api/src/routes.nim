@@ -23,6 +23,7 @@ import ./handlers_param
 import ./handlers_party
 import ./handlers_teller
 import ./handlers_teller_sessions
+import ./handlers_teller_vault
 import ./health
 import ./problem
 
@@ -218,7 +219,18 @@ proc tellerSessionRoutes*(): seq[RouteSpec] =
               operationId: "closeTellerSession", handler: handleCloseTellerSession),
   ]
 
+proc tellerVaultRoutes*(): seq[RouteSpec] =
+  ## Vault kas cabang (T-107): top-up kas operasional + baca saldo. Izin `teller.vault.*` harus
+  ## dipegang di cabang target (`authorizedAtBranch`). **Tanpa jurnal GL** (O-097).
+  @[
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/teller/vault",
+              operationId: "getTellerVault", handler: handleGetTellerVault),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/teller/vault/topups",
+              operationId: "topUpTellerVault", handler: handleTopUpTellerVault),
+  ]
+
 proc allRoutes*(): seq[RouteSpec] =
   systemRoutes() & authRoutes() & mfaRoutes() & paramRoutes() & auditRoutes() &
     partyRoutes() & kycRoutes() & ledgerRoutes() & journalRoutes() & productRoutes() &
-    depositRoutes() & tellerRoutes() & tellerSessionRoutes() & eventRoutes()
+    depositRoutes() & tellerRoutes() & tellerSessionRoutes() & tellerVaultRoutes() &
+    eventRoutes()
