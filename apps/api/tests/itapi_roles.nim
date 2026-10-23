@@ -323,6 +323,9 @@ suite "kran-api: peran CLI (O-013)":
 
     check runCtl(revokeRoleCmd, ".", uname, "", bootstrapAdminRole) == 3
     check bootstrapAdminRole in roleCodesOfUser(db, uid)
+    # Disabling the last admin is the same one-way door as revoking it.
+    check runCtl(disableUserCmd, ".", uname) == 3
+    check userById(db, uid).get().status == "ACTIVE"
 
   test "withRoleDb(useTx = true): kegagalan di tengah membatalkan seluruh tulisan":
     # Bootstrap menulis tiga hal (pengguna, role, audit). Kalau salah satunya gagal dan transaksinya

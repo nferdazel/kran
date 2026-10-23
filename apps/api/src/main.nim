@@ -587,6 +587,13 @@ proc runDisableUser*(db: DbConn, username: string, clock: Clock): int =
     stderr.writeLine "kran-api: tidak ada pengguna '" & username & "'"
     return 3
   let user = found.get()
+  # Same lockout guard as `revoke-role`: disabling the last admin leaves nobody who can manage
+  # RBAC, which is a one-way door without shell access.
+  if bootstrapAdminRole in roleCodesOfUser(db, user.userId) and
+     countUsersWithRole(db, bootstrapAdminRole) <= 1:
+    stderr.writeLine "kran-api: menolak menonaktifkan role '" & bootstrapAdminRole &
+      "' terakhir — tidak boleh mengunci semua admin keluar"
+    return 3
   let instScope = institutionScope()
   let now = clock.now()
   let nowIso = utcIso(now)
