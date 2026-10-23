@@ -197,3 +197,18 @@ plus open item yang butuh keputusan pemilik (O-071 MFA aktivasi, O-067, O-066 se
 | T-109 | DONE | Seed dev deposit untuk e2e teller | T-105, T-108 | T-088a, T-093 | Belum ada party/produk SAVINGS ACTIVE/rekening/vault di seed dev, dan user dev belum memegang `teller.*`; e2e teller (buka sesi, setor, tutup, axe) tidak bisa dijalankan. Tambah seed idempoten + grant, lalu tulis `teller.spec.ts`.
 | T-114 | DONE | Provisioning akun operator produksi (`ctl create-user` + role pilot) | temuan pilot 23 Okt | T-027, T-107 | Produksi hanya punya `ctl bootstrap-admin`/`reset-password`; tidak ada cara membuat teller/checker tanpa SQL + hash manual, dan role `teller` belum ada. **Selesai**: `ctl create-user --username --user-role [--branch] [--full-name]` (satu role, audit `user.create`, wajib ganti), migrasi `0027` (role `teller` + `product_checker`), test `itapi_roles`. Data pilot: `docs/runbooks/pilot-provisioning.md`. |
 
+## Pasca-M2 — tindak lanjut pilot (23 Okt 2026)
+
+Bukan penghalang Fase 2: kriteria M2 (deposit + teller) sudah terpenuhi
+(`docs/milestones/M2-report.md`). Baris di bawah menutup celah **permukaan operator** yang ditemukan
+dua audit pilot 23 Okt 2026 beserta keputusan tata kelola yang menyertainya (O-102, O-103). Kerjakan
+bersama Fase 5 (coop pack) atau lebih awal bila pilot butuh operator non-teknis; status semua baris
+awalnya `TODO`, bukan blocker Fase 2.
+
+| ID | Status | Tujuan | Spec | Deps | Kriteria selesai (dapat diverifikasi mesin) |
+|---|---|---|---|---|---|
+| T-115 | TODO | UI buka rekening: cari anggota (party search), pilih produk, pilih cabang | §16.2, §23 | T-088a, T-088d (izin `deposit.account.manage`) | Layar pembukaan rekening memakai `POST /api/v1/deposit/accounts` + pencarian party; izin `deposit.account.manage`; gerbang cabang; i18n id+en; axe 2 tema x 2 locale + keyboard-only; e2e buka rekening |
+| T-116 | TODO | UI administrasi buku besar: buka/tutup periode, COA, dan pembalik jurnal | §16.2, §23 | T-072, T-073, T-082 | Layar `/app/ledger/admin` memakai `POST /api/v1/ledger/periods`, `.../{periodId}/close`, `POST /api/v1/ledger/coa`, `POST /api/v1/ledger/journals/{journalId}/reversal`; izin `ledger.*` yang ada; i18n id+en; axe + keyboard-only |
+| T-117 | TODO | Manajemen pengguna/peran lewat API + UI: assign/revoke/disable/unlock | §13, §18.2 | T-114, T-027 | Endpoint API + UI untuk assign/revoke role, menonaktifkan, dan membuka akun terkunci (menggantikan ketergantungan `ctl` untuk operasi harian); kunci `role.*`/`perm.*` i18n (O-053); audit tiap aksi; test authz + e2e |
+| T-118 | TODO | Keputusan tata kelola & SoD operator pilot | §18.2 | O-097, O-098, O-102 | Pemilik menetapkan pasangan SoD tambahan (termasuk `platform_admin`/`teller`) dan penyetuju kedua untuk kas/vault; seed pasangan + test `grantRole`/`authorize` menolak; keputusan dicatat di `docs/DECISIONS.md` |
+
