@@ -212,7 +212,6 @@ suite "deposit: mutasi saldo pemindahbukuan":
     expectDbError(proc() = db.exec(sql"TRUNCATE deposit.transfer"))
 
 var
-  workerStarted: Atomic[bool]
   workerFailed: Atomic[bool]
 
 type TransferArgs = object
@@ -223,7 +222,6 @@ type TransferArgs = object
 
 proc transferWorker(args: TransferArgs) {.thread.} =
   {.cast(gcsafe).}:
-    workerStarted.store(true)
     let ok =
       try:
         args.pool.withTx(proc(d: DbConn): bool {.closure.} =
@@ -236,8 +234,17 @@ proc transferWorker(args: TransferArgs) {.thread.} =
     if not ok:
       workerFailed.store(true)
 
+proc blockedByHolder(pid: string): int =
+  ## Jumlah sesi lain yang menunggu lock yang dipegang `pid` (pola `ittransaction`): sinkronisasi
+  ## deterministik tanpa `sleep` yang bisa lolos saat pekerja belum benar-benar bersaing.
+  parseInt(db.getValue(sql"""
+    SELECT count(*)::text FROM pg_stat_activity
+     WHERE datname = current_database() AND pid <> pg_backend_pid()
+       AND wait_event_type = 'Lock'
+       AND ?::int = ANY(pg_blocking_pids(pid))""", pid))
+
 suite "deposit: PB berlawanan arah bersamaan tidak deadlock":
-  test "A→B dan B→A bersamaan: keduanya selesai, saldo akhir benar":
+  test "urutan kunci `account_id` menaik: kedua arah selesai tanpa deadlock":
     let a = accountRow()
     let b = accountRow()
     save(a)
@@ -245,17 +252,37 @@ suite "deposit: PB berlawanan arah bersamaan tidak deadlock":
     credit(a.accountId, money(100_0000))
     credit(b.accountId, money(100_0000))
 
-    workerStarted.store(false)
+    # Sesi uji memegang lock baris saldo **terkecil**. Dengan urutan `account_id` menaik, kedua PB
+    # (dua arah) menunggu di baris yang sama → terserialisasi. Bila urutan kunci dihapus,
+    # masing-masing memegang baris sumbernya lalu menunggu baris yang lain → deadlock dan salah satu
+    # pekerja gagal (`workerFailed`), sehingga test ini gagal.
+    let (minId, maxId) =
+      if a.accountId < b.accountId: (a.accountId, b.accountId)
+      else: (b.accountId, a.accountId)
+
+    exec(db, sql"BEGIN")
+    discard db.getValue(sql"""
+      SELECT 1 FROM deposit.account_balance WHERE account_id = ? FOR UPDATE""", $minId)
+    let holderPid = db.getValue(sql"SELECT pg_backend_pid()")
+
     workerFailed.store(false)
     var w1, w2: Thread[TransferArgs]
-    createThread(w1, transferWorker,
-      TransferArgs(pool: dbPool, sourceId: $a.accountId, destinationId: $b.accountId,
-        amount: money(60_0000).toDecimalString))
-    while not workerStarted.load():
-      sleep(2)
-    createThread(w2, transferWorker,
-      TransferArgs(pool: dbPool, sourceId: $b.accountId, destinationId: $a.accountId,
-        amount: money(60_0000).toDecimalString))
+    createThread(w1, transferWorker, TransferArgs(pool: dbPool, sourceId: $minId,
+      destinationId: $maxId, amount: money(60_0000).toDecimalString))
+    createThread(w2, transferWorker, TransferArgs(pool: dbPool, sourceId: $maxId,
+      destinationId: $minId, amount: money(60_0000).toDecimalString))
+
+    # Tunggu **kedua** pekerja benar-benar menunggu lock sesi uji.
+    let deadline = epochTime() + 10.0
+    var blocked = 0
+    while epochTime() < deadline and blocked < 2:
+      blocked = blockedByHolder(holderPid)
+      if blocked < 2:
+        sleep(20)
+    check blocked >= 2
+
+    # Lepas lock: kedua pekerja lanjut; dengan urutan menaik keduanya terserialisasi dan selesai.
+    exec(db, sql"COMMIT")
     joinThread(w1)
     joinThread(w2)
 

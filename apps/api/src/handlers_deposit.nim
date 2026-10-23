@@ -34,6 +34,15 @@ import ./problem
 const
   permissionDepositAccountManage* = "deposit.account.manage"
   permissionDepositAccountRead* = "deposit.account.read"
+  ## Batas jumlah baris daftar rekening (nilai **teknis**, ukuran respons — pola daftar audit/param,
+  ## T-100). Bukan ambang bisnis.
+  maxAccountListLimit* = 200 # nomagic:ok batas ukuran respons daftar
+
+type
+  ## Data server rusak pada jalur rekening (nomor urut sequence melewati lebar, baris DB tidak bisa
+  ## di-parse, rekening baru tidak terbaca kembali). Ini bukan kesalahan pemanggil: jawabannya 500,
+  ## bukan 400 (T-099, pola `PartyConfigError`).
+  DepositAccountConfigError* = object of ValueError
 
 proc accountJson(a: Account): JsonNode =
   %*{
@@ -135,9 +144,15 @@ proc handleOpenDepositAccount*(app: AppContext, req: Request) {.gcsafe.} =
               problem = "produk tidak punya versi ACTIVE yang berlaku pada tanggal bisnis"
               raise newException(ValueError, problem)
 
-            let account = newAccount(newId(app.clock), partyId.value(), prod.productId,
-              versionOpt.get().versionId, prod.code, branchId.value(), businessDate,
-              nextAccountSeq(db))
+            let account =
+              try:
+                newAccount(newId(app.clock), partyId.value(), prod.productId,
+                  versionOpt.get().versionId, prod.code, branchId.value(), businessDate,
+                  nextAccountSeq(db))
+              except ValueError:
+                # Nomor urut tidak muat lebar / data tidak sah = kondisi operator, bukan 400.
+                raise newException(DepositAccountConfigError,
+                  "rekening tidak bisa dibentuk (nomor urut atau produk tidak sah)")
             let actor = parseId(principal.user.userId).value()
             insertAccount(db, account, actor)
 
@@ -156,8 +171,17 @@ proc handleOpenDepositAccount*(app: AppContext, req: Request) {.gcsafe.} =
                 "status": $account.status,
               }))
 
+            let storedOpt =
+              try:
+                accountById(db, account.accountId)
+              except ValueError:
+                raise newException(DepositAccountConfigError,
+                  "rekening baru tidak bisa dibaca kembali setelah disimpan")
+            if storedOpt.isNone:
+              raise newException(DepositAccountConfigError,
+                "rekening baru tidak terbaca kembali setelah disimpan")
+            payload = accountJson(storedOpt.get())
             status = 201
-            payload = accountJson(accountById(db, account.accountId).get())
             (status, payload)))
   except IdempotencyConfigError:
     status = 500
@@ -165,10 +189,17 @@ proc handleOpenDepositAccount*(app: AppContext, req: Request) {.gcsafe.} =
   except IdempotencyStateError:
     status = 500
     problem = "idempotensi gagal diselesaikan"
+  except DepositAccountConfigError:
+    status = 500
+    problem = "data rekening simpanan tidak bisa diproses"
   except ValueError as e:
     if status == 0:
-      status = 400
-    problem = e.msg
+      # Tidak ada validasi pemanggil di dalam transaksi (400 sudah dicek sebelum tx): `ValueError`
+      # tanpa status = data server rusak, bukan permintaan salah (T-099).
+      status = 500
+      problem = "data rekening simpanan tidak bisa diproses"
+    else:
+      problem = e.msg
   except DbError:
     status = 500
     problem = "rekening simpanan gagal disimpan"
@@ -220,6 +251,10 @@ proc handleGetDepositAccount*(app: AppContext, req: Request) {.gcsafe.} =
   except DbError:
     status = 500
     problem = "rekening gagal dibaca"
+  except ValueError:
+    # Baris DB tidak bisa di-parse (mis. balance/status rusak) = kondisi server, bukan 404/400.
+    status = 500
+    problem = "data rekening tersimpan tidak bisa dibaca"
 
   case status
   of 200: req.respondJson(200, payload)
@@ -265,6 +300,9 @@ proc handleListDepositAccounts*(app: AppContext, req: Request) {.gcsafe.} =
         # dikembalikan (bukan 403 seluruh daftar — hasilnya disaring per baris, pola D-062).
         if partyId.isSome:
           for account in accountsByParty(db, partyId.get()):
+            # Batas respons (T-100): daftar party besar tidak mengembalikan ribuan baris sekaligus.
+            if items.len >= maxAccountListLimit:
+              break
             if authorizedAtBranch(db, principal, $account.branchId, permissionDepositAccountRead):
               items.add accountJson(account)
         else:
@@ -277,6 +315,8 @@ proc handleListDepositAccounts*(app: AppContext, req: Request) {.gcsafe.} =
             items.add accountJson(accountOpt.get())
         status = 200)
   except DbError:
+    status = 500
+  except ValueError:
     status = 500
 
   case status

@@ -1,11 +1,13 @@
 ## Domain murni modul `deposit` (T-088b): transaksi tunai simpanan (spec §9.2).
 ##
-## Yang ada di sini hanya bentuk dan invarian struktural (arah, tipe, aritmetika saldo). **Tidak ada
+## Yang ada di sini hanya bentuk dan invarian struktural (arah, tipe, validasi nominal). **Tidak ada
 ## angka bisnis**: saldo minimum datang dari binding versi produk (`product.savings.min_balance`)
 ## yang dibaca composition root, bukan konstanta di kode (spec §10, AGENTS.md §1.2).
 ##
-## Sumber kebenaran saldo tetap jurnal ledger (spec §9.1(4)); `deposit.account_balance` adalah cache
-## yang digerakkan fungsi mutasi di sini (tercermin di SQL `transaction_repo`).
+## Sumber kebenaran saldo tetap jurnal ledger (spec §9.1(4)); `deposit.account_balance` adalah cache.
+## Mutasi saldo **tidak** dihitung di sini (dulu ada `balanceAfterDeposit`/`balanceAfterWithdrawal`
+## yang hanya dipakai unit test — duplikasi aturan SQL): satu-satunya tempat aturan itu hidup adalah
+## `UPDATE ... WHERE balance - ? >= min_balance` di `infrastructure/transaction_repo`. T-103.
 
 import std/strutils
 
@@ -71,7 +73,7 @@ proc sourceEventOf*(d: CashDirection): string =
 
 proc validateAmount*(amount: Money): Money =
   ## Nominal transaksi wajib **positif**: arah sudah menentukan tanda; nominal negatif/nol adalah
-  ## permintaan tidak sah, bukan transaksi.
+  ## permintaan tidak sah, bukan transaksi. Dipakai handler tunai (bukan cek inline yang terpisah).
   if amount <= zero():
     raise newException(ValueError, "amount harus lebih besar dari nol")
   amount
@@ -81,20 +83,6 @@ proc validateNarration*(raw: string): string =
   if s.len > maxNarrationLength:
     raise newException(ValueError, "narration melebihi " & $maxNarrationLength & " karakter")
   s
-
-proc balanceAfterDeposit*(balance, amount: Money): Money =
-  ## Saldo setelah setor. Tanpa batas atas di domain (batas nominal = parameter, T-093).
-  discard validateAmount(amount)
-  balance + amount
-
-proc balanceAfterWithdrawal*(balance, amount, minBalance: Money): Money =
-  ## Saldo setelah tarik; **ditolak** bila hasilnya di bawah saldo minimum (yang datang dari
-  ## binding versi produk). Cermin klausa `balance - ? >= min` di `transaction_repo`.
-  discard validateAmount(amount)
-  let after = balance - amount
-  if after < minBalance:
-    raise newException(ValueError, "saldo tidak cukup setelah tarik (di bawah saldo minimum)")
-  after
 
 proc tellerJournalKey*(principalId, key: string): string =
   ## `teller:<principalId>:<Idempotency-Key>` — kunci idempotensi jurnal (T-088 §3). Ditolak bila
