@@ -2237,3 +2237,13 @@ Batasan yang dibuka: O-097 (GL kas teller), O-098 (top-up vault = T-107), O-099 
   `task i18n` 247 key/locale.
 - `./task ci` penuh hijau untuk `f59ba84` (`/tmp/ci-t105.log`, `== CI hijau`).
 - Belum: e2e/axe/screenshot teller — butuh seed dev (T-109).
+
+## 23 Okt 2026 — Deploy batch T-093/T-105/T-108 (produksi)
+
+- Push `3a41818..4b93e00` ke `main` (otorisasi pemilik via pilihan "Deploy batch sekarang").
+- Bukti pasca-deploy: `/readyz` 200; `GET /api/v1/teller/sessions/current` berubah dari 404
+  (versi lama) menjadi **401** (rute baru hidup). Migrasi expand teller/platform/ledger berjalan
+  sebelum trafik (deploy fail-closed bila gagal).
+- **Belum operasional**: `teller.vault` produksi belum diisi dan T-107 (top-up) belum ada; sesi kas
+  tidak bisa dibuka sampai runbook §vault dijalankan. UI teller menampilkan galat yang jujur.
+- Sisa Fase 2: T-109 (seed dev + e2e teller), T-095 (keyboard-only), O-097 (GL kas teller).
