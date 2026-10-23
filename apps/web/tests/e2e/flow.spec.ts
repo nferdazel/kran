@@ -76,9 +76,11 @@ async function login(page: Page, user: { username: string; password: string }): 
   await page.keyboard.type(user.password);
   await page.keyboard.press("Enter");
 
-  // Sesudah masuk, tempat kerja adalah buku besar.
-  await expect(page).toHaveURL(/\/app\/ledger$/);
-  await expect(page.getByRole("heading", { level: 1, name: TEXT.ledgerTitle })).toBeVisible();
+  // Landing mengikuti izin: maker mendarat di buku besar, checker (param_checker tanpa izin
+  // ledger) di `/app`. Jangan mengunci rute ledger di helper yang dipakai keduanya; T-079
+  // membuktikan landing maker di `ledger.spec.ts`.
+  await expect(page).toHaveURL(/\/app(\/|$)/);
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
   // Alur Fase 0 (parameter) tetap diuji di layarnya sendiri; pindah lewat rute nyata.
   await page.goto("/app");

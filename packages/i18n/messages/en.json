@@ -141,6 +141,7 @@
   "ledger_source_snapshot": "Matches snapshot",
   "ledger_computed": "Computed {time}",
   "ledger_caption": "Ledger account balances for {period}",
+  "ledger_table_help": "Balance table: Tab enters the table, arrow keys move between cells, Home/End jump to the row edges, Ctrl+Home/Ctrl+End jump to the first/last cell, and the next Tab leaves the table.",
   "teller_title": "Teller",
   "teller_intro": "Deposits, withdrawals, and account-to-account transfers for savings accounts.",
   "teller_account_heading": "Account",

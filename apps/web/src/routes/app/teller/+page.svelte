@@ -15,8 +15,8 @@
    * yang sedang dimuat (tidak ada pemilih cabang dan `SessionInfo` tidak membawa cabang), jadi panel
    * menunggu rekening termuat dan form transaksi ditutup selama sesi belum pasti (fail-closed).
    *
-   * TODO(T-105): `accountId` masih diisi UUID manual karena endpoint cari-nomor-rekening belum ada.
-   * Ganti input ini dengan pencarian nomor rekening begitu backend menyediakannya.
+   * Pencarian rekening lewat nomor sudah tersedia (T-105, D-126): input di layar ini dikirim ke
+   * endpoint `?accountNo=`, jadi tidak ada lagi pengisian UUID manual.
    */
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
