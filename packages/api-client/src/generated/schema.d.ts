@@ -994,6 +994,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/teller/vault": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Saldo vault kas satu cabang
+         * @description Mengembalikan saldo `teller.vault` cabang `branchId`. Bila baris vault belum ada, balasannya
+         *     **404** dengan `params.reason=vault_not_configured` — absennya konfigurasi adalah "tidak
+         *     ada", bukan saldo nol yang menyesatkan. Izin `teller.vault.read` harus dipegang di cabang
+         *     ini (`params.reason=branch_not_allowed` bila hanya di cabang lain).
+         *
+         *     **Tanpa jurnal GL**: saldo vault bukan cerminan akun buku besar (O-097).
+         *
+         *     **HUMAN-REVIEW-REQUIRED** (jalur kas teller, AGENTS.md §8).
+         */
+        get: operations["getTellerVault"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teller/vault/topups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Top-up kas vault cabang
+         * @description Menambah saldo `teller.vault` cabang `branchId` sebesar `amount` (injeksi kas operasional).
+         *     Vault **harus sudah ada** (seed/runbook T-093): baris hilang → 404 `vault_not_configured`,
+         *     bukan pembuatan baris diam-diam. Increment atomik satu baris per cabang; dua top-up
+         *     bersamaan dijumlahkan, bukan saling menimpa.
+         *
+         *     `amount` wajib desimal string > 0 (tanpa float). Tidak ada batas atas **bisnis**: limit kas
+         *     adalah kebijakan pemilik (O-099). Batas teknisnya adalah kapasitas `Money` (int64 unit 10⁻⁴).
+         *
+         *     `Idempotency-Key` wajib. Replay kunci+isi sama → 200 + `Idempotent-Replayed`; kunci sama isi
+         *     beda → 409. Izin `teller.vault.topup` harus dipegang di cabang ini
+         *     (`params.reason=branch_not_allowed` bila hanya di cabang lain).
+         *
+         *     **Tanpa jurnal GL.** Top-up menaikkan kas fisik tanpa akun buku besar lawan yang sah; ini
+         *     batas yang diakui (O-097, `docs/ACCEPTED-LIMITS.md`), bukan jurnal yang ditunda diam-diam.
+         *
+         *     **HUMAN-REVIEW-REQUIRED** (mutasi saldo vault kas, AGENTS.md §8).
+         */
+        post: operations["topUpTellerVault"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/teller/cash-transactions": {
         parameters: {
             query?: never;
@@ -1798,6 +1860,29 @@ export interface components {
             closedAt: string;
             /** @description Catatan sesi ("" bila tidak diisi). */
             note: string;
+        };
+        TellerVault: {
+            /** Format: uuid */
+            branchId: string;
+            /** @description Saldo kas fisik vault cabang, desimal string 4 desimal (tanpa float). */
+            balance: string;
+        };
+        TellerVaultTopUpRequest: {
+            /**
+             * Format: uuid
+             * @description Cabang yang vault-nya ditambah; izin `teller.vault.topup` harus dipegang di sini.
+             */
+            branchId: string;
+            /** @description Nominal top-up sebagai desimal string > 0 (tanpa float), mis. `"5000000.0000"`. */
+            amount: string;
+            /** @description Catatan opsional (batas teknis kolom 200 karakter). */
+            note?: string;
+        };
+        TellerVaultTopUp: {
+            /** Format: uuid */
+            branchId: string;
+            /** @description Saldo vault setelah top-up, desimal string 4 desimal (tanpa float). */
+            balanceAfter: string;
         };
     };
     responses: {
@@ -3443,6 +3528,84 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TellerSessionClose"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    getTellerVault: {
+        parameters: {
+            query: {
+                /** @description Cabang vault. */
+                branchId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saldo vault cabang */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TellerVault"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    topUpTellerVault: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Kunci idempotensi per pemanggil (D-098). Wajib pada endpoint pembuat objek: kirim ulang
+                 *     dengan kunci yang sama untuk mengulang permintaan tanpa membuat objek ganda. Replay
+                 *     dijawab 200 + header `Idempotent-Replayed: true`; kunci sama dengan isi berbeda → 409.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TellerVaultTopUpRequest"];
+            };
+        };
+        responses: {
+            /**
+             * @description Replay permintaan sebelumnya: `Idempotency-Key` sama dengan isi yang sama. Body adalah
+             *     respons asli yang tersimpan; vault tidak ditambah lagi.
+             */
+            200: {
+                headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TellerVaultTopUp"];
+                };
+            };
+            /** @description Vault cabang ditambah sebesar `amount` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TellerVaultTopUp"];
                 };
             };
             400: components["responses"]["Problem"];
