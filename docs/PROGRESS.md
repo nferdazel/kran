@@ -2369,8 +2369,32 @@ Batasan yang dibuka: O-097 (GL kas teller), O-098 (top-up vault = T-107), O-099 
 - **Test**: `apps/web/tests/e2e/ledger.spec.ts` (axe `/app/ledger` × 2 tema × 2 locale + keyboard)
   dan `zoom-125.spec.ts` dengan project Playwright `zoom-125` (viewport 1093×614 ≈ 1366×768 @125%,
   tanpa gulir mendatar + kolom kode sticky + tabel tetap bisa dijangkau keyboard).
-- **Bukti lokal** (tanpa e2e/DB): `svelte-check --fail-on-warnings` 0 error/0 warning; vitest
-  `packages/ui` 117 + `apps/web` 57 hijau; `playwright test --list` 43 test membuktikan berkas baru
-  ter-compile dan `zoom-125` hanya di project-nya; `./task i18n` hijau (329 key/locale); `pnpm build`
-  web hijau. **Verifikasi e2e (login + tabel berisi) menunggu run pusat** karena DB/API dev dipakai
-  agen lain.
+- **Bukti**: `svelte-check --fail-on-warnings` 0/0; vitest `packages/ui` 117 + `apps/web` 57 hijau;
+  `./task i18n` hijau; `pnpm build` web hijau. **E2E pusat dengan DB dev: 43 passed**, termasuk
+  axe `/app/ledger` 2 tema × 2 locale, keyboard-only, dan project `zoom-125`.
+- **Merge/deploy**: PR #6 → merge `5fe89da` (deploy menyusul bersama docs).
+
+## 23 Okt 2026 — RBAC hardening (audit independen, PR #4–#6)
+
+- **Audit**: 0 BLOCKER, 4 MAJOR, 7 MINOR. Gerbang authz server dan scoping cabang per objek sudah
+  benar; yang bocor adalah provisioning, siklus hidup pengguna, dan UI.
+- **PR #4** (merge `6aa7bd0`, **HUMAN-REVIEW-REQUIRED**): migrasi `platform/0028` menambah
+  `platform.role.scope` (`teller`=BRANCH, sisanya INSTITUTION); `create-user`/`assign-role`/
+  `revoke-role` menolak kombinasi role/cabang yang salah sebelum menulis; lima perintah `ctl`
+  lifecycle (assign/revoke/disable/enable/unlock) dengan satu transaksi + audit + cabut sesi;
+  guard admin terakhir untuk revoke **dan** disable; grant gagal setelah insert memicu rollback;
+  `teller` mendapat `platform.param.read` (read-only, untuk shortcut F4/F5/F9).
+- **PR #5** (merge `db8122d`): nav + command palette disaring `session.permissions`; `/app`
+  degradasi per izin (tidak lagi galat penuh saat 403); layar `/app/products` untuk approve/reject
+  DRAFT; login mendarat di halaman pertama yang boleh dibuka (admin → ledger, checker → products,
+  teller → teller); label role id+en.
+- **PR #6** (merge `5fe89da`): T-079 selesai (tabel keyboard `aria-activedescendant`, project
+  `zoom-125`, axe ledger, seed dev buku besar).
+- **Verifikasi produksi** (`db8122d`, `.deployed_rev`): `role.scope` terpasang
+  (`teller:BRANCH`, lain `INSTITUTION`); `teller.pilot` memegang 8 izin termasuk
+  `platform.param.read`; `checker.pilot` → `/app/products` (200), `teller.pilot` → `/app/teller`,
+  `admin` → `/app/ledger` lewat browser; axe `/app/products` dan `/app/teller` 0 serious/critical;
+  `ctl create-user --user-role=teller` tanpa `--branch` keluar 3 tanpa membuat baris pengguna.
+- **Gate**: CI PR #4/#5/#6 hijau (Nim, DB integrasi, Web, gitleaks); e2e lokal 43 passed.
+- **Sisa keputusan/pekerjaan**: O-102 (governance/SoD), O-103 (UI setup operator), O-104 (format
+  nomor rekening), T-115…T-118.
