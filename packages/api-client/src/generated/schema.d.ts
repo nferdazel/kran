@@ -1744,6 +1744,13 @@ export interface components {
             /** Format: uuid */
             sessionId: string;
             /**
+             * Format: date
+             * @description Tanggal bisnis sesi. `GET /sessions/current` mengembalikan sesi OPEN apa pun tanggalnya;
+             *     bila tanggalnya bukan tanggal bisnis hari ini, transaksi tunai ditolak
+             *     `session_business_date_mismatch` sampai sesi itu ditutup.
+             */
+            businessDate: string;
+            /**
              * Format: uuid
              * @description Pengguna teller pemilik sesi.
              */
@@ -1756,6 +1763,8 @@ export interface components {
             openingFloat: string;
             /** @description ISO-8601 UTC. */
             openedAt: string;
+            /** @description Catatan sesi ("" bila tidak diisi). */
+            note: string;
         };
         TellerSessionCloseRequest: {
             /** @description Kas fisik hasil hitung sebagai desimal string ≥ 0 (tanpa float). */
@@ -1766,6 +1775,8 @@ export interface components {
         TellerSessionClose: {
             /** Format: uuid */
             sessionId: string;
+            /** Format: date */
+            businessDate: string;
             /** @enum {string} */
             status: "CLOSED";
             /** @description Float awal laci, desimal string 4 desimal (tanpa float). */
@@ -1781,6 +1792,8 @@ export interface components {
             variance: string;
             /** @description ISO-8601 UTC. */
             closedAt: string;
+            /** @description Catatan sesi ("" bila tidak diisi). */
+            note: string;
         };
     };
     responses: {

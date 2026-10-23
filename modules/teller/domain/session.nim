@@ -87,7 +87,7 @@ proc validateSessionNote*(raw: string): string =
   s
 
 proc newOpenSession*(sessionId, branchId, tellerUserId: Id, businessDate: string,
-                     openingFloat: Money, openedBy: Id): TellerSession =
+                     openingFloat: Money, openedBy: Id, note = ""): TellerSession =
   ## Sesi baru berstatus `OPEN`; kolom penutup belum ada.
   if $branchId == "":
     raise newException(ValueError, "cabang sesi wajib diisi")
@@ -95,6 +95,7 @@ proc newOpenSession*(sessionId, branchId, tellerUserId: Id, businessDate: string
     raise newException(ValueError, "teller sesi wajib diisi")
   discard validateOpeningFloat(openingFloat)
   TellerSession(
+    note: validateSessionNote(note),
     sessionId: sessionId,
     branchId: branchId,
     tellerUserId: tellerUserId,

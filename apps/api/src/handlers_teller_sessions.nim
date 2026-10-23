@@ -49,21 +49,25 @@ proc sessionJson(s: TellerSession): JsonNode =
     "sessionId": $s.sessionId,
     "tellerId": $s.tellerUserId,
     "branchId": $s.branchId,
+    "businessDate": s.businessDate,
     "status": $s.status,
     "openingFloat": s.openingFloat.toDecimalString,
     "openedAt": s.openedAt,
+    "note": s.note,
   }
 
 proc closedSessionJson(s: TellerSession): JsonNode =
   ## Ringkasan tutup: kolom penutup wajib ada (ditegakkan CHECK tabel); `none` = data rusak.
   %*{
     "sessionId": $s.sessionId,
+    "businessDate": s.businessDate,
     "status": $s.status,
     "openingFloat": s.openingFloat.toDecimalString,
     "countedCash": s.countedCash.get(zero()).toDecimalString,
     "expectedCash": s.expectedCash.get(zero()).toDecimalString,
     "variance": s.variance.get(zero()).toDecimalString,
     "closedAt": s.closedAt,
+    "note": s.note,
   }
 
 proc handleOpenTellerSession*(app: AppContext, req: Request) {.gcsafe.} =
@@ -148,7 +152,7 @@ proc handleOpenTellerSession*(app: AppContext, req: Request) {.gcsafe.} =
               raise newException(ValueError, problem)
 
             let session = newOpenSession(newId(app.clock), branchId.value(), teller, businessDate,
-              openingFloat, teller)
+              openingFloat, teller, note)
             if not insertOpenSession(db, session):
               # Balapan dua buka: sesi sudah ada; transaksi dibatalkan sehingga debit vault batal.
               status = 409
@@ -273,16 +277,16 @@ proc handleCloseTellerSession*(app: AppContext, req: Request) {.gcsafe.} =
                 " tidak dipegang di cabang sesi ini"
               raise newException(ValueError, problem)
 
-            if session.status != tssOpen:
-              status = 409
-              reason = "session_not_open"
-              problem = "sesi kas sudah ditutup"
-              raise newException(ValueError, problem)
-
             if $session.tellerUserId != principal.user.userId:
               status = 409
               reason = "session_not_owned"
               problem = "sesi kas ini bukan milik pemanggil"
+              raise newException(ValueError, problem)
+
+            if session.status != tssOpen:
+              status = 409
+              reason = "session_not_open"
+              problem = "sesi kas sudah ditutup"
               raise newException(ValueError, problem)
 
             let totals = movementTotalsOf(db, session.sessionId)
