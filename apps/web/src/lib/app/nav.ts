@@ -51,6 +51,11 @@ export const appNavLinks: readonly NavLink[] = [
     permissions: ["teller.transaction.post"],
   },
   {
+    href: "/app/accounts/open",
+    label: (locale) => m.common_nav_accounts({}, { locale }),
+    permissions: ["deposit.account.manage"],
+  },
+  {
     href: "/app",
     label: (locale) => m.common_nav_params({}, { locale }),
     permissions: ["platform.param.read"],
