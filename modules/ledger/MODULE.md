@@ -191,3 +191,13 @@ pernah dibangun akan menjawab `source=snapshot` dengan daftar kosong, karena tid
 bisa dibantah. Dampak finansial nol; bila `source` dipakai sebagai bukti audit, periksa juga
 keberadaan baris `balance_snapshot` pada `ends_on`.
 
+## Simpanan koperasi: akun ekuitas provisoris (T-111)
+
+- `ledger/0014` menambah akun `301.1` (SIMPANAN POKOK ANGGOTA) dan `301.2` (SIMPANAN WAJIB
+  ANGGOTA) plus rule `DepositPosted` berkondisi `{"savingsKind":"POKOK"}` / `"WAJIB"` ke akun itu.
+  Rule generik `101/201` tetap fallback untuk NULL/SUKARELA/TABUNGAN.
+- Nomor akun dan klasifikasi ekuitas vs liabilitas **belum final**:
+  `NEEDS-COMPLIANCE-REVIEW` + O-100. Jangan memakai akun ini sebagai dasar laporan final sebelum
+  accounting owner menetapkan COA.
+- Rule berkondisi hanya terpilih bila pemanggil mengirim `savingsKind` di payload
+  (`postJournalSync`); payload kosong akan diam-diam memakai rule generik.

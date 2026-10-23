@@ -150,6 +150,8 @@
   "teller_account_status_active": "Active",
   "teller_account_status_closed": "Closed",
   "teller_account_kind_label": "Savings type",
+  "teller_print_slip": "Print slip",
+  "teller_print_statement": "Print statement",
   "teller_account_balance_label": "Balance when loaded (IDR)",
   "teller_account_balance_at": "loaded {time}",
   "teller_savings_kind_pokok": "Principal savings",

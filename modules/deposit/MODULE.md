@@ -116,3 +116,15 @@ Tidak ada parameter baru di seed/packs untuk T-088b:
 - Satu cabang per rekening; pindah cabang belum dimodelkan.
 - Batas nominal/limit transaksi tunai belum ada (menunggu parameter T-093) —
   **NEEDS-COMPLIANCE-REVIEW**.
+
+## Jenis simpanan & cetak (T-111, T-094)
+
+- `Account.savingsKind` dibaca lewat join `product.product` (bukan kolom rekening); `""` = belum
+  terklasifikasi. Teller memberi label jujur: NULL bukan "Pokok".
+- Setoran POKOK/WAJIB diposting ke ekuitas `301.1`/`301.2` lewat rule `DepositPosted` berkondisi
+  `savingsKind`. Tarik dan PB yang menyentuh POKOK/WAJIB diblokir 409 `savings_kind_locked`; PB
+  beda jenis (keduanya terisi) 409 `transfer_kind_mismatch`; NULL ↔ SUKARELA/TABUNGAN tetap boleh
+  (keduanya liabilitas `201`).
+- Cetak: `GET /teller/cash-transactions/{id}` (slip, cetak ulang) dan `GET /deposit/accounts/{id}/
+  statement` (subledger A4, batas 500 baris, tanpa saldo berjalan). Halaman print di web memakai
+  browser print; tidak ada PDF server (D-127, `ACCEPTED-LIMITS` §4b).

@@ -103,3 +103,14 @@ dan semantiknya tidak boleh dikarang. Baris lama di DB ditandai `deprecated` ole
   `4930514` harus reset schema `product` + hapus riwayat `product/%` sebelum `dbtools migrate`.
   Jalur DB kosong belum dikunci test otomatis (**O-088**).
 - Belum ada UI; pengelolaan lewat API.
+
+## Klasifikasi simpanan koperasi (T-111)
+
+- `product.savings_kind` (`POKOK|WAJIB|SUKARELA|TABUNGAN`, nullable) hanya boleh diisi untuk
+  `product_type = 'SAVINGS'` dan **immutable** setelah dibuat (trigger `product/0007`, terpisah
+  dari guard lama). `NULL` = belum terklasifikasi; jangan diisi default enum.
+- Jenis adalah sifat produk, bukan rekening: rekening mewarisi lewat produk yang di-pin, tanpa
+  kolom baru di `deposit.account`. Konsekuensi: reklasifikasi = produk baru (atau migrasi data
+  eksplisit), bukan UPDATE.
+- Aturan iuran (nominal, kadens, auto-debit, refund) **bukan** milik produk di Fase 2; itu Fase 5
+  dan butuh keputusan AD/ART. Lihat `ACCEPTED-LIMITS.md` §4a, O-100.

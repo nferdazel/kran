@@ -903,6 +903,11 @@
         {#if loadedAtText !== ""}
           <p class="kran-muted">{m.teller_account_balance_at({ time: loadedAtText })}</p>
         {/if}
+        <p>
+          <a class="kran-button" href={`/app/print/statement/${loaded.accountId}`}>
+            {m.teller_print_statement()}
+          </a>
+        </p>
       {:else}
         <p>{m.teller_account_none()}</p>
         <p class="kran-muted">{m.teller_account_none_hint()}</p>
@@ -1364,6 +1369,11 @@
                 <dt>{m.teller_business_date()}</dt>
                 <dd>{formatDate(transaction.businessDate)}</dd>
               </dl>
+              <p>
+                <a class="kran-button" href={`/app/print/slip/${transaction.transactionId}`}>
+                  {m.teller_print_slip()}
+                </a>
+              </p>
             {:else}
               {@const transfer = done.transfer}
               <dl class="teller-facts">

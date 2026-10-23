@@ -150,6 +150,8 @@
   "teller_account_status_active": "Aktif",
   "teller_account_status_closed": "Ditutup",
   "teller_account_kind_label": "Jenis simpanan",
+  "teller_print_slip": "Cetak slip",
+  "teller_print_statement": "Cetak statement",
   "teller_account_balance_label": "Saldo saat dimuat (IDR)",
   "teller_account_balance_at": "dimuat {time}",
   "teller_savings_kind_pokok": "Simpanan pokok",
