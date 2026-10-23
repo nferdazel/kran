@@ -7,8 +7,9 @@
  *  - `POST /teller/cash-transactions` dan `POST /teller/transfers` mewajibkan `Idempotency-Key`.
  *  - Konflik domain 409 selalu datang sebagai `i18nKey: "error_conflict"`; sebabnya ada di
  *    `params.reason` (`insufficient_funds`, `period_closed`, `account_not_active`,
- *    `branch_not_allowed`, `no_open_session`, `session_business_date_mismatch`). Karena itu
- *    pemetaannya per `reason`, bukan lewat `i18nKey` (pola `paramProblemMessage` di `errors.ts`).
+ *    `branch_not_allowed`, `no_open_session`, `session_business_date_mismatch`,
+ *    `savings_kind_locked`, `transfer_kind_mismatch`). Karena itu pemetaannya per `reason`, bukan
+ *    lewat `i18nKey` (pola `paramProblemMessage` di `errors.ts`).
  *  - Endpoint sesi kas (T-093) tersedia, tetapi panel buka/tutup belum ada di layar ini (T-108).
  *  - Rekening dimuat lewat nomor (`GET /deposit/accounts?accountNo=`, T-105); `accountId` hanya
  *    dipakai setelah rekening ditemukan (untuk transaksi) dan untuk rekening tujuan PB.
@@ -25,11 +26,29 @@ import { problemMessage } from "#lib/app/errors.js";
 export type DepositAccount = components["schemas"]["DepositAccount"];
 export type CashTransaction = components["schemas"]["CashTransaction"];
 export type Transfer = components["schemas"]["Transfer"];
+export type SavingsKind = components["schemas"]["SavingsKind"];
 
 /** Setor (masuk kas) atau tarik (keluar kas). */
 export type CashDirection = "DEPOSIT" | "WITHDRAWAL";
 /** Jenis pekerjaan di layar teller; `TRANSFER` = pemindahbukuan antar rekening. */
 export type TellerMode = CashDirection | "TRANSFER";
+
+const SAVINGS_KIND_LABELS: Record<string, () => string> = {
+  POKOK: () => m.teller_savings_kind_pokok(),
+  WAJIB: () => m.teller_savings_kind_wajib(),
+  SUKARELA: () => m.teller_savings_kind_sukarela(),
+  TABUNGAN: () => m.teller_savings_kind_tabungan(),
+};
+
+/**
+ * Label jenis simpanan rekening. `null`/`undefined` berarti **belum terklasifikasi** dan memakai
+ * label generik "Simpanan" — bukan tebakan jenis dari kode/nama (T-111).
+ */
+export function savingsKindLabel(kind: SavingsKind | undefined): string {
+  if (kind === null || kind === undefined) return m.teller_savings_kind_unclassified();
+  const label = SAVINGS_KIND_LABELS[kind];
+  return label === undefined ? m.teller_savings_kind_unclassified() : label();
+}
 
 /** Batas kolom `narration` di kontrak. Batas teknis kolom, bukan aturan bisnis. */
 export const NARRATION_MAX_LENGTH = 200;
@@ -239,6 +258,8 @@ const PROBLEM_REASON_MESSAGES: Record<string, () => string> = {
   branch_not_allowed: () => m.teller_error_branch_not_allowed(),
   no_open_session: () => m.teller_error_no_open_session(),
   session_business_date_mismatch: () => m.teller_error_session_business_date_mismatch(),
+  savings_kind_locked: () => m.teller_error_savings_kind_locked(),
+  transfer_kind_mismatch: () => m.teller_error_transfer_kind_mismatch(),
 };
 
 /**

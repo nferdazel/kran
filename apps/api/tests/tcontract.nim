@@ -69,3 +69,23 @@ suite "empat endpoint pembuat objek memakai idempotensi":
       check op["responses"].hasKey("200")
       check op["responses"]["200"]["headers"].hasKey("Idempotent-Replayed")
       check not op["responses"]["201"].hasKey("headers")
+
+suite "klasifikasi simpanan dideklarasikan kontrak (T-111)":
+  ## Kontrak harus memuat klasifikasi simpanan agar klien TS (dan validasi bentuk respons)
+  ## mengenalnya: `null` = belum terklasifikasi, dan produk/nerekening membawanya.
+  test "SavingsKind nullable dengan 4 jenis, dipakai produk & rekening":
+    let doc = loadContractFile(ContractPath).doc
+    let savings = doc["components"]["schemas"]["SavingsKind"]
+    check savings != nil
+    var nullable = false
+    for tipe in savings["type"]:
+      if tipe.getStr("") == "null":
+        nullable = true
+    check nullable
+    var kinds: seq[string]
+    for item in savings["enum"]:
+      if item.kind == JString:
+        kinds.add item.getStr()
+    check kinds == @["POKOK", "WAJIB", "SUKARELA", "TABUNGAN"]
+    for schemaName in ["Product", "ProductSummary", "ProductCreate", "DepositAccount"]:
+      check doc["components"]["schemas"][schemaName]["properties"].hasKey("savingsKind")

@@ -17,6 +17,7 @@ import {
   cashIdentity,
   isAccountId,
   previewAmount,
+  savingsKindLabel,
   shortcutModeForKey,
   tellerProblemMessage,
   transferIdentity,
@@ -233,6 +234,12 @@ describe("tellerProblemMessage: params.reason", () => {
     expect(tellerProblemMessage(problem(409, "no_open_session"))).toBe(
       m.teller_error_no_open_session(),
     );
+    expect(tellerProblemMessage(problem(409, "savings_kind_locked"))).toBe(
+      m.teller_error_savings_kind_locked(),
+    );
+    expect(tellerProblemMessage(problem(409, "transfer_kind_mismatch"))).toBe(
+      m.teller_error_transfer_kind_mismatch(),
+    );
   });
 
   it("404 selalu jadi pesan rekening tidak ditemukan", () => {
@@ -250,6 +257,20 @@ describe("tellerProblemMessage: params.reason", () => {
     expect(tellerProblemMessage(problem(500, undefined, "error_internal_error"))).toBe(
       m.error_internal_error(),
     );
+  });
+});
+
+describe("savingsKindLabel", () => {
+  it("memetakan tiap jenis ke label katalog", () => {
+    expect(savingsKindLabel("POKOK")).toBe(m.teller_savings_kind_pokok());
+    expect(savingsKindLabel("WAJIB")).toBe(m.teller_savings_kind_wajib());
+    expect(savingsKindLabel("SUKARELA")).toBe(m.teller_savings_kind_sukarela());
+    expect(savingsKindLabel("TABUNGAN")).toBe(m.teller_savings_kind_tabungan());
+  });
+
+  it("null/undefined = belum terklasifikasi, label generik (bukan tebakan jenis)", () => {
+    expect(savingsKindLabel(null)).toBe(m.teller_savings_kind_unclassified());
+    expect(savingsKindLabel(undefined)).toBe(m.teller_savings_kind_unclassified());
   });
 });
 

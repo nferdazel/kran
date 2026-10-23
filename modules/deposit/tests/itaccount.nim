@@ -132,3 +132,27 @@ suite "deposit: repo rekening":
     for a in listed:
       check a.partyId == fx.party.partyId
     check accountsByParty(db, Id("bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb")).len == 0
+
+suite "deposit: klasifikasi simpanan dari produk (T-111)":
+  test "savingsKind rekening dari join produk; NULL = kosong":
+    var prod = Product(productId: newId(testClock), code: "SAV-POKOK",
+      name: "Simpanan Pokok", productType: ptSavings, savingsKind: some(skPokok))
+    let v = ProductVersion(versionId: newId(testClock), productId: prod.productId,
+      versionNo: 1, effectiveFrom: "2020-01-01")
+    discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+      insertProduct(d, prod, actor)
+      insertVersion(d, v, maker)
+      insertBinding(d, v.versionId, ParamBinding(paramKey: "product.savings.min_balance",
+        value: %"0.0000"))
+      1)
+    doAssert approveVersion(db, v.versionId, actor), "versi produk pokok gagal di-approve"
+
+    let kinded = newAccount(newId(testClock), fx.party.partyId, prod.productId, v.versionId,
+      prod.code, branch, openedOn, nextAccountSeq(db))
+    save(kinded)
+    check accountById(db, kinded.accountId).get().savingsKind == "POKOK"
+
+    # Rekening pada produk tanpa klasifikasi → kosong (bukan enum pertama).
+    let plain = accountRow(nextAccountSeq(db))
+    save(plain)
+    check accountById(db, plain.accountId).get().savingsKind == ""

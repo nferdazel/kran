@@ -147,11 +147,14 @@ suite "jalur baca & pengajuan definisi deprecated (T-098)":
               'param.product.savings.grace_period_days', ARRAY[]::text[],
               'NORMAL', true, '0.1.0', true)
       ON CONFLICT (key) DO UPDATE SET deprecated = true""", graceKey)
+    # ACTIVE wajib punya checker, dan checker tidak boleh sama dengan maker.
     db.exec(sql"""
       INSERT INTO platform.param_value
-        (param_value_id, key, scope_type, scope_id, value, effective_from, status, maker, reason)
-      VALUES (gen_random_uuid(), ?, 'GLOBAL', NULL, '7'::jsonb, '1970-01-01', 'ACTIVE', ?, 'uji')
-      ON CONFLICT DO NOTHING""", graceKey, $newId(sysClock))
+        (param_value_id, key, scope_type, scope_id, value, effective_from, status, maker, checker,
+         reason)
+      VALUES (gen_random_uuid(), ?, 'GLOBAL', NULL, '7'::jsonb, '1970-01-01', 'ACTIVE', ?, ?,
+              'uji')
+      ON CONFLICT DO NOTHING""", graceKey, $newId(sysClock), $newId(sysClock))
 
     discard service.invalidateAll()
     let sumber = dbParamSource(db)

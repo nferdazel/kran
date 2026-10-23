@@ -52,6 +52,8 @@ suite "deposit: bentuk rekening":
     check a.balance == zero()
     check a.productCode == "SAV01"
     check a.accountNo == "0000000001"
+    # Klasifikasi simpanan datang dari join produk, bukan dibuat di sini (T-111): default kosong.
+    check a.savingsKind == ""
 
   test "field wajib dan tanggal divalidasi":
     expect ValueError:

@@ -107,3 +107,27 @@ suite "posting: spesifisitas produk & nominal":
   test "nominal negatif ditolak domain":
     expect ValueError:
       discard buildLines(rule(), money(-100), branch)
+
+suite "posting: klasifikasi simpanan (T-111)":
+  ## Rule berkondisi `savingsKind` (POKOK/WAJIB) harus menang atas rule generik `DepositPosted`
+  ## hanya saat payload memuat klasifikasi itu; tanpa `savingsKind` rule generik tetap terpilih
+  ## (fallback utama untuk rekening tanpa klasifikasi/SUKARELA/TABUNGAN).
+
+  test "rule berkondisi savingsKind menang atas rule generik":
+    var generic = rule(priority = 100)
+    generic.ruleId = Id("33333333-3333-7333-8333-333333333333")
+    var pokok = rule(conditions = """{"savingsKind": "POKOK"}""", priority = 100)
+    pokok.ruleId = Id("44444444-4444-7444-8444-444444444444")
+    let chosen = selectRule(@[generic, pokok], "DepositPosted",
+      parseJson("""{"product": "SAV", "accountType": "SAVINGS", "savingsKind": "POKOK"}"""))
+    check chosen.ruleId == pokok.ruleId
+    check conditionCount(chosen.conditions) == 1
+
+  test "payload tanpa savingsKind tidak memilih rule berkondisi":
+    var generic = rule(priority = 100)
+    generic.ruleId = Id("33333333-3333-7333-8333-333333333333")
+    var pokok = rule(conditions = """{"savingsKind": "POKOK"}""", priority = 100)
+    pokok.ruleId = Id("44444444-4444-7444-8444-444444444444")
+    let chosen = selectRule(@[generic, pokok], "DepositPosted",
+      parseJson("""{"product": "SAV", "accountType": "SAVINGS"}"""))
+    check chosen.ruleId == generic.ruleId

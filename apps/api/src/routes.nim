@@ -195,14 +195,18 @@ proc depositRoutes*(): seq[RouteSpec] =
               operationId: "openDepositAccount", handler: handleOpenDepositAccount),
     RouteSpec(httpMethod: hmGet, path: "/api/v1/deposit/accounts/{accountId}",
               operationId: "getDepositAccount", handler: handleGetDepositAccount),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/deposit/accounts/{accountId}/statement",
+              operationId: "getAccountStatement", handler: handleGetAccountStatement),
   ]
 
 proc tellerRoutes*(): seq[RouteSpec] =
-  ## Teller: transaksi tunai (T-088b) + pemindahbukuan (T-088c). Objek ber-cabang → gerbang
-  ## `authorizedAtBranch` di handler (PB: di kedua cabang rekening).
+  ## Teller: transaksi tunai (T-088b) + pemindahbukuan (T-088c) + slip cetak ulang (T-094a).
+  ## Objek ber-cabang → gerbang `authorizedAtBranch` di handler (PB: di kedua cabang rekening).
   @[
     RouteSpec(httpMethod: hmPost, path: "/api/v1/teller/cash-transactions",
               operationId: "postCashTransaction", handler: handleCashTransaction),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/teller/cash-transactions/{transactionId}",
+              operationId: "getCashTransactionSlip", handler: handleGetCashTransactionSlip),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/teller/transfers",
               operationId: "postTransfer", handler: handleTransfer),
   ]

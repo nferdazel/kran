@@ -9,6 +9,7 @@ import ../domain/product
 
 const
   productColumns = "product_id, code, name, product_type, " &
+    "coalesce(savings_kind, ''), " &
     "to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')"
   versionColumns = "version_id, product_id, version_no, " &
     "to_char(effective_from, 'YYYY-MM-DD'), " &
@@ -19,7 +20,8 @@ const
 
 proc productOf(row: Row): Product =
   Product(productId: Id(row[0]), code: row[1], name: row[2],
-    productType: parseProductType(row[3]), createdAt: row[4])
+    productType: parseProductType(row[3]), savingsKind: savingsKindFromDb(row[4]),
+    createdAt: row[5])
 
 proc versionOf(row: Row): ProductVersion =
   ProductVersion(versionId: Id(row[0]), productId: Id(row[1]),
@@ -29,9 +31,11 @@ proc versionOf(row: Row): ProductVersion =
 
 proc insertProduct*(db: DbConn, p: Product, actor: Id) =
   db.exec(sql"""
-    INSERT INTO product.product (product_id, code, name, product_type, created_by, updated_by)
-    VALUES (?, ?, ?, ?, ?, ?)""",
-    $p.productId, p.code, p.name, $p.productType, $actor, $actor)
+    INSERT INTO product.product
+      (product_id, code, name, product_type, savings_kind, created_by, updated_by)
+    VALUES (?, ?, ?, ?, NULLIF(?, ''), ?, ?)""",
+    $p.productId, p.code, p.name, $p.productType, savingsKindText(p.savingsKind),
+    $actor, $actor)
 
 proc productByCode*(db: DbConn, code: string): Option[Product] =
   let rows = db.getAllRows(

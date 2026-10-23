@@ -8,7 +8,7 @@
 ## party + produk `SAV-DEP` ber-versi ACTIVE, dan grant `platform_admin` untuk `dev.maker`. Data dev
 ## murni sintetis.
 
-import std/[httpclient, json, net, os, strutils, times, unittest]
+import std/[httpclient, json, net, options, os, strutils, times, unittest]
 
 import mummy
 import db_connector/db_postgres
@@ -40,6 +40,7 @@ const
   BranchId = "11111111-1111-7111-8111-111111111111"
   OtherBranchId = "22222222-2222-7222-8222-222222222222"
   ProductCode = "SAV-DEP"
+  KindProductCode = "SAV-POKOK"
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
@@ -105,6 +106,19 @@ block:
       value: %"0.0000"))
     1)
   doAssert approveVersion(db, ver.versionId, approver), "versi produk uji gagal di-approve"
+
+  # Produk berklasifikasi POKOK (T-111): rekeningnya harus membawa `savingsKind` hasil join produk.
+  let prodPokok = Product(productId: newId(fixtureClock), code: KindProductCode,
+    name: "Simpanan Pokok", productType: ptSavings, savingsKind: some(skPokok))
+  let verPokok = ProductVersion(versionId: newId(fixtureClock), productId: prodPokok.productId,
+    versionNo: 1, effectiveFrom: "2020-01-01")
+  discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+    insertProduct(d, prodPokok, actor)
+    insertVersion(d, verPokok, actor)
+    insertBinding(d, verPokok.versionId, ParamBinding(paramKey: "product.savings.min_balance",
+      value: %"0.0000"))
+    1)
+  doAssert approveVersion(db, verPokok.versionId, approver), "versi produk pokok gagal di-approve"
   dbPool.release(db)
 
 var app = AppContext(version: "itapi-deposit-0.0.0", role: "api", startedAt: epochTime(),
@@ -332,6 +346,17 @@ suite "deposit: buka & baca rekening":
     checkJson(AccountItemPath, "GET", "200", read.body)
     check read.body == created.body
 
+  test "rekening membawa savingsKind produk; tanpa klasifikasi → null (T-111)":
+    let token = tokenOf(login(MakerUser))
+    let pokok = postJson(AccountsPath, accountBody(productCode = KindProductCode), token)
+    check pokok.code == 201
+    checkJson(AccountsPath, "POST", "201", pokok.body)
+    check pokok.body["savingsKind"].getStr() == "POKOK"
+
+    let plain = postJson(AccountsPath, accountBody(), token)
+    check plain.code == 201
+    check plain.body["savingsKind"].kind == JNull
+
   test "daftar rekening per party + validasi partyId":
     let token = tokenOf(login(MakerUser))
     let listed = getJson(AccountsPath & "?partyId=" & PartyId, token)
@@ -455,7 +480,7 @@ suite "deposit: data server rusak → 500 (T-099)":
     let accountsBefore = dbCount(sql"SELECT count(*)::text FROM deposit.account")
     let seqBefore = dbText(sql"SELECT last_value::text FROM deposit.account_seq")
     discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
-      exec(d, sql"SELECT setval('deposit.account_seq', 9999999999)")
+      discard d.getValue(sql"SELECT setval('deposit.account_seq', 9999999999)")
       1)
     try:
       let reply = postJson(AccountsPath, accountBody(), token, "overflow-seq-" & $epochTime())
@@ -465,7 +490,7 @@ suite "deposit: data server rusak → 500 (T-099)":
       check dbCount(sql"SELECT count(*)::text FROM deposit.account") == accountsBefore
     finally:
       discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
-        exec(d, sql"SELECT setval('deposit.account_seq', ?::bigint)", seqBefore)
+        discard d.getValue(sql"SELECT setval('deposit.account_seq', ?::bigint)", seqBefore)
         1)
 
 suite "deposit: batas daftar rekening (T-100)":
