@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 #
-# KRAN — single entry point task runner (AGENTS.md §5).
+# KRAN — single entry point task runner (AGENTS.md §2).
 #
 #   ./task check   format + lint + archcheck + lint-nomagic + paramgen --check + i18n check
 #   ./task check-fast  like check without full `nim check` (dev iteration loop, D-077)

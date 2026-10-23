@@ -3000,3 +3000,8 @@ Runbook vault membutuhkan `branch_id` sebelum sesi kas bisa dibuka.
 
 **Konsekuensi.** Neraca tidak mencerminkan kas pilot (O-097). Nomor/identitas cabang ini bukan
 fakta organisasi; jangan dipakai sebagai kode cabang final.
+
+**Tindak lanjut (23 Okt 2026, provisioning pilot).** Dua belas party demo bawaan masih memakai
+UUID cabang demo `00000000-0000-4000-8000-000000000001`. Sebelum rekening pertama dibuka, party
+dipindahkan ke UUID pilot di atas supaya `POST /deposit/accounts` tidak ditolak `branch_mismatch`
+dan sesi kas menemukan vault yang sama. Keputusan UUID tidak berubah.
