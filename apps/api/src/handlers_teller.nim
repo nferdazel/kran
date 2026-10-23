@@ -1,4 +1,4 @@
-## Handler REST transaksi tunai teller (T-088b, spec §9.2/§9.3/§13).
+## Handler REST transaksi teller (T-088b tunai, T-088c pemindahbukuan; spec §9.2/§9.3/§13).
 ##
 ## Composition root: validasi lintas-modul (rekening, binding versi produk, periode), posting jurnal
 ## **sinkron**, dan audit ditulis di sini dalam **satu** `withDbTx`. Modul `deposit`/`ledger` tetap
@@ -22,8 +22,10 @@ import platform/domain/[audit, event, idempotency, scope]
 import platform/infrastructure/[audit_repo, auth_service, outbox_repo]
 import deposit/domain/account
 import deposit/domain/transaction
+import deposit/domain/transfer
 import deposit/infrastructure/account_repo
 import deposit/infrastructure/transaction_repo
+import deposit/infrastructure/transfer_repo
 import ledger/infrastructure/journal_repo
 import product/domain/product
 import product/infrastructure/product_repo
@@ -43,6 +45,7 @@ type
 const
   permissionTellerTransactionPost* = "teller.transaction.post"
   operationIdCashTransaction = "teller.cash_transaction.post"
+  operationIdTransfer = "teller.transfer.post"
   ## Binding saldo minimum milik versi produk (spec §10: nilai dari parameter, bukan kode).
   minBalanceParamKey = "product.savings.min_balance"
 
@@ -286,6 +289,257 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
     if status == 0:
       status = 500
     problem = "transaksi tunai gagal disimpan"
+
+  if outcome.decision != idemProceed:
+    discard req.respondIdempotent(outcome)
+    return
+
+  case status
+  of 201: req.respondJson(201, payload)
+  of 400: req.respondProblem(pkBadRequest, "Bad Request", problem)
+  of 403: req.respondProblem(newProblem(pkForbidden, "Forbidden", problem,
+      traceId = traceIdFrom(req), params = @[("reason", "branch_not_allowed")]))
+  of 404: req.respondProblem(pkNotFound, "Not Found", problem)
+  of 409:
+    if reason.len > 0:
+      req.respondConflict(reason, problem)
+    else:
+      req.respondProblem(pkConflict, "Conflict", problem)
+  else: req.respondProblem(pkInternal, "Internal Server Error", problem)
+
+proc transferJson(t: Transfer, balances: TransferBalances): JsonNode =
+  %*{
+    "transferId": $t.transferId,
+    "journalId": $t.journalId,
+    "sourceAccountId": $t.sourceAccountId,
+    "destinationAccountId": $t.destinationAccountId,
+    "amount": t.amount.toDecimalString,
+    "sourceBalanceAfter": balances.sourceBalanceAfter.toDecimalString,
+    "destinationBalanceAfter": balances.destinationBalanceAfter.toDecimalString,
+    "businessDate": t.businessDate,
+  }
+
+proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `POST /api/v1/teller/transfers` — pemindahbukuan antar dua rekening simpanan (T-088c).
+  ##
+  ## Satu transaksi DB: kurangi saldo sumber (bersyarat), tambah saldo tujuan, jurnal sinkron,
+  ## baris `deposit.transfer`, audit, event non-akuntansi. Izin `teller.transaction.post` harus
+  ## dipegang di **kedua** cabang rekening. Periode tertutup = 409 dengan rollback penuh.
+  let principalOpt = requirePrincipal(app, req)
+  if principalOpt.isNone:
+    return
+  let principal = principalOpt.get()
+  if not requirePermission(app, req, principal, permissionTellerTransactionPost):
+    return
+
+  let body = parseJsonBody(req)
+  if body.isNone or body.get().kind != JObject:
+    req.respondProblem(pkBadRequest, "Bad Request", "badan permintaan harus objek JSON")
+    return
+  let node = body.get()
+
+  let sourceParsed = parseId(node.jsonField("sourceAccountId"))
+  if sourceParsed.isErr:
+    req.respondProblem(pkBadRequest, "Bad Request", "sourceAccountId harus UUID yang sah")
+    return
+  let destinationParsed = parseId(node.jsonField("destinationAccountId"))
+  if destinationParsed.isErr:
+    req.respondProblem(pkBadRequest, "Bad Request", "destinationAccountId harus UUID yang sah")
+    return
+  let sourceId = sourceParsed.value()
+  let destinationId = destinationParsed.value()
+
+  let amountParsed = moneyFromString(node.jsonField("amount"))
+  if amountParsed.isErr or amountParsed.value() <= zero():
+    req.respondProblem(pkBadRequest, "Bad Request", "amount harus nominal desimal positif")
+    return
+  let amount = amountParsed.value()
+
+  # Akun sama / nominal tidak positif = permintaan tidak sah (400), bukan konflik: tidak ada mutasi
+  # yang mungkin. Dicek sebelum menyentuh DB.
+  try:
+    validateTransfer(sourceId, destinationId, amount)
+  except ValueError as e:
+    req.respondProblem(pkBadRequest, "Bad Request", e.msg)
+    return
+
+  var narration = ""
+  try:
+    narration = validateNarration(node.jsonField("narration"))
+  except ValueError as e:
+    req.respondProblem(pkBadRequest, "Bad Request", e.msg)
+    return
+
+  if not requireIdempotencyKey(req):
+    req.respondProblem(pkBadRequest, "Bad Request", "Idempotency-Key wajib diisi")
+    return
+
+  # Kunci jurnal (lapis kedua) dihitung sebelum transaksi supaya kunci terlalu panjang = 400 bersih.
+  var journalKey = ""
+  try:
+    journalKey = tellerJournalKey(principal.user.userId, req.headers[idempotencyHeader])
+  except ValueError as e:
+    req.respondProblem(pkBadRequest, "Bad Request", e.msg)
+    return
+
+  let asOf = businessDateIso(app.clock)
+
+  var status = 0
+  var problem = ""
+  var reason = ""
+  var payload = newJObject()
+  var outcome = IdempotentOutcome(decision: idemProceed)
+  try:
+    outcome = withDbTx(app.pool, proc(db: DbConn): IdempotentOutcome {.gcsafe.} =
+      dbCalls:
+        withIdempotency(db, principal, req, operationIdTransfer, $node, asOf,
+        app.clock.now(),
+        proc(): tuple[status: int, payload: JsonNode] {.gcsafe.} =
+          dbCalls:
+            var sourceOpt, destinationOpt: Option[Account]
+            try:
+              sourceOpt = accountById(db, sourceId)
+              destinationOpt = accountById(db, destinationId)
+            except ValueError:
+              status = 500
+              problem = "data rekening tersimpan tidak bisa dibaca"
+              raise newException(DepositConfigError, problem)
+            if sourceOpt.isNone or destinationOpt.isNone:
+              status = 404
+              problem = "rekening tidak ditemukan"
+              raise newException(ValueError, problem)
+            let source = sourceOpt.get()
+            let destination = destinationOpt.get()
+
+            # Izin harus dipegang di **kedua** cabang rekening yang disentuh.
+            if not authorizedAtBranch(db, principal, $source.branchId,
+                permissionTellerTransactionPost):
+              status = 403
+              problem = "izin " & permissionTellerTransactionPost &
+                " tidak dipegang di cabang rekening sumber"
+              raise newException(ValueError, problem)
+            if not authorizedAtBranch(db, principal, $destination.branchId,
+                permissionTellerTransactionPost):
+              status = 403
+              problem = "izin " & permissionTellerTransactionPost &
+                " tidak dipegang di cabang rekening tujuan"
+              raise newException(ValueError, problem)
+
+            if source.status != asActive or destination.status != asActive:
+              status = 409
+              reason = "account_not_active"
+              problem = "rekening sumber atau tujuan tidak berstatus ACTIVE"
+              raise newException(ValueError, problem)
+
+            let businessDate = businessDateFor(db, institutionScope(), asOf)
+            if not periodOpenFor(db, businessDate):
+              status = 409
+              reason = "period_closed"
+              problem = "periode tanggal bisnis sudah ditutup"
+              raise newException(ValueError, problem)
+
+            # Saldo minimum dari versi produk **sumber** (rekening yang didebit).
+            var minBalance: Money
+            try:
+              minBalance = minBalanceFor(db, source.productVersionId)
+            except ValueError as e:
+              status = 500
+              problem = e.msg
+              raise newException(DepositConfigError, problem)
+
+            let transferId = newId(app.clock)
+            let actor = parseId(principal.user.userId).value()
+
+            var balances: Option[TransferBalances]
+            try:
+              balances = applyTransferBalances(db, source.accountId, destination.accountId,
+                amount, minBalance)
+            except ValueError:
+              status = 500
+              problem = "data saldo rekening tidak bisa dibaca"
+              raise newException(DepositConfigError, problem)
+            if balances.isNone:
+              status = 409
+              reason = "insufficient_funds"
+              problem = "saldo rekening sumber tidak cukup untuk PB ini"
+              raise newException(ValueError, problem)
+
+            # Posting jurnal sinkron. Kegagalan periode dari trigger `ledger` (balapan tutup
+            # periode, T-080) dipetakan ke 409; rollback membatalkan mutasi kedua saldo.
+            var journalId: Id
+            try:
+              journalId = postJournalSync(db, app.clock, transferSourceEvent, amount,
+                source.branchId, transferId, businessDate, journalKey, actor)
+            except DbError as e:
+              if "periode OPEN" in e.msg:
+                status = 409
+                reason = "period_closed"
+                problem = "periode tanggal bisnis sudah ditutup"
+              else:
+                status = 500
+                problem = "jurnal pemindahbukuan gagal disimpan"
+              raise newException(ValueError, problem)
+            except ValueError as e:
+              status = 500
+              problem = "posting rule pemindahbukuan tidak tersedia: " & e.msg
+              raise newException(ValueError, problem)
+
+            let transfer = Transfer(
+              transferId: transferId,
+              sourceAccountId: source.accountId,
+              destinationAccountId: destination.accountId,
+              amount: amount,
+              businessDate: businessDate,
+              narration: narration,
+              journalId: journalId)
+            insertTransfer(db, transfer, actor)
+
+            let ctx = auditContextFor(principal, req, app.clock, "pemindahbukuan simpanan",
+              $source.branchId)
+            discard appendAudit(db, newAuditEntry(ctx, "deposit.transfer.post",
+              "deposit_transfer", $transferId, app.clock, businessDate = businessDate,
+              after = %*{
+                "transferId": $transferId,
+                "sourceAccountId": $source.accountId,
+                "destinationAccountId": $destination.accountId,
+                "amount": amount.toDecimalString,
+                "journalId": $journalId,
+              }))
+
+            # Event non-akuntansi: TANPA header `accounting` supaya konsumen `ledger` tidak
+            # memposting jurnal kedua (jurnal sudah ditulis sinkron di atas).
+            discard appendEvent(db, newOutboxEvent(newId(app.clock), "TransferPosted",
+              "deposit_transfer", $transferId, "TransferPosted:" & $transferId,
+              %*{"transferId": $transferId, "sourceAccountId": $source.accountId,
+                 "destinationAccountId": $destination.accountId,
+                 "amount": amount.toDecimalString, "businessDate": businessDate,
+                 "branchId": $source.branchId}))
+            discard appendEvent(db, newOutboxEvent(newId(app.clock), "journal.posted", "journal",
+              $journalId, "journal.posted:" & $journalId,
+              %*{"journalId": $journalId, "businessDate": businessDate,
+                 "sourceEvent": transferSourceEvent, "reversalOf": nil,
+                 "totalDebit": amount.toDecimalString}))
+
+            status = 201
+            payload = transferJson(transfer, balances.get())
+            (status, payload)))
+  except IdempotencyConfigError:
+    status = 500
+    problem = "konfigurasi idempotensi di server tidak sah"
+  except IdempotencyStateError:
+    status = 500
+    problem = "idempotensi gagal diselesaikan"
+  except DepositConfigError:
+    if status == 0:
+      status = 500
+  except ValueError as e:
+    if status == 0:
+      status = 400
+    problem = e.msg
+  except DbError:
+    if status == 0:
+      status = 500
+    problem = "pemindahbukuan gagal disimpan"
 
   if outcome.decision != idemProceed:
     discard req.respondIdempotent(outcome)

@@ -60,6 +60,11 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 - Worker `role=worker` menjalankan loop konsumen; batas dari parameter
   `ledger.posting.batch_size`, `max_attempts`, `retry_backoff_seconds`, `poll_interval_ms`.
 - Pengelolaan rule lewat migrasi sampai ada API/UI (**O-080**).
+- Rule transaksi simpanan dari migrasi idempoten: `DepositWithdrawn` (T-088b, `0012` = D 201/K 101)
+  dan `DepositTransferred` (T-088c, `0013` = D 201/K 201 untuk pemindahbukuan/PB). `DepositPosted`
+  (D 101/K 201) dari `0005` dipakai ulang. **Batas PB:** kedua sisi akun `201` yang sama → jurnal
+  net-nol di GL; perpindahan per rekening dicatat di modul `deposit` (`deposit.transfer`), belum ada
+  GL per pemilik — lihat `docs/ACCEPTED-LIMITS.md` dan T-101/Fase 3.
 
 ## Saldo turunan & trial balance (T-075)
 

@@ -6,6 +6,8 @@
 
 import ./domain/account
 import ./domain/transaction
+import ./domain/transfer
 
 export account
 export transaction
+export transfer
