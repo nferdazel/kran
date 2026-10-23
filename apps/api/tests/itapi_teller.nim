@@ -46,7 +46,7 @@ const
   BusinessDate = "2026-10-22"
   ## Cukup untuk seluruh suite (tiap test memakai rekening segar); fixture di bawah menyiapkan
   ## sebanyak ini.
-  AccountFixtures = 24
+  AccountFixtures = 30
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
