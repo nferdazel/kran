@@ -64,6 +64,22 @@ const
   ## itself is still created by `bootstrap-admin`.
   createUserCmd* = "create-user"
 
+  ## User lifecycle commands (RBAC hardening). Offboarding used to require raw SQL, which bypasses
+  ## audit and session revocation; these run the same transactional/audit/session discipline as
+  ## `reset-password`.
+  assignRoleCmd* = "assign-role"
+  revokeRoleCmd* = "revoke-role"
+  disableUserCmd* = "disable-user"
+  enableUserCmd* = "enable-user"
+  unlockUserCmd* = "unlock-user"
+
+  ## Perintah `ctl` yang menerima `--username` (semua perintah yang menyasar satu pengguna).
+  usernameCommands* = [bootstrapAdminCmd, resetPasswordCmd, createUserCmd, assignRoleCmd,
+                       revokeRoleCmd, disableUserCmd, enableUserCmd, unlockUserCmd]
+
+  ## Perintah `ctl` yang menerima `--user-role` dan/atau `--branch`.
+  roleAssignmentCommands* = [createUserCmd, assignRoleCmd, revokeRoleCmd]
+
   ## Role yang diberikan `bootstrap-admin`. `platform_admin` diisi migrasi
   ## `0008_platform_rbac_catalogue.sql` beserta seluruh izin yang dikenal, jadi admin pertama
   ## memang bisa bekerja — tanpa itu perintahnya hanya menghasilkan pengguna tanpa izin.
@@ -162,14 +178,14 @@ proc parseArgs(argv: seq[string]): CliOptions =
      not (result.role == roleCtl and result.cmd == auditAnchorCmd):
     die("--out hanya untuk `--role=ctl " & auditAnchorCmd & "`")
   if result.username.len > 0 and
-     not (result.role == roleCtl and result.cmd in
-          [bootstrapAdminCmd, resetPasswordCmd, createUserCmd]):
-    die("--username hanya untuk `--role=ctl " & bootstrapAdminCmd & "`, `" &
-      resetPasswordCmd & "`, atau `" & createUserCmd & "`")
-  if (result.userRole.len > 0 or result.branchId.len > 0 or result.fullName.len > 0) and
+     not (result.role == roleCtl and result.cmd in usernameCommands):
+    die("--username hanya untuk perintah ctl: " & usernameCommands.join(", "))
+  if (result.userRole.len > 0 or result.branchId.len > 0) and
+     not (result.role == roleCtl and result.cmd in roleAssignmentCommands):
+    die("--user-role dan --branch hanya untuk perintah ctl: " & roleAssignmentCommands.join(", "))
+  if result.fullName.len > 0 and
      not (result.role == roleCtl and result.cmd == createUserCmd):
-    die("--user-role, --branch, dan --full-name hanya untuk `--role=ctl " &
-      createUserCmd & "`")
+    die("--full-name hanya untuk `--role=ctl " & createUserCmd & "`")
 
 var shutdownRequested: Atomic[bool]
 
@@ -232,6 +248,17 @@ const CtlUsage* =
   "  create-user     : provision an operator account (requires --username=<name>,\n" &
   "                    --user-role=<role>; optional --branch=<uuid>, --full-name=<name>; the\n" &
   "                    initial password is printed once and must be changed at first login)\n" &
+  "  assign-role     : grant a role to an existing user (requires --username=<name>,\n" &
+  "                    --user-role=<role>; optional --branch=<uuid>; audit user.role_grant)\n" &
+  "  revoke-role     : revoke a role from a user (requires --username=<name>,\n" &
+  "                    --user-role=<role>; optional --branch=<uuid>; refuses to revoke the last\n" &
+  "                    platform_admin; audit user.role_revoke)\n" &
+  "  disable-user    : set a user INACTIVE and revoke all sessions (requires --username=<name>;\n" &
+  "                    audit user.disable)\n" &
+  "  enable-user     : set an INACTIVE user back to ACTIVE (requires --username=<name>; only\n" &
+  "                    INACTIVE -> ACTIVE; audit user.enable)\n" &
+  "  unlock-user     : unlock a LOCKED user and clear the failure counter (requires\n" &
+  "                    --username=<name>; only LOCKED -> ACTIVE; audit user.unlock)\n" &
   "  daycloser-status: (belum ada di Fase 0 → kode 3)\n" &
   "  help            : tampilkan bantuan ini"
 
@@ -372,6 +399,12 @@ proc runCreateUser*(db: DbConn, username, roleCode, branchId, fullName: string,
   if not roleExists(db, roleCode):
     stderr.writeLine "kran-api: unknown role '" & roleCode & "'"
     return (3, "")
+  # Fail before inserting anything: a branch role needs a branch, an institution role must not
+  # have one. Wrong combination = rejected (code 3), same class as an unknown role.
+  let scopeProblem = roleAssignmentProblem(db, roleCode, branchId)
+  if scopeProblem.len > 0:
+    stderr.writeLine "kran-api: " & roleCode & ": " & scopeProblem
+    return (3, "")
 
   let instScope = institutionScope()
   let now = clock.now()
@@ -458,6 +491,176 @@ proc resetUserPassword*(db: DbConn, username: string, clock: Clock): tuple[code:
                "sessions_revoked": revoked}))
   (0, password)
 
+proc runAssignRole*(db: DbConn, username, roleCode, branchId: string, clock: Clock): int =
+  ## Menugaskan role ke pengguna yang **sudah ada** (lifecycle/offboarding, RBAC hardening).
+  ##
+  ## Kode: 0 berhasil, 1 gagal menulis, 2 argumen kurang, 3 ditolak/tidak ditemukan (pengguna/role
+  ## tidak ada, kombinasi scope/cabang tidak cocok, sudah memegang role itu, atau konflik SoD).
+  ## Pemanggil wajib `withRoleDb(..., useTx = true)`: penugasan + audit harus lahir bersama.
+  if username.len == 0 or roleCode.len == 0:
+    stderr.writeLine "kran-api: `ctl " & assignRoleCmd &
+      "` butuh --username=<nama> dan --user-role=<peran>"
+    return 2
+  let found = userByUsername(db, username)
+  if found.isNone:
+    stderr.writeLine "kran-api: tidak ada pengguna '" & username & "'"
+    return 3
+  if not roleExists(db, roleCode):
+    stderr.writeLine "kran-api: role tidak dikenal '" & roleCode & "'"
+    return 3
+  let problem = roleAssignmentProblem(db, roleCode, branchId)
+  if problem.len > 0:
+    stderr.writeLine "kran-api: " & problem
+    return 3
+  let user = found.get()
+  try:
+    if not grantRole(db, user.userId, roleCode, branchId, ""):
+      stderr.writeLine "kran-api: pengguna '" & username & "' sudah memegang role '" &
+        roleCode & "' pada cabang itu"
+      return 3
+  except ValueError as e:
+    # Pemisahan tugas (SoD): penugasan yang melahirkan pasangan terlarang ditolak `grantRole`.
+    stderr.writeLine "kran-api: penugasan role ditolak: " & e.msg
+    return 3
+  let instScope = institutionScope()
+  let now = clock.now()
+  let nowIso = utcIso(now)
+  let ctx = newAuditContext(Id(""), device = "kran-api ctl",
+    reason = "assign role", startedAt = now)
+  discard appendAudit(db, newAuditEntry(ctx, "user.role_grant", "app_user", user.userId, clock,
+    businessDate = businessDateFor(db, instScope, nowIso),
+    after = %*{"username": user.username, "role": roleCode, "branch": branchId}))
+  0
+
+proc runRevokeRole*(db: DbConn, username, roleCode, branchId: string, clock: Clock): int =
+  ## Mencabut role dari pengguna (offboarding). Mencabut **persis** grant yang cocok: cabang kosong
+  ## = grant tingkat institusi, cabang terisi = grant cabang itu.
+  ##
+  ## Penjaga penguncian-keluar: `platform_admin` terakhir tidak boleh dicabut — tanpa itu sistem
+  ## bisa kehilangan satu-satunya akun yang bisa mengelola RBAC.
+  ##
+  ## Kode: 0 berhasil, 1 gagal menulis, 2 argumen kurang, 3 ditolak/tidak ditemukan.
+  if username.len == 0 or roleCode.len == 0:
+    stderr.writeLine "kran-api: `ctl " & revokeRoleCmd &
+      "` butuh --username=<nama> dan --user-role=<peran>"
+    return 2
+  let found = userByUsername(db, username)
+  if found.isNone:
+    stderr.writeLine "kran-api: tidak ada pengguna '" & username & "'"
+    return 3
+  if not roleExists(db, roleCode):
+    stderr.writeLine "kran-api: role tidak dikenal '" & roleCode & "'"
+    return 3
+  let problem = roleAssignmentProblem(db, roleCode, branchId)
+  if problem.len > 0:
+    stderr.writeLine "kran-api: " & problem
+    return 3
+  let user = found.get()
+  if roleCode.toLowerAscii == bootstrapAdminRole and
+     bootstrapAdminRole in roleCodesOfUser(db, user.userId) and
+     countUsersWithRole(db, bootstrapAdminRole) <= 1:
+    stderr.writeLine "kran-api: menolak mencabut role '" & bootstrapAdminRole &
+      "' terakhir — tidak boleh mengunci semua admin keluar"
+    return 3
+  if not revokeRole(db, user.userId, roleCode, branchId):
+    stderr.writeLine "kran-api: pengguna '" & username & "' tidak memegang role '" & roleCode &
+      "' pada cabang itu"
+    return 3
+  let instScope = institutionScope()
+  let now = clock.now()
+  let nowIso = utcIso(now)
+  let ctx = newAuditContext(Id(""), device = "kran-api ctl",
+    reason = "revoke role", startedAt = now)
+  discard appendAudit(db, newAuditEntry(ctx, "user.role_revoke", "app_user", user.userId, clock,
+    businessDate = businessDateFor(db, instScope, nowIso),
+    after = %*{"username": user.username, "role": roleCode, "branch": branchId}))
+  0
+
+proc runDisableUser*(db: DbConn, username: string, clock: Clock): int =
+  ## Menonaktifkan akun dan mencabut seluruh sesinya. Kode: 0 berhasil, 1 gagal menulis, 2 argumen
+  ## kurang, 3 pengguna tidak ada. Pemanggil wajib `withRoleDb(..., useTx = true)`.
+  if username.len == 0:
+    stderr.writeLine "kran-api: `ctl " & disableUserCmd & "` butuh --username=<nama>"
+    return 2
+  let found = userByUsername(db, username)
+  if found.isNone:
+    stderr.writeLine "kran-api: tidak ada pengguna '" & username & "'"
+    return 3
+  let user = found.get()
+  # Same lockout guard as `revoke-role`: disabling the last admin leaves nobody who can manage
+  # RBAC, which is a one-way door without shell access.
+  if bootstrapAdminRole in roleCodesOfUser(db, user.userId) and
+     countUsersWithRole(db, bootstrapAdminRole) <= 1:
+    stderr.writeLine "kran-api: menolak menonaktifkan role '" & bootstrapAdminRole &
+      "' terakhir — tidak boleh mengunci semua admin keluar"
+    return 3
+  let instScope = institutionScope()
+  let now = clock.now()
+  let nowIso = utcIso(now)
+  if not setUserStatus(db, user.userId, "INACTIVE"):
+    stderr.writeLine "kran-api: gagal menonaktifkan '" & username & "'"
+    return 1
+  let revoked = revokeSessionsOfUser(db, user.userId, nowIso, "akun dinonaktifkan operator")
+  let ctx = newAuditContext(Id(""), device = "kran-api ctl",
+    reason = "disable user", startedAt = now)
+  discard appendAudit(db, newAuditEntry(ctx, "user.disable", "app_user", user.userId, clock,
+    businessDate = businessDateFor(db, instScope, nowIso),
+    after = %*{"username": user.username, "sessions_revoked": revoked}))
+  0
+
+proc runEnableUser*(db: DbConn, username: string, clock: Clock): int =
+  ## Mengaktifkan kembali akun yang **dinonaktifkan**: hanya `INACTIVE` → `ACTIVE`. `LOCKED` dan
+  ## `SUSPENDED` sengaja ditolak (yang pertama punya `unlock-user`, yang kedua butuh keputusan
+  ## berbeda) — kebijakan konservatif supaya aktifkan-tidak-diam-diam mengubah keadaan lain.
+  ## Kode: 0 berhasil, 1 gagal menulis, 2 argumen kurang, 3 pengguna tidak ada / bukan INACTIVE.
+  if username.len == 0:
+    stderr.writeLine "kran-api: `ctl " & enableUserCmd & "` butuh --username=<nama>"
+    return 2
+  let found = userByUsername(db, username)
+  if found.isNone:
+    stderr.writeLine "kran-api: tidak ada pengguna '" & username & "'"
+    return 3
+  let user = found.get()
+  if not enableInactiveUser(db, user.userId):
+    stderr.writeLine "kran-api: '" & username &
+      "' tidak dalam status INACTIVE; hanya akun nonaktif yang bisa diaktifkan kembali"
+    return 3
+  let instScope = institutionScope()
+  let now = clock.now()
+  let nowIso = utcIso(now)
+  let ctx = newAuditContext(Id(""), device = "kran-api ctl",
+    reason = "enable user", startedAt = now)
+  discard appendAudit(db, newAuditEntry(ctx, "user.enable", "app_user", user.userId, clock,
+    businessDate = businessDateFor(db, instScope, nowIso),
+    after = %*{"username": user.username}))
+  0
+
+proc runUnlockUser*(db: DbConn, username: string, clock: Clock): int =
+  ## Membuka akun yang terkunci: hanya `LOCKED` → `ACTIVE`, penghitung gagal dan `locked_until`
+  ## dikosongkan. Kode: 0 berhasil, 1 gagal menulis, 2 argumen kurang, 3 pengguna tidak ada /
+  ## bukan LOCKED.
+  if username.len == 0:
+    stderr.writeLine "kran-api: `ctl " & unlockUserCmd & "` butuh --username=<nama>"
+    return 2
+  let found = userByUsername(db, username)
+  if found.isNone:
+    stderr.writeLine "kran-api: tidak ada pengguna '" & username & "'"
+    return 3
+  let user = found.get()
+  if not unlockUser(db, user.userId):
+    stderr.writeLine "kran-api: '" & username &
+      "' tidak terkunci; hanya akun LOCKED yang bisa dibuka"
+    return 3
+  let instScope = institutionScope()
+  let now = clock.now()
+  let nowIso = utcIso(now)
+  let ctx = newAuditContext(Id(""), device = "kran-api ctl",
+    reason = "unlock user", startedAt = now)
+  discard appendAudit(db, newAuditEntry(ctx, "user.unlock", "app_user", user.userId, clock,
+    businessDate = businessDateFor(db, instScope, nowIso),
+    after = %*{"username": user.username}))
+  0
+
 proc auditAnchorLine*(db: DbConn, clock: Clock): string =
   ## Satu baris anchor: waktu UTC, `seq` dan `hash` kepala rantai. Tanpa PII/kredensial.
   let head = auditHead(db)
@@ -479,9 +682,10 @@ proc runAuditAnchor*(db: DbConn, clock: Clock, outPath: string): string =
 proc runCtl*(command, root: string, username = "", outPath = "", userRole = "",
              branchId = "", fullName = ""): int =
   ## Peran `ctl`: perintah operasional yang aman (read-only), dipakai skrip ops dan freeze gate.
-  ## Tiga pengecualian yang memang menulis: `bootstrap-admin` (sekali-jalan), `create-user`
-  ## (provisioning akun operator), dan `reset-password` (pemulihan darurat, dengan audit +
-  ## pencabutan sesi + wajib ganti).
+  ## Pengecualian yang memang menulis: `bootstrap-admin` (sekali-jalan), `create-user`
+  ## (provisioning akun operator), `reset-password` (pemulihan darurat), dan siklus hidup pengguna
+  ## `assign-role`/`revoke-role`/`disable-user`/`enable-user`/`unlock-user` — semuanya dengan audit
+  ## dan (bila relevan) pencabutan sesi dalam satu transaksi.
   if command.len == 0 or command == "help":
     echo CtlUsage
     return 0
@@ -516,6 +720,22 @@ proc runCtl*(command, root: string, username = "", outPath = "", userRole = "",
       echo password
       echo "Masuk dengan kata sandi itu, lalu ganti saat diminta."
     code
+  of assignRoleCmd:
+    # Satu transaksi: penugasan role + audit harus lahir bersama (pola `bootstrap-admin`).
+    withRoleDb(proc(db: DbConn): int {.closure.} =
+      runAssignRole(db, username, userRole, branchId, systemClock()), useTx = true)
+  of revokeRoleCmd:
+    withRoleDb(proc(db: DbConn): int {.closure.} =
+      runRevokeRole(db, username, userRole, branchId, systemClock()), useTx = true)
+  of disableUserCmd:
+    withRoleDb(proc(db: DbConn): int {.closure.} =
+      runDisableUser(db, username, systemClock()), useTx = true)
+  of enableUserCmd:
+    withRoleDb(proc(db: DbConn): int {.closure.} =
+      runEnableUser(db, username, systemClock()), useTx = true)
+  of unlockUserCmd:
+    withRoleDb(proc(db: DbConn): int {.closure.} =
+      runUnlockUser(db, username, systemClock()), useTx = true)
   of auditAnchorCmd:
     withRoleDb(proc(db: DbConn): int {.closure.} =
       echo runAuditAnchor(db, systemClock(), outPath)
