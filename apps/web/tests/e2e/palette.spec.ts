@@ -28,6 +28,7 @@ type Text = {
   empty: string;
   ledger: string;
   teller: string;
+  accounts: string;
   params: string;
   products: string;
   paramsTitle: string;
@@ -43,6 +44,7 @@ const T: Record<"id" | "en", Text> = {
     empty: "Tidak ada perintah yang cocok.",
     ledger: "Buku besar",
     teller: "Teller",
+    accounts: "Buka rekening",
     params: "Parameter",
     products: "Produk",
     paramsTitle: "Parameter & jejak audit",
@@ -56,6 +58,7 @@ const T: Record<"id" | "en", Text> = {
     empty: "No matching command.",
     ledger: "Ledger",
     teller: "Teller",
+    accounts: "Open account",
     params: "Parameters",
     products: "Products",
     paramsTitle: "Parameters & audit trail",
@@ -157,12 +160,14 @@ test.describe.serial("command palette", () => {
     await expect(dialog.getByText(T.id.empty)).toBeVisible();
     await expect(dialog.getByRole("link")).toHaveCount(0);
 
-    // Kueri kosong mengembalikan seluruh daftar untuk operator maker: buku besar, teller,
-    // parameter, produk. Seed dev `0003_dev_ledger.sql` memberi `dev.maker` izin baca buku besar
-    // supaya tabel ledger punya fixture untuk gate axe/keyboard T-079.
+    // Kueri kosong mengembalikan seluruh daftar untuk operator maker: buku besar, teller, buka
+    // rekening, parameter, produk. Seed dev `0003_dev_ledger.sql` memberi `dev.maker` izin baca
+    // buku besar supaya tabel ledger punya fixture untuk gate axe/keyboard T-079; `param_maker`
+    // juga memegang `deposit.account.manage`, jadi layar buka rekening ikut tampil.
     await dialog.getByLabel(T.id.searchLabel, { exact: true }).fill("");
-    await expect(dialog.getByRole("link")).toHaveCount(4);
+    await expect(dialog.getByRole("link")).toHaveCount(5);
     await expect(dialog.getByRole("link", { name: T.id.ledger, exact: true })).toBeVisible();
+    await expect(dialog.getByRole("link", { name: T.id.accounts, exact: true })).toBeVisible();
 
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
