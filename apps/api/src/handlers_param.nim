@@ -224,6 +224,15 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
             if not authorizedAtBranch(db, principal.get(), targetBranch, permissionParamSubmit):
               problemCode = reasonBranchNotAllowed
               raise newException(ValueError, branchNotAllowedProblem(targetBranch, "pengaju"))
+            # T-098: definisi yang dipensiunkan (`deprecated`) fail-closed juga di HTTP, dengan
+            # alasan berkode stabil supaya UI tidak menyamakannya dengan nilai yang bentuknya salah.
+            # `submitValue` tetap memeriksa ulang (defense in depth) untuk pemanggil non-HTTP.
+            let definition = definitionOf(db, key)
+            if definition.isSome and definition.get().deprecated:
+              problemCode = "deprecated"
+              raise newException(ValueError,
+                "definisi parameter " & key &
+                  " sudah deprecated (pensiun): pengajuan perubahan ditolak")
             let ctx = auditContextFor(principal.get(), req, app.clock, reason, targetBranch)
             # Aturan lintas-parameter diperiksa lebih dulu: nilai yang sah sendiri bisa tetap ditolak
             # bila digabung nilai lain yang sudah aktif (lihat `sessionPolicyCandidateProblem`).

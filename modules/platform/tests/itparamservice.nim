@@ -129,3 +129,41 @@ suite "migrasi product/0005 (T-087)":
     for d in dbDefinitions(db):
       check d.key != graceKey
     check driftAgainstDatabase(db, paramDefinitions).len == 0
+
+suite "jalur baca & pengajuan definisi deprecated (T-098)":
+  ## D-121: definisi yang sengaja dipensiunkan tidak boleh dibaca maupun diajukan lagi. Nilai
+  ## lamanya sengaja masih ada di `param_value` (riwayat effective-dated), jadi test ini
+  ## membuktikan fail-closed berasal dari penanda `deprecated`, bukan dari "nilai tidak ada".
+  const graceKey = "product.savings.grace_period_days"
+
+  test "pembacaan nilai definisi deprecated ditolak (fail-closed)":
+    # Idempoten: tidak bergantung pada urutan suite migrasi 0005 di atas.
+    db.exec(sql"""
+      INSERT INTO platform.param_definition
+        (key, module, value_type, json_schema, allowed_scopes, description_key,
+         regulatory_refs, sensitivity, requires_approval, since_version, deprecated)
+      VALUES (?, 'product', 'integer', '{"minimum":0,"maximum":365}'::jsonb,
+              ARRAY['GLOBAL','INSTITUTION']::text[],
+              'param.product.savings.grace_period_days', ARRAY[]::text[],
+              'NORMAL', true, '0.1.0', true)
+      ON CONFLICT (key) DO UPDATE SET deprecated = true""", graceKey)
+    db.exec(sql"""
+      INSERT INTO platform.param_value
+        (param_value_id, key, scope_type, scope_id, value, effective_from, status, maker, reason)
+      VALUES (gen_random_uuid(), ?, 'GLOBAL', NULL, '7'::jsonb, '1970-01-01', 'ACTIVE', ?, 'uji')
+      ON CONFLICT DO NOTHING""", graceKey, $newId(sysClock))
+
+    discard service.invalidateAll()
+    let sumber = dbParamSource(db)
+    let hasil = sumber.fetch(graceKey, bizDate, instScope)
+    check hasil.isErr
+    check hasil.error().kind == pekDeprecated
+
+  test "pengajuan nilai baru untuk definisi deprecated ditolak (fail-closed)":
+    var ditolak = false
+    try:
+      discard submitValue(db, $newId(sysClock), graceKey, "GLOBAL", "", %*1, bizDate, "",
+        parseId($newId(sysClock)).value(), "uji deprecated")
+    except ValueError:
+      ditolak = true
+    check ditolak

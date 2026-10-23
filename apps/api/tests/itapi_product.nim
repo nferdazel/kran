@@ -27,6 +27,7 @@ const
   LoginPath = "/api/v1/auth/login"
   MakerUser = "dev.maker"
   ApproverUser = "dev.approver"
+  Approver2User = "dev.approver2"
   CheckerUser = "dev.checker"
   DevPassword = "rahasia-panjang-123"
   CookieName = "kran_session"
@@ -57,11 +58,22 @@ block:
       FROM platform.app_user WHERE username = 'dev.checker'
     ON CONFLICT (username) DO UPDATE SET must_change_password = false, status = 'ACTIVE'
   """)
+  # Approver kedua: balapan T-097 harus memakai **dua aktor** berbeda (bukan dua request satu token),
+  # supaya test membuktikan `checker` = aktor pemenang. Hanya untuk DB uji.
+  execScript(db, """
+    INSERT INTO platform.app_user
+      (user_id, username, full_name, password_algo, password_hash, must_change_password)
+    SELECT md5('dev|dev.approver2')::uuid, 'dev.approver2', 'Uji Approver Kedua (dev)',
+           password_algo, password_hash, false
+      FROM platform.app_user WHERE username = 'dev.checker'
+    ON CONFLICT (username) DO UPDATE SET must_change_password = false, status = 'ACTIVE'
+  """)
   execScript(db, """
     INSERT INTO platform.user_role (user_id, role_id, branch_id)
     SELECT u.user_id, r.role_id, NULL
       FROM platform.app_user u, platform.role r
-     WHERE u.username IN ('dev.maker', 'dev.approver') AND r.code = 'platform_admin'
+     WHERE u.username IN ('dev.maker', 'dev.approver', 'dev.approver2')
+       AND r.code = 'platform_admin'
     ON CONFLICT DO NOTHING
   """)
   dbPool.release(db)
@@ -237,6 +249,8 @@ let makerToken = tokenOf(postJson(LoginPath,
   %*{"username": MakerUser, "password": DevPassword}))
 let approverToken = tokenOf(postJson(LoginPath,
   %*{"username": ApproverUser, "password": DevPassword}))
+let approver2Token = tokenOf(postJson(LoginPath,
+  %*{"username": Approver2User, "password": DevPassword}))
 let checkerToken = tokenOf(postJson(LoginPath,
   %*{"username": CheckerUser, "password": DevPassword}))
 
@@ -618,8 +632,9 @@ suite "product: balapan dua checker":
 
       createThread(workers[0], approveRaceWorker,
         ApproveRaceArgs(url: baseUrl, path: path, token: approverToken, slot: 0))
+      # Dua **aktor** berbeda (T-097): bukan dua request dengan token yang sama.
       createThread(workers[1], approveRaceWorker,
-        ApproveRaceArgs(url: baseUrl, path: path, token: approverToken, slot: 1))
+        ApproveRaceArgs(url: baseUrl, path: path, token: approver2Token, slot: 1))
 
       # Tunggu sampai KEDUA permintaan benar-benar menunggu di guard UPDATE, dengan rantai lock
       # berakar pada baris versi yang dipegang `side`. Waiter kedua menunggu waiter pertama (tuple
@@ -649,13 +664,21 @@ suite "product: balapan dua checker":
 
     var approved = 0
     var notDraft = 0
+    var winner = ""
     for slot in 0 .. 1:
       if approRaceCode[slot] == 200:
         inc approved
+        winner = if slot == 0: ApproverUser else: Approver2User
       elif approRaceCode[slot] == 409 and approRaceReason[slot] == "not_draft":
         inc notDraft
     check approved == 1
     check notDraft == 1
+
+    # T-097: keputusan harus tercatat atas **aktor pemenang**, bukan token lain.
+    check winner.len > 0
+    check dbValue(sql"""
+      SELECT checker::text FROM product.product_version WHERE version_id = ?""", vid) ==
+      dbValue(sql"SELECT user_id::text FROM platform.app_user WHERE username = ?", winner)
 
     check dbValue(sql"""
       SELECT status FROM product.product_version WHERE version_id = ?""", vid) == "ACTIVE"
