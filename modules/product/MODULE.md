@@ -67,10 +67,12 @@ Katalog atribut untuk pilot (`modules/product/seeds/params.yaml`): `product.savi
 (money) dan `product.savings.admin_fee` (money). Keduanya kelas `komersial-konservatif` (nilai 0 =
 tidak menagih) dan bertanda `NEEDS-COMPLIANCE-REVIEW` sampai angka final disetujui pemilik.
 
-Bentuk akrual (O-084/D-094) sudah terdefinisi tetapi **belum bernilai**: `interest_rate` (rate, persen),
-`day_count_basis` (`ACT_365|ACT_360|THIRTY_360`), `rounding_mode` (`HALF_UP|HALF_EVEN`),
-`rounding_scale` (0–4), `interest_posting` (`NONE|MONTH_END`). Tanpa `default_pack` → binding produk
-ke kunci ini gagal-cepat sampai nilainya disetujui compliance. Kelimanya kelas
+Bentuk akrual (O-084/D-094) sudah terdefinisi tetapi **belum bernilai**: `interest_rate` (rate,
+persen), `day_count_basis` (`ACT_365|ACT_360|THIRTY_360`, basis bernama spec §10.5), `rounding_mode`
+(hanya `HALF_EVEN` — kernel hanya mengimplementasikan half-to-even), `rounding_scale` (0–2 =
+`moneyScale`, D-136: penyimpanan uang adalah sen), dan `interest_posting` (domain nilai **sengaja
+dibuka**, bukan enum — spec/D-094 tidak menetapkan waktu posting). Tanpa `default_pack` → binding
+produk ke kunci ini gagal-cepat sampai nilainya disetujui compliance. Kelimanya kelas
 `regulasi-tidak-disemai` (D-095): nilai rate/basis yang bersifat regulasi tidak disemai.
 
 `product.savings.grace_period_days` **dikeluarkan** dari katalog (T-087, D-095) — tidak ada konsumen

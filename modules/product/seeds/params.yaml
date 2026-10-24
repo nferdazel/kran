@@ -41,10 +41,21 @@
 # menunggu keputusan compliance (`NEEDS-COMPLIANCE-REVIEW`), dan parameter tanpa nilai membuat
 # pembacaan gagal-cepat alih-alih memakai default yang tidak disetujui (spec §10.6).
 # Akrual sendiri adalah task day-close (Fase 3), bukan atribut produk; lihat D-094.
+#
+# O-084 (24 Okt 2026): yang dibekukan di sini adalah **bentuk** (tipe/batas/enum) yang mengikuti
+# kode yang sudah ada — bukan nilai bisnis. Dua batas datang dari kode, bukan tebakan:
+#   * `rounding_scale` ≤ `moneyScale` (2) karena penyimpanan uang adalah sen (D-136);
+#   * `rounding_mode` = `HALF_EVEN` saja karena kernel hanya punya pembulatan half-to-even
+#     (`shared/kernel/checkedint.nim` `divRoundHalfEven`, dipakai `Money.div` dan `applyRate`).
+# Nilai yang **belum** diputuskan: rate, basis hari, skala yang dipakai suatu produk, dan kapan
+# bunga diposting. Catatan: `product.savings.interest_posting` sengaja ber-`type: string` (domain
+# nilai dibuka) — spec/D-094 tidak menetapkan waktu posting, jadi enum lama adalah tebakan.
 - key: product.savings.interest_rate
   type: rate
   scopes: [GLOBAL, INSTITUTION]
-  schema: { maxLength: 32 }
+  schema:
+    maxLength: 32
+    description: "persen sebagai string; presisi maksimum 4 desimal dan batas kewajaran ditegakkan kernel (rateFromPercentString), bukan di sini"
   sensitivity: NORMAL
   provenance: { class: regulasi-tidak-disemai, compliance: NEEDS-COMPLIANCE-REVIEW }
 
@@ -52,29 +63,38 @@
   type: enum
   scopes: [GLOBAL, INSTITUTION]
   enum: [ACT_365, ACT_360, THIRTY_360]
-  schema: { enum: [ACT_365, ACT_360, THIRTY_360] }
+  schema:
+    enum: [ACT_365, ACT_360, THIRTY_360]
+    description: "basis hari bernama spec §10.5 (act/360, 30/360, act/365); menambah basis lain = ubah definisi ini, bukan nilai bebas"
   sensitivity: NORMAL
   provenance: { class: regulasi-tidak-disemai, compliance: NEEDS-COMPLIANCE-REVIEW }
 
 - key: product.savings.rounding_mode
   type: enum
   scopes: [GLOBAL, INSTITUTION]
-  enum: [HALF_UP, HALF_EVEN]
-  schema: { enum: [HALF_UP, HALF_EVEN] }
+  enum: [HALF_EVEN]
+  schema:
+    enum: [HALF_EVEN]
+    description: "hanya HALF_EVEN: kernel hanya mengimplementasikan half-to-even (checkedint.divRoundHalfEven; Money.div & applyRate). Mode lain butuh kode + keputusan lebih dulu"
   sensitivity: NORMAL
   provenance: { class: regulasi-tidak-disemai, compliance: NEEDS-COMPLIANCE-REVIEW }
 
 - key: product.savings.rounding_scale
   type: integer
   scopes: [GLOBAL, INSTITUTION]
-  schema: { minimum: 0, maximum: 4 }
+  schema:
+    type: integer
+    minimum: 0
+    maximum: 2
+    description: "0..moneyScale (2): penyimpanan uang adalah sen (D-136), jadi hasil pembulatan > 2 desimal tidak punya tempat menyimpan"
   sensitivity: NORMAL
   provenance: { class: regulasi-tidak-disemai, compliance: NEEDS-COMPLIANCE-REVIEW }
 
 - key: product.savings.interest_posting
-  type: enum
+  type: string
   scopes: [GLOBAL, INSTITUTION]
-  enum: [NONE, MONTH_END]
-  schema: { enum: [NONE, MONTH_END] }
+  schema:
+    maxLength: 32
+    description: "domain nilai sengaja dibuka: spec/D-094 tidak menetapkan kapan bunga diposting, jadi enum lama [NONE, MONTH_END] ditarik; enum ditetapkan bersama mesin akrual (Fase 3)"
   sensitivity: NORMAL
   provenance: { class: regulasi-tidak-disemai, compliance: NEEDS-COMPLIANCE-REVIEW }
