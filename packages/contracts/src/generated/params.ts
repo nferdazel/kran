@@ -742,5 +742,23 @@ export const paramDefinitions: readonly ParamDefinition[] = [
       "minimum": 0,
       "maximum": 4
     }
+  },
+  {
+    "key": "teller.vault.cash_account",
+    "module": "teller",
+    "valueType": "string",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "CRITICAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.teller.vault.cash_account",
+    "jsonSchema": {
+      "minLength": 1,
+      "maxLength": 32
+    }
   }
 ] as const;

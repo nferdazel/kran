@@ -1120,6 +1120,53 @@ suite "teller: sesi kas menggerbang transaksi tunai (T-093b)":
     check closeAgain.code == 409
     check closeAgain.body["params"]["reason"].getStr() == "session_not_open"
 
+  test "T-118: buka/tutup sesi + selisih kas berjurnal (vault, laci, selisih)":
+    let token = tokenOf(login(SessionTellerUser))
+    let openResp = postJson(SessionsPath,
+      %*{"branchId": SessionBranchId, "openingFloat": "100.0000"}, token)
+    check openResp.code == 201
+    let sessionId = openResp.body["sessionId"].getStr()
+
+    let deposit = postJson(CashPath, cashBody(SessionBranchAccountId, "DEPOSIT", "50.0000"), token)
+    check deposit.code == 201
+
+    # expected = 150, counted = 140 → selisih kurang 10.
+    let closeResp = postJson(SessionsPath & "/" & sessionId & "/close",
+      %*{"countedCash": "140.0000"}, token)
+    check closeResp.code == 200
+    check closeResp.body["variance"].getStr() == "-10.0000"
+
+    # Float: laci bertambah, vault berkurang.
+    check dbCount(sql"""SELECT count(*)::text FROM ledger.journal j
+                          JOIN ledger.journal_line l ON l.journal_id = j.journal_id
+                         WHERE j.source_event = 'TellerSessionOpened' AND j.source_ref = ?::uuid
+                           AND l.gl_account = '101.2' AND l.debit = 100""", sessionId) == 1
+    check dbCount(sql"""SELECT count(*)::text FROM ledger.journal j
+                          JOIN ledger.journal_line l ON l.journal_id = j.journal_id
+                         WHERE j.source_event = 'TellerSessionOpened' AND j.source_ref = ?::uuid
+                           AND l.gl_account = '101.1' AND l.credit = 100""", sessionId) == 1
+    # Kas fisik kembali ke vault sebesar counted.
+    check dbCount(sql"""SELECT count(*)::text FROM ledger.journal j
+                          JOIN ledger.journal_line l ON l.journal_id = j.journal_id
+                         WHERE j.source_event = 'TellerSessionClosed' AND j.source_ref = ?::uuid
+                           AND l.gl_account = '101.1' AND l.debit = 140""", sessionId) == 1
+    # Kaki selisih memakai akun laci sehingga saldo 101.2 kembali nol setelah tutup.
+    check dbCount(sql"""SELECT count(*)::text FROM ledger.journal j
+                          JOIN ledger.journal_line l ON l.journal_id = j.journal_id
+                         WHERE j.source_event = 'TellerCashShortage' AND j.source_ref = ?::uuid
+                           AND l.gl_account = '101.9' AND l.debit = 10""", sessionId) == 1
+    check dbCount(sql"""SELECT count(*)::text FROM ledger.journal j
+                          JOIN ledger.journal_line l ON l.journal_id = j.journal_id
+                         WHERE j.source_event = 'TellerCashShortage' AND j.source_ref = ?::uuid
+                           AND l.gl_account = '101.2' AND l.credit = 10""", sessionId) == 1
+
+    # Saldo GL laci untuk cabang ini = 0 setelah sesi tutup (float + transaksi - penutupan - selisih).
+    check dbCount(sql"""SELECT count(*)::text FROM (
+                          SELECT sum(l.debit - l.credit) AS net FROM ledger.journal_line l
+                            JOIN ledger.journal j ON j.journal_id = l.journal_id
+                           WHERE l.gl_account = '101.2' AND l.branch_id = ?::uuid
+                          HAVING sum(l.debit - l.credit) <> 0) x""", SessionBranchId) == 0
+
   test "setelah tutup: transaksi baru 409, replay transaksi lama tetap 200":
     let token = tokenOf(login(SessionTellerUser))
     let openResp = postJson(SessionsPath,

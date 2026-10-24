@@ -123,7 +123,7 @@ menetapkannya sebagai *prosedur* dulu (kode menyusul bila dipilih):
 ## 4. Tata kelola kas/vault
 
 **Penyetuju kedua top-up vault.** Usul: `teller.vault.topup` dipecah maker-checker — pengaju memakai
-izin `teller.vault.topup.submit`, penyetuju `teller.vault.topup.approve`. Bukti yang wajib disertakan:
+izin `teller.vault.submit`, penyetuju `teller.vault.approve`. Bukti yang wajib disertakan:
 sumber dana fisik (slip penarikan bank / bukti setor ke rekening institusi), cabang, nominal, dan
 alasan. Nominal **harus sama** antara pengajuan dan eksekusi.
 

@@ -95,6 +95,18 @@ block:
     ON CONFLICT DO NOTHING
   """)
 
+  # Buka/tutup sesi memposting jurnal GL, jadi tanggal bisnis jam palsu wajib punya periode OPEN
+  # (trigger `ledger.assert_journal_period_open`).
+  execScript(db, """
+    INSERT INTO ledger.period (period_id, starts_on, ends_on, status, created_by, updated_by)
+    SELECT md5('itapi-teller-sessions|2026')::uuid, '2026-01-01'::date, '2026-12-31'::date, 'OPEN',
+           md5('itapi-teller-sessions|fixture')::uuid,
+           md5('itapi-teller-sessions|fixture')::uuid
+    WHERE NOT EXISTS (
+      SELECT 1 FROM ledger.period
+       WHERE starts_on <= '2026-10-22'::date AND ends_on >= '2026-10-22'::date)
+  """)
+
   # Vault: BranchA cukup, BranchB kecil (uji insufficient), BranchD untuk konkurensi; BranchC sengaja
   # tanpa baris (uji vault_not_configured).
   for (branch, balance) in [(BranchA, "1000.0000"), (BranchB, "50.0000"), (BranchD, "100.0000")]:

@@ -49,6 +49,7 @@ const paramKeys*: seq[string] = @[
   "product.savings.min_balance",
   "product.savings.rounding_mode",
   "product.savings.rounding_scale",
+  "teller.vault.cash_account",
 ]
 
 const P_ledger_coa_code_pattern* = ParamKey[string]("ledger.coa.code_pattern")
@@ -132,6 +133,8 @@ const P_product_savings_min_balance* = ParamKey[Money]("product.savings.min_bala
 const P_product_savings_rounding_mode* = ParamKey[string]("product.savings.rounding_mode")
 
 const P_product_savings_rounding_scale* = ParamKey[int64]("product.savings.rounding_scale")
+
+const P_teller_vault_cash_account* = ParamKey[string]("teller.vault.cash_account")
 
 const paramDefinitions*: seq[ParamDefinition] = @[
   ParamDefinition(
@@ -583,6 +586,17 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.product.savings.rounding_scale",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "teller.vault.cash_account",
+    module: "teller",
+    valueType: pvtString,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psCritical,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.teller.vault.cash_account",
     sinceVersion: "0.1.0",
   ),
 ]

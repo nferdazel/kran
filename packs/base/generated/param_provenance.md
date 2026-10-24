@@ -51,13 +51,14 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | `product.savings.min_balance` | komersial-konservatif | base | `NEEDS-COMPLIANCE-REVIEW` | tidak menagih; angka final menunggu pemilik |
 | `product.savings.rounding_mode` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
 | `product.savings.rounding_scale` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
+| `teller.vault.cash_account` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Pemetaan pilot `101.1 KAS DI VAULT` (memo T-118 §5, O-097/K-6) — bukan kutipan SAK EP/PSAK. |
 
 ## Ringkasan per kelas
 
 | kelas | jumlah definisi |
 |---|---|
 | teknis | 15 |
-| kebijakan | 19 |
+| kebijakan | 20 |
 | komersial-konservatif | 2 |
 | belum-bermakna | 0 |
 | regulasi-tidak-disemai | 5 |
