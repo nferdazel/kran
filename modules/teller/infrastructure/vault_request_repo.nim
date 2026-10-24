@@ -4,7 +4,7 @@
 ## Persetujuan menulis saldo vault + jurnal GL di transaksi yang sama dengan pemanggil, jadi repo ini
 ## hanya menyimpan baris pengajuan dan keputusannya.
 
-import std/[options, strutils]
+import std/options
 
 import db_connector/db_postgres
 
