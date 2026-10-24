@@ -254,6 +254,31 @@ suite "administrasi pengguna: daftar & katalog (T-117)":
     check tellerScope == "BRANCH"
     check adminScope == "INSTITUTION"
 
+suite "master cabang: baca (T-121/O-101)":
+  test "admin melihat daftar; tanpa izin 403; role BRANCH boleh membaca":
+    const BranchesPath = "/api/v1/branches"
+    let ok = getJson(BranchesPath, adminToken)
+    check ok.code == 200
+    checkJson(BranchesPath, "GET", "200", ok.body)
+    var codes: seq[string]
+    for item in ok.body["items"]:
+      codes.add item["code"].getStr()
+      check item["branchId"].getStr().len > 0
+      check item["name"].getStr().len > 0
+      check item["status"].getStr() in ["ACTIVE", "INACTIVE"]
+    check "001" in codes
+
+    let denied = getJson(BranchesPath, plainToken)
+    check denied.code == 403
+    checkProblem(BranchesPath, "GET", "403", denied.body)
+
+    # Pemegang role ber-scope BRANCH justru pengguna yang butuh daftar ini. Izinnya diberikan ke
+    # role (bukan ke user), dan handler sengaja tidak menuntut grant tanpa batas cabang.
+    check dbValue(sql"""SELECT count(*)::text FROM platform.role_permission rp
+                          JOIN platform.role r ON r.role_id = rp.role_id
+                          JOIN platform.permission p ON p.permission_id = rp.permission_id
+                         WHERE r.code = 'teller' AND p.code = 'platform.branch.read'""") == "1"
+
 suite "administrasi pengguna: tugaskan & cabut role (T-117)":
   test "scope, duplikat, dan pencabutan grant persis":
     let branch = "b0000000-0000-4000-8000-0000000000aa"

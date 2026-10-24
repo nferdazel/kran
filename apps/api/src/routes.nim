@@ -12,6 +12,7 @@ import mummy
 import ./events
 import ./handlers_audit
 import ./handlers_auth
+import ./handlers_branches
 import ./handlers_deposit
 import ./handlers_journals
 import ./handlers_kyc
@@ -243,6 +244,13 @@ proc tellerVaultRoutes*(): seq[RouteSpec] =
               operationId: "rejectTellerVaultTopUp", handler: handleRejectTellerVaultTopUp),
   ]
 
+proc branchRoutes*(): seq[RouteSpec] =
+  ## Master cabang, baca saja (T-121/O-101). Penulisan tetap lewat `ctl create-branch`.
+  @[
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/branches", operationId: "listBranches",
+              handler: handleListBranches),
+  ]
+
 proc userRoutes*(): seq[RouteSpec] =
   ## Administrasi pengguna & role (T-117): daftar akun, katalog role, dan siklus hidup akun.
   ## Institusi (bukan cabang) → izin `platform.user.manage` **dan** grant tanpa batas cabang di
@@ -268,4 +276,4 @@ proc allRoutes*(): seq[RouteSpec] =
   systemRoutes() & authRoutes() & mfaRoutes() & paramRoutes() & auditRoutes() &
     partyRoutes() & kycRoutes() & ledgerRoutes() & journalRoutes() & productRoutes() &
     depositRoutes() & tellerRoutes() & tellerSessionRoutes() & tellerVaultRoutes() &
-    userRoutes() & eventRoutes()
+    branchRoutes() & userRoutes() & eventRoutes()

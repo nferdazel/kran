@@ -74,6 +74,10 @@ tags:
       Administrasi pengguna & role (spec §9.2, T-117): daftar akun operator, katalog role, dan
       siklus hidup akun (tugaskan/cabut role, nonaktifkan/aktifkan/buka kunci). Butuh izin
       `platform.user.manage` **dan** grant tanpa batas cabang (aksi tingkat institusi).
+  - name: platform
+    description: |
+      Data master platform: cabang (kode 3 digit + nama). Baca saja; pembuatan dan perubahan
+      tetap lewat `ctl create-branch` (D-130).
 
 paths:
   /healthz:
@@ -2545,6 +2549,34 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/branches:
+    get:
+      operationId: listBranches
+      tags: [platform]
+      summary: Master cabang
+      description: |
+        Daftar cabang (kode 3 digit + nama), urut kode. Kode adalah prefiks nomor rekening
+        (D-130). Baca saja: tidak ada rute untuk membuat atau mengubah cabang.
+
+        Izin `platform.branch.read` cukup **dipegang** (tidak dituntut grant tanpa batas cabang),
+        karena pemegang role ber-scope `BRANCH` justru pengguna yang butuh daftar ini. Daftar tidak
+        disaring per cabang; otorisasi per cabang tetap ditegakkan di endpoint yang menyentuh kas.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Daftar cabang
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BranchList"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
   /api/v1/roles:
     get:
       operationId: listRoles
@@ -3041,6 +3073,33 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/UserSummary"
+
+    BranchSummary:
+      type: object
+      additionalProperties: false
+      required: [branchId, code, name, status]
+      properties:
+        branchId:
+          type: string
+          format: uuid
+        code:
+          type: string
+          description: Kode 3 digit; prefiks nomor rekening (D-130).
+        name:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+
+    BranchList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BranchSummary"
 
     RoleSummary:
       type: object

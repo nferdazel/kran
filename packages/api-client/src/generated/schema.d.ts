@@ -1289,6 +1289,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/branches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Master cabang
+         * @description Daftar cabang (kode 3 digit + nama), urut kode. Kode adalah prefiks nomor rekening
+         *     (D-130). Baca saja: tidak ada rute untuk membuat atau mengubah cabang.
+         *
+         *     Izin `platform.branch.read` cukup **dipegang** (tidak dituntut grant tanpa batas cabang),
+         *     karena pemegang role ber-scope `BRANCH` justru pengguna yang butuh daftar ini. Daftar tidak
+         *     disaring per cabang; otorisasi per cabang tetap ditegakkan di endpoint yang menyentuh kas.
+         */
+        get: operations["listBranches"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/roles": {
         parameters: {
             query?: never;
@@ -1545,6 +1570,18 @@ export interface components {
         };
         UserList: {
             items: components["schemas"]["UserSummary"][];
+        };
+        BranchSummary: {
+            /** Format: uuid */
+            branchId: string;
+            /** @description Kode 3 digit; prefiks nomor rekening (D-130). */
+            code: string;
+            name: string;
+            /** @enum {string} */
+            status: "ACTIVE" | "INACTIVE";
+        };
+        BranchList: {
+            items: components["schemas"]["BranchSummary"][];
         };
         RoleSummary: {
             code: string;
@@ -4423,6 +4460,29 @@ export interface operations {
                 };
             };
             400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    listBranches: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar cabang */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BranchList"];
+                };
+            };
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
