@@ -443,13 +443,15 @@ proc bootstrapFirstAdmin*(db: DbConn, ctx: AuditContext, clock: Clock, scope: Sc
 # menyelesaikan pengguna lebih dulu (nama untuk CLI, id untuk HTTP) lalu memetakan hasilnya ke kode
 # keluar atau status HTTP — bukan menyalin aturannya.
 
-const platformAdminRole* = "platform_admin"
+const
+  platformAdminRole* = "platform_admin"
+  userManagePermission* = "platform.user.manage"
 
 type
   UserAdminOutcome* = enum
     uaoOk
     uaoRoleNotFound ## kode role tidak ada di katalog (salah ketik), bukan konflik.
-    uaoRejected     ## ditolak aturan: scope role, SoD, admin terakhir, atau status salah.
+    uaoRejected     ## ditolak aturan: scope role, SoD, pengelola terakhir, atau status salah.
     uaoWriteFailed  ## perubahan status gagal ditulis (mis. baris hilang di tengah transaksi).
 
   UserAdminResult* = object
@@ -457,12 +459,28 @@ type
     reason*: string ## kode stabil untuk pemetaan HTTP (`already_granted`, `sod_conflict`, …).
     detail*: string ## pesan untuk operator (dipakai CLI; boleh dibawa HTTP sebagai `detail`).
 
-proc locksOutLastAdmin*(db: DbConn, user: UserRow): bool =
-  ## True bila `user` satu-satunya pemegang `platform_admin`: mencabut role itu atau
-  ## menonaktifkan akunnya membuat tidak ada lagi yang bisa mengelola RBAC (satu pintu keluar
-  ## tanpa akses shell). Sama dengan penjagaan `ctl` — dipakai kedua jalur.
-  platformAdminRole in roleCodesOfUser(db, user.userId) and
-    countUsersWithRole(db, platformAdminRole) <= 1
+proc locksOutLastAdmin*(db: DbConn, user: UserRow, roleBeingRevoked = ""): bool =
+  ## True bila operasi menyisakan **nol** pengguna ACTIVE yang bisa mengelola pengguna, yaitu nol
+  ## pemegang izin `platform.user.manage` (bukan kode role tertentu): `platform_admin` dan
+  ## `ops_admin` sama-sama memegang izin itu, jadi keduanya terlindungi (T-118, K-7). Tanpa ini
+  ## instalasi bisa kehilangan satu-satunya akun yang bisa mengelola RBAC — satu pintu keluar tanpa
+  ## akses shell.
+  ##
+  ## `roleBeingRevoked` kosong (operasi status/`disable`) = seluruh peran dihitung. Terisi
+  ## (`revoke-role`) = hanya berpengaruh bila role itu memberi izin **dan** bukan satu-satunya jalur
+  ## `user` ke izin itu (peran pengelola lain tetap membuatnya mampu mengelola).
+  ##
+  ## Satu definisi, dipakai kedua jalur (`ctl` dan rute HTTP).
+  if user.status != "ACTIVE":
+    return false
+  if roleBeingRevoked.len > 0:
+    if not roleGrantsPermission(db, roleBeingRevoked, userManagePermission):
+      return false
+    if userHasPermissionExcludingRole(db, user.userId, roleBeingRevoked, userManagePermission):
+      return false
+  elif not userHasPermission(db, user.userId, userManagePermission):
+    return false
+  countActiveUsersWithPermission(db, userManagePermission) <= 1
 
 proc grantUserRole*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
                     user: UserRow, roleCode, branchId: string): UserAdminResult =
@@ -490,16 +508,18 @@ proc grantUserRole*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef
 proc revokeUserRole*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
                      user: UserRow, roleCode, branchId: string): UserAdminResult =
   ## Mencabut **persis** grant yang cocok: cabang kosong = grant institusi, cabang terisi = grant
-  ## cabang itu. Role `platform_admin` terakhir tidak boleh dicabut. Audit `user.role_revoke`.
+  ## cabang itu. Role terakhir yang membuat pengguna mampu mengelola pengguna tidak boleh dicabut.
+  ## Audit `user.role_revoke`.
   if not roleExists(db, roleCode):
     return UserAdminResult(outcome: uaoRoleNotFound, reason: "role_not_found",
       detail: "role tidak dikenal: " & roleCode)
   let problem = roleAssignmentProblem(db, roleCode, branchId)
   if problem.len > 0:
     return UserAdminResult(outcome: uaoRejected, reason: "role_scope", detail: problem)
-  if roleCode.toLowerAscii == platformAdminRole and locksOutLastAdmin(db, user):
+  if locksOutLastAdmin(db, user, roleBeingRevoked = roleCode):
     return UserAdminResult(outcome: uaoRejected, reason: "last_admin",
-      detail: "menolak mencabut role '" & platformAdminRole & "' terakhir")
+      detail: "menolak mencabut role '" & roleCode &
+        "': akan tidak ada pengguna aktif yang bisa mengelola pengguna")
   if not revokeRole(db, user.userId, roleCode, branchId):
     return UserAdminResult(outcome: uaoRejected, reason: "not_granted",
       detail: "pengguna tidak memegang role '" & roleCode & "' pada cabang itu")
@@ -511,10 +531,11 @@ proc revokeUserRole*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRe
 
 proc disableUserAccount*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
                          user: UserRow): UserAdminResult =
-  ## Menonaktifkan akun dan mencabut seluruh sesinya; admin terakhir dijaga. Audit `user.disable`.
+  ## Menonaktifkan akun dan mencabut seluruh sesinya; pengelola pengguna terakhir dijaga. Audit
+  ## `user.disable`.
   if locksOutLastAdmin(db, user):
     return UserAdminResult(outcome: uaoRejected, reason: "last_admin",
-      detail: "menolak menonaktifkan role '" & platformAdminRole & "' terakhir")
+      detail: "menolak menonaktifkan akun: akan tidak ada pengguna aktif yang bisa mengelola pengguna")
   let now = clock.now()
   let nowIso = utcIso(now)
   if not setUserStatus(db, user.userId, "INACTIVE"):

@@ -268,7 +268,7 @@ const CtlUsage* =
   "                    --user-role=<role>; optional --branch=<uuid>; audit user.role_grant)\n" &
   "  revoke-role     : revoke a role from a user (requires --username=<name>,\n" &
   "                    --user-role=<role>; optional --branch=<uuid>; refuses to revoke the last\n" &
-  "                    platform_admin; audit user.role_revoke)\n" &
+  "                    user who can manage users (platform.user.manage); audit user.role_revoke)\n" &
   "  disable-user    : set a user INACTIVE and revoke all sessions (requires --username=<name>;\n" &
   "                    audit user.disable)\n" &
   "  enable-user     : set an INACTIVE user back to ACTIVE (requires --username=<name>; only\n" &
@@ -571,8 +571,9 @@ proc runRevokeRole*(db: DbConn, username, roleCode, branchId: string, clock: Clo
   ## Mencabut role dari pengguna (offboarding). Mencabut **persis** grant yang cocok: cabang kosong
   ## = grant tingkat institusi, cabang terisi = grant cabang itu.
   ##
-  ## Penjaga penguncian-keluar: `platform_admin` terakhir tidak boleh dicabut — tanpa itu sistem
-  ## bisa kehilangan satu-satunya akun yang bisa mengelola RBAC.
+  ## Penjaga penguncian-keluar: pengguna terakhir yang memegang izin `platform.user.manage`
+  ## (`platform_admin` atau `ops_admin`) tidak boleh dicabut — tanpa itu sistem bisa kehilangan
+  ## satu-satunya akun yang bisa mengelola RBAC (T-118, K-7).
   ##
   ## Kode: 0 berhasil, 1 gagal menulis, 2 argumen kurang, 3 ditolak/tidak ditemukan.
   if username.len == 0 or roleCode.len == 0:
@@ -598,7 +599,7 @@ proc runRevokeRole*(db: DbConn, username, roleCode, branchId: string, clock: Clo
 
 proc runDisableUser*(db: DbConn, username: string, clock: Clock): int =
   ## Menonaktifkan akun dan mencabut seluruh sesinya. Kode: 0 berhasil, 1 gagal menulis, 2 argumen
-  ## kurang, 3 pengguna tidak ada / admin terakhir. Pemanggil wajib `withRoleDb(..., useTx = true)`.
+  ## kurang, 3 pengguna tidak ada / pengelola terakhir. Pemanggil wajib `withRoleDb(..., useTx = true)`.
   if username.len == 0:
     stderr.writeLine "kran-api: `ctl " & disableUserCmd & "` butuh --username=<nama>"
     return 2

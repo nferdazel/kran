@@ -196,7 +196,7 @@ Catatan penempatan: `CloseLevel` masih di `domain/calendar.nim`. Saat modul `day
 | Hash password | `infrastructure/password_hasher.nim` — PBKDF2-HMAC-SHA256; hash token sesi (SHA-256) |
 | Repo | `infrastructure/auth_repo.nim` — user/lockout, role/permission/SoD, sesi |
 | Alur | `infrastructure/auth_service.nim` — `authenticate`, `sessionFor`, `touch`, `logout`, `logoutAll`, `authorizeUser`, `changePassword`, `bootstrapFirstAdmin`, `createUserWithRole`, `roleAssignmentProblem` |
-| Migrasi | `0006_platform_auth.sql` (tabel) + `0008_platform_rbac_catalogue.sql` (katalog izin & role sistem) + `0010_platform_password_history.sql` (riwayat hash kata sandi) + `0028_platform_rbac_role_scope.sql` (kolom `role.scope` + izin baca parameter teller) |
+| Migrasi | `0006_platform_auth.sql` (tabel) + `0008_platform_rbac_catalogue.sql` (katalog izin & role sistem) + `0010_platform_password_history.sql` (riwayat hash kata sandi) + `0028_platform_rbac_role_scope.sql` (kolom `role.scope` + izin baca parameter teller) + `0032_platform_rbac_admin_roles.sql` (peran admin sempit + pasangan SoD, T-118) |
 
 Invarian tambahan:
 
@@ -269,7 +269,8 @@ Invarian tambahan:
     (bukan `false`) supaya pembungkus transaksi `withRoleDb` me-rollback baris itu — `withTx`
     COMMIT begitu `body` kembali normal, jadi `false` akan meng-commit akun setengah jadi.
     Siklus hidup (assign/revoke role, disable/enable/unlock) dilakukan lewat `ctl` dengan audit +
-    pencabutan sesi dalam satu transaksi; `revoke-role` menolak mencabut `platform_admin` terakhir.
+    pencabutan sesi dalam satu transaksi; `revoke-role`/`disable-user` menolak bila operasinya
+    menyisakan **nol** pengguna aktif yang bisa mengelola pengguna (`platform.user.manage`, T-118).
 
 Catatan: alur auth tinggal di `infrastructure` (butuh DB). Saat port/use case lapisan
 `application` lahir (pola T-016), isi `auth_service.nim` pindah ke `application/`.
@@ -279,7 +280,7 @@ Catatan: alur auth tinggal di `infrastructure` (butuh DB). Saat port/use case la
 | Bagian | Berkas |
 |---|---|
 | Layanan | `infrastructure/auth_service.nim` — `grantUserRole`, `revokeUserRole`, `disableUserAccount`, `enableUserAccount`, `unlockUserAccount` (+ `locksOutLastAdmin`); aturan siklus hidup **satu definisi**, dipakai `ctl` dan rute HTTP |
-| Repo | `infrastructure/auth_repo.nim` — `listUsers`, `roleGrantsOfUser`, `listRoles` (di samping `countUsersWithRole`) |
+| Repo | `infrastructure/auth_repo.nim` — `listUsers`, `roleGrantsOfUser`, `listRoles`, `countUsersWithRole`, dan (T-118) `roleGrantsPermission`, `userHasPermission`, `userHasPermissionExcludingRole`, `countActiveUsersWithPermission` |
 | HTTP | `apps/api/src/handlers_users.nim` — `GET /api/v1/users`, `GET /api/v1/roles`, `POST /api/v1/users/{userId}/roles`, `DELETE …/roles/{role}`, `POST …/disable|enable|unlock` |
 | Migrasi | `0029_platform_rbac_user_admin.sql` — izin `platform.user.manage` untuk `platform_admin` |
 
@@ -289,6 +290,32 @@ memakai action yang sama dengan `ctl` (`user.role_grant`, `user.role_revoke`, `u
 `user.enable`, `user.unlock`) dengan aktor dari sesi; penolakan dipetakan ke 409 dengan
 `params.reason` stabil (`last_admin`, `sod_conflict`, `already_granted`, `not_granted`,
 `not_inactive`, `not_locked`). **HUMAN-REVIEW-REQUIRED** (administrasi pengguna/RBAC, AGENTS.md §8).
+
+### Peran admin sempit & penjaga pengelola terakhir (T-118, K-1(b)/K-2(a)/K-7(a))
+
+Sampai `0029` hanya `platform_admin` yang memegang seluruh izin, sehingga SoD tidak bisa ditegakkan
+(memasangkan konflik ke peran wildcard itu akan melumpuhkannya sendiri). `0032` memecah admin menjadi
+peran sempit dan menyemai pasangan konflik antar peran itu:
+
+| Role | Izin inti | Fungsi |
+|---|---|---|
+| `ops_admin` | `platform.user.manage`, `platform.param.read`, `platform.audit.read`, `party.party.read`/`create`, `deposit.account.manage`/`read`, `product.catalog.read`, `ledger.coa.read`/`period.read`, `teller.vault.read` | administrasi akun/anggota/rekening |
+| `ledger_admin` | `ledger.coa.manage`, `ledger.period.manage`, `ledger.journal.read`/`reverse`, `product.catalog.manage`, `platform.param.read` | pembukuan, periode, COA, pembalik |
+| `cash_admin` | `teller.vault.topup`, `teller.vault.read` | penyediaan kas/vault cabang |
+| `product_maker` | `product.catalog.manage`, `product.catalog.read` | pengaju katalog produk (checker: `product_checker`) |
+
+Pasangan `platform.role_conflict` (kanonik `a < b`): wajib `product_checker`/`product_maker` dan
+`cash_admin`/`ledger_admin`; *nice to have* `ledger_admin`/`ops_admin`, `ledger_admin`/`teller`,
+`cash_admin`/`teller`. **`platform_admin` tetap ada sebagai break-glass** — bukan peran harian, dan
+sengaja tidak dipasangkan konflik agar override darurat tetap bisa dipakai (wajib beralasan + audit +
+laporan ke pengurus; memo T-118 §3).
+
+Penjaga penguncian-keluar (K-7(a)) bekerja pada **izin** `platform.user.manage`, bukan satu kode
+role: `locksOutLastAdmin(db, user, roleBeingRevoked)` menolak `revoke-role`/`disable-user` bila
+operasinya menyisakan nol pengguna **ACTIVE** pemegang izin itu (`platform_admin` dan `ops_admin`
+sama-sama dihitung). Pada `revoke-role`, role yang dicabut hanya berpengaruh bila ia memang memberi
+izin tersebut **dan** menjadi satu-satunya jalur pengguna ke izin itu. Satu definisi, dipakai `ctl`
+dan rute HTTP; `reason` stabil `last_admin` (kode keluar 3 / HTTP 409) tidak berubah.
 
 ## Master cabang (D-130)
 
