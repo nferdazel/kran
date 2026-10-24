@@ -4,7 +4,7 @@
 ## `disarmDeadline` melaporkan kejadian itu supaya pemanggil membuang koneksinya. Perilaku kueri
 ## sesungguhnya (koneksi beku lewat perantara TCP) diuji di `itpool.nim`.
 
-import std/[net, os, unittest]
+import std/[net, os, strutils, unittest]
 
 import "platform-lib/db/deadline"
 
@@ -51,3 +51,36 @@ suite "deadline: batas blok kerja":
     check armDeadline(-1, 100).token == 0
     check armDeadline(int32(1), 0).token == 0
     check not disarmDeadline(DeadlineGuard(token: 0))
+
+suite "deadline: degradasi tidak senyap (T-066)":
+  test "tabel penuh -> token 0, penghitung naik, log terstruktur sekali":
+    var lines: seq[string]
+    # `cast(gcsafe)` hanya di test: closure menulis ke variabel global seq, sedangkan `LogSink`
+    # diwajibkan gcsafe karena dipakai lintas thread pemantau.
+    setDeadlineLogSink(proc(line: string) {.gcsafe.} =
+      {.cast(gcsafe).}:
+        lines.add(line))
+    defer:
+      setDeadlineLogSink(nil)
+
+    let before = deadlineUnarmedTotal()
+    var guards: seq[DeadlineGuard]
+    while guards.len <= maxGuards:
+      let g = armDeadline(int32(1), 60_000)
+      if g.token == 0:
+        break
+      guards.add(g)
+
+    check guards.len == maxGuards
+    check deadlineUnarmedTotal() == before + 1
+    check lines.len == 1
+    check lines[0].contains("\"cause\":\"slot_table_full\"")
+    check lines[0].contains("\"deadline_unarmed_total\"")
+
+    # Kejadian berikutnya menambah penghitung tetapi tidak menulis log lagi.
+    check armDeadline(int32(1), 60_000).token == 0
+    check deadlineUnarmedTotal() == before + 2
+    check lines.len == 1
+
+    for g in guards:
+      discard disarmDeadline(g)
