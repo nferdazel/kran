@@ -21,7 +21,8 @@ import std/[json, options, strutils]
 import mummy
 import db_connector/db_postgres
 
-import kernel/[clock, ids, money, result]
+import kernel/[clock, ids, money, paramkey, result]
+import kernel/generated/paramkeys
 import platform/domain/[audit, event, idempotency, scope]
 import platform/infrastructure/[audit_repo, auth_service, outbox_repo]
 import deposit/domain/account
@@ -37,6 +38,7 @@ import teller/domain/session
 import teller/infrastructure/session_repo
 
 import ./access
+import ./cash_limit
 import ./context
 import ./db_bridge
 import ./deposit_posting
@@ -271,6 +273,17 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
               raise newException(ValueError, problem)
 
             let businessDate = businessDateFor(db, institutionScope(), asOf)
+
+            # Plafon per transaksi (K-5/O-099) dari parameter; dicek sebelum saldo/jurnal disentuh.
+            let valueLimit = cashLimit(db,
+              if direction == cdDeposit: P_teller_cash_limit_deposit
+              else: P_teller_cash_limit_withdrawal, businessDate)
+            if exceedsLimit(amount, valueLimit):
+              status = 409
+              reason = "cash_limit_exceeded"
+              problem = "nominal melebihi plafon " & valueLimit.toDecimalString
+              raise newException(ValueError, problem)
+
             if not periodOpenFor(db, businessDate):
               status = 409
               reason = "period_closed"
@@ -412,6 +425,10 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
   except DepositConfigError:
     if status == 0:
       status = 500
+  except CashLimitConfigError as e:
+    if status == 0:
+      status = 500
+    problem = "konfigurasi plafon kas tidak sah: " & e.msg
   except ValueError as e:
     if status == 0:
       status = 400

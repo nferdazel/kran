@@ -744,6 +744,57 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "teller.cash.limit_deposit",
+    "module": "teller",
+    "valueType": "money",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.teller.cash.limit_deposit",
+    "jsonSchema": {
+      "minimum": 0
+    }
+  },
+  {
+    "key": "teller.cash.limit_opening_float",
+    "module": "teller",
+    "valueType": "money",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.teller.cash.limit_opening_float",
+    "jsonSchema": {
+      "minimum": 0
+    }
+  },
+  {
+    "key": "teller.cash.limit_withdrawal",
+    "module": "teller",
+    "valueType": "money",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.teller.cash.limit_withdrawal",
+    "jsonSchema": {
+      "minimum": 0
+    }
+  },
+  {
     "key": "teller.vault.cash_account",
     "module": "teller",
     "valueType": "string",
@@ -759,6 +810,23 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     "jsonSchema": {
       "minLength": 1,
       "maxLength": 32
+    }
+  },
+  {
+    "key": "teller.vault.limit_topup_per_request",
+    "module": "teller",
+    "valueType": "money",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.teller.vault.limit_topup_per_request",
+    "jsonSchema": {
+      "minimum": 0
     }
   }
 ] as const;
