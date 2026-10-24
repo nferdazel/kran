@@ -38,7 +38,7 @@ LOG="$APP_DIR/logs/deploy.log"
 LIB_DIR="$APP_DIR/lib"
 export LD_LIBRARY_PATH="$LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 HEALTH_URL="${KRAN_HEALTH_URL:-http://127.0.0.1:8095/readyz}"
-# Unit quadlet user (podman); dipasang dari repo oleh `sync_units` di bawah.
+# Unit quadlet user (podman); dipasang dari repo oleh `sync_units` **setelah** gate lolos.
 UNIT_DIR="${KRAN_UNIT_DIR:-$HOME/.config/containers/systemd}"
 
 mkdir -p "$APP_DIR/logs"
@@ -118,8 +118,11 @@ fi
 # 2. Lock (spec §21.4 #2): satu deploy pada satu waktu.
 exec 9>"$APP_DIR/.deploy.lock"
 if ! flock -n 9; then
-  log "==> deploy lain sedang berjalan; keluar tanpa menunggu"
-  exit 0
+  # OPS-1 (T-131): keluar 0 berarti webhook melihat "deploy sukses" padahal commit ini **tidak
+  # pernah** di-deploy. Produksi lalu tertinggal dari `main` tanpa sinyal apa pun. Gagal jelas;
+  # push berikutnya (atau deploy manual) memicu ulang.
+  log "==> ERROR: deploy lain masih berjalan (lock $APP_DIR/.deploy.lock); commit ini TIDAK di-deploy"
+  exit 1
 fi
 
 if [ -z "${KRAN_GIT_URL:-}" ]; then
@@ -156,6 +159,18 @@ fi
 
 REVID="${NEW_REV:0:12}"
 [ -n "$REVID" ] || REVID="unknown"
+# ID image yang kehilangan tag `:prev` pada deploy ini; diisi saat build (lihat di bawah).
+OLD_PREV_IMAGE_ID=""
+
+# OPS-10 (T-131): HMAC GitHub menutup **body**, bukan waktu kirim, jadi satu delivery sah bisa
+# diputar ulang. Pertahanannya bukan di webhook melainkan di sini: rev yang sama dengan yang sudah
+# ter-deploy tidak membangun/mengulang apa pun. `KRAN_FORCE_DEPLOY=1` untuk deploy ulang yang
+# memang disengaja (mis. setelah mengubah env di server).
+if [ "$IS_FIRST" -eq 0 ] && [ -f "$STATE_FILE" ] && [ "$(cat "$STATE_FILE")" = "$NEW_REV" ] &&
+   [ "${KRAN_FORCE_DEPLOY:-0}" != "1" ]; then
+  log "==> skip: rev $REVID sudah ter-deploy (delivery duplikat/replay; KRAN_FORCE_DEPLOY=1 untuk paksa)"
+  exit 0
+fi
 
 # Self-update: sinkronkan skrip repo -> server. Pakai .new + mv (rename) supaya
 # bash tidak membaca file yang sedang ditimpa — lihat catatan di skyward.
@@ -220,7 +235,9 @@ restore_units() {
   done
 }
 
-sync_units
+# `sync_units` sengaja **tidak** dipanggil di sini: memasang unit baru sebelum FREEZE/MIGRATION gate
+# membuat `die` meninggalkan unit yang belum tentu cocok dengan image yang berjalan (OPS-5,
+# T-131). Pemasangan terjadi setelah gate lolos, tepat sebelum restart.
 
 # ── Gate unit: layanan kini container (quadlet), bukan unit native ──
 # Unit native ~/.config/systemd/user/kran-api.service dan unit hasil generator quadlet bernama
@@ -271,6 +288,11 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|tools/|kran\.
   cd "$MONO_DIR" || die "gagal masuk $MONO_DIR"
   # Simpan image sebelumnya: rollback LAYANAN memakai tag image. Biner di bawah bukan untuk
   # layanan, hanya supaya gate (FREEZE/MIGRATION) bisa menjalankan versi yang baru dibangun.
+  # Image yang sekarang memegang `:prev` akan kehilangan tag setelah rotasi di bawah (rotasi
+  # memindahkan `:prev` ke image `:local` saat ini). Dicatat untuk dipangkas setelah gate sukses.
+  if podman image exists localhost/kran-api:prev; then
+    OLD_PREV_IMAGE_ID="$(podman image inspect --format '{{.Id}}' localhost/kran-api:prev 2>/dev/null || true)"
+  fi
   if podman image exists localhost/kran-api:local; then
     podman tag localhost/kran-api:local localhost/kran-api:prev 2>/dev/null || true
   fi
@@ -394,6 +416,12 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/web/|packages/)' <<<"$CHANGED_FILES
     log "==> Build web (pnpm)..."
     cd "$MONO_DIR/apps/web" || die "gagal masuk apps/web"
     export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+    # OPS-3 (T-131): corepack membaca `packageManager` di package.json, jadi versi pnpm sama dengan
+    # CI. Tanpa pin, image bisa dibangun pnpm lain yang mengabaikan `minimumReleaseAge`/`allowBuilds`
+    # (cooldown supply chain) — yaitu kebijakan keamanan yang justru dilewati.
+    pnpm_version="$(sed -nE 's/.*"packageManager": *"pnpm@([^"]+)".*/\1/p' "$MONO_DIR/package.json" | head -1)"
+    [ -n "$pnpm_version" ] || die "package.json tidak memuat \"packageManager\" (pnpm) — deploy dibatalkan"
+    log "    pnpm $pnpm_version (dari package.json)"
     corepack pnpm install --frozen-lockfile
     corepack pnpm run build
     if [ -d "$MONO_DIR/apps/web/build" ]; then
@@ -415,30 +443,27 @@ else
   log "==> web tidak berubah; dilewati"
 fi
 
-# Retensi tag image (T-069): satu tag SHA per build, tanpa pemangkasan berarti disk tumbuh terus.
-# Yang dipangkas hanya tag SHA 12-hex; `:local` dan `:prev` tidak pernah disentuh, dan pemangkasan
-# berjalan SETELAH health gate sukses supaya target rollback tidak hilang lebih dulu. `podman images`
-# mengurutkan terbaru dulu. Gagal `rmi` (mis. image masih dipakai container berhenti) = WARN, bukan
-# deploy gagal.
-prune_images() {
-  local keep="${KRAN_IMAGE_KEEP:-5}" tag n=0
-  local -a shas=()
-  case "$keep" in ''|*[!0-9]*) keep=5 ;; esac
-  [ "$keep" -ge 1 ] || keep=1
-  while IFS= read -r tag; do
-    shas+=("$tag")
-  done < <(podman images --format '{{.Repository}}:{{.Tag}}' | grep -E '^localhost/kran-api:[0-9a-f]{12}$' || true)
-  [ "${#shas[@]}" -gt 0 ] || return 0
-  for tag in "${shas[@]}"; do
-    n=$((n + 1))
-    [ "$n" -le "$keep" ] && continue
-    if podman rmi "$tag" >/dev/null 2>&1; then
-      log "==> image lama dihapus: ${tag#localhost/kran-api:}"
-    else
-      log "==> WARN: gagal menghapus $tag (dipakai container?)"
-    fi
-  done
+# Retensi image (T-069, OPS-2/T-131). Build **tidak pernah** membuat tag SHA: yang ada hanya
+# `:local` (aktif) dan `:prev` (cadangan rollback). Karena itu pemangkas lama (`grep` tag 12-hex)
+# tidak pernah menemukan apa pun — setiap deploy meninggalkan satu image dangling. Yang benar:
+# sebelum build, catat ID image yang **sekarang** memegang `:prev` (image itu akan kehilangan tag
+# setelah rotasi), lalu hapus ID itu setelah health gate sukses. `:local`/`:prev` tidak pernah
+# disentuh, dan penghapusan terjadi setelah gate supaya target rollback tidak hilang lebih dulu.
+# Gagal `rmi` (masih dipakai container berhenti) = WARN, bukan deploy gagal.
+prune_previous_image() {
+  local image_id="${1:-}"
+  [ -n "$image_id" ] || return 0
+  if podman rmi "$image_id" >/dev/null 2>&1; then
+    log "==> image sebelumnya dihapus: ${image_id:0:12}"
+  else
+    log "==> WARN: gagal menghapus image ${image_id:0:12} (masih dipakai container?)"
+  fi
 }
+
+# 9b. Pasang unit quadlet dari repo **setelah** semua gate lolos (OPS-5, T-131): unit baru hanya
+# masuk disk bila image & skema sudah siap menerimanya.
+log "==> pasang unit quadlet dari repo"
+sync_units
 
 # 10. Restart unit (spec §21.4 #10).
 log "==> restart kran-api & kran-worker"
@@ -475,10 +500,35 @@ if [ "$healthy" -ne 1 ]; then
   systemctl --user daemon-reload
   systemctl --user restart kran-api || true
   systemctl --user restart kran-worker || true
+
+  # OPS-4 (T-131): rollback yang tidak sehat **bukan** rollback selesai. Tanpa pemeriksaan kedua,
+  # log hanya mengatakan "rollback" sementara layanan tetap mati dan tidak ada yang tahu.
+  rollback_healthy=0
+  for _ in {1..15}; do
+    if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
+      rollback_healthy=1
+      break
+    fi
+    sleep 2
+  done
+  if [ "$rollback_healthy" -eq 1 ]; then
+    log "==> rollback selesai dan sehat ($HEALTH_URL OK) — deploy revision $REVID dianggap GAGAL"
+  else
+    log "==> ERROR: rollback juga tidak sehat ($HEALTH_URL). Butuh intervensi manual (rollback.sh, log container)."
+  fi
   exit 1
 fi
 log "==> API sehat ($HEALTH_URL OK)"
-prune_images
+prune_previous_image "$OLD_PREV_IMAGE_ID"
+
+# OPS-8 (T-131): manifest rilis satu baris — rev, image yang sedang aktif, hash biner gate, waktu.
+# Tag SHA sengaja tidak dipakai: retensi hanya `:local`/`:prev` (kontrak emas §3.4). Bukti rilis
+# karena itu berupa catatan, bukan tumpukan image/biner per commit.
+image_id="$(podman image inspect --format '{{.Id}}' localhost/kran-api:local 2>/dev/null || echo unknown)"
+bin_sha="$(sha256sum "$BIN" 2>/dev/null | cut -d' ' -f1 || echo unknown)"
+printf '%s %s %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$NEW_REV" "${image_id:0:19}" "$bin_sha" \
+  >> "$APP_DIR/releases.txt"
+log "==> rilis dicatat: $APP_DIR/releases.txt (rev ${REVID}, image ${image_id:0:19}, bin $bin_sha)"
 
 # 12. State + log (spec §21.4 #12). Journal menerima stdout via systemd webhook.
 if [ -n "${NEW_REV:-}" ]; then printf '%s\n' "$NEW_REV" > "$STATE_FILE"; fi

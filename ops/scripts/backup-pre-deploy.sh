@@ -56,3 +56,19 @@ if [ "${objects:-0}" -eq 0 ]; then
 fi
 
 echo "==> ok: $out ($size byte, terverifikasi)"
+
+# Retensi (OPS-7, T-131): dump pra-deploy menumpuk tanpa batas — tiap deploy dengan perubahan
+# migrasi (dan tiap contract) menambah satu berkas penuh. Yang disimpan hanya N terbaru; sisanya
+# dihapus setelah dump baru terbukti bisa dibaca, jadi kegagalan di atas tidak pernah mengurangi
+# cadangan yang ada.
+KEEP="${KRAN_PREDEPLOY_KEEP:-10}"
+case "$KEEP" in ''|*[!0-9]*) KEEP=10 ;; esac
+[ "$KEEP" -ge 1 ] || KEEP=1
+removed=0
+while IFS= read -r old_dump; do
+  [ -n "$old_dump" ] || continue
+  rm -f "$old_dump" && removed=$((removed + 1))
+done < <(find "$DEST_DIR" -maxdepth 1 -type f -name '*.dump' -print   | sort -r | tail -n +"$((KEEP + 1))")
+if [ "$removed" -gt 0 ]; then
+  echo "==> retensi: $removed dump lama dihapus (menyimpan $KEEP terbaru)"
+fi

@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.25.0",
   "comment": "Root workspace pnpm. Satu pintu perintah tetap ./task (D-001); skrip di sini hanya untuk paket TS.",
   "engines": {
     "node": ">=24"
