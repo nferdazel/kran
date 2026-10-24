@@ -3132,3 +3132,50 @@ parameter beserta angka pilot (`docs/proposals/t-118-sme-accounting.md` §1).
 **Konsekuensi.** Limit hanya plafon kebijakan: cek saldo vault/`insufficient_funds` tetap berlaku
 dan bisa menolak lebih dulu. Akumulasi harian, plafon saldo vault, dan toleransi variance sengaja
 **tidak** diadopsi sekarang (usulan opsional SME) — ditunda sampai ada kebutuhan pilot yang nyata.
+
+## D-134 — Sisa keputusan T-118 diambil alih pemilik (K-3/K-4/K-6/K-8, O-105)
+
+**Konteks.** Setelah D-131/D-132/D-133, lima butir masih menunggu pemilik. Pemilik mendelegasikan
+keputusannya ke agen (24 Okt 2026) dengan batas yang sama: tidak mengarang regulasi, semua
+klasifikasi yang menyentuh kepatuhan ditandai `NEEDS-COMPLIANCE-REVIEW`, dan setiap mutasi
+saldo/jurnal ditandai `HUMAN-REVIEW-REQUIRED`. Rujukan usulan: dua memo SME
+(`docs/proposals/t-118-sme-accounting.md`, `t-118-sme-governance.md`).
+
+**Keputusan.**
+1. **K-3 — headcount & break-glass.** Minimum **3 operator harian** (target 4: `ops_admin`,
+   `cash_admin`, `teller`, `ledger_admin`) + **satu** `platform_admin` tersegel. `platform_admin`
+   **dilarang** menjadi login harian; hanya untuk (a) menjadi akun kedua saat pembanding manusia
+   tidak ada, (b) perbaikan konfigurasi sekali jalan. Setiap pemakaian wajib: audit sistem +
+   Buku Break-glass (waktu, akun harian, akun BG, operasi, `request_id`/`journal_id`, alasan,
+   penanda tangan) + laporan H+1 ke pengurus + ambang frekuensi **3 pemakaian/bulan** sebelum
+   perlu persetujuan pengurus. Staf berhenti/cuti >5 hari kerja: cabut akses dalam **1 hari kerja**
+   setelah pengganti memegang `platform.user.manage` (`disable-user`); dilarang berbagi kata sandi.
+   Prosedur: `docs/runbooks/break-glass.md`.
+2. **K-4 — bukti top-up.** Bukti kanonik = baris `teller.vault_topup_request`. Format `note`
+   (1–200 karakter): `[JENIS SUMBER] <jenis bukti> <nomor referensi> | <tujuan singkat>`. Bukti
+   fisik asli di Berkas Bukti Kas cabang; salinan digital di luar DB (DB tidak menyimpan berkas).
+   Retensi fisik **10 tahun** (`NEEDS-COMPLIANCE-REVIEW`, REG-007 belum terverifikasi); data
+   DB/audit/jurnal permanen. Checker memeriksa: nominal = bukti, akun sumber sah, `note` memuat
+   nomor referensi, cabang benar, pengaju orang lain, periode OPEN; ragu → tolak beralasan.
+3. **K-6 — pemetaan GL kas.** `101.1`/`101.2`/`101.9` + rule buka/tutup/selisih **dikonfirmasi
+   untuk pilot**; deviasi kaki selisih ke akun laci (`101.2`) disahkan. `101.9` adalah akun suspens
+   aset: wajib di-clear berkala; klasifikasi final (pendapatan lain vs kontra-aset) menunggu
+   compliance. Gate EOD/clear otomatis tetap Fase 3.
+4. **K-8 — akses vault `teller`.** `teller` **tidak** memegang `teller.vault.submit` maupun
+   `teller.vault.approve` (status quo `0035`). Ditegakkan uji `itapi_roles` supaya migrasi kelak
+   yang menambahkannya gagal di CI.
+5. **O-105 — saldo awal vault.** Sumber dana `10.000.000` diperlakukan sebagai **kewajiban**
+   `203 TITIPAN PENGURUS` (bukan ekuitas): uang pilot disediakan pemilik/pengurus, tidak ada
+   pernyataan setoran modal, dan liabilitas tidak memberi hak SHU. Reklasifikasi ke ekuitas bisa
+   dilakukan kelak lewat jurnal baru bila pemilik menyatakannya modal. Jurnalnya satu kali:
+   `D 101.1 KAS DI VAULT / K 203 TITIPAN PENGURUS` lewat `ctl post-opening-balance`
+   (rule `LedgerCashOpening`, `ledger/0036`), teraudit (`ledger.opening_balance`) dan idempoten
+   per cabang. Saldo historis induk `101` (`2.700.000`) **tidak** dipindahkan — memindahkannya
+   butuh jurnal ke akun non-postable yang ditolak trigger, dan menulis ulang baris lama melanggar
+   imutabilitas. Rekonsiliasi resmi: `teller.vault` = GL `101.1` + GL `101` (legasi) per cabang
+   saat tidak ada sesi OPEN.
+
+**Konsekuensi.** Semua penanda kepatuhan tetap berlaku: klasifikasi `203`, pemetaan `101.x`, dan
+angka retensi 10 tahun adalah usulan pilot (`NEEDS-COMPLIANCE-REVIEW`); jurnal saldo awal
+menyentuh neraca (`HUMAN-REVIEW-REQUIRED`, AGENTS §8). Yang masih terbuka tinggal UI vault (T-121)
+dan keputusan numerik lanjutan (akumulasi harian, plafon saldo vault, toleransi variance).

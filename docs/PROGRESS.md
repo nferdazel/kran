@@ -2507,6 +2507,7 @@ buka float `100.000` (jurnal `D 101.2 / K 101.1`), setor tunai `50.000` ke `0010
 nominal kas → O-099/T-122), K-6 (konfirmasi pemetaan GL), K-8 (`teller` top-up); UI vault (T-121);
 **O-105**: saldo vault pilot `10.000.000` belum punya jurnal pembuka (GL kas `2.850.000` vs vault
 `12.850.000`) — perlu keputusan akun sumber saldo awal + reklasifikasi `101` historis.
+**Ditutup D-134** (lihat bagian berikut): K-3/K-4/K-6/K-8 ditetapkan, O-105 dijurnal.
 
 ## 24 Okt 2026 — plafon nominal kas jadi parameter (T-122/K-5, D-133)
 
@@ -2531,3 +2532,29 @@ sinkron; `tcontract` 6 OK; DB dev `itapi_teller_sessions` 13 OK, `itapi_teller_v
 **Sisa.** Akumulasi harian, plafon saldo vault, dan toleransi variance (usulan opsional SME) belum
 diadopsi. Keputusan pemilik lain tetap terbuka: K-3, K-4, K-6, K-8 (O-102), O-105 (akun sumber saldo
 awal 10 jt), UI vault (T-121).
+
+## 24 Okt 2026 — sisa keputusan T-118 + saldo awal vault (D-134)
+
+Pemilik mendelegasikan lima butir yang tersisa; semuanya ditetapkan tanpa mengarang regulasi
+(penanda `NEEDS-COMPLIANCE-REVIEW` tetap di tempatnya).
+
+- **K-3 break-glass** (`docs/runbooks/break-glass.md`): `platform_admin` tersegel, minimum 3 operator
+  harian (target 4), setiap pemakaian wajib Buku Break-glass + laporan H+1, ambang 3 pemakaian/bulan;
+  berhenti/cuti >5 hari kerja → `disable-user` dalam 1 hari kerja setelah pengganti memegang
+  `platform.user.manage`.
+- **K-4 bukti top-up**: format `note` `[JENIS SUMBER] <jenis bukti> <no-ref> | <tujuan>`; bukti fisik
+  di Berkas Bukti Kas cabang (retensi 10 tahun, `NEEDS-COMPLIANCE-REVIEW`), DB tidak menyimpan berkas.
+- **K-6/K-8**: pemetaan `101.1`/`101.2`/`101.9` dikonfirmasi untuk pilot; `teller` tidak memegang
+  `teller.vault.submit`/`approve` — ditegakkan uji `itapi_roles` supaya migrasi kelak gagal di CI.
+- **O-105 saldo awal vault**: `ledger/0036` menambah akun `203 TITIPAN PENGURUS` + rule
+  `LedgerCashOpening` (`D 101.1 / K 203`); `ctl post-opening-balance --username --branch --amount
+  --business-date` memposting **satu** jurnal per cabang (idempoten, audit `ledger.opening_balance`,
+  menolak tanggal di luar periode OPEN). Rekonsiliasi resmi = `teller.vault` = GL `101.1 + 101`
+  (legasi) per cabang saat tidak ada sesi OPEN; `101` historis tidak dipindah karena non-postable
+  dan immutable.
+
+**Bukti.** `itapi_roles` 29 OK (termasuk uji idempotensi/penolakan periode + K-8), `itapi_party`
+(reset schema) 0 gagal sebelum `itapi_roles`, `./task check-fast`/`lint` hijau, `./task fmt` bersih.
+
+**Sisa.** UI vault (T-121), angka lanjutan opsional (akumulasi harian, plafon saldo vault, toleransi
+variance), dan pembuatan akun per peran di produksi supaya SoD berlaku penuh.
