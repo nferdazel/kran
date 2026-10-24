@@ -119,6 +119,18 @@ Tidak ada parameter baru di seed/packs untuk T-088b:
 - Batas nominal/limit transaksi tunai belum ada (menunggu parameter T-093) —
   **NEEDS-COMPLIANCE-REVIEW**.
 
+## Rekonsiliasi cache (T-101)
+
+`account_balance` adalah cache; baris di `deposit.transaction` (tunai) dan `deposit.transfer` (PB)
+adalah sumbernya. `kran-api --role=ctl reconcile-deposits [--branch=<uuid>]` membandingkan
+`expected = Σ tunai masuk − Σ tunai keluar + Σ PB masuk − Σ PB keluar` dengan cache, mencetak setiap
+rekening yang berbeda (termasuk cache yang hilang), dan keluar **1** bila ada selisih. Baca saja:
+koreksi harus lewat penyelidikan, bukan ditulis ulang alat ini.
+
+Kenapa bukan `journal_line`: kedua kaki PB memakai akun `201` yang sama (net-nol), jadi jurnal tidak
+bisa memisahkan saldo per rekening (D-124). Jurnal simpanan yang dibalik di ledger juga tidak
+memutar baris simpanan (T-123).
+
 ## Jenis simpanan & cetak (T-111, T-094)
 
 - `Account.savingsKind` dibaca lewat join `product.product` (bukan kolom rekening); `""` = belum
