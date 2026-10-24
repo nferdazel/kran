@@ -1933,13 +1933,16 @@ paths:
         `session_already_open`.
 
         Tutup sesi (`POST …/sessions/{sessionId}/close`) mencatat `expected_cash`, `counted_cash`,
-        dan `variance`. **Tidak ada jurnal GL** untuk kas teller/variance (keputusan akuntansi
-        belum diambil; lihat `docs/ACCEPTED-LIMITS.md`).
+        dan `variance`. Buka/tutup/selisih **berjurnal** (`D 101.2 / K 101.1` sebesar float,
+        `D 101.1 / K 101.2` sebesar counted, selisih ke/dari `101.9`) dan ditulis di transaksi yang
+        sama dengan mutasi vault (T-118/D-132); pemetaan akun `NEEDS-COMPLIANCE-REVIEW`.
 
         `Idempotency-Key` wajib. Replay kunci+isi sama → 200 + `Idempotent-Replayed`; kunci sama isi
         beda → 409. Izin `teller.session.open` harus dipegang di cabang ini
         (`params.reason=branch_not_allowed` bila hanya di cabang lain). Konflik domain 409 memakai
-        `params.reason`: `session_already_open`, `insufficient_vault`, `vault_not_configured`.
+        `params.reason`: `cash_limit_exceeded` (opening float melebihi parameter
+        `teller.cash.limit_opening_float`), `session_already_open`, `insufficient_vault`,
+        `vault_not_configured`.
 
         **HUMAN-REVIEW-REQUIRED** (mutasi vault + variance kas, AGENTS.md §8).
       security:
@@ -2186,7 +2189,9 @@ paths:
         Vault harus sudah ada (404 `vault_not_configured`). Izin `teller.vault.submit` harus
         dipegang di cabang ini (`params.reason=branch_not_allowed`). `sourceAccount` wajib akun
         ASSET aktif yang postable dan **bukan** akun vault itu sendiri (400
-        `params.reason=source_account_invalid`).
+        `params.reason=source_account_invalid`). Nominal di atas parameter
+        `teller.vault.limit_topup_per_request` → 409 `params.reason=topup_exceeds_limit` (nominal
+        tepat di plafon diterima).
 
         `Idempotency-Key` wajib. Replay kunci+isi sama → 200 + `Idempotent-Replayed`; kunci sama isi
         beda → 409.
@@ -2345,7 +2350,9 @@ paths:
         (`params.reason=branch_not_allowed` bila hanya di cabang lain). Konflik domain 409 memakai
         `params.reason`: `no_open_session` (tidak ada sesi kas `OPEN` untuk teller di cabang rekening),
         `session_business_date_mismatch` (sesi `OPEN` ada tetapi untuk tanggal bisnis lain; tutup
-        sesi itu dulu), `account_not_active`, `insufficient_funds`, `period_closed`,
+        sesi itu dulu), `cash_limit_exceeded` (nominal melebihi parameter
+        `teller.cash.limit_deposit`/`teller.cash.limit_withdrawal`), `account_not_active`,
+        `insufficient_funds`, `period_closed`,
         `savings_kind_locked` (penarikan dari rekening bersimpanan pokok/wajib belum didukung;
         saldo & jurnal tidak berubah).
 

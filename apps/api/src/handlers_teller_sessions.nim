@@ -19,13 +19,15 @@ import std/[json, options, strutils]
 import mummy
 import db_connector/db_postgres
 
-import kernel/[clock, ids, money, result]
+import kernel/[clock, ids, money, paramkey, result]
+import kernel/generated/paramkeys
 import platform/domain/[audit, event, idempotency, scope]
 import platform/infrastructure/[audit_repo, auth_service, outbox_repo]
 import teller/domain/session
 import teller/infrastructure/session_repo
 
 import ./access
+import ./cash_limit
 import ./context
 import ./db_bridge
 import ./deposit_posting
@@ -135,6 +137,14 @@ proc handleOpenTellerSession*(app: AppContext, req: Request) {.gcsafe.} =
             let businessDate = businessDateFor(db, institutionScope(), asOf)
             let teller = parseId(principal.user.userId).value()
 
+            # Plafon float per sesi (K-5/O-099) dari parameter; dicek sebelum vault disentuh.
+            let floatLimit = cashLimit(db, P_teller_cash_limit_opening_float, businessDate)
+            if exceedsLimit(openingFloat, floatLimit):
+              status = 409
+              reason = "cash_limit_exceeded"
+              problem = "opening float melebihi plafon " & floatLimit.toDecimalString
+              raise newException(ValueError, problem)
+
             # Periksa lebih dulu supaya vault tidak tersentuh; balapan tetap ditangani index di bawah.
             if openSessionFor(db, branchId.value(), teller).isSome:
               status = 409
@@ -195,6 +205,9 @@ proc handleOpenTellerSession*(app: AppContext, req: Request) {.gcsafe.} =
   except IdempotencyStateError:
     status = 500
     problem = "idempotensi gagal diselesaikan"
+  except CashLimitConfigError as e:
+    status = 500
+    problem = "konfigurasi plafon kas tidak sah: " & e.msg
   except ValueError as e:
     if status == 0:
       status = 400

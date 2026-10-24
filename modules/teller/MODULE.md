@@ -102,8 +102,14 @@ runtime (pola `deposit/0006`/`0008`: `ON ALL TABLES` hanya mencakup tabel yang a
   (O-099/K-5). Saldo awal tetap bisa diisi seed/runbook (satu kali, ops).
 - **Vault harus sudah ada** sebelum top-up: baris hilang bukan dibuat diam-diam (404
   `vault_not_configured`). Vault kosong juga membuat sesi tidak bisa dibuka — fail-closed, bukan bug.
-- **Limit kas teller / nominal transaksi** belum ada (parameter belum ditetapkan pemilik) —
-  `NEEDS-COMPLIANCE-REVIEW`, jangan mengarang nilainya.
+- **Plafon nominal kas = parameter (D-133, O-099 tertutup)**: `teller.cash.limit_opening_float`
+  (pilot 2.000.000), `teller.cash.limit_deposit` (10.000.000), `teller.cash.limit_withdrawal`
+  (5.000.000), `teller.vault.limit_topup_per_request` (25.000.000). Dibaca `apps/api/src/cash_limit.nim`
+  (scope institusi, tanggal bisnis) dan dicek **di handler** sebelum mutasi; pelanggaran = 409
+  `cash_limit_exceeded`/`topup_exceeds_limit`, nominal tepat di plafon diterima, parameter hilang =
+  500. Angka = kebijakan pilot (`NEEDS-COMPLIANCE-REVIEW`), bukan regulasi; ubah lewat nilai parameter.
+- **Belum ada** akumulasi harian, plafon saldo vault, dan toleransi variance (usulan opsional SME,
+  ditunda sampai ada kebutuhan pilot).
 - **Rollback binary setelah 093b**: transaksi tunai kembali tanpa sesi sementara sesi masih `OPEN` →
   tutup semua sesi (atau rekonsiliasi manual) sebelum rollback.
 - Tanpa rekap/daftar transaksi per sesi (088d/T-108) dan tanpa tutup otomatis sesi lama (T-093 R9).

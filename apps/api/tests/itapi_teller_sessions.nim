@@ -324,6 +324,19 @@ suite "sessions: buka & vault":
     check reply.body["params"]["reason"].getStr() == "insufficient_vault"
     check vaultOf(BranchB) == before
 
+  test "opening float di atas plafon → 409 cash_limit_exceeded, vault utuh":
+    let token = tokenOf(login(MakerUser))
+    let before = vaultOf(BranchA)
+    # Plafon `teller.cash.limit_opening_float` = 2.000.000; dicek lebih dulu daripada saldo vault,
+    # sehingga alasan penolakan pasti plafon, bukan `insufficient_vault`.
+    let reply = openSession(token, BranchA, "2000000.0001", "sess-limit-" & $epochTime())
+    check reply.code == 409
+    checkProblem(SessionsPath, "POST", "409", reply.body)
+    check reasonOf(reply) == "cash_limit_exceeded"
+    check vaultOf(BranchA) == before
+    check dbCount(sql"""SELECT count(*)::text FROM teller.teller_session
+                         WHERE branch_id = ? AND status = 'OPEN'""", BranchA) == 0
+
   test "buka 201 menurunkan vault; tutup 200 menambahnya sebesar counted":
     let token = tokenOf(login(MakerUser))
     let before = vaultOf(BranchB)

@@ -49,7 +49,11 @@ const paramKeys*: seq[string] = @[
   "product.savings.min_balance",
   "product.savings.rounding_mode",
   "product.savings.rounding_scale",
+  "teller.cash.limit_deposit",
+  "teller.cash.limit_opening_float",
+  "teller.cash.limit_withdrawal",
   "teller.vault.cash_account",
+  "teller.vault.limit_topup_per_request",
 ]
 
 const P_ledger_coa_code_pattern* = ParamKey[string]("ledger.coa.code_pattern")
@@ -134,7 +138,15 @@ const P_product_savings_rounding_mode* = ParamKey[string]("product.savings.round
 
 const P_product_savings_rounding_scale* = ParamKey[int64]("product.savings.rounding_scale")
 
+const P_teller_cash_limit_deposit* = ParamKey[Money]("teller.cash.limit_deposit")
+
+const P_teller_cash_limit_opening_float* = ParamKey[Money]("teller.cash.limit_opening_float")
+
+const P_teller_cash_limit_withdrawal* = ParamKey[Money]("teller.cash.limit_withdrawal")
+
 const P_teller_vault_cash_account* = ParamKey[string]("teller.vault.cash_account")
+
+const P_teller_vault_limit_topup_per_request* = ParamKey[Money]("teller.vault.limit_topup_per_request")
 
 const paramDefinitions*: seq[ParamDefinition] = @[
   ParamDefinition(
@@ -589,6 +601,39 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(
+    key: "teller.cash.limit_deposit",
+    module: "teller",
+    valueType: pvtMoney,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.teller.cash.limit_deposit",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "teller.cash.limit_opening_float",
+    module: "teller",
+    valueType: pvtMoney,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.teller.cash.limit_opening_float",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "teller.cash.limit_withdrawal",
+    module: "teller",
+    valueType: pvtMoney,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.teller.cash.limit_withdrawal",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
     key: "teller.vault.cash_account",
     module: "teller",
     valueType: pvtString,
@@ -597,6 +642,17 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.teller.vault.cash_account",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "teller.vault.limit_topup_per_request",
+    module: "teller",
+    valueType: pvtMoney,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.teller.vault.limit_topup_per_request",
     sinceVersion: "0.1.0",
   ),
 ]
