@@ -41,6 +41,7 @@ import platform/infrastructure/[audit_repo, auth_repo, auth_service, branch_repo
 
 import deposit/infrastructure/reconcile_repo
 import ledger/infrastructure/journal_repo
+import teller/infrastructure/session_repo
 
 import ./access
 import ./context
@@ -564,6 +565,17 @@ proc runPostOpeningBalance*(db: DbConn, username, branchIdRaw, amountRaw,
     echo "kran-api: saldo awal cabang ini sudah diposting (journal " & existing[0] & ")"
     return 0
 
+  # Vault dan GL harus lahir bersama: jurnal ini membuat kas fisik cabang ada di `101.1`, jadi
+  # `teller.vault.balance` diisi jumlah yang sama dalam transaksi yang sama (T-129/LED-2). Vault
+  # yang sudah bersaldo ditolak lebih dulu — saldo awal tidak boleh menimpa/menggandakan kas yang
+  # sudah bergerak.
+  let vaultBefore = vaultBalanceOf(db, branchId)
+  if vaultBefore.isSome and not vaultBefore.get().isZero:
+    stderr.writeLine "kran-api: vault cabang " & branchIdRaw & " sudah bersaldo " &
+      vaultBefore.get().toDecimalString &
+      " — saldo awal hanya boleh untuk vault kosong; rekonsiliasi manual bila perlu"
+    return 3
+
   let actor = parseId(found.get().userId).value()
   var journalId: Id
   try:
@@ -575,6 +587,13 @@ proc runPostOpeningBalance*(db: DbConn, username, branchIdRaw, amountRaw,
   except DbError as e:
     stderr.writeLine "kran-api: jurnal saldo awal ditolak basis data: " & e.msg
     return 1
+
+  if not setOpeningVaultBalance(db, branchId, amount):
+    # Balapan dengan perintah lain yang mengisi vault di antara pemeriksaan dan tulisan. Jurnal
+    # sudah tertulis di transaksi ini, jadi menaikkan ValueError membuat seluruhnya rollback —
+    # lebih baik gagal jelas daripada GL dan vault berbeda.
+    raise newException(ValueError,
+      "vault cabang berubah saat saldo awal diposting; ulangi setelah memeriksa saldo vault")
 
   let ctx = newAuditContext(actor, device = "kran-api ctl",
     reason = "post vault opening balance", startedAt = clock.now())

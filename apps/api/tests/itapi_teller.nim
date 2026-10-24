@@ -1005,62 +1005,6 @@ suite "teller: konfigurasi produk rusak":
     check balanceOf(BrokenAccountId) == "0.00"
     check txCount(BrokenAccountId) == 0
 
-suite "teller: periode tertutup":
-  test "periode CLOSED → 409 period_closed, tanpa perubahan (rollback)":
-    let token = tokenOf(login(MakerUser))
-    let accountId = freshAccount()
-    let journalsBefore = journalCount("DepositPosted")
-
-    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
-      exec(d, sql"""
-        UPDATE ledger.period SET status = 'CLOSED', closed_at = now(), closed_by = ?
-         WHERE starts_on <= '2026-10-22'::date AND ends_on >= '2026-10-22'::date""",
-        $fixtureActor)
-      1)
-
-    let reply = postJson(CashPath, cashBody(accountId, "DEPOSIT", "10.00"), token)
-    check reply.code == 409
-    checkProblem(CashPath, "POST", "409", reply.body)
-    check reply.body["params"]["reason"].getStr() == "period_closed"
-    check balanceOf(accountId) == "0.00"
-    check txCount(accountId) == 0
-    check journalCount("DepositPosted") == journalsBefore
-
-    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
-      exec(d, sql"""
-        UPDATE ledger.period SET status = 'OPEN', closed_at = NULL, closed_by = NULL
-         WHERE starts_on <= '2026-10-22'::date AND ends_on >= '2026-10-22'::date""")
-      1)
-
-  test "PB saat periode CLOSED → 409 period_closed, tanpa perubahan (rollback)":
-    let token = tokenOf(login(MakerUser))
-    let source = freshAccount()
-    let destination = freshAccount()
-    check postJson(CashPath, cashBody(source, "DEPOSIT", "100.00"), token).code == 201
-    let journalsBefore = journalCount("DepositTransferred")
-
-    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
-      exec(d, sql"""
-        UPDATE ledger.period SET status = 'CLOSED', closed_at = now(), closed_by = ?
-         WHERE starts_on <= '2026-10-22'::date AND ends_on >= '2026-10-22'::date""",
-        $fixtureActor)
-      1)
-
-    let reply = postJson(TransferPath, transferBody(source, destination, "10.00"), token)
-    check reply.code == 409
-    checkProblem(TransferPath, "POST", "409", reply.body)
-    check reply.body["params"]["reason"].getStr() == "period_closed"
-    check balanceOf(source) == "100.00"
-    check balanceOf(destination) == "0.00"
-    check transferCount(source) == 0
-    check journalCount("DepositTransferred") == journalsBefore
-
-    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
-      exec(d, sql"""
-        UPDATE ledger.period SET status = 'OPEN', closed_at = NULL, closed_by = NULL
-         WHERE starts_on <= '2026-10-22'::date AND ends_on >= '2026-10-22'::date""")
-      1)
-
 suite "teller: sesi kas menggerbang transaksi tunai (T-093b)":
   test "tanpa sesi OPEN → 409 no_open_session, saldo & jurnal tidak berubah":
     let token = tokenOf(login(SessionTellerUser))
@@ -1532,3 +1476,43 @@ suite "deposit: statement subledger (T-094b)":
     check over.body["detail"].getStr().contains("500")
     # Tanpa respons separuh: 400 hanya problem+json, tidak membawa `rows`.
     check not over.body.hasKey("rows")
+
+suite "teller: periode tertutup (sengaja terakhir)":
+  ## Penutupan periode tidak bisa dibatalkan lagi (T-129/DB-4, `ledger/0045`), jadi uji ini tidak
+  ## boleh menutup periode yang dibutuhkan suite lain. Urutannya juga dibalik: PB butuh setoran awal
+  ## saat periode masih OPEN, sedangkan setoran tunai diuji setelah periode benar-benar ditutup.
+
+  test "PB saat periode CLOSED → 409 period_closed, tanpa perubahan (rollback)":
+    let token = tokenOf(login(MakerUser))
+    let source = freshAccount()
+    let destination = freshAccount()
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "100.00"), token).code == 201
+    let journalsBefore = journalCount("DepositTransferred")
+
+    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+      exec(d, sql"""
+        UPDATE ledger.period SET status = 'CLOSED', closed_at = now(), closed_by = ?
+         WHERE starts_on <= '2026-10-22'::date AND ends_on >= '2026-10-22'::date""",
+        $fixtureActor)
+      1)
+
+    let reply = postJson(TransferPath, transferBody(source, destination, "10.00"), token)
+    check reply.code == 409
+    checkProblem(TransferPath, "POST", "409", reply.body)
+    check reply.body["params"]["reason"].getStr() == "period_closed"
+    check balanceOf(source) == "100.00"
+    check balanceOf(destination) == "0.00"
+    check transferCount(source) == 0
+    check journalCount("DepositTransferred") == journalsBefore
+
+  test "setoran tunai saat periode CLOSED → 409 period_closed, tanpa perubahan":
+    let token = tokenOf(login(MakerUser))
+    let accountId = freshAccount()
+    let journalsBefore = journalCount("DepositPosted")
+    let reply = postJson(CashPath, cashBody(accountId, "DEPOSIT", "10.00"), token)
+    check reply.code == 409
+    checkProblem(CashPath, "POST", "409", reply.body)
+    check reply.body["params"]["reason"].getStr() == "period_closed"
+    check balanceOf(accountId) == "0.00"
+    check txCount(accountId) == 0
+    check journalCount("DepositPosted") == journalsBefore

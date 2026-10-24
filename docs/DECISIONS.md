@@ -3375,3 +3375,31 @@ diminta berubah oleh siapa pun, dan `paramgen`/`lint-nomagic` akan menuntut seed
 pusat di belakang satu NAT melaporkan 429 berulang), jalur naiknya jelas: pindahkan ketiga angka ke
 parameter `platform.security.*` dan baca lewat `settings` seperti parameter keamanan lain — bukan
 menambal handler.
+
+## D-141 — Penutupan periode final; saldo awal vault lewat `ctl` (24 Okt 2026)
+
+**Konteks.** Audit 24 Okt 2026 (DB-4, LED-2) menemukan dua jalan pintas yang saling mengunci:
+`ledger.period` bisa diubah bolak-balik (`CLOSED → OPEN`), dan saldo awal vault diposting sebagai
+jurnal tanpa menyentuh `teller.vault` — sehingga GL dan kas fisik bisa bercerita berbeda, dan
+"memperbaikinya" dengan membuka periode lagi adalah satu-satunya jalan yang tampak tersedia.
+
+**Keputusan.**
+
+1. Penutupan periode **final**. Trigger `ledger.period_guard` hanya mengizinkan `OPEN → CLOSED`;
+   koreksi setelah tutup dilakukan dengan jurnal pembalik bertanggal periode berjalan, bukan dengan
+   membuka kembali periode yang sudah dilaporkan.
+2. Menutup periode menolak sesi kas `OPEN` di rentangnya (`409 open_sessions`), karena sesi itu tidak
+   akan pernah bisa ditutup setelah periodenya tertutup. Tutup sesi juga memeriksa periode lebih dulu
+   (`409 period_closed`), bukan membiarkan trigger menghasilkan 500.
+3. Saldo awal vault ditetapkan oleh `ctl post-opening-balance`: satu transaksi menulis jurnal
+   `LedgerCashOpening` **dan** `teller.vault.balance`. Vault yang sudah bersaldo ditolak — saldo awal
+   bukan penyesuaian. Jurnal itu diperlakukan milik subledger (`teller.vault`), jadi tidak bisa dibalik
+   lewat buku besar.
+
+**Ditolak.** Menambah perintah "reopen periode" atau "edit vault" (jalur koreksi tanpa jejak audit);
+membiarkan `post-opening-balance` hanya menulis GL (itu justru sumber O-105); membuat baris vault
+diam-diam pada alur top-up (sudah fail-closed sejak T-118).
+
+**Konsekuensi.** Bila suatu saat benar-benar perlu membatalkan penutupan (mis. salah tanggal), itu
+keputusan produk baru: butuh perintah eksplisit, alasan wajib, audit, dan kemungkinan jurnal koreksi.
+Sampai itu ada, `UPDATE ledger.period` manual akan ditolak DB — termasuk oleh skrip ops.

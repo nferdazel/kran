@@ -541,3 +541,33 @@ suite "kebijakan sesi: aturan lintas-parameter":
       asOf)
     check melanggar.contains(dari)
     check melanggar.contains("tidak boleh melebihi")
+
+suite "platform: secret TOTP wajib ciphertext (T-129/DB-3)":
+  test "secret_enc plaintext ditolak CHECK, ciphertext diterima":
+    # Sebelum `platform/0044` kolom ini hanya NOT NULL: satu jalur tulis yang lupa mengenkripsi
+    # menyimpan secret TOTP terbaca dengan satu SELECT.
+    let mfaUser = $newId(sysClock)
+    db.exec(sql"""
+      INSERT INTO platform.app_user
+        (user_id, username, full_name, password_algo, password_hash, must_change_password)
+      VALUES (?::uuid, ?, 'Uji MFA (it)', 'x', 'x', false)""",
+      mfaUser, "it.mfa." & mfaUser[0 .. 7])
+    defer:
+      discard db.execAffectedRows(sql"DELETE FROM platform.user_mfa WHERE user_id = ?::uuid",
+        mfaUser)
+      discard db.execAffectedRows(sql"DELETE FROM platform.app_user WHERE user_id = ?::uuid",
+        mfaUser)
+
+    expect DbError:
+      db.exec(sql"""
+        INSERT INTO platform.user_mfa
+          (user_id, status, secret_enc, digits, period_seconds)
+        VALUES (?::uuid, 'PENDING', 'JBSWY3DPEHPK3PXP', 6, 30)""", mfaUser)
+
+    db.exec(sql"""
+      INSERT INTO platform.user_mfa
+        (user_id, status, secret_enc, digits, period_seconds)
+      VALUES (?::uuid, 'PENDING', 'kran:enc:v1:uji:bm9uY2U=:Y2lwaGVydGV4dA==', 6, 30)""",
+      mfaUser)
+    check db.getValue(sql"""
+      SELECT count(*)::text FROM platform.user_mfa WHERE user_id = ?::uuid""", mfaUser) == "1"

@@ -4,7 +4,7 @@ import std/[options, strutils]
 
 import db_connector/db_postgres
 
-import kernel/[ids, money]
+import kernel/[ids, money, result]
 import ../domain/journal
 
 const
@@ -13,6 +13,11 @@ const
 proc moneyOf*(raw: string): Money =
   ## `numeric(24,2)` → `Money` tanpa float. Skala `moneyScale`; lebih dari itu = data rusak
   ## (ditolak, bukan dibulatkan diam-diam).
+  ##
+  ## Parsing lewat `moneyFromString` (T-129/DB-5): `numeric(24,2)` menampung 22 digit, sedangkan
+  ## `Money` int64 hanya ~18. Aritmetika tangan sebelumnya membungkus diam-diam untuk nilai besar —
+  ## saldo raksasa bisa terbaca negatif tanpa satu pun galat. Parser kernel memakai aritmetika
+  ## terperiksa, jadi nilai di luar rentang menjadi `ValueError`, bukan angka salah.
   let s = raw.strip
   if s.len == 0:
     raise newException(ValueError, "nominal kosong dari DB")
@@ -27,10 +32,11 @@ proc moneyOf*(raw: string): Money =
   while frac.len < moneyScale:
     frac.add '0'
   let whole = if parts[0].len == 0: "0" else: parts[0]
-  var units = parseBiggestInt(whole) * moneyScaleFactor + parseBiggestInt(frac)
-  if negative:
-    units = -units
-  money(units)
+  let parsed = moneyFromString((if negative: "-" else: "") & whole & "." & frac)
+  if parsed.isErr:
+    raise newException(ValueError, "nominal DB di luar rentang Money: " & raw &
+      " (" & parsed.error().details & ")")
+  result = parsed.value()
 
 const journalColumns =
   "journal_id, to_char(business_date, 'YYYY-MM-DD'), to_char(value_date, 'YYYY-MM-DD'), " &

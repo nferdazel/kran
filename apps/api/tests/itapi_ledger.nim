@@ -193,6 +193,13 @@ proc dbValue(query: SqlQuery, args: varargs[string, `$`]): string =
   finally:
     dbPool.release(conn)
 
+proc dbExec(query: SqlQuery, args: varargs[string, `$`]) =
+  let conn = dbPool.acquire()
+  try:
+    conn.exec(query, args)
+  finally:
+    dbPool.release(conn)
+
 let maker = login(MakerUser)
 doAssert maker.code == 200, "login dev.maker gagal — seed dev terpasang?"
 let makerToken = tokenOf(maker)
@@ -455,6 +462,40 @@ suite "ledger: periode":
       %*{"reason": "tidak ada"}, makerToken)
     check missing.code == 404
     checkProblem(ClosePath, "POST", "404", missing.body)
+
+  test "tutup periode ditolak 409 bila masih ada sesi kas OPEN di rentangnya (T-129/LED-1)":
+    # Menutup periode yang memuat sesi OPEN menjebak: jurnal penutup sesi bertanggal sesi ditolak
+    # trigger periode, sementara index "satu sesi OPEN per teller" menghalangi sesi baru. Tidak ada
+    # jalur reopen, jadi penolakan harus terjadi di sini.
+    let opened = postJson(PeriodsPath, %*{"startsOn": "2026-08-01", "endsOn": "2026-08-31"},
+      makerToken)
+    check opened.code == 201
+    let periodId = opened.body["periodId"].getStr()
+    let path = ClosePath.replace("{periodId}", periodId)
+
+    let uid = dbValue(sql"""
+      SELECT user_id::text FROM platform.app_user WHERE username = 'dev.maker'""")
+    dbExec(sql"""
+      INSERT INTO teller.teller_session
+        (session_id, branch_id, teller_user_id, business_date, status, opening_float, opened_by)
+      VALUES (gen_random_uuid(), '11111111-1111-7111-8111-111111111111', ?::uuid,
+              '2026-08-10', 'OPEN', 0, ?::uuid)""", uid, uid)
+
+    let blocked = postJson(path, %*{"reason": "tutup Agustus 2026"}, makerToken)
+    check blocked.code == 409
+    check blocked.body["params"]["reason"].getStr() == "open_sessions"
+    checkProblem(ClosePath, "POST", "409", blocked.body)
+    check dbValue(sql"SELECT status FROM ledger.period WHERE period_id = ?::uuid",
+      periodId) == "OPEN"
+    check dbValue(sql"""SELECT count(*)::text FROM platform.outbox
+                         WHERE event_type = 'period.closed' AND aggregate_id = ?""",
+      periodId) == "0"
+
+    # Sesi tidak lagi OPEN → periode boleh ditutup (penjagaan bukan larangan permanen).
+    dbExec(sql"DELETE FROM teller.teller_session WHERE business_date = '2026-08-10'")
+    let closed = postJson(path, %*{"reason": "tutup Agustus 2026"}, makerToken)
+    check closed.code == 200
+    check closed.body["status"].getStr() == "CLOSED"
 
 proc ensurePeriod(startsOn, endsOn: string): string =
   ## Buka periode langsung di DB; yang diuji di suite ini laporan, bukan pembukaan periode.

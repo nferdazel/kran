@@ -23,6 +23,7 @@ import kernel/[clock, ids, money, result]
 import kernel/generated/paramkeys
 import platform/domain/[audit, event, idempotency, scope]
 import platform/infrastructure/[audit_repo, auth_service, outbox_repo]
+import ledger/infrastructure/journal_repo
 import teller/domain/session
 import teller/infrastructure/session_repo
 
@@ -310,6 +311,17 @@ proc handleCloseTellerSession*(app: AppContext, req: Request) {.gcsafe.} =
               status = 409
               reason = "session_not_open"
               problem = "sesi kas sudah ditutup"
+              raise newException(ValueError, problem)
+
+            # LED-1/T-129: penutupan sesi memposting jurnal bertanggal `business_date` sesi.
+            # Tanpa periode OPEN untuk tanggal itu, trigger menolak jurnal, transaksi rollback, dan
+            # sesi tetap OPEN padahal kas sudah dihitung — layar teller hanya melihat 500. Karena
+            # itu diperiksa lebih dulu dan dijawab 409 yang bisa ditindaklanjuti.
+            if not periodOpenFor(db, session.businessDate):
+              status = 409
+              reason = "period_closed"
+              problem = "tidak ada periode akuntansi OPEN untuk " & session.businessDate &
+                "; buka periode itu lebih dulu"
               raise newException(ValueError, problem)
 
             let totals = movementTotalsOf(db, session.sessionId)

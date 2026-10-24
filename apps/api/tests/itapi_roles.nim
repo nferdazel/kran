@@ -21,7 +21,7 @@ import platform/domain/scope
 import platform/infrastructure/[audit_repo, auth_repo, auth_service, branch_repo,
   password_hasher, worker_repo]
 
-import ../src/main
+import ../src/[journal_ownership, main]
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
@@ -257,11 +257,13 @@ suite "kran-api: peran CLI (O-013)":
         SELECT 1 FROM ledger.period
          WHERE '2026-02-15'::date BETWEEN starts_on AND ends_on)""")
 
-    # Tanggal di luar periode OPEN = ditolak (3), tanpa jurnal.
+    # Tanggal di luar periode OPEN = ditolak (3), tanpa jurnal. Semua hitungan dibatasi ke cabang
+    # uji ini: suite tidak menghapus schema, jadi baris dari run sebelumnya boleh tetap ada.
     check runCtl(openingBalanceCmd, ".", username = uname, branchId = branch,
       amount = "1234.00", businessDate = "2025-01-01") == 3
     check db.getValue(sql"""SELECT count(*)::text FROM ledger.journal
-                             WHERE source_event = 'LedgerCashOpening'""") == "0"
+                             WHERE source_event = 'LedgerCashOpening'
+                               AND source_ref = ?::uuid""", branch) == "0"
 
     check runCtl(openingBalanceCmd, ".", username = uname, branchId = branch,
       amount = "1234.00", businessDate = "2026-02-15") == 0
@@ -270,17 +272,54 @@ suite "kran-api: peran CLI (O-013)":
 
     # Tetap **satu** jurnal: jalankan ulang tidak menambah, koreksi kelak = jurnal pembalik.
     check db.getValue(sql"""SELECT count(*)::text FROM ledger.journal
-                             WHERE source_event = 'LedgerCashOpening'""") == "1"
+                             WHERE source_event = 'LedgerCashOpening'
+                               AND source_ref = ?::uuid""", branch) == "1"
     check db.getValue(sql"""SELECT count(*)::text FROM ledger.journal_line l
                               JOIN ledger.journal j ON j.journal_id = l.journal_id
                              WHERE j.source_event = 'LedgerCashOpening'
-                               AND l.gl_account = '101.1' AND l.debit = 1234""") == "1"
+                               AND j.source_ref = ?::uuid
+                               AND l.gl_account = '101.1' AND l.debit = 1234""", branch) == "1"
     check db.getValue(sql"""SELECT count(*)::text FROM ledger.journal_line l
                               JOIN ledger.journal j ON j.journal_id = l.journal_id
                              WHERE j.source_event = 'LedgerCashOpening'
-                               AND l.gl_account = '203' AND l.credit = 1234""") == "1"
+                               AND j.source_ref = ?::uuid
+                               AND l.gl_account = '203' AND l.credit = 1234""", branch) == "1"
     check db.getValue(sql"""SELECT count(*)::text FROM platform.audit_log
-                             WHERE action = 'ledger.opening_balance'""") == "1"
+                             WHERE action = 'ledger.opening_balance'
+                               AND resource_id = (SELECT journal_id::text FROM ledger.journal
+                                                   WHERE source_event = 'LedgerCashOpening'
+                                                     AND source_ref = ?::uuid)""",
+      branch) == "1"
+
+    # Vault dan GL lahir bersama (T-129/LED-2): kas fisik cabang = nominal jurnal, bukan 0.
+    check db.getValue(sql"""
+      SELECT balance::text FROM teller.vault WHERE branch_id = ?::uuid""", branch) == "1234.00"
+
+    # Jurnalnya milik `teller.vault`, jadi tidak boleh dibalik lewat buku besar: pembalik hanya
+    # memutar `journal_line`, sementara saldo vault tidak ikut berubah.
+    let openingJournal = db.getValue(sql"""
+      SELECT journal_id::text FROM ledger.journal
+       WHERE source_event = 'LedgerCashOpening' AND source_ref = ?::uuid""", branch)
+    check subledgerOwner(db, openingJournal) == "teller.vault"
+
+    # Vault yang sudah bersaldo ditolak: saldo awal tidak boleh menimpa/menggandakan kas.
+    const fundedBranch = "b0000000-0000-4000-8000-000000000002"
+    discard db.execAffectedRows(sql"""
+      INSERT INTO platform.branch (branch_id, code, name)
+      VALUES ('b0000000-0000-4000-8000-000000000002', '003', 'Cabang Bersaldo')
+      ON CONFLICT DO NOTHING""")
+    discard db.execAffectedRows(sql"""
+      INSERT INTO teller.vault (branch_id, balance) VALUES ('b0000000-0000-4000-8000-000000000002', '50.00')
+      ON CONFLICT (branch_id) DO UPDATE SET balance = EXCLUDED.balance""")
+    check runCtl(openingBalanceCmd, ".", username = uname, branchId = fundedBranch,
+      amount = "1234.00", businessDate = "2026-02-15") == 3
+    check db.getValue(sql"""
+      SELECT count(*)::text FROM ledger.journal
+       WHERE source_event = 'LedgerCashOpening' AND source_ref = ?::uuid""",
+      fundedBranch) == "0"
+    check db.getValue(sql"""
+      SELECT balance::text FROM teller.vault WHERE branch_id = ?::uuid""",
+      fundedBranch) == "50.00"
 
   test "0035: teller tidak memegang izin vault submit/approve (K-8)":
     # Kontrak SoD: penyediaan kas (vault) terpisah dari operasi kas (laci). Migrasi yang menambah

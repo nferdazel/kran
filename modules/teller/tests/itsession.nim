@@ -401,3 +401,47 @@ suite "teller: transaksi tunai vs penutupan bersamaan":
 
     check gateInserted.load()
     check seenCashIn == money(25_0000)
+
+suite "teller: invarian data vault (T-129/DB-2, DB-5)":
+  test "journal_id pengajuan top-up harus jurnal yang ada":
+    # Sebelum `teller/0043` kolom ini hanya uuid: baris APPROVED bisa menunjuk jurnal yang tidak ada
+    # setelah pemulihan DB yang tidak lengkap, dan laporan kas tidak bisa direkonsiliasi.
+    expectDbError(proc() = db.exec(sql"""
+      INSERT INTO teller.vault_topup_request
+        (request_id, branch_id, amount, source_account, note, status, requested_by,
+         decided_by, decided_at, journal_id)
+      VALUES (gen_random_uuid(), ?::uuid, '1.00', '203', 'uji fk', 'APPROVED', ?::uuid, ?::uuid,
+              now(), gen_random_uuid())""", branchE, tellerA, tellerB))
+
+  test "satu jurnal tidak boleh dipakai dua pengajuan top-up":
+    let jid = newId(testClock)
+    let refId = newId(testClock)
+    discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+      discard insertJournal(d, Journal(journalId: jid, businessDate: businessDate,
+        valueDate: businessDate, sourceEvent: "ItSessionTopup", sourceRef: refId,
+        idempotencyKey: "its-topup-" & $jid), actor)
+      insertJournalLine(d, jid, JournalLine(lineNo: 1, glAccount: "101.1", branchId: Id(branchE),
+        debit: money(100), credit: zero()))
+      insertJournalLine(d, jid, JournalLine(lineNo: 2, glAccount: "203", branchId: Id(branchE),
+        debit: zero(), credit: money(100)))
+      1)
+
+    proc insertTopup(requestId, journalId: string) =
+      db.exec(sql"""
+        INSERT INTO teller.vault_topup_request
+          (request_id, branch_id, amount, source_account, note, status, requested_by,
+           decided_by, decided_at, journal_id)
+        VALUES (?::uuid, ?::uuid, '1.00', '203', 'uji unik', 'APPROVED', ?::uuid, ?::uuid,
+                now(), ?::uuid)""", requestId, branchE, tellerA, tellerB, journalId)
+
+    insertTopup($newId(testClock), $jid)
+    expectDbError(proc() = insertTopup($newId(testClock), $jid))
+    check db.getValue(sql"""
+      SELECT count(*)::text FROM teller.vault_topup_request WHERE journal_id = ?::uuid""",
+      $jid) == "1"
+
+  test "saldo vault di luar rentang Money ditolak DB":
+    setVault(Id(branchE), money(0))
+    expectDbError(proc() = db.exec(sql"""
+      UPDATE teller.vault SET balance = 92233720368547758.08 WHERE branch_id = ?::uuid""",
+      branchE))

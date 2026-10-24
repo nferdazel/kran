@@ -81,6 +81,19 @@ proc debitVault*(db: DbConn, branchId: Id, amount: Money): Option[Money] =
     return none(Money)
   some(moneyRequired(rows[0][0]))
 
+proc setOpeningVaultBalance*(db: DbConn, branchId: Id, amount: Money): bool =
+  ## Menetapkan saldo vault untuk **saldo awal** (T-129/LED-2): hanya bila baris vault belum ada
+  ## atau saldonya nol. `false` = vault sudah bersaldo, jadi saldo awal akan menimpa/menggandakan
+  ## kas yang sudah tercatat; pemanggil wajib menolak, bukan memaksa.
+  ##
+  ## Baris vault yang belum ada **dibuat** di sini: perintah saldo awal adalah momen vault cabang
+  ## ditetapkan, dan `ledger.journal` untuk event yang sama diposting dalam transaksi yang sama.
+  db.execAffectedRows(sql"""
+      INSERT INTO teller.vault (branch_id, balance) VALUES (?, ?::numeric)
+      ON CONFLICT (branch_id) DO UPDATE
+         SET balance = EXCLUDED.balance, updated_at = now()
+       WHERE teller.vault.balance = 0""", $branchId, amount.toDecimalString) == 1
+
 proc creditVault*(db: DbConn, branchId: Id, amount: Money): Option[Money] =
   ## Tambah vault sebesar kas fisik yang benar-benar masuk (`counted_cash`, bukan `expected_cash`).
   let rows = db.getAllRows(sql"""
@@ -105,6 +118,16 @@ proc insertOpenSession*(db: DbConn, s: TellerSession): bool =
       ON CONFLICT (branch_id, teller_user_id) WHERE status = 'OPEN' DO NOTHING""",
     $s.sessionId, $s.branchId, $s.tellerUserId, s.businessDate, s.openingFloat.toDecimalString,
     $s.openedBy, s.note) == 1
+
+proc openSessionCount*(db: DbConn, startsOn, endsOn: string): int64 =
+  ## Jumlah sesi kas `OPEN` yang `business_date`-nya di dalam rentang periode. Dipakai gerbang
+  ## tutup periode (T-129/LED-1): menutup periode yang memuat sesi OPEN membuat sesi itu tidak
+  ## pernah bisa ditutup — jurnal penutupnya ditolak trigger periode, sementara index "satu sesi
+  ## OPEN per teller" menghalangi sesi baru.
+  result = db.getValue(sql"""
+    SELECT count(*)::text FROM teller.teller_session s
+     WHERE s.status = 'OPEN'
+       AND s.business_date BETWEEN ?::date AND ?::date""", startsOn, endsOn).parseBiggestInt
 
 proc sessionById*(db: DbConn, sessionId: Id): Option[TellerSession] =
   let rows = db.getAllRows(

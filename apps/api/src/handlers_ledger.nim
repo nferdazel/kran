@@ -18,6 +18,7 @@ import platform/domain/[audit, event, scope]
 import platform/infrastructure/[audit_repo, auth_service, outbox_repo, param_repo]
 import ledger/domain/[coa, period]
 import ledger/infrastructure/ledger_repo
+import teller/infrastructure/session_repo
 
 import ./access
 import ./context
@@ -362,6 +363,7 @@ proc handleClosePeriod*(app: AppContext, req: Request) {.gcsafe.} =
 
   var status = 0
   var problem = ""
+  var conflictReason = "" ## `params.reason` untuk 409; kosong = konflik tanpa kode.
   var payload = newJObject()
   try:
     withDbTx(app.pool, proc(db: DbConn) {.gcsafe.} =
@@ -377,6 +379,19 @@ proc handleClosePeriod*(app: AppContext, req: Request) {.gcsafe.} =
         if p.get().status == psClosed:
           status = 409
           problem = "periode sudah ditutup"
+          raise newException(ValueError, problem)
+
+        # LED-1/T-129: sesi kas OPEN di dalam rentang periode membuat penutupan periode
+        # menjebak. Jurnal penutup sesi memakai `business_date` sesi, jadi setelah periode CLOSED
+        # trigger menolaknya; transaksi tutup sesi rollback, dan index "satu sesi OPEN per teller"
+        # menghalangi sesi baru. Tidak ada jalur reopen atau batal tutup — karena itu ditolak di
+        # pintu masuknya, bukan dibiarkan menjadi 500 di layar teller.
+        let openSessions = openSessionCount(db, p.get().startsOn, p.get().endsOn)
+        if openSessions > 0:
+          status = 409
+          conflictReason = "open_sessions"
+          problem = "masih ada " & $openSessions &
+            " sesi kas OPEN pada rentang periode ini; tutup sesi itu lebih dulu"
           raise newException(ValueError, problem)
 
         let userId = parseId(principal.user.userId).value()
@@ -425,5 +440,10 @@ proc handleClosePeriod*(app: AppContext, req: Request) {.gcsafe.} =
   of 400: req.respondProblem(pkBadRequest, "Bad Request", problem)
   of 403: req.respondInstitutionOnly(permissionPeriodManage)
   of 404: req.respondProblem(pkNotFound, "Not Found", problem)
-  of 409: req.respondProblem(pkConflict, "Conflict", problem)
+  of 409:
+    if conflictReason.len == 0:
+      req.respondProblem(pkConflict, "Conflict", problem)
+    else:
+      req.respondProblem(newProblem(pkConflict, "Conflict", problem, traceId = traceIdFrom(req),
+        params = @[("reason", conflictReason)]))
   else: req.respondProblem(pkInternal, "Internal Server Error", problem)

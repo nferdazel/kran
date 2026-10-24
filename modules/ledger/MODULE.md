@@ -21,6 +21,13 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 - `Period` (`domain/period.nim`): rentang tanggal **inklusif**, status OPEN/CLOSED. Tumpang tindih
   ditolak `EXCLUDE USING gist (daterange(...) WITH &&)`, bukan pemeriksaan aplikasi.
   Penutupan mengisi `closed_at`/`closed_by`; **alasan wajib** dan masuk audit.
+- **Penutupan satu arah** (T-129/DB-4, `0045`): trigger `ledger.period_guard` hanya mengizinkan
+  `OPEN → CLOSED`; `CLOSED → OPEN`, perubahan `period_id`/`created_*`, dan perubahan rentang
+  ditolak. Tidak ada reopen — koreksi setelah tutup = jurnal pembalik, bukan membuka periode lagi.
+- **Tutup periode menolak sesi kas OPEN** di rentangnya (409 `open_sessions`, T-129/LED-1). Tanpa
+  penjagaan itu sesi tersebut tidak akan pernah bisa ditutup: jurnal penutupnya bertanggal sesi dan
+  akan ditolak periode yang sudah CLOSED, sementara index "satu sesi OPEN per teller" menghalangi
+  sesi baru.
 - Urutan penutupan (tidak menutup periode lebih awal saat sebelumnya masih terbuka) **belum**
   ditegakkan di sini — itu tugas `daycloser` (Fase 5). Lihat `docs/tasks/T-072.md`.
 
@@ -39,10 +46,10 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
   (permintaan ulang → 200 dengan jurnal yang sama). Jurnal yang sudah dibalik tidak bisa dibalik
   lagi; jurnal pembalik tidak bisa dibalik.
 - Tanpa partisi pada Fase 1 — **D-072**.
-- Immutability **bersandar pada trigger**, bukan pemisahan privilege: role aplikasi saat ini adalah
-  pemilik tabel, sehingga `ALTER TABLE … DISABLE TRIGGER`/`session_replication_role` bisa
-  membatalkannya. Pemisahan role produksi dicatat **O-010**; sampai itu ada, jaminan ini berlaku
-  untuk jalur aplikasi, bukan terhadap superuser.
+- Immutability punya dua lapis: trigger **dan** privilege. Sejak `platform/0042` role runtime
+  (`kran_runtime`) kehilangan `UPDATE/DELETE/TRUNCATE` pada `ledger.journal`/`journal_line`
+  (T-129/DB-1). Yang masih berlaku: role aplikasi adalah **pemilik** tabel, jadi `kran_app` (dipakai
+  migrasi) tetap bisa mengubah jurnal; jaminan ini melindungi jalur runtime, bukan superuser.
 - Pembalik memakai akun dari jurnal asal; bila akun sudah dinonaktifkan, pembalik ditolak
   (fail-closed) — kebijakan alternatif dicatat **O-079**.
 - **Jurnal milik subledger tidak bisa dibalik** (D-135): bila `deposit.transaction`,
@@ -131,7 +138,8 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 
 - `ledger.coa_account` — kode unik, tipe, sisi normal (CHECK konsisten), `postable`, status.
   Tidak ber-cabang: GL milik institusi (spec §9).
-- `ledger.period` — rentang inklusif, status, `closed_at`/`closed_by`, EXCLUDE tumpang tindih.
+- `ledger.period` — rentang inklusif, status, `closed_at`/`closed_by`, EXCLUDE tumpang tindih,
+  trigger penutupan satu arah (`0045`).
 - `ledger.journal` / `ledger.journal_line` — jurnal immutable + pembalik, trigger keseimbangan
   deferred, periode OPEN, akun postable/ACTIVE, dan baris hanya boleh masuk dalam **transaksi yang
   sama** dengan header (lihat bagian Jurnal di atas).
