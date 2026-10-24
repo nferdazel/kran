@@ -546,3 +546,34 @@ suite "sessions: dua penutupan bersamaan":
     check codes == @[200, 409]
     # 100 + 30 (counted sekali) = 130; kalau dua kali jadi 160.
     check vaultOf(BranchD) == "130.00"
+
+suite "sessions: tutup sesi butuh periode OPEN (T-129/LED-1)":
+  test "periode tanggal sesi sudah ditutup → 409 period_closed, sesi tetap OPEN":
+    # Suite ini sengaja terakhir: ia menutup satu-satunya periode fixture. Penutupan sesi memposting
+    # jurnal bertanggal `business_date` sesi; tanpa periode OPEN, trigger menolak jurnal, transaksi
+    # rollback, dan sesi tetap OPEN padahal kas sudah dihitung — teller hanya melihat 500.
+    let token = tokenOf(login(MakerUser))
+    let open = openSession(token, BranchA, "5.00")
+    check open.code == 201
+    let sessionId = open.body["sessionId"].getStr()
+
+    let conn = dbPool.acquire()
+    try:
+      conn.exec(sql"""
+        UPDATE ledger.period
+           SET status = 'CLOSED', closed_at = now(),
+               closed_by = '00000000-0000-0000-0000-0000000000a1'
+         WHERE status = 'OPEN' AND ?::date BETWEEN starts_on AND ends_on""", BusinessDate)
+    finally:
+      dbPool.release(conn)
+
+    let denied = postJson(ClosePath.replace("{sessionId}", sessionId),
+      %*{"countedCash": "5.00"}, token, "sess-period-closed-" & $epochTime())
+    check denied.code == 409
+    check denied.body["params"]["reason"].getStr() == "period_closed"
+    checkProblem(ClosePath, "POST", "409", denied.body)
+    check dbCount(sql"""SELECT count(*)::text FROM teller.teller_session
+                         WHERE session_id = ?::uuid AND status = 'OPEN'""", sessionId) == 1
+    check dbCount(sql"""SELECT count(*)::text FROM ledger.journal
+                         WHERE source_event = 'TellerSessionClosed'
+                           AND source_ref = ?::uuid""", sessionId) == 0

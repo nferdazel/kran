@@ -2831,3 +2831,24 @@ tidak diperiksa; `no-store` hanya ada di endpoint MFA; dua 500 mengirim teks exc
 **Bukti.** `thttp_util` 5 test, `tlogin_guard` 3 test, `itapi_users` (+2 eskalasi, +1 pembatas 429
 dengan `Retry-After`), `itapi_auth`/`itapi_ws`/`tapi`/`tcontract` hijau; `check`, `openapi`,
 `lint-web`, `build` hijau. Detail: `docs/tasks/T-128.md`.
+
+## 24 Okt 2026 — T-129: kas dan buku besar berhenti bisa berselisih
+
+Tujuh temuan integritas ditutup dalam satu batch: sesi kas bisa terkunci selamanya bila periodenya
+ditutup lebih dulu; jurnal saldo awal vault bisa dibalik sementara kas fisiknya tetap; role runtime
+masih boleh mengubah jurnal; pengajuan top-up bisa menunjuk jurnal hantu; `secret_enc` MFA tanpa
+penjagaan bentuk; periode akuntansi bisa dibuka kembali; dan `moneyOf` bisa membungkus nilai besar
+tanpa galat.
+
+- Tutup periode menolak 409 `open_sessions`; tutup sesi menjawab 409 `period_closed` sebelum menulis.
+- `ctl post-opening-balance` kini menetapkan `teller.vault` dalam transaksi yang sama dan menolak
+  vault yang sudah bersaldo; jurnalnya dikenali milik `teller.vault` (tidak bisa dibalik).
+- Migrasi `0042`–`0046`: cabut hak tulis runtime pada jurnal/audit/hapus `param_value`, FK+UNIQUE
+  `vault_topup_request.journal_id`, CHECK ciphertext MFA, trigger periode satu arah, CHECK rentang
+  `Money` pada 14 kolom uang.
+- `moneyOf` memakai `moneyFromString` (aritmetika terperiksa).
+
+**Bukti.** `tjournal` 5 test, `itjournal` 4, `itsession` 3, `itauth` 1, `ittransaction` 1,
+`itapi_ledger`, `itapi_teller_sessions`, `itapi_roles`, `itapi_teller`, `itapi_journal`,
+`itapi_teller_vault` hijau; `check` + `dbtools validate` (80 migrasi) + `build` hijau. Detail:
+`docs/tasks/T-129.md`.

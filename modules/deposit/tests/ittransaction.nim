@@ -282,8 +282,15 @@ suite "deposit: periode tertutup membatalkan seluruh transaksi":
     check balanceOfAccount(a.accountId) == zero()
     check transactionsByAccount(db, a.accountId).len == 0
     check not periodOpenFor(db, businessDate)
-    # Kembalikan supaya suite lain tetap bisa menulis (dan bukti tidak bergantung urutan).
-    db.exec(sql"""
-      UPDATE ledger.period SET status = 'OPEN', closed_at = NULL, closed_by = NULL
-       WHERE period_id = ?""", $periodId)
-    check periodOpenFor(db, businessDate)
+    # Penutupan tidak bisa dibatalkan (T-129/DB-4): percobaan reopen ditolak DB. Suite ini yang
+    # terakhir di berkas, jadi tidak ada test berikutnya yang membutuhkan periode OPEN.
+    var reopened = false
+    try:
+      db.exec(sql"""
+        UPDATE ledger.period SET status = 'OPEN', closed_at = NULL, closed_by = NULL
+         WHERE period_id = ?""", $periodId)
+      reopened = true
+    except DbError:
+      discard
+    check not reopened
+    check not periodOpenFor(db, businessDate)

@@ -126,17 +126,21 @@ runtime (pola `deposit/0006`/`0008`: `ON ALL TABLES` hanya mencakup tabel yang a
 
 ## Operasional — saldo awal vault (satu kali, ops)
 
-**T-118** mengganti top-up langsung dengan pengajuan + persetujuan (`POST /api/v1/teller/vault/topups`
-= `teller.vault.submit`; `.../{requestId}/approve` = `teller.vault.approve`). Baris vault itu
-sendiri tetap perlu ada lebih dulu: pengajuan tidak membuat baris baru (404
-`vault_not_configured`). Membuat baris awal (satu kali, ops) lewat SQL (di produksi: role owner,
-`kran-migrate.env`) atas permintaan pemilik:
+**Jalur resmi sejak T-129/LED-2** adalah `ctl post-opening-balance`: perintah itu memposting jurnal
+`D 101.1 KAS DI VAULT / K 203 TITIPAN PENGURUS` **dan** menetapkan `teller.vault.balance` sebesar
+nominal yang sama dalam satu transaksi. Tanpa ini GL dan kas fisik bercerita berbeda (O-105).
 
-```sql
-INSERT INTO teller.vault (branch_id, balance) VALUES ('<branch-uuid>', '10000000.00')
-ON CONFLICT (branch_id) DO NOTHING;
+```bash
+podman exec kran-api /usr/local/bin/kran-api --role=ctl post-opening-balance \
+  --username=<operator> --branch=<uuid> --amount=<nominal> --business-date=<YYYY-MM-DD>
 ```
 
-Atau, bila baris sudah ada, cukup top-up lewat API. Tanpa baris vault, sesi tidak bisa dibuka
-(`vault_not_configured`) — fail-closed, bukan bug.
+Aturan: vault harus **kosong atau belum ada**. Vault yang sudah bersaldo ditolak (kode 3) karena
+saldo awal tidak boleh menimpa/menggandakan kas yang sudah bergerak. Idempoten per cabang: bila
+jurnalnya sudah ada, perintah tidak mengubah apa pun.
+
+**T-118** mengganti top-up langsung dengan pengajuan + persetujuan (`POST /api/v1/teller/vault/topups`
+= `teller.vault.submit`; `.../{requestId}/approve` = `teller.vault.approve`). Pengajuan tidak
+membuat baris vault baru (404 `vault_not_configured`), jadi saldo awal harus sudah lewat jalur di
+atas. Tanpa baris vault, sesi tidak bisa dibuka (`vault_not_configured`) — fail-closed, bukan bug.
 

@@ -4,6 +4,7 @@ import std/[random, strutils, unittest]
 
 import kernel/[ids, money]
 import ../api
+import ../infrastructure/journal_repo
 
 proc line(no: int, account: string, debit, credit: int64): JournalLine =
   JournalLine(lineNo: no, glAccount: account,
@@ -114,3 +115,26 @@ suite "journal: property 1.000 jurnal acak":
         broken[idx].debit = money(minorUnits(broken[idx].debit) + 1)
       expect ValueError:
         discard validateJournalLines(broken)
+
+suite "journal: nominal dari DB (T-129/DB-5)":
+  test "nilai dalam rentang Money terbaca apa adanya":
+    check moneyOf("1234.00") == money(123400)
+    check moneyOf("-1234.00") == money(-123400)
+    check moneyOf("0.00").isZero
+
+  test "batas atas tepat masih diterima":
+    # int64.high minor units = 92.233.720.368.547.758,07
+    check moneyOf("92233720368547758.07") == money(int64.high)
+
+  test "satu sen di atas batas ditolak, bukan membungkus":
+    # Sebelum T-129 nilai ini membungkus jadi negatif tanpa galat.
+    expect ValueError:
+      discard moneyOf("92233720368547758.08")
+
+  test "nilai 22 digit (lebar numeric(24,2)) ditolak":
+    expect ValueError:
+      discard moneyOf("9999999999999999999999.99")
+
+  test "skala lebih dari 2 desimal tetap ditolak":
+    expect ValueError:
+      discard moneyOf("1.005")

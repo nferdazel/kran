@@ -39,6 +39,12 @@ discard insertPeriod(db,
   Period(periodId: novId, startsOn: "2026-11-01", endsOn: "2026-11-30"), actor)
 discard closePeriod(db, novId, actor)
 
+## Periode khusus uji balapan penutupan (O-089/T-129): penutupan tidak bisa dibatalkan lagi sejak
+## `ledger/0045`, jadi uji ini tidak boleh memakai periode yang dibutuhkan suite berikutnya.
+let raceId = newId(testClock)
+discard insertPeriod(db,
+  Period(periodId: raceId, startsOn: "2026-09-01", endsOn: "2026-09-30"), actor)
+
 var keyCounter = 0
 
 proc nextKey(): string =
@@ -223,7 +229,7 @@ suite "journal: aturan akuntansi di DB":
     ## kegagalan yang diharapkan adalah pelanggaran periode, bukan timeout.
     periodClosed.store(false)
     var closer: Thread[CloseArgs]
-    createThread(closer, closePeriodSlowly, (pool: dbPool, periodId: $octId, actorId: $actor))
+    createThread(closer, closePeriodSlowly, (pool: dbPool, periodId: $raceId, actorId: $actor))
     while not periodClosed.load():
       sleep(5)
     let sesiB = dbPool.acquire()
@@ -236,7 +242,7 @@ suite "journal: aturan akuntansi di DB":
       try:
         exec(sesiB,
           sql"INSERT INTO ledger.journal (journal_id, business_date, value_date, source_event, source_ref, idempotency_key, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          $jid, "2026-10-15", "2026-10-15", "DepositPosted", $jid, idem, $actor)
+          $jid, "2026-09-15", "2026-09-15", "DepositPosted", $jid, idem, $actor)
       except DbError as e:
         pesan = e.msg
       check pesan.len > 0
@@ -248,8 +254,12 @@ suite "journal: aturan akuntansi di DB":
     joinThread(closer)
 
     check journalById(db, jid).isNone
-    # Kembalikan periode ke OPEN supaya suite berikutnya tetap bisa posting.
-    db.exec(sql"UPDATE ledger.period SET status = 'OPEN', closed_at = NULL, closed_by = NULL WHERE period_id = ?", $octId)
+    # Penutupan **tidak** bisa dibatalkan (T-129/DB-4): percobaan reopen ditolak DB, bukan diam-diam
+    # berhasil. Karena itu periode uji ini khusus dan tidak dipakai suite lain.
+    expectDbError(proc() = db.exec(
+      sql"UPDATE ledger.period SET status = 'OPEN', closed_at = NULL, closed_by = NULL WHERE period_id = ?",
+      $raceId))
+    check periodById(db, raceId).get().status == psClosed
     check periodById(db, octId).get().status == psOpen
 
 suite "journal: pembalik & daftar":
@@ -357,3 +367,36 @@ suite "journal: guard tambahan (review T-073)":
     second.idempotencyKey = nextKey()
     expectDbError(proc() = discard save(second))
     check journals(db, stored.businessDate, "reversal").len == 1
+
+suite "periode: penutupan satu arah & rentang terkunci (T-129/DB-4)":
+  test "periode CLOSED tidak bisa dibuka kembali":
+    expectDbError(proc() = db.exec(sql"""
+      UPDATE ledger.period SET status = 'OPEN', closed_at = NULL, closed_by = NULL
+       WHERE period_id = ?::uuid""", $novId))
+    check periodById(db, novId).get().status == psClosed
+
+  test "rentang periode yang sudah berisi jurnal tidak bisa diubah":
+    expectDbError(proc() = db.exec(sql"""
+      UPDATE ledger.period SET ends_on = '2026-10-15' WHERE period_id = ?::uuid""", $octId))
+    check periodById(db, octId).get().endsOn == "2026-10-31"
+
+  test "identitas periode tidak bisa diubah":
+    expectDbError(proc() = db.exec(sql"""
+      UPDATE ledger.period SET created_by = gen_random_uuid() WHERE period_id = ?::uuid""",
+      $octId))
+
+
+suite "jurnal: nominal di luar rentang Money ditolak DB (T-129/DB-5)":
+  test "baris jurnal dengan nominal raksasa ditolak CHECK":
+    # Nilai ini tidak bisa ditulis lewat `money()` (melebihi int64), jadi disisipkan sebagai
+    # numeric mentah — persis bentuk data yang dulu membungkus saat dibaca `moneyOf`.
+    let j = newJournal(businessDate = "2026-10-19")
+    expectDbError(proc() = (discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+      discard insertJournal(d, j, actor)
+      d.exec(sql"""
+        INSERT INTO ledger.journal_line
+          (journal_id, line_no, gl_account, branch_id, debit, credit)
+        VALUES (?::uuid, 1, '101.2', ?::uuid, 92233720368547758.08, 0),
+               (?::uuid, 2, '201', ?::uuid, 0, 92233720368547758.08)""",
+        $j.journalId, $branch, $j.journalId, $branch)
+      1)))
