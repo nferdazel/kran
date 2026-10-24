@@ -19,6 +19,27 @@ import kernel/[clock, ids, money]
 import ledger/domain/[journal, posting]
 import ledger/infrastructure/[journal_repo, posting_repo]
 
+proc postRuleJournalSync*(db: DbConn, clock: Clock, eventType: string, amount: Money,
+    branchId: Id, sourceRef: Id, businessDate, idempotencyKey: string, actor: Id,
+    payload: JsonNode): Id =
+  ## Menulis satu jurnal double-entry dari posting rule `eventType` dengan `payload` sebagai
+  ## konteks pemilihan rule. Dipakai transaksi tunai (payload produk/rekening) **dan** mutasi kas
+  ## teller (payload kosong: rule teller tidak berkondisi).
+  let rule = selectRule(activeRules(db, eventType, businessDate), eventType, payload)
+  let lines = buildLines(rule, amount, branchId)
+  let journal = Journal(
+    journalId: newId(clock),
+    businessDate: businessDate,
+    valueDate: businessDate,
+    sourceEvent: eventType,
+    sourceRef: sourceRef,
+    idempotencyKey: idempotencyKey,
+    reversalOf: "")
+  discard insertJournal(db, journal, actor)
+  for line in lines:
+    insertJournalLine(db, journal.journalId, line)
+  journal.journalId
+
 proc postJournalSync*(db: DbConn, clock: Clock, eventType: string, amount: Money,
     branchId: Id, sourceRef: Id, businessDate, idempotencyKey: string,
     actor: Id, productCode, accountType, savingsKind: string): Id =
@@ -36,17 +57,5 @@ proc postJournalSync*(db: DbConn, clock: Clock, eventType: string, amount: Money
     payload["accountType"] = %accountType
   if savingsKind.len > 0:
     payload["savingsKind"] = %savingsKind
-  let rule = selectRule(activeRules(db, eventType, businessDate), eventType, payload)
-  let lines = buildLines(rule, amount, branchId)
-  let journal = Journal(
-    journalId: newId(clock),
-    businessDate: businessDate,
-    valueDate: businessDate,
-    sourceEvent: eventType,
-    sourceRef: sourceRef,
-    idempotencyKey: idempotencyKey,
-    reversalOf: "")
-  discard insertJournal(db, journal, actor)
-  for line in lines:
-    insertJournalLine(db, journal.journalId, line)
-  journal.journalId
+  postRuleJournalSync(db, clock, eventType, amount, branchId, sourceRef, businessDate,
+    idempotencyKey, actor, payload)

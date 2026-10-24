@@ -1065,28 +1065,87 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * Daftar pengajuan top-up vault
+         * @description Daftar pengajuan top-up satu cabang, terbaru lebih dulu. Izin `teller.vault.read` harus
+         *     dipegang di cabang itu (`params.reason=branch_not_allowed` bila hanya di cabang lain).
+         *     `status` kosong = semua status; `limit` bawaan dan maksimum 100.
+         */
+        get: operations["listTellerVaultTopUps"];
+        put?: never;
+        /**
+         * Ajukan top-up kas vault (maker)
+         * @description **Pengajuan**, bukan mutasi: saldo vault belum berubah. Yang disimpan nominal, akun sumber
+         *     (`sourceAccount`, kode COA ASSET postable), alasan/bukti sumber dana (`note`, wajib), dan
+         *     pengaju. Persetujuan akun **lain** menulis saldo vault + jurnal
+         *     `D <teller.vault.cash_account> / K <sourceAccount>` (T-118, menutup O-097/O-098).
+         *
+         *     Vault harus sudah ada (404 `vault_not_configured`). Izin `teller.vault.submit` harus
+         *     dipegang di cabang ini (`params.reason=branch_not_allowed`). `sourceAccount` wajib akun
+         *     ASSET aktif yang postable dan **bukan** akun vault itu sendiri (400
+         *     `params.reason=source_account_invalid`).
+         *
+         *     `Idempotency-Key` wajib. Replay kunci+isi sama → 200 + `Idempotent-Replayed`; kunci sama isi
+         *     beda → 409.
+         *
+         *     **HUMAN-REVIEW-REQUIRED** (jalur kas teller, AGENTS.md §8).
+         */
+        post: operations["submitTellerVaultTopUp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teller/vault/topups/{requestId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
         get?: never;
         put?: never;
         /**
-         * Top-up kas vault cabang
-         * @description Menambah saldo `teller.vault` cabang `branchId` sebesar `amount` (injeksi kas operasional).
-         *     Vault **harus sudah ada** (seed/runbook T-093): baris hilang → 404 `vault_not_configured`,
-         *     bukan pembuatan baris diam-diam. Increment atomik satu baris per cabang; dua top-up
-         *     bersamaan dijumlahkan, bukan saling menimpa.
+         * Setujui pengajuan top-up (checker)
+         * @description Menulis saldo vault (`balance + amount`), jurnal `D <teller.vault.cash_account> / K
+         *     sourceAccount`, audit `teller.vault.topup.approve`, dan event `TellerVaultTopedUp` dalam
+         *     **satu** transaksi. Akun kaki vault datang dari parameter (`teller.vault.cash_account`,
+         *     nilai pilot `101.1 KAS DI VAULT`), bukan konstanta di kode; parameter/akun tidak sah → 500.
          *
-         *     `amount` wajib desimal string > 0 (tanpa float). Tidak ada batas atas **bisnis**: limit kas
-         *     adalah kebijakan pemilik (O-099). Batas teknisnya adalah kapasitas `Money` (int64 unit 10⁻⁴).
+         *     Izin `teller.vault.approve` harus dipegang di cabang pengajuan. Konflik 409 memakai
+         *     `params.reason`: `topup_request_not_pending` (sudah diputuskan), `self_approval` (pengaju
+         *     tidak boleh menyetujui pengajuannya sendiri), `source_account_invalid` (parameter akun vault
+         *     berubah sehingga akun sumber = akun vault). 404 `topup_request_not_found` /
+         *     `vault_not_configured`.
          *
-         *     `Idempotency-Key` wajib. Replay kunci+isi sama → 200 + `Idempotent-Replayed`; kunci sama isi
-         *     beda → 409. Izin `teller.vault.topup` harus dipegang di cabang ini
-         *     (`params.reason=branch_not_allowed` bila hanya di cabang lain).
+         *     `Idempotency-Key` wajib; replay tidak menambah saldo/jurnal lagi.
          *
-         *     **Tanpa jurnal GL.** Top-up menaikkan kas fisik tanpa akun buku besar lawan yang sah; ini
-         *     batas yang diakui (O-097, `docs/ACCEPTED-LIMITS.md`), bukan jurnal yang ditunda diam-diam.
-         *
-         *     **HUMAN-REVIEW-REQUIRED** (mutasi saldo vault kas, AGENTS.md §8).
+         *     **HUMAN-REVIEW-REQUIRED** (mutasi saldo vault + jurnal GL, AGENTS.md §8).
          */
-        post: operations["topUpTellerVault"];
+        post: operations["approveTellerVaultTopUp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teller/vault/topups/{requestId}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tolak pengajuan top-up (checker)
+         * @description Menutup pengajuan tanpa menyentuh saldo vault. Alasan (`reason`) wajib. Izin
+         *     `teller.vault.approve` di cabang pengajuan; pengaju tidak boleh memutuskan
+         *     pengajuannya sendiri (409 `self_approval`).
+         */
+        post: operations["rejectTellerVaultTopUp"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2266,19 +2325,54 @@ export interface components {
         TellerVaultTopUpRequest: {
             /**
              * Format: uuid
-             * @description Cabang yang vault-nya ditambah; izin `teller.vault.topup` harus dipegang di sini.
+             * @description Cabang yang vault-nya diisi; izin `teller.vault.submit` harus dipegang di sini.
              */
             branchId: string;
             /** @description Nominal top-up sebagai desimal string > 0 (tanpa float), mis. `"5000000.0000"`. */
             amount: string;
-            /** @description Catatan opsional (batas teknis kolom 200 karakter). */
-            note?: string;
+            /** @description Kode COA akun sumber dana (wajib ASSET, aktif, postable), mis. `"102"`. */
+            sourceAccount: string;
+            /** @description Alasan/bukti sumber dana (wajib, tidak boleh kosong). */
+            note: string;
         };
-        TellerVaultTopUp: {
+        TellerVaultTopUpRecord: {
+            /** Format: uuid */
+            requestId: string;
             /** Format: uuid */
             branchId: string;
-            /** @description Saldo vault setelah top-up, desimal string 4 desimal (tanpa float). */
+            /** @description Nominal pengajuan, desimal string 4 desimal. */
+            amount: string;
+            sourceAccount: string;
+            note: string;
+            /** @enum {string} */
+            status: "PENDING" | "APPROVED" | "REJECTED";
+            /** Format: uuid */
+            requestedBy: string;
+            /** @description Kosong selama `PENDING`. */
+            decidedBy: string;
+            /** @description Kosong selama `PENDING`; ISO-8601 UTC bila sudah diputuskan. */
+            decidedAt: string;
+            /** @description Alasan penolakan; kosong bila disetujui atau masih `PENDING`. */
+            decisionNote: string;
+            /** @description Jurnal GL hasil persetujuan; kosong selama `PENDING`/`REJECTED`. */
+            journalId: string;
+            /** @description ISO-8601 UTC. */
+            createdAt: string;
+        };
+        TellerVaultTopUpRequestList: {
+            items: components["schemas"]["TellerVaultTopUpRecord"][];
+        };
+        TellerVaultTopUpApproval: {
+            request: components["schemas"]["TellerVaultTopUpRecord"];
+            /** @description Saldo vault setelah persetujuan, desimal string 4 desimal. */
             balanceAfter: string;
+        };
+        TellerVaultTopUpRejectRequest: {
+            /** @description Alasan penolakan (wajib). */
+            reason: string;
+        };
+        TellerVaultTopUpRejection: {
+            request: components["schemas"]["TellerVaultTopUpRecord"];
         };
     };
     responses: {
@@ -4027,7 +4121,38 @@ export interface operations {
             500: components["responses"]["Problem"];
         };
     };
-    topUpTellerVault: {
+    listTellerVaultTopUps: {
+        parameters: {
+            query: {
+                /** @description Cabang vault. */
+                branchId: string;
+                /** @description Saring status pengajuan. */
+                status?: "PENDING" | "APPROVED" | "REJECTED";
+                /** @description Jumlah baris maksimum (bawaan 100). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar pengajuan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TellerVaultTopUpRequestList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    submitTellerVaultTopUp: {
         parameters: {
             query?: never;
             header: {
@@ -4049,7 +4174,7 @@ export interface operations {
         responses: {
             /**
              * @description Replay permintaan sebelumnya: `Idempotency-Key` sama dengan isi yang sama. Body adalah
-             *     respons asli yang tersimpan; vault tidak ditambah lagi.
+             *     respons asli yang tersimpan; tidak ada pengajuan baru.
              */
             200: {
                 headers: {
@@ -4057,16 +4182,83 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TellerVaultTopUp"];
+                    "application/json": components["schemas"]["TellerVaultTopUpRecord"];
                 };
             };
-            /** @description Vault cabang ditambah sebesar `amount` */
+            /** @description Pengajuan dibuat (status `PENDING`) */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TellerVaultTopUp"];
+                    "application/json": components["schemas"]["TellerVaultTopUpRecord"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    approveTellerVaultTopUp: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Kunci idempotensi per pemanggil (D-098). Wajib pada endpoint pembuat objek: kirim ulang
+                 *     dengan kunci yang sama untuk mengulang permintaan tanpa membuat objek ganda. Replay
+                 *     dijawab 200 + header `Idempotent-Replayed: true`; kunci sama dengan isi berbeda → 409.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pengajuan disetujui; saldo vault dan jurnal sudah ditulis */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TellerVaultTopUpApproval"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    rejectTellerVaultTopUp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TellerVaultTopUpRejectRequest"];
+            };
+        };
+        responses: {
+            /** @description Pengajuan ditolak */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TellerVaultTopUpRejection"];
                 };
             };
             400: components["responses"]["Problem"];

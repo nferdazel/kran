@@ -2468,3 +2468,31 @@ angka tetap keputusan pemilik.
 
 **Sisa.** O-101 (endpoint/UI master cabang), O-104 (check digit bila compliance menuntut), K-1…K-8
 (T-118) menunggu pemilik.
+
+## 24 Okt 2026 — tata kelola operator & kas berjurnal (T-118, D-131/D-132)
+
+Rekomendasi memo T-118 (SME akuntansi) disetujui pemilik dan diimplementasikan.
+
+- **Peran sempit + SoD** (`platform/0032`, D-131): `ops_admin`, `ledger_admin`, `cash_admin`,
+  `product_maker` dengan grant eksplisit; lima pasangan konflik tersemai; `platform_admin` tinggal
+  break-glass; penjaga penguncian-keluar memakai pemegang `platform.user.manage`.
+- **Kas teller berjurnal** (`ledger/0033`–`0034`, D-132): `101` jadi induk non-postable,
+  `101.1 KAS DI VAULT` / `101.2 KAS DI TELLER` / `101.9 SELISIH KAS`; buka/tutup sesi dan selisih
+  diposting sinkron di transaksi yang sama. Kaki selisih memakai akun laci (deviasi sadar dari memo,
+  supaya saldo laci bisa nol).
+- **Top-up vault maker-checker** (`teller/0035`, D-132): pengajuan `PENDING` + persetujuan akun lain
+  yang menulis saldo vault + jurnal `D <akun vault> / K <akun sumber>` + audit + event; self-approval
+  dan dua persetujuan bersamaan ditolak/diserialkan. Akun vault dari parameter
+  `teller.vault.cash_account` (CRITICAL, `NEEDS-COMPLIANCE-REVIEW`), bukan literal di kode.
+- Izin baru `teller.vault.submit`/`teller.vault.approve` (tiga segmen, spec §13); izin lama
+  `teller.vault.topup` dipertahankan untuk data historis.
+
+**Bukti.** `./task check-fast` hijau (paramgen in sync, i18n 574 kunci/locale); `./task lint` 213
+berkas; `./task openapi` sinkron; `tcontract` 6 OK. DB dev: `itapi_teller_vault` 17 OK,
+`itapi_teller_sessions` 12 OK, `itapi_teller` 43 OK, `itsession` 11 OK, `itapi_roles` 27 OK,
+`itapi_users` 7 OK, `itapi_auth` 45 OK, `itjournal` 18 OK, `itledger` 8 OK, `ittb` 4 OK,
+`itposting` 10 OK, `ittransaction` 8 OK, `itparam` 28 OK, `itparamservice` 9 OK,
+`itapi_journal` 15 OK, `itapi_ledger` 16 OK, `itapi_deposit` 17 OK, `itapi_fase1` 7 OK.
+
+**Sisa.** Keputusan pemilik K-3 (staf minimum/break-glass), K-4 (format bukti override), K-5 (batas
+nominal kas → O-099/T-122), K-6 (konfirmasi pemetaan GL), K-8 (`teller` top-up); UI vault (T-121).

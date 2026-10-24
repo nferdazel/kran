@@ -1,0 +1,22 @@
+# Definisi parameter modul `teller` (spec §10.3).
+#
+# Nilai di `default_pack` adalah nilai awal pack, BUKAN fallback kode: aplikasi tetap
+# gagal-cepat bila nilai aktif tidak ada (spec §10.6).
+#
+# `regulatory_refs` sengaja kosong sampai register regulasi §4 diverifikasi compliance
+# (docs/OPEN_ITEMS.md O-001) — jangan menebak nomor pasal.
+
+# Akun GL tempat saldo vault kas cabang dibukukan. Persetujuan top-up memposting
+# `D <akun ini> / K <akun sumber>`; tanpa parameter ini kode handler harus menyebut kode akun
+# sendiri, dan pemetaan akun adalah kebijakan akuntansi institusi (spec §10.5), bukan konstanta.
+# `CRITICAL`: memindahkan kas ke akun lain mengubah neraca, jadi perubahannya butuh 4-eyes.
+- key: teller.vault.cash_account
+  type: string
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minLength: 1, maxLength: 32 }
+  sensitivity: CRITICAL
+  provenance:
+    class: kebijakan
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: "Pemetaan pilot `101.1 KAS DI VAULT` (memo T-118 §5, O-097/K-6) — bukan kutipan SAK EP/PSAK."
+  default_pack: { base: "101.1" }

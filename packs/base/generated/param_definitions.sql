@@ -456,3 +456,14 @@ ON CONFLICT (key) DO UPDATE SET
   sensitivity = EXCLUDED.sensitivity, requires_approval = EXCLUDED.requires_approval,
   since_version = EXCLUDED.since_version;
 
+INSERT INTO platform.param_definition
+  (key, module, value_type, json_schema, allowed_scopes, description_key,
+   regulatory_refs, sensitivity, requires_approval, since_version)
+VALUES ('teller.vault.cash_account', 'teller', 'string', '{"minLength":1,"maxLength":32}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.teller.vault.cash_account', ARRAY[]::text[], 'CRITICAL', true, '0.1.0')
+ON CONFLICT (key) DO UPDATE SET
+  module = EXCLUDED.module, value_type = EXCLUDED.value_type,
+  json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,
+  description_key = EXCLUDED.description_key, regulatory_refs = EXCLUDED.regulatory_refs,
+  sensitivity = EXCLUDED.sensitivity, requires_approval = EXCLUDED.requires_approval,
+  since_version = EXCLUDED.since_version;
+
