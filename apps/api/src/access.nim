@@ -10,6 +10,7 @@ import std/[options]
 import mummy
 import db_connector/db_postgres
 
+import platform/domain/authz
 import platform/infrastructure/[auth_repo, auth_service]
 import kernel/[auditcontext, clock, ids, result]
 
@@ -100,6 +101,23 @@ proc authorizedAnyBranch*(db: DbConn, principal: Principal, permission: string):
   ## yang menentukan apa yang terlihat adalah penyaringan itu sendiri.
   {.cast(gcsafe).}:
     authorizeUserAnyBranch(db, principal.user.userId, permission).allowed
+
+type
+  BranchAuthz* = object
+    ## Izin efektif pemanggil yang **dimuat sekali** untuk menyaring banyak baris (T-130/ARC-2).
+    ## Tanpa ini, daftar rekening 200 baris menjalankan 2 query otorisasi per baris.
+    grants: seq[Grant]
+    conflicts: seq[RolePair]
+
+proc loadBranchAuthz*(db: DbConn, principal: Principal): BranchAuthz =
+  ## Satu kali baca grant + pasangan SoD; keputusannya tetap lewat `authorize` yang sama dengan
+  ## `authorizedAtBranch`, jadi aturannya tidak bercabang dua.
+  {.cast(gcsafe).}:
+    BranchAuthz(grants: grantsOf(db, principal.user.userId), conflicts: conflictPairs(db))
+
+proc allowedAt*(snapshot: BranchAuthz, targetBranch, permission: string): bool =
+  ## Padanan `authorizedAtBranch` untuk pemeriksaan berulang pada satu permintaan.
+  authorize(snapshot.grants, targetBranch, permission, snapshot.conflicts).allowed
 
 proc authorizedAtBranch*(db: DbConn, principal: Principal, targetBranch,
                          permission: string): bool =

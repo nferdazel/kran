@@ -24,6 +24,7 @@ type
     pkUpgradeRequired = "UPGRADE_REQUIRED"
     pkConflict = "CONFLICT"
     pkTooManyRequests = "TOO_MANY_REQUESTS"
+    pkUnavailable = "SERVICE_UNAVAILABLE"
     pkNotImplemented = "NOT_IMPLEMENTED"
     pkInternal = "INTERNAL_ERROR"
 
@@ -44,6 +45,7 @@ proc statusOf*(kind: ProblemKind): int =
   of pkUpgradeRequired: 426
   of pkConflict: 409
   of pkTooManyRequests: 429
+  of pkUnavailable: 503
   of pkNotImplemented: 501
   of pkInternal: 500
 
@@ -76,13 +78,19 @@ proc toJson*(p: Problem): JsonNode =
     result["params"] = params
 
 proc traceIdFrom*(req: Request): string =
-  ## Ambil `X-Request-Id` dari proxy (Caddy) bila ada; kalau tidak, buat korelasi baru.
+  ## Trace id permintaan: dari scope yang dibuka `beginRequestScope` (satu nilai per permintaan),
+  ## jadi access log, amplop problem, dan audit menyebut korelasi yang sama. Di luar siklus
+  ## permintaan (test), `X-Request-Id` dibaca langsung atau korelasi baru dibuat.
+  let scoped = requestScopeTrace()
+  if scoped.len > 0:
+    return scoped
   let fromProxy = req.headers["X-Request-Id"]
   if fromProxy.len > 0:
     return fromProxy
   newCorrelationId()
 
 proc respondProblem*(req: Request, problem: Problem) =
+  recordStatus(statusOf(problem.kind))
   req.respond(statusOf(problem.kind), headersWithType(ContentTypeProblem), $problem.toJson)
 
 proc respondProblem*(req: Request, problem: Problem,
@@ -91,6 +99,7 @@ proc respondProblem*(req: Request, problem: Problem,
   var headers = headersWithType(ContentTypeProblem)
   for (key, value) in extra:
     headers[key] = value
+  recordStatus(statusOf(problem.kind))
   req.respond(statusOf(problem.kind), headers, $problem.toJson)
 
 proc respondProblem*(req: Request, kind: ProblemKind, title: string, detail = "") =

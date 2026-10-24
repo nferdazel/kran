@@ -12,6 +12,8 @@ import std/[httpclient, json, net, os, strutils, times, unittest]
 import mummy
 
 import "platform-lib/db/config"
+import "platform-lib/db/pool"
+import kernel/clock
 
 import ../src/[drain, health, readiness, server]
 
@@ -149,3 +151,40 @@ suite "readyz dengan DB nyata":
     let body = parseJson(response.body)
     check body["status"].getStr() == "ok"
     check body["role"].getStr() == "api"
+
+suite "API-1: pool bermasalah dijawab problem+json, bukan 500 kosong":
+  test "rute ber-DB saat pool ditutup → 503 SERVICE_UNAVAILABLE + Retry-After":
+    # Sebelum T-130, `PoolError` lolos dari handler dan Mummy menjawab 500 **tanpa badan dan tanpa
+    # log**. Sekarang satu penangan terakhir menerjemahkannya jadi 503 yang bisa dibedakan klien.
+    let deadPool = newDbPool(dbConfigFromEnv(envT))
+    deadPool.close()
+    let brokenApp = AppContext(version: "itapi-broken-0.0.0", role: "api",
+      startedAt: epochTime(), pool: deadPool, clock: systemClock(),
+      readiness: databaseProbe(deadPool))
+    let port = freePort()
+    let server = newApiServer(brokenApp)
+    var thread: Thread[ServeArgs]
+    createThread(thread, serveInThread, ServeArgs(server: server, port: port))
+    let origin = "http://127.0.0.1:" & $port
+
+    let client = newHttpClient(timeout = 15_000)
+    defer: client.close()
+    let response = client.get(origin & "/api/v1/params")
+    check response.code.int == 503
+    check response.headers.getOrDefault("Content-Type").startsWith("application/problem+json")
+    check response.headers.getOrDefault("Retry-After").len > 0
+    let body = parseJson(response.body)
+    check body["code"].getStr() == "SERVICE_UNAVAILABLE"
+    check body["i18nKey"].getStr() == "error_service_unavailable"
+    check body["params"]["reason"].getStr() == "pool_unavailable"
+
+suite "ARC-1: readiness memakai pool yang sama dengan permintaan":
+  test "pool yang sudah ditutup → check database failed, bukan hijau":
+    # Probe dengan pool sendiri akan tetap hijau walau pool permintaan habis/putus — itu yang
+    # membuat instance tetap menerima trafik tanpa bisa melayani.
+    let deadPool = newDbPool(dbConfigFromEnv(envT))
+    deadPool.close()
+    let checks = databaseProbe(deadPool)()
+    check checks.len == 1
+    check checks[0].name == "database"
+    check checks[0].status == csFailed

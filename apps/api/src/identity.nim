@@ -3,7 +3,7 @@
 ## Satu tempat untuk membaca cookie sesi dan mengambil IP/perangkat yang ikut tercatat di audit.
 ## Dipakai modul realtime (handshake WS) maupun handler REST — dua konsumen, satu aturan.
 
-import std/[strutils]
+import std/[net, strutils]
 
 import mummy
 
@@ -53,15 +53,40 @@ proc withoutPort*(address: string): string =
       return address[0 ..< colon]
   address
 
+proc isLoopback(address: string): bool =
+  ## Apakah alamat koneksi berasal dari host ini sendiri (Caddy/proxy Vite berjalan di host yang
+  ## sama). Dipakai sebagai syarat mempercayai `X-Forwarded-For`.
+  address == "127.0.0.1" or address == "::1" or address == "::ffff:127.0.0.1"
+
+const maxIpLength* = 45 # nomagic:ok panjang teks IPv6 terpanjang, sama dengan batas kolom `inet`
+
+proc clientIpFrom*(peerAddress, forwardedFor: string): string =
+  ## Pilihan IP dari alamat koneksi + header `X-Forwarded-For` (T-130/SEC-2). Dipisah dari
+  ## `Request` supaya aturannya bisa diuji tanpa server.
+  ##
+  ## Header hanya dipercaya bila koneksi datang dari loopback — di produksi Caddy berjalan di host
+  ## yang sama, di dev proxy Vite juga. Tanpa syarat itu, klien mana pun bisa memalsukan kolom
+  ## `inet` audit (dan kunci pembatas login) cukup dengan mengirim header sendiri. Isi header
+  ## divalidasi sebagai alamat IP; yang tidak sah diabaikan, bukan diteruskan ke DB — sebelumnya
+  ## satu header ngawur membuat penulisan yang diaudit gagal 500.
+  let peer = withoutPort(peerAddress)
+  if not isLoopback(peer):
+    return peer
+  let forwarded = forwardedFor.split(',')[0].strip()
+  if forwarded.len == 0:
+    return peer
+  let candidate = withoutPort(forwarded)
+  if candidate.len > maxIpLength:
+    return peer
+  try:
+    discard parseIpAddress(candidate)
+    candidate
+  except ValueError:
+    peer
+
 proc clientIp*(req: Request): string =
-  ## IP pemanggil untuk audit. `X-Forwarded-For` diutamakan karena di belakang proxy (Caddy,
-  ## proxy Vite di dev) alamat koneksi selalu alamat proxy. Nilai yang tidak sah **tidak**
-  ## diperbaiki di sini: kolom `inet` DB yang menolaknya, dan gagal jelas lebih baik daripada
-  ## tercatat salah.
-  let forwarded = req.headers["X-Forwarded-For"].split(',')[0].strip()
-  if forwarded.len > 0:
-    return forwarded
-  withoutPort(req.remoteAddress)
+  ## IP pemanggil untuk audit (spec §18.2) — aturannya di `clientIpFrom`.
+  clientIpFrom(req.remoteAddress, req.headers["X-Forwarded-For"])
 
 proc deviceOf*(req: Request): string =
   ## User-Agent dipotong (`maxDeviceLength`), bukan disimpan utuh.

@@ -3403,3 +3403,31 @@ diam-diam pada alur top-up (sudah fail-closed sejak T-118).
 **Konsekuensi.** Bila suatu saat benar-benar perlu membatalkan penutupan (mis. salah tanggal), itu
 keputusan produk baru: butuh perintah eksplisit, alasan wajib, audit, dan kemungkinan jurnal koreksi.
 Sampai itu ada, `UPDATE ledger.period` manual akan ditolak DB — termasuk oleh skrip ops.
+
+## D-142 — Worker HTTP mengikuti ukuran pool; `X-Forwarded-For` hanya dari loopback (24 Okt 2026)
+
+**Konteks.** Audit 24 Okt 2026 (ARC-1, SEC-2) menemukan dua default yang saling memperburuk: Mummy
+membuka `countProcessors() * 10` worker (40 di mesin 4 vCPU) sementara pool DB 8, sehingga
+permintaan hanya mengantre lalu gagal `PoolError`; dan `X-Forwarded-For` dipercaya dari siapa pun,
+sehingga klien dapat memalsukan IP di rantai audit dan kunci pembatas login.
+
+**Keputusan.**
+
+1. `serverThreads = max(1, poolSize - 1)`. Satu koneksi disisihkan untuk pump `LISTEN` yang dipinjam
+   seumur proses; sisa worker sama dengan koneksi yang bisa dilayani. Lebih banyak worker daripada
+   koneksi bukan throughput tambahan, hanya antrean yang berakhir timeout.
+2. `/readyz` memakai pool proses. Pool penuh/putus = instance tidak siap — itu jujur; probe dengan
+   pool sendiri hanya menyembunyikan masalah.
+3. `X-Forwarded-For` dipercaya **hanya** bila koneksi berasal dari loopback (Caddy dan proxy Vite
+   berjalan di host yang sama), dan nilainya harus alamat IP sah ≤ 45 karakter; selain itu dipakai
+   alamat socket.
+
+**Ditolak.** Membaca `X-Forwarded-For` dari entri terakhir (mengandalkan Caddy menambahkan di
+belakang) tanpa aturan kepercayaan eksplisit — itu tetap tebakan. Menambah daftar proxy tepercaya
+sekarang (belum ada topologi yang membutuhkannya; API dan Caddy satu host). Menaikkan pool agar
+cukup untuk 40 worker — membalik masalahnya: 40 koneksi Postgres per instance.
+
+**Konsekuensi.** Bila API kelak dipindah ke host terpisah dari proxy, aturan loopback ini **harus**
+diganti daftar proxy tepercaya (`KRAN_TRUSTED_PROXIES`), karena semua permintaan akan datang dari
+alamat proxy dan audit kehilangan IP klien. Sampai itu terjadi, salah konfigurasi itu akan terlihat
+sebagai semua IP audit sama dengan alamat proxy — bukan sebagai IP palsu yang lolos.

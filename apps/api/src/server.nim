@@ -3,15 +3,19 @@
 ## Handler dipanggil di **thread Mummy**, jadi boleh blocking — penting karena `db_connector`
 ## sinkron diwajibkan spec §12.1 (satu query sinkron tidak boleh membekukan seluruh API).
 
-import std/strutils
+import std/[cpuinfo, strutils, times]
 
 import mummy
 import mummy/routers
+
+import "platform-lib/db/pool"
+import "platform-lib/log"
 
 import ./context
 import ./drain
 import ./events
 import ./health
+import ./http_util
 import ./problem
 import ./routes
 
@@ -58,6 +62,19 @@ proc buildRouter*(app: AppContext): Router =
     of hmPatch: result.patch(pattern, handleRequest)
     of hmDelete: result.delete(pattern, handleRequest)
 
+proc accessLogLine*(httpMethod, path: string, status: int, durationMs: int64): string =
+  ## Bentuk satu baris access log (T-130/API-6). `status` 0 = handler tidak merespons lewat helper
+  ## (mis. respons ditulis langsung oleh Mummy), ditandai `-` supaya tidak terbaca "200".
+  httpMethod & " " & path & " " & (if status > 0: $status else: "-") & " " &
+    $durationMs & "ms"
+
+proc logAccess(req: Request, status: int, durationMs: int64) =
+  ## Satu baris per permintaan — dipanggil pembungkus, bukan tiap handler, jadi tidak ada rute yang
+  ## bisa lupa. Trace id ikut sebagai field terstruktur (korelasi dengan amplop problem & audit).
+  discard newLogger(app = "kran-api").info(
+    accessLogLine($req.httpMethod, req.path, status, durationMs),
+    traceId = requestScopeTrace())
+
 proc requestHandler*(app: AppContext): RequestHandler =
   ## Router dipegang closure; Mummy memanggil handler ini dari worker thread-nya.
   var router = buildRouter(app)
@@ -67,15 +84,38 @@ proc requestHandler*(app: AppContext): RequestHandler =
   router.methodNotAllowedHandler = proc(req: Request) {.gcsafe.} =
     req.respondProblem(pkMethodNotAllowed, "Method Not Allowed",
       $req.httpMethod & " tidak didukung untuk " & req.path)
+  # Penangan terakhir (T-130/API-1). Tanpa ini, `PoolError`/exception yang lolos dari handler
+  # dijawab Mummy sebagai 500 **tanpa badan dan tanpa log** — klien tidak bisa membedakan "server
+  # salah" dari "koneksi habis", dan operator tidak punya jejak apa pun.
+  router.errorHandler = proc(req: Request, e: ref Exception) {.gcsafe.} =
+    if e of PoolError:
+      discard newLogger(lvlError).error("pool basis data tidak tersedia",
+        [("detail", e.msg), ("method", $req.httpMethod), ("path", req.path)],
+        traceId = requestScopeTrace())
+      req.respondProblem(
+        newProblem(pkUnavailable, "Service Unavailable",
+          "basis data sedang sibuk; coba lagi sebentar lagi",
+          traceId = requestScopeTrace(), params = @[("reason", "pool_unavailable")]),
+        @[("Retry-After", "1")])
+    else:
+      # `e.msg` hanya ke log server: bisa memuat nama tabel/host. Klien menerima teks tetap.
+      discard newLogger(lvlError).error("permintaan gagal tanpa penangan",
+        [("detail", e.msg), ("method", $req.httpMethod), ("path", req.path)],
+        traceId = requestScopeTrace())
+      req.respondProblem(pkInternal, "Internal Server Error",
+        "terjadi kesalahan pada server")
   let inner = router.toHandler()
   # Hitungan permintaan berjalan dibungkus di **satu** tempat (bukan di tiap handler), jadi tidak ada
   # rute yang bisa lupa dan membuat drain menggantung (T-032).
   result = proc(req: Request) {.gcsafe.} =
     beginRequest()
+    beginRequestScope(req)
+    let started = epochTime()
     try:
       inner(req)
     finally:
       endRequest()
+      logAccess(req, requestScopeStatus(), int64((epochTime() - started) * 1000))
 
 proc websocketHandlerOf(app: AppContext): WebSocketHandler =
   ## Handler WebSocket dipasang sekali di awal (Mummy memakainya untuk semua koneksi).
@@ -85,9 +125,14 @@ proc websocketHandlerOf(app: AppContext): WebSocketHandler =
   else:
     app.events.websocketHandler()
 
+proc apiWorkerThreads*(app: AppContext): int =
+  ## `app.serverThreads` bila sudah dihitung composition root; selain itu default Mummy
+  ## (`countProcessors() * 10`) supaya test dan peran non-API berperilaku seperti sebelumnya.
+  if app.serverThreads > 0: app.serverThreads else: max(countProcessors() * 10, 1)
+
 proc newApiServer*(app: AppContext, logHandler: LogHandler = nil): Server =
   newServer(requestHandler(app), websocketHandler = websocketHandlerOf(app),
-            logHandler = logHandler)
+            logHandler = logHandler, workerThreads = apiWorkerThreads(app))
 
 proc serveApi*(app: AppContext, port: int, address: string) =
   let server = newApiServer(app)
