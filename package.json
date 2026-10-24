@@ -11,11 +11,15 @@
     "build:web": "pnpm --filter @kran/web build",
     "check:web": "pnpm --filter @kran/web check",
     "test:ui": "pnpm --filter @kran/ui test",
-    "e2e": "pnpm --filter @kran/web e2e"
+    "e2e": "pnpm --filter @kran/web e2e",
+    "lint:web": "eslint apps/web/src packages/ui/src"
   },
   "devDependencies": {
     "@stoplight/spectral-cli": "6.17.0",
+    "eslint": "10.13.0",
+    "eslint-plugin-svelte": "3.23.1",
     "openapi-typescript": "7.13.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.0"
   }
 }

@@ -101,7 +101,7 @@
   }
 
   async function loadPeriods(): Promise<void> {
-    const { data: body, response, error } = await api.GET("/api/v1/ledger/periods");
+    const { data: body, response } = await api.GET("/api/v1/ledger/periods");
     if (response.status === 401) {
       await goto("/login");
       return;

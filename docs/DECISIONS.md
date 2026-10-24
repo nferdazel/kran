@@ -3318,3 +3318,38 @@ semua nilai >2 desimal — akan menyembunyikan sub-sen yang benar-benar hilang.
 (`toDecimalString`). Tampilan mentah parameter/binding lama masih bisa memperlihatkan `0.0000`
 sampai barisnya disemai ulang — kosmetik, bukan kesalahan hitung. Bukti: `tmoney`/`tprop_money`
 hijau dengan kasus `"25000.0000"`, `"1.2300"`, `"1.2301"` (ditolak).
+
+## D-139 — Lint statis TS/Svelte dipasang; dua kelompok aturan dikecualikan (T-057)
+
+**Konteks.** O-023 menyisakan lint statis generik untuk sisi TS/Svelte. D-053 menutup bagian a11y
+lewat `svelte-check --fail-on-warnings` dan menunda sisanya karena butuh dependensi baru. Pemilik
+meminta pemasangannya pada 24 Okt 2026.
+
+**Keputusan.**
+
+1. Dependensi **dipin persis**: `eslint` 10.13.0, `eslint-plugin-svelte` 3.23.1,
+   `typescript-eslint` 8.72.0. Cooldown `minimumReleaseAge: 4320` (3 hari) tetap berlaku; ketiga
+   versi sudah melewatinya.
+2. Satu flat config di akar (`eslint.config.js`): `typescript-eslint` recommended + config
+   `svelte/recommended`, dengan `typescript-eslint` sebagai parser di dalam `<script lang="ts">`.
+   Target `apps/web/src` + `packages/ui/src`; hasil generator (`paraglide`, klien OpenAPI dalam
+   repo) diabaikan.
+3. Dua kelompok aturan dimatikan, bukan "dilonggarkan diam-diam":
+   - `svelte/a11y-*` — plugin ini memetakan ulang diagnostik kompilator yang sudah memblokir lewat
+     `svelte-check --fail-on-warnings` (D-053). Dua gerbang untuk satu kebenaran hanya menambah
+     pesan ganda.
+   - `svelte/no-navigation-without-resolve` — menuntut `resolve()` dari `$app/paths` bertipe rute.
+     Aplikasi ini SPA statis di akar domain tanpa `paths.base`, jadi `resolve()` tidak mengubah
+     perilaku; adopsinya menyentuh 21 titik navigasi (15 `goto`, 7 `href`, termasuk data nav dan
+     command palette) dan tipenya. Itu migrasi UI tersendiri: **T-125**.
+4. Gate berjalan di `./task lint-web`, dipanggil `./task ci` dan job CI `web-e2e` — **bukan**
+   `./task check`. Job CI `nim-check` tidak menjalankan `pnpm install`; menaruhnya di `check` akan
+   membuat gate selalu skip di sana (alasan yang sama sudah dicatat D-053).
+
+**Ditolak.** Memasang `eslint-plugin-jsx-a11y`-gaya aturan a11y (duplikat); memaksa `resolve()`
+sekarang (mencampur pemasangan lint dengan migrasi navigasi); menaruh lint web di `./task check`
+(gate yang skip di CI bukan gate).
+
+**Konsekuensi.** `./task check` tetap bisa dijalankan tanpa Node; `./task ci` di mesin developer
+dan job `web-e2e` menjalankan eslint. `svelte-check` tetap menjadi gate a11y tunggal. Bila T-125
+selesai, pengecualian `no-navigation-without-resolve` dicabut dari `eslint.config.js`.

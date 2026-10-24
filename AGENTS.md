@@ -28,6 +28,7 @@ diam-diam memilih; catat di `docs/DECISIONS.md` dan eskalasi (lihat §8).
 `task verify [filter]` → `check-fast` + openapi + build + test modul terpilih (loop harian)
 `task test`    → unit + property + integration (Postgres ephemeral) + contract
 `task e2e`     → Playwright (e2e + axe 2 tema + svelte-check); visual regression belum ada (O-022)
+`task lint-web` → eslint (typescript-eslint + `svelte/*` non-a11y); butuh `pnpm install`
 `task ci`      → semua di atas (harus hijau sebelum menyatakan task selesai; DoD tidak berubah).
 Selama implementasi pakai `task verify <modul>`; `nim check` penuh di-shard paralel (D-077).
 Kalau perintah ini belum ada, MEMBUATNYA adalah task pertama (Fase 0, T-001).

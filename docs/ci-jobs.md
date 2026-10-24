@@ -12,6 +12,7 @@ job kosong yang selalu hijau adalah "hijau palsu". Per tanggal T-001 hanya ada
 | `traceability` (requirement ↔ kontrol/test) | T-005 |
 | `contract` (OpenAPI ↔ implementasi) | T-008 — digabung ke job `web-e2e` (`./task openapi`) dan ke `./task test` (test Nim `tcontract`/`tapi`/`itapi`) |
 | `web` (svelte-check/vitest/i18n) | T-010 — job `web-e2e` |
+| `web-lint` (eslint: typescript-eslint + `svelte/*` non-a11y) | T-057 — dalam job `web-e2e` (`./task lint-web`, D-139) |
 | `e2e-a11y` (Playwright + axe ×2 tema ×2 locale) | T-010 — dalam job `web-e2e` |
 | `traceability` | **belum** dibuat — jangan dianggap ada (lihat O-027) |
 

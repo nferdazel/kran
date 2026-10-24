@@ -180,10 +180,6 @@
     filteredLines.length === 0 ? undefined : ledgerCellId(visibleRow, activeColumn),
   );
 
-  function isActiveCell(row: number, column: number): boolean {
-    return filteredLines.length > 0 && row === visibleRow && column === activeColumn;
-  }
-
   function moveActiveCell(row: number, column: number): void {
     const rows = filteredLines.length;
     if (rows === 0) return;

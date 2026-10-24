@@ -2738,3 +2738,24 @@ satu baris log), `./task test tlog` hijau, `./task check` hijau. Detail: `docs/t
 
 **Sisa.** Penghitung belum diekspos sebagai probe `/readyz` — itu observabilitas Fase 9
 (`docs/ACCEPTED-LIMITS.md`), bukan bagian task ini.
+
+## 24 Okt 2026 — lint statis TS/Svelte (T-057)
+
+Sisa O-023 dipasang atas permintaan pemilik (D-139), setelah D-053 menundanya.
+
+- Dependensi dipin persis dan lolos cooldown 3 hari: `eslint` 10.13.0, `eslint-plugin-svelte`
+  3.23.1, `typescript-eslint` 8.72.0.
+- Flat config `eslint.config.js` di akar: `typescript-eslint` recommended + `svelte/recommended`,
+  parser TS diteruskan ke `<script lang="ts">`; target `apps/web/src` + `packages/ui/src`, hasil
+  generator diabaikan.
+- Gate `./task lint-web`, dipanggil `./task ci` dan job CI `web-e2e` — bukan `./task check`, karena
+  job `nim-check` tidak menjalankan `pnpm install`.
+- Dua pengecualian tertulis di config: `svelte/a11y-*` (duplikat `svelte-check --fail-on-warnings`,
+  D-053) dan `svelte/no-navigation-without-resolve` (migrasi `resolve()` = T-125).
+- Temuan lint pertama langsung diperbaiki: `isActiveCell` tak terpakai (ledger) dan `error` tak
+  terpakai (ledger/admin).
+
+**Bukti.** `pnpm lint:web` 0 masalah; probe berkas `.svelte` dengan variabel tak terpakai
+menghasilkan `@typescript-eslint/no-unused-vars` (bukti `.svelte` benar-benar dilint);
+`./task lint-web` `ok`; `./task check` hijau; `./task e2e` **46 passed** (3,3 m);
+`pnpm install --frozen-lockfile` sinkron.

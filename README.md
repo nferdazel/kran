@@ -88,8 +88,9 @@ from the code are explained in each module's `MODULE.md` and in
 A rule that only lives in a document will be broken, so most rules above have an enforcer, and the
 enforcers are themselves tested: [`tools/archcheck`](tools/archcheck) (module boundaries),
 [`tools/lint-nomagic`](tools/lint-nomagic) + [`tools/paramgen`](tools/paramgen) `--check` (business
-values), [`tools/i18ncheck`](tools/i18ncheck) (UI text), [`tools/openapi`](tools/openapi) with a
-contract test (contract and TS client), and [`tools/dbtools`](tools/dbtools) (expand-only migrations).
+values), [`tools/i18ncheck`](tools/i18ncheck) (UI text), `eslint` (TS/Svelte, non-a11y, D-139),
+[`tools/openapi`](tools/openapi) with a contract test (contract and TS client), and
+[`tools/dbtools`](tools/dbtools) (expand-only migrations).
 Money/rate are enforced by kernel types and their tests. The rules that do not yet have an enforcer
 (day-close via `daycloser`) are tracked as open items and arrive together with their modules.
 
@@ -120,6 +121,7 @@ One command entry point: `./task` (POSIX script, no extra tooling dependencies; 
 | `./task verify [filter]` | `check-fast` + openapi + build + tests for the selected modules (D-077) |
 | `./task test` | unit + property + integration (Postgres) + contract |
 | `./task e2e` | token contrast + svelte-check + Playwright (e2e, axe 2 themes, keyboard) |
+| `./task lint-web` | eslint (typescript-eslint + `svelte/*`, non-a11y) over `apps/web` and `packages/ui` |
 | `./task openapi` | lint the OpenAPI contract + check the TS client is in sync |
 | `./task ci` | every gate above; must be green before a task is called done |
 | `./task ci-repeat [N]` | repeat the full gate N times (default 3), to catch flake |
