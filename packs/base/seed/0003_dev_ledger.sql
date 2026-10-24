@@ -2,7 +2,7 @@
 --
 -- Fixture buku besar minimum untuk e2e T-079 (`/app/ledger`): izin **baca** buku besar untuk
 -- `param_maker` (dev.maker), satu periode tahun berjalan, dan satu jurnal demo seimbang
--- (D 101 KAS / K 201 SIMPANAN). Tanpa ini layar buku besar — tempat kerja pertama setelah login —
+-- (D 101.2 KAS DI TELLER / K 201 SIMPANAN). Tanpa ini layar buku besar — tempat kerja pertama setelah login —
 -- hanya menampilkan "tidak punya izin membaca jurnal" atau "belum ada periode akuntansi", sehingga
 -- gate axe/keyboard tidak bisa menyentuh tabelnya.
 --
@@ -60,7 +60,7 @@ SELECT md5('dev|ledger-journal|' || to_char(now(), 'YYYY-MM-DD'))::uuid,
        'e2e00000-0000-4000-8000-000000000001'::uuid,
        v.debit,
        v.credit
-  FROM (VALUES (1, '101', 10.0000::numeric, 0::numeric),
+  FROM (VALUES (1, '101.2', 10.0000::numeric, 0::numeric),
                (2, '201', 0::numeric, 10.0000::numeric)) AS v(line_no, gl_account, debit, credit)
  WHERE NOT EXISTS (
    SELECT 1 FROM ledger.journal_line
