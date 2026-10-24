@@ -12,7 +12,7 @@ Status: **T-093** (skema + API sesi + gerbang transaksi tunai) + **T-107** (top-
 
 | Tabel | Isi |
 |---|---|
-| `teller.vault` | Satu vault per cabang: `balance numeric(24,4)` dengan CHECK `>= 0`. Berkurang saat sesi dibuka (opening float), bertambah saat ditutup (counted cash) dan saat top-up disetujui (T-118). Vault adalah representasi operasional saldo akun GL `teller.vault.cash_account` (parameter), bukan sumber kebenaran akuntansi. |
+| `teller.vault` | Satu vault per cabang: `balance numeric(24,2)` dengan CHECK `>= 0`. Berkurang saat sesi dibuka (opening float), bertambah saat ditutup (counted cash) dan saat top-up disetujui (T-118). Vault adalah representasi operasional saldo akun GL `teller.vault.cash_account` (parameter), bukan sumber kebenaran akuntansi. |
 | `teller.teller_session` | Sesi kas: `branch_id`, `teller_user_id`, `business_date`, `status` (`OPEN`/`CLOSED`), `opening_float`, `opened_at/by`, `expected_cash`/`counted_cash`/`variance`/`note`/`closed_at/by` (terisi hanya saat `CLOSED`). |
 | `teller.cash_movement` | Arus laci per sesi: `CASH_IN`/`CASH_OUT`, `amount > 0`, `transaction_id` **UNIQUE** (FK `deposit.transaction`). Satu transaksi tunai = tepat satu baris movement. |
 | `teller.vault_topup_request` | Pengajuan top-up (T-118): `amount`, `source_account` (COA ASSET), `note` wajib, `status` `PENDING`/`APPROVED`/`REJECTED`, `requested_by`, `decided_by/at`, `decision_note`, `journal_id`. CHECK menolak self-approval dan mewajibkan `journal_id` hanya saat `APPROVED`. |
@@ -48,7 +48,7 @@ runtime (pola `deposit/0006`/`0008`: `ON ALL TABLES` hanya mencakup tabel yang a
 - **Tutup tidak bisa dua kali**: `UPDATE ... WHERE session_id = ? AND status = 'OPEN'`; 0 baris = 409.
 - **Baris `cash_movement` immutable** (`0006`): UPDATE/DELETE/TRUNCATE ditolak
   `ledger.reject_mutation()`. Koreksi = transaksi tunai baru (jurnal pembalik di sisi `deposit`).
-- **Uang tanpa float**: seluruh nominal `numeric(24,4)` / tipe `Money`; API mengirim desimal string.
+- **Uang tanpa float**: seluruh nominal `numeric(24,2)` / tipe `Money`; API mengirim desimal string 2 desimal.
 
 ## API
 

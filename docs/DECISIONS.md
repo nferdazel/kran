@@ -2403,6 +2403,10 @@ snapshot sebagai default "cepat" (basi tanpa galat, granularitas harian, tanpa c
 
 ## D-097 — O-082: 4 desimal di tabel, 2 desimal untuk tunai
 
+> **Diganti D-136 (24 Okt 2026).** Presisi penyimpanan dan tampilan sekarang **2 desimal** di
+> semua tempat. Alasan penolakan 2-desimal di tabel pada D-097 (jumlah baris ≠ total) hanya berlaku
+> saat skala tampilan berbeda-beda; dengan satu skala, penjumlahan tetap eksak.
+
 **Keputusan.** Penyimpanan tetap `Money` 10⁻⁴. Tampilan: **4 desimal** untuk nilai yang
 dijumlahkan (jurnal, TB, neraca), **2 desimal** untuk nilai tunai tunggal (input/konfirmasi teller,
 struk). Satu pintu `formatMoney(decimal, {decimals})` di `apps/web/src/lib/app/format.ts`, parsing
@@ -3213,3 +3217,41 @@ terlihat belakangan, sementara kerusakannya sudah terjadi.
 ledger menampilkan alasan itu apa adanya. Jurnal murni buku besar (mis. saldo awal `203`,
 `LedgerCashOpening`) tetap bisa dibalik. Opsi (b) dicatat sebagai pekerjaan lanjutan; sampai ada,
 `docs/ACCEPTED-LIMITS.md` menyebut bahwa koreksi subledger hanya lewat modul asal.
+
+---
+
+## D-136 — Uang 2 desimal: penyimpanan, API, dan tampilan (menggantikan D-097)
+
+**Konteks.** Sejak Fase 1 uang disimpan `numeric(24,4)` dan `Money` memakai skala 10⁻⁴, sementara
+tampilan tunai sudah 2 desimal (D-097). Pemilik memutuskan (24 Okt 2026) menyederhanakan semuanya
+ke **2 desimal**: nilai pilot adalah rupiah utuh, akrual bunga belum ada (O-084), dan operator
+sebaiknya melihat angka yang persis sama dengan yang disimpan.
+
+**Keputusan.**
+1. `kernel/money.nim`: `moneyScale = 2`, `moneyScaleFactor = 100`; unit terkecil = 1 sen. Parser
+   menolak lebih dari 2 desimal (tidak membulatkan diam-diam). `toDisplayString` dihapus — satu-
+   satunya tugasnya adalah menjembatani penyimpanan 4 desimal ke tampilan 2 desimal.
+2. Kolom uang menjadi `numeric(24,2)`: `deposit.account_balance.balance`,
+   `deposit.transaction.amount`, `deposit.transfer.amount`, `ledger.journal_line.debit/credit`,
+   `ledger.balance_snapshot.debit_total/credit_total`, `teller.vault.balance`,
+   `teller.cash_movement.amount`, `teller.teller_session.opening_float/expected_cash/`
+   `counted_cash/variance`, `teller.vault_topup_request.amount`. Migrasi
+   `deposit/0038`, `ledger/0039`, `teller/0040` (expand-only; migrasi lama tidak diubah).
+3. Migrasi **fail-closed**: bila ada baris dengan nilai di bawah 0,01, migrasi berhenti dan
+   menyebut tabelnya. Membulatkan diam-diam berarti membuang presisi di tabel yang immutable
+   (jurnal, transaksi teller) tanpa cara mengoreksinya. Data pilot diperiksa lebih dulu: nol baris.
+4. API mengirim string 2 desimal; kontrak OpenAPI diperbarui. `formatMoney` dan `addMoney` di
+   `@kran/ui` default 2 desimal; `parseMoneyInput` menormalkan ke 2 desimal.
+5. `Rate` tetap 1e-6 — presisi persen bukan presisi uang. `Money × Rate` kini membulatkan ke sen.
+
+**Konsekuensi & risiko.**
+- **Akrual bunga (Fase 3)**: pembulatan per sen per posting. Akrual harian yang dijumlahkan bisa
+  bias sampai 0,005/posting dibanding skala 4. Parameter `rounding_scale`/`rounding_mode` (O-084)
+  wajib diputuskan sebelum akrual ditulis; jangan mengasumsikan skala 4.
+- **Idempotensi**: `request_hash` memuat badan permintaan; key lama dengan nominal 4 desimal tidak
+  akan replay setelah deploy (409 hash beda). Di pilot key sudah lewat TTL.
+- **Deviasi spec**: §9.3 masih menulis `numeric(24,4)` di contoh DDL-nya. Spec adalah sumber
+  kebenaran; deviasi ini dicatat di `docs/OPEN_ITEMS.md` (O-106) sampai spec diperbarui pemilik.
+- `ledger.balance_snapshot` dibangun ulang untuk setiap `as_of` yang ada setelah tipe kolom
+  berubah; cache turunan tidak boleh tertinggal dari jurnal.
+- **HUMAN-REVIEW-REQUIRED** (AGENTS §8): perubahan presisi menyentuh buku besar dan kas.

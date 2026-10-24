@@ -100,12 +100,12 @@ Aturan yang mengikat:
   Digit terakhir setiap baris jatuh di satu garis vertikal.
 - Format `id-ID` / `en-US` lewat `Intl.NumberFormat`; simbol mata uang di header kolom
   ("Saldo (IDR)"), bukan di setiap sel. Singkatan angka (rb/jt) dilarang.
-- **Presisi desimal mengikuti sumber, bukan selera layar**: jurnal/TB 4 desimal; layar tunai
-  menunggu keputusan **O-082** (default sementara: 4 desimal di semua tempat).
+- **Presisi uang 2 desimal di semua tempat** (D-136): penyimpanan `numeric(24,2)`, API string 2
+  desimal, layar 2 desimal. Tidak ada lagi dua presisi berbeda antara tabel dan layar tunai.
 - Debit/kredit: kolom terpisah + label "D"/"K" + posisi, bukan warna saja. Untuk teller, bahasa
   yang dipakai "Setor (masuk)" / "Tarik (keluar)" dengan tanda + / −.
 - Total: baris lengket, hairline 2 px di atas, latar surface. Selisih selalu disertai kata:
-  "Tidak seimbang: selisih 250.000,0000". Nol tampil `0,0000`; negatif pakai minus di depan digit.
+  "Tidak seimbang: selisih 250.000,00". Nol tampil `0,00`; negatif pakai minus di depan digit.
 - Nilai angka bisa diseleksi dan disalin; jangan pakai `user-select:none` di sel data.
 
 ## 7. Form, alur, dan kegagalan
