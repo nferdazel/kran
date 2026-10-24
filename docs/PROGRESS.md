@@ -2558,3 +2558,28 @@ Pemilik mendelegasikan lima butir yang tersisa; semuanya ditetapkan tanpa mengar
 
 **Sisa.** UI vault (T-121), angka lanjutan opsional (akumulasi harian, plafon saldo vault, toleransi
 variance), dan pembuatan akun per peran di produksi supaya SoD berlaku penuh.
+
+## 24 Okt 2026 — layar vault kas + daftar cabang (T-121, O-101)
+
+Permukaan operator terakhir Fase 2 yang masih bolong: top-up vault hanya bisa diajukan lewat API.
+
+- **Rute baca baru** `GET /api/v1/branches` + izin `platform.branch.read` (`platform/0037`, diberikan
+  ke `ops_admin`/`cash_admin`/`teller`/`ledger_admin`/`platform_admin`). Layar tidak lagi menuntut
+  operator menghafal UUID cabang; penulisan cabang tetap `ctl create-branch` (D-130). Handler sengaja
+  **tidak** menuntut grant tanpa batas cabang, karena pemegang role `BRANCH` justru pengguna yang
+  butuh daftar itu.
+- **Layar `/app/vault`**: saldo vault cabang (angka tabular), form pengajuan untuk pemegang
+  `teller.vault.submit`, daftar pengajuan dengan filter status, tombol setujui/tolak untuk pemegang
+  `teller.vault.approve`. Konfirmasi setujui dan form tolak inline (DESIGN §7); pengaju sendiri tetap
+  ditolak server `409 self_approval`. Format bukti K-4 hanya disebut di hint, tidak diperiksa UI.
+- **Seed dev**: `dev.cashmaker` dan `dev.cashchecker` (dua akun `cash_admin`) untuk e2e maker-checker
+  dengan orang berbeda. Keduanya sengaja bukan `ops_admin` supaya jumlah pemegang
+  `platform.user.manage` di seed tidak menggeser uji "pengelola terakhir".
+
+**Bukti.** `./task check-fast` hijau (i18n 633 key/locale); `./task lint` 215 berkas; `./task openapi`
+sinkron + typecheck klien; `./task test` 1096 OK (termasuk `itapi_users` untuk rute cabang);
+`./task e2e` 46 lulus (alur ajukan → setujui → tolak dengan saldo diverifikasi lewat API, mobile
+390px tanpa overflow, axe 2 tema × 2 locale tanpa pelanggaran serious/critical).
+
+**Sisa.** O-101 kini hanya kurang tulis/ubah cabang lewat HTTP; O-103 tinggal layar lain (mis. serah
+terima kas per sesi) dan keputusan plafon lanjutan (akumulasi harian, plafon saldo vault).
