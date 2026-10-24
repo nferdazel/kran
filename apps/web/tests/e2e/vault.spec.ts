@@ -31,7 +31,9 @@ type Text = {
   amount: string;
   source: string;
   note: string;
+  amountFormat: string;
   filter: string;
+  cancel: string;
   submit: string;
   submitted: string;
   approve: string;
@@ -51,7 +53,9 @@ const T: Record<"id" | "en", Text> = {
     amount: "Nominal (IDR)",
     source: "Akun sumber (kode COA)",
     note: "Bukti dan tujuan",
+    amountFormat: "Nominal hanya boleh angka, maksimum satu pemisah desimal.",
     filter: "Status",
+    cancel: "Batal",
     submit: "Ajukan top-up",
     submitted: "Pengajuan terkirim dan menunggu keputusan.",
     approve: "Setujui",
@@ -69,7 +73,9 @@ const T: Record<"id" | "en", Text> = {
     amount: "Amount (IDR)",
     source: "Source account (COA code)",
     note: "Evidence and purpose",
+    amountFormat: "Amount may only contain digits and at most one decimal separator.",
     filter: "Status",
+    cancel: "Cancel",
     submit: "Request top-up",
     submitted: "Request submitted and waiting for a decision.",
     approve: "Approve",
@@ -187,6 +193,15 @@ test.describe.serial("vault: pengajuan dan keputusan top-up", () => {
     await browserLogin(page, makerCookie);
     await openVault(page, text);
 
+    // 0. Validasi klien: nominal tidak sah tidak dikirim dan pesannya tampil di form.
+    await page.getByLabel(text.source, { exact: true }).fill(SOURCE_ACCOUNT);
+    await page.getByLabel(text.note, { exact: true }).fill(`[E2E] invalid e2e-${suffix} | uji`);
+    await page.getByLabel(text.amount, { exact: true }).fill("abc");
+    const invalidSubmit = page.getByRole("button", { name: text.submit, exact: true });
+    await invalidSubmit.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("alert")).toHaveText(text.amountFormat);
+
     // 1. Pengajuan (maker).
     await submitTopUp(page, text, "50000", `[E2E] slip e2e-${suffix} | isi vault`);
 
@@ -200,6 +215,14 @@ test.describe.serial("vault: pengajuan dan keputusan top-up", () => {
     await openVault(page, text);
     const row = page.getByRole("row").filter({ hasText: `e2e-${suffix} | isi vault` });
     await expect(row).toBeVisible();
+    await row.getByRole("button", { name: text.approve, exact: true }).focus();
+    await page.keyboard.press("Enter");
+    // Batal menutup konfirmasi tanpa memutuskan apa pun.
+    const cancel = page.getByRole("button", { name: text.cancel, exact: true });
+    await cancel.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("button", { name: text.approveConfirm, exact: true })).toHaveCount(0);
+
     await row.getByRole("button", { name: text.approve, exact: true }).focus();
     await page.keyboard.press("Enter");
     const confirm = page.getByRole("button", { name: text.approveConfirm, exact: true });
