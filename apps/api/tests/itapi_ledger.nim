@@ -220,14 +220,21 @@ suite "ledger: COA":
     check all.body["items"].len >= 15
 
     var hasKas = false
+    var hasKasTeller = false
     for item in all.body["items"]:
       if item["code"].getStr() == "101":
         hasKas = true
         check item["name"].getStr() == "KAS"
         check item["accountType"].getStr() == "ASSET"
         check item["normalSide"].getStr() == "DEBIT"
+        # `101 KAS` menjadi induk non-postable sejak migrasi 0033 (T-118).
+        check not item["postable"].getBool()
+      elif item["code"].getStr() == "101.2":
+        hasKasTeller = true
+        check item["name"].getStr() == "KAS DI TELLER"
         check item["postable"].getBool()
     check hasKas
+    check hasKasTeller
 
     let assets = getJson(CoaPath & "?type=asset", makerToken)
     check assets.code == 200
@@ -568,16 +575,16 @@ proc rebuildSnapshotAt(asOf: string) =
 block:
   # April: saldo awal periode Mei (periode lain, tetap OPEN).
   discard ensurePeriod("2026-04-01", "2026-04-30")
-  postJournal("2026-04-10", "101", "201", "1000.0000")
+  postJournal("2026-04-10", "101.2", "201", "1000.0000")
   postJournal("2026-04-20", "102", "201", "200.0000")
   # Mei: mutasi di hari pertama & terakhir periode (batas inklusif).
-  postJournal("2026-05-01", "101", "201", "100.0000")
-  postJournal("2026-05-31", "101", "201", "50.0000")
+  postJournal("2026-05-01", "101.2", "201", "100.0000")
+  postJournal("2026-05-31", "101.2", "201", "50.0000")
   # Juni: di luar periode Mei → tidak boleh masuk closing Mei.
   discard ensurePeriod("2026-06-01", "2026-06-30")
-  postJournal("2026-06-01", "101", "201", "9999.0000")
+  postJournal("2026-06-01", "101.2", "201", "9999.0000")
   # Juli: untuk jalur snapshot saat periode CLOSED.
-  postJournal("2026-07-05", "101", "201", "300.0000")
+  postJournal("2026-07-05", "101.2", "201", "300.0000")
 
 suite "ledger: laporan saldo GL (T-082)":
   test "tanpa sesi → 401, tanpa izin → 403, periodId bentuk salah → 400":
@@ -609,7 +616,7 @@ suite "ledger: laporan saldo GL (T-082)":
     check reply.body["computedAt"].getStr().len >= 20
 
     # 01/05 + 31/05 keduanya ikut (inklusif); 01/06 tidak.
-    let kas = lineOf(reply.body, "101")
+    let kas = lineOf(reply.body, "101.2")
     check kas.kind == JObject
     check kas["openingDebit"].getStr() == "1000.0000"
     check kas["openingCredit"].getStr() == "0.0000"
@@ -681,8 +688,8 @@ suite "ledger: laporan saldo GL (T-082)":
     checkJson(BalancesPath, "GET", "200", closedReply.body)
     check closedReply.body["source"].getStr() == "snapshot"
     check closedReply.body["computedAt"].getStr().endsWith("Z")
-    # Angka tetap benar: 101 kumulatif s.d. 31 Juli = 1000 + 150 + 9999 + 300.
-    let kas = lineOf(closedReply.body, "101")
+    # Angka tetap benar: 101.2 kumulatif s.d. 31 Juli = 1000 + 150 + 9999 + 300.
+    let kas = lineOf(closedReply.body, "101.2")
     check kas.kind == JObject
     check kas["closingDebit"].getStr() == "11449.0000"
     check asMoney(kas["closingDebit"].getStr()) ==
@@ -691,12 +698,12 @@ suite "ledger: laporan saldo GL (T-082)":
   test "snapshot basi ditolak: jurnal backdated setelah CLOSED → source=ledger":
     # Prasyarat: test sebelumnya menutup Juli dan cache 31 Juli cocok dengan jurnal.
     # Jurnal ke April (periode OPEN) mengubah saldo awal Juli, jadi cache tidak lagi sah.
-    postJournal("2026-04-15", "101", "201", "77.0000")
+    postJournal("2026-04-15", "101.2", "201", "77.0000")
 
     let reply = getJson(BalancesPath & "?periodId=" & julyPeriod, makerToken)
     check reply.code == 200
     check reply.body["source"].getStr() == "ledger" # bukan `snapshot` yang sudah basi
-    let kas = lineOf(reply.body, "101")
+    let kas = lineOf(reply.body, "101.2")
     check kas.kind == JObject
     # 11449 + 77: angka tetap dari jurnal, bukan dari cache lama.
     check kas["closingDebit"].getStr() == "11526.0000"

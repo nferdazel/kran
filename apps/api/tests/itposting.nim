@@ -84,7 +84,7 @@ suite "posting: alur normal":
     check full.lines.len == 2
     check full.businessDate == "2026-10-15"
     check full.idempotencyKey == "outbox:" & $eventId
-    check full.lines[0].glAccount == "101"
+    check full.lines[0].glAccount == "101.2"
     check full.lines[0].debit == money(150_0000)
     check full.lines[1].glAccount == "201"
     check full.lines[1].credit == money(150_0000)
