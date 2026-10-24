@@ -88,8 +88,9 @@ proc moneyErr(msg: string, code = "KRAN-1101"): AppError {.inline.} =
   appError(code, "error.money.invalid", aekValidation, msg)
 
 proc moneyFromString*(s: string): AppResult[Money] =
-  ## Bentuk yang diterima: `[+-]?angka[.desimal]` dengan **maksimum `moneyScale` desimal**
-  ## (skala penyimpanan spec §9.1(2)). Lebih dari itu ditolak, bukan dibulatkan.
+  ## Bentuk yang diterima: `[+-]?angka[.desimal]` dengan **maksimum `moneyScale` desimal**; nol
+  ## tambahan di belakang koma diterima selama nilainya tetap (mis. `"25000.0000"`), sedangkan
+  ## digit sub-sen ditolak, bukan dibulatkan (D-136, D-138).
   var t = s.strip()
   if t.len == 0:
     return err[Money, AppError](moneyErr("string kosong"))
@@ -126,9 +127,15 @@ proc moneyFromString*(s: string): AppResult[Money] =
   if sawDot and frac.len == 0:
     return err[Money, AppError](moneyErr("titik tanpa angka desimal: " & s))
   if frac.len > moneyScale:
-    return err[Money, AppError](moneyErr(
-      "maksimum " & $moneyScale & " desimal: " & s, "KRAN-1103"
-    ))
+    ## Nol tambahan di belakang koma tidak mengubah nilai: `"25000.0000"` = `"25000.00"`.
+    ## Ini bukan pembulatan — digit bukan-nol tetap ditolak (D-138). Diperlukan karena nilai
+    ## parameter/binding lama tersimpan 4 desimal (pra-D-136).
+    for k in moneyScale ..< frac.len:
+      if frac[k] != '0':
+        return err[Money, AppError](moneyErr(
+          "maksimum " & $moneyScale & " desimal (nol tambahan diterima): " & s, "KRAN-1103"
+        ))
+    frac.setLen(moneyScale)
 
   while frac.len < moneyScale:
     frac.add('0')

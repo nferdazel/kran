@@ -10,11 +10,16 @@ suite "money":
     check moneyFromString("0").value.toDecimalString == "0.00"
     check moneyFromString("+0.01").value.minorUnits == 1
     check moneyFromString(" 7.25 ").value.minorUnits == 725
+    # Nol tambahan di belakang koma = nilai sama (D-138); bukan pembulatan.
+    check moneyFromString("25000.0000").value.toDecimalString == "25000.00"
+    check moneyFromString("0.0000").value.toDecimalString == "0.00"
+    check moneyFromString("1.2300").value.minorUnits == 123
 
   test "parse menolak bentuk tidak sah (tanpa pembulatan diam-diam)":
     check moneyFromString("").isErr
-    check moneyFromString("1.234").isErr # > 2 desimal
+    check moneyFromString("1.234").isErr # > 2 desimal dan ada digit bukan-nol
     check moneyFromString("1.23456").isErr
+    check moneyFromString("1.2301").isErr # sub-sen tetap ditolak
     check moneyFromString("12,5").isErr
     check moneyFromString("abc").isErr
     check moneyFromString("1.2.3").isErr
