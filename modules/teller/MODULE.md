@@ -92,14 +92,21 @@ runtime (pola `deposit/0006`/`0008`: `ON ALL TABLES` hanya mencakup tabel yang a
 
 ## Batas (lihat `docs/ACCEPTED-LIMITS.md`)
 
-- **Pemetaan akun kas adalah usulan pilot** (`101.1`/`101.2`/`101.9`, `ledger/0033`–`0034`):
-  `NEEDS-COMPLIANCE-REVIEW` (REG-011), bukan kutipan SAK EP/PSAK. Mengubah pemetaan = migrasi rule
-  baru + uji golden, bukan mengubah handler.
+- **Pemetaan akun kas adalah usulan pilot** (`101.1`/`101.2`/`101.9` + `203 TITIPAN PENGURUS`,
+  `ledger/0033`–`0036`): `NEEDS-COMPLIANCE-REVIEW` (REG-011), bukan kutipan SAK EP/PSAK. Mengubah
+  pemetaan = migrasi rule baru + uji golden, bukan mengubah handler.
+- **Rekonsiliasi resmi** (`teller.vault` vs GL, D-134): `teller.vault` = GL `101.1` + GL `101`
+  (legasi) per cabang saat tidak ada sesi `OPEN`. Saldo `101` lama (2.700.000) tidak bisa dipindah
+  ke sub-akun: `101` induk non-postable sejak `ledger/0033` dan jurnal lama immutable.
 - **Sumber dana top-up** tidak diverifikasi ke rekening bank: bukti = alasan pengajuan + akun COA
   yang dipilih pengaju, dan checker menyetujui apa adanya. Penyesuaian **turun** (koreksi selisih
   vault) belum punya endpoint (O-098).
-- **Batas nominal kas** (opening float, top-up, transaksi) belum ada — angkanya kebijakan pemilik
-  (O-099/K-5). Saldo awal tetap bisa diisi seed/runbook (satu kali, ops).
+- **Saldo awal vault dijurnal sekali, bukan SQL** (O-105/D-134): `kran-api --role=ctl
+  post-opening-balance --username=<operator> --branch=<uuid> --amount=<nominal>
+  --business-date=<YYYY-MM-DD>` memposting `D 101.1 / K 203` (rule `LedgerCashOpening`,
+  `ledger/0036`), audit `ledger.opening_balance`, idempoten per cabang, dan menolak tanggal di luar
+  periode OPEN. Sumber dana = titipan pengurus (`NEEDS-COMPLIANCE-REVIEW`); reklasifikasi ke ekuitas
+  kelak = jurnal baru, bukan edit baris lama.
 - **Vault harus sudah ada** sebelum top-up: baris hilang bukan dibuat diam-diam (404
   `vault_not_configured`). Vault kosong juga membuat sesi tidak bisa dibuka — fail-closed, bukan bug.
 - **Plafon nominal kas = parameter (D-133, O-099 tertutup)**: `teller.cash.limit_opening_float`
