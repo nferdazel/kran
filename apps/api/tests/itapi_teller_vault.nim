@@ -32,6 +32,7 @@ const
   ContractPath = "packages/contracts/openapi/kran-api.yaml"
   VaultPath = "/api/v1/teller/vault"
   TopUpsPath = "/api/v1/teller/vault/topups"
+  ReversalPath = "/api/v1/ledger/journals/{journalId}/reversal"
   LoginPath = "/api/v1/auth/login"
   MakerUser = "dev.maker"
   CheckerUser = "dev.checker"
@@ -437,6 +438,25 @@ suite "vault: baca, ajukan, setujui":
     check again.code == 409
     checkProblem(TopUpsPath & "/{requestId}/approve", "POST", "409", again.body)
     check reasonOf(again) == "topup_request_not_pending"
+
+  test "jurnal top-up vault tidak bisa dibalik lewat buku besar (T-123)":
+    let maker = tokenOf(login(MakerUser))
+    let checker = tokenOf(login(CheckerUser))
+    let submitted = submitTopUp(maker, BranchA, "100.0000", "vault-reverse-" & $epochTime())
+    check submitted.code == 201
+    let approved = approveTopUp(checker, requestIdOf(submitted),
+      "vault-reverse-approve-" & $epochTime())
+    check approved.code == 200
+    let journalId = approved.body["request"]["journalId"].getStr()
+
+    let denied = postJson(ReversalPath.replace("{journalId}", journalId),
+      %*{"reason": "uji guard subledger"}, maker)
+    check denied.code == 409
+    checkProblem(ReversalPath, "POST", "409", denied.body)
+    check denied.body["params"]["reason"].getStr() == "journal_owned_by_subledger"
+    check denied.body["params"]["subledger"].getStr() == "teller.vault_topup_request"
+    check dbCount(sql"""SELECT count(*)::text FROM ledger.journal
+                         WHERE reversal_of = ?::uuid""", journalId) == 0
 
   test "top-up di atas plafon → 409 topup_exceeds_limit; tepat plafon diterima":
     let maker = tokenOf(login(MakerUser))

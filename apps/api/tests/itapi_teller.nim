@@ -39,6 +39,7 @@ const
   SlipPath = "/api/v1/teller/cash-transactions/{transactionId}"
   TransferPath = "/api/v1/teller/transfers"
   StatementPath = "/api/v1/deposit/accounts/{accountId}/statement"
+  ReversalPath = "/api/v1/ledger/journals/{journalId}/reversal"
   SessionsPath = "/api/v1/teller/sessions"
   SessionClosePath = "/api/v1/teller/sessions/{sessionId}/close"
   LoginPath = "/api/v1/auth/login"
@@ -669,6 +670,36 @@ suite "teller: setor & tarik":
     check balanceOf(accountId) == "40.0000"
     check txCount(accountId) == rowsBefore
     check journalCount("DepositWithdrawn") == journalsBefore
+
+suite "teller: jurnal subledger tidak bisa dibalik (T-123)":
+  test "jurnal transaksi tunai & PB ditolak 409 journal_owned_by_subledger":
+    let token = tokenOf(login(MakerUser))
+    let source = freshAccount()
+    let destination = freshAccount()
+    let deposit = postJson(CashPath, cashBody(source, "DEPOSIT", "100.0000"), token)
+    check deposit.code == 201
+    let cashJournal = deposit.body["journalId"].getStr()
+
+    let denied = postJson(ReversalPath.replace("{journalId}", cashJournal),
+      %*{"reason": "uji guard subledger"}, token)
+    check denied.code == 409
+    checkProblem(ReversalPath, "POST", "409", denied.body)
+    check denied.body["params"]["reason"].getStr() == "journal_owned_by_subledger"
+    check denied.body["params"]["subledger"].getStr() == "deposit.transaction"
+    # Tidak ada jurnal pembalik yang lahir dari penolakan itu.
+    check dbCount(sql"""SELECT count(*)::text FROM ledger.journal
+                         WHERE reversal_of = ?::uuid""", cashJournal) == 0
+
+    # PB juga punya subledger sendiri: pembalik hanya akan membuat GL dan baris transfer berbeda.
+    let transfer = postJson(TransferPath,
+      transferBody(source, destination, "10.0000", "PB uji guard"), token)
+    check transfer.code == 201
+    let transferJournal = transfer.body["journalId"].getStr()
+    let deniedTransfer = postJson(ReversalPath.replace("{journalId}", transferJournal),
+      %*{"reason": "uji guard subledger"}, token)
+    check deniedTransfer.code == 409
+    check deniedTransfer.body["params"]["reason"].getStr() == "journal_owned_by_subledger"
+    check deniedTransfer.body["params"]["subledger"].getStr() == "deposit.transfer"
 
 suite "teller: idempotency":
   test "replay 200 + Idempotent-Replayed, tepat satu jurnal; isi beda 409":
