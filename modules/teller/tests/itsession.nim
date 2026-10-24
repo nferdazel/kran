@@ -111,7 +111,7 @@ proc seedTransaction(amount: Money): Id =
     sourceEvent: "ItSessionTest", sourceRef: txId, idempotencyKey: "its-" & $jid)
   discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
     discard insertJournal(d, j, actor)
-    insertJournalLine(d, jid, JournalLine(lineNo: 1, glAccount: "101", branchId: Id(branchA),
+    insertJournalLine(d, jid, JournalLine(lineNo: 1, glAccount: "101.2", branchId: Id(branchA),
       debit: amount, credit: zero()))
     insertJournalLine(d, jid, JournalLine(lineNo: 2, glAccount: "201", branchId: Id(branchA),
       debit: zero(), credit: amount))

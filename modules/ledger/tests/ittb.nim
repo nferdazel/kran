@@ -48,7 +48,7 @@ discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
     let j = Journal(journalId: newId(testClock), businessDate: "2026-10-15",
       valueDate: "2026-10-15", sourceEvent: "TbTest", sourceRef: newId(testClock),
       idempotencyKey: "ittb-" & $i,
-      lines: @[line(1, "101", amount, 0), line(2, "201", 0, amount)])
+      lines: @[line(1, "101.2", amount, 0), line(2, "201", 0, amount)])
     discard insertJournal(d, j, actor)
     for l in j.lines:
       insertJournalLine(d, j.journalId, l)
@@ -64,7 +64,7 @@ block:
     let j = Journal(journalId: newId(testClock), businessDate: "2026-09-15",
       valueDate: "2026-09-15", sourceEvent: "TbTestPrior", sourceRef: newId(testClock),
       idempotencyKey: "ittb-prior",
-      lines: @[line(1, "101", sepAmount, 0), line(2, "201", 0, sepAmount)])
+      lines: @[line(1, "101.2", sepAmount, 0), line(2, "201", 0, sepAmount)])
     discard insertJournal(d, j, actor)
     for l in j.lines:
       insertJournalLine(d, j.journalId, l)
@@ -78,7 +78,7 @@ suite "trial balance: rekonsiliasi":
     check tb.totalDebit == money(expectedOct)
     check tb.totalCredit == money(expectedOct)
     for l in tb.lines:
-      if l.accountCode == "101":
+      if l.accountCode == "101.2":
         check l.debit == money(expectedOct)
         check l.credit.isZero
       elif l.accountCode == "201":
@@ -109,7 +109,7 @@ suite "trial balance: rekonsiliasi":
         if l.accountCode == code:
           found = true
           # Bulan sebelumnya ikut di snapshot (kumulatif), tidak ikut di TB periode Oktober.
-          let priorDebit = if code == "101": sepAmount else: 0
+          let priorDebit = if code == "101.2": sepAmount else: 0
           let priorCredit = if code == "201": sepAmount else: 0
           check debit == l.debit.minorUnits + priorDebit
           check credit == l.credit.minorUnits + priorCredit

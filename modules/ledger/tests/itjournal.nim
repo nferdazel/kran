@@ -52,7 +52,7 @@ proc line(no: int, account: string, debit, credit: int64): JournalLine =
 proc newJournal(businessDate = "2026-10-15", lines: seq[JournalLine] = @[]): Journal =
   var ls = lines
   if ls.len == 0:
-    ls = @[line(1, "101", 250_0000, 0), line(2, "201", 0, 250_0000)]
+    ls = @[line(1, "101.2", 250_0000, 0), line(2, "201", 0, 250_0000)]
   Journal(journalId: newId(testClock), businessDate: businessDate, valueDate: businessDate,
     sourceEvent: "DepositPosted", sourceRef: newId(testClock),
     idempotencyKey: nextKey(), lines: ls)
@@ -132,7 +132,7 @@ suite "journal: penyimpanan & immutability":
 
 suite "journal: aturan akuntansi di DB":
   test "jurnal tidak seimbang ditolak saat COMMIT":
-    let j = newJournal(lines = @[line(1, "101", 100_0000, 0), line(2, "201", 0, 99_0000)])
+    let j = newJournal(lines = @[line(1, "101.2", 100_0000, 0), line(2, "201", 0, 99_0000)])
     var raised = false
     try:
       discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
@@ -146,7 +146,7 @@ suite "journal: aturan akuntansi di DB":
     check journalById(db, j.journalId).isNone
 
   test "jurnal satu baris ditolak saat COMMIT":
-    let j = newJournal(lines = @[line(1, "101", 100_0000, 0)])
+    let j = newJournal(lines = @[line(1, "101.2", 100_0000, 0)])
     var raised = false
     try:
       discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
@@ -160,6 +160,9 @@ suite "journal: aturan akuntansi di DB":
   test "akun header (postable=false) ditolak":
     expectDbError(proc() = discard save(
       newJournal(lines = @[line(1, "1", 100, 0), line(2, "201", 0, 100)])))
+    # `101 KAS` kini induk non-postable (0033); posting langsung ke `101` juga ditolak.
+    expectDbError(proc() = discard save(
+      newJournal(lines = @[line(1, "101", 100, 0), line(2, "201", 0, 100)])))
 
   test "akun non-ACTIVE ditolak":
     let a = CoaAccount(accountId: newId(testClock), code: "1999", name: "AKUN NONAKTIF",
@@ -263,7 +266,7 @@ suite "journal: pembalik & daftar":
     check reversalExistsFor(db, original.journalId)
     let storedRev = journalById(db, rev.journalId).get()
     check storedRev.reversalOf == $original.journalId
-    check storedRev.lines[0].glAccount == "101"
+    check storedRev.lines[0].glAccount == "101.2"
     check storedRev.lines[0].credit == money(250_0000)
     check storedRev.lines[0].debit.isZero
     check storedRev.lines.totalDebit == storedRev.lines.totalCredit
@@ -287,7 +290,7 @@ suite "journal: pembalik & daftar":
       for _ in 0 ..< 30:
         let amount = r.rand(1 .. 9_000_000).int64
         var j = newJournal(businessDate = "2026-10-20")
-        j.lines = @[line(1, "101", amount, 0), line(2, "201", 0, amount)]
+        j.lines = @[line(1, "101.2", amount, 0), line(2, "201", 0, amount)]
         discard insertJournal(d, j, actor)
         for l in j.lines:
           insertJournalLine(d, j.journalId, l)
@@ -315,7 +318,7 @@ suite "journal: guard tambahan (review T-073)":
     var raised = false
     try:
       discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
-        insertJournalLine(d, j.journalId, line(3, "101", 1_0000, 0))
+        insertJournalLine(d, j.journalId, line(3, "101.2", 1_0000, 0))
         insertJournalLine(d, j.journalId, line(4, "201", 0, 1_0000))
         1)
     except DbError:
@@ -333,7 +336,7 @@ suite "journal: guard tambahan (review T-073)":
     var raised = false
     try:
       discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
-        insertJournalLine(d, j.journalId, line(3, "101", 1_0000, 0))
+        insertJournalLine(d, j.journalId, line(3, "101.2", 1_0000, 0))
         insertJournalLine(d, j.journalId, line(4, "201", 0, 1_0000))
         1)
     except DbError:

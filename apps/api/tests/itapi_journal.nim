@@ -218,7 +218,7 @@ proc seedJournal(businessDate = "2026-10-15", amount: int64 = 250_0000): Id =
   let j = Journal(journalId: newId(testClock), businessDate: businessDate,
     valueDate: businessDate, sourceEvent: "DepositPosted", sourceRef: newId(testClock),
     idempotencyKey: nextKey(),
-    lines: @[line(1, "101", amount, 0), line(2, "201", 0, amount)])
+    lines: @[line(1, "101.2", amount, 0), line(2, "201", 0, amount)])
   discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
     discard insertJournal(d, j, actor)
     for l in j.lines:
@@ -302,7 +302,7 @@ suite "journal: baca":
     check detail.body["lines"].len == 2
     check detail.body["totalDebit"].getStr() == "250.0000"
     check detail.body["totalCredit"].getStr() == "250.0000"
-    check detail.body["lines"][0]["glAccount"].getStr() == "101"
+    check detail.body["lines"][0]["glAccount"].getStr() == "101.2"
 
     let byDate = getJson(JournalsPath & "?businessDate=2026-10-15", makerToken)
     check byDate.code == 200
@@ -407,7 +407,7 @@ suite "journal: pembalik":
       sourceEvent: "DepositPosted",
       sourceRef: newId(testClock),
       idempotencyKey: key,
-      lines: @[line(1, "101", 100_0000, 0), line(2, "201", 0, 100_0000)])
+      lines: @[line(1, "101.2", 100_0000, 0), line(2, "201", 0, 100_0000)])
 
     let r = raceReversal(id, winner, makerToken, key)
     check r.blocked

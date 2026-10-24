@@ -40,12 +40,21 @@ suite "coa: seed & constraint":
   test "COA awal dari migrasi terpasang":
     let accounts = coaAccounts(db)
     check accounts.len >= 15
+    # `101 KAS` menjadi induk non-postable sejak 0033; kas diposting ke sub-akunnya.
     let kas = coaByCode(db, "101")
     check kas.isSome
     check kas.get().name == "KAS"
     check kas.get().accountType == atAsset
     check kas.get().normalSide == nsDebit
-    check kas.get().postable
+    check not kas.get().postable
+    for (code, name) in [("101.1", "KAS DI VAULT"), ("101.2", "KAS DI TELLER"),
+                         ("101.9", "SELISIH KAS")]:
+      let sub = coaByCode(db, code)
+      check sub.isSome
+      check sub.get().name == name
+      check sub.get().accountType == atAsset
+      check sub.get().normalSide == nsDebit
+      check sub.get().postable
     # Akun header tidak boleh dipakai posting.
     let header = coaByCode(db, "1")
     check header.isSome
