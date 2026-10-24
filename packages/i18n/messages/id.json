@@ -567,5 +567,6 @@
   "users_error_branch_forbidden": "Role ini tingkat institusi: kosongkan cabang.",
   "users_error_branch_invalid": "Cabang harus UUID yang sah.",
   "users_error_branch_not_allowed": "Izin ini harus dipegang tanpa batas cabang.",
-  "users_error_body_invalid": "Permintaan tidak valid."
+  "users_error_body_invalid": "Permintaan tidak valid.",
+  "accounts_error_branch_not_registered": "Cabang ini belum terdaftar di master cabang, jadi nomor rekening tidak bisa dibuat. Hubungi admin untuk mendaftarkan kode cabang."
 }

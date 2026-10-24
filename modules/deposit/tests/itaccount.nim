@@ -71,7 +71,7 @@ let fx = fixture()
 
 proc accountRow(seqNo: int64): Account =
   newAccount(newId(testClock), fx.party.partyId, fx.product.productId, fx.version.versionId,
-    fx.product.code, branch, openedOn, seqNo)
+    fx.product.code, branch, "001", openedOn, seqNo)
 
 proc expectDbError(body: proc()) =
   var raised = false
@@ -108,12 +108,12 @@ suite "deposit: repo rekening":
 
   test "FK party/produk/versi produk salah ditolak DB":
     let bogusParty = newAccount(newId(testClock), Id("99999999-9999-7999-8999-999999999999"),
-      fx.product.productId, fx.version.versionId, fx.product.code, branch, openedOn,
+      fx.product.productId, fx.version.versionId, fx.product.code, branch, "001", openedOn,
       nextAccountSeq(db))
     expectDbError(proc() = save(bogusParty))
 
     let bogusVersion = newAccount(newId(testClock), fx.party.partyId, fx.product.productId,
-      Id("aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa"), fx.product.code, branch, openedOn,
+      Id("aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa"), fx.product.code, branch, "001", openedOn,
       nextAccountSeq(db))
     expectDbError(proc() = save(bogusVersion))
 
@@ -148,7 +148,7 @@ suite "deposit: klasifikasi simpanan dari produk (T-111)":
     doAssert approveVersion(db, v.versionId, actor), "versi produk pokok gagal di-approve"
 
     let kinded = newAccount(newId(testClock), fx.party.partyId, prod.productId, v.versionId,
-      prod.code, branch, openedOn, nextAccountSeq(db))
+      prod.code, branch, "001", openedOn, nextAccountSeq(db))
     save(kinded)
     check accountById(db, kinded.accountId).get().savingsKind == "POKOK"
 
