@@ -3013,3 +3013,29 @@ fakta organisasi; jangan dipakai sebagai kode cabang final.
 UUID cabang demo `00000000-0000-4000-8000-000000000001`. Sebelum rekening pertama dibuka, party
 dipindahkan ke UUID pilot di atas supaya `POST /deposit/accounts` tidak ditolak `branch_mismatch`
 dan sesi kas menemukan vault yang sama. Keputusan UUID tidak berubah.
+
+## D-130 — Nomor rekening memakai kode cabang (3 digit) + nomor urut (7 digit)
+
+**Konteks.** D-123 memakai 10 digit nomor urut global tanpa prefiks, sehingga nomor rekening tidak
+memperlihatkan cabang pembukanya. O-104 (format final) dan O-101 (master cabang) terbuka, dan data
+pilot sudah berisi enam rekening. **Pemilik memutuskan (24 Okt 2026):** kode cabang 3 digit
+digabungkan ke nomor rekening, dan cabang wajib punya kode.
+
+**Keputusan.**
+1. `platform.branch` menyimpan `code` **tepat 3 digit** (`^[0-9]{3}$`, unik) + `name`. Tabel lahir di
+   migrasi `platform/0030`; cabang pilot `b0000000-0000-4000-8000-000000000001` terdaftar sebagai
+   `001` / `Cabang Pilot`.
+2. Nomor rekening = `code` + nomor urut `deposit.account_seq` dipad 7 digit (total 10 digit, tanpa
+   check digit). Nomor urut tetap **global** (bukan per cabang): prefiks sudah membedakan cabang dan
+   satu nomor tidak bisa muncul di dua cabang.
+3. `POST /api/v1/deposit/accounts` mewajibkan cabang terdaftar; kalau tidak → 409
+   `branch_not_registered`. Rekening lama diseragamkan lewat migrasi `deposit/0031` (nomor baru dari
+   sequence; nomor lama tidak didaur ulang). Rekening di cabang tak terdaftar dibiarkan apa adanya.
+4. Kode cabang **tidak boleh diubah** setelah dipakai nomor rekening — perbaikan hanya lewat migrasi
+   + analisis data.
+5. Pendaftaran cabang lewat `ctl create-branch --branch-code --branch-name` (audit `branch.create`).
+
+**Konsekuensi.** Nomor rekening berubah untuk data pilot yang sudah ada (identitas rekening tetap
+`account_id`; jurnal/transaksi tidak menyimpan nomor). Check digit/format final lain masih terbuka
+(O-104) — bila diminta compliance, bentuk baru = migrasi + nomor baru, bukan penulisan ulang nomor
+lama. Belum ada endpoint HTTP/UI master cabang (O-101 tetap terbuka untuk itu).

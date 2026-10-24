@@ -72,7 +72,7 @@ let fx = fixture()
 
 proc accountRow(): Account =
   newAccount(newId(testClock), fx.party.partyId, fx.product.productId, fx.version.versionId,
-    fx.product.code, branch, openedOn, nextAccountSeq(db))
+    fx.product.code, branch, "001", openedOn, nextAccountSeq(db))
 
 proc save(a: Account) =
   discard dbPool.withTx(proc(d: DbConn): int {.closure.} =

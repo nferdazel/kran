@@ -35,12 +35,13 @@ berjalan **sebelum** `ledger/0003`). `deposit/0008` menambah grant runtime untuk
 - **Tanpa kolom `currency`**: asumsi satu mata uang (spec §2.2; T-088 §8 butir 6).
 - **`status` hanya `ACTIVE`/`CLOSED`**: `DORMANT`/`FROZEN` belum punya aturan (T-088 §8 butir 8).
 - **Ordinary FK** ke `party.party`, `product.product`, `product.product_version`; `branch_id` tanpa
-  FK karena belum ada tabel cabang. Kesamaan cabang party↔rekening ditegakkan use case
-  (`branch_mismatch`), bukan DB.
-- **Nomor rekening provisoris** (D-123): `{seq:10}` zero-padded dari `deposit.account_seq`, **tanpa check
-  digit**. Bentuk final (prefix/check digit) menunggu parameter `deposit.account.number_format`
-  yang **belum dibuat** (tanpa konsumen di T-088a). Tanda **NEEDS-COMPLIANCE-REVIEW**;
-  **jangan mengarang format bisnis lain** sebelum pemilik/compliance memutuskan (T-088 §8 butir 7).
+  FK (master cabang hidup di `platform.branch`, D-130) — kesamaan cabang party↔rekening ditegakkan
+  use case (`branch_mismatch`), bukan DB.
+- **Nomor rekening** (D-130, menggantikan D-123): **kode cabang 3 digit** (`platform.branch.code`) +
+  **nomor urut 7 digit** (`deposit.account_seq`, global). Contoh `0010000006` = cabang `001`,
+  rekening ke-6. Tanpa check digit; `POST /deposit/accounts` menolak cabang yang belum terdaftar
+  (409 `branch_not_registered`). Format lain (mis. check digit) masih bisa diminta compliance
+  (O-104) dan tidak boleh diasumsikan modul lain.
 
 ## API
 
@@ -112,7 +113,8 @@ Tidak ada parameter baru di seed/packs untuk T-088b:
 - PB (pemindahbukuan antar rekening) = T-088c: **stuktur** ada (tabel `deposit.transfer` + endpoint),
   tetapi **GL per pemilik belum terpisah** — kedua sisi jurnal akun `201` (net-nol); perpindahan
   per rekening ada di `deposit.transfer`. Pemodelan GL per pemilik = T-101/Fase 3.
-- Nomor rekening provisoris (lihat di atas) — **NEEDS-COMPLIANCE-REVIEW**.
+- Nomor rekening: kode cabang + nomor urut (D-130); check digit belum ada, dan modul lain tidak
+  boleh mengasumsikan lebar/isi nomor.
 - Satu cabang per rekening; pindah cabang belum dimodelkan.
 - Batas nominal/limit transaksi tunai belum ada (menunggu parameter T-093) —
   **NEEDS-COMPLIANCE-REVIEW**.

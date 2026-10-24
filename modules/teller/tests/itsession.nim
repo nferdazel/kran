@@ -89,7 +89,7 @@ discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
   1)
 doAssert approveVersion(db, ver.versionId, approver), "versi produk uji gagal di-approve"
 let testAccount = newAccount(newId(testClock), owner.partyId, prod.productId, ver.versionId, prod.code,
-  Id(branchA), "2026-10-01", nextAccountSeq(db))
+  Id(branchA), "001", "2026-10-01", nextAccountSeq(db))
 discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
   insertAccount(d, testAccount, actor)
   1)

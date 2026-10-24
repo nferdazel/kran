@@ -567,5 +567,6 @@
   "users_error_branch_forbidden": "This role is institution-level: leave the branch empty.",
   "users_error_branch_invalid": "The branch must be a valid UUID.",
   "users_error_branch_not_allowed": "This permission must be held without a branch limit.",
-  "users_error_body_invalid": "The request is not valid."
+  "users_error_body_invalid": "The request is not valid.",
+  "accounts_error_branch_not_registered": "This branch is not registered in the branch master, so an account number cannot be issued. Ask an admin to register the branch code."
 }

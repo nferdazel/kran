@@ -87,6 +87,14 @@ block:
     ON CONFLICT DO NOTHING
   """)
 
+  # Master cabang (D-135): pembukaan rekening butuh kode cabang 3 digit sebagai prefiks nomor.
+  execScript(db, """
+    INSERT INTO platform.branch (branch_id, code, name) VALUES
+      ('""" & BranchId & """', '111', 'Cabang Uji'),
+      ('""" & OtherBranchId & """', '222', 'Cabang Uji Lain')
+    ON CONFLICT DO NOTHING
+  """)
+
   let fixtureClock = fakeClock(dateTime(2026, mOct, 22, 9, 0, 0))
   let actor = Id("77777777-7777-7777-8777-777777777777")
   let approver = Id("88888888-8888-7888-8888-888888888888")
@@ -299,6 +307,17 @@ suite "deposit: gerbang cabang":
     check listed.code == 200
     checkJson(AccountsPath, "GET", "200", listed.body)
     check listed.body["items"].len == 0
+
+  test "cabang tanpa kode di master ditolak (nomor rekening butuh prefiks kode)":
+    let maker = login(MakerUser)
+    check maker.code == 200
+    # Cabang acak yang belum terdaftar: izin institusi lolos, tetapi tidak ada kode untuk prefiks.
+    let created = postJson(AccountsPath,
+      accountBody(branchId = "33333333-3333-7333-8333-333333333333"), tokenOf(maker),
+      "branch-unregistered-" & $epochTime())
+    check created.code == 409
+    checkProblem(AccountsPath, "POST", "409", created.body)
+    check created.body["params"]["reason"].getStr() == "branch_not_registered"
 
   test "klaim idempotency tidak tersisa saat request gagal":
     let maker = login(MakerUser)
@@ -514,7 +533,7 @@ suite "deposit: batas daftar rekening (T-100)":
       exec(seedConn, sql"BEGIN")
       for _ in 0 ..< 205:
         let a = newAccount(newId(clock), Id(PartyId), productId, versionId, ProductCode,
-          Id(BranchId), "2026-10-01", nextAccountSeq(seedConn))
+          Id(BranchId), "111", "2026-10-01", nextAccountSeq(seedConn))
         insertAccount(seedConn, a, actor)
       exec(seedConn, sql"COMMIT")
     finally:
