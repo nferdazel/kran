@@ -1122,6 +1122,117 @@ paths:
         "501":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/parties/{partyId}/detail:
+    put:
+      operationId: upsertPartyDetail
+      tags: [party]
+      summary: Simpan detail party (orang/lembaga) + alamat
+      description: |
+        Menyimpan detail sesuai **jenis party**: `PERSON` wajib blok `person` (nama resmi, tanggal
+        lahir, jenis kelamin, pekerjaan) dan dilarang `org`; `ORG` sebaliknya. Tiap nilai
+        disimpan **terenkripsi** (field-level, AAD = nama tabel) dengan *blind index* dan bentuk
+        tersamar; nilai aslinya tidak pernah tersimpan. `address` opsional (bila tidak dikirim,
+        alamat yang ada dibiarkan). Butuh izin `party.kyc.manage` di cabang party. Bila
+        `KRAN_KEK_FILE` belum diatur, endpoint menjawab 501 (fail-closed).
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/PartyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartyDetailUpdate"
+      responses:
+        "200":
+          description: Detail tersimpan (respons memuat bentuk tersamar)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartyDetailView"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+    get:
+      operationId: getPartyDetail
+      tags: [party]
+      summary: Detail party dalam bentuk tersamar
+      description: |
+        Mengembalikan detail party dalam **bentuk tersamar** (tanpa dekripsi) — hanya dua karakter
+        terakhir tiap field. Membuka nilai asli punya endpoint sendiri (`unmask`) yang butuh izin
+        tambahan + alasan + audit. Butuh `party.party.read` di cabang party; party atau detail yang
+        tidak ada dijawab 404.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/PartyId"
+      responses:
+        "200":
+          description: Detail party (tersamar)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartyDetailView"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/parties/{partyId}/detail/unmask:
+    post:
+      operationId: unmaskPartyDetail
+      tags: [party]
+      summary: Buka detail party (unmask)
+      description: |
+        Mengembalikan nilai asli detail party (orang/lembaga + alamat). Butuh izin
+        `party.identity_doc.read` (izin baca PII modul `party`) di cabang party **dan** alasan pada
+        badan permintaan; setiap pembukaan menulis audit `party.detail.unmask` (tanpa PII).
+        Detail yang tidak ada dijawab 404. Bila `KRAN_KEK_FILE` belum diatur, endpoint menjawab 501
+        (fail-closed).
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/PartyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnmaskRequest"
+      responses:
+        "200":
+          description: Detail party (nilai asli)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartyDetailUnmasked"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
   /api/v1/ledger/coa:
     get:
       operationId: listCoa
@@ -3583,6 +3694,181 @@ components:
           description: ISO-8601 UTC.
         nextReviewDue:
           type: ["string", "null"]
+
+    PartyDetailUpdate:
+      type: object
+      additionalProperties: false
+      description: |
+        Detail party per jenis party. `person` wajib untuk `PERSON` (dan `org` dilarang), `org`
+        wajib untuk `ORG` (dan `person` dilarang); kecocokan divalidasi server → 400.
+      properties:
+        person:
+          $ref: "#/components/schemas/PersonDetailCreate"
+        org:
+          $ref: "#/components/schemas/OrgDetailCreate"
+        address:
+          $ref: "#/components/schemas/AddressInput"
+
+    PersonDetailCreate:
+      type: object
+      additionalProperties: false
+      required: [legalName, birthDate, sex]
+      properties:
+        legalName:
+          type: string
+          minLength: 2
+          maxLength: 200
+          description: Nama resmi (PII; disimpan terenkripsi, tidak diterbitkan ke event).
+        birthDate:
+          type: string
+          description: Tanggal lahir `YYYY-MM-DD`. Bentuk tidak sah atau melewati tanggal bisnis → 400.
+        sex:
+          type: string
+          description: Harus termasuk daftar parameter `party.person.sex_values`.
+        occupation:
+          type: string
+          maxLength: 100
+          description: Pekerjaan (opsional).
+
+    OrgDetailCreate:
+      type: object
+      additionalProperties: false
+      required: [legalName]
+      properties:
+        legalName:
+          type: string
+          minLength: 2
+          maxLength: 200
+          description: Nama resmi lembaga (PII; disimpan terenkripsi).
+
+    AddressInput:
+      type: object
+      additionalProperties: false
+      required: [line]
+      properties:
+        line:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: Baris alamat (PII; disimpan terenkripsi).
+        city:
+          type: string
+          maxLength: 100
+          description: Kota (opsional).
+        postalCode:
+          type: string
+          maxLength: 16
+          description: Kode pos (opsional).
+
+    PartyDetailView:
+      type: object
+      additionalProperties: false
+      required: [partyId, kind, person, org, address, updatedAt]
+      description: |
+        Detail party dalam bentuk **tersamar** (dua karakter terakhir tiap field). Nilai asli hanya
+        lewat `unmask`.
+      properties:
+        partyId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [PERSON, ORG]
+        person:
+          $ref: "#/components/schemas/PersonDetailLast2"
+        org:
+          $ref: "#/components/schemas/OrgDetailLast2"
+        address:
+          $ref: "#/components/schemas/AddressLast2"
+        updatedAt:
+          type: string
+          description: ISO-8601 UTC.
+
+    PersonDetailLast2:
+      type: ["object", "null"]
+      additionalProperties: false
+      required: [legalNameLast2, birthDateLast2, sexLast2, occupationLast2]
+      properties:
+        legalNameLast2:
+          type: string
+        birthDateLast2:
+          type: string
+        sexLast2:
+          type: string
+        occupationLast2:
+          type: string
+
+    OrgDetailLast2:
+      type: ["object", "null"]
+      additionalProperties: false
+      required: [legalNameLast2]
+      properties:
+        legalNameLast2:
+          type: string
+
+    AddressLast2:
+      type: ["object", "null"]
+      additionalProperties: false
+      required: [lineLast2, cityLast2, postalCodeLast2]
+      properties:
+        lineLast2:
+          type: string
+        cityLast2:
+          type: string
+        postalCodeLast2:
+          type: string
+
+    PartyDetailUnmasked:
+      type: object
+      additionalProperties: false
+      required: [partyId, kind, person, org, address]
+      properties:
+        partyId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [PERSON, ORG]
+        person:
+          $ref: "#/components/schemas/PersonDetailFull"
+        org:
+          $ref: "#/components/schemas/OrgDetailFull"
+        address:
+          $ref: "#/components/schemas/AddressFull"
+
+    PersonDetailFull:
+      type: ["object", "null"]
+      additionalProperties: false
+      required: [legalName, birthDate, sex, occupation]
+      properties:
+        legalName:
+          type: string
+        birthDate:
+          type: string
+        sex:
+          type: string
+        occupation:
+          type: string
+
+    OrgDetailFull:
+      type: ["object", "null"]
+      additionalProperties: false
+      required: [legalName]
+      properties:
+        legalName:
+          type: string
+
+    AddressFull:
+      type: ["object", "null"]
+      additionalProperties: false
+      required: [line, city, postalCode]
+      properties:
+        line:
+          type: string
+        city:
+          type: string
+        postalCode:
+          type: string
 
     CoaCreate:
       type: object

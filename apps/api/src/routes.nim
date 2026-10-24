@@ -14,6 +14,7 @@ import ./handlers_audit
 import ./handlers_auth
 import ./handlers_branches
 import ./handlers_deposit
+import ./handlers_detail
 import ./handlers_journals
 import ./handlers_kyc
 import ./handlers_ledger
@@ -141,6 +142,18 @@ proc kycRoutes*(): seq[RouteSpec] =
     RouteSpec(httpMethod: hmPost,
               path: "/api/v1/parties/{partyId}/identity-docs/{docId}/unmask",
               operationId: "unmaskIdentityDoc", handler: handleUnmask),
+  ]
+
+proc detailRoutes*(): seq[RouteSpec] =
+  ## Detail party orang/lembaga + alamat (T-078). Baca biasa mengembalikan bentuk **tersamar**;
+  ## nilai asli hanya lewat *unmask* (izin baca PII + alasan + audit).
+  @[
+    RouteSpec(httpMethod: hmPut, path: "/api/v1/parties/{partyId}/detail",
+              operationId: "upsertPartyDetail", handler: handleUpsertPartyDetail),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/parties/{partyId}/detail",
+              operationId: "getPartyDetail", handler: handleGetPartyDetail),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/parties/{partyId}/detail/unmask",
+              operationId: "unmaskPartyDetail", handler: handleUnmaskPartyDetail),
   ]
 
 proc ledgerRoutes*(): seq[RouteSpec] =
@@ -274,6 +287,7 @@ proc userRoutes*(): seq[RouteSpec] =
 
 proc allRoutes*(): seq[RouteSpec] =
   systemRoutes() & authRoutes() & mfaRoutes() & paramRoutes() & auditRoutes() &
-    partyRoutes() & kycRoutes() & ledgerRoutes() & journalRoutes() & productRoutes() &
+    partyRoutes() & kycRoutes() & detailRoutes() & ledgerRoutes() & journalRoutes() &
+    productRoutes() &
     depositRoutes() & tellerRoutes() & tellerSessionRoutes() & tellerVaultRoutes() &
     branchRoutes() & userRoutes() & eventRoutes()
