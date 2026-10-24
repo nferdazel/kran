@@ -9,7 +9,7 @@
 ## Yang **tidak** di sini: akses DB, cache, maker-checker (itu `infrastructure/` +
 ## `application/`). Spesifikasi eksplisit: tidak ada fallback diam-diam (§10.6).
 
-import std/[json, options]
+import std/[json, options, strutils]
 import kernel/[paramkey, money, rate, businessdate, result]
 
 type
@@ -93,6 +93,30 @@ proc jsonTypeMatches*(want: string, value: JsonNode): bool =
   of "array": value.kind == JArray
   else: false
 
+proc isDecimalString*(s: string): bool =
+  ## Bentuk angka desimal `-?digit+(.digit+)?` — bentuk nilai money/rate (spec §13: uang dan rate
+  ## adalah **string** desimal, bukan angka JSON). Tanggal, enum, dan teks bebas tidak cocok, jadi
+  ## pemeriksaan batas numerik di bawah tidak menyentuh tipe lain.
+  var i = 0
+  if s.len == 0:
+    return false
+  if s[0] == '-':
+    i = 1
+  if i >= s.len:
+    return false
+  var digits = 0
+  var dots = 0
+  while i < s.len:
+    let c = s[i]
+    if c in {'0' .. '9'}:
+      inc digits
+    elif c == '.':
+      inc dots
+    else:
+      return false
+    inc i
+  digits > 0 and dots <= 1
+
 proc validateAgainstSchema*(schema: JsonNode, value: JsonNode): string =
   ## Mengembalikan "" bila nilai memenuhi schema, atau pesan masalah.
   ## Subset yang dipahami: `type`, `minimum`, `maximum`, `minLength`, `maxLength`, `enum`.
@@ -110,6 +134,18 @@ proc validateAgainstSchema*(schema: JsonNode, value: JsonNode): string =
       return "nilai " & $v & " di bawah minimum " & $schema["minimum"].getFloat()
     if schema.hasKey("maximum") and v > schema["maximum"].getFloat():
       return "nilai " & $v & " di atas maximum " & $schema["maximum"].getFloat()
+  if value.kind == JString and (schema.hasKey("minimum") or schema.hasKey("maximum")):
+    # T-133/API-11: nilai money/rate adalah string desimal, sehingga cabang numerik di atas tidak
+    # pernah menjangkaunya — akibatnya `limit_withdrawal` = "-1.00" lolos submit **dan** approve
+    # walau schema-nya `{"minimum": 0}`. Perbandingan di sini hanya batas (bukan aritmetika uang),
+    # dan hanya untuk string yang memang berbentuk desimal.
+    let raw = value.getStr("")
+    if isDecimalString(raw):
+      let v = parseFloat(raw)
+      if schema.hasKey("minimum") and v < schema["minimum"].getFloat():
+        return "nilai " & raw & " di bawah minimum " & $schema["minimum"].getFloat()
+      if schema.hasKey("maximum") and v > schema["maximum"].getFloat():
+        return "nilai " & raw & " di atas maximum " & $schema["maximum"].getFloat()
   if value.getStr("").len > 0 or value.kind == JString:
     let s = value.getStr("")
     if schema.hasKey("minLength") and s.len < schema["minLength"].getInt():

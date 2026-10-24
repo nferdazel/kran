@@ -245,6 +245,12 @@ proc handleSubscription(svc: EventService, socket: WebSocket, identity: string,
     if svc.streams.hasKey(socket):
       clientId = svc.streams[socket].id
 
+  # T-133/ARC-4: `clientId` 0 berarti socket sudah tidak terdaftar (habis di antara handshake dan
+  # pesan ini). Mendaftarkannya ke hub membuat entri "subscriber 0" yang tidak pernah dihapus —
+  # kebocoran kecil yang tumbuh seiring reconnect. Tidak ada yang perlu dikabari.
+  if clientId == 0:
+    return encodeSubscribed(@[], subscription.topics, 0, svc.resumeLimit)
+
   if subscription.kind == skUnsubscribe:
     withLock svc.lock:
       if svc.streams.hasKey(socket):

@@ -21,6 +21,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
+        "405":
+          $ref: "#/components/responses/Problem"
+  /api/v1/sesi:
+    get:
+      operationId: getSession
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: ok
+        "405":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
 components:
   schemas:
     Health:
@@ -53,7 +69,7 @@ proc route(httpMethod, path, operationId: string): DeclaredRoute =
 suite "loadContract":
   test "operasi terbaca dengan method huruf besar":
     let c = loadContract(contohKontrak, "contoh")
-    check c.operations.len == 1
+    check c.operations.len == 2
     check c.operations[0].path == "/healthz"
     check c.operations[0].httpMethod == "GET"
     check c.operations[0].operationId == "getHealth"
@@ -72,17 +88,19 @@ suite "loadContract":
 
   test "file dari disk terbaca":
     let path = writeTemp(contohKontrak, "contoh.yaml")
-    check loadContractFile(path).operations.len == 1
+    check loadContractFile(path).operations.len == 2
     removeFile(path)
 
 suite "findings (parity rute vs kontrak)":
   test "sama = tanpa temuan":
     let c = loadContract(contohKontrak, "contoh")
-    check findings(@[route("GET", "/healthz", "getHealth")], c).len == 0
+    check findings(@[route("GET", "/healthz", "getHealth"),
+                      route("GET", "/api/v1/sesi", "getSession")], c).len == 0
 
   test "rute implementasi yang tidak ada di kontrak = temuan":
     let c = loadContract(contohKontrak, "contoh")
     let f = findings(@[route("GET", "/healthz", "getHealth"),
+                         route("GET", "/api/v1/sesi", "getSession"),
                          route("GET", "/debug", "getDebug")], c)
     check f.len == 1
     check "tidak ada di kontrak" in f[0]
@@ -90,18 +108,98 @@ suite "findings (parity rute vs kontrak)":
   test "operasi kontrak yang belum diimplementasikan = temuan":
     let c = loadContract(contohKontrak, "contoh")
     let f = findings(@[], c)
-    check f.len == 1
-    check "tidak diimplementasikan" in f[0]
+    check f.len == 2
+    for item in f:
+      check "tidak diimplementasikan" in item
 
   test "operationId berbeda = temuan":
     let c = loadContract(contohKontrak, "contoh")
-    let f = findings(@[route("GET", "/healthz", "healthCheck")], c)
+    let f = findings(@[route("GET", "/healthz", "healthCheck"),
+                         route("GET", "/api/v1/sesi", "getSession")], c)
     check f.len == 1
     check "operationId tidak cocok" in f[0]
+
+  test "operasi tanpa 405 = temuan (respons router tidak dideklarasikan)":
+    let tanpa405 = contohKontrak.replace("""
+        "405":
+          $ref: "#/components/responses/Problem"
+""", "")
+    let c = loadContract(tanpa405, "contoh")
+    let f = findings(@[route("GET", "/healthz", "getHealth"),
+                        route("GET", "/api/v1/sesi", "getSession")], c)
+    check f.len == 2
+    for item in f:
+      check "tidak mendeklarasikan 405" in item
+
+  test "operasi ber-auth tanpa 501 = temuan":
+    let tanpa501 = contohKontrak.replace("""
+        "501":
+          $ref: "#/components/responses/Problem"
+""", "")
+    let c = loadContract(tanpa501, "contoh")
+    let f = findings(@[route("GET", "/healthz", "getHealth"),
+                        route("GET", "/api/v1/sesi", "getSession")], c)
+    check f.len == 1
+    check "tidak mendeklarasikan 501" in f[0]
+
+  test "operasi ber-auth tanpa 503 = temuan (penangan terakhir pool DB)":
+    # 503 datang dari `router.errorHandler` untuk setiap operasi ber-DB, bukan dari handler:
+    # kontrak yang tidak menyebutnya membuat klien menganggapnya mustahil.
+    let tanpa503 = contohKontrak.replace("""        "503":
+          $ref: "#/components/responses/Problem"
+""", "")
+    let c = loadContract(tanpa503, "contoh")
+    let f = findings(@[route("GET", "/healthz", "getHealth"),
+                        route("GET", "/api/v1/sesi", "getSession")], c)
+    check f.len == 1
+    check "tidak mendeklarasikan 503" in f[0]
+
+  test "operasi berbadan tanpa 415 = temuan (tipe media tidak dideklarasikan)":
+    let denganBadan = contohKontrak.replace("""      security:
+        - sessionCookie: []
+""", """      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+""")
+    let c = loadContract(denganBadan, "contoh")
+    let f = findings(@[route("GET", "/healthz", "getHealth"),
+                        route("GET", "/api/v1/sesi", "getSession")], c)
+    check f.len == 1
+    check "tidak mendeklarasikan 415" in f[0]
+
+  test "operasi berbadan dengan 415 = tanpa temuan":
+    let denganBadan = contohKontrak.replace("""      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: ok
+""", """      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "415":
+          $ref: "#/components/responses/Problem"
+        "200":
+          description: ok
+""")
+    let c = loadContract(denganBadan, "contoh")
+    check findings(@[route("GET", "/healthz", "getHealth"),
+                      route("GET", "/api/v1/sesi", "getSession")], c).len == 0
 
   test "rute duplikat di tabel implementasi = temuan":
     let c = loadContract(contohKontrak, "contoh")
     let f = findings(@[route("GET", "/healthz", "getHealth"),
+                         route("GET", "/api/v1/sesi", "getSession"),
                          route("GET", "/healthz", "getHealth")], c)
     check f.len == 1
     check "duplikat" in f[0]

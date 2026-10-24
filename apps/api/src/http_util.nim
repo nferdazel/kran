@@ -15,13 +15,32 @@ const
 var scopeStatus {.threadvar.}: int
 var scopeTrace {.threadvar.}: string
 
+const
+  ## Panjang & karakter id korelasi yang diterima dari klien. Bukan kebijakan bisnis: batas ini
+  ## menjaga kolom log/audit tetap terbaca dan mencegah nilai raksasa/aneh dipakai sebagai kunci
+  ## (T-133/API-10).
+  maxCorrelationIdLength* = 64 # nomagic:ok batas teknis panjang id korelasi
+
+proc sanitizeCorrelationId*(raw: string): string =
+  ## Id korelasi dari header: dipakai apa adanya **hanya** bila bentuknya wajar. Nilai lain
+  ## (kosong, kepanjangan, berisi spasi/kontrol) diganti id baru — bukan dipotong, karena id
+  ## potongan bisa bertabrakan dengan id lain.
+  let value = raw.strip()
+  if value.len == 0 or value.len > maxCorrelationIdLength:
+    return ""
+  for ch in value:
+    if ch in {'a'..'z', 'A'..'Z', '0'..'9', '-', '_', '.', ':'}:
+      continue
+    return ""
+  value
+
 proc beginRequestScope*(req: Request) =
   ## Awal satu permintaan (dipanggil pembungkus di `server.nim`): status direset dan trace id
   ## ditetapkan **sekali**, sehingga amplop problem, access log, dan audit memakai korelasi yang
   ## sama (T-130/API-6). Threadvar cukup karena Mummy memproses satu permintaan per worker thread
   ## pada satu waktu.
   scopeStatus = 0
-  scopeTrace = req.headers["X-Request-Id"].strip()
+  scopeTrace = sanitizeCorrelationId(req.headers["X-Request-Id"])
   if scopeTrace.len == 0:
     scopeTrace = newCorrelationId()
 
@@ -92,6 +111,23 @@ proc jsonField*(node: JsonNode, name: string): string =
   if node.kind != JObject or not node.hasKey(name) or node[name].kind != JString:
     return ""
   node[name].getStr()
+
+proc acceptsJsonBody*(req: Request): bool =
+  ## Apakah badan permintaan boleh diproses sebagai JSON (T-133/API-4).
+  ##
+  ## Kontrak menyatakan setiap badan permintaan `application/json`; menerima `text/plain` atau
+  ## badan tanpa `Content-Type` berarti mem-parse apa pun yang kebetulan berbentuk JSON, dan
+  ## kegagalannya muncul sebagai 400 yang menyalahkan isi, bukan tipe. Badan kosong selalu boleh
+  ## (banyak operasi memang tanpa badan).
+  if req.body.len == 0:
+    return true
+  var contentType: string
+  try:
+    contentType = req.headers["Content-Type"]
+  except KeyError:
+    return false
+  let mediaType = contentType.split(';')[0].strip().toLowerAscii()
+  mediaType == ContentTypeJson
 
 proc parseJsonBody*(req: Request): Option[JsonNode] =
   ## Badan permintaan sebagai JSON. `none` bila kosong atau bukan JSON yang sah.

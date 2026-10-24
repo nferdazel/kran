@@ -12,11 +12,21 @@
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
   import { passwordProblemMessage } from "#lib/app/errors.js";
+  import { appNavLinks, sessionPermissions, visibleNavLinks } from "#lib/app/nav.js";
   import type { PageProps } from "./$types";
 
   let { data }: PageProps = $props();
 
   const session = $derived(data.session);
+
+  /**
+   * Tujuan setelah berhasil (T-133/UI-13): tautan pertama yang boleh dibuka akun ini. "/app" tetap
+   * dipertahankan sebagai cadangan, tetapi ia menampilkan "tidak berizin" untuk teller — pengguna
+   * yang baru mengganti kata sandi paksa tidak boleh langsung mendapat layar buntu.
+   */
+  const continueHref = $derived(
+    visibleNavLinks(appNavLinks, sessionPermissions(session))[0]?.href ?? "/app",
+  );
 
   let oldPassword = $state("");
   let newPassword = $state("");
@@ -77,7 +87,7 @@
   {#if berhasil}
     <p class="kran-alert" role="status">{m.password_success()}</p>
     <p>
-      <a class="kran-button kran-button--primary" href="/app">{m.password_continue()}</a>
+      <a class="kran-button kran-button--primary" href={continueHref}>{m.password_continue()}</a>
     </p>
   {:else}
     <form class="kran-form" onsubmit={submit} novalidate>

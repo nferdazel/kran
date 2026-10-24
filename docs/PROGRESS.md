@@ -2916,3 +2916,37 @@ gagal; dan tanggal bisnis bergeser sehari di zona waktu negatif.
 **Bukti.** vitest 125 hijau (format + api baru), Playwright 54 hijau (8 test baru), svelte-check
 0 error/0 warning, `check` hijau, `tlogin_guard`/`itapi_users` tetap hijau dengan nilai default.
 Detail: `docs/tasks/T-132.md`.
+
+## 25 Okt 2026 — T-133: kontrak yang menyebut apa yang benar-benar dikembalikan
+
+Batch terakhir audit 24 Okt ditutup. Yang paling terasa bukan yang paling besar: kontrak OpenAPI
+tidak pernah menyebut `405`/`501`/`503`/`415` padahal keempatnya benar-benar dikembalikan, dan badan
+JSON diterima tanpa memeriksa `Content-Type`. Keduanya sifat lapisan pembungkus, jadi keduanya
+ditutup di sana — `requestHandler` menolak badan non-JSON dengan `415`, dan `tools/openapi` kini
+menegakkan deklarasi respons sehingga operasi baru tidak bisa lupa.
+
+Sisanya tersebar:
+
+- **API**: `Idempotency-Key` tidak sah → 400 (bukan 500 dari `ValueError` di dalam transaksi),
+  `X-Request-Id` disaring, dan batas `minimum`/`maximum` kini berlaku untuk nilai **string** desimal
+  (money/rate) — `limit_withdrawal="-1.00"` sebelumnya lolos submit dan approve.
+- **DB**: index `journal_line(gl_account)`, `audit_log(action)` untuk filter `LIKE`, dan
+  `UNIQUE(audit_log.prev_hash)`. Index terakhir membongkar bug laten: trigger rantai memilih ujung
+  dengan `seq` terbesar, padahal `seq` dialokasikan sebelum advisory lock — dua penulisan bersamaan
+  bisa commit terbalik, dan append berikutnya merantai ke baris yang bukan ujung. Migrasi 0050
+  mengganti pemilihan ujung menjadi "baris yang hash-nya belum dipakai siapa pun".
+- **UI**: tabel bergulir di `/app` dan `/app/ledger/admin` jadi region berlabel, pencarian party
+  memakai `AbortController` + nomor urut, nilai numerik non-finite ditolak dengan pesan, dan
+  "Lanjut bekerja" menuju layar yang benar-benar boleh dibuka peran pengguna.
+- **Operasi**: health gate ber-deadline 60 dtk dan membandingkan image yang melayani dengan `:local`;
+  Caddy dapat `request_body` + timeout transport; quadlet dapat `PrivateTmp` + `MemoryMax`; skrip
+  deploy memeriksa mode/owner env-file sebelum `source`.
+- **Realtime**: `subscribe` dari socket yang sudah tidak terdaftar tidak lagi meninggalkan entri hub.
+
+Sisanya — 24 butir dari API-7/8/9 sampai UI-7/8 — **tidak** dikerjakan dan sekarang tercatat di
+`docs/ACCEPTED-LIMITS.md` §3 dengan dampak, cara mendeteksi, dan pemilik.
+
+**Bukti.** `./task ci` hijau penuh: `check` (229/230 berkas, 8 skrip shell), `openapi` (kontrak +
+klien sinkron), `lint-web`, seluruh unit/properti/integrasi, dan Playwright **54 test** hijau
+(termasuk gate axe 4 layar administrasi dan alur keyboard). `caddy validate` di server:
+`Valid configuration`. Detail: `docs/tasks/T-133.md`, D-145, D-146.

@@ -38,3 +38,7 @@ Restart=always
 # bukan crash. Tanpa baris ini systemd mengulang start tiap 3 detik.
 RestartPreventExitStatus=2 3
 RestartSec=3
+# T-133/OPS-15: isolasi /tmp + batas memori sebagai pengaman kebocoran (bukan sizing hasil ukur).
+# Worker hanya memproses outbox per batch, jadi 512 MB sudah longgar untuk operasi normal.
+PrivateTmp=true
+MemoryMax=512M

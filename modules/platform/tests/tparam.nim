@@ -94,6 +94,30 @@ suite "param: validasi schema (subset)":
     check validateAgainstSchema(schema, %*0).contains("minimum")
     check validateAgainstSchema(schema, %*366).contains("maximum")
 
+  test "minimum/maximum berlaku untuk nilai string desimal (money/rate, T-133/API-11)":
+    # Nilai money/rate adalah string (spec §13), jadi cabang numerik JSON tidak menjangkaunya:
+    # tanpa pemeriksaan ini `"-1.00"` lolos terhadap `{"minimum": 0}` dan menjadi batas kas negatif.
+    let moneySchema = %*{"type": "string", "minimum": 0}
+    check validateAgainstSchema(moneySchema, %*"0.00") == ""
+    check validateAgainstSchema(moneySchema, %*"1500000.00") == ""
+    check validateAgainstSchema(moneySchema, %*"-1.00").contains("minimum")
+    let rateSchema = %*{"type": "string", "minimum": 0, "maximum": 1}
+    check validateAgainstSchema(rateSchema, %*"0.0325") == ""
+    check validateAgainstSchema(rateSchema, %*"1.5").contains("maximum")
+
+  test "string bukan desimal tidak dibandingkan dengan batas":
+    # Tanggal/enum/teks tidak boleh gagal hanya karena schema kebetulan punya `minimum`.
+    let schema = %*{"type": "string", "minimum": 0}
+    check validateAgainstSchema(schema, %*"2026-10-24") == ""
+    check validateAgainstSchema(schema, %*"efektif") == ""
+    check validateAgainstSchema(schema, %*"-") == ""
+
+  test "isDecimalString: bentuk yang diterima":
+    for good in ["0", "-1", "12.50", "0.0001", "-0.5"]:
+      check isDecimalString(good)
+    for bad in ["", "-", ".", "1.2.3", "1e5", "+1", " 1", "1,5", "2026-10-24"]:
+      check not isDecimalString(bad)
+
   test "minLength, maxLength, enum":
     check validateAgainstSchema(%*{"type": "string", "minLength": 3}, %*"ab")
       .contains("minLength")

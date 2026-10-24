@@ -215,6 +215,9 @@ suite "rute T-012 tanpa basis data":
       if verb == "GET":
         response = client.get(baseUrl & path)
       else:
+        # Badan JSON tanpa `Content-Type` dijawab 415 oleh pembungkus (T-133/API-4), bukan 501:
+        # yang diuji di sini adalah bahwa rute ber-DB tanpa pool membalas `NOT_IMPLEMENTED`.
+        client.headers["Content-Type"] = "application/json"
         response = client.post(baseUrl & path, "{}")
       check response.code.int == 501
       check "application/problem+json" in response.headers["Content-Type"]

@@ -129,9 +129,15 @@ suite "readyz dengan DB nyata":
     var result: tuple[code: int, body: JsonNode]
     let deadline = epochTime() + 10.0
     while epochTime() < deadline:
-      result = readinessResponse()
-      if result.code == 200:
-        break
+      # Server dijalankan di thread: percobaan pertama bisa mendahului `bind`, dan `httpclient`
+      # melempar `OSError` alih-alih mengembalikan kode. Tanpa `try`, test gagal karena waktu,
+      # bukan karena readiness — pernah terjadi di gate penuh yang mesinnya lebih sibuk.
+      try:
+        result = readinessResponse()
+        if result.code == 200:
+          break
+      except CatchableError:
+        discard
       sleep(100)
 
     check result.code == 200

@@ -72,9 +72,11 @@ export function accountOpenProblemMessage(problem: Problem): string {
 }
 
 /** Pencarian party ringkas; `branchId` opsional (izin harus dipegang di cabang itu). */
-export function searchParties(query: string, branchId?: string) {
+export function searchParties(query: string, branchId?: string, signal?: AbortSignal) {
   return api.GET("/api/v1/parties", {
     params: { query: branchId === undefined ? { query } : { query, branchId } },
+    // `signal` memungkinkan pemanggil membatalkan pencarian yang sudah usang (T-133/UI-10).
+    signal,
   });
 }
 

@@ -20,6 +20,7 @@ type
     pkUnauthorized = "UNAUTHORIZED"
     pkForbidden = "FORBIDDEN"
     pkBadRequest = "BAD_REQUEST"
+    pkUnsupportedMediaType = "UNSUPPORTED_MEDIA_TYPE"
     pkMethodNotAllowed = "METHOD_NOT_ALLOWED"
     pkUpgradeRequired = "UPGRADE_REQUIRED"
     pkConflict = "CONFLICT"
@@ -42,6 +43,7 @@ proc statusOf*(kind: ProblemKind): int =
   of pkForbidden: 403
   of pkNotFound: 404
   of pkMethodNotAllowed: 405
+  of pkUnsupportedMediaType: 415
   of pkUpgradeRequired: 426
   of pkConflict: 409
   of pkTooManyRequests: 429
@@ -84,7 +86,7 @@ proc traceIdFrom*(req: Request): string =
   let scoped = requestScopeTrace()
   if scoped.len > 0:
     return scoped
-  let fromProxy = req.headers["X-Request-Id"]
+  let fromProxy = sanitizeCorrelationId(req.headers["X-Request-Id"])
   if fromProxy.len > 0:
     return fromProxy
   newCorrelationId()

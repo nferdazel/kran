@@ -196,7 +196,7 @@ test.describe("keyboard-only", () => {
     await openScreen(page, "/app/products", T.id.products.title);
 
     // Produk baru muncul di dua tabel (draf dan katalog), jadi baris dicari di dalam region draf.
-    const drafts = page.getByRole("region", { name: "Versi menunggu persetujuan" });
+    const drafts = page.getByRole("region", { name: "Tabel: Versi menunggu persetujuan" });
     const row = drafts.getByRole("row").filter({ hasText: code });
     await expect(row).toBeVisible();
     const approve = row.getByRole("button", { name: T.id.products.action, exact: true });

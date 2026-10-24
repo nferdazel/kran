@@ -53,6 +53,8 @@ const PASSWORD_TIMEOUT = { timeout: 20_000 } as const;
 const TEXT = {
   loginTitle: "Masuk",
   appTitle: "Parameter & jejak audit",
+  /** Tujuan "Lanjut bekerja" untuk akun ini: buku besar, layar pertama yang boleh dibuka (UI-13). */
+  ledgerTitle: "Saldo buku besar",
   title: "Ganti kata sandi",
   username: "Nama pengguna",
   password: "Kata sandi",
@@ -168,13 +170,16 @@ test("wajib ganti: /app dialihkan sampai diganti, lalu sesi yang sama bisa beker
   // Pemberitahuan wajib-ganti hilang setelah berhasil (tidak ada dua pesan yang bertentangan).
   await expect(page.getByRole("status").filter({ hasText: TEXT.notice })).toHaveCount(0);
 
+  // T-133/UI-13: "Lanjut bekerja" menuju tautan nav pertama yang **boleh** dibuka akun ini. Untuk
+  // `dev.firstlogin` (param_maker) itu buku besar — seed memberi izin baca jurnal; `/app` hanya
+  // berisi parameter dan bukan tujuan yang benar untuk peran ini.
   await page.getByRole("link", { name: TEXT.continue }).click();
-  await expect(page).toHaveURL(/\/app$/);
-  await expect(page.getByRole("heading", { level: 1, name: TEXT.appTitle })).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/ledger$/);
+  await expect(page.getByRole("heading", { level: 1, name: TEXT.ledgerTitle })).toBeVisible();
 
   // Kewajiban gantinya benar-benar hilang di server, bukan hanya di state halaman: muat ulang
   // halaman kerja, dan ia tetap boleh dipakai (tanpa pengalihan kembali).
   await page.reload();
-  await expect(page).toHaveURL(/\/app$/);
-  await expect(page.getByRole("heading", { level: 1, name: TEXT.appTitle })).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/ledger$/);
+  await expect(page.getByRole("heading", { level: 1, name: TEXT.ledgerTitle })).toBeVisible();
 });
