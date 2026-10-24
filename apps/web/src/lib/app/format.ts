@@ -1,9 +1,8 @@
 /**
  * Format angka/tanggal/uang (spec §16.2): `Intl` dengan locale aktif.
  *
- * Uang dari API datang sebagai **string desimal** (spec §13: `"1500000.00"`), bukan number JSON —
- * jadi fungsi ini menerima string dan hanya mengubahnya untuk *tampilan*. Di tampilan umum IDR
- * ditampilkan tanpa desimal; presisi penuh dipakai di detail/laporan (`{ full: true }`).
+ * Uang dari API datang sebagai **string desimal** 2 desimal (spec §13, D-136), bukan number JSON —
+ * jadi fungsi ini menerima string dan hanya mengubahnya untuk *tampilan*.
  */
 
 import * as m from "#lib/paraglide/messages.js";
@@ -12,13 +11,13 @@ import { currentLocale } from "#lib/app/i18n.js";
 
 /**
  * Uang dari API datang sebagai **string desimal** (spec §13: `"1500000.00"`), bukan number JSON.
- * `formatMoney` (T-083/D-097) mempertahankan presisi tanpa float dan tanpa simbol mata uang:
+ * `formatMoney` (T-083/D-136) mempertahankan presisi tanpa float dan tanpa simbol mata uang:
  * simbol ditaruh di judul kolom (DESIGN §6).
  */
 export function formatMoney(decimal: string, options: { decimals?: MoneyDecimals } = {}): string {
   return formatMoneyForLocale(decimal, {
     locale: currentLocale(),
-    decimals: options.decimals ?? 4,
+    decimals: options.decimals ?? 2,
   });
 }
 

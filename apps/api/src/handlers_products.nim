@@ -169,7 +169,7 @@ proc definitionError(db: DbConn, bindings: seq[ParamBinding]): string =
       else:
         let parsed = moneyFromString(b.value.getStr())
         if parsed.isErr:
-          return b.paramKey & " bukan desimal 4 angka di belakang koma yang sah"
+          return b.paramKey & " bukan desimal " & $moneyScale & " angka di belakang koma yang sah"
         units = parsed.value().minorUnits
         factor = pow10(moneyScale)
       if minB.value.isSome:

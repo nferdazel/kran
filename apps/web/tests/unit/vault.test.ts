@@ -30,11 +30,11 @@ function problem(status: number, reason?: string, i18nKey = "error_conflict"): P
 const VALID = { amount: "50000", sourceAccount: "102", note: "[BANK] slip 123 | isi vault" };
 
 describe("validateTopUp", () => {
-  it("menerima isian sah dan menormalkan nominal ke 4 desimal", () => {
+  it("menerima isian sah dan menormalkan nominal ke 2 desimal", () => {
     const result = validateTopUp(VALID);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.amount).toBe("50000.0000");
+      expect(result.value.amount).toBe("50000.00");
       expect(result.value.sourceAccount).toBe("102");
     }
   });
@@ -91,10 +91,10 @@ describe("validateTopUp", () => {
 
 describe("topUpIdentity", () => {
   it("sama untuk isian sama, berbeda saat nominal berubah", () => {
-    const base = { branchId: "b1", amount: "50000.0000", sourceAccount: "102", note: "n" };
+    const base = { branchId: "b1", amount: "50000.00", sourceAccount: "102", note: "n" };
     expect(topUpIdentity(base)).toBe(topUpIdentity({ ...base }));
     expect(
-      topUpIdentity(base) === topUpIdentity({ ...base, amount: "60000.0000" }),
+      topUpIdentity(base) === topUpIdentity({ ...base, amount: "60000.00" }),
     ).toBe(false);
   });
 });

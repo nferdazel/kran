@@ -213,7 +213,7 @@ proc line(no: int, account: string, debit, credit: int64): JournalLine =
   JournalLine(lineNo: no, glAccount: account, branchId: Id(BranchId),
     debit: money(debit), credit: money(credit))
 
-proc seedJournal(businessDate = "2026-10-15", amount: int64 = 250_0000): Id =
+proc seedJournal(businessDate = "2026-10-15", amount: int64 = 25_000): Id =
   ## Jurnal dibuat langsung lewat repo (HTTP sengaja tidak punya endpoint buat jurnal).
   let j = Journal(journalId: newId(testClock), businessDate: businessDate,
     valueDate: businessDate, sourceEvent: "DepositPosted", sourceRef: newId(testClock),
@@ -300,8 +300,8 @@ suite "journal: baca":
     checkJson(DetailPath, "GET", "200", detail.body)
     check detail.body["journalId"].getStr() == $id
     check detail.body["lines"].len == 2
-    check detail.body["totalDebit"].getStr() == "250.0000"
-    check detail.body["totalCredit"].getStr() == "250.0000"
+    check detail.body["totalDebit"].getStr() == "250.00"
+    check detail.body["totalCredit"].getStr() == "250.00"
     check detail.body["lines"][0]["glAccount"].getStr() == "101.2"
 
     let byDate = getJson(JournalsPath & "?businessDate=2026-10-15", makerToken)
@@ -327,7 +327,7 @@ suite "journal: pembalik":
     checkProblem(ReversalPath, "POST", "400", reply.body)
 
   test "pembalik dibuat, idempoten, dan menulis audit + event":
-    let id = seedJournal(amount = 175_0000)
+    let id = seedJournal(amount = 17_500)
     let path = ReversalPath.replace("{journalId}", $id)
     let key = nextKey()
     let created = postJson(path, %*{"reason": "koreksi posting"}, makerToken, key)
@@ -335,9 +335,9 @@ suite "journal: pembalik":
     checkJson(ReversalPath, "POST", "201", created.body)
     check created.body["reversalOf"].getStr() == $id
     check created.body["sourceEvent"].getStr() == "reversal"
-    check created.body["lines"][0]["credit"].getStr() == "175.0000"
-    check created.body["lines"][0]["debit"].getStr() == "0.0000"
-    check created.body["lines"][1]["debit"].getStr() == "175.0000"
+    check created.body["lines"][0]["credit"].getStr() == "175.00"
+    check created.body["lines"][0]["debit"].getStr() == "0.00"
+    check created.body["lines"][1]["debit"].getStr() == "175.00"
     let reversalId = created.body["journalId"].getStr()
 
     check dbValue(sql"""
@@ -371,7 +371,7 @@ suite "journal: pembalik":
     checkProblem(ReversalPath, "POST", "409", chain.body)
 
   test "balapan kunci sama + pembalik: yang kalah membaca ulang → 200 (O-078)":
-    let id = seedJournal(amount = 150_0000)
+    let id = seedJournal(amount = 15_000)
     let key = nextKey()
     let original = dbPool.withConn(proc(d: DbConn): Journal = journalById(d, id).get())
     let winner = Journal(
@@ -479,7 +479,7 @@ suite "journal: grant bercabang":
 
 suite "trial balance":
   test "TB sesuai kontrak dan seimbang":
-    discard seedJournal(amount = 320_0000)
+    discard seedJournal(amount = 32_000)
     let reply = getJson(TrialBalancePath & "?periodId=" & $mainPeriodId, makerToken)
     check reply.code == 200
     checkJson(TrialBalancePath, "GET", "200", reply.body)

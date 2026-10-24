@@ -575,16 +575,16 @@ proc rebuildSnapshotAt(asOf: string) =
 block:
   # April: saldo awal periode Mei (periode lain, tetap OPEN).
   discard ensurePeriod("2026-04-01", "2026-04-30")
-  postJournal("2026-04-10", "101.2", "201", "1000.0000")
-  postJournal("2026-04-20", "102", "201", "200.0000")
+  postJournal("2026-04-10", "101.2", "201", "1000.00")
+  postJournal("2026-04-20", "102", "201", "200.00")
   # Mei: mutasi di hari pertama & terakhir periode (batas inklusif).
-  postJournal("2026-05-01", "101.2", "201", "100.0000")
-  postJournal("2026-05-31", "101.2", "201", "50.0000")
+  postJournal("2026-05-01", "101.2", "201", "100.00")
+  postJournal("2026-05-31", "101.2", "201", "50.00")
   # Juni: di luar periode Mei → tidak boleh masuk closing Mei.
   discard ensurePeriod("2026-06-01", "2026-06-30")
-  postJournal("2026-06-01", "101.2", "201", "9999.0000")
+  postJournal("2026-06-01", "101.2", "201", "9999.00")
   # Juli: untuk jalur snapshot saat periode CLOSED.
-  postJournal("2026-07-05", "101.2", "201", "300.0000")
+  postJournal("2026-07-05", "101.2", "201", "300.00")
 
 suite "ledger: laporan saldo GL (T-082)":
   test "tanpa sesi → 401, tanpa izin → 403, periodId bentuk salah → 400":
@@ -618,26 +618,26 @@ suite "ledger: laporan saldo GL (T-082)":
     # 01/05 + 31/05 keduanya ikut (inklusif); 01/06 tidak.
     let kas = lineOf(reply.body, "101.2")
     check kas.kind == JObject
-    check kas["openingDebit"].getStr() == "1000.0000"
-    check kas["openingCredit"].getStr() == "0.0000"
-    check kas["periodDebit"].getStr() == "150.0000"
-    check kas["periodCredit"].getStr() == "0.0000"
-    check kas["closingDebit"].getStr() == "1150.0000"
-    check kas["closingCredit"].getStr() == "0.0000"
+    check kas["openingDebit"].getStr() == "1000.00"
+    check kas["openingCredit"].getStr() == "0.00"
+    check kas["periodDebit"].getStr() == "150.00"
+    check kas["periodCredit"].getStr() == "0.00"
+    check kas["closingDebit"].getStr() == "1150.00"
+    check kas["closingCredit"].getStr() == "0.00"
 
     # 201 hanya bergerak di sisi kredit.
     let simpanan = lineOf(reply.body, "201")
     check simpanan.kind == JObject
-    check simpanan["openingCredit"].getStr() == "1200.0000"
-    check simpanan["periodCredit"].getStr() == "150.0000"
-    check simpanan["closingCredit"].getStr() == "1350.0000"
+    check simpanan["openingCredit"].getStr() == "1200.00"
+    check simpanan["periodCredit"].getStr() == "150.00"
+    check simpanan["closingCredit"].getStr() == "1350.00"
 
     # 102 tidak bergerak di Mei tetapi saldo awalnya ≠ 0 → wajib tampil.
     let bank = lineOf(reply.body, "102")
     check bank.kind == JObject
-    check bank["openingDebit"].getStr() == "200.0000"
-    check bank["periodDebit"].getStr() == "0.0000"
-    check bank["closingDebit"].getStr() == "200.0000"
+    check bank["openingDebit"].getStr() == "200.00"
+    check bank["periodDebit"].getStr() == "0.00"
+    check bank["closingDebit"].getStr() == "200.00"
 
     # Akun yang tidak pernah dipakai tidak tampil.
     check lineOf(reply.body, "501").kind == JNull
@@ -691,14 +691,14 @@ suite "ledger: laporan saldo GL (T-082)":
     # Angka tetap benar: 101.2 kumulatif s.d. 31 Juli = 1000 + 150 + 9999 + 300.
     let kas = lineOf(closedReply.body, "101.2")
     check kas.kind == JObject
-    check kas["closingDebit"].getStr() == "11449.0000"
+    check kas["closingDebit"].getStr() == "11449.00"
     check asMoney(kas["closingDebit"].getStr()) ==
       asMoney(kas["openingDebit"].getStr()) + asMoney(kas["periodDebit"].getStr())
 
   test "snapshot basi ditolak: jurnal backdated setelah CLOSED → source=ledger":
     # Prasyarat: test sebelumnya menutup Juli dan cache 31 Juli cocok dengan jurnal.
     # Jurnal ke April (periode OPEN) mengubah saldo awal Juli, jadi cache tidak lagi sah.
-    postJournal("2026-04-15", "101.2", "201", "77.0000")
+    postJournal("2026-04-15", "101.2", "201", "77.00")
 
     let reply = getJson(BalancesPath & "?periodId=" & julyPeriod, makerToken)
     check reply.code == 200
@@ -706,4 +706,4 @@ suite "ledger: laporan saldo GL (T-082)":
     let kas = lineOf(reply.body, "101.2")
     check kas.kind == JObject
     # 11449 + 77: angka tetap dari jurnal, bukan dari cache lama.
-    check kas["closingDebit"].getStr() == "11526.0000"
+    check kas["closingDebit"].getStr() == "11526.00"

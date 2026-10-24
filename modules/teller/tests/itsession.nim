@@ -85,7 +85,7 @@ discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
   insertProduct(d, prod, actor)
   insertVersion(d, ver, actor)
   insertBinding(d, ver.versionId, ParamBinding(paramKey: "product.savings.min_balance",
-    value: %"0.0000"))
+    value: %"0.00"))
   1)
 doAssert approveVersion(db, ver.versionId, approver), "versi produk uji gagal di-approve"
 let testAccount = newAccount(newId(testClock), owner.partyId, prod.productId, ver.versionId, prod.code,
@@ -191,7 +191,7 @@ suite "teller: sesi kas":
     expectDbError(proc() = db.exec(sql"""
       INSERT INTO teller.teller_session
         (session_id, branch_id, teller_user_id, business_date, status, opening_float, opened_by)
-      VALUES (gen_random_uuid(), ?::uuid, ?::uuid, ?::date, 'OPEN', '1.0000', ?::uuid)""",
+      VALUES (gen_random_uuid(), ?::uuid, ?::uuid, ?::date, 'OPEN', '1.00', ?::uuid)""",
       branchC, tellerA, tellerA))
     # Tutup → sesi baru untuk pasangan yang sama boleh.
     check closeSession(db, sid, money(10_0000), money(10_0000), zero(), "", Id(tellerA))
@@ -259,16 +259,16 @@ suite "teller: sesi kas":
       INSERT INTO teller.teller_session
         (session_id, branch_id, teller_user_id, business_date, status, opening_float, opened_by,
          expected_cash, counted_cash, variance, closed_at, closed_by)
-      VALUES (gen_random_uuid(), ?::uuid, ?::uuid, ?::date, 'CLOSED', '0.0000', ?::uuid,
-              '10.0000', '10.0000', '1.0000', now(), ?::uuid)""",
+      VALUES (gen_random_uuid(), ?::uuid, ?::uuid, ?::date, 'CLOSED', '0.00', ?::uuid,
+              '10.00', '10.00', '1.00', now(), ?::uuid)""",
       branchC, tellerB, businessDate, tellerB, tellerB))
     # Baris CLOSED tanpa seluruh kolom penutup juga ditolak.
     expectDbError(proc() = db.exec(sql"""
       INSERT INTO teller.teller_session
         (session_id, branch_id, teller_user_id, business_date, status, opening_float, opened_by,
          counted_cash, variance, closed_at, closed_by)
-      VALUES (gen_random_uuid(), ?::uuid, ?::uuid, ?::date, 'CLOSED', '0.0000', ?::uuid,
-              '10.0000', '0.0000', now(), ?::uuid)""",
+      VALUES (gen_random_uuid(), ?::uuid, ?::uuid, ?::date, 'CLOSED', '0.00', ?::uuid,
+              '10.00', '0.00', now(), ?::uuid)""",
       branchC, tellerB, businessDate, tellerB, tellerB))
 
   test "movement immutable: UPDATE/DELETE/TRUNCATE ditolak":

@@ -232,8 +232,8 @@ proc approveRaceWorker(args: ApproveRaceArgs) {.thread.} =
 proc productBody(code, name: string, ptype = "SAVINGS", fromIso = "2026-10-01",
                  bindings: JsonNode = nil): JsonNode =
   let b = if bindings.isNil:
-    %*{"product.savings.min_balance": "0.0000",
-       "product.savings.admin_fee": "5000.0000"}
+    %*{"product.savings.min_balance": "0.00",
+       "product.savings.admin_fee": "5000.00"}
   else:
     bindings
   %*{"code": code, "name": name, "productType": ptype, "effectiveFrom": fromIso,
@@ -388,7 +388,7 @@ suite "product: maker-checker":
   test "versi baru tetap DRAFT: tidak menutup versi ACTIVE berjalan":
     let reply = postJson(VersionsPath.replace("{code}", "SAV01"),
       %*{"effectiveFrom": "2026-11-01",
-         "bindings": {"product.savings.min_balance": "10000.0000"}}, makerToken)
+         "bindings": {"product.savings.min_balance": "10000.00"}}, makerToken)
     check reply.code == 201
     checkJson(VersionsPath, "POST", "201", reply.body)
     check versionOf(reply.body, 1)["effectiveTo"].kind == JNull
@@ -441,18 +441,18 @@ suite "product: validasi & konflik":
     check created.code == 201
     let next = postJson(VersionsPath.replace("{code}", "SAV-H1"),
       %*{"effectiveFrom": "2026-10-02",
-         "bindings": {"product.savings.min_balance": "0.0000"}}, makerToken)
+         "bindings": {"product.savings.min_balance": "0.00"}}, makerToken)
     check next.code == 201
     check versionOf(next.body, 1)["effectiveTo"].kind == JNull
     check versionOf(next.body, 2)["status"].getStr() == "DRAFT"
 
   test "nilai di luar batas/overflow → 400, bukan 500":
     let overflow = postJson(ProductsPath, productBody("SAV07", "Besar",
-      bindings = %*{"product.savings.min_balance": "922337203685478.0000"}), makerToken)
+      bindings = %*{"product.savings.min_balance": "92233720368547758.08"}), makerToken)
     check overflow.code == 400
     checkProblem(ProductsPath, "POST", "400", overflow.body)
     let negative = postJson(ProductsPath, productBody("SAV08", "Negatif",
-      bindings = %*{"product.savings.min_balance": "-1.0000"}), makerToken)
+      bindings = %*{"product.savings.min_balance": "-1.00"}), makerToken)
     check negative.code == 400
     let scaleTooBig = postJson(ProductsPath, productBody("SAV10", "Skala",
       bindings = %*{"product.savings.rounding_scale": 999}), makerToken)
@@ -513,7 +513,7 @@ suite "product: validasi & konflik":
     let detail = getJson(DetailPath.replace("{code}", "TIDAKADA"), makerToken)
     check detail.code == 404
     let version = postJson(VersionsPath.replace("{code}", "TIDAKADA"),
-      %*{"effectiveFrom": "2026-11-01", "bindings": {"product.savings.min_balance": "1.0000"}},
+      %*{"effectiveFrom": "2026-11-01", "bindings": {"product.savings.min_balance": "1.00"}},
       makerToken)
     check version.code == 404
     checkProblem(VersionsPath, "POST", "404", version.body)
@@ -559,13 +559,13 @@ suite "product: konflik jendela & reject self-approval":
     check created.code == 201
     let v2 = postJson(VersionsPath.replace("{code}", "SAV03"),
       %*{"effectiveFrom": "2026-11-01",
-         "bindings": {"product.savings.min_balance": "10000.0000"}}, makerToken)
+         "bindings": {"product.savings.min_balance": "10000.00"}}, makerToken)
     check v2.code == 201
     let v2id = versionOf(v2.body, 2)["versionId"].getStr()
     # Draft ketiga dibuat sebelum v2 disetujui, jadi masih boleh mulai setelah v1 (10-01).
     let v3 = postJson(VersionsPath.replace("{code}", "SAV03"),
       %*{"effectiveFrom": "2026-10-15",
-         "bindings": {"product.savings.min_balance": "10000.0000"}}, makerToken)
+         "bindings": {"product.savings.min_balance": "10000.00"}}, makerToken)
     check v3.code == 201
     let v3id = versionOf(v3.body, 3)["versionId"].getStr()
 

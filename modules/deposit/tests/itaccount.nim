@@ -62,7 +62,7 @@ proc fixture(): tuple[party: Party, product: Product, version: ProductVersion] =
     insertProduct(d, prod, actor)
     insertVersion(d, v, maker)
     insertBinding(d, v.versionId, ParamBinding(paramKey: "product.savings.min_balance",
-      value: %"0.0000"))
+      value: %"0.00"))
     1)
   doAssert approveVersion(db, v.versionId, actor), "versi produk uji gagal di-approve"
   (p, prod, v)
@@ -97,7 +97,7 @@ suite "deposit: repo rekening":
     check stored.get().branchId == branch
     check db.getValue(
       sql"SELECT balance::text FROM deposit.account_balance WHERE account_id = ?",
-      $a.accountId) == "0.0000"
+      $a.accountId) == "0.00"
 
   test "nomor rekening unik (duplikat ditolak DB)":
     let seqNo = nextAccountSeq(db)
@@ -124,7 +124,7 @@ suite "deposit: repo rekening":
       sql"UPDATE deposit.account_balance SET balance = -1 WHERE account_id = ?", $a.accountId))
     check db.getValue(
       sql"SELECT balance::text FROM deposit.account_balance WHERE account_id = ?",
-      $a.accountId) == "0.0000"
+      $a.accountId) == "0.00"
 
   test "daftar rekening per party":
     let listed = accountsByParty(db, fx.party.partyId)
@@ -143,7 +143,7 @@ suite "deposit: klasifikasi simpanan dari produk (T-111)":
       insertProduct(d, prod, actor)
       insertVersion(d, v, maker)
       insertBinding(d, v.versionId, ParamBinding(paramKey: "product.savings.min_balance",
-        value: %"0.0000"))
+        value: %"0.00"))
       1)
     doAssert approveVersion(db, v.versionId, actor), "versi produk pokok gagal di-approve"
 

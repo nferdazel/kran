@@ -2,18 +2,19 @@ import std/unittest
 import kernel
 
 suite "money":
-  test "parse dan format kanonik (selalu 4 desimal)":
-    # 1.500.000,0000 -> 1_500_000 * 10^4 = 15_000_000_000 unit terkecil
-    check moneyFromString("1500000.00").value.minorUnits == 15_000_000_000
-    check moneyFromString("1500000.00").value.toDecimalString == "1500000.0000"
-    check moneyFromString("-12.5").value.toDecimalString == "-12.5000"
-    check moneyFromString("0").value.toDecimalString == "0.0000"
-    check moneyFromString("+0.0001").value.minorUnits == 1
-    check moneyFromString(" 7.25 ").value.minorUnits == 72_500
+  test "parse dan format kanonik (selalu 2 desimal)":
+    # 1.500.000,00 -> 1_500_000 * 10^2 = 150_000_000 unit terkecil (sen)
+    check moneyFromString("1500000.00").value.minorUnits == 150_000_000
+    check moneyFromString("1500000").value.toDecimalString == "1500000.00"
+    check moneyFromString("-12.5").value.toDecimalString == "-12.50"
+    check moneyFromString("0").value.toDecimalString == "0.00"
+    check moneyFromString("+0.01").value.minorUnits == 1
+    check moneyFromString(" 7.25 ").value.minorUnits == 725
 
   test "parse menolak bentuk tidak sah (tanpa pembulatan diam-diam)":
     check moneyFromString("").isErr
-    check moneyFromString("1.23456").isErr # > 4 desimal
+    check moneyFromString("1.234").isErr # > 2 desimal
+    check moneyFromString("1.23456").isErr
     check moneyFromString("12,5").isErr
     check moneyFromString("abc").isErr
     check moneyFromString("1.2.3").isErr
@@ -54,13 +55,6 @@ suite "money":
     check money(-7) div 2 == money(-4)
     expect ValueError:
       discard money(1) div 0
-
-  test "tampilan 2 desimal juga half-to-even":
-    check money(12_345).toDisplayString == "1.23" # 1,2345 -> 1,23
-    check money(12_350).toDisplayString == "1.24" # 1,2350 -> 1,24 (2 ganjil -> naik)
-    check money(12_450).toDisplayString == "1.24" # 1,2450 -> 1,24 (4 genap -> tetap)
-    check money(-12_350).toDisplayString == "-1.24"
-    check zero().toDisplayString == "0.00"
 
   test "overflow tidak pernah diam-diam":
     expect MoneyOverflowError:

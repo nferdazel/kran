@@ -205,7 +205,7 @@ var
   productCode = "SAV01"
   journalId = ""
   accountingEventId: Id
-  amount = 250_000_0000'i64
+  amount = 25_000_000'i64 ## 250.000,00 dalam sen (D-136)
 
 suite "Fase 1 end-to-end":
   test "login maker":
@@ -237,8 +237,8 @@ suite "Fase 1 end-to-end":
     let created = postJson(ProductsPath, %*{
       "code": productCode, "name": "Simpanan Sukarela", "productType": "SAVINGS",
       "effectiveFrom": "2026-10-01",
-      "bindings": {"product.savings.min_balance": "10000.0000",
-                   "product.savings.admin_fee": "2500.0000"}}, partyToken)
+      "bindings": {"product.savings.min_balance": "10000.00",
+                   "product.savings.admin_fee": "2500.00"}}, partyToken)
     check created.code == 201
     checkJson(ProductsPath, "POST", "201", created.body)
     check created.body["versions"].len == 1
@@ -268,7 +268,7 @@ suite "Fase 1 end-to-end":
       let ev = newOutboxEvent(accountingEventId, "DepositPosted", "deposit",
         "aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa",
         "fase1:" & $accountingEventId,
-        %*{"amount": "250000.0000", "branchId": BranchId, "businessDate": "2026-10-15",
+        %*{"amount": "250000.00", "branchId": BranchId, "businessDate": "2026-10-15",
            "product": productCode},
         headers = %*{"accounting": true})
       check appendEvent(db, ev))

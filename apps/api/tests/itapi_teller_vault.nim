@@ -99,8 +99,8 @@ block:
   """)
 
   # BranchA/BranchRace punya vault; BranchNoVault sengaja tanpa baris (uji 404 vault_not_configured).
-  for (branch, balance) in [(BranchA, "1000.0000"), (BranchB, "100.0000"),
-                            (BranchRace, "100.0000")]:
+  for (branch, balance) in [(BranchA, "1000.00"), (BranchB, "100.00"),
+                            (BranchRace, "100.00")]:
     execScript(db, "INSERT INTO teller.vault (branch_id, balance) VALUES ('" & branch & "', '" &
       balance & "')")
   dbPool.release(db)
@@ -283,21 +283,21 @@ proc reasonOf(reply: Reply): string =
 
 suite "vault: autentikasi & izin":
   test "tanpa sesi → 401":
-    let reply = submitTopUp("", BranchA, "10.0000")
+    let reply = submitTopUp("", BranchA, "10.00")
     check reply.code == 401
     checkProblem(TopUpsPath, "POST", "401", reply.body)
 
   test "pengajuan izin hanya di cabang lain → 403 branch_not_allowed":
     let token = tokenOf(login(BranchMakerUser))
     check token.len > 0
-    let reply = submitTopUp(token, BranchA, "10.0000", "vault-403-" & $epochTime())
+    let reply = submitTopUp(token, BranchA, "10.00", "vault-403-" & $epochTime())
     check reply.code == 403
     checkProblem(TopUpsPath, "POST", "403", reply.body)
     check reasonOf(reply) == "branch_not_allowed"
 
   test "persetujuan izin hanya di cabang lain → 403 branch_not_allowed":
     let maker = tokenOf(login(MakerUser))
-    let submitted = submitTopUp(maker, BranchA, "10.0000", "vault-approve-403-" & $epochTime())
+    let submitted = submitTopUp(maker, BranchA, "10.00", "vault-approve-403-" & $epochTime())
     check submitted.code == 201
     let requestId = requestIdOf(submitted)
 
@@ -306,7 +306,7 @@ suite "vault: autentikasi & izin":
     check reply.code == 403
     checkProblem(TopUpsPath & "/{requestId}/approve", "POST", "403", reply.body)
     check reasonOf(reply) == "branch_not_allowed"
-    check vaultOf(BranchA) == "1000.0000"
+    check vaultOf(BranchA) == "1000.00"
 
   test "baca izin hanya di cabang lain → 403 branch_not_allowed (saldo & daftar)":
     let token = tokenOf(login(BranchMakerUser))
@@ -325,22 +325,22 @@ suite "vault: validasi 400":
     let token = tokenOf(login(MakerUser))
     check token.len > 0
 
-    for bad in ["0.0000", "-5.0000", "abc", "1.00001", ""]:
+    for bad in ["0.00", "-5.00", "abc", "1.00001", ""]:
       let reply = submitTopUp(token, BranchA, bad)
       check reply.code == 400
       checkProblem(TopUpsPath, "POST", "400", reply.body)
 
-    let badBranch = submitTopUp(token, "bukan-uuid", "10.0000")
+    let badBranch = submitTopUp(token, "bukan-uuid", "10.00")
     check badBranch.code == 400
     checkProblem(TopUpsPath, "POST", "400", badBranch.body)
 
     # Bukti sumber dana wajib: pengajuan tanpa alasan tidak bisa ditelaah approver.
-    let noNote = postJson(TopUpsPath, %*{"branchId": BranchA, "amount": "10.0000",
+    let noNote = postJson(TopUpsPath, %*{"branchId": BranchA, "amount": "10.00",
       "sourceAccount": "102"}, token)
     check noNote.code == 400
     checkProblem(TopUpsPath, "POST", "400", noNote.body)
 
-    let longNote = postJson(TopUpsPath, topUpBody(BranchA, "10.0000", repeat('n', 201)), token)
+    let longNote = postJson(TopUpsPath, topUpBody(BranchA, "10.00", repeat('n', 201)), token)
     check longNote.code == 400
     checkProblem(TopUpsPath, "POST", "400", longNote.body)
 
@@ -348,12 +348,12 @@ suite "vault: validasi 400":
     # dan **bukan** akun vault itu sendiri: D/K akun yang sama membuat saldo vault naik sementara
     # jurnal netto nol (buku besar tidak lagi mengikat saldo).
     for badSource in ["999", "201", "1", "101.1"]:
-      let reply = postJson(TopUpsPath, topUpBody(BranchA, "10.0000", "bukti", badSource), token)
+      let reply = postJson(TopUpsPath, topUpBody(BranchA, "10.00", "bukti", badSource), token)
       check reply.code == 400
       checkProblem(TopUpsPath, "POST", "400", reply.body)
       check reasonOf(reply) == "source_account_invalid"
 
-    let tanpaKunci = postJson(TopUpsPath, topUpBody(BranchA, "10.0000"), token, sendKey = false)
+    let tanpaKunci = postJson(TopUpsPath, topUpBody(BranchA, "10.00"), token, sendKey = false)
     check tanpaKunci.code == 400
     checkProblem(TopUpsPath, "POST", "400", tanpaKunci.body)
 
@@ -378,7 +378,7 @@ suite "vault: baca, ajukan, setujui":
     checkProblem(VaultPath, "GET", "404", read.body)
     check reasonOf(read) == "vault_not_configured"
 
-    let top = submitTopUp(token, BranchNoVault, "10.0000", "vault-novault-" & $epochTime())
+    let top = submitTopUp(token, BranchNoVault, "10.00", "vault-novault-" & $epochTime())
     check top.code == 404
     checkProblem(TopUpsPath, "POST", "404", top.body)
     check reasonOf(top) == "vault_not_configured"
@@ -389,7 +389,7 @@ suite "vault: baca, ajukan, setujui":
     check reply.code == 200
     checkJson(VaultPath, "GET", "200", reply.body)
     check reply.body["branchId"].getStr() == BranchB
-    check reply.body["balance"].getStr() == "100.0000"
+    check reply.body["balance"].getStr() == "100.00"
 
   test "ajukan → PENDING tanpa ubah saldo; setujui akun lain → saldo + jurnal + audit + event":
     let maker = tokenOf(login(MakerUser))
@@ -400,7 +400,7 @@ suite "vault: baca, ajukan, setujui":
     let requested = outboxCount("TellerVaultTopUpRequested")
     let topped = outboxCount("TellerVaultTopedUp")
 
-    let submitted = submitTopUp(maker, BranchA, "250.0000", "vault-add-" & $epochTime())
+    let submitted = submitTopUp(maker, BranchA, "250.00", "vault-add-" & $epochTime())
     check submitted.code == 201
     checkJson(TopUpsPath, "POST", "201", submitted.body)
     check submitted.body["status"].getStr() == "PENDING"
@@ -417,10 +417,10 @@ suite "vault: baca, ajukan, setujui":
     let approved = approveTopUp(checker, requestId, "vault-approve-" & $epochTime())
     check approved.code == 200
     checkJson(TopUpsPath & "/{requestId}/approve", "POST", "200", approved.body)
-    check approved.body["balanceAfter"].getStr() == "1250.0000"
+    check approved.body["balanceAfter"].getStr() == "1250.00"
     check approved.body["request"]["status"].getStr() == "APPROVED"
     check approved.body["request"]["journalId"].getStr().len == 36
-    check vaultOf(BranchA) == "1250.0000"
+    check vaultOf(BranchA) == "1250.00"
     check auditCount("teller.vault.topup.approve") == approveAudits + 1
     check outboxCount("TellerVaultTopedUp") == topped + 1
 
@@ -442,7 +442,7 @@ suite "vault: baca, ajukan, setujui":
   test "jurnal top-up vault tidak bisa dibalik lewat buku besar (T-123)":
     let maker = tokenOf(login(MakerUser))
     let checker = tokenOf(login(CheckerUser))
-    let submitted = submitTopUp(maker, BranchA, "100.0000", "vault-reverse-" & $epochTime())
+    let submitted = submitTopUp(maker, BranchA, "100.00", "vault-reverse-" & $epochTime())
     check submitted.code == 201
     let approved = approveTopUp(checker, requestIdOf(submitted),
       "vault-reverse-approve-" & $epochTime())
@@ -463,31 +463,31 @@ suite "vault: baca, ajukan, setujui":
     let pendingBefore = pendingCount(BranchA)
 
     # Plafon `teller.vault.limit_topup_per_request` = 25.000.000 (K-5), dicek sebelum menulis.
-    let over = submitTopUp(maker, BranchA, "25000000.0001", "vault-limit-" & $epochTime())
+    let over = submitTopUp(maker, BranchA, "25000000.01", "vault-limit-" & $epochTime())
     check over.code == 409
     checkProblem(TopUpsPath, "POST", "409", over.body)
     check reasonOf(over) == "topup_exceeds_limit"
     check pendingCount(BranchA) == pendingBefore
 
-    let atLimit = submitTopUp(maker, BranchA, "25000000.0000", "vault-limit-ok-" & $epochTime())
+    let atLimit = submitTopUp(maker, BranchA, "25000000.00", "vault-limit-ok-" & $epochTime())
     check atLimit.code == 201
     check atLimit.body["status"].getStr() == "PENDING"
     check pendingCount(BranchA) == pendingBefore + 1
 
   test "pengaju tidak boleh menyetujui pengajuannya sendiri → 409 self_approval":
     let maker = tokenOf(login(MakerUser))
-    let submitted = submitTopUp(maker, BranchB, "25.0000", "vault-self-" & $epochTime())
+    let submitted = submitTopUp(maker, BranchB, "25.00", "vault-self-" & $epochTime())
     check submitted.code == 201
     let reply = approveTopUp(maker, requestIdOf(submitted), "vault-self-" & $epochTime())
     check reply.code == 409
     checkProblem(TopUpsPath & "/{requestId}/approve", "POST", "409", reply.body)
     check reasonOf(reply) == "self_approval"
-    check vaultOf(BranchB) == "100.0000"
+    check vaultOf(BranchB) == "100.00"
 
   test "tolak pengajuan: alasan wajib, saldo tidak berubah, approve setelahnya 409":
     let maker = tokenOf(login(MakerUser))
     let checker = tokenOf(login(CheckerUser))
-    let submitted = submitTopUp(maker, BranchB, "40.0000", "vault-reject-" & $epochTime())
+    let submitted = submitTopUp(maker, BranchB, "40.00", "vault-reject-" & $epochTime())
     check submitted.code == 201
     let requestId = requestIdOf(submitted)
 
@@ -500,7 +500,7 @@ suite "vault: baca, ajukan, setujui":
     check rejected.body["request"]["status"].getStr() == "REJECTED"
     check rejected.body["request"]["decisionNote"].getStr() == "Bukti setoran bank tidak dilampirkan"
     check rejected.body["request"]["journalId"].getStr() == ""
-    check vaultOf(BranchB) == "100.0000"
+    check vaultOf(BranchB) == "100.00"
 
     let afterReject = approveTopUp(checker, requestId, "vault-after-reject-" & $epochTime())
     check afterReject.code == 409
@@ -508,7 +508,7 @@ suite "vault: baca, ajukan, setujui":
 
   test "daftar pengajuan: status filter + bentuk kontrak":
     let maker = tokenOf(login(MakerUser))
-    let submitted = submitTopUp(maker, BranchA, "5.0000", "vault-list-" & $epochTime())
+    let submitted = submitTopUp(maker, BranchA, "5.00", "vault-list-" & $epochTime())
     check submitted.code == 201
 
     let all = listTopUps(maker, BranchA)
@@ -525,7 +525,7 @@ suite "vault: baca, ajukan, setujui":
   test "parameter akun vault berubah ke akun sumber → persetujuan 409, saldo tidak berubah":
     let maker = tokenOf(login(MakerUser))
     let checker = tokenOf(login(CheckerUser))
-    let submitted = submitTopUp(maker, BranchB, "35.0000", "vault-cfg-" & $epochTime())
+    let submitted = submitTopUp(maker, BranchB, "35.00", "vault-cfg-" & $epochTime())
     check submitted.code == 201
     let requestId = requestIdOf(submitted)
     let before = vaultOf(BranchB)
@@ -560,24 +560,24 @@ suite "vault: idempotensi":
   test "submitted: replay kunci+isi sama → 200 tanpa pengajuan baru; isi beda → 409":
     let token = tokenOf(login(MakerUser))
     let key = "vault-idem-" & $epochTime()
-    let first = submitTopUp(token, BranchB, "25.0000", key)
+    let first = submitTopUp(token, BranchB, "25.00", key)
     check first.code == 201
     let requestsAfterFirst = pendingCount(BranchB)
 
-    let replay = submitTopUp(token, BranchB, "25.0000", key)
+    let replay = submitTopUp(token, BranchB, "25.00", key)
     check replay.code == 200
     check replay.replayed == "true"
     check replay.body["requestId"].getStr() == first.body["requestId"].getStr()
     check pendingCount(BranchB) == requestsAfterFirst
 
-    let mismatch = submitTopUp(token, BranchB, "30.0000", key)
+    let mismatch = submitTopUp(token, BranchB, "30.00", key)
     check mismatch.code == 409
     checkProblem(TopUpsPath, "POST", "409", mismatch.body)
 
   test "approve: replay kunci sama → 200 tanpa menambah vault/jurnal lagi":
     let maker = tokenOf(login(MakerUser))
     let checker = tokenOf(login(CheckerUser))
-    let submitted = submitTopUp(maker, BranchB, "15.0000", "vault-approve-idem-" & $epochTime())
+    let submitted = submitTopUp(maker, BranchB, "15.00", "vault-approve-idem-" & $epochTime())
     check submitted.code == 201
     let requestId = requestIdOf(submitted)
     let key = "vault-approve-idem-key-" & $epochTime()
@@ -638,12 +638,12 @@ suite "vault: dua persetujuan bersamaan deterministik (T-113/T-118)":
 
     # Saldo awal dipatok eksplisit supaya assertion tidak bergantung urutan suite lain.
     discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
-      exec(d, sql"UPDATE teller.vault SET balance = 100.0000 WHERE branch_id = ?", BranchRace)
+      exec(d, sql"UPDATE teller.vault SET balance = 100.00 WHERE branch_id = ?", BranchRace)
       1)
-    check vaultOf(BranchRace) == "100.0000"
+    check vaultOf(BranchRace) == "100.00"
 
-    let first = submitTopUp(maker, BranchRace, "30.0000", "vault-det-s1-" & $epochTime())
-    let second = submitTopUp(maker, BranchRace, "20.0000", "vault-det-s2-" & $epochTime())
+    let first = submitTopUp(maker, BranchRace, "30.00", "vault-det-s1-" & $epochTime())
+    let second = submitTopUp(maker, BranchRace, "20.00", "vault-det-s2-" & $epochTime())
     check first.code == 201
     check second.code == 201
 
@@ -685,7 +685,7 @@ suite "vault: dua persetujuan bersamaan deterministik (T-113/T-118)":
     # 100 + 30 + 20 = 150. **Mutation check** (jangan dijalankan): ganti `balance = balance + ?`
     # menjadi read-then-write (`balance = ?`). Kedua pekerja membaca 100 sebelum menunggu lock lalu
     # menulis 130/120 → saldo akhir != 150, dan assertion ini GAGAL (lost update).
-    check vaultOf(BranchRace) == "150.0000"
+    check vaultOf(BranchRace) == "150.00"
 
     # Satu jurnal per pengajuan, tidak ada jurnal ganda dari replay/balapan.
     check dbCount(sql"""SELECT count(*)::text FROM ledger.journal

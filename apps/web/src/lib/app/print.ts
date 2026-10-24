@@ -80,13 +80,13 @@ export interface StatementTotals {
 
 /** Total masuk/keluar = jumlah baris subledger (bukan rekonsiliasi GL, bukan saldo berjalan). */
 export function statementTotals(rows: StatementRow[]): StatementTotals {
-  let inflow = "0.0000";
-  let outflow = "0.0000";
+  let inflow = "0.00";
+  let outflow = "0.00";
   for (const row of rows) {
-    if (row.direction === "IN") inflow = addMoney(inflow, row.amount, 4);
-    else outflow = addMoney(outflow, row.amount, 4);
+    if (row.direction === "IN") inflow = addMoney(inflow, row.amount);
+    else outflow = addMoney(outflow, row.amount);
   }
-  return { inflow, outflow, net: addMoney(inflow, `-${outflow}`, 4) };
+  return { inflow, outflow, net: addMoney(inflow, `-${outflow}`) };
 }
 
 export function slipDirectionLabel(direction: SlipDirection): string {

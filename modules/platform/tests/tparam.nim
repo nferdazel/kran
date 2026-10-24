@@ -120,7 +120,7 @@ suite "param: konversi bertipe":
     check coerceTo[string]("k", %*1).isErr
 
   test "money wajib string desimal (hindari float)":
-    check coerceTo[Money]("k", %*"10000.00").value() == money(100_000_000)
+    check coerceTo[Money]("k", %*"10000.00").value() == money(1_000_000)
     check coerceTo[Money]("k", %*1000).isErr
     check coerceTo[Money]("k", %*"bukan uang").isErr
 

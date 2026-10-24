@@ -20,12 +20,12 @@ proc rule(eventType = "DepositPosted", product = "", conditions = "{}",
 suite "posting: containment & pencocokan":
   test "kondisi kosong cocok dengan payload apa pun":
     check jsonContains(parseJson("""{"a": 1}"""), parseJson("{}"))
-    check rule().ruleMatches("DepositPosted", parseJson("""{"amount": "1.0000"}"""))
+    check rule().ruleMatches("DepositPosted", parseJson("""{"amount": "1.00"}"""))
 
   test "kondisi adalah subset rekursif":
     let r = rule(conditions = """{"product": "SAV", "meta": {"channel": "TELLER"}}""")
     check r.ruleMatches("DepositPosted",
-      parseJson("""{"product": "SAV", "meta": {"channel": "TELLER", "x": 1}, "amount": "1.0000"}"""))
+      parseJson("""{"product": "SAV", "meta": {"channel": "TELLER", "x": 1}, "amount": "1.00"}"""))
     check not r.ruleMatches("DepositPosted",
       parseJson("""{"product": "SAV", "meta": {"channel": "MOBILE"}}"""))
     check not r.ruleMatches("DepositPosted", parseJson("""{"product": "SAV"}"""))
@@ -39,7 +39,7 @@ suite "posting: containment & pencocokan":
     check not rule().ruleMatches("FeeCharged", parseJson("{}"))
 
 suite "posting: pemilihan rule":
-  let payload = parseJson("""{"product": "SAV", "amount": "1.0000"}""")
+  let payload = parseJson("""{"product": "SAV", "amount": "1.00"}""")
 
   test "rule paling spesifik menang":
     let general = rule(priority = 10)
@@ -100,7 +100,7 @@ suite "posting: spesifisitas produk & nominal":
     var sav = rule(product = "SAV", priority = 100)
     sav.ruleId = Id("44444444-4444-7444-8444-444444444444")
     let chosen = selectRule(@[generic, sav], "DepositPosted",
-      parseJson("""{"product": "SAV", "amount": "1.0000"}"""))
+      parseJson("""{"product": "SAV", "amount": "1.00"}"""))
     check chosen.productCode == "SAV"
     check chosen.ruleId == sav.ruleId
 

@@ -60,8 +60,8 @@ SELECT md5('dev|ledger-journal|' || to_char(now(), 'YYYY-MM-DD'))::uuid,
        'e2e00000-0000-4000-8000-000000000001'::uuid,
        v.debit,
        v.credit
-  FROM (VALUES (1, '101.2', 10.0000::numeric, 0::numeric),
-               (2, '201', 0::numeric, 10.0000::numeric)) AS v(line_no, gl_account, debit, credit)
+  FROM (VALUES (1, '101.2', 10.00::numeric, 0::numeric),
+               (2, '201', 0::numeric, 10.00::numeric)) AS v(line_no, gl_account, debit, credit)
  WHERE NOT EXISTS (
    SELECT 1 FROM ledger.journal_line
     WHERE journal_id = md5('dev|ledger-journal|' || to_char(now(), 'YYYY-MM-DD'))::uuid);

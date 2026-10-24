@@ -45,7 +45,7 @@ discard insertPeriod(db,
 var app = AppContext(version: "itposting-0.0.0", role: "worker", startedAt: epochTime(),
                      pool: dbPool, clock: testClock)
 
-proc accountingEvent(eventType = "DepositPosted", amount = "150.0000",
+proc accountingEvent(eventType = "DepositPosted", amount = "150.00",
                      businessDate = "2026-10-15", accounting = true): Id =
   let ev = newOutboxEvent(
     newId(testClock), eventType, "deposit", "aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa",
@@ -85,9 +85,9 @@ suite "posting: alur normal":
     check full.businessDate == "2026-10-15"
     check full.idempotencyKey == "outbox:" & $eventId
     check full.lines[0].glAccount == "101.2"
-    check full.lines[0].debit == money(150_0000)
+    check full.lines[0].debit == money(15_000)
     check full.lines[1].glAccount == "201"
-    check full.lines[1].credit == money(150_0000)
+    check full.lines[1].credit == money(15_000)
     check full.lines.totalDebit == full.lines.totalCredit
 
     # Konsumen memancarkan `journal.posted` dalam transaksi yang sama (spec §8.1).
@@ -96,7 +96,7 @@ suite "posting: alur normal":
        WHERE event_type = 'journal.posted' AND aggregate_id = ?""", $j.journalId) == "1"
 
   test "pengiriman ulang event yang sama tidak menambah jurnal":
-    let eventId = accountingEvent(amount = "75.0000")
+    let eventId = accountingEvent(amount = "75.00")
     discard processBatch(app, "test-worker", 10, 3, 0)
     check journalCount("DepositPosted") == 2
 
@@ -145,7 +145,7 @@ suite "posting: retry, lease, dan header salah":
     check statusOf(eventId) == "DEAD"
 
   test "event IN_FLIGHT yang terdampar direbut kembali lewat lease":
-    let eventId = accountingEvent(amount = "10.0000")
+    let eventId = accountingEvent(amount = "10.00")
     let first = dbPool.withConn(proc(d: DbConn): seq[OutboxEvent] {.gcsafe.} =
       claimBatch(d, "worker-mati", 50, 0))
     var claimed = false
@@ -167,7 +167,7 @@ suite "posting: retry, lease, dan header salah":
     check found
 
   test "IN_FLIGHT yang masih segar tidak direbut meski lease aktif":
-    let eventId = accountingEvent(amount = "12.0000")
+    let eventId = accountingEvent(amount = "12.00")
     let first = dbPool.withConn(proc(d: DbConn): seq[OutboxEvent] {.gcsafe.} =
       claimBatch(d, "worker-aktif", 50, 300))
     var claimed = false
@@ -181,7 +181,7 @@ suite "posting: retry, lease, dan header salah":
       check ev.eventId != eventId
 
   test "inbox hilang tetapi jurnal sudah ada → event DONE, bukan jurnal kedua":
-    let eventId = accountingEvent(amount = "13.0000")
+    let eventId = accountingEvent(amount = "13.00")
     discard processBatch(app, "test-worker", 10, 3, 0)
     let before = journals(db, "", "DepositPosted").len
     db.exec(sql"DELETE FROM platform.inbox WHERE event_id = ?", $eventId)
@@ -193,7 +193,7 @@ suite "posting: retry, lease, dan header salah":
   test "header accounting salah tipe = gagal terlihat, bukan diabaikan":
     let ev = newOutboxEvent(newId(testClock), "DepositPosted", "deposit",
       "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb", "itposting:bad-header:" & $newId(testClock),
-      %*{"amount": "5.0000", "branchId": branch, "businessDate": "2026-10-15"},
+      %*{"amount": "5.00", "branchId": branch, "businessDate": "2026-10-15"},
       headers = %*{"accounting": "true"})
     check appendEvent(db, ev)
     discard processBatch(app, "test-worker", 10, 1, 0)

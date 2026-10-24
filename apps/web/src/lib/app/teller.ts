@@ -101,7 +101,7 @@ function amountErrorMessage(error: "empty" | "invalid_format" | "not_positive" |
 }
 
 /**
- * Nominal terketik → desimal polos 4 desimal, atau galat yang menunjuk field `amount`.
+ * Nominal terketik → desimal polos 2 desimal, atau galat yang menunjuk field `amount`.
  * Parser-nya di `@kran/ui/money` (satu pintu uang, D-097); di sini hanya pesan yang dilokalkan.
  */
 export function validateAmount(
@@ -112,7 +112,7 @@ export function validateAmount(
   return { ok: false, error: { field: "amount", message: amountErrorMessage(parsed.error) } };
 }
 
-/** Pratinjau nominal: desimal polos 4 desimal bila isian sah, `""` bila belum. */
+/** Pratinjau nominal: desimal polos 2 desimal bila isian sah, `""` bila belum. */
 export function previewAmount(raw: string): string {
   const parsed = parseMoneyInput(raw);
   return parsed.ok ? parsed.value : "";

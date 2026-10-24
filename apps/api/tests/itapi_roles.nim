@@ -240,9 +240,9 @@ suite "kran-api: peran CLI (O-013)":
     check runCtl(createUserCmd, ".", username = uname, userRole = "ops_admin",
       fullName = "Uji Opener") == 0
     check runCtl(openingBalanceCmd, ".", username = uname, branchId = branch,
-      amount = "0.0000", businessDate = "2026-02-15") == 2
+      amount = "0.00", businessDate = "2026-02-15") == 2
     check runCtl(openingBalanceCmd, ".", username = uname, branchId = branch,
-      amount = "1234.0000", businessDate = "2026-13-01") == 2
+      amount = "1234.00", businessDate = "2026-13-01") == 2
 
     # Periode OPEN untuk tanggal uji (idempoten; suite lain bisa saja sudah punya).
     discard db.execAffectedRows(sql"""
@@ -259,14 +259,14 @@ suite "kran-api: peran CLI (O-013)":
 
     # Tanggal di luar periode OPEN = ditolak (3), tanpa jurnal.
     check runCtl(openingBalanceCmd, ".", username = uname, branchId = branch,
-      amount = "1234.0000", businessDate = "2025-01-01") == 3
+      amount = "1234.00", businessDate = "2025-01-01") == 3
     check db.getValue(sql"""SELECT count(*)::text FROM ledger.journal
                              WHERE source_event = 'LedgerCashOpening'""") == "0"
 
     check runCtl(openingBalanceCmd, ".", username = uname, branchId = branch,
-      amount = "1234.0000", businessDate = "2026-02-15") == 0
+      amount = "1234.00", businessDate = "2026-02-15") == 0
     check runCtl(openingBalanceCmd, ".", username = uname, branchId = branch,
-      amount = "1234.0000", businessDate = "2026-02-15") == 0
+      amount = "1234.00", businessDate = "2026-02-15") == 0
 
     # Tetap **satu** jurnal: jalankan ulang tidak menambah, koreksi kelak = jurnal pembalik.
     check db.getValue(sql"""SELECT count(*)::text FROM ledger.journal

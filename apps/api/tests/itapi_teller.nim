@@ -147,7 +147,7 @@ block:
     insertProduct(d, prod, fixtureActor)
     insertVersion(d, ver, fixtureActor)
     insertBinding(d, ver.versionId, ParamBinding(paramKey: "product.savings.min_balance",
-      value: %"0.0000"))
+      value: %"0.00"))
     1)
   doAssert approveVersion(db, ver.versionId, approver), "versi produk uji gagal di-approve"
 
@@ -178,7 +178,7 @@ block:
     insertProduct(d, prodRusak, fixtureActor)
     insertVersion(d, verRusak, fixtureActor)
     insertBinding(d, verRusak.versionId, ParamBinding(paramKey: "product.savings.min_balance",
-      value: %"-5.0000"))
+      value: %"-5.00"))
     1)
   doAssert approveVersion(db, verRusak.versionId, approver), "versi rusak gagal di-approve"
   let akunRusak = newAccount(newId(fixtureClock), party.partyId, prodRusak.productId,
@@ -205,7 +205,7 @@ block:
     insertProduct(d, prodDest, fixtureActor)
     insertVersion(d, verDest, fixtureActor)
     insertBinding(d, verDest.versionId, ParamBinding(paramKey: "product.savings.min_balance",
-      value: %"1000.0000"))
+      value: %"1000.00"))
     1)
   doAssert approveVersion(db, verDest.versionId, approver), "versi tujuan gagal di-approve"
   HighMinAccountId = $seedAccount(party.partyId, prodDest.productId, verDest.versionId,
@@ -221,7 +221,7 @@ block:
     insertProduct(d, prodRule, fixtureActor)
     insertVersion(d, verRule, fixtureActor)
     insertBinding(d, verRule.versionId, ParamBinding(paramKey: "product.savings.min_balance",
-      value: %"0.0000"))
+      value: %"0.00"))
     1)
   doAssert approveVersion(db, verRule.versionId, approver), "versi rule produk gagal di-approve"
   ProductRuleAccountId = $seedAccount(party.partyId, prodRule.productId, verRule.versionId,
@@ -246,7 +246,7 @@ block:
       insertProduct(d, p, fixtureActor)
       insertVersion(d, v, fixtureActor)
       insertBinding(d, v.versionId, ParamBinding(paramKey: "product.savings.min_balance",
-        value: %"0.0000"))
+        value: %"0.00"))
       1)
     doAssert approveVersion(db, v.versionId, approver), "versi " & code & " gagal di-approve"
     seedAccount(party.partyId, p.productId, v.versionId, Id(BranchId), code)
@@ -276,7 +276,7 @@ block:
   """)
   for branch in [BranchId, SessionBranchId]:
     execScript(db, "INSERT INTO teller.vault (branch_id, balance) VALUES ('" & branch &
-      "', '1000000.0000') ON CONFLICT (branch_id) DO UPDATE SET balance = EXCLUDED.balance")
+      "', '1000000.00') ON CONFLICT (branch_id) DO UPDATE SET balance = EXCLUDED.balance")
   SessionBranchAccountId = $seedAccount(party.partyId, prod.productId, ver.versionId,
     Id(SessionBranchId))
 
@@ -562,14 +562,14 @@ proc seedStatementBulk(tag, accountId, otherId: string, cashCount, transferCount
 
 suite "teller: autentikasi & izin":
   test "tanpa sesi → 401":
-    let reply = postJson(CashPath, cashBody(AccountIds[0], "DEPOSIT", "10.0000"))
+    let reply = postJson(CashPath, cashBody(AccountIds[0], "DEPOSIT", "10.00"))
     check reply.code == 401
     checkProblem(CashPath, "POST", "401", reply.body)
 
   test "pemegang izin lain → 403 (params.permission)":
     let checker = login(CheckerUser)
     check checker.code == 200
-    let reply = postJson(CashPath, cashBody(AccountIds[0], "DEPOSIT", "10.0000"),
+    let reply = postJson(CashPath, cashBody(AccountIds[0], "DEPOSIT", "10.00"),
       tokenOf(checker))
     check reply.code == 403
     checkProblem(CashPath, "POST", "403", reply.body)
@@ -581,25 +581,25 @@ suite "teller: validasi & bukan ditemukan":
     check token.len > 0
 
     let badId = postJson(CashPath,
-      %*{"accountId": "bukan-uuid", "direction": "DEPOSIT", "amount": "10.0000"}, token)
+      %*{"accountId": "bukan-uuid", "direction": "DEPOSIT", "amount": "10.00"}, token)
     check badId.code == 400
     checkProblem(CashPath, "POST", "400", badId.body)
 
     let badDirection = postJson(CashPath,
-      %*{"accountId": AccountIds[0], "direction": "TRANSFER", "amount": "10.0000"}, token)
+      %*{"accountId": AccountIds[0], "direction": "TRANSFER", "amount": "10.00"}, token)
     check badDirection.code == 400
 
-    for bad in ["0.0000", "-5.0000", "abc", "1.00001"]:
+    for bad in ["0.00", "-5.00", "abc", "1.00001"]:
       let reply = postJson(CashPath,
         %*{"accountId": AccountIds[0], "direction": "DEPOSIT", "amount": bad}, token)
       check reply.code == 400
       checkProblem(CashPath, "POST", "400", reply.body)
 
     let longNarration = postJson(CashPath,
-      cashBody(AccountIds[0], "DEPOSIT", "10.0000", repeat('n', 201)), token)
+      cashBody(AccountIds[0], "DEPOSIT", "10.00", repeat('n', 201)), token)
     check longNarration.code == 400
 
-    let tanpaKunci = postJson(CashPath, cashBody(AccountIds[0], "DEPOSIT", "10.0000"), token,
+    let tanpaKunci = postJson(CashPath, cashBody(AccountIds[0], "DEPOSIT", "10.00"), token,
       sendKey = false)
     check tanpaKunci.code == 400
     checkProblem(CashPath, "POST", "400", tanpaKunci.body)
@@ -607,7 +607,7 @@ suite "teller: validasi & bukan ditemukan":
   test "rekening tidak ada → 404":
     let token = tokenOf(login(MakerUser))
     let reply = postJson(CashPath,
-      cashBody("99999999-9999-7999-8999-999999999999", "DEPOSIT", "10.0000"), token)
+      cashBody("99999999-9999-7999-8999-999999999999", "DEPOSIT", "10.00"), token)
     check reply.code == 404
     checkProblem(CashPath, "POST", "404", reply.body)
 
@@ -615,19 +615,19 @@ suite "teller: setor & tarik":
   test "setor 201 → saldo naik, satu baris + satu jurnal":
     let token = tokenOf(login(MakerUser))
     let accountId = freshAccount()
-    let reply = postJson(CashPath, cashBody(accountId, "DEPOSIT", "100.0000", "setor tunai"),
+    let reply = postJson(CashPath, cashBody(accountId, "DEPOSIT", "100.00", "setor tunai"),
       token)
     check reply.code == 201
     checkJson(CashPath, "POST", "201", reply.body)
     check reply.body["direction"].getStr() == "DEPOSIT"
-    check reply.body["amount"].getStr() == "100.0000"
-    check reply.body["balanceAfter"].getStr() == "100.0000"
+    check reply.body["amount"].getStr() == "100.00"
+    check reply.body["balanceAfter"].getStr() == "100.00"
     check reply.body["businessDate"].getStr() == BusinessDate
-    check balanceOf(accountId) == "100.0000"
+    check balanceOf(accountId) == "100.00"
     check txCount(accountId) == 1
     check journalCount("DepositPosted") == 1
     let depositLines = journalLines(reply.body["journalId"].getStr())
-    check depositLines == @[("101.2", "100.0000", "0.0000"), ("201", "0.0000", "100.0000")]
+    check depositLines == @[("101.2", "100.00", "0.00"), ("201", "0.00", "100.00")]
     # M2: event outbox tidak boleh ber-header `accounting` (kalau tidak worker memposting jurnal kedua).
     let txId = reply.body["transactionId"].getStr()
     let journalId = reply.body["journalId"].getStr()
@@ -646,28 +646,28 @@ suite "teller: setor & tarik":
   test "tarik 201 → saldo turun; tarik melebihi saldo 409 tanpa ubah apa pun":
     let token = tokenOf(login(MakerUser))
     let accountId = freshAccount()
-    let deposit = postJson(CashPath, cashBody(accountId, "DEPOSIT", "100.0000"), token)
+    let deposit = postJson(CashPath, cashBody(accountId, "DEPOSIT", "100.00"), token)
     check deposit.code == 201
 
-    let withdraw = postJson(CashPath, cashBody(accountId, "WITHDRAWAL", "60.0000"), token)
+    let withdraw = postJson(CashPath, cashBody(accountId, "WITHDRAWAL", "60.00"), token)
     check withdraw.code == 201
     checkJson(CashPath, "POST", "201", withdraw.body)
     check withdraw.body["direction"].getStr() == "WITHDRAWAL"
-    check withdraw.body["balanceAfter"].getStr() == "40.0000"
-    check balanceOf(accountId) == "40.0000"
+    check withdraw.body["balanceAfter"].getStr() == "40.00"
+    check balanceOf(accountId) == "40.00"
     check txCount(accountId) == 2
     check journalCount("DepositWithdrawn") == 1
     let withdrawLines = journalLines(withdraw.body["journalId"].getStr())
-    check withdrawLines == @[("201", "60.0000", "0.0000"), ("101.2", "0.0000", "60.0000")]
+    check withdrawLines == @[("201", "60.00", "0.00"), ("101.2", "0.00", "60.00")]
 
     let rowsBefore = txCount(accountId)
     let journalsBefore = journalCount("DepositWithdrawn")
-    let tooMuch = postJson(CashPath, cashBody(accountId, "WITHDRAWAL", "100.0000"), token)
+    let tooMuch = postJson(CashPath, cashBody(accountId, "WITHDRAWAL", "100.00"), token)
     check tooMuch.code == 409
     checkProblem(CashPath, "POST", "409", tooMuch.body)
     check tooMuch.body["params"]["reason"].getStr() == "insufficient_funds"
     # Rollback: saldo, baris, dan jurnal tidak berubah.
-    check balanceOf(accountId) == "40.0000"
+    check balanceOf(accountId) == "40.00"
     check txCount(accountId) == rowsBefore
     check journalCount("DepositWithdrawn") == journalsBefore
 
@@ -676,7 +676,7 @@ suite "teller: jurnal subledger tidak bisa dibalik (T-123)":
     let token = tokenOf(login(MakerUser))
     let source = freshAccount()
     let destination = freshAccount()
-    let deposit = postJson(CashPath, cashBody(source, "DEPOSIT", "100.0000"), token)
+    let deposit = postJson(CashPath, cashBody(source, "DEPOSIT", "100.00"), token)
     check deposit.code == 201
     let cashJournal = deposit.body["journalId"].getStr()
 
@@ -692,7 +692,7 @@ suite "teller: jurnal subledger tidak bisa dibalik (T-123)":
 
     # PB juga punya subledger sendiri: pembalik hanya akan membuat GL dan baris transfer berbeda.
     let transfer = postJson(TransferPath,
-      transferBody(source, destination, "10.0000", "PB uji guard"), token)
+      transferBody(source, destination, "10.00", "PB uji guard"), token)
     check transfer.code == 201
     let transferJournal = transfer.body["journalId"].getStr()
     let deniedTransfer = postJson(ReversalPath.replace("{journalId}", transferJournal),
@@ -705,7 +705,7 @@ suite "teller: idempotency":
   test "replay 200 + Idempotent-Replayed, tepat satu jurnal; isi beda 409":
     let token = tokenOf(login(MakerUser))
     let accountId = freshAccount()
-    let body = cashBody(accountId, "DEPOSIT", "25.0000")
+    let body = cashBody(accountId, "DEPOSIT", "25.00")
     let key = "idem-teller-1"
 
     let journalsBefore = journalCount("DepositPosted")
@@ -728,23 +728,23 @@ suite "teller: idempotency":
     check txCount(accountId) == 1
     check journalCount("DepositPosted") == journalsBefore + 1
     check auditCount("deposit.transaction.post") == auditsAfterFirst
-    check balanceOf(accountId) == "25.0000"
+    check balanceOf(accountId) == "25.00"
 
     # Isi beda pada kunci yang sama → 409.
-    let mismatch = postJson(CashPath, cashBody(accountId, "DEPOSIT", "30.0000"), token, key)
+    let mismatch = postJson(CashPath, cashBody(accountId, "DEPOSIT", "30.00"), token, key)
     check mismatch.code == 409
     checkProblem(CashPath, "POST", "409", mismatch.body)
 
   test "replay setelah TTL idempotensi lewat → 409 terdefinisi, bukan 500 (T-102)":
     let token = tokenOf(login(MakerUser))
     let accountId = freshAccount()
-    let body = cashBody(accountId, "DEPOSIT", "25.0000")
+    let body = cashBody(accountId, "DEPOSIT", "25.00")
     let key = "idem-expire-1"
     let journalsBefore = journalCount("DepositPosted")
 
     let first = postJson(CashPath, body, token, key)
     check first.code == 201
-    check balanceOf(accountId) == "25.0000"
+    check balanceOf(accountId) == "25.00"
     check txCount(accountId) == 1
 
     # Paksa klaim platform kedaluwarsa (TTL lewat): geser `created_at`/`expires_at` ke masa lalu.
@@ -765,7 +765,7 @@ suite "teller: idempotency":
     checkProblem(CashPath, "POST", "409", replay.body)
     check replay.body["params"]["reason"].getStr() == "idempotency_replay_expired"
     # Rollback: tidak ada mutasi saldo / baris / jurnal kedua.
-    check balanceOf(accountId) == "25.0000"
+    check balanceOf(accountId) == "25.00"
     check txCount(accountId) == 1
     check journalCount("DepositPosted") == journalsBefore + 1
 
@@ -774,27 +774,27 @@ suite "teller: pemindahbukuan (PB)":
     let token = tokenOf(login(MakerUser))
     let source = freshAccount()
     let destination = freshAccount()
-    check postJson(CashPath, cashBody(source, "DEPOSIT", "100.0000"), token).code == 201
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "100.00"), token).code == 201
     let journalsBefore = journalCount("DepositTransferred")
 
     let reply = postJson(TransferPath,
-      transferBody(source, destination, "60.0000", "PB uji"), token)
+      transferBody(source, destination, "60.00", "PB uji"), token)
     check reply.code == 201
     checkJson(TransferPath, "POST", "201", reply.body)
     check reply.body["sourceAccountId"].getStr() == source
     check reply.body["destinationAccountId"].getStr() == destination
-    check reply.body["amount"].getStr() == "60.0000"
-    check reply.body["sourceBalanceAfter"].getStr() == "40.0000"
-    check reply.body["destinationBalanceAfter"].getStr() == "60.0000"
+    check reply.body["amount"].getStr() == "60.00"
+    check reply.body["sourceBalanceAfter"].getStr() == "40.00"
+    check reply.body["destinationBalanceAfter"].getStr() == "60.00"
     check reply.body["businessDate"].getStr() == BusinessDate
-    check balanceOf(source) == "40.0000"
-    check balanceOf(destination) == "60.0000"
+    check balanceOf(source) == "40.00"
+    check balanceOf(destination) == "60.00"
     check transferCount(source) == 1
     check transferCount(destination) == 1
     check journalCount("DepositTransferred") == journalsBefore + 1
     # Kedua sisi GL akun 201 (net-nol di GL); yang pindah per rekening = baris `deposit.transfer`.
     let lines = journalLines(reply.body["journalId"].getStr())
-    check lines == @[("201", "60.0000", "0.0000"), ("201", "0.0000", "60.0000")]
+    check lines == @[("201", "60.00", "0.00"), ("201", "0.00", "60.00")]
 
     let transferId = reply.body["transferId"].getStr()
     let journalId = reply.body["journalId"].getStr()
@@ -815,25 +815,25 @@ suite "teller: pemindahbukuan (PB)":
     let a = freshAccount()
     let b = freshAccount()
 
-    let same = postJson(TransferPath, transferBody(a, a, "10.0000"), token)
+    let same = postJson(TransferPath, transferBody(a, a, "10.00"), token)
     check same.code == 400
     checkProblem(TransferPath, "POST", "400", same.body)
 
-    for bad in ["0.0000", "-5.0000", "abc", "1.00001"]:
+    for bad in ["0.00", "-5.00", "abc", "1.00001"]:
       let reply = postJson(TransferPath, transferBody(a, b, bad), token)
       check reply.code == 400
       checkProblem(TransferPath, "POST", "400", reply.body)
 
     let badId = postJson(TransferPath,
-      %*{"sourceAccountId": "bukan-uuid", "destinationAccountId": b, "amount": "1.0000"}, token)
+      %*{"sourceAccountId": "bukan-uuid", "destinationAccountId": b, "amount": "1.00"}, token)
     check badId.code == 400
     checkProblem(TransferPath, "POST", "400", badId.body)
 
     let longNarration = postJson(TransferPath,
-      transferBody(a, b, "10.0000", repeat('n', 201)), token)
+      transferBody(a, b, "10.00", repeat('n', 201)), token)
     check longNarration.code == 400
 
-    let tanpaKunci = postJson(TransferPath, transferBody(a, b, "10.0000"), token, sendKey = false)
+    let tanpaKunci = postJson(TransferPath, transferBody(a, b, "10.00"), token, sendKey = false)
     check tanpaKunci.code == 400
     checkProblem(TransferPath, "POST", "400", tanpaKunci.body)
 
@@ -841,7 +841,7 @@ suite "teller: pemindahbukuan (PB)":
     let token = tokenOf(login("dev.branchmaker"))
     let a = freshAccount()
     let b = freshAccount()
-    let reply = postJson(TransferPath, transferBody(a, b, "1.0000"), token,
+    let reply = postJson(TransferPath, transferBody(a, b, "1.00"), token,
       "branch-transfer-" & $epochTime())
     check reply.code == 403
     checkProblem(TransferPath, "POST", "403", reply.body)
@@ -850,47 +850,47 @@ suite "teller: pemindahbukuan (PB)":
   test "izin hanya di cabang sumber, tujuan cabang lain → 403 tanpa mutasi":
     let token = tokenOf(login("dev.branchmaker2"))
     let source = freshAccount()
-    check postJson(CashPath, cashBody(source, "DEPOSIT", "50.0000"), tokenOf(login(
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "50.00"), tokenOf(login(
         MakerUser))).code == 201
-    let reply = postJson(TransferPath, transferBody(source, OtherBranchAccountId, "10.0000"),
+    let reply = postJson(TransferPath, transferBody(source, OtherBranchAccountId, "10.00"),
       token, "branch-dest-" & $epochTime())
     check reply.code == 403
     checkProblem(TransferPath, "POST", "403", reply.body)
     check reply.body["params"]["reason"].getStr() == "branch_not_allowed"
-    check balanceOf(source) == "50.0000"
-    check balanceOf(OtherBranchAccountId) == "0.0000"
+    check balanceOf(source) == "50.00"
+    check balanceOf(OtherBranchAccountId) == "0.00"
     check transferCount(source) == 0
 
   test "min_balance memakai versi produk sumber, bukan tujuan":
     let token = tokenOf(login(MakerUser))
     let source = freshAccount()
-    check postJson(CashPath, cashBody(source, "DEPOSIT", "100.0000"), token).code == 201
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "100.00"), token).code == 201
     # Tujuan punya min_balance 1000; kalau handler salah memakainya, PB 100 akan 409.
-    let reply = postJson(TransferPath, transferBody(source, HighMinAccountId, "100.0000"), token,
+    let reply = postJson(TransferPath, transferBody(source, HighMinAccountId, "100.00"), token,
       "highmin-" & $epochTime())
     check reply.code == 201
-    check reply.body["sourceBalanceAfter"].getStr() == "0.0000"
-    check balanceOf(source) == "0.0000"
-    check balanceOf(HighMinAccountId) == "100.0000"
+    check reply.body["sourceBalanceAfter"].getStr() == "0.00"
+    check balanceOf(source) == "0.00"
+    check balanceOf(HighMinAccountId) == "100.00"
 
   test "rekening sumber CLOSED → 409 account_not_active":
     let token = tokenOf(login(MakerUser))
     let source = freshAccount()
     let destination = freshAccount()
-    check postJson(CashPath, cashBody(source, "DEPOSIT", "50.0000"), token).code == 201
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "50.00"), token).code == 201
     discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
       exec(d, sql"UPDATE deposit.account SET status = 'CLOSED' WHERE account_id = ?", source)
       1)
-    let reply = postJson(TransferPath, transferBody(source, destination, "10.0000"), token)
+    let reply = postJson(TransferPath, transferBody(source, destination, "10.00"), token)
     check reply.code == 409
     check reply.body["params"]["reason"].getStr() == "account_not_active"
-    check balanceOf(source) == "50.0000"
+    check balanceOf(source) == "50.00"
     check transferCount(source) == 0
 
   test "rekening tidak ada → 404":
     let token = tokenOf(login(MakerUser))
     let reply = postJson(TransferPath,
-      transferBody("99999999-9999-7999-8999-999999999999", freshAccount(), "1.0000"), token)
+      transferBody("99999999-9999-7999-8999-999999999999", freshAccount(), "1.00"), token)
     check reply.code == 404
     checkProblem(TransferPath, "POST", "404", reply.body)
 
@@ -898,41 +898,41 @@ suite "teller: pemindahbukuan (PB)":
     let token = tokenOf(login(MakerUser))
     let source = freshAccount()
     let destination = freshAccount()
-    check postJson(CashPath, cashBody(source, "DEPOSIT", "30.0000"), token).code == 201
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "30.00"), token).code == 201
     let before = transferCount(source)
 
-    let reply = postJson(TransferPath, transferBody(source, destination, "40.0000"), token)
+    let reply = postJson(TransferPath, transferBody(source, destination, "40.00"), token)
     check reply.code == 409
     checkProblem(TransferPath, "POST", "409", reply.body)
     check reply.body["params"]["reason"].getStr() == "insufficient_funds"
     # Rollback: saldo kedua sisi & baris transfer tidak berubah.
-    check balanceOf(source) == "30.0000"
-    check balanceOf(destination) == "0.0000"
+    check balanceOf(source) == "30.00"
+    check balanceOf(destination) == "0.00"
     check transferCount(source) == before
 
   test "rekening tujuan CLOSED → 409 account_not_active tanpa mutasi":
     let token = tokenOf(login(MakerUser))
     let source = freshAccount()
     let destination = freshAccount()
-    check postJson(CashPath, cashBody(source, "DEPOSIT", "50.0000"), token).code == 201
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "50.00"), token).code == 201
     discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
       exec(d, sql"UPDATE deposit.account SET status = 'CLOSED' WHERE account_id = ?", destination)
       1)
 
-    let reply = postJson(TransferPath, transferBody(source, destination, "10.0000"), token)
+    let reply = postJson(TransferPath, transferBody(source, destination, "10.00"), token)
     check reply.code == 409
     checkProblem(TransferPath, "POST", "409", reply.body)
     check reply.body["params"]["reason"].getStr() == "account_not_active"
-    check balanceOf(source) == "50.0000"
-    check balanceOf(destination) == "0.0000"
+    check balanceOf(source) == "50.00"
+    check balanceOf(destination) == "0.00"
     check transferCount(destination) == 0
 
   test "replay 200 + Idempotent-Replayed, tepat satu jurnal/transfer; isi beda 409":
     let token = tokenOf(login(MakerUser))
     let source = freshAccount()
     let destination = freshAccount()
-    check postJson(CashPath, cashBody(source, "DEPOSIT", "100.0000"), token).code == 201
-    let body = transferBody(source, destination, "25.0000")
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "100.00"), token).code == 201
+    let body = transferBody(source, destination, "25.00")
     let key = "idem-transfer-1"
     let journalsBefore = journalCount("DepositTransferred")
     let auditsBefore = auditCount("deposit.transfer.post")
@@ -954,17 +954,17 @@ suite "teller: pemindahbukuan (PB)":
     check transferCount(source) == 1
     check journalCount("DepositTransferred") == journalsBefore + 1
     check auditCount("deposit.transfer.post") == auditsBefore + 1
-    check balanceOf(source) == "75.0000"
-    check balanceOf(destination) == "25.0000"
+    check balanceOf(source) == "75.00"
+    check balanceOf(destination) == "25.00"
 
-    let mismatch = postJson(TransferPath, transferBody(source, destination, "30.0000"), token, key)
+    let mismatch = postJson(TransferPath, transferBody(source, destination, "30.00"), token, key)
     check mismatch.code == 409
     checkProblem(TransferPath, "POST", "409", mismatch.body)
 
 suite "teller: otorisasi cabang & keadaan rekening":
   test "izin hanya di cabang lain → 403 branch_not_allowed":
     let token = tokenOf(login("dev.branchmaker"))
-    let reply = postJson(CashPath, cashBody(AccountIds[0], "DEPOSIT", "10.0000"), token,
+    let reply = postJson(CashPath, cashBody(AccountIds[0], "DEPOSIT", "10.00"), token,
       "branch-teller-" & $epochTime())
     check reply.code == 403
     checkProblem(CashPath, "POST", "403", reply.body)
@@ -976,18 +976,18 @@ suite "teller: otorisasi cabang & keadaan rekening":
     discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
       exec(d, sql"UPDATE deposit.account SET status = 'CLOSED' WHERE account_id = ?", accountId)
       1)
-    let reply = postJson(CashPath, cashBody(accountId, "DEPOSIT", "10.0000"), token)
+    let reply = postJson(CashPath, cashBody(accountId, "DEPOSIT", "10.00"), token)
     check reply.code == 409
     checkProblem(CashPath, "POST", "409", reply.body)
     check reply.body["params"]["reason"].getStr() == "account_not_active"
-    check balanceOf(accountId) == "0.0000"
+    check balanceOf(accountId) == "0.00"
     check txCount(accountId) == 0
 
   test "event tanpa posting rule → ValueError, tanpa jurnal":
     var raised = false
     try:
       discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
-        discard postJournalSync(d, app.clock, "EventTanpaRule", moneyFromString("1.0000").value(),
+        discard postJournalSync(d, app.clock, "EventTanpaRule", moneyFromString("1.00").value(),
           parseId(BranchId).value(), newId(app.clock), BusinessDate, "tanpa-rule-1",
           fixtureActor, "SAV-DEP", "SAVINGS", "")
         1)
@@ -999,10 +999,10 @@ suite "teller: otorisasi cabang & keadaan rekening":
 suite "teller: konfigurasi produk rusak":
   test "min_balance negatif → 500, bukan 400, tanpa mutasi":
     let token = tokenOf(login(MakerUser))
-    let reply = postJson(CashPath, cashBody(BrokenAccountId, "DEPOSIT", "10.0000"), token)
+    let reply = postJson(CashPath, cashBody(BrokenAccountId, "DEPOSIT", "10.00"), token)
     check reply.code == 500
     check reply.body["detail"].getStr().len > 0
-    check balanceOf(BrokenAccountId) == "0.0000"
+    check balanceOf(BrokenAccountId) == "0.00"
     check txCount(BrokenAccountId) == 0
 
 suite "teller: periode tertutup":
@@ -1018,11 +1018,11 @@ suite "teller: periode tertutup":
         $fixtureActor)
       1)
 
-    let reply = postJson(CashPath, cashBody(accountId, "DEPOSIT", "10.0000"), token)
+    let reply = postJson(CashPath, cashBody(accountId, "DEPOSIT", "10.00"), token)
     check reply.code == 409
     checkProblem(CashPath, "POST", "409", reply.body)
     check reply.body["params"]["reason"].getStr() == "period_closed"
-    check balanceOf(accountId) == "0.0000"
+    check balanceOf(accountId) == "0.00"
     check txCount(accountId) == 0
     check journalCount("DepositPosted") == journalsBefore
 
@@ -1036,7 +1036,7 @@ suite "teller: periode tertutup":
     let token = tokenOf(login(MakerUser))
     let source = freshAccount()
     let destination = freshAccount()
-    check postJson(CashPath, cashBody(source, "DEPOSIT", "100.0000"), token).code == 201
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "100.00"), token).code == 201
     let journalsBefore = journalCount("DepositTransferred")
 
     discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
@@ -1046,12 +1046,12 @@ suite "teller: periode tertutup":
         $fixtureActor)
       1)
 
-    let reply = postJson(TransferPath, transferBody(source, destination, "10.0000"), token)
+    let reply = postJson(TransferPath, transferBody(source, destination, "10.00"), token)
     check reply.code == 409
     checkProblem(TransferPath, "POST", "409", reply.body)
     check reply.body["params"]["reason"].getStr() == "period_closed"
-    check balanceOf(source) == "100.0000"
-    check balanceOf(destination) == "0.0000"
+    check balanceOf(source) == "100.00"
+    check balanceOf(destination) == "0.00"
     check transferCount(source) == 0
     check journalCount("DepositTransferred") == journalsBefore
 
@@ -1068,11 +1068,11 @@ suite "teller: sesi kas menggerbang transaksi tunai (T-093b)":
     let accountId = SessionBranchAccountId
     let journalsBefore = journalCount("DepositPosted")
 
-    let reply = postJson(CashPath, cashBody(accountId, "DEPOSIT", "10.0000"), token)
+    let reply = postJson(CashPath, cashBody(accountId, "DEPOSIT", "10.00"), token)
     check reply.code == 409
     checkProblem(CashPath, "POST", "409", reply.body)
     check reply.body["params"]["reason"].getStr() == "no_open_session"
-    check balanceOf(accountId) == "0.0000"
+    check balanceOf(accountId) == "0.00"
     check txCount(accountId) == 0
     check journalCount("DepositPosted") == journalsBefore
 
@@ -1095,11 +1095,11 @@ suite "teller: sesi kas menggerbang transaksi tunai (T-093b)":
       let current = call("GET", SessionsPath & "/current?branchId=" & BranchId, "", token)
       check current.code == 200
       check current.body["businessDate"].getStr() == "2026-10-21"
-      let reply = postJson(CashPath, cashBody(accountId, "DEPOSIT", "10.0000"), token)
+      let reply = postJson(CashPath, cashBody(accountId, "DEPOSIT", "10.00"), token)
       check reply.code == 409
       checkProblem(CashPath, "POST", "409", reply.body)
       check reply.body["params"]["reason"].getStr() == "session_business_date_mismatch"
-      check balanceOf(accountId) == "0.0000"
+      check balanceOf(accountId) == "0.00"
       check txCount(accountId) == 0
       check journalCount("DepositPosted") == journalsBefore
     finally:
@@ -1112,7 +1112,7 @@ suite "teller: sesi kas menggerbang transaksi tunai (T-093b)":
   test "sesi dibuka → transaksi mencatat CASH_IN/CASH_OUT; tutup menghitung expected":
     let token = tokenOf(login(SessionTellerUser))
     let openResp = postJson(SessionsPath,
-      %*{"branchId": SessionBranchId, "openingFloat": "100.0000"}, token)
+      %*{"branchId": SessionBranchId, "openingFloat": "100.00"}, token)
     check openResp.code == 201
     checkJson(SessionsPath, "POST", "201", openResp.body)
     check openResp.body["status"].getStr() == "OPEN"
@@ -1120,26 +1120,26 @@ suite "teller: sesi kas menggerbang transaksi tunai (T-093b)":
     let sessionId = openResp.body["sessionId"].getStr()
 
     # Sesi kedua di cabang yang sama untuk teller yang sama ditolak.
-    let dup = postJson(SessionsPath, %*{"branchId": SessionBranchId, "openingFloat": "0.0000"},
+    let dup = postJson(SessionsPath, %*{"branchId": SessionBranchId, "openingFloat": "0.00"},
       token)
     check dup.code == 409
     check dup.body["params"]["reason"].getStr() == "session_already_open"
 
-    let deposit = postJson(CashPath, cashBody(SessionBranchAccountId, "DEPOSIT", "50.0000"), token)
+    let deposit = postJson(CashPath, cashBody(SessionBranchAccountId, "DEPOSIT", "50.00"), token)
     check deposit.code == 201
     let withdraw = postJson(CashPath,
-      cashBody(SessionBranchAccountId, "WITHDRAWAL", "20.0000"), token)
+      cashBody(SessionBranchAccountId, "WITHDRAWAL", "20.00"), token)
     check withdraw.code == 201
 
     # Plafon per transaksi (K-5/O-099) dicek sebelum saldo/jurnal: di atas plafon = 409 tanpa
     # movement baru, dan alasannya plafon (bukan saldo kurang).
     let overDeposit = postJson(CashPath,
-      cashBody(SessionBranchAccountId, "DEPOSIT", "10000000.0001"), token)
+      cashBody(SessionBranchAccountId, "DEPOSIT", "10000000.01"), token)
     check overDeposit.code == 409
     checkProblem(CashPath, "POST", "409", overDeposit.body)
     check overDeposit.body["params"]["reason"].getStr() == "cash_limit_exceeded"
     let overWithdraw = postJson(CashPath,
-      cashBody(SessionBranchAccountId, "WITHDRAWAL", "5000000.0001"), token)
+      cashBody(SessionBranchAccountId, "WITHDRAWAL", "5000000.01"), token)
     check overWithdraw.code == 409
     check overWithdraw.body["params"]["reason"].getStr() == "cash_limit_exceeded"
 
@@ -1149,35 +1149,35 @@ suite "teller: sesi kas menggerbang transaksi tunai (T-093b)":
 
     # expected = 100 float + 50 masuk - 20 keluar = 130.
     let closeResp = postJson(SessionsPath & "/" & sessionId & "/close",
-      %*{"countedCash": "130.0000"}, token)
+      %*{"countedCash": "130.00"}, token)
     check closeResp.code == 200
     checkJson(SessionClosePath, "POST", "200", closeResp.body)
-    check closeResp.body["expectedCash"].getStr() == "130.0000"
-    check closeResp.body["countedCash"].getStr() == "130.0000"
-    check closeResp.body["variance"].getStr() == "0.0000"
+    check closeResp.body["expectedCash"].getStr() == "130.00"
+    check closeResp.body["countedCash"].getStr() == "130.00"
+    check closeResp.body["variance"].getStr() == "0.00"
     check closeResp.body["status"].getStr() == "CLOSED"
 
     # Tutup kedua ditolak.
     let closeAgain = postJson(SessionsPath & "/" & sessionId & "/close",
-      %*{"countedCash": "130.0000"}, token)
+      %*{"countedCash": "130.00"}, token)
     check closeAgain.code == 409
     check closeAgain.body["params"]["reason"].getStr() == "session_not_open"
 
   test "T-118: buka/tutup sesi + selisih kas berjurnal (vault, laci, selisih)":
     let token = tokenOf(login(SessionTellerUser))
     let openResp = postJson(SessionsPath,
-      %*{"branchId": SessionBranchId, "openingFloat": "100.0000"}, token)
+      %*{"branchId": SessionBranchId, "openingFloat": "100.00"}, token)
     check openResp.code == 201
     let sessionId = openResp.body["sessionId"].getStr()
 
-    let deposit = postJson(CashPath, cashBody(SessionBranchAccountId, "DEPOSIT", "50.0000"), token)
+    let deposit = postJson(CashPath, cashBody(SessionBranchAccountId, "DEPOSIT", "50.00"), token)
     check deposit.code == 201
 
     # expected = 150, counted = 140 → selisih kurang 10.
     let closeResp = postJson(SessionsPath & "/" & sessionId & "/close",
-      %*{"countedCash": "140.0000"}, token)
+      %*{"countedCash": "140.00"}, token)
     check closeResp.code == 200
-    check closeResp.body["variance"].getStr() == "-10.0000"
+    check closeResp.body["variance"].getStr() == "-10.00"
 
     # Float: laci bertambah, vault berkurang.
     check dbCount(sql"""SELECT count(*)::text FROM ledger.journal j
@@ -1213,11 +1213,11 @@ suite "teller: sesi kas menggerbang transaksi tunai (T-093b)":
   test "setelah tutup: transaksi baru 409, replay transaksi lama tetap 200":
     let token = tokenOf(login(SessionTellerUser))
     let openResp = postJson(SessionsPath,
-      %*{"branchId": SessionBranchId, "openingFloat": "0.0000"}, token)
+      %*{"branchId": SessionBranchId, "openingFloat": "0.00"}, token)
     check openResp.code == 201
     let sessionId = openResp.body["sessionId"].getStr()
 
-    let body = cashBody(SessionBranchAccountId, "DEPOSIT", "10.0000")
+    let body = cashBody(SessionBranchAccountId, "DEPOSIT", "10.00")
     let key = "teller-session-replay-1"
     let first = postJson(CashPath, body, token, key)
     check first.code == 201
@@ -1225,13 +1225,13 @@ suite "teller: sesi kas menggerbang transaksi tunai (T-093b)":
     check cashMovementCount(sessionId) == 1
 
     let closeResp = postJson(SessionsPath & "/" & sessionId & "/close",
-      %*{"countedCash": "10.0000"}, token)
+      %*{"countedCash": "10.00"}, token)
     check closeResp.code == 200
-    check closeResp.body["expectedCash"].getStr() == "10.0000"
+    check closeResp.body["expectedCash"].getStr() == "10.00"
 
     # Sesi sudah CLOSED: transaksi tunai baru ditolak dan tidak menyentuh jurnal.
     let journalsBefore = journalCount("DepositPosted")
-    let afterClose = postJson(CashPath, cashBody(SessionBranchAccountId, "DEPOSIT", "5.0000"),
+    let afterClose = postJson(CashPath, cashBody(SessionBranchAccountId, "DEPOSIT", "5.00"),
       token)
     check afterClose.code == 409
     checkProblem(CashPath, "POST", "409", afterClose.body)
@@ -1248,38 +1248,38 @@ suite "teller: sesi kas menggerbang transaksi tunai (T-093b)":
 suite "teller: posting rule produk-spesifik (T-104)":
   test "setor memakai rule `product_code` akun, bukan rule generik":
     let token = tokenOf(login(MakerUser))
-    let reply = postJson(CashPath, cashBody(ProductRuleAccountId, "DEPOSIT", "10.0000"), token)
+    let reply = postJson(CashPath, cashBody(ProductRuleAccountId, "DEPOSIT", "10.00"), token)
     check reply.code == 201
     checkJson(CashPath, "POST", "201", reply.body)
     # Rule produk SAV-PROD (D 102 / K 202) harus terpilih. Bila `postJournalSync` mengirim payload
     # kosong, rule produk tidak cocok dan rule generik (101.2/201) yang dipakai → assertion gagal.
     let lines = journalLines(reply.body["journalId"].getStr())
-    check lines == @[("102", "10.0000", "0.0000"), ("202", "0.0000", "10.0000")]
+    check lines == @[("102", "10.00", "0.00"), ("202", "0.00", "10.00")]
 
 suite "teller: klasifikasi simpanan koperasi (T-111)":
   test "setor POKOK → ekuitas 301.1 (rule generik tidak terpilih)":
     let token = tokenOf(login(MakerUser))
-    let reply = postJson(CashPath, cashBody(PokokAccountId, "DEPOSIT", "50.0000"), token)
+    let reply = postJson(CashPath, cashBody(PokokAccountId, "DEPOSIT", "50.00"), token)
     check reply.code == 201
     checkJson(CashPath, "POST", "201", reply.body)
-    check balanceOf(PokokAccountId) == "50.0000"
+    check balanceOf(PokokAccountId) == "50.00"
     # Tanpa rule berkondisi yang terpilih, jurnal akan memakai 101.2/201 (generik).
     let lines = journalLines(reply.body["journalId"].getStr())
-    check lines == @[("101.2", "50.0000", "0.0000"), ("301.1", "0.0000", "50.0000")]
+    check lines == @[("101.2", "50.00", "0.00"), ("301.1", "0.00", "50.00")]
 
   test "setor WAJIB → ekuitas 301.2":
     let token = tokenOf(login(MakerUser))
-    let reply = postJson(CashPath, cashBody(WajibAccountId, "DEPOSIT", "25.0000"), token)
+    let reply = postJson(CashPath, cashBody(WajibAccountId, "DEPOSIT", "25.00"), token)
     check reply.code == 201
     checkJson(CashPath, "POST", "201", reply.body)
     let lines = journalLines(reply.body["journalId"].getStr())
-    check lines == @[("101.2", "25.0000", "0.0000"), ("301.2", "0.0000", "25.0000")]
+    check lines == @[("101.2", "25.00", "0.00"), ("301.2", "0.00", "25.00")]
 
   test "tarik dari POKOK/WAJIB → 409 savings_kind_locked tanpa ubah saldo":
     let token = tokenOf(login(MakerUser))
     let pokokBefore = balanceOf(PokokAccountId)
     let pokokTxBefore = txCount(PokokAccountId)
-    let pokok = postJson(CashPath, cashBody(PokokAccountId, "WITHDRAWAL", "10.0000"), token)
+    let pokok = postJson(CashPath, cashBody(PokokAccountId, "WITHDRAWAL", "10.00"), token)
     check pokok.code == 409
     checkProblem(CashPath, "POST", "409", pokok.body)
     check pokok.body["params"]["reason"].getStr() == "savings_kind_locked"
@@ -1287,7 +1287,7 @@ suite "teller: klasifikasi simpanan koperasi (T-111)":
     check txCount(PokokAccountId) == pokokTxBefore
 
     let wajibBefore = balanceOf(WajibAccountId)
-    let wajib = postJson(CashPath, cashBody(WajibAccountId, "WITHDRAWAL", "5.0000"), token)
+    let wajib = postJson(CashPath, cashBody(WajibAccountId, "WITHDRAWAL", "5.00"), token)
     check wajib.code == 409
     check wajib.body["params"]["reason"].getStr() == "savings_kind_locked"
     check balanceOf(WajibAccountId) == wajibBefore
@@ -1296,14 +1296,14 @@ suite "teller: klasifikasi simpanan koperasi (T-111)":
     let token = tokenOf(login(MakerUser))
 
     let fromPokok = postJson(TransferPath,
-      transferBody(PokokTransferAccountId, SukarelaKindAccountId, "1.0000"), token)
+      transferBody(PokokTransferAccountId, SukarelaKindAccountId, "1.00"), token)
     check fromPokok.code == 409
     checkProblem(TransferPath, "POST", "409", fromPokok.body)
     check fromPokok.body["params"]["reason"].getStr() == "savings_kind_locked"
 
     # Sumber SUKARELA (tidak terkunci) ke tujuan POKOK: tujuan yang terkunci menolak lebih dulu.
     let cross = postJson(TransferPath,
-      transferBody(SukarelaKindAccountId, PokokAccountId, "1.0000"), token)
+      transferBody(SukarelaKindAccountId, PokokAccountId, "1.00"), token)
     check cross.code == 409
     checkProblem(TransferPath, "POST", "409", cross.body)
     check cross.body["params"]["reason"].getStr() == "savings_kind_locked"
@@ -1311,15 +1311,15 @@ suite "teller: klasifikasi simpanan koperasi (T-111)":
     # Dua jenis yang sama-sama liabilitas tetapi berbeda label (SUKARELA vs TABUNGAN): aturan
     # "satu jenis" tetap berlaku, dan inilah satu-satunya cabang yang memakai `transfer_kind_mismatch`.
     let bedaLabel = postJson(TransferPath,
-      transferBody(SukarelaKindAccountId, TabunganKindAccountId, "1.0000"), token)
+      transferBody(SukarelaKindAccountId, TabunganKindAccountId, "1.00"), token)
     check bedaLabel.code == 409
     checkProblem(TransferPath, "POST", "409", bedaLabel.body)
     check bedaLabel.body["params"]["reason"].getStr() == "transfer_kind_mismatch"
-    check balanceOf(TabunganKindAccountId) == "0.0000"
+    check balanceOf(TabunganKindAccountId) == "0.00"
 
     # Rollback: tidak ada mutasi saldo/baris transfer di kedua sisi.
-    check balanceOf(SukarelaKindAccountId) == "0.0000"
-    check balanceOf(PokokTransferAccountId) == "0.0000"
+    check balanceOf(SukarelaKindAccountId) == "0.00"
+    check balanceOf(PokokTransferAccountId) == "0.00"
     check transferCount(SukarelaKindAccountId) == 0
     check transferCount(PokokTransferAccountId) == 0
 
@@ -1330,33 +1330,33 @@ suite "teller: klasifikasi simpanan koperasi (T-111)":
     let nullAccount = AccountIds[0]
     let awalNull = saldo(nullAccount)
     let awalSukarela = saldo(SukarelaKindAccountId)
-    let setor = postJson(CashPath, cashBody(nullAccount, "DEPOSIT", "10.0000"), token)
+    let setor = postJson(CashPath, cashBody(nullAccount, "DEPOSIT", "10.00"), token)
     check setor.code == 201
 
     let keSukarela = postJson(TransferPath,
-      transferBody(nullAccount, SukarelaKindAccountId, "3.0000"), token)
+      transferBody(nullAccount, SukarelaKindAccountId, "3.00"), token)
     check keSukarela.code == 201
-    check saldo(nullAccount) == awalNull + money(70_000)
-    check saldo(SukarelaKindAccountId) == awalSukarela + money(30_000)
+    check saldo(nullAccount) == awalNull + money(700)
+    check saldo(SukarelaKindAccountId) == awalSukarela + money(300)
 
     let balik = postJson(TransferPath,
-      transferBody(SukarelaKindAccountId, nullAccount, "1.0000"), token)
+      transferBody(SukarelaKindAccountId, nullAccount, "1.00"), token)
     check balik.code == 201
-    check saldo(nullAccount) == awalNull + money(80_000)
-    check saldo(SukarelaKindAccountId) == awalSukarela + money(20_000)
+    check saldo(nullAccount) == awalNull + money(800)
+    check saldo(SukarelaKindAccountId) == awalSukarela + money(200)
 
     # Tujuan POKOK diblokir walaupun sumbernya NULL: dana tidak boleh masuk ekuitas lewat PB.
     let kePokok = postJson(TransferPath,
-      transferBody(nullAccount, PokokAccountId, "1.0000"), token)
+      transferBody(nullAccount, PokokAccountId, "1.00"), token)
     check kePokok.code == 409
     check kePokok.body["params"]["reason"].getStr() == "savings_kind_locked"
-    check saldo(nullAccount) == awalNull + money(80_000)
+    check saldo(nullAccount) == awalNull + money(800)
 
 suite "teller: slip cetak ulang (T-094a)":
   test "baca transaksi tunai → 200, field slip, tanpa saldo":
     let token = tokenOf(login(MakerUser))
     let accountId = freshAccount()
-    let created = postJson(CashPath, cashBody(accountId, "DEPOSIT", "40.0000", "setor slip"),
+    let created = postJson(CashPath, cashBody(accountId, "DEPOSIT", "40.00", "setor slip"),
       token)
     check created.code == 201
     let txId = created.body["transactionId"].getStr()
@@ -1367,7 +1367,7 @@ suite "teller: slip cetak ulang (T-094a)":
     check reply.body["transactionId"].getStr() == txId
     check reply.body["journalId"].getStr() == created.body["journalId"].getStr()
     check reply.body["direction"].getStr() == "DEPOSIT"
-    check reply.body["amount"].getStr() == "40.0000"
+    check reply.body["amount"].getStr() == "40.00"
     check reply.body["businessDate"].getStr() == BusinessDate
     check reply.body["narration"].getStr() == "setor slip"
     # `balanceAfter` sengaja tidak ada: saldo per transaksi tidak disimpan (D-127).
@@ -1376,7 +1376,7 @@ suite "teller: slip cetak ulang (T-094a)":
   test "tanpa sesi → 401":
     let token = tokenOf(login(MakerUser))
     let accountId = freshAccount()
-    let created = postJson(CashPath, cashBody(accountId, "DEPOSIT", "5.0000"), token)
+    let created = postJson(CashPath, cashBody(accountId, "DEPOSIT", "5.00"), token)
     check created.code == 201
     let reply = call("GET", CashPath & "/" & created.body["transactionId"].getStr(), "", "")
     check reply.code == 401
@@ -1385,7 +1385,7 @@ suite "teller: slip cetak ulang (T-094a)":
   test "cabang lain → 403; id tidak ada / id PB → 404":
     let token = tokenOf(login(MakerUser))
     let accountId = freshAccount()
-    let created = postJson(CashPath, cashBody(accountId, "DEPOSIT", "5.0000"), token)
+    let created = postJson(CashPath, cashBody(accountId, "DEPOSIT", "5.00"), token)
     check created.code == 201
     let txId = created.body["transactionId"].getStr()
 
@@ -1403,8 +1403,8 @@ suite "teller: slip cetak ulang (T-094a)":
     # Id PB bukan baris `deposit.transaction`: endpoint slip tidak menemukannya (404, bukan PB).
     let source = freshAccount()
     let destination = freshAccount()
-    check postJson(CashPath, cashBody(source, "DEPOSIT", "20.0000"), token).code == 201
-    let pb = postJson(TransferPath, transferBody(source, destination, "5.0000"), token)
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "20.00"), token).code == 201
+    let pb = postJson(TransferPath, transferBody(source, destination, "5.00"), token)
     check pb.code == 201
     let pbAsSlip = call("GET", CashPath & "/" & pb.body["transferId"].getStr(), "", token)
     check pbAsSlip.code == 404
@@ -1415,13 +1415,13 @@ suite "deposit: statement subledger (T-094b)":
     let accountId = freshAccount()
     let otherId = freshAccount()
 
-    check postJson(CashPath, cashBody(accountId, "DEPOSIT", "100.0000", "setor"), token).code == 201
-    check postJson(CashPath, cashBody(accountId, "WITHDRAWAL", "40.0000", "tarik"), token).code ==
+    check postJson(CashPath, cashBody(accountId, "DEPOSIT", "100.00", "setor"), token).code == 201
+    check postJson(CashPath, cashBody(accountId, "WITHDRAWAL", "40.00", "tarik"), token).code ==
       201
-    let outbound = postJson(TransferPath, transferBody(accountId, otherId, "10.0000", "pb keluar"),
+    let outbound = postJson(TransferPath, transferBody(accountId, otherId, "10.00", "pb keluar"),
       token)
     check outbound.code == 201
-    let inbound = postJson(TransferPath, transferBody(otherId, accountId, "3.0000", "pb masuk"),
+    let inbound = postJson(TransferPath, transferBody(otherId, accountId, "3.00", "pb masuk"),
       token)
     check inbound.code == 201
 
@@ -1465,8 +1465,8 @@ suite "deposit: statement subledger (T-094b)":
     let token = tokenOf(login(MakerUser))
     let source = freshAccount()
     let destination = freshAccount()
-    check postJson(CashPath, cashBody(source, "DEPOSIT", "30.0000"), token).code == 201
-    check postJson(TransferPath, transferBody(source, destination, "7.0000"), token).code == 201
+    check postJson(CashPath, cashBody(source, "DEPOSIT", "30.00"), token).code == 201
+    check postJson(TransferPath, transferBody(source, destination, "7.00"), token).code == 201
 
     let destinationStatement =
       call("GET", statementUrl(destination, BusinessDate, BusinessDate), "", token)

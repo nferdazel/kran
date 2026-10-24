@@ -11,8 +11,8 @@ const
   listLimit* = 200 # nomagic:ok batas ukuran respons daftar (bukan nilai bisnis)
 
 proc moneyOf*(raw: string): Money =
-  ## `numeric(24,4)` → `Money` tanpa float. Skala 4 desimal; lebih dari itu = data rusak (ditolak,
-  ## bukan dibulatkan diam-diam).
+  ## `numeric(24,2)` → `Money` tanpa float. Skala `moneyScale`; lebih dari itu = data rusak
+  ## (ditolak, bukan dibulatkan diam-diam).
   let s = raw.strip
   if s.len == 0:
     raise newException(ValueError, "nominal kosong dari DB")
@@ -23,7 +23,7 @@ proc moneyOf*(raw: string): Money =
     raise newException(ValueError, "nominal DB tidak sah: " & raw)
   var frac = if parts.len == 2: parts[1] else: ""
   if frac.len > moneyScale:
-    raise newException(ValueError, "nominal DB melebihi 4 desimal: " & raw)
+    raise newException(ValueError, "nominal DB melebihi " & $moneyScale & " desimal: " & raw)
   while frac.len < moneyScale:
     frac.add '0'
   let whole = if parts[0].len == 0: "0" else: parts[0]

@@ -148,7 +148,7 @@ suite "platform: outbox":
 
   test "kegagalan: backoff menunda klaim, dead-letter setelah batas, re-drive":
     let ev = newOutboxEvent(newId(sysClock), "account.balance_changed", "account",
-      "acc-1", "account.balance:acc-1:1", %*{"balance": "1000.0000"})
+      "acc-1", "account.balance:acc-1:1", %*{"balance": "1000.00"})
     check appendEvent(db, ev)
 
     let first = claimBatch(db, "worker-1", 10)

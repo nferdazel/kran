@@ -71,12 +71,12 @@
     // Totals must follow the visible rows. Using all `balances.lines` would show figures that do
     // not match the table while a category filter is active.
     const lines = filteredLines;
-    let openingDebit = "0.0000";
-    let openingCredit = "0.0000";
-    let periodDebit = "0.0000";
-    let periodCredit = "0.0000";
-    let closingDebit = "0.0000";
-    let closingCredit = "0.0000";
+    let openingDebit = "0.00";
+    let openingCredit = "0.00";
+    let periodDebit = "0.00";
+    let periodCredit = "0.00";
+    let closingDebit = "0.00";
+    let closingCredit = "0.00";
     for (const line of lines) {
       openingDebit = addMoney(openingDebit, line.openingDebit);
       openingCredit = addMoney(openingCredit, line.openingCredit);

@@ -1906,9 +1906,9 @@ export interface components {
             glAccount: string;
             /** Format: uuid */
             branchId: string;
-            /** @description Desimal 4 angka di belakang koma, mis. `1500.0000`. */
+            /** @description Desimal 2 angka di belakang koma, mis. `1500.00`. */
             debit: string;
-            /** @description Desimal 4 angka di belakang koma; tepat satu dari debit/credit > 0. */
+            /** @description Desimal 2 angka di belakang koma; tepat satu dari debit/credit > 0. */
             credit: string;
         };
         JournalHeader: {
@@ -2127,7 +2127,7 @@ export interface components {
             savingsKind?: components["schemas"]["SavingsKind"];
             /** @enum {string} */
             status: "ACTIVE" | "CLOSED";
-            /** @description Saldo desimal string 4 desimal (tanpa float), mis. `"0.0000"`. */
+            /** @description Saldo desimal string 2 desimal (tanpa float), mis. `"0.00"`. */
             balance: string;
             /** Format: date */
             openedOn: string;
@@ -2148,7 +2148,7 @@ export interface components {
              * @enum {string}
              */
             direction: "DEPOSIT" | "WITHDRAWAL";
-            /** @description Nominal desimal string > 0 (tanpa float), mis. `"100000.0000"`. */
+            /** @description Nominal desimal string > 0 (tanpa float), mis. `"100000.00"`. */
             amount: string;
             /** @description Keterangan opsional (batas teknis kolom 200 karakter). */
             narration?: string;
@@ -2163,9 +2163,9 @@ export interface components {
             journalId: string;
             /** @enum {string} */
             direction: "DEPOSIT" | "WITHDRAWAL";
-            /** @description Nominal desimal string 4 desimal (tanpa float). */
+            /** @description Nominal desimal string 2 desimal (tanpa float). */
             amount: string;
-            /** @description Saldo rekening setelah transaksi, desimal string 4 desimal. */
+            /** @description Saldo rekening setelah transaksi, desimal string 2 desimal. */
             balanceAfter: string;
             /**
              * Format: date
@@ -2187,7 +2187,7 @@ export interface components {
             journalId: string;
             /** @enum {string} */
             direction: "DEPOSIT" | "WITHDRAWAL";
-            /** @description Nominal desimal string 4 desimal (tanpa float). */
+            /** @description Nominal desimal string 2 desimal (tanpa float). */
             amount: string;
             /**
              * Format: date
@@ -2235,7 +2235,7 @@ export interface components {
             kind: "CASH" | "TRANSFER";
             /** @enum {string} */
             direction: "IN" | "OUT";
-            /** @description Nominal desimal string 4 desimal (tanpa float). */
+            /** @description Nominal desimal string 2 desimal (tanpa float). */
             amount: string;
             /** Format: date */
             businessDate: string;
@@ -2265,7 +2265,7 @@ export interface components {
              * @description Rekening tujuan (harus `ACTIVE` dan **berbeda** dari sumber).
              */
             destinationAccountId: string;
-            /** @description Nominal desimal string > 0 (tanpa float), mis. `"100000.0000"`. */
+            /** @description Nominal desimal string > 0 (tanpa float), mis. `"100000.00"`. */
             amount: string;
             /** @description Keterangan opsional (batas teknis kolom 200 karakter). */
             narration?: string;
@@ -2282,11 +2282,11 @@ export interface components {
             sourceAccountId: string;
             /** Format: uuid */
             destinationAccountId: string;
-            /** @description Nominal desimal string 4 desimal (tanpa float). */
+            /** @description Nominal desimal string 2 desimal (tanpa float). */
             amount: string;
-            /** @description Saldo rekening sumber setelah PB, desimal string 4 desimal. */
+            /** @description Saldo rekening sumber setelah PB, desimal string 2 desimal. */
             sourceBalanceAfter: string;
-            /** @description Saldo rekening tujuan setelah PB, desimal string 4 desimal. */
+            /** @description Saldo rekening tujuan setelah PB, desimal string 2 desimal. */
             destinationBalanceAfter: string;
             /**
              * Format: date
@@ -2300,7 +2300,7 @@ export interface components {
              * @description Cabang sesi kas; izin `teller.session.open` harus dipegang di sini.
              */
             branchId: string;
-            /** @description Float awal laci sebagai desimal string ≥ 0 (tanpa float), mis. `"500000.0000"`. */
+            /** @description Float awal laci sebagai desimal string ≥ 0 (tanpa float), mis. `"500000.00"`. */
             openingFloat: string;
             /** @description Catatan opsional (batas teknis kolom 200 karakter). */
             note?: string;
@@ -2324,7 +2324,7 @@ export interface components {
             branchId: string;
             /** @enum {string} */
             status: "OPEN";
-            /** @description Float awal laci, desimal string 4 desimal (tanpa float). */
+            /** @description Float awal laci, desimal string 2 desimal (tanpa float). */
             openingFloat: string;
             /** @description ISO-8601 UTC. */
             openedAt: string;
@@ -2344,9 +2344,9 @@ export interface components {
             businessDate: string;
             /** @enum {string} */
             status: "CLOSED";
-            /** @description Float awal laci, desimal string 4 desimal (tanpa float). */
+            /** @description Float awal laci, desimal string 2 desimal (tanpa float). */
             openingFloat: string;
-            /** @description Kas fisik yang dihitung, desimal string 4 desimal. */
+            /** @description Kas fisik yang dihitung, desimal string 2 desimal. */
             countedCash: string;
             /** @description Kas yang seharusnya ada: `openingFloat` + Σ `CASH_IN` − Σ `CASH_OUT`, desimal string. */
             expectedCash: string;
@@ -2363,7 +2363,7 @@ export interface components {
         TellerVault: {
             /** Format: uuid */
             branchId: string;
-            /** @description Saldo kas fisik vault cabang, desimal string 4 desimal (tanpa float). */
+            /** @description Saldo kas fisik vault cabang, desimal string 2 desimal (tanpa float). */
             balance: string;
         };
         TellerVaultTopUpRequest: {
@@ -2372,7 +2372,7 @@ export interface components {
              * @description Cabang yang vault-nya diisi; izin `teller.vault.submit` harus dipegang di sini.
              */
             branchId: string;
-            /** @description Nominal top-up sebagai desimal string > 0 (tanpa float), mis. `"5000000.0000"`. */
+            /** @description Nominal top-up sebagai desimal string > 0 (tanpa float), mis. `"5000000.00"`. */
             amount: string;
             /** @description Kode COA akun sumber dana (wajib ASSET, aktif, postable), mis. `"102"`. */
             sourceAccount: string;
@@ -2384,7 +2384,7 @@ export interface components {
             requestId: string;
             /** Format: uuid */
             branchId: string;
-            /** @description Nominal pengajuan, desimal string 4 desimal. */
+            /** @description Nominal pengajuan, desimal string 2 desimal. */
             amount: string;
             sourceAccount: string;
             note: string;
@@ -2408,7 +2408,7 @@ export interface components {
         };
         TellerVaultTopUpApproval: {
             request: components["schemas"]["TellerVaultTopUpRecord"];
-            /** @description Saldo vault setelah persetujuan, desimal string 4 desimal. */
+            /** @description Saldo vault setelah persetujuan, desimal string 2 desimal. */
             balanceAfter: string;
         };
         TellerVaultTopUpRejectRequest: {
@@ -3650,7 +3650,24 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
-            409: components["responses"]["Problem"];
+            /**
+             * @description Konflik: jurnal sudah pernah dibalik, jurnal asal adalah jurnal pembalik (tidak bisa
+             *     dibalik lagi), `Idempotency-Key` sudah dipakai untuk jurnal lain, periode tanggal
+             *     bisnis jurnal sudah ditutup, akun jurnal tidak `postable`/aktif, atau jurnal milik
+             *     subledger. Kasus terakhir menjawab `params.reason` = `journal_owned_by_subledger` +
+             *     `params.subledger` (`deposit.transaction`, `deposit.transfer`,
+             *     `teller.teller_session`, `teller.vault_topup_request`): pembalik hanya memutar GL,
+             *     sedangkan saldo rekening/vault/sesi tidak ikut berubah, jadi koreksi harus lewat modul
+             *     asal.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             500: components["responses"]["Problem"];
         };
     };
