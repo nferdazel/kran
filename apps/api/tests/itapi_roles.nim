@@ -231,6 +231,64 @@ suite "kran-api: peran CLI (O-013)":
       SELECT count(*) FROM platform.audit_log
        WHERE action = 'user.role_revoke' AND after_value->>'username' = ?""", uname) == "2"
 
+  test "ctl post-opening-balance: satu jurnal saldo awal, idempoten, audit (O-105)":
+    check CtlUsage.contains(openingBalanceCmd)
+    # Argumen kurang / nominal nol / tanggal tidak sah = 2 (salah pakai), bukan 3.
+    check runCtl(openingBalanceCmd, ".") == 2
+    let branch = "b0000000-0000-4000-8000-000000000001"
+    let uname = "itapi-opener-" & $newId(systemClock())
+    check runCtl(createUserCmd, ".", username = uname, userRole = "ops_admin",
+      fullName = "Uji Opener") == 0
+    check runCtl(openingBalanceCmd, ".", username = uname, branchId = branch,
+      amount = "0.0000", businessDate = "2026-02-15") == 2
+    check runCtl(openingBalanceCmd, ".", username = uname, branchId = branch,
+      amount = "1234.0000", businessDate = "2026-13-01") == 2
+
+    # Periode OPEN untuk tanggal uji (idempoten; suite lain bisa saja sudah punya).
+    discard db.execAffectedRows(sql"""
+      INSERT INTO platform.branch (branch_id, code, name)
+      VALUES ('b0000000-0000-4000-8000-000000000001', '001', 'Cabang Pilot')
+      ON CONFLICT DO NOTHING""")
+    discard db.execAffectedRows(sql"""
+      INSERT INTO ledger.period (period_id, starts_on, ends_on, status, created_by, updated_by)
+      SELECT md5('itapi-roles|opening|2026-02')::uuid, '2026-02-01'::date, '2026-02-28'::date,
+             'OPEN', md5('itapi-roles|fixture')::uuid, md5('itapi-roles|fixture')::uuid
+      WHERE NOT EXISTS (
+        SELECT 1 FROM ledger.period
+         WHERE '2026-02-15'::date BETWEEN starts_on AND ends_on)""")
+
+    # Tanggal di luar periode OPEN = ditolak (3), tanpa jurnal.
+    check runCtl(openingBalanceCmd, ".", username = uname, branchId = branch,
+      amount = "1234.0000", businessDate = "2025-01-01") == 3
+    check db.getValue(sql"""SELECT count(*)::text FROM ledger.journal
+                             WHERE source_event = 'LedgerCashOpening'""") == "0"
+
+    check runCtl(openingBalanceCmd, ".", username = uname, branchId = branch,
+      amount = "1234.0000", businessDate = "2026-02-15") == 0
+    check runCtl(openingBalanceCmd, ".", username = uname, branchId = branch,
+      amount = "1234.0000", businessDate = "2026-02-15") == 0
+
+    # Tetap **satu** jurnal: jalankan ulang tidak menambah, koreksi kelak = jurnal pembalik.
+    check db.getValue(sql"""SELECT count(*)::text FROM ledger.journal
+                             WHERE source_event = 'LedgerCashOpening'""") == "1"
+    check db.getValue(sql"""SELECT count(*)::text FROM ledger.journal_line l
+                              JOIN ledger.journal j ON j.journal_id = l.journal_id
+                             WHERE j.source_event = 'LedgerCashOpening'
+                               AND l.gl_account = '101.1' AND l.debit = 1234""") == "1"
+    check db.getValue(sql"""SELECT count(*)::text FROM ledger.journal_line l
+                              JOIN ledger.journal j ON j.journal_id = l.journal_id
+                             WHERE j.source_event = 'LedgerCashOpening'
+                               AND l.gl_account = '203' AND l.credit = 1234""") == "1"
+    check db.getValue(sql"""SELECT count(*)::text FROM platform.audit_log
+                             WHERE action = 'ledger.opening_balance'""") == "1"
+
+  test "0035: teller tidak memegang izin vault submit/approve (K-8)":
+    # Kontrak SoD: penyediaan kas (vault) terpisah dari operasi kas (laci). Migrasi yang menambah
+    # kedua izin ini ke `teller` melanggar keputusan D-134 dan harus gagal di sini.
+    check not roleGrantsPermission(db, "teller", "teller.vault.submit")
+    check not roleGrantsPermission(db, "teller", "teller.vault.approve")
+    check roleGrantsPermission(db, "cash_admin", "teller.vault.approve")
+
   test "ctl create-branch: kode 3 digit, unik, dan ber-audit":
     check runCtl(createBranchCmd, ".", "", "", "", "", "", "", "") == 2
     check runCtl(createBranchCmd, ".", "", "", "", "", "", "77", "Cabang Pendek") == 3

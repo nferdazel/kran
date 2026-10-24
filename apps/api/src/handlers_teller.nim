@@ -21,7 +21,7 @@ import std/[json, options, strutils]
 import mummy
 import db_connector/db_postgres
 
-import kernel/[clock, ids, money, paramkey, result]
+import kernel/[clock, ids, money, result]
 import kernel/generated/paramkeys
 import platform/domain/[audit, event, idempotency, scope]
 import platform/infrastructure/[audit_repo, auth_service, outbox_repo]

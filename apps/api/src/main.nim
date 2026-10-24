@@ -34,13 +34,16 @@ import "platform/infrastructure/password_hasher"
 import "platform-lib/log"
 import dbtools/lib
 
-import kernel/[auditcontext, clock, ids]
+import kernel/[auditcontext, businessdate, clock, ids, money, result]
 import platform/domain/[audit, authz, event, scope]
 import platform/infrastructure/[audit_repo, auth_repo, auth_service, branch_repo, outbox_repo,
   realtime_config]
 
+import ledger/infrastructure/journal_repo
+
 import ./access
 import ./context
+import ./deposit_posting
 import ./drain
 import ./events
 import ./health
@@ -74,13 +77,18 @@ const
   enableUserCmd* = "enable-user"
   unlockUserCmd* = "unlock-user"
 
-  ## Mendaftarkan cabang baru di master cabang (D-135). Nomor rekening memakai kode cabang, jadi
+  ## Mendaftarkan cabang baru di master cabang (D-130). Nomor rekening memakai kode cabang, jadi
   ## cabang tanpa kode tidak bisa dipakai membuka rekening.
   createBranchCmd* = "create-branch"
 
+  ## Memposting saldo awal kas vault sekali-jalan (O-105, D-134). Bukan SQL manual: jurnal ditulis
+  ## lewat posting rule resmi + audit, dan idempoten per cabang.
+  openingBalanceCmd* = "post-opening-balance"
+
   ## Perintah `ctl` yang menerima `--username` (semua perintah yang menyasar satu pengguna).
   usernameCommands* = [bootstrapAdminCmd, resetPasswordCmd, createUserCmd, assignRoleCmd,
-                       revokeRoleCmd, disableUserCmd, enableUserCmd, unlockUserCmd]
+                       revokeRoleCmd, disableUserCmd, enableUserCmd, unlockUserCmd,
+                       openingBalanceCmd]
 
   ## Perintah `ctl` yang menerima `--user-role` dan/atau `--branch`.
   roleAssignmentCommands* = [createUserCmd, assignRoleCmd, revokeRoleCmd]
@@ -106,6 +114,7 @@ const Usage =
   "[--address=127.0.0.1] [--version=<string>] [--check|--up|--seed|--contract|--down N] " &
   "[--username=<nama>] [--user-role=<peran>] [--branch=<uuid>] [--full-name=<nama>] " &
   "[--branch-code=<3 digit>] [--branch-name=<nama>] " &
+  "[--amount=<nominal>] [--business-date=<YYYY-MM-DD>] " &
   "[--out=<berkas>] [<perintah ctl>]"
 
 type
@@ -114,17 +123,19 @@ type
     port: int
     address: string
     version: string
-    root: string       ## akar repo untuk `--role=migrate` (letak `modules/*/migrations`)
-    cmd: string        ## perintah posisi untuk `--role=ctl`
-    sub: string        ## subperintah `--role=migrate`: --check | --up | --seed | --contract | --down
-    subArg: string     ## angka `N` untuk `--role=migrate --down N`
-    username: string   ## `--role=ctl bootstrap-admin`: nama admin pertama
-    userRole: string   ## `--role=ctl create-user`: role RBAC yang diberikan
-    branchId: string   ## `--role=ctl create-user`: cabang penugasan role (opsional)
-    fullName: string   ## `--role=ctl create-user`: nama tampilan (opsional)
-    branchCode: string ## `--role=ctl create-branch`: kode 3 digit
-    branchName: string ## `--role=ctl create-branch`: nama cabang
-    outPath: string    ## `--role=ctl audit-anchor`: berkas tujuan (append)
+    root: string         ## akar repo untuk `--role=migrate` (letak `modules/*/migrations`)
+    cmd: string          ## perintah posisi untuk `--role=ctl`
+    sub: string          ## subperintah `--role=migrate`: --check | --up | --seed | --contract | --down
+    subArg: string       ## angka `N` untuk `--role=migrate --down N`
+    username: string     ## `--role=ctl bootstrap-admin`: nama admin pertama
+    userRole: string     ## `--role=ctl create-user`: role RBAC yang diberikan
+    branchId: string     ## `--role=ctl create-user`: cabang penugasan role (opsional)
+    fullName: string     ## `--role=ctl create-user`: nama tampilan (opsional)
+    branchCode: string   ## `--role=ctl create-branch`: kode 3 digit
+    branchName: string   ## `--role=ctl create-branch`: nama cabang
+    outPath: string      ## `--role=ctl audit-anchor`: berkas tujuan (append)
+    amount: string       ## `--role=ctl post-opening-balance`: nominal saldo awal
+    businessDate: string ## `--role=ctl post-opening-balance`: tanggal buku YYYY-MM-DD
 
 proc die(msg: string) =
   stderr.writeLine "kran-api: " & msg
@@ -163,6 +174,10 @@ proc parseArgs(argv: seq[string]): CliOptions =
       result.branchCode = arg["--branch-code=".len .. ^1]
     elif arg.startsWith("--branch-name="):
       result.branchName = arg["--branch-name=".len .. ^1]
+    elif arg.startsWith("--amount="):
+      result.amount = arg["--amount=".len .. ^1]
+    elif arg.startsWith("--business-date="):
+      result.businessDate = arg["--business-date=".len .. ^1]
     elif arg.startsWith("--out="):
       result.outPath = arg["--out=".len .. ^1]
     elif arg.startsWith("--root="):
@@ -193,9 +208,17 @@ proc parseArgs(argv: seq[string]): CliOptions =
   if result.username.len > 0 and
      not (result.role == roleCtl and result.cmd in usernameCommands):
     die("--username hanya untuk perintah ctl: " & usernameCommands.join(", "))
-  if (result.userRole.len > 0 or result.branchId.len > 0) and
+  if result.userRole.len > 0 and
      not (result.role == roleCtl and result.cmd in roleAssignmentCommands):
-    die("--user-role dan --branch hanya untuk perintah ctl: " & roleAssignmentCommands.join(", "))
+    die("--user-role hanya untuk perintah ctl: " & roleAssignmentCommands.join(", "))
+  if result.branchId.len > 0 and
+     not (result.role == roleCtl and
+          (result.cmd in roleAssignmentCommands or result.cmd == openingBalanceCmd)):
+    die("--branch hanya untuk perintah ctl: " &
+      (@roleAssignmentCommands & @[openingBalanceCmd]).join(", "))
+  if (result.amount.len > 0 or result.businessDate.len > 0) and
+     not (result.role == roleCtl and result.cmd == openingBalanceCmd):
+    die("--amount dan --business-date hanya untuk `--role=ctl " & openingBalanceCmd & "`")
   if result.fullName.len > 0 and
      not (result.role == roleCtl and result.cmd == createUserCmd):
     die("--full-name hanya untuk `--role=ctl " & createUserCmd & "`")
@@ -277,6 +300,10 @@ const CtlUsage* =
   "                    --username=<name>; only LOCKED -> ACTIVE; audit user.unlock)\n" &
   "  create-branch   : register a branch in the branch master (requires --branch-code=<3 digits>,\n" &
   "                    --branch-name=<name>; the code is the account-number prefix; audit branch.create)\n" &
+  "  post-opening-balance : post ONE opening cash journal for a branch vault (requires\n" &
+  "                    --username=<operator>, --branch=<uuid>, --amount=<nominal>,\n" &
+  "                    --business-date=<YYYY-MM-DD>; rule LedgerCashOpening, audit\n" &
+  "                    ledger.opening_balance; idempotent per branch)\n" &
   "  daycloser-status: (belum ada di Fase 0 → kode 3)\n" &
   "  help            : tampilkan bantuan ini"
 
@@ -475,6 +502,78 @@ proc runCreateBranch*(db: DbConn, code, name: string, clock: Clock): int =
   discard appendAudit(db, newAuditEntry(ctx, "branch.create", "branch", $branchId, clock,
     businessDate = businessDateFor(db, instScope, nowIso),
     after = %*{"branchId": $branchId, "code": code, "name": branchName}))
+  0
+
+proc runPostOpeningBalance*(db: DbConn, username, branchIdRaw, amountRaw,
+                            businessDateRaw: string, clock: Clock): int =
+  ## Memposting **satu** jurnal saldo awal kas vault cabang: `D 101.1 / K 203 TITIPAN PENGURUS`
+  ## sebesar `--amount` (rule `LedgerCashOpening`, `ledger/0036`).
+  ##
+  ## Kenapa bukan `INSERT` SQL: jurnal harus lahir dari posting rule resmi, melewati trigger
+  ## keseimbangan/postable/period, dan meninggalkan audit (`ledger.opening_balance`). Idempoten per
+  ## cabang: menjalankan ulang tidak menambah jurnal kedua (jurnal lama dipertahankan — koreksi
+  ## berikutnya = jurnal pembalik, bukan hapus).
+  ##
+  ## Kode keluar: 0 berhasil atau sudah pernah diposting, 1 gagal menulis, 2 argumen kurang/salah,
+  ## 3 ditolak (pengguna/cabang/periode/nominal). Pemanggil wajib `withRoleDb(..., useTx = true)`.
+  if username.len == 0 or branchIdRaw.len == 0 or amountRaw.len == 0 or businessDateRaw.len == 0:
+    stderr.writeLine "kran-api: `ctl " & openingBalanceCmd &
+      "` butuh --username, --branch, --amount, dan --business-date"
+    return 2
+  let branchParsed = parseId(branchIdRaw)
+  if branchParsed.isErr:
+    stderr.writeLine "kran-api: --branch harus UUID yang sah"
+    return 2
+  let amountParsed = moneyFromString(amountRaw)
+  if amountParsed.isErr or not amountParsed.value().isPositive():
+    stderr.writeLine "kran-api: --amount harus nominal desimal > 0"
+    return 2
+  let dateParsed = parseBusinessDate(businessDateRaw)
+  if dateParsed.isErr:
+    stderr.writeLine "kran-api: --business-date tidak sah: " & dateParsed.error().details
+    return 2
+
+  let branchId = branchParsed.value()
+  let amount = amountParsed.value()
+  let businessDate = dateParsed.value().toIso
+  let found = userByUsername(db, username)
+  if found.isNone:
+    stderr.writeLine "kran-api: tidak ada pengguna '" & username & "'"
+    return 3
+  if branchById(db, branchId).isNone:
+    stderr.writeLine "kran-api: cabang " & branchIdRaw & " belum terdaftar"
+    return 3
+  if not periodOpenFor(db, businessDate):
+    stderr.writeLine "kran-api: tidak ada periode OPEN untuk " & businessDate &
+      " — buka/tutup periode lebih dulu"
+    return 3
+
+  let existing = db.getAllRows(sql"""
+    SELECT journal_id::text FROM ledger.journal
+     WHERE source_event = 'LedgerCashOpening' AND source_ref = ?::uuid""", $branchId)
+  if existing.len > 0:
+    echo "kran-api: saldo awal cabang ini sudah diposting (journal " & existing[0] & ")"
+    return 0
+
+  let actor = parseId(found.get().userId).value()
+  var journalId: Id
+  try:
+    journalId = postRuleJournalSync(db, clock, "LedgerCashOpening", amount, branchId, branchId,
+      businessDate, "opening-balance:" & $branchId, actor, newJObject())
+  except ValueError as e:
+    stderr.writeLine "kran-api: posting rule LedgerCashOpening tidak bisa dipakai: " & e.msg
+    return 3
+  except DbError as e:
+    stderr.writeLine "kran-api: jurnal saldo awal ditolak basis data: " & e.msg
+    return 1
+
+  let ctx = newAuditContext(actor, device = "kran-api ctl",
+    reason = "post vault opening balance", startedAt = clock.now())
+  discard appendAudit(db, newAuditEntry(ctx, "ledger.opening_balance", "ledger_journal",
+    $journalId, clock, businessDate = businessDate,
+    after = %*{"journalId": $journalId, "branchId": $branchId, "amount": amount.toDecimalString,
+               "businessDate": businessDate}))
+  echo "kran-api: jurnal saldo awal diposting " & $journalId & " (" & amount.toDecimalString & ")"
   0
 
 proc resetUserPassword*(db: DbConn, username: string, clock: Clock): tuple[code: int,
@@ -688,7 +787,8 @@ proc runAuditAnchor*(db: DbConn, clock: Clock, outPath: string): string =
       f.close()
 
 proc runCtl*(command, root: string, username = "", outPath = "", userRole = "",
-             branchId = "", fullName = "", branchCode = "", branchName = ""): int =
+             branchId = "", fullName = "", branchCode = "", branchName = "",
+             amount = "", businessDate = ""): int =
   ## Peran `ctl`: perintah operasional yang aman (read-only), dipakai skrip ops dan freeze gate.
   ## Pengecualian yang memang menulis: `bootstrap-admin` (sekali-jalan), `create-user`
   ## (provisioning akun operator), `reset-password` (pemulihan darurat), dan siklus hidup pengguna
@@ -747,6 +847,10 @@ proc runCtl*(command, root: string, username = "", outPath = "", userRole = "",
   of createBranchCmd:
     withRoleDb(proc(db: DbConn): int {.closure.} =
       runCreateBranch(db, branchCode, branchName, systemClock()), useTx = true)
+  of openingBalanceCmd:
+    withRoleDb(proc(db: DbConn): int {.closure.} =
+      runPostOpeningBalance(db, username, branchId, amount, businessDate, systemClock()),
+      useTx = true)
   of auditAnchorCmd:
     withRoleDb(proc(db: DbConn): int {.closure.} =
       echo runAuditAnchor(db, systemClock(), outPath)
@@ -923,7 +1027,8 @@ proc main() =
     quit(runMigrate(opts.root, opts.sub, opts.subArg))
   if opts.role == roleCtl:
     quit(runCtl(opts.cmd, opts.root, opts.username, opts.outPath, opts.userRole,
-      opts.branchId, opts.fullName, opts.branchCode, opts.branchName))
+      opts.branchId, opts.fullName, opts.branchCode, opts.branchName, opts.amount,
+      opts.businessDate))
   if opts.role == roleWorker:
     quit(runWorker())
 
