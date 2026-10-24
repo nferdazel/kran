@@ -134,6 +134,24 @@ jobs:
     name: Web (svelte-check + axe + Playwright)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # Database nyata untuk e2e: tanpa ini 9 dari 11 spec melewati dirinya sendiri dan job tetap
+    # hijau (audit 24 Okt 2026, BLK-1/T-126). `./task e2e` memigrasi + seed dev sendiri.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: kran
+          POSTGRES_PASSWORD: kran
+          POSTGRES_DB: kran_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kran -d kran_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      KRAN_DATABASE_URL: postgres://kran:kran@127.0.0.1:5432/kran_test
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -174,6 +192,24 @@ jobs:
         # eslint: typescript-eslint + aturan svelte/* non-a11y (D-139). Job ini sudah
         # `pnpm install`; job `nim-check` sengaja tidak, jadi lint web tidak masuk `./task check`.
         run: ./task lint-web
+
+      - name: Setup Nim
+        # e2e menjalankan binary hasil `./task build`; job ini sekarang butuh toolchain Nim.
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: '2.2.12'
+
+      - name: Cache nimble
+        uses: actions/cache@v4
+        with:
+          path: ~/.nimble
+          key: nimble-${{ runner.os }}-2.2.12-${{ hashFiles('kran.nimble') }}
+
+      - name: Install Nim dependencies
+        run: nimble install -d -y
+
+      - name: Runtime libs (libpcre3)
+        run: sudo apt-get update -qq && sudo apt-get install -y libpcre3
 
       - name: ./task openapi
         # lint kontrak OpenAPI + klien TS sinkron + typecheck paket klien

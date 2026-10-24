@@ -1,4 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
+import { requireDatabase } from "./db.js";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 /**
@@ -19,7 +20,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
  * Batas: tanpa `KRAN_DATABASE_URL` (tidak ada API + DB dev) seluruh berkas dilewati.
  */
 
-test.skip(!process.env.KRAN_DATABASE_URL, "KRAN_DATABASE_URL kosong — API e2e tidak dijalankan");
+requireDatabase();
 
 const MAKER = { username: "dev.maker", password: "rahasia-panjang-123" };
 const LOCALES = ["id", "en"] as const;

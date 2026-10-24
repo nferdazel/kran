@@ -13,6 +13,8 @@ job kosong yang selalu hijau adalah "hijau palsu". Per tanggal T-001 hanya ada
 | `contract` (OpenAPI ↔ implementasi) | T-008 — digabung ke job `web-e2e` (`./task openapi`) dan ke `./task test` (test Nim `tcontract`/`tapi`/`itapi`) |
 | `web` (svelte-check/vitest/i18n) | T-010 — job `web-e2e` |
 | `web-lint` (eslint: typescript-eslint + `svelte/*` non-a11y) | T-057 — dalam job `web-e2e` (`./task lint-web`, D-139) |
+| `web-unit` (vitest fungsi murni `apps/web`) | T-126 — dalam `./task e2e` |
+| `web-e2e` ber-DB (Postgres + migrate/seed) | T-126 — job `web-e2e` |
 | `e2e-a11y` (Playwright + axe ×2 tema ×2 locale) | T-010 — dalam job `web-e2e` |
 | `traceability` | **belum** dibuat — jangan dianggap ada (lihat O-027) |
 
@@ -48,8 +50,9 @@ Dua batasan yang mudah menjatuhkannya:
   karena seed dev memuat user contoh dengan kata sandi contoh.
 - URL harus bentuk polos: `parseDatabaseUrl` menolak query string seperti `?sslmode=require`.
 
-`itplatform` menghapus schema `platform` di DB yang ditunjuk, jadi tiap run menyiapkan ulang
-dari nol — bukan mengandalkan keadaan DB yang tersisa.
+`resetTestSchemas` (`tools/dbtools`) menghapus schema **semua modul** di DB yang ditunjuk, bukan
+hanya `platform`, jadi tiap run menyiapkan ulang dari nol — bukan mengandalkan keadaan DB yang
+tersisa. Sejak T-127 fungsi itu menolak URL yang namanya bukan `_dev`/`_test`.
 
 ## Gate kestabilan: `./task ci-repeat [N]` (T-031)
 

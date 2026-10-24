@@ -6,7 +6,7 @@
   "imports": {
     "#lib/*": "./src/lib/*"
   },
-  "comment": "Shell SvelteKit (spec \u00a714). SPA (adapter-static + fallback); e2e Playwright + axe (spec \u00a717.2). Versi dependency dipin (spec \u00a718.2).",
+  "comment": "Shell SvelteKit (spec §14). SPA (adapter-static + fallback); e2e Playwright + axe (spec §17.2). Versi dependency dipin (spec §18.2).",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
@@ -14,7 +14,8 @@
     "sync": "svelte-kit sync",
     "i18n:compile": "paraglide-js compile --project ../../packages/i18n/project.inlang --outdir ./src/lib/paraglide --emit-ts-declarations",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "test": "vitest run"
   },
   "dependencies": {
     "@kran/ui": "workspace:*",
@@ -30,6 +31,7 @@
     "svelte": "5.57.2",
     "svelte-check": "4.7.6",
     "typescript": "5.9.3",
-    "vite": "8.3.4"
+    "vite": "8.3.4",
+    "vitest": "5.0.4"
   }
 }

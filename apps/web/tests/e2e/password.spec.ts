@@ -1,4 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
+import { requireDatabase } from "./db.js";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 /**
@@ -28,7 +29,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
  * `dbtools seed --dev`) menyetel ulang password + `must_change_password` user dev.
  */
 
-test.skip(!process.env.KRAN_DATABASE_URL, "KRAN_DATABASE_URL kosong — API e2e tidak dijalankan");
+requireDatabase();
 
 const DEV_PASSWORD = "rahasia-panjang-123";
 /** User seed dengan `must_change_password = true` — hanya dipakai test alur. */

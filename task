@@ -352,7 +352,7 @@ cmd_e2e() {
   # if lockfile/package.json appears out of sync, which requires registry access.
   web_bin="$ROOT/apps/web/node_modules/.bin"
   ui_bin="$ROOT/packages/ui/node_modules/.bin"
-  if [ ! -x "$web_bin/playwright" ] || [ ! -x "$ui_bin/vitest" ]; then
+  if [ ! -x "$web_bin/playwright" ] || [ ! -x "$web_bin/vitest" ] || [ ! -x "$ui_bin/vitest" ]; then
     skip "JS dependencies not installed (run: pnpm install) — e2e/a11y skipped"
     return 0
   fi
@@ -375,6 +375,10 @@ cmd_e2e() {
     || die "svelte-check found errors or warnings"
   ok "0 error, 0 warning"
 
+  log "unit test web (vitest, fungsi murni)"
+  (cd "$ROOT/apps/web" && "$web_bin/vitest" run) || die "web unit tests failed"
+  ok "unit test web hijau"
+
   # API e2e (spec §17.2): only when DB is available. Idempotent migrate + seed dev first,
   # then Playwright starts the compiled binary on port 8099 (see apps/web/playwright.config.ts).
   if [ -z "$KRAN_DATABASE_URL" ]; then
@@ -390,8 +394,27 @@ cmd_e2e() {
   fi
 
   log "e2e (Playwright): axe 2 themes x 2 locales + keyboard-only flow + login/maker-checker flow"
-  (cd "$ROOT/apps/web" && "$web_bin/playwright" test) || die "e2e failed"
-  ok "e2e green"
+  # Log disimpan supaya jumlah test yang benar-benar dieksekusi bisa diperiksa. Tanpa ambang,
+  # spec yang melewati dirinya sendiri (DB/seed hilang) tetap menghasilkan "hijau" — persis
+  # kegagalan yang ditutup T-126.
+  e2e_log="$BUILD/e2e.log"
+  set +e
+  (cd "$ROOT/apps/web" && "$web_bin/playwright" test) >"$e2e_log" 2>&1
+  e2e_status=$?
+  set -e
+  cat "$e2e_log"
+  [ "$e2e_status" -eq 0 ] || die "e2e failed (log: $e2e_log)"
+  if [ -n "${KRAN_DATABASE_URL:-}" ]; then
+    passed=$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) passed.*/\1/p' "$e2e_log" | tail -n 1)
+    [ -n "$passed" ] || passed=0
+    minimum="${KRAN_E2E_MIN_TESTS:-40}"
+    case "$minimum" in ''|*[!0-9]*) minimum=40 ;; esac
+    [ "$passed" -ge "$minimum" ] \
+      || die "e2e hanya menjalankan $passed test (minimum $minimum) - ada spec yang di-skip?"
+    ok "e2e green: $passed test"
+  else
+    ok "e2e green (tanpa KRAN_DATABASE_URL: hanya spec yang tidak butuh API)"
+  fi
 }
 
 cmd_build() {
@@ -433,6 +456,11 @@ cmd_lint_web() {
 }
 
 cmd_ci() {
+  # Gate tanpa database bukan gate: integrasi dan e2e DB akan di-skip dan hasilnya hijau palsu
+  # (T-126). Dry run eksplisit tetap mungkin lewat KRAN_ALLOW_NO_DB=1.
+  if [ -z "${KRAN_DATABASE_URL:-}" ] && [ "${KRAN_ALLOW_NO_DB:-0}" != "1" ]; then
+    die "./task ci butuh KRAN_DATABASE_URL (integrasi + e2e DB). Tanpa DB: KRAN_ALLOW_NO_DB=1 ./task ci"
+  fi
   log "commit $(git rev-parse --short HEAD 2>/dev/null || echo '-')"
   cmd_check
   cmd_openapi

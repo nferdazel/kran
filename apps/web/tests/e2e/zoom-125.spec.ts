@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { requireDatabase } from "./db.js";
 
 /**
  * Target ukuran kerja DESIGN §4/§12: **1366×768 pada zoom 100–125%**, tanpa gulir mendatar di
@@ -14,7 +15,7 @@ import { expect, test, type Page } from "@playwright/test";
  * Batas: butuh API + DB dev (seed `0003_dev_ledger.sql`); tanpa `KRAN_DATABASE_URL` dilewati.
  */
 
-test.skip(!process.env.KRAN_DATABASE_URL, "KRAN_DATABASE_URL kosong — API e2e tidak dijalankan");
+requireDatabase();
 
 test.use({ viewport: { width: 1093, height: 614 } });
 
