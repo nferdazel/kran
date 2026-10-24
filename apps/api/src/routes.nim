@@ -227,13 +227,20 @@ proc tellerSessionRoutes*(): seq[RouteSpec] =
   ]
 
 proc tellerVaultRoutes*(): seq[RouteSpec] =
-  ## Vault kas cabang (T-107): top-up kas operasional + baca saldo. Izin `teller.vault.*` harus
-  ## dipegang di cabang target (`authorizedAtBranch`). **Tanpa jurnal GL** (O-097).
+  ## Vault kas cabang (T-107) + pengajuan top-up maker-checker (T-118). Izin `teller.vault.*`
+  ## harus dipegang di cabang target (`authorizedAtBranch`). Persetujuan menulis saldo vault +
+  ## jurnal GL; pengajuan belum mengubah saldo.
   @[
     RouteSpec(httpMethod: hmGet, path: "/api/v1/teller/vault",
               operationId: "getTellerVault", handler: handleGetTellerVault),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/teller/vault/topups",
+              operationId: "listTellerVaultTopUps", handler: handleListTellerVaultTopUps),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/teller/vault/topups",
-              operationId: "topUpTellerVault", handler: handleTopUpTellerVault),
+              operationId: "submitTellerVaultTopUp", handler: handleSubmitTellerVaultTopUp),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/teller/vault/topups/{requestId}/approve",
+              operationId: "approveTellerVaultTopUp", handler: handleApproveTellerVaultTopUp),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/teller/vault/topups/{requestId}/reject",
+              operationId: "rejectTellerVaultTopUp", handler: handleRejectTellerVaultTopUp),
   ]
 
 proc userRoutes*(): seq[RouteSpec] =
