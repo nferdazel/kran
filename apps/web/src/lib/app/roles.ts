@@ -14,6 +14,10 @@ const ROLE_LABELS: Record<string, () => string> = {
   param_checker: () => m.role_param_checker(),
   teller: () => m.role_teller(),
   product_checker: () => m.role_product_checker(),
+  ops_admin: () => m.role_ops_admin(),
+  ledger_admin: () => m.role_ledger_admin(),
+  cash_admin: () => m.role_cash_admin(),
+  product_maker: () => m.role_product_maker(),
 };
 
 export function roleLabel(code: string): string {

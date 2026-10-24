@@ -334,6 +334,52 @@ suite "administrasi pengguna: tugaskan & cabut role (T-117)":
     check disable.code == 409
     check disable.body["params"]["reason"].getStr() == "last_admin"
 
+  test "penjaga pengelola terakhir mengikuti izin platform.user.manage (T-118, K-7)":
+    # Satu-satunya pengelola memakai `ops_admin` (bukan `platform_admin`): penjaganya harus tetap
+    # menolak, membuktikan ia mengikuti izin, bukan kode role. `itapi.admin` diparkir dulu supaya
+    # jumlah pengelola aktif tepat satu, lalu masuk sebagai pengelola `ops_admin` itu sendiri.
+    let uname = "itapi.opsmanager"
+    let opsUid = $newId(systemClock())
+    dbExec(sql"""
+      INSERT INTO platform.app_user
+        (user_id, username, full_name, password_algo, password_hash, must_change_password)
+      SELECT ?::uuid, ?, 'Uji Ops Manager (itapi)', password_algo, password_hash, false
+        FROM platform.app_user WHERE username = 'dev.maker'""", opsUid, uname)
+    dbExec(sql"""
+      INSERT INTO platform.user_role (user_id, role_id, branch_id)
+      SELECT ?::uuid, r.role_id, NULL FROM platform.role r WHERE r.code = 'ops_admin'""", opsUid)
+    defer: dropUser(opsUid)
+
+    let adminId = userUid(AdminUser)
+    let adminBranch = dbValue(sql"""
+      SELECT coalesce(ur.branch_id, '') FROM platform.user_role ur
+        JOIN platform.role r ON r.role_id = ur.role_id
+       WHERE ur.user_id = ?::uuid AND r.code = 'platform_admin'""", adminId)
+    dbExec(sql"""
+      DELETE FROM platform.user_role ur USING platform.role r
+       WHERE ur.role_id = r.role_id AND ur.user_id = ?::uuid AND r.code = 'platform_admin'""",
+      adminId)
+    defer: dbExec(sql"""
+      INSERT INTO platform.user_role (user_id, role_id, branch_id)
+      SELECT ?::uuid, r.role_id, NULLIF(?, '')::uuid FROM platform.role r
+       WHERE r.code = 'platform_admin'""", adminId, adminBranch)
+
+    check dbValue(sql"""
+      SELECT count(DISTINCT ur.user_id) FROM platform.app_user u
+        JOIN platform.user_role ur ON ur.user_id = u.user_id
+        JOIN platform.role_permission rp ON rp.role_id = ur.role_id
+        JOIN platform.permission p ON p.permission_id = rp.permission_id
+       WHERE u.status = 'ACTIVE' AND p.code = 'platform.user.manage'""") == "1"
+
+    let opsToken = login(uname)
+    let revoke = deleteJson(fill(RevokePath, opsUid, "ops_admin"), opsToken)
+    check revoke.code == 409
+    check revoke.body["params"]["reason"].getStr() == "last_admin"
+    checkProblem(RevokePath, "DELETE", "409", revoke.body)
+    let disable = postEmpty(fill(DisablePath, opsUid, ""), opsToken)
+    check disable.code == 409
+    check disable.body["params"]["reason"].getStr() == "last_admin"
+
 suite "administrasi pengguna: siklus status (T-117)":
   test "disable mencabut sesi; enable hanya INACTIVE; unlock hanya LOCKED":
     let uid = newUser("itapi-status", "Uji Status")
