@@ -158,7 +158,7 @@ block:
   proc seedAccount(partyId: Id, productId: Id, versionId: Id, branch = Id(BranchId),
       code = ProductCode): Id =
     let a = newAccount(newId(fixtureClock), partyId, productId, versionId, code,
-      branch, "2026-10-01", nextAccountSeq(db))
+      branch, "001", "2026-10-01", nextAccountSeq(db))
     discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
       insertAccount(d, a, fixtureActor)
       1)
@@ -181,7 +181,7 @@ block:
     1)
   doAssert approveVersion(db, verRusak.versionId, approver), "versi rusak gagal di-approve"
   let akunRusak = newAccount(newId(fixtureClock), party.partyId, prodRusak.productId,
-    verRusak.versionId, "SAV-BROKEN", Id(BranchId), "2026-10-01", nextAccountSeq(db))
+    verRusak.versionId, "SAV-BROKEN", Id(BranchId), "111", "2026-10-01", nextAccountSeq(db))
   discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
     insertAccount(d, akunRusak, fixtureActor)
     1)

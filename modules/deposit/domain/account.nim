@@ -9,10 +9,13 @@ import std/strutils
 import kernel/[businessdate, ids, money, result]
 
 const
-  ## Lebar nomor rekening **provisoris** (10 digit zero-padded). Bentuk final (prefix/check digit)
-  ## menunggu parameter `deposit.account.number_format` — **NEEDS-COMPLIANCE-REVIEW**; jangan
-  ## mengarang format lain sebelum pemilik/compliance memutuskan.
-  accountNoWidth* = 10 # nomagic:ok lebar format nomor rekening provisoris (lihat NEEDS-COMPLIANCE-REVIEW)
+  ## Format nomor rekening (D-135, keputusan pemilik 24 Okt 2026): **kode cabang 3 digit** +
+  ## **nomor urut 7 digit** = 10 digit, tanpa check digit. Kode cabang berasal dari master cabang
+  ## (`platform.branch.code`), jadi nomor rekening langsung memperlihatkan cabang pembukanya.
+  ## Check digit & bentuk final lain masih terbuka untuk compliance (lihat O-104).
+  branchCodeWidth* = 3 # nomagic:ok panjang kode cabang (D-135)
+  accountSeqWidth* = 7 # nomagic:ok lebar nomor urut di dalam nomor rekening (D-135)
+  accountNoWidth* = branchCodeWidth + accountSeqWidth
   maxAccountNoLength* = 32 # nomagic:ok batas teknis kolom deposit.account.account_no
 
 type
@@ -55,21 +58,36 @@ proc parseAccountStatus*(raw: string): AccountStatus =
       return st
   raise newException(ValueError, "status rekening tidak dikenal: " & raw)
 
-proc formatAccountNo*(seqNo: int64): string =
-  ## Nomor rekening **provisoris**: nomor urut `deposit.account_seq` dipad nol di kiri selebar
-  ## `accountNoWidth`, **tanpa** check digit. Nilai tidak sah adalah kondisi operator (sequence
+proc validBranchCode*(branchCode: string): bool =
+  ## Kode cabang = tepat `branchCodeWidth` digit. Sumbernya master cabang, tetapi domain tetap
+  ## memeriksa sendiri supaya nomor rekening tidak pernah dibentuk dari kode berbentuk lain.
+  if branchCode.len != branchCodeWidth:
+    return false
+  for ch in branchCode:
+    if ch notin {'0' .. '9'}:
+      return false
+  true
+
+proc formatAccountNo*(branchCode: string, seqNo: int64): string =
+  ## Nomor rekening: kode cabang + nomor urut `deposit.account_seq` (dipad nol selebar
+  ## `accountSeqWidth`). Nilai tidak sah adalah kondisi operator (kode cabang rusak, sequence
   ## mundur/terlalu besar) — raise `ValueError`, bukan menghasilkan nomor aneh.
+  if not validBranchCode(branchCode):
+    raise newException(ValueError,
+      "kode cabang harus " & $branchCodeWidth & " digit, bukan '" & branchCode & "'")
   if seqNo < 1:
     raise newException(ValueError, "nomor urut rekening minimal 1")
   let digits = $seqNo
-  if digits.len > accountNoWidth:
+  if digits.len > accountSeqWidth:
     raise newException(ValueError,
-      "nomor urut " & digits & " tidak muat di lebar " & $accountNoWidth)
-  repeat('0', accountNoWidth - digits.len) & digits
+      "nomor urut " & digits & " tidak muat di lebar " & $accountSeqWidth)
+  branchCode & repeat('0', accountSeqWidth - digits.len) & digits
 
 proc newAccount*(accountId: Id, partyId: Id, productId: Id, productVersionId: Id,
-                 productCode: string, branchId: Id, openedOn: string, seqNo: int64): Account =
-  ## Rekening baru berstatus `ACTIVE`, tipe `SAVINGS`, saldo nol. Nomor rekening dari `formatAccountNo`.
+                 productCode: string, branchId: Id, branchCode: string, openedOn: string,
+                 seqNo: int64): Account =
+  ## Rekening baru berstatus `ACTIVE`, tipe `SAVINGS`, saldo nol. Nomor rekening dari
+  ## `formatAccountNo` (kode cabang + nomor urut).
   if $partyId == "":
     raise newException(ValueError, "party rekening wajib diisi")
   if $productId == "":
@@ -82,7 +100,7 @@ proc newAccount*(accountId: Id, partyId: Id, productId: Id, productVersionId: Id
     raise newException(ValueError, "openedOn bukan tanggal ISO (yyyy-MM-dd) yang sah")
   Account(
     accountId: accountId,
-    accountNo: formatAccountNo(seqNo),
+    accountNo: formatAccountNo(branchCode, seqNo),
     partyId: partyId,
     productId: productId,
     productVersionId: productVersionId,

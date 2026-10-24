@@ -18,8 +18,8 @@ import "platform-lib/db/pool"
 import dbtools/lib
 import kernel/[clock, ids]
 import platform/domain/scope
-import platform/infrastructure/[audit_repo, auth_repo, auth_service, password_hasher,
-  worker_repo]
+import platform/infrastructure/[audit_repo, auth_repo, auth_service, branch_repo,
+  password_hasher, worker_repo]
 
 import ../src/main
 
@@ -230,6 +230,29 @@ suite "kran-api: peran CLI (O-013)":
     check db.getValue(sql"""
       SELECT count(*) FROM platform.audit_log
        WHERE action = 'user.role_revoke' AND after_value->>'username' = ?""", uname) == "2"
+
+  test "ctl create-branch: kode 3 digit, unik, dan ber-audit":
+    check runCtl(createBranchCmd, ".", "", "", "", "", "", "", "") == 2
+    check runCtl(createBranchCmd, ".", "", "", "", "", "", "77", "Cabang Pendek") == 3
+    check runCtl(createBranchCmd, ".", "", "", "", "", "", "77a", "Cabang Salah") == 3
+
+    # Kode uji yang tidak dipakai cabang pilot/dev mana pun; dibersihkan supaya bisa dijalankan ulang.
+    const testCode = "777"
+    defer: discard db.execAffectedRows(
+      sql"DELETE FROM platform.branch WHERE code = ?", testCode)
+    check branchByCode(db, testCode).isNone
+
+    check runCtl(createBranchCmd, ".", "", "", "", "", "", testCode, "  Cabang Uji CLI  ") == 0
+    let created = branchByCode(db, testCode)
+    check created.isSome
+    check created.get().name == "Cabang Uji CLI"
+    check created.get().status == "ACTIVE"
+    # Kode duplikat ditolak, bukan diam-diam menimpa cabang yang sudah ada.
+    check runCtl(createBranchCmd, ".", "", "", "", "", "", testCode, "Cabang Lain") == 3
+    check branchByCode(db, testCode).get().name == "Cabang Uji CLI"
+    check db.getValue(sql"""
+      SELECT count(*) FROM platform.audit_log
+       WHERE action = 'branch.create' AND after_value->>'code' = ?""", testCode) == "1"
 
   test "ctl disable-user/enable-user: status and session revocation":
     let uid = $newId(systemClock())
