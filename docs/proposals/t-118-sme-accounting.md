@@ -1,5 +1,10 @@
 # Memo SME Akuntansi — Limit Kas, Perlakuan GL Kas, Saldo Awal Vault (T-118)
 
+> **Catatan 24 Okt 2026 (D-136).** Presisi uang sekarang **2 desimal** di penyimpanan, API, dan
+> tampilan. Angka 4 desimal di memo ini (`numeric(24,4)`, `10000000.0000`, dst.) adalah format saat
+> memo ditulis; **nilainya tidak berubah**, hanya skalanya. Jangan menyalin format 4 desimal ke kode
+> atau dokumen baru.
+
 **Status:** rekomendasi menunggu keputusan pemilik · **Tanggal:** 24 Okt 2026 · **Peran:** SME
 akuntansi/keuangan koperasi simpan pinjam kecil (pilot KRAN) · **Bukan kode, bukan migrasi.**
 

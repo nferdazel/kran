@@ -133,7 +133,7 @@ sendiri tetap perlu ada lebih dulu: pengajuan tidak membuat baris baru (404
 `kran-migrate.env`) atas permintaan pemilik:
 
 ```sql
-INSERT INTO teller.vault (branch_id, balance) VALUES ('<branch-uuid>', '10000000.0000')
+INSERT INTO teller.vault (branch_id, balance) VALUES ('<branch-uuid>', '10000000.00')
 ON CONFLICT (branch_id) DO NOTHING;
 ```
 

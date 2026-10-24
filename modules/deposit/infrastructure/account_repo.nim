@@ -12,7 +12,7 @@ import ../domain/account
 
 const
   ## Kolom akun + kode produk (join) + saldo (kiri, boleh kosong untuk baris lama) + klasifikasi
-  ## simpanan produk (T-111; `''` = belum terklasifikasi). Saldo disimpan `numeric(24,4)`; dibaca
+  ## simpanan produk (T-111; `''` = belum terklasifikasi). Saldo disimpan `numeric(24,2)` (D-136); dibaca
   ## sebagai teks desimal lalu diparse `moneyFromString` (tanpa float).
   accountColumns = "a.account_id, a.account_no, a.party_id, a.product_id, " &
     "a.product_version_id, p.code, a.branch_id, a.account_type, a.status, " &

@@ -1,5 +1,7 @@
 # Milestone 2 — Deposit + Teller
 
+> **Catatan 24 Okt 2026:** setelah laporan ini, menyusul T-123 (pembalik jurnal subledger ditolak), T-124 (uang 2 desimal di DB/API/UI), T-121 (UI vault + `GET /branches`), T-101 (rekonsiliasi cache saldo), dan T-078 (detail PII party). Kalau keduanya berbeda, `docs/PROGRESS.md` dan `BACKLOG.md` yang berlaku; laporan ini tetap menggambarkan keadaan saat penutupan Fase 2.
+
 Tanggal: 23 Oktober 2026
 Status: **selesai** untuk kriteria spec §23 ("Transaksi tunai & PB, saldo realtime; alur teller
 keyboard-only lulus a11y"), dengan batas yang dicatat di bawah.

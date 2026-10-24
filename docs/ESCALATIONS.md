@@ -1,4 +1,4 @@
-# ESCALATIONS — CBS
+# ESCALATIONS — KRAN
 
 Tempat STOP: hal yang **tidak boleh** dilanjutkan dengan menebak (AGENTS.md §8).
 
@@ -47,4 +47,7 @@ Format entri:
 - Yang dibutuhkan dari manusia: **pilih A atau B** (dan bila A: setujui deviasi SSE→WS agar
   spec §19.1/§13 diperbarui). Selama belum diputuskan, T-008 (contract test), T-009 (SSE hub),
   T-012 (end-to-end) tetap `BLOCKED`; task Fase 0 lain jalan terus.
-- Status: TERBUKA
+- **Keputusan pemilik (14 Okt 2026): Opsi A** — Mummy untuk REST + WebSocket untuk realtime;
+  deviasi spec §19.1 (SSE → WS) disetujui dan spec diperbarui hari yang sama. T-008/T-009/T-012
+  tidak lagi terblokir; penjaga upgrade Mummy dicatat di D-037.
+- Status: TERJAWAB (14 Okt 2026)

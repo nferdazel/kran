@@ -2,7 +2,7 @@
 ## pembulatan half-to-even (banker's).
 ##
 ## Ini invarian matematis (bukan nilai bisnis), jadi memang boleh ada di kode — dan sengaja
-## hanya di satu tempat supaya `Money` (10⁴) dan `Rate` (10⁶) tunduk pada aturan yang sama.
+## hanya di satu tempat supaya `Money` (10², sen) dan `Rate` (10⁶) tunduk pada aturan yang sama.
 ##
 ## Mengapa penting: pada build release pemeriksaan overflow bawaan Nim nonaktif, sehingga
 ## `a + b` untuk int64 bisa "membungkus" dan menghasilkan angka yang salah tanpa error.

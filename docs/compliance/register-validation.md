@@ -14,7 +14,7 @@ pun sehingga tidak butuh nilai sekarang.
 | ID | Parameter yang dibaca | Konsumen | Status |
 |---|---|---|---|
 | REG-003/004 | `party.kyc.risk_levels`, `party.kyc.default_risk_level`, `party.kyc.review_months` | `handlers_kyc.nim` (onboarding/re-KYC) | `NEEDS-COMPLIANCE-REVIEW` |
-| REG-010 | `party.identity.doc_types`, `party.identity.doc_lengths` | `handlers_party.nim` (validasi identitas) | `NEEDS-COMPLIANCE-REVIEW` |
+| REG-010 | `party.identity.doc_types`, `party.identity.doc_lengths` | `handlers_kyc.nim` (validasi identitas) | `NEEDS-COMPLIANCE-REVIEW` |
 | REG-011 | `ledger.coa.code_pattern` | teknis (pola kode COA), bukan kebijakan akuntansi | `NEEDS-COMPLIANCE-REVIEW` |
 
 Pilot boleh berjalan dengan nilai ini, tetapi **jangan diklaim sesuai regulasi** sampai

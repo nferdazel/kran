@@ -2,8 +2,8 @@
 
 ## Tujuan & Bounded Context
 
-`ledger` memiliki **buku besar**: Chart of Accounts, periode akuntansi, dan (menyusul) jurnal
-double-entry, posting rule, saldo, serta trial balance. Modul bisnis **tidak** menulis jurnal
+`ledger` memiliki **buku besar**: Chart of Accounts, periode akuntansi, jurnal double-entry,
+posting rule, saldo, serta trial balance. Modul bisnis **tidak** menulis jurnal
 langsung — mereka memancarkan accounting event dan `ledger` memetakannya lewat posting rule
 (spec §8.1). Bounded context lain hanya berbicara lewat `api.nim` dan event (spec §6.3).
 
@@ -179,8 +179,6 @@ aturan pengakuan belum diklaim patuh; lihat `NEEDS-COMPLIANCE-REVIEW` di migrasi
 
 ## Batas yang belum ditegakkan (disengaja, tercatat)
 
-- `postable=false` baru konvensi sampai T-073; belum ada yang menolak posting ke akun header/non-
-  `ACTIVE` karena tabel jurnal belum ada.
 - Akun kontra (CKPN/akumulasi penyusutan) belum bisa dimodelkan — **O-075**, menunggu keputusan
   accounting/compliance (REG-011 `V!`).
 - Daftar COA/periode dibatasi 200 baris; paginasi menyusul bila perlu.
@@ -221,8 +219,9 @@ keberadaan baris `balance_snapshot` pada `ends_on`.
 - Alasan: satu akun `101` membuat kas di laci dan kas di vault tak terpisah di neraca
   (memo `docs/proposals/t-118-operator-governance.md` §5 opsi A). Kode akun ini **struktur pilot**,
   tetap `NEEDS-COMPLIANCE-REVIEW` (REG-011 `V!`).
-- **Belum berjurnal (follow-up, O-097):** buka sesi (D 101.2/K 101.1), tutup sesi (D 101.1/K 101.2),
-  top-up vault (D 101.1/K sumber), dan sweep selisih (`101.9`) belum diposting. Karena itu
-  `teller.vault.balance` dan `expected_cash` belum bisa direkonsiliasi penuh ke `journal_line`;
-  gate EOD menunggu `daycloser` (Fase 3). Task jurnal sesi teller menyusul dan **tidak** termasuk
-  migrasi 0033.
+- **Berjurnal sejak T-118 (D-132, menutup O-097):** `ledger/0034` menambah posting rule sesi &
+  selisih kas — buka `TellerSessionOpened` (D 101.2/K 101.1), tutup `TellerSessionClosed`
+  (D 101.1/K 101.2), selisih `TellerCashOverage`/`TellerCashShortage` (D/K `101.9`) — dan top-up
+  vault dijurnal **eksplisit** di handler approval (D `101.1`/K akun sumber, event
+  `TellerVaultTopUp`). Jurnal ditulis sinkron di transaksi yang sama dengan mutasi vault; gate EOD
+  tetap menunggu `daycloser` (Fase 3).

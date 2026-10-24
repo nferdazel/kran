@@ -1,8 +1,9 @@
 # DESIGN.md — arah visual & aturan UI KRAN
 
-Status: **arah ditetapkan (D-075) dan diratifikasi pemilik 21 Okt 2026 (D-115)**; implementasi Fase 2 berjalan mulai T-079.
-Berlaku untuk layar baru. **Fase 1 (T-070…T-077) tidak mengubah UI**; migrasi token & komponen
-dikerjakan di T-079. Selama dokumen ini ada, pekerjaan UI tidak boleh lagi "draft without direction".
+Status: **arah ditetapkan (D-075) dan diratifikasi pemilik 21 Okt 2026 (D-115)**; token, komponen,
+dan layar Fase 2 (teller, vault, ledger, cetak) sudah dibangun di atasnya (T-079 dan seterusnya).
+Berlaku untuk setiap layar baru, termasuk Fase 3. Selama dokumen ini ada, pekerjaan UI tidak boleh
+lagi "draft without direction".
 
 Input: `docs/design/SME-NOTES.md` (operasional teller, information design, a11y). Angka kontras di
 bawah dihitung ulang dengan contrast checker — bukan taksiran.

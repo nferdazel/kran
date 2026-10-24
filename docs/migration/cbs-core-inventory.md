@@ -1,4 +1,4 @@
-# Inventaris `cbs-core` — referensi untuk CBS, bukan basis kode
+# Inventaris `cbs-core` — referensi untuk KRAN, bukan basis kode
 
 > **Status**: inventaris (bukan endorsement). `cbs-core` (Go) diperlakukan sebagai
 > **referensi**; tidak ada port kode Go → Nim (spec §21.9). Dokumen ini mencatat apa yang

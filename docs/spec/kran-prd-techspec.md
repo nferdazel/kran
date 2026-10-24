@@ -375,7 +375,7 @@ Modul bisnis **tidak** menulis jurnal langsung. Mereka memancarkan **accounting 
 
 ### 9.1 Prinsip
 1. **Versi PG ≥ 16**. Ekstensi: `pgcrypto`, `pg_trgm`, `btree_gist` (untuk exclusion constraint periode), opsional `pg_partman`.
-2. **Uang** disimpan `NUMERIC(24,4)` (presisi untuk akrual); pembulatan sesuai parameter di batas (posting/laporan). Di Nim: tipe `Money` fixed-point integer (skala 10⁴) — tidak pernah `float`.
+2. **Uang** disimpan `NUMERIC(24,2)` (sen; D-136, menggantikan 4 desimal). Pembulatan hasil bunga/akrual memakai parameter `rounding_scale`/`rounding_mode` di batas posting — bentuknya dikunci ke `moneyScale`/kernel (D-137), nilainya belum ditetapkan compliance (O-084). Di Nim: tipe `Money` fixed-point integer (skala 10²) — tidak pernah `float`.
 3. **Ledger immutable**: jurnal tidak di-UPDATE/DELETE; koreksi = jurnal pembalik (reversal) + jurnal baru. Dipaksa trigger + privilege.
 4. **Saldo = turunan**: tabel saldo (`balance`) adalah *cache* yang bisa direkonstruksi dari ledger; rekonsiliasi harian jadi task day-close.
 5. **Bitemporal untuk data penting**: `valid_from/valid_to` (efektif bisnis) + `recorded_at` (kapan dicatat). Parameter, produk, rate wajib effective-dated.
@@ -432,8 +432,8 @@ CREATE TABLE ledger.journal_line (
   line_no     int  NOT NULL,
   gl_account  text NOT NULL,
   branch_id   uuid NOT NULL,
-  debit       numeric(24,4) NOT NULL DEFAULT 0 CHECK (debit  >= 0),
-  credit      numeric(24,4) NOT NULL DEFAULT 0 CHECK (credit >= 0),
+  debit       numeric(24,2) NOT NULL DEFAULT 0 CHECK (debit  >= 0),
+  credit      numeric(24,2) NOT NULL DEFAULT 0 CHECK (credit >= 0),
   CHECK ((debit = 0) <> (credit = 0)),
   PRIMARY KEY (journal_id, line_no)
 );
@@ -832,7 +832,7 @@ packages/api-client             # generated
 | Katalog pesan | `packages/i18n/messages/{id,en}/<namespace>.json`, namespace = modul. Key hierarkis: `deposit.account.open.title` |
 | Library | Paraglide JS (kunci bertipe, tree-shaking) — ADR-009 |
 | ICU MessageFormat | Plural, select, gender (mis. "1 rekening" / "{n} rekening") |
-| Format angka/tanggal/uang | `Intl.NumberFormat/DateTimeFormat` dengan `id-ID`; mata uang IDR tanpa desimal di tampilan umum, presisi penuh di detail/ laporan |
+| Format angka/tanggal/uang | `Intl.NumberFormat/DateTimeFormat` dengan `id-ID`; uang **2 desimal** di semua tampilan (D-136), simbol mata uang di judul kolom, tanpa singkatan angka |
 | Tanggal Hijriah | Opsi tampilan tambahan untuk segmen syariah (`Intl` calendar `islamic`), tidak mengganti business date Masehi |
 | Zona waktu | Disimpan UTC; tampil WIB/WITA/WIT sesuai cabang (param) |
 | Arah teks | CSS **logical properties** (`margin-inline`, dst.) agar siap RTL |
@@ -1176,7 +1176,7 @@ Estimasi waktu sengaja tidak dicantumkan sebelum ada keputusan kapasitas tim; te
 | ADR-008 | **Parameter DB-driven dengan enforcement bertingkat** (compile, lint, startup, governance) | Config file | Diusulkan (inti) |
 | ADR-009 | **Paraglide JS** untuk i18n | svelte-i18n, i18next | Diusulkan |
 | ADR-010 | Day-close sebagai framework DAG idempotent berbasis checkpoint per entitas | Cron script per modul | Diusulkan (inti) |
-| ADR-011 | Uang `NUMERIC(24,4)` + `Money` fixed-point Nim | Float/ Decimal lib | Diusulkan |
+| ADR-011 | Uang `NUMERIC(24,2)` + `Money` fixed-point Nim (D-136) | Float/ Decimal lib | Diputuskan |
 | ADR-012 | SPA `adapter-static` untuk back-office | SSR penuh | Diusulkan |
 | ADR-013 | Mesin PDF/ cetak (HTML→PDF, Typst, dsb.) | — | **Terbuka** — butuh spike |
 | ADR-014 | CI/CD = turunan pola **Skyward** (Actions verifikasi saja → webhook → `deploy-vps.sh`, binary native, health gate + auto-rollback, migrasi expand-only) | Pipeline baru (GHCR/registry, k8s) | Diusulkan (§21) |

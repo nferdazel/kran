@@ -132,6 +132,9 @@ sebelum mengulang.
 
 ## 7. Batas yang masih berlaku
 
-- Kas teller/variance belum masuk GL (O-097); top-up vault belum maker-checker (O-098/O-099).
-- `branch_id` masih UUID placeholder tanpa master cabang (O-101).
+- Kas teller/variance sudah masuk GL (`101.1`/`101.2`/`101.9`, `ledger/0034`, D-132) dan top-up
+  vault sudah maker-checker (`teller/0035`, T-107); plafon kas dari parameter `teller.cash.limit_*`
+  (D-133). Batas yang **masih** berlaku: belum ada plafon akumulasi harian.
+- Master cabang ada (`platform.branch` + `ctl create-branch`, D-130) dan `GET /api/v1/branches`
+  tersedia; penulisan cabang masih lewat `ctl` (O-101 sebagian).
 - Kata sandi pilot harus diganti setelah serah terima; jangan disimpan di repo.

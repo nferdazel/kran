@@ -1,5 +1,10 @@
 # Memo SME Tata Kelola/Risiko Operasional — K-3, K-4, K-8 (T-118)
 
+> **Catatan 24 Okt 2026 (D-136).** Presisi uang sekarang **2 desimal** di penyimpanan, API, dan
+> tampilan. Angka 4 desimal di memo ini (`numeric(24,4)`, `10000000.0000`, dst.) adalah format saat
+> memo ditulis; **nilainya tidak berubah**, hanya skalanya. Jangan menyalin format 4 desimal ke kode
+> atau dokumen baru.
+
 **Penulis peran:** SME tata kelola & risiko operasional (pemisahan tugas, kontrol internal) — koperasi
 simpan pinjam kecil, pilot KRAN. **Status:** rekomendasi; keputusan tetap milik pemilik.
 **Tanggal:** 24 Okt 2026 · **Lingkup:** pilot (1 koperasi, 1 cabang, data sintetis; O-004/D-046).

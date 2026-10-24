@@ -16,13 +16,21 @@ repo** (atau dengan `--root=<dir>` yang menunjuk ke sana), karena migrasi dibaca
 | `ctl` | `kran-api --role=ctl reset-password --username=<nama>` | **0** kata sandi baru dicetak sekali, **1** gagal menulis/acak, **2** tanpa `--username`, **3** pengguna tidak ada |
 | `ctl` | `kran-api --role=ctl audit-anchor [--out=<berkas>]` | **0** baris anchor dicetak (dan ditambahkan ke berkas), **1** gagal menulis, **2** tanpa DB |
 | `ctl` | `kran-api --role=ctl reconcile-deposits [--branch=<uuid>]` | **0** semua cache saldo cocok, **1** ada selisih (temuan), **2** argumen salah |
+| `ctl` | `kran-api --role=ctl create-user --username=<nama> --user-role=<peran> [--branch=<uuid>] [--full-name=<nama>]` | **0** akun dibuat (kata sandi dicetak sekali), **3** ditolak (username/role/scope), **2** argumen kurang, **1** gagal menulis/acak |
+| `ctl` | `kran-api --role=ctl assign-role --username=<nama> --user-role=<peran> [--branch=<uuid>]` | **0** role diberikan, **3** ditolak/tidak ditemukan (role/scope/SoD), **2** argumen kurang, **1** gagal menulis |
+| `ctl` | `kran-api --role=ctl revoke-role --username=<nama> --user-role=<peran> [--branch=<uuid>]` | **0** role dicabut, **3** ditolak/tidak ditemukan (termasuk pengelola terakhir), **2** argumen kurang, **1** gagal menulis |
+| `ctl` | `kran-api --role=ctl disable-user --username=<nama>` | **0** akun `INACTIVE` + sesi dicabut, **3** tidak ada / pengelola terakhir, **2** tanpa `--username`, **1** gagal menulis |
+| `ctl` | `kran-api --role=ctl enable-user --username=<nama>` | **0** `INACTIVE`→`ACTIVE`, **3** tidak ada / bukan `INACTIVE`, **2** tanpa `--username`, **1** gagal menulis |
+| `ctl` | `kran-api --role=ctl unlock-user --username=<nama>` | **0** `LOCKED`→`ACTIVE`, **3** tidak ada / bukan `LOCKED`, **2** tanpa `--username`, **1** gagal menulis |
+| `ctl` | `kran-api --role=ctl create-branch --branch-code=<3 digit> --branch-name=<nama>` | **0** cabang didaftarkan, **3** kode tidak sah/sudah dipakai, **2** argumen kurang |
+| `ctl` | `kran-api --role=ctl post-opening-balance --username=<nama> --branch=<uuid> --amount=<nominal> --business-date=<YYYY-MM-DD>` | **0** jurnal saldo awal diposting (idempoten per cabang), **3** pengguna/cabang/periode/nominal ditolak, **2** argumen kurang/salah, **1** jurnal ditolak DB |
 | `ctl` | `kran-api --role=ctl help` | **0** |
-| `worker` | `kran-api --role=worker` | **3** belum ada pekerjaan di Fase 0 |
+| `worker` | `kran-api --role=worker` | berjalan (loop konsumen outbox) sampai dihentikan; **2** parameter/DB belum siap (tidak di-restart), **1** DB transien |
 | — | argumen salah / perintah tidak dikenal | **2** (bantuan ditulis ke stderr) |
 
 Kode `2` = salah pakai atau konfigurasi (`KRAN_DATABASE_URL` kosong), `1` = perintah berjalan tapi
 hasilnya buruk (mis. rantai audit tidak utuh), `3` = dikenali tetapi **sengaja ditolak pada keadaan
-itu** — belum diimplementasikan (`worker`, `daycloser-status`), atau penjagaan yang menolak (mis.
+itu** — belum diimplementasikan (`daycloser-status`), atau penjagaan yang menolak (mis.
 `--contract` saat expand masih tertunda, `--down` tanpa berkas pasangan). Skrip ops membedakan
 ketiganya, jadi jangan "merapikan" kode keluar tanpa memperbarui skrip.
 
@@ -30,21 +38,24 @@ ketiganya, jadi jangan "merapikan" kode keluar tanpa memperbarui skrip.
 
 - `ops/scripts/deploy-vps.sh`: `--role=migrate --check` (gate expand-only), lalu `--role=migrate --up`;
   freeze gate memanggil `--role=ctl daycloser-status` dan hanya bereaksi pada `RUNNING|CLOSING`
-  (Fase 0: kode 3, tidak ada day-close → tidak memblokir deploy, tetapi **belum terbukti** karena
-  skripnya belum pernah dijalankan di server — T-013).
+  (Fase 0: kode 3, tidak ada day-close → tidak memblokir deploy; jalur memblokir `RUNNING|CLOSING`
+  belum bisa dibuktikan karena framework daycloser belum ada).
 - `ops/scripts/migrate.sh`: `--check`/`--up` diteruskan apa adanya; `--contract` dan `--down N` juga
   diteruskan, tetapi wajib `--yes` (dan `--down` wajib N) — penolakan argumen terjadi di skrip (kode 2),
   penolakan keadaan terjadi di biner (kode 3). Prosedurnya: `docs/runbooks/migrasi.md` (D-040).
-- `ops/scripts/audit-consistency.sh` & `smoke.sh`: memakai jalur HTTP (`/healthz`, `/readyz`) dan
-  `psql`; kontraknya ada di `docs/OPEN_ITEMS.md` O-019.
+- `ops/scripts/smoke.sh`: memakai jalur HTTP (`/healthz`, `/readyz`, lalu versi vs `.deployed_rev`);
+  `ops/scripts/audit-consistency.sh`: membandingkan md5 `ops/scripts/*.sh` di repo dengan salinan di
+  server. Kontrak endpointnya ada di `docs/OPEN_ITEMS.md` O-019.
 
 ## Catatan
 
-- Peran `ctl` sengaja **read-only**, dengan dua pengecualian yang terdokumentasi:
-  `bootstrap-admin` dan `reset-password`. Keduanya butuh `--username` eksplisit dan menulis audit;
-  keduanya **tidak** memakai `--yes` karena bukan rollback skema — pemulihan akses harus bisa
-  dijalankan saat insiden. Skrip otomatis memanggil perintah lain di peran ini tanpa pengawasan,
-  jadi tidak boleh ada perintah tulis lain (re-drive outbox dsb. menyusul dengan `--yes`).
+- Peran `ctl` mayoritas **read-only**; perintah yang menulis data: `bootstrap-admin`,
+  `reset-password`, `create-user`, `assign-role`, `revoke-role`, `disable-user`, `enable-user`,
+  `unlock-user`, `create-branch`, dan `post-opening-balance` (`audit-anchor` hanya menambah berkas).
+  Semuanya menulis audit; tidak ada yang memakai `--yes` karena bukan rollback skema — pemulihan
+  akses/lifecycle harus bisa dijalankan saat insiden. Skrip otomatis memanggil perintah read-only
+  di peran ini tanpa pengawasan, jadi jangan menambah perintah tulis di luar daftar itu (re-drive
+  outbox dsb. menyusul dengan `--yes`).
 - `--role=migrate` memakai implementasi yang sama dengan `./task dbtools migrate`/`validate`
   (`tools/dbtools/lib.nim`), supaya tidak ada dua jalur migrasi yang bisa berbeda hasil.
 

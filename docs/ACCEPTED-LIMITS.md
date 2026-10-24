@@ -1,4 +1,4 @@
-# Batas yang diterima — Fase 0
+# Batas yang diterima — Fase 0–2
 
 Dokumen ini adalah **register keputusan**, bukan daftar keinginan. Aturannya satu: setiap batas harus
 punya (a) dampak nyata, (b) cara mendeteksinya, dan (c) pemilik — fase atau task yang menanganinya.
@@ -8,25 +8,25 @@ Alasan dokumen ini ada: "Fase 0 tanpa cela" bukan sesuatu yang bisa dibuktikan s
 dibuktikan adalah **tidak ada celah yang diketahui pada jalur yang diperiksa**, dan setiap hal yang
 belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian kedua dari kalimat itu.
 
-## 1. Batas yang memang milik fase lain (tidak dipaksakan masuk Fase 0)
+## 1. Batas yang memang milik fase lain (tidak dipaksakan masuk fase berjalan)
 
 | Batas | Dampak nyata | Cara mendeteksi | Pemilik |
 |---|---|---|---|
 | Metrics/observability belum ada (Prometheus-style: latensi, error rate, pool PG, antrean outbox, durasi task day-close) | Tidak ada pengukuran berkelanjutan; operator hanya punya log terstruktur | `/healthz`, `/readyz`, log JSON, dan kueri SQL manual | Fase 9 (spec §22, §23) |
-| Freeze katalog produk sebelum T-086 | Perubahan produk produksi dibekukan; pilot satu operator akan terblokir `checker <> maker` setelah maker-checker aktif | `ProductPublished` tidak terbit saat submit; approve tanpa operator kedua → 409 `self_approval` | T-086, D-099, D-119 |
+| ~~Freeze katalog produk sebelum T-086~~ **DITUTUP (T-086/D-099, 23 Okt 2026)**: maker-checker versi produk aktif, dan contract `product/0006` (T-090/D-119) mencabut jaring rollback lama | Sisa yang nyata: satu akun tidak bisa menyetujui produknya sendiri, jadi pilot wajib punya operator kedua (`product_checker`) | 409 `self_approval` saat akun yang sama mencoba approve | T-086, T-090, D-099, D-119 |
 | Freeze gate day-close | Deploy tidak bisa diblokir karena EOD berjalan; `ctl daycloser-status` selalu "belum ada" | jalankan `ctl daycloser-status` — nilainya selalu 3 sampai `daycloser` ada | Fase 3 (framework `daycloser`); O-013 |
-| Uji restore & latihan DR | Tidak ada bukti backup bisa dipulihkan | belum pernah dijalankan | Di luar repo (akses server); O-002, O-007 |
+| Frekuensi uji restore & latihan DR | Backup hanya terbukti bisa dipulihkan pada drill terakhir, bukan terus-menerus | **Drill pertama SELESAI (21 Okt 2026, O-007)**: restore dump harian ke DB latihan, hitungan cocok, rantai audit utuh. Jadwal bulanan ada di `docs/runbooks/restore-drill.md`; kepatuhan jadwal di luar repo | Di luar repo (akses server); O-007, `docs/runbooks/restore-drill.md` |
 | Target performa (spec §1.4: EOD 100k rekening + 50k pinjaman < 30 menit) | Belum ada bukti skala; angka target belum pernah diuji | belum ada benchmark | Fase 3 (day-close) + Fase 9 |
 | Multi-instance / HA | Satu proses = satu titik gagal | arsitektur: satu biner, satu pool, satu pump | Fase 9 (cutover §23) |
-| MFA & matriks pemisahan tugas (SoD) | Kontrol akses = kata sandi + RBAC + audit; belum ada faktor kedua | periksa katalog izin & pengaturan akun | Item O-015, O-016 |
+| MFA belum **diaktifkan** (kerangka ada) & SoD baru sebatas pasangan tersemai | Kontrol akses harian = kata sandi + RBAC + audit; faktor kedua belum diminta saat login (`mfa.enabled = false`) dan pemisahan tugas hanya efektif bila akun per peran benar-benar dipakai, bukan satu `platform_admin` | `platform.param_value` (`mfa.enabled`), `platform.user_role` (berapa akun memegang `platform_admin`), `platform.role_conflict` (pasangan SoD) | O-015/O-071 (aktivasi MFA), D-113/D-131 (SoD), O-102 |
 
 ## 2. Batas teknis yang diterima setelah batch "Fase 0 tahan banting"
 
 | Batas | Dampak nyata | Cara mendeteksi | Pemilik |
 |---|---|---|---|
-| Rollback layanan tidak mengembalikan skema; contract produk `0004` tetap terpasang | Binary lama + skema pasca-contract menyimpan versi sebagai DRAFT (seal lama sudah dilepas), jadi versi dari jendela itu perlu approve manual setelah pulih | `SELECT status, sealed FROM product.product_version` untuk versi yang dibuat selama jendela rollback | T-086, T-090, D-119, D-040 |
-| Migrasi contract/rollback baru terbukti di DB dev, belum di server | Rollback skema belum pernah dilatih pada data nyata; pasangan `.down.sql` belum ada untuk migrasi nyata | jalankan latihan deploy (T-013) sebelum mengandalkannya | T-035, D-040 |
-| Job CI GitHub belum lengkap (`db-tests`/`traceability`) | CI GitHub tidak menjalankan uji integrasi DB; gate yang sebenarnya adalah `./task ci` lokal (butuh DB dev) | lihat `docs/ci-jobs.md` | O-027 |
+| Rollback layanan tidak mengembalikan skema | Binary lama berjalan di atas skema yang sudah maju; contract yang terlanjur jalan tidak bisa dibatalkan oleh `rollback.sh` (hanya image yang kembali) | `--role=migrate --check` setelah rollback; bandingkan `platform.schema_migration` dengan commit yang di-deploy | T-035/T-040, T-090, D-119 |
+| Migrasi **contract** sudah jalan di produksi (`product/0006`, 23 Okt 2026), tetapi **`--down`** belum pernah dilatih pada data nyata | Rollback skema belum pernah diuji di server; pasangan `.down.sql` belum ada untuk migrasi nyata | `--role=migrate --check` setelah rollback; `SELECT filename FROM platform.schema_migration` untuk melihat contract yang terpasang; latihan `--down` = T-013 | T-035, D-040 |
+| Job CI `traceability` belum ada | Matriks requirement ↔ kontrol/test tidak dihasilkan otomatis; ketertelusuran masih manual di `docs/spec` + `docs/compliance` | job `db-tests` **sudah ada** (`postgres:18`, migrasi + `./task test`); `traceability` belum — lihat `docs/ci-jobs.md` | O-027 |
 | Antrean kirim realtime per koneksi tidak dibatasi | Klien lambat menambah pemakaian memori proses | pantau RSS; peristiwa hilang ditutup resume token | O-028 |
 | Peristiwa outbox yang membuat `oldestUndeliveredSeconds` kehilangan kursor (baris kursor dihapus) diperlakukan "dari awal" | Usia lag bisa terbaca besar sesaat walau konsumen sebenarnya tidak tertinggal | baris outbox tidak pernah dihapus jalur produksi; reset kursor hanya di uji | T-041 |
 | Probe migrasi `/readyz` bergantung pada mount `modules/` di container (`--root=/monorepo`); bila mount hilang, probe melaporkan "akar migrasi tidak tersedia" dan **tetap 200** | Skema tidak terverifikasi walau health gate hijau | `checks[]` di `/readyz` memuat `migrations` dengan `detail` "akar migrasi tidak tersedia"; volume di `ops/systemd/kran-api.container` | T-041/O-019; T-067/D-066 |
@@ -37,10 +37,10 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 | Jalur `pool.acquire()` langsung (pump `LISTEN` yang hidup selama proses) tidak memakai deadline blok | Bila perantara membeku saat pump menunggu, pump bisa menggantung sampai keepalive | pump tidak mengirim heartbeat; `pumpLastReadyNs` tidak maju, readiness realtime melaporkan degraded | T-065; pump T-029 (desain koneksi panjang) |
 | Batas DB memakai satu koneksi dari pool setiap kali terpicu (dibuat ulang saat dibutuhkan) | Sesaat setelah kejadian, kapasitas pool berkurang satu | `statsOf().created` turun; koneksi baru dibuat pada peminjaman berikutnya | T-065 |
 | Biaya KDF tiruan mengikuti parameter iterasi **saat ini** | Akun lama dengan jumlah iterasi berbeda tidak setara biayanya | bandingkan waktu respons login akun tak dikenal vs akun wajar | T-028 |
-| Percobaan kata sandi lama di `/auth/password` belum dibatasi/diaudit | Tidak ada perlindungan brute-force pada endpoint itu | belum ada penghitung percobaan di sana | O-050 |
-| PB lintas cabang diatribusikan hanya ke cabang sumber (audit, jurnal, event) | Kedua baris D/K 201 ber-`branch_id` sumber, jadi GL 201 cabang tujuan tidak mencerminkan kredit sementara subledger rekening naik: neraca cabang vs subledger menyimpang sebesar nominal PB | query `deposit.transfer` per `branch_id` kedua akun dibandingkan `journal_line` 201 per cabang; belum ada laporan GL per cabang | T-101/Fase 3 (D-124) |
-| Cache saldo `deposit.account_balance` bisa menyimpang dari baris mutasi (kas + PB) | Saldo teller dari cache; restore parsial atau bug tulis membuat saldo tidak cocok dengan baris sumber. Perbandingan terhadap GL per rekening **tidak mungkin** selama liabilitas dipool di akun `201` (PB net-nol) | **DITUTUP SEBAGIAN (T-101, 24 Okt 2026)**: `ctl reconcile-deposits [--branch]` membandingkan cache dengan `deposit.transaction` + `deposit.transfer` (exit 1 bila ada selisih, termasuk cache hilang). Belum dijadwalkan otomatis, dan jurnal simpanan yang dibalik tidak memutar baris simpanan (T-123) | Fase 3 (day-close), T-123 |
-| Jurnal pemindahbukuan (PB, `DepositTransferred`) **net-nol di GL**: kedua sisinya akun `201` yang sama | Buku besar tidak membedakan pemilik rekening; `journal_line` saja tidak cukup merekonstruksi saldo per rekening dari PB, dan GL per pemilik anggota belum ada | perpindahan per rekening ada di `deposit.transfer` (sumber & tujuan); bandingkan saldo `deposit.account`/`account_balance` dengan `deposit.transfer` + jurnal 201 | T-101/Fase 3; `modules/deposit/MODULE.md` |
+| ~~Percobaan kata sandi lama di `/auth/password` belum dibatasi/diaudit~~ **DITUTUP (T-051/D-057, 21 Okt 2026)**: penghitung gagal yang sama dengan login + audit `user.password_change.failure` (tanpa bahan kata sandi) | Sesi yang sedang berjalan tidak dicabut setelah kata sandi berubah (disengaja, D-057 butir 4) | audit `user.password_change.failure`; akun terkunci → login 403 `locked` | D-057 |
+| PB lintas cabang diatribusikan hanya ke cabang sumber (audit, jurnal, event) | Kedua baris D/K 201 ber-`branch_id` sumber, jadi GL 201 cabang tujuan tidak mencerminkan kredit sementara subledger rekening naik: neraca cabang vs subledger menyimpang sebesar nominal PB | query `deposit.transfer` per `branch_id` kedua akun dibandingkan `journal_line` 201 per cabang; belum ada laporan GL per cabang | Fase 3; T-101 menutup rekonsiliasi cache, bukan GL per pemilik (D-124) |
+| Cache saldo `deposit.account_balance` bisa menyimpang dari baris mutasi (kas + PB) | Saldo teller dari cache; restore parsial atau bug tulis membuat saldo tidak cocok dengan baris sumber. Perbandingan terhadap GL per rekening **tidak mungkin** selama liabilitas dipool di akun `201` (PB net-nol) | **DITUTUP SEBAGIAN (T-101, 24 Okt 2026)**: `ctl reconcile-deposits [--branch]` membandingkan cache dengan `deposit.transaction` + `deposit.transfer` (exit 1 bila ada selisih, termasuk cache hilang). Belum dijadwalkan otomatis. Pembalik jurnal subledger kini **ditolak** 409 `journal_owned_by_subledger` (T-123/D-135), jadi selisih tidak bisa lagi lahir dari koreksi lewat buku besar | Fase 3 (day-close) |
+| Jurnal pemindahbukuan (PB, `DepositTransferred`) **net-nol di GL**: kedua sisinya akun `201` yang sama | Buku besar tidak membedakan pemilik rekening; `journal_line` saja tidak cukup merekonstruksi saldo per rekening dari PB, dan GL per pemilik anggota belum ada | perpindahan per rekening ada di `deposit.transfer` (sumber & tujuan); bandingkan saldo `deposit.account`/`account_balance` dengan `deposit.transfer` + jurnal 201 | Fase 3; `modules/deposit/MODULE.md` |
 | Hanya pengenal cabang berbentuk **uuid** yang bisa diatribusi ke `platform.audit_log.branch_id` | Entri audit untuk cabang ber-id teks (id warisan/seeder) tetap `branch_id` NULL, jadi pemisahan audit per cabang tidak berlaku untuknya; pengenalnya tetap utuh di `resource_id`/payload | `SELECT branch_id FROM platform.audit_log WHERE action = 'param.submit' AND resource_id = ...` → NULL; diuji eksplisit di `itapi_auth` (suite scoping cabang, test pengenal non-uuid) | O-017; T-058, D-062 |
 | Topik realtime `param.changed` hanya dibuka untuk grant **tanpa** batas cabang | Pengguna yang izinnya khusus cabang tidak menerima peristiwa parameter sama sekali (fail-closed, bukan bocor); membukanya tanpa penyaringan justru mengirim peristiwa semua cabang | langganan topik gagal pada klien ber-grant khusus cabang; `topicsAllowedFor` memakai `authorized` tingkat institusi | O-070; T-058, D-062 |
 | Penerus yang ditolak **setelah** nilai ber-`effective_to` disetujui meninggalkan celah (tidak ada nilai berlaku setelah tanggal itu) | Aplikasi gagal-cepat saat startup (`missingActiveKeys`); pemulihannya dengan mengajukan + menyetujui penerus baru | pemeriksaan ulang saat persetujuan menutup kasus penerus hilang **sebelum** persetujuan (`itapi_auth`: 409); celah yang lolos tetap terdeteksi startup check O-057 | D-056; O-043/O-065 |
@@ -48,7 +48,7 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 | Belum ada kontrak-fuzzing (`schemathesis`) dan visual regression | Cakupan uji kontrak/visual lebih sempit daripada rencana spec | lihat daftar uji; parity kontrak diuji lewat `tcontract`/`itapi` | O-026, O-022 |
 | Lint statis generik (ESLint) belum ada — bagian a11y **sudah tertutup** | Aturan `svelte/*` non-a11y dan `typescript-eslint` belum menegakkan apa pun; diagnostik a11y kompilator kini memblokir lewat `svelte-check --fail-on-warnings` | diputuskan 17 Okt 2026 (D-053) untuk dikerjakan bersama T-012 | O-023, T-057 |
 | Tag image lama yang masih direferensikan container berhenti tidak bisa dihapus `podman rmi` | Tag itu tetap ada sampai container berhenti dibersihkan; pertumbuhan disk tertahan, bukan nol | baris `WARN: gagal menghapus …` di `deploy.log`; `podman ps -a` | T-069 |
-| `KRAN_KEK_FILE` belum di-mount ke container | Fitur yang membutuhkan KEK (field crypto/MFA) tidak bisa aktif di produksi; dengan env kosong fitur itu inert, bukan rusak diam-diam | `podman inspect kran-api` tidak memuat mount KEK; startup check parameter MFA | D-066; O-071 |
+| ~~`KRAN_KEK_FILE` belum di-mount ke container~~ **DITUTUP (24 Okt 2026)**: produksi me-mount berkas KEK mode 600 (`/run/secrets/kran-kek.key`) untuk `kran-api` dan `kran-worker`; env dan mount didokumentasikan di `ops/systemd/*.container` + `ops/env/kran-prod.env.example` | Sisa: rotasi KEK masih dilarang sampai `ctl reindex-blind-index` ada (D-111) | `podman inspect kran-api --format '{{range .Mounts}}{{.Destination}} {{end}}'` memuat berkas KEK | D-066, D-111, O-071 |
 | ~~Kas teller/vault tanpa jurnal GL~~ **DITUTUP (T-118/D-132/D-134, 24 Okt 2026)**: buka/tutup sesi, selisih kas, top-up vault yang disetujui, dan saldo awal vault (`D 101.1 / K 203`, `ledger/0036`) kini berjurnal | Rekonsiliasi resmi memakai agregat: `teller.vault` = GL `101.1` + GL `101` (legasi 2.700.000, tidak bisa dipindah karena `101` non-postable dan ledger immutable). Yang tersisa hanya batas pemetaan: `101.1`/`101.2`/`101.9`/`203` adalah usulan pilot (`NEEDS-COMPLIANCE-REVIEW`, REG-011), bukan kutipan SAK EP/PSAK | bandingkan `teller.vault` dengan `101.1 + 101` per cabang saat tidak ada sesi OPEN; saldo `101.2`/`101.9` kembali nol setelah semua sesi tutup | T-118; O-097/O-105 (tertutup), REG-011 |
 | ~~Top-up vault tanpa batas nominal~~ **DITUTUP (D-133, 24 Okt 2026)**: plafon per pengajuan = parameter `teller.vault.limit_topup_per_request` (pilot Rp25.000.000); setor/tarik/opening float punya plafon sendiri | Angka plafon adalah kebijakan pilot (`NEEDS-COMPLIANCE-REVIEW`), bukan regulasi, dan belum mencakup akumulasi harian/plafon saldo vault | 409 `topup_exceeds_limit`/`cash_limit_exceeded`; nilai di `platform.param_value` | D-133; O-099 tertutup |
 | Vault harus dibuat lewat seed/runbook sebelum bisa diajukan top-up | Tanpa baris `teller.vault`, pengajuan → 404 `vault_not_configured` (tidak ada pembuatan baris lewat API); operasi awal menyentuh DB langsung | 404 `vault_not_configured` pada `POST /teller/vault/topups`; `SELECT balance FROM teller.vault` | T-107/T-118; `modules/teller/MODULE.md` §Operasional |
@@ -85,7 +85,7 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
   *strict mode* — dalam gate, `itplatform` menjatuhkan schema `platform` lebih dulu sehingga e2e mulai
   bersih. Jadi sebelum menyebut sesuatu "flake kode": periksa dulu apakah keadaannya disiapkan fase lain.
 
-## 4. Bukti yang ada hari ini
+## 4. Bukti historis (tanggal eksplisit; angka terkini ada di `docs/PROGRESS.md`)
 
 - `./task ci-repeat 3` (gate kestabilan, T-031): hijau **3 putaran berturut-turut** atas tree final
   T-037 — 464 `[OK]` per putaran (1392 total) dan 23 uji e2e per putaran. Satu flake e2e sebelumnya
@@ -138,22 +138,20 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 ## 4c. Permukaan operator pilot (23 Okt 2026) — batas yang diterima
 
 Batas berikut **hanya berlaku untuk pilot saat ini** (1 koperasi, 1 cabang, data sintetis; O-004/D-046).
-Ia bukan klaim pekerjaan selesai: celah UI-nya dicatat sebagai task backlog T-115…T-117, dan keputusan
-tata kelolanya menunggu pemilik (O-102).
+Ia bukan klaim pekerjaan selesai. **Diperbarui 24 Okt 2026:** permukaan operator yang dulu hanya CLI
+sekarang sudah punya UI (T-115 buka rekening, T-116 administrasi buku besar, T-117 pengguna/peran,
+T-121 top-up vault), jadi batas "tidak ada UI" di bawah sudah tidak berlaku; yang tersisa hanya
+keputusan tata kelola (O-102).
 
-- **Tidak ada UI top-up vault (API-nya ada).** Setup
-  operator berjalan lewat CLI/API saja: akun dan peran lewat `kran-api --role=ctl bootstrap-admin` /
-  `create-user` (satu role) / `reset-password`; pekerjaan bisnis lewat `curl` ke endpoint yang sudah ada
-  (`POST /api/v1/deposit/accounts`, `POST /api/v1/ledger/periods`, `POST /api/v1/ledger/coa`,
-  `POST /api/v1/ledger/journals/{journalId}/reversal`, `POST /api/v1/teller/vault/topups`) atau SQL
-  runbook. Dampak: operasi harian tidak bisa dilakukan operator non-teknis. Cara deteksi: tidak ada rute
-  UI di `apps/web` untuk alur itu; daftar permukaan yang ada di `apps/api/src/routes.nim`. Pemilik:
-  O-103, T-115…T-117.
-- **Top-up vault: API maker-checker, belum ada UI.** `POST /teller/vault/topups` (izin
+- ~~Tidak ada UI top-up vault (API-nya ada)~~ **DITUTUP (T-121, 24 Okt 2026)**: `/app/vault` mengajukan
+  dan menyetujui top-up; `/app/ledger` menangani akun/COA/periode, `/app/users` menangani pengguna/peran,
+  dan pembukaan rekening ada di `/app/deposit`. Setup awal (akun pertama, reset sandi) tetap lewat
+  `kran-api --role=ctl`. Pemilik: T-115…T-117, T-121.
+- **Top-up vault: maker-checker lewat API dan UI.** `POST /teller/vault/topups` (izin
   `teller.vault.submit`) hanya membuat pengajuan; `.../{requestId}/approve` (izin
   `teller.vault.approve`) oleh akun lain menulis saldo + jurnal `D <teller.vault.cash_account> / K
-  <akun sumber>`. Tanpa UI, operator memakai `curl`. Dampak: langkah ganda mudah dilewati/dilupakan
-  bila dijalankan manual. Plafon per pengajuan sudah ada (D-133). Cara deteksi: `teller.vault_topup_request`
+  <akun sumber>`. UI `/app/vault` memisahkan peran pengaju dan penyetuju, tetapi keduanya tetap harus
+  akun berbeda (409 `self_approval`). Plafon per pengajuan sudah ada (D-133). Cara deteksi: `teller.vault_topup_request`
   (status + `decided_by`), `platform.audit_log` (`teller.vault.topup.submit`/`.approve`), event
   `TellerVaultTopUpRequested`/`TellerVaultTopedUp`. Pemilik: O-103/T-121, O-099/T-122.
 - **Risiko tata kelola sampai akun per peran dipakai.** Sejak T-118/D-131 `platform_admin` adalah
