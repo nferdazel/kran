@@ -151,6 +151,17 @@ ON CONFLICT (key) DO UPDATE SET
 INSERT INTO platform.param_definition
   (key, module, value_type, json_schema, allowed_scopes, description_key,
    regulatory_refs, sensitivity, requires_approval, since_version)
+VALUES ('party.person.sex_values', 'party', 'json', '{"type":"array"}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.party.person.sex_values', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
+ON CONFLICT (key) DO UPDATE SET
+  module = EXCLUDED.module, value_type = EXCLUDED.value_type,
+  json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,
+  description_key = EXCLUDED.description_key, regulatory_refs = EXCLUDED.regulatory_refs,
+  sensitivity = EXCLUDED.sensitivity, requires_approval = EXCLUDED.requires_approval,
+  since_version = EXCLUDED.since_version;
+
+INSERT INTO platform.param_definition
+  (key, module, value_type, json_schema, allowed_scopes, description_key,
+   regulatory_refs, sensitivity, requires_approval, since_version)
 VALUES ('platform.calendar.fiscal_year_start_month', 'platform', 'integer', '{"minimum":1,"maximum":12}'::jsonb, ARRAY['GLOBAL'], 'param.platform.calendar.fiscal_year_start_month', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
 ON CONFLICT (key) DO UPDATE SET
   module = EXCLUDED.module, value_type = EXCLUDED.value_type,

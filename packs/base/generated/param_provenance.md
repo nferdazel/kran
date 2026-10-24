@@ -23,6 +23,7 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | `party.kyc.default_risk_level` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | - |
 | `party.kyc.review_months` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | - |
 | `party.kyc.risk_levels` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | - |
+| `party.person.sex_values` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | - |
 | `platform.calendar.fiscal_year_start_month` | kebijakan | base | - | - |
 | `platform.calendar.weekend_days` | kebijakan | base | - | - |
 | `platform.idempotency.ttl_hours` | teknis | base | - | - |
@@ -62,7 +63,7 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | kelas | jumlah definisi |
 |---|---|
 | teknis | 15 |
-| kebijakan | 24 |
+| kebijakan | 25 |
 | komersial-konservatif | 2 |
 | belum-bermakna | 0 |
 | regulasi-tidak-disemai | 5 |

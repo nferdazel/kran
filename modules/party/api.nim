@@ -4,6 +4,6 @@
 ## (dijaga `tools/archcheck`). Repositori DB sengaja **tidak** diekspor di sini: yang boleh
 ## menyentuhnya hanya composition root (`apps/api`) dan test modul.
 
-import ./domain/[cif, identity, jsonparam, kyc, party]
+import ./domain/[cif, detail, identity, jsonparam, kyc, party]
 
-export cif, identity, jsonparam, kyc, party
+export cif, detail, identity, jsonparam, kyc, party
