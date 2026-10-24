@@ -3179,3 +3179,37 @@ saldo/jurnal ditandai `HUMAN-REVIEW-REQUIRED`. Rujukan usulan: dua memo SME
 angka retensi 10 tahun adalah usulan pilot (`NEEDS-COMPLIANCE-REVIEW`); jurnal saldo awal
 menyentuh neraca (`HUMAN-REVIEW-REQUIRED`, AGENTS §8). Yang masih terbuka tinggal UI vault (T-121)
 dan keputusan numerik lanjutan (akumulasi harian, plafon saldo vault, toleransi variance).
+
+---
+
+## D-135 — Jurnal milik subledger tidak boleh dibalik lewat buku besar (T-123)
+
+**Konteks.** `POST /ledger/journals/{id}/reversal` hanya memutar `ledger.journal_line`. Modul yang
+menyimpan keadaan sendiri di luar buku besar — `deposit.transaction`/`deposit.transfer` (saldo
+rekening), `teller.teller_session` (sesi & kas laci), `teller.vault_topup_request` (saldo vault) —
+tidak ikut berubah. Hasilnya GL dan subledger berbeda tanpa jejak, dan rekonsiliasi T-101 tetap
+"bersih" karena ia membandingkan cache dengan baris simpanan, bukan dengan GL. Tiga opsi:
+(a) larang pembalik, (b) tambah jalur koreksi yang memutar baris + cache, (c) laporkan sebagai
+selisih di day-close.
+
+**Keputusan.** Opsi **(a)** untuk sekarang, karena hanya itu yang bisa dijamin benar tanpa mengarang
+semantik koreksi produk (apakah pembalik simpanan berarti transaksi keluar? bagaimana biaya, bunga,
+dan urutan cetak?). Opsi (b) tetap arah jangka panjang; opsi (c) tidak cukup karena selisih baru
+terlihat belakangan, sementara kerusakannya sudah terjadi.
+
+- Gerbang baru di handler pembalik: `409 journal_owned_by_subledger` + `params.subledger`
+  (`deposit.transaction`, `deposit.transfer`, `teller.teller_session`,
+  `teller.vault_topup_request`).
+- Deteksi berbasis **data**, bukan daftar `source_event`: yang menentukan adalah ada tidaknya baris
+  subledger yang menunjuk jurnal itu. Event baru dari modul yang sama otomatis tertangkap.
+  Pengecualian: jurnal sesi kas memakai `source_ref = session_id` (tabel sesi tidak menyimpan
+  `journal_id`), jadi empat event sesi didaftarkan eksplisit.
+- Query lintas schema tinggal di `apps/api/src/journal_ownership.nim` (lapisan perakit), bukan di
+  modul `ledger`: ledger tidak boleh mengetahui tabel `deposit`/`teller` (AGENTS §1.1).
+- Koreksi untuk jurnal tersebut: transaksi tunai/PB baru atau penutupan sesi dengan selisih —
+  bukan pembalik buku besar. Pesan 409 mengarahkan ke modul asal.
+
+**Konsekuensi.** Operator tidak bisa lagi "membatalkan" transaksi tunai lewat menu jurnal; UI
+ledger menampilkan alasan itu apa adanya. Jurnal murni buku besar (mis. saldo awal `203`,
+`LedgerCashOpening`) tetap bisa dibalik. Opsi (b) dicatat sebagai pekerjaan lanjutan; sampai ada,
+`docs/ACCEPTED-LIMITS.md` menyebut bahwa koreksi subledger hanya lewat modul asal.

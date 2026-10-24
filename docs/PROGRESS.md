@@ -2601,3 +2601,22 @@ berkas.
 
 **Sisa.** Penjadwalan harian menunggu daycloser (Fase 3); jurnal simpanan yang dibalik di ledger
 tidak memutar baris simpanan, dicatat sebagai T-123.
+
+## 24 Okt 2026 — jurnal subledger tidak bisa dibalik lewat buku besar (T-123)
+
+Pembalik jurnal hanya memutar `ledger.journal_line`; saldo rekening, vault, dan sesi kas tidak ikut
+berubah. Sekarang pembalik untuk jurnal semacam itu **ditolak**.
+
+- `apps/api/src/journal_ownership.nim` mendeteksi pemilik jurnal dari **data** (baris
+  `deposit.transaction`/`deposit.transfer`/`teller.vault_topup_request`, atau jurnal sesi kas yang
+  `source_ref` = `session_id`), bukan dari daftar `source_event`.
+- Handler membalas `409` dengan `params.reason = journal_owned_by_subledger` dan
+  `params.subledger`. Jurnal murni buku besar (saldo awal `203`/`LedgerCashOpening`) tetap bisa
+  dibalik.
+- Test di tiga suite: tunai, PB, top-up vault, dan `TellerSessionOpened` masing-masing 409 dan tidak
+  meninggalkan baris pembalik.
+
+**Bukti.** `itapi_teller` 44 OK; `itapi_teller_vault` 19 OK; `itapi_teller_sessions` 14 OK.
+
+**Sisa.** Jalur koreksi subledger yang memutar baris + cache (opsi b D-135) belum ada; sampai itu,
+koreksi hanya lewat transaksi baru di modul asal.
