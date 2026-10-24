@@ -30,6 +30,8 @@ saat ini belum ada konsumen lintas-modul, jadi belum ada yang perlu diekspor.
 - `platform.app_user`, `platform.role`, `platform.permission`, `platform.role_permission`,
   `platform.user_role`, `platform.role_conflict`, `platform.session` — identitas, akses, sesi (T-006).
 - `platform.user_mfa` — faktor kedua per akun (TOTP); rahasia **terenkripsi** (T-046).
+- `platform.branch` — master cabang: kode **3 digit** + nama (D-130). Kode dipakai sebagai prefiks
+  nomor rekening; modul lain tetap menyimpan `branch_id` tanpa FK.
 - `platform.idempotency_key` — klaim `Idempotency-Key` per principal (T-084, D-098). Baris hanya
   ditulis di dalam transaksi bisnis; respons non-2xx tidak pernah disimpan; TTL dari parameter
   `platform.idempotency.ttl_hours`.
@@ -287,6 +289,18 @@ memakai action yang sama dengan `ctl` (`user.role_grant`, `user.role_revoke`, `u
 `user.enable`, `user.unlock`) dengan aktor dari sesi; penolakan dipetakan ke 409 dengan
 `params.reason` stabil (`last_admin`, `sod_conflict`, `already_granted`, `not_granted`,
 `not_inactive`, `not_locked`). **HUMAN-REVIEW-REQUIRED** (administrasi pengguna/RBAC, AGENTS.md §8).
+
+## Master cabang (D-130)
+
+| Bagian | Berkas |
+|---|---|
+| Migrasi | `0030_platform_branch_master.sql` — tabel `platform.branch` + cabang pilot `001` (`b0000000-…-001`) |
+| Repo | `infrastructure/branch_repo.nim` — `branchById`, `branchByCode`, `insertBranch`, `listBranches`, `validBranchCode` |
+| ctl | `apps/api/src/main.nim` — `create-branch --branch-code=<3 digit> --branch-name=<nama>` (audit `branch.create`, kode keluar 3 untuk kode tidak sah/duplikat) |
+
+Kode cabang **tidak boleh diubah** begitu ada nomor rekening yang memakainya: nomor rekening adalah
+identitas bisnis (D-130). Perbaikan kode hanya lewat migrasi + analisis data. Belum ada endpoint HTTP
+baca/tulis cabang (O-101 masih terbuka untuk permukaan operator).
 
 ## MFA TOTP (T-046, spec §13/§18.2)
 
