@@ -2641,3 +2641,25 @@ vitest `@kran/ui` 117 dan `apps/web` 121 lolos; `./task openapi` sinkron; `./tas
 
 **Sisa.** Akrual bunga Fase 3: pembulatan per sen per posting, jadi `rounding_scale`/`rounding_mode`
 (O-084) harus diputuskan sebelum akrual ditulis. Deviasi spec §9.3 dicatat sebagai O-106.
+
+## 24 Okt 2026 — detail PII party (T-078, HUMAN-REVIEW-REQUIRED)
+
+Detail orang/lembaga + alamat kini punya tempat sendiri, dengan pola enkripsi D-069.
+
+- Migrasi `party/0041_party_detail`: `party.party_person` (nama resmi, tanggal lahir, jenis
+  kelamin, pekerjaan), `party.party_org` (nama resmi), `party.address`. Setiap kolom sensitif
+  disimpan sebagai ciphertext + blind index + bentuk tersamar; CHECK DB menolak bentuk lain.
+- API: `PUT /parties/{id}/detail` (izin KYC di cabang), `GET /parties/{id}/detail` **tersamar
+  tanpa dekripsi**, `POST /parties/{id}/detail/unmask` (izin `party.identity_doc.read` + alasan +
+  audit `party.detail.unmask` tanpa nilai asli; 501 bila KEK belum tersedia).
+- Tidak ada event untuk detail: PII tidak keluar modul.
+
+**Bukti.** `tdetail` 13 OK; `itdetail` 6 OK dan `itapi_detail` 10 OK (dua suite integrasi ini
+sebelumnya belum dijalankan di worktree); `task check` hijau (223/224 berkas, archcheck,
+lint-nomagic, paramgen, i18n); suite `party`/`kyc`/`platform`/`product`/`teller` hijau saat
+dijalankan per berkas setelah merge.
+
+**Sisa / catatan review manusia.** Izin baca PII memakai `party.identity_doc.read` yang sudah ada
+(tanpa migrasi platform) — pemisahan izin yang lebih halus dicatat di `docs/tasks/T-078.md`.
+Blind index diterapkan ke semua kolom sensitif termasuk `sex` (kardinalitas rendah). Area
+PII/enkripsi tetap **HUMAN-REVIEW-REQUIRED** (AGENTS §8).
