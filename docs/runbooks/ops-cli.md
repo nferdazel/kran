@@ -15,6 +15,7 @@ repo** (atau dengan `--root=<dir>` yang menunjuk ke sana), karena migrasi dibaca
 | `ctl` | `kran-api --role=ctl bootstrap-admin --username=<nama>` | **0** admin dibuat, **3** sudah ada pemegang role admin, **2** tanpa `--username` |
 | `ctl` | `kran-api --role=ctl reset-password --username=<nama>` | **0** kata sandi baru dicetak sekali, **1** gagal menulis/acak, **2** tanpa `--username`, **3** pengguna tidak ada |
 | `ctl` | `kran-api --role=ctl audit-anchor [--out=<berkas>]` | **0** baris anchor dicetak (dan ditambahkan ke berkas), **1** gagal menulis, **2** tanpa DB |
+| `ctl` | `kran-api --role=ctl reconcile-deposits [--branch=<uuid>]` | **0** semua cache saldo cocok, **1** ada selisih (temuan), **2** argumen salah |
 | `ctl` | `kran-api --role=ctl help` | **0** |
 | `worker` | `kran-api --role=worker` | **3** belum ada pekerjaan di Fase 0 |
 | — | argumen salah / perintah tidak dikenal | **2** (bantuan ditulis ke stderr) |

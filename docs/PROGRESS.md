@@ -2583,3 +2583,21 @@ sinkron + typecheck klien; `./task test` 1096 OK (termasuk `itapi_users` untuk r
 
 **Sisa.** O-101 kini hanya kurang tulis/ubah cabang lewat HTTP; O-103 tinggal layar lain (mis. serah
 terima kas per sesi) dan keputusan plafon lanjutan (akumulasi harian, plafon saldo vault).
+
+## 24 Okt 2026 — rekonsiliasi cache saldo simpanan (T-101)
+
+Cache `deposit.account_balance` kini bisa diperiksa terhadap baris sumbernya tanpa SQL manual.
+
+- `modules/deposit/infrastructure/reconcile_repo.nim`: `expected = Σ tunai − Σ keluar + Σ PB masuk −
+  Σ PB keluar`, dibandingkan dengan cache. PB memakai `deposit.transfer` (bukan `journal_line`):
+  kedua kakinya akun `201` yang sama, jadi jurnal net-nol dan tidak bisa dipakai per rekening.
+- `ctl reconcile-deposits [--branch=<uuid>]`: baca saja; exit **0** bersih, **1** ada selisih,
+  **2** argumen salah. Rekening tanpa baris cache dilaporkan, bukan dianggap cocok.
+- Fixture integrasi `itreconcile.nim` membuktikan hitungan PB di kedua sisi, arah/nilai selisih,
+  filter cabang, dan kontrak kode keluar.
+
+**Bukti.** `itreconcile` 3 OK; `./task test` 1099 OK; `./task check-fast` hijau; `./task lint` 217
+berkas.
+
+**Sisa.** Penjadwalan harian menunggu daycloser (Fase 3); jurnal simpanan yang dibalik di ledger
+tidak memutar baris simpanan, dicatat sebagai T-123.
