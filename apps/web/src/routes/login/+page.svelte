@@ -42,11 +42,16 @@
     submitting = true;
     errorMessage = "";
 
-    const { error, response } = await api.POST("/api/v1/auth/login", {
-      body: { username, password },
-    });
+    try {
+      const { error, response } = await api.POST("/api/v1/auth/login", {
+        body: { username, password },
+      });
 
-    if (response.ok) {
+      if (!response.ok) {
+        errorMessage = loginErrorMessage(error);
+        return;
+      }
+
       // Cookie sesi sudah terpasang. Landing harus mengikuti izin: `teller` tidak punya
       // `ledger.journal.read`, jadi mengarahkannya ke `/app/ledger` hanya menampilkan halaman
       // "tidak berizin". Ambil sesi sekali, lalu pilih tautan nav pertama yang boleh dibuka;
@@ -55,11 +60,14 @@
       const target =
         visibleNavLinks(appNavLinks, sessionPermissions(session))[0]?.href ?? "/app";
       await goto(target);
-      return;
+    } catch {
+      // Jaringan putus / proxy mati bukan "kredensial salah": tanpa penanganan ini `submitting`
+      // tertahan `true`, tombol mati permanen dan pengguna tidak diberi tahu apa pun
+      // (T-132/UI-2). `finally` mengembalikan tombol ke keadaan bisa ditekan.
+      errorMessage = m.error_generic();
+    } finally {
+      submitting = false;
     }
-
-    submitting = false;
-    errorMessage = loginErrorMessage(error);
   }
 </script>
 

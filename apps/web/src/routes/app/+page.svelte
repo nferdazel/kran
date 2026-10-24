@@ -283,10 +283,6 @@
     await refresh();
   }
 
-  async function logout(): Promise<void> {
-    await api.POST("/api/v1/auth/logout");
-    await goto("/login");
-  }
 </script>
 
 <svelte:head>
@@ -321,8 +317,9 @@
   </div>
 
   <div class="app-session-actions">
-    <span class="kran-badge kran-badge--primary">{m.app_signed_in_as({ name: session.fullName })}</span>
-    <!-- Peran ditampilkan sebagai label nyata (kode peran diterjemahkan katalog), bukan kode mentah. -->
+    <!-- Identitas, tautan ubah sandi, dan tombol keluar tinggal di shell `/app` (T-132/UI-3),
+         supaya tersedia di setiap layar kerja, bukan hanya di sini. Peran tetap ditampilkan di
+         halaman ini karena ia konteks landing, bukan aksi sesi. -->
     {#if roleLabels.length > 0}
       <span class="app-roles">
         <span class="kran-muted">{m.app_roles_label()}:</span>
@@ -331,8 +328,6 @@
         {/each}
       </span>
     {/if}
-    <a class="kran-button" href="/app/password">{m.app_change_password()}</a>
-    <button class="kran-button" type="button" onclick={logout}>{m.app_logout()}</button>
   </div>
 </div>
 

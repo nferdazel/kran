@@ -9,8 +9,6 @@
    * ditampilkan di sini, bukan lewat pengalihan otomatis, supaya pengguna melihat sendiri bahwa
    * perubahan berhasil dan sesi lain sudah diputus.
    */
-  import { goto } from "$app/navigation";
-
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
   import { passwordProblemMessage } from "#lib/app/errors.js";
@@ -32,25 +30,28 @@
     submitting = true;
     errorMessage = "";
 
-    const { error, response } = await api.POST("/api/v1/auth/password", {
-      body: { oldPassword, newPassword },
-    });
+    try {
+      const { error, response } = await api.POST("/api/v1/auth/password", {
+        body: { oldPassword, newPassword },
+      });
 
-    submitting = false;
-    if (response.ok) {
+      if (!response.ok) {
+        errorMessage = api.isProblem(error) ? passwordProblemMessage(error) : m.error_generic();
+        return;
+      }
       // Kata sandi lama sudah tidak berlaku; form tidak perlu menahan nilainya.
       oldPassword = "";
       newPassword = "";
       berhasil = true;
-      return;
+    } catch {
+      // Sama alasannya dengan layar masuk (T-132/UI-2): kegagalan jaringan tidak boleh
+      // meninggalkan tombol `disabled` tanpa penjelasan.
+      errorMessage = m.error_generic();
+    } finally {
+      submitting = false;
     }
-    errorMessage = api.isProblem(error) ? passwordProblemMessage(error) : m.error_generic();
   }
 
-  async function logout(): Promise<void> {
-    await api.POST("/api/v1/auth/logout");
-    await goto("/login");
-  }
 </script>
 
 <svelte:head>
@@ -61,10 +62,8 @@
   <div>
     <h1 class="password-title">{m.password_title()}</h1>
   </div>
-  <div class="password-session-actions">
-    <span class="kran-badge kran-badge--primary">{m.app_signed_in_as({ name: session.fullName })}</span>
-    <button class="kran-button" type="button" onclick={logout}>{m.app_logout()}</button>
-  </div>
+  <!-- Identitas + tombol keluar ada di shell `/app` (T-132/UI-3): satu tempat untuk semua layar
+       kerja, jadi layar ini tidak lagi menyediakan salinan kedua. -->
 </div>
 
 <section class="kran-card password-card" aria-labelledby="ganti-kata-sandi">
@@ -138,13 +137,6 @@
     font-size: var(--text-xl);
     line-height: var(--line-height-tight);
     font-weight: 600;
-  }
-
-  .password-session-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
   }
 
   .password-card {

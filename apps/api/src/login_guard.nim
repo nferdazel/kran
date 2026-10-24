@@ -11,8 +11,14 @@
 ## Angka di bawah adalah kapasitas proses (bukan kebijakan bisnis/regulasi): batas ini melindungi
 ## server, bukan mengatur produk. Bila kelak perlu dapat diubah tanpa deploy, pindahkan ke parameter
 ## `platform.security.*`; jangan menambah konstanta bisnis.
+##
+## Dua angka pertama dapat ditimpa lewat lingkungan (`KRAN_LOGIN_MAX_CONCURRENCY`,
+## `KRAN_LOGIN_ATTEMPTS_PER_MINUTE`). Itu **kapasitas deployment**, bukan kebijakan: satu instance
+## di belakang NAT kantor atau satu suite e2e yang login berulang kali dari 127.0.0.1 tidak boleh
+## memaksa menurunkan mutu kode. Nilai yang tidak sah diabaikan (dipakai default), bukan membuat
+## proses menolak start — pembatas yang salah baca tidak boleh mematikan layanan.
 
-import std/[locks, times, tables]
+import std/[locks, os, strutils, times, tables]
 
 const
   loginConcurrencyLimit* = 4   # nomagic:ok kapasitas KDF bersamaan per proses
@@ -26,11 +32,27 @@ type
     inflight: int
     windowStart: float64
     perIp: Table[string, int]
+    concurrencyLimit: int
+    attemptsPerMinute: int
+
+proc positiveFromEnv(name: string, fallback: int): int =
+  ## Nilai positif dari lingkungan; kosong/tidak sah/≤ 0 = default (fail-open ke nilai aman).
+  let raw = getEnv(name).strip()
+  if raw.len == 0:
+    return fallback
+  try:
+    let value = parseInt(raw)
+    if value > 0: value else: fallback
+  except ValueError:
+    fallback
 
 proc newLoginGuard*(): LoginGuard =
   result = LoginGuard()
   initLock(result.lock)
   result.windowStart = epochTime()
+  result.concurrencyLimit = positiveFromEnv("KRAN_LOGIN_MAX_CONCURRENCY", loginConcurrencyLimit)
+  result.attemptsPerMinute = positiveFromEnv("KRAN_LOGIN_ATTEMPTS_PER_MINUTE",
+    loginAttemptsPerMinute)
 
 proc resetWindow(g: LoginGuard, now: float64) =
   if now - g.windowStart >= loginWindowSeconds:
@@ -45,10 +67,10 @@ proc tryBegin*(g: LoginGuard, ip: string,
     return (true, 0)
   withLock g.lock:
     g.resetWindow(now)
-    if g.inflight >= loginConcurrencyLimit:
+    if g.inflight >= g.concurrencyLimit:
       return (false, 1)
     let used = g.perIp.getOrDefault(ip, 0)
-    if used >= loginAttemptsPerMinute:
+    if used >= g.attemptsPerMinute:
       let remaining = int(loginWindowSeconds - (now - g.windowStart))
       return (false, max(1, remaining))
     g.perIp[ip] = used + 1

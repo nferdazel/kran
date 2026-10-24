@@ -10,9 +10,11 @@
   import "@kran/ui/components.css";
 
   import { onMount } from "svelte";
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
 
   import * as m from "#lib/paraglide/messages.js";
+  import { api } from "#lib/app/api.js";
   import {
     applyTheme,
     readChoice,
@@ -42,6 +44,25 @@
    * dianggap kosong (tautan berizin disembunyikan, bukan ditampilkan lalu ditolak server).
    */
   const navLinks = $derived(visibleNavLinks(appNavLinks, sessionPermissions(page.data.session)));
+
+  /**
+   * Identitas pemegang sesi untuk shell (T-132/UI-3). Sebelumnya logout hanya ada di `/app` dan
+   * `/app/password`; teller di terminal bersama tidak bisa mengakhiri sesi dari layar kerjanya.
+   * Shell adalah tempatnya: satu tombol, tersedia di setiap rute `/app`.
+   */
+  const sessionName = $derived(
+    (page.data.session as { fullName?: string } | undefined)?.fullName ?? "",
+  );
+
+  async function logout(): Promise<void> {
+    try {
+      await api.POST("/api/v1/auth/logout");
+    } catch {
+      // Sesi yang sudah tidak sah tetap harus membawa pengguna keluar dari layar ini: kegagalan
+      // jaringan tidak boleh membuat tombol "Keluar" tampak tidak bekerja.
+    }
+    await goto("/login");
+  }
 
   const themeChoices: readonly ThemeChoice[] = ["system", "light", "dark"];
 
@@ -170,6 +191,14 @@
           <span class="kran-muted">{m.palette_heading()}</span>
           <span class="kran-kbd">Ctrl K</span>
         </div>
+
+        {#if sessionName !== ""}
+          <div class="kran-nav__session">
+            <p class="kran-nav__who">{m.app_signed_in_as({ name: sessionName })}</p>
+            <a class="kran-button" href="/app/password">{m.app_change_password()}</a>
+            <button class="kran-button" type="button" onclick={logout}>{m.app_logout()}</button>
+          </div>
+        {/if}
       </div>
     </nav>
   {/if}

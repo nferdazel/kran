@@ -2892,3 +2892,27 @@ rollback yang gagal tetap dilaporkan sebagai rollback selesai.
 **Bukti.** `./task check` hijau (8 skrip `bash -n` + shellcheck), `ci.yml` valid dengan 4 job
 ber-`timeout-minutes: 15`, `build` hijau. Perilaku skrip baru terbukti pada deploy berikutnya —
 belum diuji di VPS dari sesi ini. Detail: `docs/tasks/T-131.md`.
+
+## 24 Okt 2026 — T-132: layar kerja bisa dipakai tanpa tetikus
+
+Empat masalah UX operator ditutup, semuanya jenis yang tidak terlihat di test API: tanpa sesi kas,
+teller tidak bisa memilih PB karena `fieldset disabled` menelan seluruh pemilih mode; kegagalan
+jaringan saat login meninggalkan tombol mati tanpa pesan; logout hanya ada di dua layar sehingga
+teller di terminal bersama tidak bisa keluar; sesi kedaluwarsa menyisakan UI yang setiap kirimannya
+gagal; dan tanggal bisnis bergeser sehari di zona waktu negatif.
+
+- `disabled` dipindah ke kontrol yang memang ditahan (nominal/narasi/tujuan/kirim); pemilih mode
+  tetap aktif.
+- `try/catch/finally` di login dan ganti kata sandi; pesan generik untuk kegagalan jaringan.
+- Identitas + ubah sandi + keluar tinggal di shell `/app`; duplikat di `/app` dan `/app/password`
+  dihapus.
+- Middleware 401 → `/login` di klien API (kecuali di halaman masuk), dengan fungsi keputusan yang
+  diuji.
+- `formatDate` memakai kalender UTC; `prefers-reduced-motion: reduce` sekarang menyeluruh.
+- Gate e2e baru untuk empat layar administrasi: axe ×2 tema ×2 locale + satu alur keyboard per layar.
+- Pembatas login dapat ditimpa lewat lingkungan (kapasitas deployment), sehingga suite e2e yang
+  login puluhan kali dari 127.0.0.1 tidak dijawab 429.
+
+**Bukti.** vitest 125 hijau (format + api baru), Playwright 54 hijau (8 test baru), svelte-check
+0 error/0 warning, `check` hijau, `tlogin_guard`/`itapi_users` tetap hijau dengan nilai default.
+Detail: `docs/tasks/T-132.md`.
