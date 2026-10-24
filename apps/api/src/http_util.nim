@@ -11,8 +11,34 @@ const
   ContentTypeProblem* = "application/problem+json"
 
 proc headersWithType*(contentType: string): HttpHeaders =
+  ## Header dasar setiap respons API. `no-store` wajib: respons memuat data sesi/PII (unmask,
+  ## slip, statement) dan browser terminal bersama tidak boleh menyimpannya (T-128/SEC-3).
   result = emptyHttpHeaders()
   result["Content-Type"] = contentType
+  result["Cache-Control"] = "no-store"
+
+proc sameOrigin*(origin, host: string): bool =
+  ## True bila `Origin` menunjuk host yang sama dengan header `Host`.
+  ##
+  ## Dipakai gerbang WebSocket (T-128/SEC-4): cookie `SameSite=Strict` sudah menahan sebagian besar
+  ## cross-site, tetapi handshake WS tidak selalu diperlakukan sama oleh browser. Origin tanpa skema
+  ## yang dikenal, atau host berbeda, ditolak. `Origin` kosong (klien non-browser) diloloskan dan
+  ## tetap harus punya cookie sesi yang sah.
+  if origin.len == 0:
+    return true
+  var o = origin.toLowerAscii()
+  var matched = false
+  for prefix in ["https://", "http://"]:
+    if o.startsWith(prefix):
+      o = o[prefix.len .. ^1]
+      matched = true
+      break
+  if not matched:
+    return false
+  let slash = o.find('/')
+  if slash >= 0:
+    o = o[0 ..< slash]
+  o == host.toLowerAscii()
 
 proc respondJson*(req: Request, status: int, body: JsonNode) =
   ## Satu tempat menulis respons JSON supaya header konsisten.

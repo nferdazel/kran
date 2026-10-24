@@ -15,7 +15,7 @@ import openapi/lib
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
 
-import ../src/[context, readiness, server]
+import ../src/[context, login_guard, readiness, server]
 
 const
   ContractPath = "packages/contracts/openapi/kran-api.yaml"
@@ -120,21 +120,24 @@ type
     code: int
     body: JsonNode
     setCookie: string
+    retryAfter: string
 
-proc call(verb, path, payload, token: string): Reply =
+proc call(verb, path, payload, token: string, base = ""): Reply =
+  let origin = if base.len == 0: baseUrl else: base
   let client = newHttpClient(timeout = 60_000)
   defer: client.close()
   if token.len > 0:
     client.headers["Cookie"] = CookieName & "=" & token
   var response: Response
   case verb
-  of "GET": response = client.get(baseUrl & path)
-  of "DELETE": response = client.request(baseUrl & path, httpMethod = HttpDelete)
+  of "GET": response = client.get(origin & path)
+  of "DELETE": response = client.request(origin & path, httpMethod = HttpDelete)
   else:
     client.headers["Content-Type"] = "application/json"
-    response = client.post(baseUrl & path, payload)
+    response = client.post(origin & path, payload)
   result.code = response.code.int
   result.setCookie = response.headers.getOrDefault("Set-Cookie")
+  result.retryAfter = response.headers.getOrDefault("Retry-After")
   result.body = newJNull()
   if response.body.len > 0:
     try:
@@ -199,6 +202,22 @@ proc newUser(username, fullName: string): string =
       (user_id, username, full_name, password_algo, password_hash, must_change_password)
     VALUES (?::uuid, ?, ?, 'pbkdf2-hmac-sha256', 'x', false)""", uid, username, fullName)
   uid
+
+proc newUserWithPassword(username, fullName, passwordLike: string): string =
+  ## Akun yang bisa login: hash disalin dari akun seed (iterasi 1000) supaya test tidak menulis
+  ## hash sendiri dan tidak membayar KDF produksi.
+  let uid = $newId(systemClock())
+  dbExec(sql"""
+    INSERT INTO platform.app_user
+      (user_id, username, full_name, password_algo, password_hash, must_change_password)
+    SELECT ?::uuid, ?, ?, password_algo, password_hash, false
+      FROM platform.app_user WHERE username = ?""", uid, username, fullName, passwordLike)
+  uid
+
+proc grantRoleDirect(uid, roleCode: string) =
+  dbExec(sql"""
+    INSERT INTO platform.user_role (user_id, role_id, branch_id)
+    SELECT ?::uuid, r.role_id, NULL FROM platform.role r WHERE r.code = ?""", uid, roleCode)
 
 proc dropUser(uid: string) =
   dbExec(sql"DELETE FROM platform.user_role WHERE user_id = ?::uuid", uid)
@@ -460,3 +479,110 @@ suite "administrasi pengguna: siklus status (T-117)":
     check postEmpty(fill(DisablePath, NoSuchUser, ""), adminToken).code == 404
     check postEmpty(fill(EnablePath, NoSuchUser, ""), adminToken).code == 404
     check postEmpty(fill(UnlockPath, NoSuchUser, ""), adminToken).code == 404
+
+suite "administrasi pengguna: eskalasi grant ditolak (T-128)":
+  test "menugaskan role kepada akun sendiri tidak membuka jalan eskalasi":
+    # `platform_admin` memegang seluruh izin dan sengaja tidak dipasangkan SoD, jadi menugaskan
+    # role itu ke diri sendiri adalah jalur naik wewenang tanpa approver (audit 24 Okt 2026, BLK-3).
+    let adminUid = userUid(AdminUser)
+    let own = postJson(fill(AssignPath, adminUid, ""), %*{"role": "ops_admin"}, adminToken)
+    check own.code == 409
+    check own.body["params"]["reason"].getStr() == "self_grant"
+    checkProblem(AssignPath, "POST", "409", own.body)
+    check dbValue(sql"""SELECT count(*) FROM platform.user_role ur
+                          JOIN platform.role r ON r.role_id = ur.role_id
+                         WHERE ur.user_id = ?::uuid AND r.code = 'ops_admin'""", adminUid) == "0"
+
+  test "pemberi izin tidak boleh memberikan role yang lebih luas dari wewenangnya":
+    # `ops_admin` memegang `platform.user.manage` tetapi tidak seluruh izin. Tanpa penjagaan ini,
+    # ia bisa menugaskan `platform_admin` kepada orang lain dan memakai akun itu.
+    let actorUid = newUserWithPassword("itapi.ops", "Uji Ops (itapi)", PlainUser)
+    let victimUid = newUser("itapi-ops-victim", "Uji Korban (itapi)")
+    defer:
+      dropUser(actorUid)
+      dropUser(victimUid)
+    grantRoleDirect(actorUid, "ops_admin")
+    let opsToken = login("itapi.ops")
+
+    let escalate = postJson(fill(AssignPath, victimUid, ""), %*{"role": "platform_admin"},
+      opsToken)
+    check escalate.code == 403
+    check escalate.body["params"]["reason"].getStr() == "grant_exceeds_actor"
+    checkProblem(AssignPath, "POST", "403", escalate.body)
+    check dbValue(sql"""SELECT count(*) FROM platform.user_role ur
+                          JOIN platform.role r ON r.role_id = ur.role_id
+                         WHERE ur.user_id = ?::uuid AND r.code = 'platform_admin'""",
+      victimUid) == "0"
+
+    # Penjagaan bukan larangan total: role yang seluruh izinnya dipegang pemberi izin tetap boleh
+    # ditugaskan. Role-nya dibuat di test supaya tidak bergantung pada isi katalog seed.
+    dbExec(sql"""
+      INSERT INTO platform.role (role_id, code, name_key) VALUES
+        (gen_random_uuid(), 'itapi_reader', 'role.itapi_reader')""")
+    dbExec(sql"""
+      INSERT INTO platform.role_permission (role_id, permission_id)
+      SELECT r.role_id, p.permission_id FROM platform.role r, platform.permission p
+       WHERE r.code = 'itapi_reader' AND p.code = 'ledger.coa.read'""")
+    defer:
+      dbExec(sql"DELETE FROM platform.role WHERE code = 'itapi_reader'")
+
+    let allowed = postJson(fill(AssignPath, victimUid, ""), %*{"role": "itapi_reader"}, opsToken)
+    check allowed.code == 201
+    checkJson(AssignPath, "POST", "201", allowed.body)
+
+
+suite "login: pembatas percobaan (T-128)":
+  test "percobaan beruntun dari alamat yang sama dijawab 429 + Retry-After":
+    # Server terpisah dengan `loginGuard` aktif: `app` milik suite lain sengaja tanpa pembatas
+    # (ratusan login di satu proses test tidak boleh saling mengunci).
+    let guarded = AppContext(version: "itapi-users-guarded-0.0.0", role: "api",
+      startedAt: epochTime(), pool: dbPool, clock: systemClock(),
+      loginGuard: newLoginGuard())
+    let port = freePort()
+    let server = newApiServer(guarded)
+    var thread: Thread[ServeArgs]
+    createThread(thread, serveInThread, ServeArgs(server: server, port: port))
+    let origin = "http://127.0.0.1:" & $port
+    let deadline = epochTime() + 10.0
+    var up = false
+    while epochTime() < deadline and not up:
+      try:
+        let probe = newHttpClient(timeout = 1000)
+        defer: probe.close()
+        up = probe.get(origin & "/healthz").code.int == 200
+      except CatchableError:
+        discard
+      if not up:
+        sleep(50)
+    doAssert up, "server test ber-pembatas tidak pernah siap"
+
+    let badBody = $ %*{"username": "tidak-ada", "password": "salah-panjang-123"}
+    # Jatah berasal dari konstanta modul, jadi jumlah percobaan yang dibutuhkan tidak ditulis ulang
+    # di sini. Batas atas 3x memberi ruang bila jendela 60 detik berganti di tengah loop (hitung
+    # ulang), tanpa membuat test menunggu.
+    var blocked = Reply(code: 401)
+    var allowedAt = 0
+    for i in 0 ..< loginAttemptsPerMinute * 3:
+      let attempt = call("POST", LoginPath, badBody, "", origin)
+      if attempt.code == 429:
+        blocked = attempt
+        break
+      checkpoint "percobaan " & $i & " -> " & $attempt.code & ": " & $attempt.body
+      check attempt.code == 401
+      inc allowedAt
+
+    check blocked.code == 429
+    check allowedAt >= loginAttemptsPerMinute - 1
+
+    check blocked.body["code"].getStr() == "TOO_MANY_REQUESTS"
+    check blocked.body["i18nKey"].getStr() == "error_too_many_requests"
+    check blocked.body["params"]["reason"].getStr() == "rate_limited"
+    check blocked.retryAfter.len > 0
+    check blocked.retryAfter.parseInt >= 1
+    checkProblem(LoginPath, "POST", "429", blocked.body)
+
+    # Kredensial benar pun tertahan selama jendela: pembatas kapasitas, bukan lockout akun.
+    let correct = $ %*{"username": AdminUser, "password": DevPassword}
+    check call("POST", LoginPath, correct, "", origin).code == 429
+    check dbValue(sql"""SELECT locked_until::text FROM platform.app_user
+                         WHERE username = ?""", AdminUser) == ""

@@ -3353,3 +3353,25 @@ sekarang (mencampur pemasangan lint dengan migrasi navigasi); menaruh lint web d
 **Konsekuensi.** `./task check` tetap bisa dijalankan tanpa Node; `./task ci` di mesin developer
 dan job `web-e2e` menjalankan eslint. `svelte-check` tetap menjadi gate a11y tunggal. Bila T-125
 selesai, pengecualian `no-navigation-without-resolve` dicabut dari `eslint.config.js`.
+
+## D-140 — Pembatas login: konstanta kapasitas proses, bukan parameter (24 Okt 2026)
+
+**Konteks.** Audit 24 Okt 2026 (SEC-1) menemukan `POST /auth/login` tanpa pembatas apa pun, padahal
+tiap percobaan menjalankan PBKDF2 sambil memegang satu koneksi pool. Aturan §1.2 melarang nilai
+bisnis di kode; pertanyaannya apakah angka pembatas ini "nilai bisnis".
+
+**Keputusan.** Angka pembatas tinggal sebagai konstanta di `apps/api/src/login_guard.nim`
+(`loginConcurrencyLimit` 4, `loginAttemptsPerMinute` 10, `loginWindowSeconds` 60), ditandai
+`# nomagic:ok` dengan alasan tertulis. Ini **kapasitas server**, bukan kebijakan institusi: tidak ada
+koperasi yang "mengatur" berapa login per menit yang boleh dilayani prosesnya, dan nilai yang salah
+tidak menciptakan salah posting atau salah laporan. Sama kelasnya dengan `maxUsersLimit` (batas
+ukuran respons) di `handlers_users.nim`.
+
+**Ditolak.** Menambah parameter `platform.security.rate_limit_*` sekarang: menaikkan permukaan
+parameter (definisi, seed, validasi, audit perubahan, dokumentasi) untuk angka yang belum pernah
+diminta berubah oleh siapa pun, dan `paramgen`/`lint-nomagic` akan menuntut seed baru untuk itu.
+
+**Konsekuensi.** Mengubah batas = deploy baru. Bila kelak muncul kebutuhan nyata (mis. satu kantor
+pusat di belakang satu NAT melaporkan 429 berulang), jalur naiknya jelas: pindahkan ketiga angka ke
+parameter `platform.security.*` dan baca lewat `settings` seperti parameter keamanan lain — bukan
+menambal handler.

@@ -37,6 +37,7 @@
   "error_method_not_allowed": "Metode permintaan tidak didukung.",
   "error_not_found": "Data yang diminta tidak ditemukan.",
   "error_not_implemented": "Fitur ini belum tersedia.",
+  "error_too_many_requests": "Terlalu banyak percobaan. Tunggu sebentar lalu coba lagi.",
   "error_unauthorized": "Nama pengguna atau kata sandi salah.",
   "error_upgrade_required": "Permintaan tidak dapat diproses oleh server.",
   "login_error": "Tidak dapat masuk dengan akun ini.",

@@ -30,6 +30,7 @@ import platform/infrastructure/[outbox_listener, outbox_repo]
 import "platform-lib/db/pool"
 
 import ./db_bridge
+import ./http_util
 import ./identity
 import ./problem
 
@@ -389,6 +390,13 @@ proc openStream*(svc: EventService, req: Request) {.gcsafe.} =
      not hasToken(req.headers["Upgrade"], "websocket"):
     req.respondProblem(pkUpgradeRequired, "Upgrade Required",
       "endpoint ini hanya menerima WebSocket (Upgrade: websocket)")
+    return
+
+  # Gerbang Origin (T-128/SEC-4): handshake WS tidak selalu diatur cookie `SameSite`, jadi
+  # browser dari situs lain ditolak di sini. Klien non-browser (tanpa Origin) tetap harus
+  # membawa cookie sesi yang sah di langkah berikutnya.
+  if not sameOrigin(req.headers["Origin"], req.headers["Host"]):
+    req.respondProblem(pkForbidden, "Forbidden", "origin tidak diizinkan membuka stream")
     return
 
   let identity = identityFromRequest(req)

@@ -18,6 +18,7 @@ const PROBLEM_MESSAGES: Record<string, () => string> = {
   error_method_not_allowed: () => m.error_method_not_allowed(),
   error_not_found: () => m.error_not_found(),
   error_not_implemented: () => m.error_not_implemented(),
+  error_too_many_requests: () => m.error_too_many_requests(),
   error_unauthorized: () => m.error_unauthorized(),
   error_upgrade_required: () => m.error_upgrade_required(),
 };

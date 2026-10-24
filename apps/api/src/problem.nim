@@ -23,6 +23,7 @@ type
     pkMethodNotAllowed = "METHOD_NOT_ALLOWED"
     pkUpgradeRequired = "UPGRADE_REQUIRED"
     pkConflict = "CONFLICT"
+    pkTooManyRequests = "TOO_MANY_REQUESTS"
     pkNotImplemented = "NOT_IMPLEMENTED"
     pkInternal = "INTERNAL_ERROR"
 
@@ -42,6 +43,7 @@ proc statusOf*(kind: ProblemKind): int =
   of pkMethodNotAllowed: 405
   of pkUpgradeRequired: 426
   of pkConflict: 409
+  of pkTooManyRequests: 429
   of pkNotImplemented: 501
   of pkInternal: 500
 

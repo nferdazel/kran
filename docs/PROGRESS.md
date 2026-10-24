@@ -2815,3 +2815,19 @@ dipakai bersama `devSeedDbAllowed` lewat `testDbNameAllowed`.
 
 **Bukti.** `./task test tdbtools` 3 suite `[OK]` (termasuk `kran`, `kran_prod`, `kran_devx`
 ditolak); `./task test itplatform` hijau pada `kran_dev`.
+
+## 24 Okt 2026 — T-128: eskalasi grant, login flood, dan bocoran 500 ditutup
+
+`ops_admin` (memegang `platform.user.manage`) bisa menugaskan `platform_admin` kepada dirinya sendiri
+tanpa approver; login tanpa pembatas membuat PBKDF2+pool bisa dihabiskan dari luar; `Origin` WebSocket
+tidak diperiksa; `no-store` hanya ada di endpoint MFA; dua 500 mengirim teks exception.
+
+- `login_guard.nim`: semaphore 4 login bersamaan + jendela 10 percobaan/menit per IP, diperiksa
+  sebelum KDF; `429 TOO_MANY_REQUESTS` + `Retry-After` (D-140).
+- `headersWithType` memberi `Cache-Control: no-store` ke seluruh JSON/problem+json.
+- WS menolak `Origin` asing; `self_grant` 409 dan `grant_exceeds_actor` 403 di penugasan role.
+- `e.msg` pindah ke log server pada login/ganti sandi/`/readyz`.
+
+**Bukti.** `thttp_util` 5 test, `tlogin_guard` 3 test, `itapi_users` (+2 eskalasi, +1 pembatas 429
+dengan `Retry-After`), `itapi_auth`/`itapi_ws`/`tapi`/`tcontract` hijau; `check`, `openapi`,
+`lint-web`, `build` hijau. Detail: `docs/tasks/T-128.md`.

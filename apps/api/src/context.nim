@@ -14,6 +14,7 @@ import "platform-lib/crypto/fieldcrypto"
 import kernel/clock
 
 import ./events
+import ./login_guard
 
 type
   CheckStatus* = enum
@@ -44,6 +45,8 @@ type
     ## kosong (belum ada kolom terenkripsi); enkripsi/dekripsi menolak eksplisit. Diset &
     ## divalidasi saat startup lewat `fieldCryptoFromProcessEnv`.
     fieldCrypto*: FieldCrypto
+    ## Pembatas login (T-128). `nil` di test/CLI; produksi selalu diisi `newLoginGuard()`.
+    loginGuard*: LoginGuard
 
 proc businessDateIso*(clock: Clock): string =
   ## Tanggal "hari ini" versi UTC yang dipakai untuk membaca parameter efektif-dated.
