@@ -82,14 +82,14 @@ proc balanceOfAccount(accountId: Id): Money =
   accountById(db, accountId).get().balance
 
 proc saveJournal(amount: Money): Id =
-  ## Jurnal setor (101/201) seimbang untuk memenuhi FK `deposit.transaction.journal_id`.
+  ## Jurnal setor (101.2/201) seimbang untuk memenuhi FK `deposit.transaction.journal_id`.
   let jid = newId(testClock)
   let j = Journal(journalId: jid, businessDate: businessDate, valueDate: businessDate,
     sourceEvent: "DepositPosted", sourceRef: newId(testClock),
     idempotencyKey: "ittx-" & $jid)
   discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
     discard insertJournal(d, j, actor)
-    insertJournalLine(d, jid, JournalLine(lineNo: 1, glAccount: "101", branchId: branch,
+    insertJournalLine(d, jid, JournalLine(lineNo: 1, glAccount: "101.2", branchId: branch,
       debit: amount, credit: zero()))
     insertJournalLine(d, jid, JournalLine(lineNo: 2, glAccount: "201", branchId: branch,
       debit: zero(), credit: amount))
@@ -270,7 +270,7 @@ suite "deposit: periode tertutup membatalkan seluruh transaksi":
           sourceEvent: "DepositPosted", sourceRef: newId(testClock),
           idempotencyKey: "itclosed-" & $jid)
         discard insertJournal(d, j, actor)
-        insertJournalLine(d, jid, JournalLine(lineNo: 1, glAccount: "101", branchId: branch,
+        insertJournalLine(d, jid, JournalLine(lineNo: 1, glAccount: "101.2", branchId: branch,
           debit: money(100_0000), credit: zero()))
         insertJournalLine(d, jid, JournalLine(lineNo: 2, glAccount: "201", branchId: branch,
           debit: zero(), credit: money(100_0000)))

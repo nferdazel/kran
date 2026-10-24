@@ -306,7 +306,7 @@ suite "Fase 1 end-to-end":
     check tb.body["totalDebit"].getStr() == tb.body["totalCredit"].getStr()
     var kasDebit, simpananCredit: int64
     for line in tb.body["lines"]:
-      if line["accountCode"].getStr() == "101":
+      if line["accountCode"].getStr() == "101.2":
         kasDebit = moneyOf(line["debit"].getStr()).minorUnits
       elif line["accountCode"].getStr() == "201":
         simpananCredit = moneyOf(line["credit"].getStr()).minorUnits
@@ -347,7 +347,7 @@ suite "Fase 1 end-to-end":
     check moneyOf(tb.body["totalDebit"].getStr()) == money(amount * 2)
     check tb.body["totalDebit"].getStr() == tb.body["totalCredit"].getStr()
     for line in tb.body["lines"]:
-      if line["accountCode"].getStr() in ["101", "201"]:
+      if line["accountCode"].getStr() in ["101.2", "201"]:
         check moneyOf(line["debit"].getStr()).minorUnits == amount
         check moneyOf(line["credit"].getStr()).minorUnits == amount
     withDb(proc(db: DbConn) =

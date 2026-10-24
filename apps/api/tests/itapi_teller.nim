@@ -225,7 +225,7 @@ block:
   doAssert approveVersion(db, verRule.versionId, approver), "versi rule produk gagal di-approve"
   ProductRuleAccountId = $seedAccount(party.partyId, prodRule.productId, verRule.versionId,
     Id(BranchId), "SAV-PROD")
-  # GL 102/202 (bukan 101/201 rule generik) supaya pemilihan rule produk bisa dibedakan di test.
+  # GL 102/202 (bukan 101.2/201 rule generik) supaya pemilihan rule produk bisa dibedakan di test.
   discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
     insertRule(d, PostingRule(ruleId: newId(fixtureClock), eventType: "DepositPosted",
       productCode: "SAV-PROD", conditions: %*{}, priority: 100,
@@ -626,7 +626,7 @@ suite "teller: setor & tarik":
     check txCount(accountId) == 1
     check journalCount("DepositPosted") == 1
     let depositLines = journalLines(reply.body["journalId"].getStr())
-    check depositLines == @[("101", "100.0000", "0.0000"), ("201", "0.0000", "100.0000")]
+    check depositLines == @[("101.2", "100.0000", "0.0000"), ("201", "0.0000", "100.0000")]
     # M2: event outbox tidak boleh ber-header `accounting` (kalau tidak worker memposting jurnal kedua).
     let txId = reply.body["transactionId"].getStr()
     let journalId = reply.body["journalId"].getStr()
@@ -657,7 +657,7 @@ suite "teller: setor & tarik":
     check txCount(accountId) == 2
     check journalCount("DepositWithdrawn") == 1
     let withdrawLines = journalLines(withdraw.body["journalId"].getStr())
-    check withdrawLines == @[("201", "60.0000", "0.0000"), ("101", "0.0000", "60.0000")]
+    check withdrawLines == @[("201", "60.0000", "0.0000"), ("101.2", "0.0000", "60.0000")]
 
     let rowsBefore = txCount(accountId)
     let journalsBefore = journalCount("DepositWithdrawn")
@@ -1162,7 +1162,7 @@ suite "teller: posting rule produk-spesifik (T-104)":
     check reply.code == 201
     checkJson(CashPath, "POST", "201", reply.body)
     # Rule produk SAV-PROD (D 102 / K 202) harus terpilih. Bila `postJournalSync` mengirim payload
-    # kosong, rule produk tidak cocok dan rule generik (101/201) yang dipakai → assertion gagal.
+    # kosong, rule produk tidak cocok dan rule generik (101.2/201) yang dipakai → assertion gagal.
     let lines = journalLines(reply.body["journalId"].getStr())
     check lines == @[("102", "10.0000", "0.0000"), ("202", "0.0000", "10.0000")]
 
@@ -1173,9 +1173,9 @@ suite "teller: klasifikasi simpanan koperasi (T-111)":
     check reply.code == 201
     checkJson(CashPath, "POST", "201", reply.body)
     check balanceOf(PokokAccountId) == "50.0000"
-    # Tanpa rule berkondisi yang terpilih, jurnal akan memakai 101/201 (generik).
+    # Tanpa rule berkondisi yang terpilih, jurnal akan memakai 101.2/201 (generik).
     let lines = journalLines(reply.body["journalId"].getStr())
-    check lines == @[("101", "50.0000", "0.0000"), ("301.1", "0.0000", "50.0000")]
+    check lines == @[("101.2", "50.0000", "0.0000"), ("301.1", "0.0000", "50.0000")]
 
   test "setor WAJIB → ekuitas 301.2":
     let token = tokenOf(login(MakerUser))
@@ -1183,7 +1183,7 @@ suite "teller: klasifikasi simpanan koperasi (T-111)":
     check reply.code == 201
     checkJson(CashPath, "POST", "201", reply.body)
     let lines = journalLines(reply.body["journalId"].getStr())
-    check lines == @[("101", "25.0000", "0.0000"), ("301.2", "0.0000", "25.0000")]
+    check lines == @[("101.2", "25.0000", "0.0000"), ("301.2", "0.0000", "25.0000")]
 
   test "tarik dari POKOK/WAJIB → 409 savings_kind_locked tanpa ubah saldo":
     let token = tokenOf(login(MakerUser))
