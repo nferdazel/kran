@@ -28,6 +28,7 @@ import teller/infrastructure/session_repo
 import ./access
 import ./context
 import ./db_bridge
+import ./deposit_posting
 import ./http_util
 import ./idempotency
 import ./problem
@@ -159,6 +160,15 @@ proc handleOpenTellerSession*(app: AppContext, req: Request) {.gcsafe.} =
               reason = "session_already_open"
               problem = "teller sudah punya sesi kas OPEN di cabang ini"
               raise newException(ValueError, problem)
+
+            # Kas pindah dari vault ke laci: jurnal **sinkron** di transaksi yang sama supaya
+            # tidak pernah ada float tanpa jejak buku besar (T-118, O-097 opsi A).
+            # Float nol = tidak ada kas berpindah, jadi tidak ada jurnal (jurnal bernominal nol
+            # ditolak domain).
+            if openingFloat.isPositive:
+              discard postRuleJournalSync(db, app.clock, "TellerSessionOpened", openingFloat,
+                branchId.value(), session.sessionId, businessDate,
+                "teller-session-opened:" & $session.sessionId, teller, newJObject())
 
             let ctx = auditContextFor(principal, req, app.clock, "buka sesi kas teller", branchRaw)
             discard appendAudit(db, newAuditEntry(ctx, "teller.session.open", "teller_session",
@@ -306,6 +316,22 @@ proc handleCloseTellerSession*(app: AppContext, req: Request) {.gcsafe.} =
               status = 500
               problem = "vault cabang hilang saat penutupan sesi"
               raise newException(ValueError, problem)
+
+            # Kas fisik kembali ke vault, lalu selisih menutup saldo laci. Kaki selisih memakai
+            # akun laci (`101.2`), bukan vault: setelah kas kembali, saldo laci = -variance, jadi
+            # hanya laci yang bisa dinolkan oleh jurnal selisih (lihat migrasi `ledger/0034`).
+            if countedCash.isPositive:
+              discard postRuleJournalSync(db, app.clock, "TellerSessionClosed", countedCash,
+                session.branchId, session.sessionId, session.businessDate,
+                "teller-session-closed:" & $session.sessionId, actor, newJObject())
+            if variance.isPositive:
+              discard postRuleJournalSync(db, app.clock, "TellerCashOverage", variance,
+                session.branchId, session.sessionId, session.businessDate,
+                "teller-session-overage:" & $session.sessionId, actor, newJObject())
+            elif variance.isNegative:
+              discard postRuleJournalSync(db, app.clock, "TellerCashShortage", abs(variance),
+                session.branchId, session.sessionId, session.businessDate,
+                "teller-session-shortage:" & $session.sessionId, actor, newJObject())
 
             let ctx = auditContextFor(principal, req, app.clock, "tutup sesi kas teller",
               $session.branchId)

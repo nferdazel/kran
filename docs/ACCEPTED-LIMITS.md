@@ -49,9 +49,9 @@ belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian ked
 | Lint statis generik (ESLint) belum ada — bagian a11y **sudah tertutup** | Aturan `svelte/*` non-a11y dan `typescript-eslint` belum menegakkan apa pun; diagnostik a11y kompilator kini memblokir lewat `svelte-check --fail-on-warnings` | diputuskan 17 Okt 2026 (D-053) untuk dikerjakan bersama T-012 | O-023, T-057 |
 | Tag image lama yang masih direferensikan container berhenti tidak bisa dihapus `podman rmi` | Tag itu tetap ada sampai container berhenti dibersihkan; pertumbuhan disk tertahan, bukan nol | baris `WARN: gagal menghapus …` di `deploy.log`; `podman ps -a` | T-069 |
 | `KRAN_KEK_FILE` belum di-mount ke container | Fitur yang membutuhkan KEK (field crypto/MFA) tidak bisa aktif di produksi; dengan env kosong fitur itu inert, bukan rusak diam-diam | `podman inspect kran-api` tidak memuat mount KEK; startup check parameter MFA | D-066; O-071 |
-| Kas teller/vault **tanpa jurnal GL**: buka/tutup sesi memindahkan kas fisik, variance tidak diakui di buku besar, dan top-up vault (T-107) menaikkan saldo tanpa akun lawan (COA "kas teller"/"kas pusat"/akun injeksi kas belum ada) | Neraca tidak mencerminkan kas di laci teller, selisih kas, maupun kas yang disuntikkan lewat top-up; hanya `teller.vault` + `teller.teller_session` yang memuatnya | bandingkan `teller.vault` (saldo) dengan `journal_line` akun kas 101 per cabang; variance tercatat di `teller.teller_session.variance` tapi tidak ada jurnal pasangannya; top-up tercatat di audit/outbox `TellerVaultTopedUp` tanpa jurnal | T-093/T-107 (keputusan pemilik: jurnal menyusul); O-097 |
-| Top-up vault (`POST /teller/vault/topups`, T-107) tanpa maker-checker & tanpa batas nominal | Satu pemegang izin `teller.vault.topup` bisa menyuntikkan kas dalam jumlah tak terbatas tanpa persetujuan operator kedua; tidak ada "alasan wajib" yang ditegakkan (note opsional) | `platform.audit_log` (`action = 'teller.vault.topup'`) + event `TellerVaultTopedUp` memuat amount/balanceBefore/After; tidak ada tabel persetujuan top-up | T-107; kebijakan maker-checker/batas menunggu pemilik (O-098/O-099) |
-| Vault harus dibuat lewat seed/runbook sebelum bisa di-top-up | Tanpa baris `teller.vault`, top-up → 404 `vault_not_configured` (tidak ada pembuatan baris lewat API); operasi awal menyentuh DB langsung | 404 `vault_not_configured` pada `POST /teller/vault/topups`; `SELECT balance FROM teller.vault` | T-107; `modules/teller/MODULE.md` §Operasional |
+| ~~Kas teller/vault tanpa jurnal GL~~ **DITUTUP (T-118, D-132, 24 Okt 2026)**: buka/tutup sesi, selisih kas, dan top-up vault yang disetujui kini berjurnal (`101.1`/`101.2`/`101.9`) | Yang tersisa hanya batas pemetaan: akun `101.1`/`101.2`/`101.9` adalah usulan pilot (`NEEDS-COMPLIANCE-REVIEW`, REG-011), bukan kutipan SAK EP/PSAK | bandingkan `teller.vault` dengan `journal_line` akun `101.1` per cabang; saldo `101.2`/`101.9` kembali nol setelah semua sesi tutup | T-118; O-097 (tertutup), REG-011 |
+| Top-up vault **tanpa batas nominal** (maker-checker sudah ada sejak T-118) | Satu pengaju + satu penyetuju bisa menyetujui nominal berapa pun; angkanya kebijakan pemilik (K-5/O-099) | `teller.vault_topup_request` mencatat nominal/akun sumber/alasan/pemutus + `journal_id`; tidak ada kolom limit; `platform.audit_log` (`teller.vault.topup.submit`/`.approve`) | T-118; batas nominal menunggu pemilik (O-099/T-122) |
+| Vault harus dibuat lewat seed/runbook sebelum bisa diajukan top-up | Tanpa baris `teller.vault`, pengajuan → 404 `vault_not_configured` (tidak ada pembuatan baris lewat API); operasi awal menyentuh DB langsung | 404 `vault_not_configured` pada `POST /teller/vault/topups`; `SELECT balance FROM teller.vault` | T-107/T-118; `modules/teller/MODULE.md` §Operasional |
 | Rollback binary ke `:prev` setelah T-093b (tanpa gerbang sesi) meninggalkan jendela: transaksi tunai tidak menulis `cash_movement` sementara sesi masih `OPEN` | `expected_cash` saat tutup tidak memuat transaksi jendela rollback → variance rapor palsu | bandingkan `COUNT(teller.cash_movement)` dengan `COUNT(deposit.transaction)` per sesi/business date setelah rollback | T-093 (mitigasi: tutup semua sesi / rekonsiliasi manual sebelum rollback) |
 | `expected_cash` hanya benar bila **setiap** transaksi tunai menulis `teller.cash_movement` | Kalau gerbang sesi (093b) dilewati (mis. binary lama), arus laci tidak lengkap dan variance salah tanpa error | paritas `COUNT(teller.cash_movement)` vs `COUNT(deposit.transaction CASH_*)` per sesi; uji `itapi_teller` (gate) + `itsession` (movement) | T-093; `modules/teller/MODULE.md` |
 | Limit kas teller / nominal transaksi tunai belum ada (parameter belum ditetapkan pemilik) | Teller bisa menyimpan/mengeluarkan nominal tak terbatas; tidak ada kontrol kepatuhan di jalur kas | tidak ada pembacaan parameter limit di `handlers_teller.nim`; penanda `NEEDS-COMPLIANCE-REVIEW` | T-093; spec §10.5/§4 (`V?`), O-001 |
@@ -142,7 +142,7 @@ Batas berikut **hanya berlaku untuk pilot saat ini** (1 koperasi, 1 cabang, data
 Ia bukan klaim pekerjaan selesai: celah UI-nya dicatat sebagai task backlog T-115…T-117, dan keputusan
 tata kelolanya menunggu pemilik (O-102).
 
-- **Tidak ada UI pembukaan rekening / administrasi periode/COA/pembalik / top-up vault.** Setup
+- **Tidak ada UI top-up vault (API-nya ada).** Setup
   operator berjalan lewat CLI/API saja: akun dan peran lewat `kran-api --role=ctl bootstrap-admin` /
   `create-user` (satu role) / `reset-password`; pekerjaan bisnis lewat `curl` ke endpoint yang sudah ada
   (`POST /api/v1/deposit/accounts`, `POST /api/v1/ledger/periods`, `POST /api/v1/ledger/coa`,
@@ -150,17 +150,19 @@ tata kelolanya menunggu pemilik (O-102).
   runbook. Dampak: operasi harian tidak bisa dilakukan operator non-teknis. Cara deteksi: tidak ada rute
   UI di `apps/web` untuk alur itu; daftar permukaan yang ada di `apps/api/src/routes.nim`. Pemilik:
   O-103, T-115…T-117.
-- **Vault top-up lewat API/runbook, tanpa UI dan tanpa maker-checker.** `POST /teller/vault/topups`
-  (izin `teller.vault.topup`) menaikkan saldo tanpa persetujuan operator kedua dan tanpa jurnal GL;
-  baris vault awal tetap diisi lewat seed/runbook. Dampak: injeksi kas tak terbatas oleh satu pemegang
-  izin dan neraca tidak mencerminkan kas. Cara deteksi: `platform.audit_log` (`action =
-  'teller.vault.topup'`) + event `TellerVaultTopedUp`; `teller.vault` vs `journal_line` akun kas.
-  Pemilik: O-098, O-097, T-107.
-- **Risiko tata kelola satu admin.** `platform_admin` memegang maker + checker + kas + vault sekaligus;
-  satu-satunya pasangan SoD tersemai adalah `param_maker`/`param_checker`, sehingga pemisahan tugas
-  efektif tidak ada di produksi. Diterima hanya karena pilot memakai data sintetis dan satu operator.
-  Cara deteksi: `platform.role_permission` untuk `platform_admin`; `platform.role_conflict` hanya
-  memuat `param_*`. Pemilik: O-102, O-097, O-098.
+- **Top-up vault: API maker-checker, belum ada UI.** `POST /teller/vault/topups` (izin
+  `teller.vault.submit`) hanya membuat pengajuan; `.../{requestId}/approve` (izin
+  `teller.vault.approve`) oleh akun lain menulis saldo + jurnal `D <teller.vault.cash_account> / K
+  <akun sumber>`. Tanpa UI, operator memakai `curl`. Dampak: langkah ganda mudah dilewati/dilupakan
+  bila dijalankan manual, dan batas nominal belum ada (O-099). Cara deteksi: `teller.vault_topup_request`
+  (status + `decided_by`), `platform.audit_log` (`teller.vault.topup.submit`/`.approve`), event
+  `TellerVaultTopUpRequested`/`TellerVaultTopedUp`. Pemilik: O-103/T-121, O-099/T-122.
+- **Risiko tata kelola sampai akun per peran dipakai.** Sejak T-118/D-131 `platform_admin` adalah
+  break-glass: peran sempit (`ops_admin`/`ledger_admin`/`cash_admin`/`product_maker`) dan lima
+  pasangan SoD tersemai. Selama produksi masih memakai satu akun `platform_admin`, pemisahan tugas
+  **belum** efektif — itu keputusan operasional pemilik (K-3), bukan cacat kode. Cara deteksi:
+  `platform.user_role` (berapa akun memegang `platform_admin`), `platform.role_conflict`. Pemilik:
+  O-102 (K-3/K-4).
 
 ## 5. Cara memakai dokumen ini
 
