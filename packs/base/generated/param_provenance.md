@@ -51,14 +51,18 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | `product.savings.min_balance` | komersial-konservatif | base | `NEEDS-COMPLIANCE-REVIEW` | tidak menagih; angka final menunggu pemilik |
 | `product.savings.rounding_mode` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
 | `product.savings.rounding_scale` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
+| `teller.cash.limit_deposit` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Plafon setor tunai per transaksi; angka pilot pemilik 24 Okt 2026 (K-5). |
+| `teller.cash.limit_opening_float` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Plafon float laci per sesi; angka pilot pemilik 24 Okt 2026 (K-5). |
+| `teller.cash.limit_withdrawal` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Plafon tarik tunai per transaksi; angka pilot pemilik 24 Okt 2026 (K-5). |
 | `teller.vault.cash_account` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Pemetaan pilot `101.1 KAS DI VAULT` (memo T-118 §5, O-097/K-6) — bukan kutipan SAK EP/PSAK. |
+| `teller.vault.limit_topup_per_request` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Plafon satu pengajuan top-up vault; angka pilot pemilik 24 Okt 2026 (K-5). |
 
 ## Ringkasan per kelas
 
 | kelas | jumlah definisi |
 |---|---|
 | teknis | 15 |
-| kebijakan | 20 |
+| kebijakan | 24 |
 | komersial-konservatif | 2 |
 | belum-bermakna | 0 |
 | regulasi-tidak-disemai | 5 |

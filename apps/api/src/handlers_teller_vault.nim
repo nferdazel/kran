@@ -32,6 +32,7 @@ import teller/domain/session
 import teller/infrastructure/[session_repo, vault_request_repo]
 
 import ./access
+import ./cash_limit
 import ./context
 import ./db_bridge
 import ./http_util
@@ -110,6 +111,11 @@ proc submitTopUp(principal: Principal, app: AppContext, req: Request, db: DbConn
     return (400, newJObject(),
       "akun sumber harus akun ASSET aktif yang postable", "source_account_invalid")
   let businessDate = businessDateFor(db, institutionScope(), businessDateIso(app.clock))
+  # Plafon per pengajuan (K-5/O-099) dari parameter, dicek sebelum apa pun ditulis.
+  let topUpLimit = cashLimit(db, P_teller_vault_limit_topup_per_request, businessDate)
+  if exceedsLimit(amount, topUpLimit):
+    return (409, newJObject(),
+      "nominal melebihi plafon top-up " & topUpLimit.toDecimalString, "topup_exceeds_limit")
   # Sumber = akun vault sendiri akan memposting D/K akun yang sama: saldo vault naik sementara
   # jurnal netto nol — saldo dan buku besar tidak lagi mengikat. Tolak di sini, bukan dibiarkan.
   if sourceAccount == vaultGlAccount(db, businessDate):
@@ -224,6 +230,9 @@ proc handleSubmitTellerVaultTopUp*(app: AppContext, req: Request) {.gcsafe.} =
   except IdempotencyStateError:
     status = 500
     problem = "idempotensi gagal diselesaikan"
+  except CashLimitConfigError as e:
+    status = 500
+    problem = "konfigurasi plafon kas tidak sah: " & e.msg
   except ValueError as e:
     if status == 0:
       status = 400

@@ -438,6 +438,22 @@ suite "vault: baca, ajukan, setujui":
     checkProblem(TopUpsPath & "/{requestId}/approve", "POST", "409", again.body)
     check reasonOf(again) == "topup_request_not_pending"
 
+  test "top-up di atas plafon → 409 topup_exceeds_limit; tepat plafon diterima":
+    let maker = tokenOf(login(MakerUser))
+    let pendingBefore = pendingCount(BranchA)
+
+    # Plafon `teller.vault.limit_topup_per_request` = 25.000.000 (K-5), dicek sebelum menulis.
+    let over = submitTopUp(maker, BranchA, "25000000.0001", "vault-limit-" & $epochTime())
+    check over.code == 409
+    checkProblem(TopUpsPath, "POST", "409", over.body)
+    check reasonOf(over) == "topup_exceeds_limit"
+    check pendingCount(BranchA) == pendingBefore
+
+    let atLimit = submitTopUp(maker, BranchA, "25000000.0000", "vault-limit-ok-" & $epochTime())
+    check atLimit.code == 201
+    check atLimit.body["status"].getStr() == "PENDING"
+    check pendingCount(BranchA) == pendingBefore + 1
+
   test "pengaju tidak boleh menyetujui pengajuannya sendiri → 409 self_approval":
     let maker = tokenOf(login(MakerUser))
     let submitted = submitTopUp(maker, BranchB, "25.0000", "vault-self-" & $epochTime())

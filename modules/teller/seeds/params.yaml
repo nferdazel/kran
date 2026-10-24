@@ -20,3 +20,52 @@
     compliance: NEEDS-COMPLIANCE-REVIEW
     note: "Pemetaan pilot `101.1 KAS DI VAULT` (memo T-118 §5, O-097/K-6) — bukan kutipan SAK EP/PSAK."
   default_pack: { base: "101.1" }
+
+# --- Batas nominal kas (O-099/K-5, D-133) ------------------------------------------------
+# Angka di bawah = kebijakan pilot yang disetujui pemilik 24 Okt 2026 (memo SME akuntansi),
+# BUKAN angka regulasi/kepatuhan. Semuanya `NORMAL`: menaikkan plafon tidak mengubah neraca,
+# hanya kelonggaran operasional — tetapi tetap parameter supaya bisa ditinjau tanpa deploy.
+# Dicek di handler (domain tetap murni); pelanggaran = 409 `cash_limit_exceeded`, bukan 400.
+- key: teller.cash.limit_opening_float
+  type: money
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 0 }
+  sensitivity: NORMAL
+  provenance:
+    class: kebijakan
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: "Plafon float laci per sesi; angka pilot pemilik 24 Okt 2026 (K-5)."
+  default_pack: { base: "2000000.0000" }
+
+- key: teller.cash.limit_deposit
+  type: money
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 0 }
+  sensitivity: NORMAL
+  provenance:
+    class: kebijakan
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: "Plafon setor tunai per transaksi; angka pilot pemilik 24 Okt 2026 (K-5)."
+  default_pack: { base: "10000000.0000" }
+
+- key: teller.cash.limit_withdrawal
+  type: money
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 0 }
+  sensitivity: NORMAL
+  provenance:
+    class: kebijakan
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: "Plafon tarik tunai per transaksi; angka pilot pemilik 24 Okt 2026 (K-5)."
+  default_pack: { base: "5000000.0000" }
+
+- key: teller.vault.limit_topup_per_request
+  type: money
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 0 }
+  sensitivity: NORMAL
+  provenance:
+    class: kebijakan
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: "Plafon satu pengajuan top-up vault; angka pilot pemilik 24 Okt 2026 (K-5)."
+  default_pack: { base: "25000000.0000" }
