@@ -276,7 +276,7 @@
 </script>
 
 <svelte:head>
-  <title>{m.common_app_title()} — {m.vault_title()}</title>
+  <title>{m.common_app_title()} · {m.vault_title()}</title>
 </svelte:head>
 
 <div class="vault-head">
