@@ -224,6 +224,45 @@ proc rolePermissions*(db: DbConn, roleCode: string): seq[string] =
      WHERE r.code = lower(?) ORDER BY p.code""", roleCode):
     result.add row[0]
 
+proc roleGrantsPermission*(db: DbConn, roleCode, permissionCode: string): bool =
+  ## True bila role `roleCode` memegang izin `permissionCode` di katalog.
+  db.getAllRows(sql"""
+    SELECT 1 FROM platform.role r
+      JOIN platform.role_permission rp ON rp.role_id = r.role_id
+      JOIN platform.permission p ON p.permission_id = rp.permission_id
+     WHERE r.code = lower(?) AND p.code = ?""", roleCode, permissionCode).len > 0
+
+proc userHasPermission*(db: DbConn, userId, permissionCode: string): bool =
+  ## True bila pengguna memegang `permissionCode` lewat role mana pun (status apa pun).
+  db.getAllRows(sql"""
+    SELECT 1 FROM platform.user_role ur
+      JOIN platform.role_permission rp ON rp.role_id = ur.role_id
+      JOIN platform.permission p ON p.permission_id = rp.permission_id
+     WHERE ur.user_id = ?::uuid AND p.code = ?""", userId, permissionCode).len > 0
+
+proc userHasPermissionExcludingRole*(db: DbConn, userId, roleCode,
+                                     permissionCode: string): bool =
+  ## True bila pengguna memegang `permissionCode` lewat role **selain** `roleCode`. Dipakai penjaga
+  ## pengelola-terakhir untuk tahu apakah mencabut satu role benar-benar menghilangkan izinnya.
+  db.getAllRows(sql"""
+    SELECT 1 FROM platform.user_role ur
+      JOIN platform.role r ON r.role_id = ur.role_id
+      JOIN platform.role_permission rp ON rp.role_id = ur.role_id
+      JOIN platform.permission p ON p.permission_id = rp.permission_id
+     WHERE ur.user_id = ?::uuid AND r.code <> lower(?) AND p.code = ?""",
+    userId, roleCode, permissionCode).len > 0
+
+proc countActiveUsersWithPermission*(db: DbConn, permissionCode: string): int =
+  ## Berapa pengguna **ACTIVE** yang memegang `permissionCode` lewat role mana pun. Akun non-aktif
+  ## tidak bisa mengelola apa pun, jadi tidak dihitung oleh penjaga pengelola-terakhir.
+  parseInt(db.getValue(sql"""
+    SELECT count(DISTINCT ur.user_id)
+      FROM platform.app_user u
+      JOIN platform.user_role ur ON ur.user_id = u.user_id
+      JOIN platform.role_permission rp ON rp.role_id = ur.role_id
+      JOIN platform.permission p ON p.permission_id = rp.permission_id
+     WHERE u.status = 'ACTIVE' AND p.code = ?""", permissionCode))
+
 proc setRoleConflict*(db: DbConn, roleCodeA, roleCodeB, reasonKey: string): bool =
   ## Menyimpan pasangan SoD dalam bentuk kanonik (a < b) — urutan argumen tidak penting.
   let (a, b) = if roleCodeA < roleCodeB: (roleCodeA, roleCodeB)

@@ -16,7 +16,7 @@ import db_connector/db_postgres
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
 import dbtools/lib
-import kernel/[clock, ids]
+import kernel/[auditcontext, clock, ids]
 import platform/domain/scope
 import platform/infrastructure/[audit_repo, auth_repo, auth_service, branch_repo,
   password_hasher, worker_repo]
@@ -320,35 +320,119 @@ suite "kran-api: peran CLI (O-013)":
       SELECT count(*) FROM platform.audit_log
        WHERE action = 'user.unlock' AND after_value->>'username' = ?""", uname) == "1"
 
-  test "ctl revoke-role: refuses to revoke the last platform_admin (lockout guard)":
-    # Make the precondition deterministic regardless of what earlier suites left behind: park any
-    # pre-existing platform_admin grant, restore it afterwards.
-    var parked: seq[tuple[userId, branchId: string]]
-    for row in db.getAllRows(sql"""
-      SELECT ur.user_id::text, coalesce(ur.branch_id, '')
-        FROM platform.user_role ur JOIN platform.role r ON r.role_id = ur.role_id
-       WHERE r.code = ?""", bootstrapAdminRole):
-      parked.add (row[0], row[1])
-    for (uid, branchId) in parked:
-      discard revokeRole(db, uid, bootstrapAdminRole, branchId)
-    defer:
-      for (uid, branchId) in parked:
-        discard grantRole(db, uid, bootstrapAdminRole, branchId, "")
+  test "0032: peran admin sempit — izin eksplisit & scope INSTITUTION (T-118)":
+    for code in ["ops_admin", "ledger_admin", "cash_admin", "product_maker"]:
+      check roleExists(db, code)
+      check roleScope(db, code).get() == roleScopeInstitution
+    # `ops_admin` menggantikan `platform_admin` untuk administrasi harian pengguna/anggota/rekening,
+    # tetapi TIDAK memegang kas/vault atau pembalik jurnal.
+    let ops = rolePermissions(db, "ops_admin")
+    check "platform.user.manage" in ops
+    check "deposit.account.manage" in ops
+    check "teller.vault.topup" notin ops
+    check "ledger.journal.reverse" notin ops
+    # Yang membukukan tidak mengendalikan injeksi kas, tetapi boleh membalik jurnal.
+    let ledger = rolePermissions(db, "ledger_admin")
+    check "ledger.coa.manage" in ledger
+    check "ledger.journal.reverse" in ledger
+    check "teller.vault.topup" notin ledger
+    let cash = rolePermissions(db, "cash_admin")
+    check "teller.vault.topup" in cash
+    check "teller.vault.read" in cash
+    check "ledger.coa.manage" notin cash
+    # Pembuat katalog tidak boleh menyetujui (itu tugas `product_checker`).
+    let maker = rolePermissions(db, "product_maker")
+    check "product.catalog.manage" in maker
+    check "product.catalog.approve" notin maker
+    # `platform_admin` tetap break-glass: izin manajemen pengguna tidak dicabut dari sana.
+    check "platform.user.manage" in rolePermissions(db, "platform_admin")
+
+  test "0032: pasangan SoD tersemai (kanonik a < b) & penugasan berkonflik ditolak (T-118)":
+    let pairs = conflictPairs(db)
+    let expected = @[
+      (a: "product_checker", b: "product_maker"),
+      (a: "cash_admin", b: "ledger_admin"),
+      (a: "ledger_admin", b: "ops_admin"),
+      (a: "ledger_admin", b: "teller"),
+      (a: "cash_admin", b: "teller")]
+    for pair in expected:
+      check pair in pairs
+    for pair in pairs:
+      check pair.a < pair.b # CHECK `role_conflict_order_chk` (0006) tidak boleh dilanggar.
 
     let uid = $newId(systemClock())
-    let uname = "itapi-lastadmin-" & uid[0 .. 7]
-    check insertUser(db, NewUser(userId: uid, username: uname, fullName: "Uji Admin Terakhir",
+    let uname = "itapi-sod-" & uid[0 .. 7]
+    check insertUser(db, NewUser(userId: uid, username: uname, fullName: "Uji SoD",
       passwordHash: "x"))
     defer: discard db.execAffectedRows(
       sql"DELETE FROM platform.app_user WHERE user_id = ?::uuid", uid)
-    check grantRole(db, uid, bootstrapAdminRole, "", "")
-    check countUsersWithRole(db, bootstrapAdminRole) == 1
+    let ctx = newAuditContext(newId(systemClock()), systemClock())
 
-    check runCtl(revokeRoleCmd, ".", uname, "", bootstrapAdminRole) == 3
-    check bootstrapAdminRole in roleCodesOfUser(db, uid)
-    # Disabling the last admin is the same one-way door as revoking it.
+    # maker-checker katalog produk: satu orang tidak boleh memegang keduanya.
+    check grantRole(db, uid, "product_checker", "", "")
+    let makerRes = grantUserRole(db, ctx, systemClock(), institutionScope(), userById(db, uid).get(),
+      "product_maker", "")
+    check makerRes.outcome == uaoRejected
+    check makerRes.reason == "sod_conflict"
+    check "product_maker" notin roleCodesOfUser(db, uid)
+
+    # yang membukukan tidak boleh mengendalikan injeksi kas.
+    check grantRole(db, uid, "ledger_admin", "", "")
+    let cashRes = grantUserRole(db, ctx, systemClock(), institutionScope(), userById(db, uid).get(),
+      "cash_admin", "")
+    check cashRes.outcome == uaoRejected
+    check cashRes.reason == "sod_conflict"
+    check "cash_admin" notin roleCodesOfUser(db, uid)
+
+  test "penjaga pengelola terakhir: berbasis izin platform.user.manage (T-118, K-7)":
+    # Deterministik apa pun yang ditinggalkan suite lain: park SEMUA grant yang membuat pemegangnya
+    # mampu mengelola pengguna (`platform_admin` maupun `ops_admin`), pulihkan sesudahnya.
+    var parked: seq[tuple[userId, roleCode, branchId: string]]
+    for row in db.getAllRows(sql"""
+      SELECT DISTINCT ur.user_id::text, r.code, coalesce(ur.branch_id, '')
+        FROM platform.user_role ur
+        JOIN platform.role r ON r.role_id = ur.role_id
+        JOIN platform.role_permission rp ON rp.role_id = r.role_id
+        JOIN platform.permission p ON p.permission_id = rp.permission_id
+       WHERE p.code = 'platform.user.manage'"""):
+      parked.add (row[0], row[1], row[2])
+    for (uid, roleCode, branchId) in parked:
+      discard revokeRole(db, uid, roleCode, branchId)
+    defer:
+      for (uid, roleCode, branchId) in parked:
+        discard db.execAffectedRows(sql"""
+          INSERT INTO platform.user_role (user_id, role_id, branch_id)
+          SELECT ?::uuid, r.role_id, NULLIF(?, '')::uuid
+            FROM platform.role r WHERE r.code = ?
+          ON CONFLICT DO NOTHING""", uid, branchId, roleCode)
+
+    # Satu-satunya pengelola memakai `ops_admin`, bukan `platform_admin`: membuktikan penjaganya
+    # mengikuti izin, bukan kode role.
+    let uid = $newId(systemClock())
+    let uname = "itapi-lastmanager-" & uid[0 .. 7]
+    check insertUser(db, NewUser(userId: uid, username: uname, fullName: "Uji Pengelola Terakhir",
+      passwordHash: "x"))
+    defer: discard db.execAffectedRows(
+      sql"DELETE FROM platform.app_user WHERE user_id = ?::uuid", uid)
+    check grantRole(db, uid, "ops_admin", "", "")
+    check countActiveUsersWithPermission(db, "platform.user.manage") == 1
+
+    # Mencabut role pengelola terakhir dan menonaktifkannya sama-sama satu pintu keluar.
+    check runCtl(revokeRoleCmd, ".", uname, "", "ops_admin") == 3
+    check "ops_admin" in roleCodesOfUser(db, uid)
     check runCtl(disableUserCmd, ".", uname) == 3
     check userById(db, uid).get().status == "ACTIVE"
+
+    # Dengan pengelola kedua (akun lain), pencabutan yang menyisakan pengelola diizinkan.
+    let uid2 = $newId(systemClock())
+    check insertUser(db, NewUser(userId: uid2, username: "itapi-lastmanager2-" & uid2[0 .. 7],
+      fullName: "Uji Pengelola Kedua", passwordHash: "x"))
+    defer: discard db.execAffectedRows(
+      sql"DELETE FROM platform.app_user WHERE user_id = ?::uuid", uid2)
+    check grantRole(db, uid2, bootstrapAdminRole, "", "")
+    check countActiveUsersWithPermission(db, "platform.user.manage") == 2
+    check runCtl(revokeRoleCmd, ".", uname, "", "ops_admin") == 0
+    check runCtl(disableUserCmd, ".", uname) == 0
 
   test "withRoleDb(useTx = true): kegagalan di tengah membatalkan seluruh tulisan":
     # Bootstrap menulis tiga hal (pengguna, role, audit). Kalau salah satunya gagal dan transaksinya
