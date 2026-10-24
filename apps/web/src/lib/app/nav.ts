@@ -51,6 +51,13 @@ export const appNavLinks: readonly NavLink[] = [
     permissions: ["teller.transaction.post"],
   },
   {
+    // Saldo kas vault + pengajuan/persetujuan top-up (T-121). Izin baca dipakai sebagai gerbang
+    // menu; seksi pengajuan/keputusan disaring sendiri oleh `teller.vault.submit`/`approve`.
+    href: "/app/vault",
+    label: (locale) => m.common_nav_vault({}, { locale }),
+    permissions: ["teller.vault.read"],
+  },
+  {
     href: "/app/accounts/open",
     label: (locale) => m.common_nav_accounts({}, { locale }),
     permissions: ["deposit.account.manage"],

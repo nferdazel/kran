@@ -48,7 +48,7 @@ describe("visibleNavLinks", () => {
       "deposit.account.read",
       "party.party.read",
     ];
-    expect(hrefs(visibleNavLinks(appNavLinks, teller))).toEqual(["/app/teller"]);
+    expect(hrefs(visibleNavLinks(appNavLinks, teller))).toEqual(["/app/teller", "/app/vault"]);
   });
 
   it("maker parameter (tanpa ledger.journal.read) tidak melihat buku besar", () => {
@@ -56,6 +56,7 @@ describe("visibleNavLinks", () => {
     expect(hrefs(visibleNavLinks(appNavLinks, maker))).toEqual([
       "/app/ledger/admin",
       "/app/teller",
+      "/app/vault",
       "/app/accounts/open",
       "/app",
       "/app/products",
