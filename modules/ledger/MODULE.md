@@ -60,11 +60,14 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 - Worker `role=worker` menjalankan loop konsumen; batas dari parameter
   `ledger.posting.batch_size`, `max_attempts`, `retry_backoff_seconds`, `poll_interval_ms`.
 - Pengelolaan rule lewat migrasi sampai ada API/UI (**O-080**).
-- Rule transaksi simpanan dari migrasi idempoten: `DepositWithdrawn` (T-088b, `0012` = D 201/K 101)
+- Rule transaksi simpanan dari migrasi idempoten: `DepositWithdrawn` (T-088b, `0012` = D 201/K 101.2)
   dan `DepositTransferred` (T-088c, `0013` = D 201/K 201 untuk pemindahbukuan/PB). `DepositPosted`
-  (D 101/K 201) dari `0005` dipakai ulang. **Batas PB:** kedua sisi akun `201` yang sama → jurnal
+  (D 101.2/K 201) dari `0005` dipakai ulang. **Batas PB:** kedua sisi akun `201` yang sama → jurnal
   net-nol di GL; perpindahan per rekening dicatat di modul `deposit` (`deposit.transfer`), belum ada
   GL per pemilik — lihat `docs/ACCEPTED-LIMITS.md` dan T-101/Fase 3.
+- Migrasi `0033_ledger_cash_clearing.sql` (T-118) memisahkan kas konter: `101` menjadi induk
+  non-postable, `101.2 KAS DI TELLER` menggantikan `101` pada **semua** `posting_rule_line` yang
+  sebelumnya menunjuk `101` (5 baris lintas `0005`/`0012`/`0014`). Jurnal historis tetap `101`.
 
 ## Saldo turunan & trial balance (T-075)
 
@@ -133,6 +136,9 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 - COA awal (`0002_ledger_coa_base.sql`) adalah **contoh struktur** untuk pilot, bertanda
   `NEEDS-COMPLIANCE-REVIEW` (REG-011 `V!`): jangan dijadikan dasar laporan final sebelum review
   compliance. Ditaruh di migrasi (bukan `packs/*/seed/`) karena seed pack hanya untuk `--dev`.
+- `0033_ledger_cash_clearing.sql` menambah `101.1 KAS DI VAULT` / `101.2 KAS DI TELLER` /
+  `101.9 SELISIH KAS` (ASSET, DEBIT, postable) dan menjadikan `101 KAS` non-postable (induk).
+  Kode akun itu **usulan struktur pilot** dari memo T-118, tetap `NEEDS-COMPLIANCE-REVIEW`.
 
 ## Task day-close yang didaftarkan
 
@@ -195,9 +201,23 @@ keberadaan baris `balance_snapshot` pada `ends_on`.
 
 - `ledger/0014` menambah akun `301.1` (SIMPANAN POKOK ANGGOTA) dan `301.2` (SIMPANAN WAJIB
   ANGGOTA) plus rule `DepositPosted` berkondisi `{"savingsKind":"POKOK"}` / `"WAJIB"` ke akun itu.
-  Rule generik `101/201` tetap fallback untuk NULL/SUKARELA/TABUNGAN.
+  Rule generik `101.2/201` tetap fallback untuk NULL/SUKARELA/TABUNGAN.
 - Nomor akun dan klasifikasi ekuitas vs liabilitas **belum final**:
   `NEEDS-COMPLIANCE-REVIEW` + O-100. Jangan memakai akun ini sebagai dasar laporan final sebelum
   accounting owner menetapkan COA.
 - Rule berkondisi hanya terpilih bila pemanggil mengirim `savingsKind` di payload
   (`postJournalSync`); payload kosong akan diam-diam memakai rule generik.
+
+## Kas teller vs vault: sub-akun clearing (T-118)
+
+- `ledger/0033` menambah `101.1 KAS DI VAULT`, `101.2 KAS DI TELLER`, `101.9 SELISIH KAS`
+  (ASSET/DEBIT/postable) dan memindahkan posting kas konter dari `101` ke `101.2`. `101 KAS` kini
+  induk non-postable, jadi posting langsung ke `101` ditolak trigger `postable`.
+- Alasan: satu akun `101` membuat kas di laci dan kas di vault tak terpisah di neraca
+  (memo `docs/proposals/t-118-operator-governance.md` §5 opsi A). Kode akun ini **struktur pilot**,
+  tetap `NEEDS-COMPLIANCE-REVIEW` (REG-011 `V!`).
+- **Belum berjurnal (follow-up, O-097):** buka sesi (D 101.2/K 101.1), tutup sesi (D 101.1/K 101.2),
+  top-up vault (D 101.1/K sumber), dan sweep selisih (`101.9`) belum diposting. Karena itu
+  `teller.vault.balance` dan `expected_cash` belum bisa direkonsiliasi penuh ke `journal_line`;
+  gate EOD menunggu `daycloser` (Fase 3). Task jurnal sesi teller menyusul dan **tidak** termasuk
+  migrasi 0033.
