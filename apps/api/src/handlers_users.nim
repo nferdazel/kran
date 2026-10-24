@@ -72,9 +72,12 @@ proc parseLimit(req: Request): tuple[value: int, error: string] =
     (0, "limit harus angka")
 
 proc rejectKind(reason: string): ProblemKind =
-  ## `400` untuk kode role/branch yang salah bentuk (masukan pemanggil), `409` untuk konflik keadaan
-  ## (sudah/sedang tidak dipegang, admin terakhir, status salah).
-  if reason in ["role_not_found", "role_scope"]: pkBadRequest else: pkConflict
+  ## `400` untuk kode role/branch yang salah bentuk (masukan pemanggil), `403` untuk penugasan yang
+  ## melebihi wewenang pemberi izin, `409` untuk konflik keadaan (sudah dipegang, admin terakhir,
+  ## status salah).
+  if reason in ["role_not_found", "role_scope"]: pkBadRequest
+  elif reason == "grant_exceeds_actor": pkForbidden
+  else: pkConflict
 
 proc respondUserProblem(req: Request, kind: ProblemKind, reason, detail: string) =
   req.respondProblem(newProblem(kind, $kind, detail, traceId = traceIdFrom(req),
@@ -187,6 +190,23 @@ proc handleAssignRole*(app: AppContext, req: Request) {.gcsafe.} =
         if userOpt.isNone:
           status = 404
           return
+        # T-128/BLK-3: menugaskan ke diri sendiri membuka jalur eskalasi (ops_admin -> platform_admin)
+        # tanpa approver, dan `platform_admin` memang tidak dipasangkan SoD. Dilarang di sini, bukan
+        # hanya di UI.
+        if userOpt.get().userId == principal.user.userId:
+          status = -1
+          reason = "self_grant"
+          detail = "peran tidak boleh ditugaskan kepada akun yang melakukan permintaan"
+          return
+        # Pemberi izin tidak boleh memberikan peran yang memuat izin yang tidak ia pegang sendiri.
+        # Tanpa ini, `platform.user.manage` setara `platform_admin` (T-128/BLK-3).
+        for permission in rolePermissions(db, roleCode):
+          if not userHasPermission(db, principal.user.userId, permission):
+            status = -1
+            reason = "grant_exceeds_actor"
+            detail = "peran memuat izin '" & permission &
+              "' yang tidak dipegang oleh pemberi izin"
+            return
         let ctx = auditContextFor(principal, req, app.clock, "assign role", branchId)
         let res = grantUserRole(db, ctx, app.clock, institutionScope(), userOpt.get(),
           roleCode, branchId)

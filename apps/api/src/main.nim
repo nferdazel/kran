@@ -48,6 +48,7 @@ import ./deposit_posting
 import ./drain
 import ./events
 import ./health
+import ./login_guard
 import ./posting
 import ./readiness
 import ./server
@@ -1093,6 +1094,7 @@ proc main() =
     readiness: databaseProbe(),
     pool: pool,
     clock: systemClock(),
+    loginGuard: newLoginGuard(),
   )
 
   # Enkripsi field (T-054, spec §18.2): `KRAN_KEK_FILE` kosong → belum ada kolom terenkripsi,

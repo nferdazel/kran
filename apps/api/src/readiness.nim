@@ -8,6 +8,7 @@
 ## — ambang yang dipakai bersifat teknis dan diberi komentar.
 
 import std/[strutils, times]
+import "platform-lib/log"
 
 import db_connector/db_postgres
 
@@ -107,7 +108,12 @@ proc databaseProbe*(): ReadinessProbe =
                                 detail: "jawaban tak terduga dari select 1")]
       @[ReadinessCheck(name: "database", status: csOk)]
     except CatchableError as e:
-      @[ReadinessCheck(name: "database", status: csFailed, detail: e.msg)]
+      # `detail` adalah endpoint **tanpa autentikasi**: pesan libpq memuat host/port/user.
+      # Sebabnya ke log server, klien hanya menerima kode tetap (T-128/API-2).
+      discard newLogger(lvlError).error("readiness: database tidak dapat dihubungi",
+        [("detail", e.msg)])
+      @[ReadinessCheck(name: "database", status: csFailed,
+                       detail: "database tidak dapat dihubungi")]
 
 proc migrationCheck*(pendingExpand: seq[string]; verifiable: bool): ReadinessCheck =
   ## Keputusan readiness migrasi (O-019). Dipisah dari I/O supaya bisa diuji deterministik

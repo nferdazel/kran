@@ -19,6 +19,8 @@ import ./context
 import ./db_bridge
 import ./http_util
 import ./identity
+import ./login_guard
+import "platform-lib/log"
 import ./problem
 
 const
@@ -42,6 +44,20 @@ proc handleLogin*(app: AppContext, req: Request) {.gcsafe.} =
     req.respondProblem(pkNotImplemented, "Not Implemented",
       "layanan basis data tidak dikonfigurasi (KRAN_DATABASE_URL kosong saat start)")
     return
+
+  # Pembatas login (T-128) diperiksa **sebelum** parsing dan KDF: permintaan cacat pun dihitung,
+  # dan PBKDF2 tidak pernah berjalan tanpa slot. Slot wajib dilepas lewat `defer`.
+  let ip = clientIp(req)
+  let slot = tryBegin(app.loginGuard, ip)
+  if not slot.allowed:
+    req.respondProblem(
+      newProblem(pkTooManyRequests, "Too Many Requests",
+        "terlalu banyak percobaan login; coba lagi nanti",
+        traceId = traceIdFrom(req), params = @[("reason", "rate_limited")]),
+      @[("Retry-After", $slot.retryAfter)])
+    return
+  defer:
+    finish(app.loginGuard)
 
   let body = parseJsonBody(req)
   if body.isNone:
@@ -69,12 +85,12 @@ proc handleLogin*(app: AppContext, req: Request) {.gcsafe.} =
     req.respondProblem(pkInternal, "Internal Server Error", "login gagal diproses")
     return
   except ValueError as e:
-    # Kebijakan keamanan dari parameter tidak sah (mis. `session_idle_minutes` >
-    # `session_absolute_minutes`): konfigurasi institusi yang rusak, bukan kesalahan pengguna.
-    # Tetap dijawab sebagai `problem+json` sesuai kontrak — bukan 500 mentah tanpa amplop — dan
-    # sebabnya terlihat di `detail` supaya bisa langsung ditindaklanjuti.
+    # Sebabnya ke log server; teksnya memuat kunci/nilai kebijakan institusi sehingga
+    # tidak boleh dikirim ke klien (T-128/API-2).
+    discard newLogger(lvlError).error("kebijakan keamanan tidak sah",
+      [("detail", e.msg)])
     req.respondProblem(pkInternal, "Internal Server Error",
-      "kebijakan keamanan tidak sah: " & e.msg)
+      "kebijakan keamanan server tidak sah")
     return
 
   case authResult.outcome
@@ -191,8 +207,12 @@ proc handleChangePassword*(app: AppContext, req: Request) {.gcsafe.} =
     req.respondProblem(pkInternal, "Internal Server Error", "ganti kata sandi gagal diproses")
     return
   except ValueError as e:
+    # Sebabnya ke log server; teksnya memuat kunci/nilai kebijakan institusi sehingga
+    # tidak boleh dikirim ke klien (T-128/API-2).
+    discard newLogger(lvlError).error("kebijakan keamanan tidak sah",
+      [("detail", e.msg)])
     req.respondProblem(pkInternal, "Internal Server Error",
-      "kebijakan keamanan tidak sah: " & e.msg)
+      "kebijakan keamanan server tidak sah")
     return
 
   if not changed:

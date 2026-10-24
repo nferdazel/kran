@@ -37,6 +37,7 @@
   "error_method_not_allowed": "The request method is not supported.",
   "error_not_found": "The requested data was not found.",
   "error_not_implemented": "This feature is not available yet.",
+  "error_too_many_requests": "Too many attempts. Wait a moment and try again.",
   "error_unauthorized": "Incorrect username or password.",
   "error_upgrade_required": "The server cannot process this request.",
   "login_error": "Could not sign in with this account.",

@@ -1407,7 +1407,10 @@ export interface paths {
          *     (`roleAssignmentProblem`): role `BRANCH` butuh cabang, role `INSTITUTION` menolaknya (`400`
          *     `role_scope`). Konflik pemisahan tugas ditolak `409` `sod_conflict`; role yang sudah
          *     dipegang `409` `already_granted`; kode role tak dikenal `400` `role_not_found`; pengguna
-         *     tak ada `404` `user_not_found`. Audit `user.role_grant` ditulis dengan aktor dari sesi.
+         *     tak ada `404` `user_not_found`. Penugasan kepada akun peminta sendiri ditolak `409`
+         *     `self_grant`, dan role yang memuat izin yang tidak dipegang pemberi izin ditolak `403`
+         *     `grant_exceeds_actor` — tanpa keduanya `platform.user.manage` setara `platform_admin`.
+         *     Audit `user.role_grant` ditulis dengan aktor dari sesi.
          *     **HUMAN-REVIEW-REQUIRED** (administrasi pengguna/RBAC).
          */
         post: operations["assignUserRole"];
@@ -2767,6 +2770,21 @@ export interface operations {
                 };
             };
             405: components["responses"]["Problem"];
+            /**
+             * @description Terlalu banyak percobaan login dari alamat ini (`params.reason` = `rate_limited`).
+             *     Pembatasnya melindungi kapasitas KDF/pool, bukan kebijakan akun: akun yang benar pun
+             *     ditolak selama jendela berjalan.
+             */
+            429: {
+                headers: {
+                    /** @description Detik sampai percobaan berikutnya diterima */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
         };
