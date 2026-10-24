@@ -98,7 +98,7 @@ dan semantiknya tidak boleh dikarang. Baris lama di DB ditandai `deprecated` ole
   ada di `0018`. Dibiarkan karena `0017` sudah diterapkan (checksum).
 - Binding `pvtJson` dibatasi ukuran (16 KiB) tetapi bentuknya belum divalidasi schema; batas schema
   pecahan ditolak (fail-closed), bukan diabaikan. Plafon teknis teks 200 karakter dan `decimal`
-  mewarisi 4 desimal `moneyFromString` (**O-087**).
+  mewarisi 2 desimal `moneyFromString` (**O-087**).
 - Migrasi modul ini pernah diubah sebelum deploy (review T-076); DB dev yang dibuat sebelum
   `4930514` harus reset schema `product` + hapus riwayat `product/%` sebelum `dbtools migrate`.
   Jalur DB kosong belum dikunci test otomatis (**O-088**).

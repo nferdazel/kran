@@ -35,7 +35,7 @@ Penyesuaian saldo turun belum punya API; koreksi hanya lewat SQL oleh pemilik/op
 ## Bukti eksekusi produksi (23 Okt 2026)
 
 - Cabang pilot: `b0000000-0000-4000-8000-000000000001` (placeholder sampai master cabang ada).
-- Float awal: `10000000.0000` (Rp10.000.000), disetujui pemilik.
+- Float awal: `10000000.00` (Rp10.000.000), disetujui pemilik.
 - Hasil: `INSERT 0 1`; `SELECT` → satu baris dengan saldo tersebut.
 - Konsekuensi: sesi kas pilot bisa dibuka; saldo ini **tidak** tercermin di neraca GL (O-097).
 

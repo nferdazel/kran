@@ -2620,3 +2620,24 @@ berubah. Sekarang pembalik untuk jurnal semacam itu **ditolak**.
 
 **Sisa.** Jalur koreksi subledger yang memutar baris + cache (opsi b D-135) belum ada; sampai itu,
 koreksi hanya lewat transaksi baru di modul asal.
+
+## 24 Okt 2026 — uang 2 desimal (T-124, D-136)
+
+Presisi tunggal 2 desimal di semua lapisan; D-097 diganti.
+
+- `kernel/money.nim`: `moneyScale = 2` (unit terkecil 1 sen), parser menolak >2 desimal,
+  `toDisplayString` dihapus (tugasnya hanya menjembatani 4 → 2).
+- Migrasi expand-only `deposit/0038`, `ledger/0039`, `teller/0040`: 14 kolom uang → `numeric(24,2)`,
+  fungsi keseimbangan jurnal ikut 2 desimal, `balance_snapshot` dibangun ulang per `as_of`.
+  Ketiga migrasi **berhenti** bila ada nilai di bawah 0,01 (bukan membulatkan diam-diam).
+- Kontrak OpenAPI + klien TS: semua nominal 2 desimal. `formatMoney`/`addMoney` default 2,
+  `parseMoneyInput` menormalkan ke 2; seed parameter dan fixture ikut 2 desimal.
+- Pra-cek produksi: 0 baris dengan nilai < 0,01 di seluruh 9 tabel (aman, lossless).
+
+**Bukti.** `./task test` **1101 OK**; `./task check` hijau (nimpretty 217, lint 218, archcheck,
+lint-nomagic, paramgen, i18n 632 key, 8 skrip ops); `./task e2e` **46 lolos** + 117 uji kontras;
+vitest `@kran/ui` 117 dan `apps/web` 121 lolos; `./task openapi` sinkron; `./task dbtools validate`
+72 migrasi.
+
+**Sisa.** Akrual bunga Fase 3: pembulatan per sen per posting, jadi `rounding_scale`/`rounding_mode`
+(O-084) harus diputuskan sebelum akrual ditulis. Deviasi spec §9.3 dicatat sebagai O-106.
