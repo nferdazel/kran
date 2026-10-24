@@ -9,7 +9,7 @@
 ## Aksi institusi (bukan cabang) → dua gerbang seperti T-072/T-073: izin dipegang di cabang mana pun
 ## (`requirePermission`) **dan** grant tanpa batas cabang (`authorizedAtBranch(..., "")`).
 
-import std/[json, options, strutils]
+import std/[json, options, strutils, tables]
 
 import mummy
 import db_connector/db_postgres
@@ -42,10 +42,12 @@ proc roleGrantJson(g: RoleGrant): JsonNode =
     "branchId": if g.branchId.len == 0: newJNull() else: %g.branchId,
   }
 
-proc userJson(db: DbConn, u: UserRow): JsonNode =
+proc userJson(grants: seq[RoleGrant], u: UserRow): JsonNode =
   ## Bentuk pengguna untuk layar administrasi: **tanpa** password hash dan tanpa sesi/secret.
+  ## Grant dioper dari pemanggil supaya daftar pengguna tidak melakukan satu query per baris
+  ## (T-130/ARC-2).
   var roles = newJArray()
-  for g in roleGrantsOfUser(db, u.userId):
+  for g in grants:
     roles.add roleGrantJson(g)
   %*{
     "userId": u.userId,
@@ -108,8 +110,13 @@ proc handleListUsers*(app: AppContext, req: Request) {.gcsafe.} =
         if not authorizedAtBranch(db, principal, "", permissionUserManage):
           status = 403
           return
-        for u in listUsers(db, limit.value):
-          items.add userJson(db, u)
+        let users = listUsers(db, limit.value)
+        var userIds: seq[string]
+        for u in users:
+          userIds.add u.userId
+        let grants = roleGrantsForUsers(db, userIds)
+        for u in users:
+          items.add userJson(grants.getOrDefault(u.userId), u)
         status = 200)
   except DbError:
     status = 500
@@ -278,7 +285,7 @@ proc handleRevokeRole*(app: AppContext, req: Request) {.gcsafe.} =
     status = 500
 
   case status
-  of 204: req.respond(204, emptyHttpHeaders())
+  of 204: req.respondRaw(204, emptyHttpHeaders(), "")
   of 403: req.respondInstitutionOnly(permissionUserManage)
   of 404: respondNotFoundUser(req)
   of 500: req.respondProblem(pkInternal, "Internal Server Error", "pencabutan role gagal disimpan")

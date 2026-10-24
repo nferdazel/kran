@@ -2852,3 +2852,22 @@ tanpa galat.
 `itapi_ledger`, `itapi_teller_sessions`, `itapi_roles`, `itapi_teller`, `itapi_journal`,
 `itapi_teller_vault` hijau; `check` + `dbtools validate` (80 migrasi) + `build` hijau. Detail:
 `docs/tasks/T-129.md`.
+
+## 24 Okt 2026 — T-130: 500 tanpa jejak, pool yang kelaparan, dan N+1
+
+Permintaan yang gagal mengambil koneksi DB dijawab Mummy sebagai 500 tanpa badan dan tanpa log;
+`/readyz` hijau walau pool permintaan habis karena probe punya pool sendiri; 40 worker bersaing
+untuk 8 koneksi. Daftar rekening menjalankan 2–3 query otorisasi per baris, daftar pengguna satu
+query role per akun. `X-Forwarded-For` dipercaya apa adanya, dan tidak ada access log.
+
+- `router.errorHandler`: `PoolError` → 503 `problem+json` + `Retry-After` + log; exception lain → 500
+  `problem+json`, sebab hanya ke log.
+- `serverThreads = max(1, poolSize - 1)`; `databaseProbe(pool)` memakai pool proses.
+- `loadBranchAuthz`/`allowedAt` dan `roleGrantsForUsers` menghapus N+1.
+- `clientIpFrom`: XFF hanya dari loopback, divalidasi `parseIpAddress`, ≤ 45 karakter.
+- Access log satu baris per permintaan (`GET /api/v1/params 503 0ms`) dengan `trace_id` yang sama
+  dengan amplop problem.
+
+**Bukti.** `tidentity` 5, `taccess_log` 4, `itapi` (503 dengan `Retry-After` + probe pool tertutup),
+`tapi`/`tcontract`/`itapi_deposit`/`itapi_users` hijau; `check`, `lint-web`, `build` hijau. Detail:
+`docs/tasks/T-130.md`.

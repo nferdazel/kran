@@ -92,17 +92,24 @@ proc combineProbes*(probes: seq[ReadinessProbe]): ReadinessProbe =
       if probe != nil:
         result.add probe()
 
-proc databaseProbe*(): ReadinessProbe =
-  ## Readiness DB: pool dibuat sekali (lazy) supaya `/healthz` tetap tidak menyentuh DB.
+proc databaseProbe*(sharedPool: DbPool = nil): ReadinessProbe =
+  ## Readiness DB. `sharedPool` = pool milik proses API, sehingga probe melihat kondisi pool yang
+  ## **sama** dengan permintaan: pool penuh/putus membuat `/readyz` ikut merah, bukan hijau karena
+  ## probe punya koneksinya sendiri (T-130/ARC-1). Tanpa `sharedPool` (test, konstruksi awal) probe
+  ## membuat pool kecilnya sendiri — `/healthz` tetap tidak menyentuh DB.
+  ##
   ## Pesan `detail` sengaja tidak memuat kredensial — hanya sebab kegagalan.
-  var pool: DbPool
+  var localPool: DbPool
   result = proc(): seq[ReadinessCheck] {.gcsafe.} =
     if not databaseUrlSet(envTableFromProcess()):
       return @[ReadinessCheck(name: "database", status: csFailed,
                               detail: "KRAN_DATABASE_URL belum diisi")]
+    var pool = sharedPool
     try:
       if pool.isNil:
-        pool = newDbPool(dbConfigFromProcessEnv())
+        if localPool.isNil:
+          localPool = newDbPool(dbConfigFromProcessEnv())
+        pool = localPool
       if not pingDatabase(pool):
         return @[ReadinessCheck(name: "database", status: csFailed,
                                 detail: "jawaban tak terduga dari select 1")]

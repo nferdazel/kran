@@ -1103,8 +1103,15 @@ proc main() =
   # pump `LISTEN` (pump meminjam satu koneksi seumur proses).
   # Tanpa `KRAN_DATABASE_URL` API tetap hidup untuk `/healthz`, dan rute yang butuh DB membalas 501.
   var pool: DbPool
+  var serverThreads = 0
   if databaseUrlSet(envTableFromProcess()):
-    pool = newDbPool(dbConfigFromProcessEnv())
+    let dbConfig = dbConfigFromProcessEnv()
+    pool = newDbPool(dbConfig)
+    # ARC-1 (T-130): worker thread HTTP tidak boleh melebihi koneksi yang tersedia. Lebih banyak
+    # worker daripada pool hanya membuat permintaan menunggu 5 detik lalu gagal `PoolError`, dan
+    # thread yang menganggur tetap menghabiskan memori. Satu koneksi disisihkan untuk pump LISTEN
+    # yang dipinjam seumur proses.
+    serverThreads = max(1, dbConfig.poolSize - 1)
 
   var app = AppContext(
     version: opts.version,
@@ -1114,6 +1121,7 @@ proc main() =
     pool: pool,
     clock: systemClock(),
     loginGuard: newLoginGuard(),
+    serverThreads: serverThreads,
   )
 
   # Enkripsi field (T-054, spec §18.2): `KRAN_KEK_FILE` kosong → belum ada kolom terenkripsi,
@@ -1145,7 +1153,9 @@ proc main() =
   # untuk membaca daftar migrasi (default "."; di produksi diarahkan unit systemd ke checkout
   # monorepo).
   app.readiness = combineProbes(@[
-    databaseProbe(),
+    # Pool yang sama dengan permintaan: pool penuh/putus membuat /readyz merah (ARC-1), bukan hijau
+      # karena probe punya koneksi sendiri.
+    databaseProbe(app.pool),
     migrationProbe(app.pool, opts.root),
     realtimeProbe(app.events),
     pumpLagProbe(app.events, app.pool),

@@ -101,7 +101,7 @@ proc handleLogin*(app: AppContext, req: Request) {.gcsafe.} =
     # skrip di halaman tidak bisa membacanya.
     headers["Set-Cookie"] = SessionCookieName & "=" & authResult.token & "; " &
       sessionCookieAttributes(policy)
-    req.respond(200, headers, $ %*{
+    req.respondRaw(200, headers, $ %*{
       "userId": authResult.userId,
       "sessionId": authResult.sessionId,
       "expiresAt": utcIso(sessionDeadlines(policy, now)[0])})
@@ -160,7 +160,7 @@ proc handleLogout*(app: AppContext, req: Request) {.gcsafe.} =
 
   var headers = emptyHttpHeaders()
   headers["Set-Cookie"] = SessionCookieName & "=; " & clearedCookieAttributes()
-  req.respond(204, headers)
+  req.respondRaw(204, headers, "")
 
 proc handleChangePassword*(app: AppContext, req: Request) {.gcsafe.} =
   ## `POST /api/v1/auth/password` — ganti kata sandi sendiri (T-027).
@@ -223,4 +223,4 @@ proc handleChangePassword*(app: AppContext, req: Request) {.gcsafe.} =
     return
 
   # Cookie tidak diganti: sesi yang dipakai tetap sah, hanya sesi lain yang dicabut.
-  req.respond(204, emptyHttpHeaders())
+  req.respondRaw(204, emptyHttpHeaders(), "")

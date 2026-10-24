@@ -6,9 +6,35 @@ import std/[json, options, strutils]
 import mummy
 import mummy/routers
 
+import kernel/ids
+
 const
   ContentTypeJson* = "application/json"
   ContentTypeProblem* = "application/problem+json"
+
+var scopeStatus {.threadvar.}: int
+var scopeTrace {.threadvar.}: string
+
+proc beginRequestScope*(req: Request) =
+  ## Awal satu permintaan (dipanggil pembungkus di `server.nim`): status direset dan trace id
+  ## ditetapkan **sekali**, sehingga amplop problem, access log, dan audit memakai korelasi yang
+  ## sama (T-130/API-6). Threadvar cukup karena Mummy memproses satu permintaan per worker thread
+  ## pada satu waktu.
+  scopeStatus = 0
+  scopeTrace = req.headers["X-Request-Id"].strip()
+  if scopeTrace.len == 0:
+    scopeTrace = newCorrelationId()
+
+proc requestScopeTrace*(): string =
+  ## Trace id permintaan yang sedang dilayani; "" di luar siklus permintaan (test/CLI).
+  scopeTrace
+
+proc requestScopeStatus*(): int =
+  ## Status respons terakhir yang dicatat helper di modul ini; 0 = handler tidak lewat helper.
+  scopeStatus
+
+proc recordStatus*(status: int) {.inline.} =
+  scopeStatus = status
 
 proc headersWithType*(contentType: string): HttpHeaders =
   ## Header dasar setiap respons API. `no-store` wajib: respons memuat data sesi/PII (unmask,
@@ -42,7 +68,14 @@ proc sameOrigin*(origin, host: string): bool =
 
 proc respondJson*(req: Request, status: int, body: JsonNode) =
   ## Satu tempat menulis respons JSON supaya header konsisten.
+  recordStatus(status)
   req.respond(status, headersWithType(ContentTypeJson), $body)
+
+proc respondRaw*(req: Request, status: int, headers: HttpHeaders, body: string) =
+  ## Respons yang butuh header sendiri (mis. `Set-Cookie` sesi, 204 tanpa badan). Tetap mencatat
+  ## status supaya access log tidak kehilangan baris (T-130/API-6).
+  recordStatus(status)
+  req.respond(status, headers, body)
 
 proc respondJsonHeaders*(req: Request, status: int, body: JsonNode,
     extra: openArray[(string, string)]) =
@@ -50,6 +83,7 @@ proc respondJsonHeaders*(req: Request, status: int, body: JsonNode,
   var headers = headersWithType(ContentTypeJson)
   for (key, value) in extra:
     headers[key] = value
+  recordStatus(status)
   req.respond(status, headers, $body)
 
 proc jsonField*(node: JsonNode, name: string): string =

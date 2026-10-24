@@ -48,7 +48,7 @@ proc respondSecretJson(req: Request, status: int, body: JsonNode) =
   var headers = headersWithType(ContentTypeJson)
   headers["Cache-Control"] = "no-store"
   headers["Pragma"] = "no-cache"
-  req.respond(status, headers, $body)
+  req.respondRaw(status, headers, $body)
 
 proc mfaGate(db: DbConn, clock: Clock, settings: var MfaSettings, broken: var string): bool =
   ## `true` = fitur hidup dan `settings` terisi.
@@ -233,7 +233,7 @@ proc handleMfaVerify*(app: AppContext, req: Request) {.gcsafe.} =
 
   case outcome
   of mvoActivated:
-    req.respond(204, emptyHttpHeaders())
+    req.respondRaw(204, emptyHttpHeaders(), "")
   of mvoInvalidCode:
     # 403, bukan 401: sesinya sah, yang salah hanya kodenya. Klien yang memperlakukan 401 sebagai
     # "sesi berakhir" tidak jadi mengeluarkan pengguna dari halaman pendaftaran (pola yang sama

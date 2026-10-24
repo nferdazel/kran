@@ -47,6 +47,10 @@ type
     fieldCrypto*: FieldCrypto
     ## Pembatas login (T-128). `nil` di test/CLI; produksi selalu diisi `newLoginGuard()`.
     loginGuard*: LoginGuard
+    ## Jumlah worker thread HTTP (T-130/ARC-1). `0` = pakai default Mummy (test yang tidak peduli).
+    ## Produksi mengisinya dari ukuran pool: lebih banyak worker daripada koneksi hanya membuat
+    ## permintaan mengantre 5 detik lalu gagal `PoolError`.
+    serverThreads*: int
 
 proc businessDateIso*(clock: Clock): string =
   ## Tanggal "hari ini" versi UTC yang dipakai untuk membaca parameter efektif-dated.

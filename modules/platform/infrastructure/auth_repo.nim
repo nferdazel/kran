@@ -3,7 +3,7 @@
 ## Waktu selalu **eksplisit** (parameter `nowIso`, `expiresAtIso`, …) supaya bisa diuji
 ## deterministik; repo tidak memakai `now()` sendiri kecuali untuk kolom `created_at/updated_at`.
 
-import std/[options, sets, strutils]
+import std/[options, sets, strutils, tables]
 
 import db_connector/db_postgres
 
@@ -308,6 +308,27 @@ proc roleGrantsOfUser*(db: DbConn, userId: string): seq[RoleGrant] =
      WHERE ur.user_id = ?::uuid
      ORDER BY r.code, coalesce(ur.branch_id, '')""", userId):
     result.add RoleGrant(roleCode: row[0], branchId: row[1])
+
+proc roleGrantsForUsers*(db: DbConn, userIds: openArray[string]): Table[string, seq[RoleGrant]] =
+  ## Pemberian role untuk **banyak** pengguna dalam satu query (T-130/ARC-2). Bentuk hasilnya sama
+  ## dengan `roleGrantsOfUser` per pengguna; yang dihilangkan hanya N+1 saat daftar pengguna dibaca.
+  ## Id dikirim sebagai literal array Postgres (`{...}`), bukan `$seq` (yang menghasilkan `@[...]`).
+  if userIds.len == 0:
+    return
+  result = initTable[string, seq[RoleGrant]]()
+  var literal = "{"
+  for i, id in userIds:
+    if i > 0:
+      literal.add ","
+    literal.add id
+  literal.add "}"
+  for row in db.getAllRows(sql"""
+    SELECT ur.user_id::text, r.code, coalesce(ur.branch_id, '')
+      FROM platform.user_role ur
+      JOIN platform.role r ON r.role_id = ur.role_id
+     WHERE ur.user_id = ANY(?::uuid[])
+     ORDER BY ur.user_id, r.code, coalesce(ur.branch_id, '')""", literal):
+    result.mgetOrPut(row[0], @[]).add RoleGrant(roleCode: row[1], branchId: row[2])
 
 proc conflictsOfUser*(db: DbConn, userId: string): seq[RolePair] =
   ## Pasangan SoD yang benar-benar dipegang pengguna ini.
