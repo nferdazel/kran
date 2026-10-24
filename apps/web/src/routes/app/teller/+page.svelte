@@ -1536,7 +1536,12 @@
           {/if}
 
           <form class="kran-form teller-form" onsubmit={(event) => void reviewTransaction(event)} novalidate>
-            <fieldset class="teller-gate" disabled={postingBlocked}>
+            <!-- `disabled` sengaja TIDAK di fieldset pembungkus: ia membungkus pemilih mode, dan
+                 fieldset yang disabled mengeluarkan seluruh isinya dari urutan fokus — tanpa sesi
+                 kas, teller tidak bisa memilih PB (mode TRANSFER) lagi lewat pointer maupun
+                 keyboard, padahal PB justru satu-satunya yang tetap boleh (T-132/UI-1). Yang
+                 ditahan adalah field nominal/narasi/tujuan dan tombol kirim. -->
+            <fieldset class="teller-gate">
               <fieldset class="teller-fieldset">
                 <legend class="kran-label">{m.teller_direction_label()}</legend>
                 <div class="kran-radio-group kran-segmented">
@@ -1555,6 +1560,7 @@
                   <input
                     class="kran-input teller-uuid"
                     id="teller-destination"
+                    disabled={postingBlocked}
                     name="destinationAccountId"
                     bind:this={destinationEl}
                     bind:value={destinationInput}
@@ -1576,6 +1582,7 @@
                   class="kran-input teller-money-input"
                   id="teller-amount"
                   name="amount"
+                  disabled={postingBlocked}
                   inputmode="decimal"
                   bind:this={amountEl}
                   bind:value={amountRaw}
@@ -1597,6 +1604,7 @@
                   class="kran-input"
                   id="teller-narration"
                   name="narration"
+                  disabled={postingBlocked}
                   maxlength={NARRATION_MAX_LENGTH}
                   bind:this={narrationEl}
                   bind:value={narration}
@@ -1607,7 +1615,13 @@
               </div>
 
               <p>
-                <button class="kran-button kran-button--primary" type="submit">{m.teller_review()}</button>
+                <button
+                  class="kran-button kran-button--primary"
+                  type="submit"
+                  disabled={postingBlocked}
+                >
+                  {m.teller_review()}
+                </button>
               </p>
             </fieldset>
           </form>
@@ -1669,8 +1683,9 @@
     min-inline-size: 0;
   }
 
-  /* Gerbang sesi: fieldset tanpa bingkai. `disabled` bawaan browser mengeluarkan kontrol dari urutan
-   * tab sekaligus menahan pengiriman selama sesi kas belum pasti (fail-closed). */
+  /* Gerbang sesi: fieldset tanpa bingkai, hanya untuk tata letak. Status `disabled` ada di kontrol
+   * yang memang harus ditahan (nominal/narasi/tujuan/kirim), bukan di sini — lihat komentar di
+   * markup (T-132/UI-1). */
   .teller-gate {
     display: grid;
     gap: var(--space-4);

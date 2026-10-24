@@ -238,6 +238,30 @@
   font-size: var(--text-xs);
 }
 
+/* Sesi di shell (T-132/UI-3): identitas + ubah sandi + keluar, tersedia di setiap rute `/app`. */
+.kran-nav__session {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.kran-nav__who {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+@media (min-width: 1024px) {
+  /* Sidebar: menumpuk penuh lebar, dengan garis pemisah dari menu di atasnya. */
+  .kran-shell--app .kran-nav__session {
+    flex-direction: column;
+    align-items: stretch;
+    border-block-start: 1px solid var(--color-hairline);
+    padding-block-start: var(--space-3);
+  }
+}
+
 .kran-nav ul {
   display: flex;
   gap: var(--space-4);
@@ -1148,5 +1172,22 @@
   .kran-print-title,
   .kran-table tfoot {
     break-inside: avoid;
+  }
+}
+
+/* Reduced motion (T-132/UI-11): sebelumnya hanya dua aturan yang dijaga
+ * `prefers-reduced-motion: no-preference`, sementara transisi lain (nav, segmented, tabel, filter,
+ * palette, bilah saldo) tetap berjalan. Satu aturan menyeluruh lebih jujur daripada mengejar tiap
+ * deklarasi: pengguna yang meminta gerak minimal mendapatkannya di semua komponen, termasuk yang
+ * ditambahkan kemudian. Durasi 1ms (bukan 0) menjaga event `transitionend`/`animationend` tetap
+ * terkirim, sehingga logika yang menunggunya tidak menggantung. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
   }
 }

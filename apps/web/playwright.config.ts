@@ -60,7 +60,16 @@ if (dbURL !== "") {
   servers.push({
     command: apiCommand,
     url: `${apiURL}/healthz`,
-    env: { ...inheritedEnv, KRAN_DATABASE_URL: dbURL },
+    env: {
+      ...inheritedEnv,
+      KRAN_DATABASE_URL: dbURL,
+      // Seluruh suite e2e login dari 127.0.0.1 — satu IP untuk puluhan login per menit, karena tiap
+      // spec memakai akun dev yang berbeda dan cookie tidak dibagi antar berkas. Pembatas login
+      // (T-128) memang bekerja per IP, jadi tanpa penimpaan ini suite akan dijawab 429 dan gagal
+      // karena kapasitas, bukan karena perilaku aplikasi. Pembatasnya sendiri diuji di
+      // `tlogin_guard` dan `itapi_users` dengan nilai default; di sini yang diuji bukan pembatas.
+      KRAN_LOGIN_ATTEMPTS_PER_MINUTE: "1000",
+    },
     reuseExistingServer: false,
     timeout: 30_000,
     stdout: "pipe",

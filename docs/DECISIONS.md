@@ -3376,6 +3376,12 @@ pusat di belakang satu NAT melaporkan 429 berulang), jalur naiknya jelas: pindah
 parameter `platform.security.*` dan baca lewat `settings` seperti parameter keamanan lain — bukan
 menambal handler.
 
+**Amandemen (24 Okt 2026, D-144).** Dua angka pertama kini dapat ditimpa lewat `KRAN_LOGIN_MAX_CONCURRENCY`
+dan `KRAN_LOGIN_ATTEMPTS_PER_MINUTE` (default tetap konstanta di atas). Alasannya sama — kapasitas
+proses — dan suite e2e-lah yang memaksa: puluhan login per menit dari 127.0.0.1 dijawab 429. Ini
+**bukan** perubahan menjadi parameter bisnis; `platform.security.*` tetap ditolak untuk alasan yang
+sama.
+
 ## D-141 — Penutupan periode final; saldo awal vault lewat `ctl` (24 Okt 2026)
 
 **Konteks.** Audit 24 Okt 2026 (DB-4, LED-2) menemukan dua jalan pintas yang saling mengunci:
@@ -3459,3 +3465,28 @@ kepatuhan disimpan di server).
 deploy ulang rev lama lewat `git`. Kolom sha256 di manifest akan menunjukkan build yang tidak
 reproducible (nimble tanpa lockfile) sebagai nilai berbeda untuk rev yang sama; itu memang gunanya,
 dan batasnya tercatat di `docs/ACCEPTED-LIMITS.md`.
+
+## D-144 — Batas login dapat ditimpa lewat lingkungan (24 Okt 2026)
+
+**Konteks.** D-140 menetapkan tiga konstanta pembatas login (`loginConcurrencyLimit`,
+`loginAttemptsPerMinute`, `loginWindowSeconds`) sebagai kapasitas proses, bukan parameter bisnis.
+Saat gate UI diperluas (T-132/UI-4), suite e2e menjalankan puluhan login per menit dari satu alamat
+(127.0.0.1) karena tiap berkas spec memakai akun dev berbeda, dan seluruh suite dijawab 429. Itu
+kegagalan kapasitas, bukan kegagalan perilaku aplikasi.
+
+**Keputusan.** Dua angka pertama dibaca dari `KRAN_LOGIN_MAX_CONCURRENCY` dan
+`KRAN_LOGIN_ATTEMPTS_PER_MINUTE` bila ada; kosong, bukan angka, atau ≤ 0 = nilai default. Nilai tidak
+sah **diabaikan**, bukan membuat proses menolak start. `playwright.config.ts` menaikkan batas
+percobaan (bukan konkurensi) untuk proses API e2e.
+
+**Ditolak.** Menjadikannya parameter `platform.security.*` (alasan yang sama dengan D-140: permukaan
+parameter, seed, audit, dan dokumentasi untuk angka yang bukan kebijakan institusi). Mengecualikan
+loopback dari pembatas (pembatasnya justru dibutuhkan di host yang sama dengan Caddy; pengecualian
+akan membuatnya tidak pernah aktif di topologi sekarang). Mengurangi jumlah login di spec (setiap
+berkas tetap butuh sesinya sendiri; memaksa `storageState` bersama antar berkas akan menyembunyikan
+alur login yang justru diuji).
+
+**Konsekuensi.** Lingkungan yang salah setel bisa melemahkan pembatas (mis. 100000 di produksi).
+Mitigasinya: nilainya hanya muncul di `playwright.config.ts`, tidak ada di `ops/env/*.example`, dan
+logika pembatasnya tetap diuji dengan default (`tlogin_guard`, `itapi_users`). Bila kelak batas ini
+sering disetel di produksi, jalur naiknya tetap D-140: pindahkan ke parameter dan hapus env.

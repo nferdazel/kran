@@ -35,14 +35,24 @@ export function formatAccountCount(count: number): string {
   return category === "one" ? m.common_home_accounts_one({ count }) : m.common_home_accounts_other({ count });
 }
 
+/**
+ * Tanggal bisnis (`YYYY-MM-DD`) → teks locale aktif.
+ *
+ * `timeZone: "UTC"` wajib (T-132/UI-6): nilainya dibangun sebagai tengah malam UTC, jadi tanpa
+ * opsi itu peramban di zona negatif (mis. Amerika) menampilkannya sebagai **hari sebelumnya** —
+ * tanggal bisnis yang salah baca pada laporan dan slip. Tanggal bisnis adalah tanggal kalender,
+ * bukan instan waktu: ia tidak boleh "bergeser" mengikuti zona perangkat.
+ *
+ * Zona waktu per cabang (WIB/WITA/WIT, spec §16.2) **belum** ditangani di sini. Saat itu datang,
+ * tanggal harus dibangun sebagai tengah malam di zona cabang (bukan tengah malam UTC yang
+ * diformat dengan zona lain — itu justru menggeser hasilnya).
+ */
 export function formatDate(isoDate: string): string {
-  // Tanggal bisnis selalu `YYYY-MM-DD` (spec §13); ditampilkan dengan locale aktif,
-  // zona waktu WIB/WITA/WIT per cabang menyusul (butuh parameter cabang, spec §16.2).
   const [year, month, day] = isoDate.split("-").map(Number);
   if (!year || !month || !day) {
     throw new Error(`tanggal bukan ISO YYYY-MM-DD: ${isoDate}`);
   }
-  return new Intl.DateTimeFormat(currentLocale(), { dateStyle: "long" }).format(
+  return new Intl.DateTimeFormat(currentLocale(), { dateStyle: "long", timeZone: "UTC" }).format(
     new Date(Date.UTC(year, month - 1, day)),
   );
 }
