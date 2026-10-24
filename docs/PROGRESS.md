@@ -1,4 +1,4 @@
-# PROGRESS — CBS
+# PROGRESS — KRAN
 
 Log apa yang benar-benar selesai, dengan buktinya. Format: satu entri per task.
 
@@ -2663,3 +2663,61 @@ dijalankan per berkas setelah merge.
 (tanpa migrasi platform) — pemisahan izin yang lebih halus dicatat di `docs/tasks/T-078.md`.
 Blind index diterapkan ke semua kolom sensitif termasuk `sex` (kardinalitas rendah). Area
 PII/enkripsi tetap **HUMAN-REVIEW-REQUIRED** (AGENTS §8).
+
+## 24 Okt 2026 — sapuan dokumentasi (O-106) + bentuk parameter akrual (O-084)
+
+Dua pekerjaan yang menyentuh dokumen, dengan aturan baru di `docs/README.md`: dokumen **keadaan
+sekarang** harus akurat hari ini, sedangkan `PROGRESS*`, `tasks/`, `proposals/`, `milestones/`,
+`spikes/`, `migration/`, dan `ESCALATIONS.md` adalah catatan bertanggal yang diberi anotasi, bukan
+ditulis ulang.
+
+### O-106 — semua dokumen disisir
+
+- **Spec** (sumber kebenaran): §9.1(2), contoh DDL §9.3, §16.2, dan tabel ADR-011 → `numeric(24,2)`,
+  skala 10², 2 desimal (D-136). Catatan akrual menautkan D-137/O-084.
+- **Register**: `OPEN_ITEMS` (O-013, O-016, O-019, O-075, O-082, O-095, O-103, O-106, O-085/O-101
+  koreksi), `ACCEPTED-LIMITS` (judul → Fase 0–2; sembilan baris yang sudah tidak berlaku ditutup
+  atau dikoreksi: T-086/T-090, drill restore, job CI `db-tests`, percobaan kata sandi, mount KEK,
+  contract di produksi, pembalik jurnal subledger, MFA/SoD, UI operator), `ESCALATIONS` E-001 →
+  `TERJAWAB`.
+- **Keadaan sekarang**: `README.md` (daftar seed dev lengkap), `DESIGN.md` (status implementasi),
+  `BACKLOG.md` (Money 10²), `AGENTS.md` (isi `task e2e`), `docs/README.md` (baru: peta + aturan
+  kesegaran), `modules/*/MODULE.md` (deposit/ledger/platform/teller; `party` sudah bersih).
+- **Catatan bertanggal**: `PROGRESS`/`cbs-core-inventory` judul → KRAN, `M2-report` diberi catatan
+  lanjutan, tiga memo T-118 diberi catatan D-136 (angka 4 desimal di dalamnya tetap sebagai riwayat).
+- **Runbook/kepatuhan**: `ops-cli.md` (perintah ctl yang ada + arti kode keluar), `deploy-setup.md`
+  (status deploy + `KRAN_PORT`), `pilot-provisioning.md` §7 (O-097/O-098/O-099/O-101 sudah selesai),
+  `sod-matrix-draft.md` (enam pasangan tersemai, kolom tabel yang benar),
+  `register-validation.md` (konsumen REG-010).
+- **Kode/komentar** yang masih menyebut 4 desimal: `account_repo.nim`, `handlers_products.nim`,
+  `checkedint.nim`.
+
+### O-084 — bentuk atribut akrual, tanpa nilai
+
+D-137 (melengkapi D-094): `rounding_scale` integer 0..2 (`moneyScale`, D-136), `rounding_mode`
+hanya `HALF_EVEN` (kernel hanya punya half-to-even), `day_count_basis` tetap
+`ACT_365`/`ACT_360`/`THIRTY_360` (spec §10.5), `interest_posting` dibuka menjadi string (enum lama
+adalah tebakan), `interest_rate` tetap `rate`. Nilai bisnis tetap `NEEDS-COMPLIANCE-REVIEW`, tanpa
+`default_pack`.
+
+**Bukti.** `./task test tproductparams` **6 OK** (baru), `./task test tproduct` exit 0; `./task fmt`
+dan `./task check` hijau (nimpretty, archcheck, lint-nomagic, paramgen sinkron, i18n 632 key,
+8 skrip ops); `paramgen-gen` menulis ulang lima artefak; pemeriksa tautan relatif di
+`README.md`/`DESIGN.md`/`AGENTS.md`/`docs/*.md`/`runbooks`/`agent`/`MODULE.md` → **0 tautan mati**.
+
+**Sisa.** Nilai akrual per produk menunggu compliance (O-084); menambah mode pembulatan atau basis
+hari = kode kernel + keputusan baru. `itapi_product`/`itproduct` tidak dijalankan saat merge O-084
+(DB bersama dipakai agen lain); jalur yang tersentuh hanya skema parameter, dan asersi lama
+(`rounding_scale: 999` → 400) tetap 400 dengan batas baru.
+
+### Temuan saat menyisir: penarikan tunai pilot gagal membaca `min_balance` (D-138)
+
+D-136 membuat `moneyFromString` menolak >2 desimal, tetapi nominal parameter dan binding produk
+disimpan sebagai **string JSON**, dan data pilot pra-D-136 masih `"25000.0000"`. Binding versi
+yang sudah sealed tidak bisa dinormalkan lewat migrasi, jadi `minBalanceFor` gagal dan
+penarikan tunai berhenti dengan 500. Perbaikan: parser menerima nol tambahan di belakang koma
+(`"25000.0000"` = `"25000.00"`), digit sub-sen tetap ditolak.
+
+**Bukti.** `./task test tmoney` dan `tprop_money` hijau (kasus `"25000.0000"`, `"1.2300"`,
+`"1.2301"` ditolak). Catatan: binding pilot lama juga memuat `rounding_mode: HALF_UP` — tidak
+dibaca kode mana pun dan versi sealed tidak diubah; versi baru tidak bisa mem-bind-nya.

@@ -3230,6 +3230,8 @@ sebaiknya melihat angka yang persis sama dengan yang disimpan.
 **Keputusan.**
 1. `kernel/money.nim`: `moneyScale = 2`, `moneyScaleFactor = 100`; unit terkecil = 1 sen. Parser
    menolak lebih dari 2 desimal (tidak membulatkan diam-diam). `toDisplayString` dihapus — satu-
+   **Diperbarui 24 Okt 2026 (D-138):** nol tambahan di belakang koma kini diterima
+   (`"25000.0000"` = `"25000.00"`); digit sub-sen tetap ditolak.
    satunya tugasnya adalah menjembatani penyimpanan 4 desimal ke tampilan 2 desimal.
 2. Kolom uang menjadi `numeric(24,2)`: `deposit.account_balance.balance`,
    `deposit.transaction.amount`, `deposit.transfer.amount`, `ledger.journal_line.debit/credit`,
@@ -3252,6 +3254,67 @@ sebaiknya melihat angka yang persis sama dengan yang disimpan.
   akan replay setelah deploy (409 hash beda). Di pilot key sudah lewat TTL.
 - **Deviasi spec**: §9.3 masih menulis `numeric(24,4)` di contoh DDL-nya. Spec adalah sumber
   kebenaran; deviasi ini dicatat di `docs/OPEN_ITEMS.md` (O-106) sampai spec diperbarui pemilik.
+  **Diperbarui 24 Okt 2026:** spec §9.1(2), contoh DDL §9.3, §16.2, dan tabel ADR-011 sudah
+  diperbarui; O-106 ditutup.
 - `ledger.balance_snapshot` dibangun ulang untuk setiap `as_of` yang ada setelah tipe kolom
   berubah; cache turunan tidak boleh tertinggal dari jurnal.
 - **HUMAN-REVIEW-REQUIRED** (AGENTS §8): perubahan presisi menyentuh buku besar dan kas.
+
+## D-137 — Bentuk parameter akrual dikunci ke kode, nilai tetap menunggu compliance (O-084)
+
+**Konteks.** D-094 menambahkan lima kunci akrual simpanan tanpa nilai. D-136 mengubah `moneyScale`
+ke 2 sehingga batas `rounding_scale` lama (`0..4`) menjadi basi, dan enum `rounding_mode` masih
+memuat `HALF_UP` yang tidak dapat diimplementasikan kernel. O-084 meminta bentuknya dibekukan
+sebelum kode akrual Fase 3 ditulis.
+
+**Keputusan.** Yang dikunci adalah **bentuk** (tipe/batas/enum); nilai bisnis tetap menunggu
+compliance (tanpa `default_pack`, bertanda `NEEDS-COMPLIANCE-REVIEW`, kelas `regulasi-tidak-disemai`):
+
+1. `rounding_scale` = integer `0..moneyScale` (2). Penyimpanan uang adalah sen (D-136); hasil
+   pembulatan dengan skala > 2 tidak punya tempat menyimpan.
+2. `rounding_mode` = enum `["HALF_EVEN"]` saja. Kernel hanya punya half-to-even
+   (`checkedint.divRoundHalfEven`, dipakai `Money.div` dan `applyRate`). Menambah mode
+   (`HALF_UP`, `TRUNCATE`, …) butuh kode kernel + keputusan baru lebih dulu.
+3. `day_count_basis` tetap enum `[ACT_365, ACT_360, THIRTY_360]` karena spec §10.5 menamai ketiganya.
+4. `interest_posting` diubah dari `enum [NONE, MONTH_END]` menjadi `string` (`maxLength: 32`):
+   spec dan D-094 tidak menetapkan kapan bunga diposting, jadi enum lama adalah tebakan dan ditarik.
+   Domain nilainya ditetapkan bersama mesin akrual Fase 3.
+5. `interest_rate` tetap `type: rate`; presisi persen (≤4 desimal) ditegakkan
+   `rateFromPercentString` saat konversi, bukan oleh schema.
+
+**Ditolak.** Mengarang konvensi posting/day-count; mengunci `HALF_UP` padahal kodenya tidak ada;
+mempertahankan `maximum: 4` yang basi pasca D-136.
+
+**Konsekuensi.** Binding produk ke kelima kunci tetap gagal-cepat sampai compliance mengisi nilai.
+Perubahan mode pembulatan atau basis hari adalah perubahan definisi + kode (dan ADR/D baru), bukan
+nilai bebas. Bukti dan rincian: `docs/tasks/O-084.md`.
+
+**Catatan 24 Okt 2026.** Versi produk pilot yang sudah sealed memuat `rounding_mode: HALF_UP`
+dan nominal 4 desimal (mis. `min_balance: "25000.0000"`). `HALF_UP` tidak dibaca kode mana pun
+dan versi sealed sengaja tidak diubah; versi **baru** tidak bisa lagi mem-bind-nya. Nominal 4
+desimal yang berupa nol tambahan tetap terbaca setelah D-138.
+
+## D-138 — Parser uang menerima nol tambahan di belakang koma (data 4 desimal pra-D-136)
+
+**Konteks.** D-136 mempersempit `Money` ke sen dan membuat `moneyFromString` menolak lebih dari 2
+desimal. Tetapi tidak semua nilai uang disimpan di kolom `numeric`: parameter (`platform.param_value`)
+dan atribut produk (`product.product_param_binding`) menyimpan nominal sebagai **string JSON**.
+Data pilot yang di-seed sebelum D-136 masih berisi `"0.0000"`, `"25000.0000"`, dsb., dan binding
+produk **dibekukan saat versi sealed** sehingga tidak bisa dinormalkan lewat migrasi.
+
+Akibatnya `minBalanceFor` (`apps/api/src/handlers_teller.nim`) gagal membaca `min_balance` dan
+penarikan tunai pada produk pilot berhenti dengan 500 `binding … bukan nominal sah` — bukan karena
+nilainya salah, melainkan karena bentuk penulisannya. Ditemukan saat menyisir dokumen pasca-D-136.
+
+**Keputusan.** `moneyFromString` menerima digit desimal **lebih dari `moneyScale` hanya bila
+semuanya nol** (`"1.2300"` → `"1.23"`). Digit bukan-nol di posisi sub-sen tetap ditolak dengan
+`KRAN-1103`. Ini bukan pembulatan: tidak ada nilai yang berubah, hanya bentuk penulisan.
+
+**Ditolak.** (a) Membulatkan diam-diam — bertentangan dengan alasan D-136; (b) migrasi data yang
+menulis ulang binding produk sealed — melanggar imutabilitas versi; (c) melonggarkan parser untuk
+semua nilai >2 desimal — akan menyembunyikan sub-sen yang benar-benar hilang.
+
+**Konsekuensi.** Nilai lama terbaca tanpa intervensi; nilai baru tetap ditulis 2 desimal
+(`toDecimalString`). Tampilan mentah parameter/binding lama masih bisa memperlihatkan `0.0000`
+sampai barisnya disemai ulang — kosmetik, bukan kesalahan hitung. Bukti: `tmoney`/`tprop_money`
+hijau dengan kasus `"25000.0000"`, `"1.2300"`, `"1.2301"` (ditolak).
