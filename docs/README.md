@@ -34,6 +34,7 @@ diperbaiki; catat pertentangannya di `DECISIONS.md` (dan `OPEN_ITEMS.md` bila bu
 | [`milestones/`](milestones) | Laporan penutupan fase |
 | [`spikes/`](spikes) | Eksperimen dengan hasil terukur saat itu |
 | [`migration/`](migration) | Inventaris sistem lama (referensi, bukan target) |
+| [`audit/`](audit) | Hasil audit bertanggal; temuan yang sudah ditutup tetap tercatat di sana |
 | [`ESCALATIONS.md`](ESCALATIONS.md) | Titik STOP beserta jawabannya (status `TERJAWAB` + tanggal) |
 
 Aturan untuk catatan bertanggal:
