@@ -39,6 +39,7 @@ import platform/domain/[audit, authz, event, scope]
 import platform/infrastructure/[audit_repo, auth_repo, auth_service, branch_repo, outbox_repo,
   realtime_config]
 
+import deposit/infrastructure/reconcile_repo
 import ledger/infrastructure/journal_repo
 
 import ./access
@@ -84,6 +85,10 @@ const
   ## Memposting saldo awal kas vault sekali-jalan (O-105, D-134). Bukan SQL manual: jurnal ditulis
   ## lewat posting rule resmi + audit, dan idempoten per cabang.
   openingBalanceCmd* = "post-opening-balance"
+
+  ## Memeriksa cache saldo rekening simpanan terhadap mutasi tunai + PB (T-101). Baca saja:
+  ## selisih adalah temuan untuk diselidiki, bukan sesuatu yang dikoreksi diam-diam di sini.
+  reconcileDepositsCmd* = "reconcile-deposits"
 
   ## Perintah `ctl` yang menerima `--username` (semua perintah yang menyasar satu pengguna).
   usernameCommands* = [bootstrapAdminCmd, resetPasswordCmd, createUserCmd, assignRoleCmd,
@@ -213,9 +218,10 @@ proc parseArgs(argv: seq[string]): CliOptions =
     die("--user-role hanya untuk perintah ctl: " & roleAssignmentCommands.join(", "))
   if result.branchId.len > 0 and
      not (result.role == roleCtl and
-          (result.cmd in roleAssignmentCommands or result.cmd == openingBalanceCmd)):
+          (result.cmd in roleAssignmentCommands or
+           result.cmd in [openingBalanceCmd, reconcileDepositsCmd])):
     die("--branch hanya untuk perintah ctl: " &
-      (@roleAssignmentCommands & @[openingBalanceCmd]).join(", "))
+      (@roleAssignmentCommands & @[openingBalanceCmd, reconcileDepositsCmd]).join(", "))
   if (result.amount.len > 0 or result.businessDate.len > 0) and
      not (result.role == roleCtl and result.cmd == openingBalanceCmd):
     die("--amount dan --business-date hanya untuk `--role=ctl " & openingBalanceCmd & "`")
@@ -300,6 +306,8 @@ const CtlUsage* =
   "                    --username=<name>; only LOCKED -> ACTIVE; audit user.unlock)\n" &
   "  create-branch   : register a branch in the branch master (requires --branch-code=<3 digits>,\n" &
   "                    --branch-name=<name>; the code is the account-number prefix; audit branch.create)\n" &
+  "  reconcile-deposits : compare deposit.account_balance with cash + transfer rows (optional\\n" &
+  "                    --branch=<uuid>; exit 1 when any account disagrees)\n" &
   "  post-opening-balance : post ONE opening cash journal for a branch vault (requires\n" &
   "                    --username=<operator>, --branch=<uuid>, --amount=<nominal>,\n" &
   "                    --business-date=<YYYY-MM-DD>; rule LedgerCashOpening, audit\n" &
@@ -576,6 +584,40 @@ proc runPostOpeningBalance*(db: DbConn, username, branchIdRaw, amountRaw,
   echo "kran-api: jurnal saldo awal diposting " & $journalId & " (" & amount.toDecimalString & ")"
   0
 
+proc runReconcileDeposits*(db: DbConn, branchIdRaw: string): int =
+  ## Membandingkan `deposit.account_balance` dengan mutasi tunai + pemindahbukuan (T-101).
+  ##
+  ## Kenapa bukan `journal_line` per rekening: jurnal PB net-nol di akun `201`, jadi saldo per
+  ## rekening tidak bisa direkonstruksi dari jurnal (D-124, `docs/ACCEPTED-LIMITS.md`).
+  ##
+  ## Kode keluar: 0 semua cocok, 1 ada selisih (temuan), 2 argumen salah.
+  var branchId = ""
+  if branchIdRaw.len > 0:
+    if parseId(branchIdRaw).isErr:
+      stderr.writeLine "kran-api: --branch harus UUID yang sah"
+      return 2
+    branchId = branchIdRaw
+
+  var checked: int64
+  var mismatches: seq[BalanceMismatch]
+  try:
+    checked = reconciledAccountCount(db, branchId)
+    mismatches = accountBalanceMismatches(db, branchId)
+  except DbError as e:
+    stderr.writeLine "kran-api: rekonsiliasi gagal membaca basis data: " & e.msg
+    return 1
+
+  for m in mismatches:
+    let cached = if m.cached.len == 0: "(cache tidak ada)" else: m.cached
+    echo "selisih: rekening " & m.accountNo & " cabang " & m.branchId &
+      " cache " & cached & " seharusnya " & m.expected & " (selisih " & m.delta & ")"
+  if mismatches.len == 0:
+    echo "kran-api: rekonsiliasi saldo simpanan bersih (" & $checked & " rekening diperiksa)"
+    return 0
+  echo "kran-api: " & $mismatches.len & " dari " & $checked &
+    " rekening tidak cocok dengan mutasi tunai + PB"
+  1
+
 proc resetUserPassword*(db: DbConn, username: string, clock: Clock): tuple[code: int,
     password: string] =
   ## Setel kata sandi acak baru untuk pengguna yang **sudah ada**.
@@ -851,6 +893,9 @@ proc runCtl*(command, root: string, username = "", outPath = "", userRole = "",
     withRoleDb(proc(db: DbConn): int {.closure.} =
       runPostOpeningBalance(db, username, branchId, amount, businessDate, systemClock()),
       useTx = true)
+  of reconcileDepositsCmd:
+    withRoleDb(proc(db: DbConn): int {.closure.} =
+      runReconcileDeposits(db, branchId))
   of auditAnchorCmd:
     withRoleDb(proc(db: DbConn): int {.closure.} =
       echo runAuditAnchor(db, systemClock(), outPath)
