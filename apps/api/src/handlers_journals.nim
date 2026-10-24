@@ -22,6 +22,7 @@ import ./access
 import ./context
 import ./db_bridge
 import ./http_util
+import ./journal_ownership
 import ./problem
 
 const
@@ -172,6 +173,8 @@ proc handleReverseJournal*(app: AppContext, req: Request) {.gcsafe.} =
 
   var status = 0
   var problem = ""
+  var reasonCode = ""
+  var subledger = ""
   var payload = newJObject()
   try:
     withDbTx(app.pool, proc(db: DbConn) {.gcsafe.} =
@@ -203,6 +206,15 @@ proc handleReverseJournal*(app: AppContext, req: Request) {.gcsafe.} =
         if reversalExistsFor(db, journalId.value()):
           status = 409
           problem = "jurnal sudah dibalik"
+          raise newException(ValueError, problem)
+        # T-123: jurnal milik subledger tidak boleh dibalik lewat buku besar saja.
+        let owner = subledgerOwner(db, $journalId.value())
+        if owner.len > 0:
+          status = 409
+          reasonCode = "journal_owned_by_subledger"
+          subledger = owner
+          problem = "jurnal milik " & owner &
+            " tidak bisa dibalik lewat buku besar; koreksi lewat modul asalnya"
           raise newException(ValueError, problem)
         if not periodOpenFor(db, original.get().businessDate):
           status = 409
@@ -288,5 +300,11 @@ proc handleReverseJournal*(app: AppContext, req: Request) {.gcsafe.} =
   of 400: req.respondProblem(pkBadRequest, "Bad Request", problem)
   of 403: req.respondInstitutionOnly(permissionJournalReverse)
   of 404: req.respondProblem(pkNotFound, "Not Found", problem)
-  of 409: req.respondProblem(pkConflict, "Conflict", problem)
+  of 409:
+    if reasonCode.len > 0:
+      req.respondProblem(newProblem(pkConflict, "Conflict", problem,
+        traceId = traceIdFrom(req),
+        params = @[("reason", reasonCode), ("subledger", subledger)]))
+    else:
+      req.respondProblem(pkConflict, "Conflict", problem)
   else: req.respondProblem(pkInternal, "Internal Server Error", problem)

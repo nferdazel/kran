@@ -27,6 +27,7 @@ import ../src/[context, readiness, server]
 const
   ContractPath = "packages/contracts/openapi/kran-api.yaml"
   SessionsPath = "/api/v1/teller/sessions"
+  ReversalPath = "/api/v1/ledger/journals/{journalId}/reversal"
   CurrentPath = "/api/v1/teller/sessions/current"
   ClosePath = "/api/v1/teller/sessions/{sessionId}/close"
   LoginPath = "/api/v1/auth/login"
@@ -251,6 +252,14 @@ proc dbCount(query: SqlQuery, args: varargs[string, `$`]): int =
   finally:
     dbPool.release(conn)
 
+proc journalOf(sourceEvent, sourceRef: string): string =
+  let conn = dbPool.acquire()
+  try:
+    conn.getValue(sql"""SELECT journal_id::text FROM ledger.journal
+                         WHERE source_event = ? AND source_ref = ?::uuid""", sourceEvent, sourceRef)
+  finally:
+    dbPool.release(conn)
+
 proc auditCount(action: string): int =
   dbCount(sql"SELECT count(*)::text FROM platform.audit_log WHERE action = ?", action)
 
@@ -391,6 +400,29 @@ suite "sessions: buka & vault":
       %*{"countedCash": "10.0000"}, token, "sess-note-close-" & $epochTime())
     check close.code == 200
     check close.body["note"].getStr() == "kas shift malam"
+
+  test "jurnal sesi kas tidak bisa dibalik lewat buku besar (T-123)":
+    let token = tokenOf(login(MakerUser))
+    let open = postJson(SessionsPath, openBody(BranchA, "10.0000"), token,
+      "sess-reverse-" & $epochTime())
+    check open.code == 201
+    let sessionId = open.body["sessionId"].getStr()
+    let journalId = journalOf("TellerSessionOpened", sessionId)
+    check journalId.len == 36
+
+    let denied = postJson(ReversalPath.replace("{journalId}", journalId),
+      %*{"reason": "uji guard subledger"}, token)
+    check denied.code == 409
+    checkProblem(ReversalPath, "POST", "409", denied.body)
+    check denied.body["params"]["reason"].getStr() == "journal_owned_by_subledger"
+    check denied.body["params"]["subledger"].getStr() == "teller.teller_session"
+    check dbCount(sql"""SELECT count(*)::text FROM ledger.journal
+                         WHERE reversal_of = ?::uuid""", journalId) == 0
+
+    # Tutup supaya tidak meninggalkan sesi OPEN untuk test berikutnya.
+    let close = postJson(SessionsPath & "/" & sessionId & "/close",
+      %*{"countedCash": "10.0000"}, token, "sess-reverse-close-" & $epochTime())
+    check close.code == 200
 
   test "buka 201 → current 200; sesi kedua → 409; idempotensi & tutup":
     let token = tokenOf(login(MakerUser))
