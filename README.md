@@ -107,8 +107,9 @@ Quick start from the repo root (`./task devdb up` opens the tunnel to the dev DB
 pnpm install && pnpm --filter @kran/web dev   # back-office at http://127.0.0.1:5173 (registry: docs/runbooks/dev-web.md)
 ```
 
-Dev seed users: `dev.maker` (proposes parameter changes) and `dev.checker` (approves them). Their
-passwords are in [`packs/base/seed/0001_dev_users.sql`](packs/base/seed/0001_dev_users.sql).
+Dev seed users: `dev.maker` (proposes parameter changes) and `dev.checker` (approves them), plus
+`dev.cashmaker`/`dev.cashchecker` (cash maker-checker) and `dev.firstlogin` (forced password change).
+Passwords are in [`packs/base/seed/0001_dev_users.sql`](packs/base/seed/0001_dev_users.sql).
 
 One command entry point: `./task` (POSIX script, no extra tooling dependencies; D-001).
 

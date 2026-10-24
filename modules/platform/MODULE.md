@@ -1,7 +1,7 @@
 # Modul `platform`
 
-Lintas-modul: audit trail, outbox/inbox, parameter, kalender & business date, dan (menyusul)
-user/role/session, workflow, notifikasi (spec §8, §9.2).
+Lintas-modul: audit trail, outbox/inbox, parameter, kalender & business date, user/role/session, dan
+(menyusul) workflow, notifikasi (spec §8, §9.2).
 
 ## Isi saat ini (T-004)
 
@@ -14,10 +14,10 @@ user/role/session, workflow, notifikasi (spec §8, §9.2).
 | Repo denyut worker | `infrastructure/worker_repo.nim` | `touchWorkerHeartbeat`, `workerHeartbeatAgeSeconds`, `deadEventCount` (O-081) |
 | Repo inbox | `infrastructure/inbox_repo.nim` | `claimInbox` (de-dup per konsumen) |
 | Repo idempotency | `infrastructure/idempotency_repo.nim` | `claimIdempotency`, `completeIdempotency` (T-084) |
-| Migrasi | `migrations/0001..0021` | schema, audit_log, outbox+inbox, parameter, kalender, auth, NOTIFY outbox (realtime), heartbeat, SoD, idempotency |
+| Migrasi | `migrations/0001..0037` | schema, audit_log, outbox+inbox, parameter, kalender, auth, RBAC, NOTIFY outbox (realtime), heartbeat, SoD, idempotency |
 
-`api.nim` (permukaan publik modul) menyusul bersama T-005 (parameter) / T-006 (auth):
-saat ini belum ada konsumen lintas-modul, jadi belum ada yang perlu diekspor.
+`api.nim` (permukaan publik modul) belum dibuat: saat ini belum ada konsumen lintas-modul, jadi
+belum ada yang perlu diekspor.
 
 ## Tabel yang dimiliki
 
@@ -299,9 +299,9 @@ peran sempit dan menyemai pasangan konflik antar peran itu:
 
 | Role | Izin inti | Fungsi |
 |---|---|---|
-| `ops_admin` | `platform.user.manage`, `platform.param.read`, `platform.audit.read`, `party.party.read`/`create`, `deposit.account.manage`/`read`, `product.catalog.read`, `ledger.coa.read`/`period.read`, `teller.vault.read` | administrasi akun/anggota/rekening |
-| `ledger_admin` | `ledger.coa.manage`, `ledger.period.manage`, `ledger.journal.read`/`reverse`, `product.catalog.manage`, `platform.param.read` | pembukuan, periode, COA, pembalik |
-| `cash_admin` | `teller.vault.topup`, `teller.vault.read` | penyediaan kas/vault cabang |
+| `ops_admin` | `platform.user.manage`, `platform.param.read`, `platform.audit.read`, `party.party.read`/`create`, `deposit.account.manage`/`read`, `product.catalog.read`, `ledger.coa.read`/`period.read`, `teller.vault.read`, `teller.vault.submit`, `platform.branch.read` | administrasi akun/anggota/rekening |
+| `ledger_admin` | `ledger.coa.manage`, `ledger.period.manage`, `ledger.journal.read`/`reverse`, `product.catalog.manage`, `platform.param.read`, `platform.branch.read` | pembukuan, periode, COA, pembalik |
+| `cash_admin` | `teller.vault.submit`/`approve`, `teller.vault.read`, `platform.branch.read` | penyediaan kas/vault cabang |
 | `product_maker` | `product.catalog.manage`, `product.catalog.read` | pengaju katalog produk (checker: `product_checker`) |
 
 Pasangan `platform.role_conflict` (kanonik `a < b`): wajib `product_checker`/`product_maker` dan
@@ -326,8 +326,9 @@ dan rute HTTP; `reason` stabil `last_admin` (kode keluar 3 / HTTP 409) tidak ber
 | ctl | `apps/api/src/main.nim` — `create-branch --branch-code=<3 digit> --branch-name=<nama>` (audit `branch.create`, kode keluar 3 untuk kode tidak sah/duplikat) |
 
 Kode cabang **tidak boleh diubah** begitu ada nomor rekening yang memakainya: nomor rekening adalah
-identitas bisnis (D-130). Perbaikan kode hanya lewat migrasi + analisis data. Belum ada endpoint HTTP
-baca/tulis cabang (O-101 masih terbuka untuk permukaan operator).
+identitas bisnis (D-130). Perbaikan kode hanya lewat migrasi + analisis data. **Baca** cabang lewat
+HTTP sudah ada — `GET /api/v1/branches` (izin `platform.branch.read`, `0037`/T-121); membuat atau
+mengubah cabang tetap lewat `ctl create-branch` (O-101 sebagian selesai).
 
 ## MFA TOTP (T-046, spec §13/§18.2)
 

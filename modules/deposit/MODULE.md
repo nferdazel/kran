@@ -50,7 +50,7 @@ berjalan **sebelum** `ledger/0003`). `deposit/0008` menambah grant runtime untuk
 | `POST /api/v1/deposit/accounts` | `deposit.account.manage` | 201 `DepositAccount` | 400 body; 403 (cabang); 409 `party_not_active`/`branch_mismatch`/`product_not_active`; 409 idempotensi |
 | `GET /api/v1/deposit/accounts/{accountId}` | `deposit.account.read` | 200 `DepositAccount` | 403 (cabang), 404 |
 | `GET /api/v1/deposit/accounts?partyId=` | `deposit.account.read` | 200 `{items:[]}` | 400 uuid, 403 |
-| `POST /api/v1/teller/cash-transactions` | `teller.transaction.post` | 201 `CashTransaction` | 400 arah/nominal/narration; 403 (cabang); 404 akun; 409 `insufficient_funds`/`period_closed`/`account_not_active`; 409 idempotensi |
+| `POST /api/v1/teller/cash-transactions` | `teller.transaction.post` | 201 `CashTransaction` | 400 arah/nominal/narration; 403 (cabang); 404 akun; 409 `insufficient_funds`/`period_closed`/`account_not_active`/`cash_limit_exceeded`; 409 idempotensi |
 | `POST /api/v1/teller/transfers` | `teller.transaction.post` (**kedua** cabang) | 201 `Transfer` | 400 akun sama/nominal/narration; 403 (cabang); 404 akun; 409 `insufficient_funds`/`period_closed`/`account_not_active`; 409 idempotensi |
 
 - `Idempotency-Key` **wajib** di `POST` (pola T-085: `requireIdempotencyKey`/`withIdempotency`);
@@ -85,8 +85,8 @@ berjalan **sebelum** `ledger/0003`). `deposit/0008` menambah grant runtime untuk
   tujuan. `min_balance` dari binding versi produk rekening **sumber**.
 - **Jurnal** dari posting rule `DepositTransferred` (migrasi `ledger/0013`): D 201 / K 201. **Batas:**
   kedua sisi GL akun `201` yang sama, jadi jurnal PB **net-nol di buku besar**; perpindahan **per
-  rekening** dicatat di `deposit.transfer` (sumber & tujuan). Rekonsiliasi & GL per pemilik =
-  T-101/Fase 3 (lihat `docs/ACCEPTED-LIMITS.md`).
+  rekening** dicatat di `deposit.transfer` (sumber & tujuan). Rekonsiliasi cache = T-101 (selesai);
+  **GL per pemilik** belum ada dan tetap Fase 3 (lihat `docs/ACCEPTED-LIMITS.md`).
 - **Izin** `teller.transaction.post` diperiksa di **kedua** cabang rekening (sumber & tujuan).
 - **HUMAN-REVIEW-REQUIRED**: mutasi dua saldo + jurnal (AGENTS.md §8).
 
@@ -105,19 +105,20 @@ berjalan **sebelum** `ledger/0003`). `deposit/0008` menambah grant runtime untuk
 Tidak ada parameter baru di seed/packs untuk T-088b:
 - Saldo minimum dibaca dari **binding versi produk** `product.savings.min_balance` (sudah terdaftar
   di pack `base`); tidak ada binding → 0.
-- Batas nominal transaksi tunai & limit harian belum ditetapkan pemilik (T-088 §8 butir 1) —
-  **NEEDS-COMPLIANCE-REVIEW**, ditambahkan bersama T-093.
+- Batas nominal transaksi tunai lewat **parameter teller** (T-093/D-133):
+  `teller.cash.limit_deposit`/`limit_withdrawal` dicek di handler teller sebelum mutasi (409
+  `cash_limit_exceeded`); limit harian kumulatif belum ada — **NEEDS-COMPLIANCE-REVIEW**.
 
 ## Batas
 
 - PB (pemindahbukuan antar rekening) = T-088c: **stuktur** ada (tabel `deposit.transfer` + endpoint),
   tetapi **GL per pemilik belum terpisah** — kedua sisi jurnal akun `201` (net-nol); perpindahan
-  per rekening ada di `deposit.transfer`. Pemodelan GL per pemilik = T-101/Fase 3.
+  per rekening ada di `deposit.transfer`. Pemodelan GL per pemilik tetap terbuka untuk Fase 3 (T-101 hanya menutup rekonsiliasi cache).
 - Nomor rekening: kode cabang + nomor urut (D-130); check digit belum ada, dan modul lain tidak
   boleh mengasumsikan lebar/isi nomor.
 - Satu cabang per rekening; pindah cabang belum dimodelkan.
-- Batas nominal/limit transaksi tunai belum ada (menunggu parameter T-093) —
-  **NEEDS-COMPLIANCE-REVIEW**.
+- Batas nominal per transaksi tunai sudah ada (parameter teller, D-133); akumulasi/limit harian
+  belum ada — **NEEDS-COMPLIANCE-REVIEW**.
 
 ## Rekonsiliasi cache (T-101)
 

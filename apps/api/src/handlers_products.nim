@@ -157,7 +157,7 @@ proc definitionError(db: DbConn, bindings: seq[ParamBinding]): string =
       if b.value.kind != JString:
         return b.paramKey & " harus teks desimal"
       var units: int64
-      # Satuan schema mengikuti satuan nilai: money/decimal dalam satuan utuh (×10^4 minor),
+      # Satuan schema mengikuti satuan nilai: money/decimal dalam satuan utuh (×10^moneyScale minor),
       # rate dalam **persen** (1% = 10_000 unit, lihat kernel/rate.rateUnitsPerPercent).
       var factor: int64
       if def.valueType == pvtRate:

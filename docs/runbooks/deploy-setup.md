@@ -1,7 +1,9 @@
 # Runbook — setup deploy (deploy key + webhook)
 
-Status: **deploy belum pernah dijalankan**; deploy key + hook webhook **sudah terpasang**
-(15 Okt 2026, buktinya di `docs/tasks/T-040.md`). Bagian yang masih rencana: latihan deploy (T-013). Langkah yang menyentuh server harus diverifikasi di server; yang
+Status: deploy **sudah berjalan berulang** lewat push ke `main` (webhook → health gate, lihat §D2);
+deploy key + hook webhook **sudah terpasang** (15 Okt 2026, buktinya di `docs/tasks/T-040.md`).
+Bagian yang masih rencana: latihan `deploy-vps.sh` manual (T-013) dan latihan **rollback** (T-068).
+Langkah yang menyentuh server harus diverifikasi di server; yang
 tidak bisa dibuktikan di sini ditulis begitu, bukan diasumsikan berhasil. Spec: §21.4 (alur deploy),
 §21.5 (unit & direktori), §21.7 (webhook).
 
@@ -93,8 +95,8 @@ nyata. Variabel yang dibaca kode: `KRAN_DATABASE_URL`, `KRAN_DB_POOL_SIZE`,
 `KRAN_DB_QUERY_DEADLINE_MS` (wajib > `KRAN_DB_STATEMENT_TIMEOUT_MS`; default statement_timeout + 5000),
 `KRAN_DB_VALIDATE_ON_ACQUIRE`, `KRAN_APP_NAME`. Variabel untuk skrip deploy: `KRAN_GIT_URL`, `KRAN_APP_DIR`, `KRAN_HEALTH_URL`,
 `KRAN_ENV_FILE` (opsional, default `$KRAN_APP_DIR/env/kran-prod.env`).
-**`KRAN_PORT` dan `KRAN_BIND_HOST` wajib ada**: biner tidak membacanya sendiri, unit systemd yang
-meneruskannya ke flag `--port`/`--address` (lihat T-045 temuan 8).
+**`KRAN_PORT`/`KRAN_BIND_HOST` tidak lagi dipakai**: unit quadlet `kran-api.container` menulis
+`--port=8095 --address=0.0.0.0` eksplisit (biner tidak membacanya sendiri; lihat T-045 temuan 8).
 **Tidak ada nilai bisnis di sini** — semuanya dari parameter DB (spec §10).
 
 ## D. Fakta server (recon read-only, 15 Okt 2026)
@@ -189,7 +191,7 @@ Fakta yang membuat peralihan ini tidak lurus (semuanya ketemu di server, bukan d
 | Fakta | Konsekuensi |
 |---|---|
 | Host Rocky 9 tidak punya `libpq`; biner dibangun di image Debian | `deploy-vps.sh` mem-*vendor* `libpq.so.5`, `libldap-2.5.so.0`, `liblber-2.5.so.0`, `libsasl2.so.2` dari image ke `$APP_DIR/lib` (nama = soname) dan unit memakai `LD_LIBRARY_PATH`. Alternatif rapi: `dnf install libpq` di host (butuh root) lalu hapus blok vendor |
-| Biner tidak membaca `KRAN_PORT` | unit wajib meneruskan `--port=${KRAN_PORT} --address=${KRAN_BIND_HOST}`; tanpa itu app memakai 8080 — port yang di host ini dipakai container lain (crash-loop) |
+| Biner tidak membaca `KRAN_PORT` | unit wajib meneruskan `--port=${KRAN_PORT} --address=${KRAN_BIND_HOST}`; tanpa itu app memakai 8080 — port yang di host ini dipakai container lain (crash-loop). **Sejak quadlet** (`ops/systemd/kran-api.container`) port ditulis eksplisit (`--port=8095`), jadi env itu tidak lagi dipakai |
 | `webhook.service` tidak mewarisi `EnvironmentFile` unit | `deploy-vps.sh` memuat `$APP_DIR/env/kran-prod.env` sendiri; kalau tidak, deploy dari push gagal `KRAN_DATABASE_URL kosong` |
 | Direktori `web` diganti tiap deploy (`mv web.new web`) | direktori baru mewarisi label SELinux induknya (`var_t`) → Caddy (user `caddy`) menerima 403/404. `deploy-vps.sh` sudah memanggil `restorecon -RF "$APP_DIR/web"`; yang **wajib** ada sekali di server adalah aturan `semanage fcontext` di atas — tanpa aturan itu `restorecon` justru mengembalikan label ke `var_t` |
 | Stack lama = quadlet systemd | `podman stop` tidak cukup; hentikan lewat `systemctl --user stop cbs-*`, lalu `mask` supaya tidak bangkit saat reboot |
