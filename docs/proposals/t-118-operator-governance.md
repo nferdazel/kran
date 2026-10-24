@@ -1,6 +1,6 @@
 # Memo Keputusan — Tata Kelola Operator & Pemisahan Tugas (T-118)
 
-**Status:** keputusan menunggu pemilik · **Tanggal:** 24 Okt 2026 · **Lingkup:** pilot (1 koperasi,
+**Status:** keputusan menunggu pemilik (lihat §6) · **Tanggal:** 24 Okt 2026 · **Lingkup:** pilot (1 koperasi,
 1 cabang, data sintetis; O-004/D-046) · **Bukan kode, bukan migrasi.**
 
 Sumber yang dibaca: `docs/OPEN_ITEMS.md` (O-097…O-104), `docs/ACCEPTED-LIMITS.md` §4c, spec §4/§9/§10/§13/§18.2,
@@ -46,7 +46,9 @@ tidak berjurnal** (O-097) — jadi saldo `teller.vault` tidak bisa direkonsilias
 
 **Hari ini vs parameter.** Tidak ada satu pun parameter `teller.*` yang tersemai (`modules/teller`
 tidak punya `seeds/params.yaml`); limit kas dan nominal belum ada (O-099). `daycloser` **belum ada**
-(O-013) — task EOD belum bisa menampung sweep kas. Belum ada master cabang; `branch_id` masih UUID
+(O-013) — task EOD belum bisa menampung sweep kas. Master cabang **ada sejak D-130** (`platform.branch`
+kode 3 digit + nama, `ctl create-branch`), tetapi belum ada endpoint/UI-nya; `branch_id` di modul lain
+tetap UUID tanpa FK
 placeholder (O-101). Pemisahan tugas efektif = tidak ada di produksi (O-102).
 
 ## 2. Risiko per celah
