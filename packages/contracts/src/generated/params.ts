@@ -665,14 +665,15 @@ export const paramDefinitions: readonly ParamDefinition[] = [
         "ACT_365",
         "ACT_360",
         "THIRTY_360"
-      ]
+      ],
+      "description": "basis hari bernama spec §10.5 (act/360, 30/360, act/365); menambah basis lain = ubah definisi ini, bukan nilai bebas"
     }
   },
   {
     "key": "product.savings.interest_posting",
     "module": "product",
-    "valueType": "enum",
-    "tsType": "\"NONE\" | \"MONTH_END\"",
+    "valueType": "string",
+    "tsType": "string",
     "scopes": [
       "GLOBAL",
       "INSTITUTION"
@@ -682,10 +683,8 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     "regulatoryRefs": [],
     "descriptionKey": "param.product.savings.interest_posting",
     "jsonSchema": {
-      "enum": [
-        "NONE",
-        "MONTH_END"
-      ]
+      "maxLength": 32,
+      "description": "domain nilai sengaja dibuka: spec/D-094 tidak menetapkan kapan bunga diposting, jadi enum lama [NONE, MONTH_END] ditarik; enum ditetapkan bersama mesin akrual (Fase 3)"
     }
   },
   {
@@ -702,7 +701,8 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     "regulatoryRefs": [],
     "descriptionKey": "param.product.savings.interest_rate",
     "jsonSchema": {
-      "maxLength": 32
+      "maxLength": 32,
+      "description": "persen sebagai string; presisi maksimum 4 desimal dan batas kewajaran ditegakkan kernel (rateFromPercentString), bukan di sini"
     }
   },
   {
@@ -726,7 +726,7 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     "key": "product.savings.rounding_mode",
     "module": "product",
     "valueType": "enum",
-    "tsType": "\"HALF_UP\" | \"HALF_EVEN\"",
+    "tsType": "\"HALF_EVEN\"",
     "scopes": [
       "GLOBAL",
       "INSTITUTION"
@@ -737,9 +737,9 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     "descriptionKey": "param.product.savings.rounding_mode",
     "jsonSchema": {
       "enum": [
-        "HALF_UP",
         "HALF_EVEN"
-      ]
+      ],
+      "description": "hanya HALF_EVEN: kernel hanya mengimplementasikan half-to-even (checkedint.divRoundHalfEven; Money.div & applyRate). Mode lain butuh kode + keputusan lebih dulu"
     }
   },
   {
@@ -756,8 +756,10 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     "regulatoryRefs": [],
     "descriptionKey": "param.product.savings.rounding_scale",
     "jsonSchema": {
+      "type": "integer",
       "minimum": 0,
-      "maximum": 4
+      "maximum": 2,
+      "description": "0..moneyScale (2): penyimpanan uang adalah sen (D-136), jadi hasil pembulatan > 2 desimal tidak punya tempat menyimpan"
     }
   },
   {

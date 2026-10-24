@@ -562,7 +562,7 @@ const paramDefinitions*: seq[ParamDefinition] = @[
   ParamDefinition(
     key: "product.savings.interest_posting",
     module: "product",
-    valueType: pvtEnum,
+    valueType: pvtString,
     scopes: {pstGlobal, pstInstitution},
     sensitivity: psNormal,
     requiresApproval: true,

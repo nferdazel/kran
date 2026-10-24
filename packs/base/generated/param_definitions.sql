@@ -404,7 +404,7 @@ ON CONFLICT (key) DO UPDATE SET
 INSERT INTO platform.param_definition
   (key, module, value_type, json_schema, allowed_scopes, description_key,
    regulatory_refs, sensitivity, requires_approval, since_version)
-VALUES ('product.savings.day_count_basis', 'product', 'enum', '{"enum":["ACT_365","ACT_360","THIRTY_360"]}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.product.savings.day_count_basis', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
+VALUES ('product.savings.day_count_basis', 'product', 'enum', '{"enum":["ACT_365","ACT_360","THIRTY_360"],"description":"basis hari bernama spec §10.5 (act/360, 30/360, act/365); menambah basis lain = ubah definisi ini, bukan nilai bebas"}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.product.savings.day_count_basis', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
 ON CONFLICT (key) DO UPDATE SET
   module = EXCLUDED.module, value_type = EXCLUDED.value_type,
   json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,
@@ -415,7 +415,7 @@ ON CONFLICT (key) DO UPDATE SET
 INSERT INTO platform.param_definition
   (key, module, value_type, json_schema, allowed_scopes, description_key,
    regulatory_refs, sensitivity, requires_approval, since_version)
-VALUES ('product.savings.interest_posting', 'product', 'enum', '{"enum":["NONE","MONTH_END"]}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.product.savings.interest_posting', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
+VALUES ('product.savings.interest_posting', 'product', 'string', '{"maxLength":32,"description":"domain nilai sengaja dibuka: spec/D-094 tidak menetapkan kapan bunga diposting, jadi enum lama [NONE, MONTH_END] ditarik; enum ditetapkan bersama mesin akrual (Fase 3)"}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.product.savings.interest_posting', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
 ON CONFLICT (key) DO UPDATE SET
   module = EXCLUDED.module, value_type = EXCLUDED.value_type,
   json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,
@@ -426,7 +426,7 @@ ON CONFLICT (key) DO UPDATE SET
 INSERT INTO platform.param_definition
   (key, module, value_type, json_schema, allowed_scopes, description_key,
    regulatory_refs, sensitivity, requires_approval, since_version)
-VALUES ('product.savings.interest_rate', 'product', 'rate', '{"maxLength":32}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.product.savings.interest_rate', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
+VALUES ('product.savings.interest_rate', 'product', 'rate', '{"maxLength":32,"description":"persen sebagai string; presisi maksimum 4 desimal dan batas kewajaran ditegakkan kernel (rateFromPercentString), bukan di sini"}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.product.savings.interest_rate', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
 ON CONFLICT (key) DO UPDATE SET
   module = EXCLUDED.module, value_type = EXCLUDED.value_type,
   json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,
@@ -448,7 +448,7 @@ ON CONFLICT (key) DO UPDATE SET
 INSERT INTO platform.param_definition
   (key, module, value_type, json_schema, allowed_scopes, description_key,
    regulatory_refs, sensitivity, requires_approval, since_version)
-VALUES ('product.savings.rounding_mode', 'product', 'enum', '{"enum":["HALF_UP","HALF_EVEN"]}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.product.savings.rounding_mode', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
+VALUES ('product.savings.rounding_mode', 'product', 'enum', '{"enum":["HALF_EVEN"],"description":"hanya HALF_EVEN: kernel hanya mengimplementasikan half-to-even (checkedint.divRoundHalfEven; Money.div & applyRate). Mode lain butuh kode + keputusan lebih dulu"}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.product.savings.rounding_mode', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
 ON CONFLICT (key) DO UPDATE SET
   module = EXCLUDED.module, value_type = EXCLUDED.value_type,
   json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,
@@ -459,7 +459,7 @@ ON CONFLICT (key) DO UPDATE SET
 INSERT INTO platform.param_definition
   (key, module, value_type, json_schema, allowed_scopes, description_key,
    regulatory_refs, sensitivity, requires_approval, since_version)
-VALUES ('product.savings.rounding_scale', 'product', 'integer', '{"minimum":0,"maximum":4}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.product.savings.rounding_scale', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
+VALUES ('product.savings.rounding_scale', 'product', 'integer', '{"type":"integer","minimum":0,"maximum":2,"description":"0..moneyScale (2): penyimpanan uang adalah sen (D-136), jadi hasil pembulatan > 2 desimal tidak punya tempat menyimpan"}'::jsonb, ARRAY['GLOBAL', 'INSTITUTION'], 'param.product.savings.rounding_scale', ARRAY[]::text[], 'NORMAL', true, '0.1.0')
 ON CONFLICT (key) DO UPDATE SET
   module = EXCLUDED.module, value_type = EXCLUDED.value_type,
   json_schema = EXCLUDED.json_schema, allowed_scopes = EXCLUDED.allowed_scopes,
