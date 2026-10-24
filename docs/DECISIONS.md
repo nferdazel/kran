@@ -3039,3 +3039,69 @@ digabungkan ke nomor rekening, dan cabang wajib punya kode.
 `account_id`; jurnal/transaksi tidak menyimpan nomor). Check digit/format final lain masih terbuka
 (O-104) — bila diminta compliance, bentuk baru = migrasi + nomor baru, bukan penulisan ulang nomor
 lama. Belum ada endpoint HTTP/UI master cabang (O-101 tetap terbuka untuk itu).
+
+## D-131 — Peran admin sempit + pasangan SoD tersemai (T-118, K-1(b)/K-2(a)/K-7(a))
+
+**Konteks.** Seluruh operasi pilot bergantung pada satu `platform_admin` yang memegang maker
+*dan* checker parameter/produk, kas/vault, buku besar, dan administrasi pengguna, sehingga SoD
+tidak bisa ditegakkan (O-102). Memasangkan konflik ke `platform_admin` akan melumpuhkan peran itu
+sendiri. Memo `docs/proposals/t-118-operator-governance.md` §3 mengusulkan pemecahan peran.
+
+**Keputusan (disetujui pemilik 24 Okt 2026, opsi K-1(b), K-2(a), K-7(a)).**
+1. Migrasi `platform/0032` menambah empat peran sempit dengan grant izin eksplisit: `ops_admin`
+   (administrasi operasional harian), `ledger_admin` (periode/COA/jurnal/pembalik),
+   `cash_admin` (sesi kas, vault, transaksi tunai), `product_maker` (usulan produk/parameter).
+2. Lima pasangan konflik disemai di `platform.role_conflict`: **wajib** `product_maker`/
+   `product_checker` dan `cash_admin`/`ledger_admin`; **nice-to-have** `ledger_admin`/`ops_admin`,
+   `ledger_admin`/`teller`, `cash_admin`/`teller`.
+3. `platform_admin` **tetap ada sebagai break-glass**, bukan peran harian: jalur override
+   operasi-ganda (maker = checker) hanya untuk operator cadangan saat staf kurang dari yang
+   dibutuhkan SoD, wajib beralasan dan diaudit, dan dilaporkan ke pengurus. Peran ini sengaja
+   **tidak** dipasangkan konflik — memasangkannya mematikan break-glass itu sendiri.
+4. Penjaga penguncian-keluar tidak lagi menghitung peran `platform_admin`, tetapi pemegang izin
+   `platform.user.manage`: mencabut/menonaktifkan pengguna terakhir yang bisa mengelola pengguna
+   ditolak, apa pun kode perannya. Mencabut satu peran hanya memicu penjagaan bila peran itu
+   jalan terakhir pengguna ke izin tersebut.
+5. Label peran baru tersedia di UI (`packages/i18n`, id+en).
+
+**Konsekuensi.** Produksi perlu akun terpisah per peran sempit sebelum SoD berlaku efektif;
+selama staf kurang, break-glass dipakai dengan alasan tertulis. Angka kepatuhan (jumlah staf
+minimum, batas nominal kas) tetap keputusan pemilik (K-3/K-5, O-102/O-099).
+
+## D-132 — Kas teller/vault berjurnal; top-up vault maker-checker (T-118, O-097/O-098)
+
+**Konteks.** Buka/tutup sesi kas dan top-up vault hanya mengubah `teller.vault.balance` tanpa
+jejak buku besar, dan satu pemegang izin bisa menyuntik kas tanpa persetujuan kedua (O-097/O-098).
+Memo T-118 §4–§5 mengusulkan COA kas terpisah, maker-checker, dan jurnal.
+
+**Keputusan (disetujui pemilik 24 Okt 2026, K-6/K-7; angka K-5 tetap terbuka).**
+1. COA `ledger/0033`: `101` menjadi induk non-postable; `101.1 KAS DI VAULT`,
+   `101.2 KAS DI TELLER`, `101.9 SELISIH KAS`. Rule `101` yang lama dipindahkan ke `101.2`.
+2. `ledger/0034` menyemai posting rule `TellerSessionOpened`, `TellerSessionClosed`,
+   `TellerCashOverage`, `TellerCashShortage`; handler sesi memposting jurnal **sinkron** di
+   transaksi yang sama dengan mutasi vault, nominal nol dilewati (domain menolak jurnal nol).
+3. Arah jurnal: buka `D 101.2 / K 101.1` (float pindah ke laci); tutup `D 101.1 / K 101.2`
+   sebesar counted; selisih lebih `D 101.2 / K 101.9`, kurang `D 101.9 / K 101.2` sebesar |variance|.
+   **Deviasi sadar dari memo §5**: kaki selisih memakai akun laci (`101.2`), bukan vault — setelah
+   kas kembali ke vault saldo laci = −variance, jadi hanya akun laci yang bisa dinolkan jurnal
+   selisih. Versi memo akan meninggalkan saldo laci tidak nol.
+4. Top-up vault menjadi maker-checker (`teller/0035`): `POST /teller/vault/topups` hanya membuat
+   pengajuan `PENDING` (nominal, akun sumber, alasan/bukti wajib); persetujuan akun **lain**
+   (`.../{requestId}/approve`) menulis saldo vault + jurnal `D <akun vault> / K <akun sumber>` +
+   audit + event dalam satu transaksi. Penolakan butuh alasan. Self-approval ditolak CHECK DB dan
+   handler; dua persetujuan bersamaan diserialkan `FOR UPDATE` pada baris pengajuan.
+5. Akun kaki vault datang dari parameter `teller.vault.cash_account` (CRITICAL,
+   `NEEDS-COMPLIANCE-REVIEW`, nilai pilot `101.1`), bukan literal di handler. Akun sumber dipilih
+   pengaju dan disetujui apa adanya oleh checker; wajib akun ASSET aktif postable dan **bukan**
+   akun vault itu sendiri.
+6. Izin baru berbentuk tiga segmen (spec §13, `validPermissionCode`): `teller.vault.submit`
+   (pengaju: `cash_admin`, `ops_admin`, `platform_admin`) dan `teller.vault.approve` (penyetuju:
+   `cash_admin`, `platform_admin`). Izin lama `teller.vault.topup` dipertahankan di katalog demi
+   data historis tetapi tidak dipakai rute mana pun.
+
+**Konsekuensi.** Neraca kini memuat kas pilot (vault/laci/selisih), tetapi pemetaan akunnya usulan
+pilot — `NEEDS-COMPLIANCE-REVIEW` (REG-011), bukan kutipan SAK EP/PSAK. Sumber dana top-up tidak
+divalidasi ke rekening bank; bukti sumber adalah alasan pengajuan + akun COA yang dipilih. Batas
+nominal kas (K-5/O-099) dan jumlah staf minimum (K-3) tetap keputusan pemilik. Rollback binary ke
+sebelum rilis ini menghentikan jurnal kas baru tetapi jurnal lama tetap ada (tidak ada pembalik
+otomatis).
