@@ -2721,3 +2721,20 @@ penarikan tunai berhenti dengan 500. Perbaikan: parser menerima nol tambahan di 
 **Bukti.** `./task test tmoney` dan `tprop_money` hijau (kasus `"25000.0000"`, `"1.2300"`,
 `"1.2301"` ditolak). Catatan: binding pilot lama juga memuat `rounding_mode: HALF_UP` — tidak
 dibaca kode mana pun dan versi sealed tidak diubah; versi baru tidak bisa mem-bind-nya.
+
+## 24 Okt 2026 — degradasi pemantau deadline tidak lagi senyap (T-066)
+
+Temuan MINOR reviewer T-065: `armDeadline` boleh mengembalikan token 0 (tanpa batas) saat tabel
+slot penuh atau thread pemantau gagal dibuat, tetapi kegagalan itu tidak meninggalkan jejak.
+
+- `deadlineUnarmedTotal()` menghitung setiap kegagalan internal; kejadian pertama menulis **satu**
+  log JSON (`cause`, `deadline_unarmed_total`) supaya tabel penuh tidak membanjiri log per kueri.
+- Thread pemantau yang gagal dibuat kini melepas token 0; sebelumnya slot tetap dipakai dan token
+  != 0 padahal tidak ada pemantau — batas yang ilusi.
+- `setDeadlineLogSink` dipakai test untuk menangkap log tanpa menulis ke stderr.
+
+**Bukti.** `./task test tdeadline` 4 OK (termasuk kasus tabel penuh: token 0, penghitung +1, tepat
+satu baris log), `./task test tlog` hijau, `./task check` hijau. Detail: `docs/tasks/T-066.md`.
+
+**Sisa.** Penghitung belum diekspos sebagai probe `/readyz` — itu observabilitas Fase 9
+(`docs/ACCEPTED-LIMITS.md`), bukan bagian task ini.

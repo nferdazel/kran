@@ -22,8 +22,14 @@
 ## Degradasi yang disengaja: bila tabel slot penuh atau thread pemantau gagal dibuat, `armDeadline`
 ## mengembalikan token 0 (= tanpa batas). Memantau adalah lapisan tambahan; kegagalannya tidak boleh
 ## membuat kueri yang sehat gagal. Jumlah slot jauh di atas ukuran pool yang wajar.
+## Karena itu degradasi **tidak boleh senyap** (T-066): setiap kejadian menambah penghitung
+## `deadlineUnarmedTotal`, dan kejadian pertama menulis satu log terstruktur (`cause`, `total`)
+## supaya operator tahu blok DB berjalan tanpa batas. Log sengaja sekali saja — bila tabel penuh,
+## setiap kueri akan mencetak baris dan justru menenggelamkan log lain.
 
 import std/[locks, monotimes, os, posix]
+
+import ../log
 
 const
   maxGuards* = 256 ## cukup untuk semua pool aplikasi; pemakaian di luar ini = tanpa batas
@@ -49,6 +55,9 @@ var
   nextToken: uint64
   watchdogStarted = false
   watchdogThread: Thread[WatchdogArg]
+  unarmedTotal: uint64
+  unarmedLogged = false
+  deadlineSink: LogSink
 
 initLock(guardLock)
 
@@ -71,27 +80,60 @@ proc watchdogMain(_: WatchdogArg) {.thread.} =
 
 proc armDeadline*(fd: int32, timeoutMs: int): DeadlineGuard =
   ## Daftarkan `fd` dengan batas `timeoutMs`. `fd < 0` atau `timeoutMs <= 0` = tanpa batas.
-  ## Bila tabel penuh, juga tanpa batas (lebih baik daripada crash; jumlahnya jauh di atas
-  ## `poolSize` yang wajar).
+  ## Bila pemantau gagal dibuat atau tabel penuh, juga tanpa batas (lebih baik daripada crash;
+  ## jumlahnya jauh di atas `poolSize` yang wajar) — kejadiannya dicatat sekali lewat log + penghitung.
   result.token = 0
   if fd < 0 or timeoutMs <= 0:
     return
+  var cause = ""
+  var total: uint64
+  var logNow = false
   withLock guardLock:
-    if not watchdogStarted:
+    var monitoring = watchdogStarted
+    if not monitoring:
       # Di dalam lock supaya dua thread tidak membuat dua pemantau. Penanda baru diset setelah
       # thread benar-benar ada; kalau gagal, panggilan berikutnya mencoba lagi.
       try:
         createThread(watchdogThread, watchdogMain, WatchdogArg())
         watchdogStarted = true
+        monitoring = true
       except CatchableError:
-        discard
-    for i in 0 ..< maxGuards:
-      if not slots[i].used:
-        inc nextToken
-        slots[i] = Slot(used: true, token: nextToken, fd: SocketHandle(fd),
-                        atMs: monoMs() + float(timeoutMs))
-        result.token = nextToken
-        break
+        cause = "watchdog_thread"
+    if monitoring:
+      for i in 0 ..< maxGuards:
+        if not slots[i].used:
+          inc nextToken
+          slots[i] = Slot(used: true, token: nextToken, fd: SocketHandle(fd),
+                          atMs: monoMs() + float(timeoutMs))
+          result.token = nextToken
+          break
+      if result.token == 0:
+        cause = "slot_table_full"
+    if cause.len > 0:
+      inc unarmedTotal
+      total = unarmedTotal
+      if not unarmedLogged:
+        unarmedLogged = true
+        logNow = true
+  if logNow:
+    # `deadlineSink` bertipe closure (memori GC), jadi membacanya tidak GC-safe. Cast sempit ini
+    # hanya menyentuh hook uji; `armDeadline` sendiri tidak menyimpan/memanggil closure apa pun.
+    var sink: LogSink
+    {.cast(gcsafe).}:
+      sink = deadlineSink
+    discard newLogger(lvlWarn, "kran", sink).warn(
+      "pemantau batas DB tidak terpasang; blok berjalan tanpa batas",
+      [("cause", cause), ("deadline_unarmed_total", $total)]
+    )
+
+proc deadlineUnarmedTotal*(): uint64 =
+  ## Berapa kali batas gagal dipasang karena sebab internal (bukan karena `fd`/batas tidak sah).
+  withLock guardLock:
+    result = unarmedTotal
+
+proc setDeadlineLogSink*(sink: LogSink) =
+  ## Hook uji: arahkan log degradasi ke `sink` (mis. buffer) alih-alih stderr.
+  deadlineSink = sink
 
 proc disarmDeadline*(g: DeadlineGuard): bool =
   ## Lepas pendaftaran. `true` bila batas sudah terlanjur lewat — artinya socket sudah
