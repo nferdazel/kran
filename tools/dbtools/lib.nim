@@ -460,14 +460,25 @@ proc reportStatus*(db: DbConn, root: string): seq[MigrationStatus] =
       s.checksumChanged = s.appliedSha256 != sha256Of(db, m.sql)
     result.add s
 
+proc testDbNameAllowed*(name: string): bool =
+  ## Satu-satunya definisi "database dev/test" (T-127): seed dev dan reset schema memakai aturan
+  ## yang sama, supaya tidak ada dua definisi yang bisa berbeda.
+  result = name.endsWith("_dev") or name.endsWith("_test")
+
 proc resetTestSchemas*(db: DbConn, root: string) =
   ## Menghapus **semua** schema modul yang punya migrasi (termasuk `platform` beserta ledger
   ## migrasinya) supaya integration test bisa menerapkan seluruh migrasi dari nol.
   ##
-  ## Hanya untuk DB dev/test: pemanggil adalah test yang sudah dijaga `KRAN_DATABASE_URL`
-  ## (pola yang sama dengan `DROP SCHEMA platform` yang dulu ditulis tangan di tiap test).
-  ## Tanpa ini, menambah modul baru membuat test lama gagal karena migrasi modul itu dijalankan
+  ## Hanya untuk DB dev/test. Penjaga ini **wajib**: satu `KRAN_DATABASE_URL` yang salah arah
+  ## (mis. env produksi masih ter-export) akan menghapus database pilot. Nama DB diperiksa dari
+  ## server, bukan dari env pemanggil, supaya tidak bisa diakali dengan mengubah URL saja.
+  ## Tanpa reset, menambah modul baru membuat test lama gagal karena migrasi modul itu dijalankan
   ## ulang tanpa ledger-nya sementara objeknya masih ada.
+  let dbName = db.getValue(sql("SELECT current_database()"))
+  if not testDbNameAllowed(dbName):
+    raise newException(ValueError,
+      "resetTestSchemas menolak database '" & dbName &
+      "': nama harus berakhir _dev atau _test (T-127)")
   var schemaSeen: seq[string]
   for m in migrationsOf(root):
     if m.module in schemaSeen:
@@ -607,8 +618,7 @@ proc devSeedDbAllowed*(url: string): bool =
   ## atau `_test`. `packs/base/seed/0001_dev_users.sql` memuat user contoh dengan kata sandi contoh —
   ## satu salah ketik URL cukup untuk menanamkannya ke basis data produksi (temuan audit repo publik
   ## 16 Okt 2026, O-062). Sebelumnya penjagaan hanya berupa flag `--dev` itu sendiri.
-  let name = databaseNameOf(url)
-  result = name.endsWith("_dev") or name.endsWith("_test")
+  result = testDbNameAllowed(databaseNameOf(url))
 
 proc applyAllMigrations*(db: DbConn, root: string): MigrateReport =
   ## Test memakai skema **final** (expand + contract). Contract tetap dipisah di jalur deploy;
