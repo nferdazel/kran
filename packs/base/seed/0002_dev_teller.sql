@@ -52,5 +52,5 @@ ON CONFLICT DO NOTHING;
 -- Vault cabang e2e. Float awal e2e kecil (1000), jadi saldo ini cukup untuk ratusan run dan
 -- tidak perlu top-up (T-107 belum ada).
 INSERT INTO teller.vault (branch_id, balance)
-VALUES ('e2e00000-0000-4000-8000-000000000001', '1000000.0000')
+VALUES ('e2e00000-0000-4000-8000-000000000001', '1000000.00')
 ON CONFLICT (branch_id) DO NOTHING;

@@ -111,7 +111,7 @@ block:
     insertProduct(d, prod, actor)
     insertVersion(d, ver, actor)
     insertBinding(d, ver.versionId, ParamBinding(paramKey: "product.savings.min_balance",
-      value: %"0.0000"))
+      value: %"0.00"))
     1)
   doAssert approveVersion(db, ver.versionId, approver), "versi produk uji gagal di-approve"
 
@@ -124,7 +124,7 @@ block:
     insertProduct(d, prodPokok, actor)
     insertVersion(d, verPokok, actor)
     insertBinding(d, verPokok.versionId, ParamBinding(paramKey: "product.savings.min_balance",
-      value: %"0.0000"))
+      value: %"0.00"))
     1)
   doAssert approveVersion(db, verPokok.versionId, approver), "versi produk pokok gagal di-approve"
   dbPool.release(db)
@@ -339,7 +339,7 @@ suite "deposit: buka & baca rekening":
     checkJson(AccountsPath, "POST", "201", created.body)
     check created.body["accountType"].getStr() == "SAVINGS"
     check created.body["status"].getStr() == "ACTIVE"
-    check created.body["balance"].getStr() == "0.0000"
+    check created.body["balance"].getStr() == "0.00"
     check created.body["productCode"].getStr() == ProductCode
     check created.body["branchId"].getStr() == BranchId
     check created.body["partyId"].getStr() == PartyId
@@ -354,7 +354,7 @@ suite "deposit: buka & baca rekening":
     # Saldo awal benar-benar 0 di DB (bukan hanya di respons).
     check dbText(sql"""
       SELECT balance::text FROM deposit.account_balance WHERE account_id = ?""",
-      accountId) == "0.0000"
+      accountId) == "0.00"
     check dbCount(sql"""
       SELECT count(*)::text FROM deposit.account WHERE party_id = ?""",
       PartyId) >= 1

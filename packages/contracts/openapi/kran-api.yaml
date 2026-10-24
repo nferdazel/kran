@@ -3720,10 +3720,10 @@ components:
           format: uuid
         debit:
           type: string
-          description: Desimal 4 angka di belakang koma, mis. `1500.0000`.
+          description: Desimal 2 angka di belakang koma, mis. `1500.00`.
         credit:
           type: string
-          description: Desimal 4 angka di belakang koma; tepat satu dari debit/credit > 0.
+          description: Desimal 2 angka di belakang koma; tepat satu dari debit/credit > 0.
 
     JournalHeader:
       type: object
@@ -4133,7 +4133,7 @@ components:
           enum: [ACTIVE, CLOSED]
         balance:
           type: string
-          description: Saldo desimal string 4 desimal (tanpa float), mis. `"0.0000"`.
+          description: Saldo desimal string 2 desimal (tanpa float), mis. `"0.00"`.
         openedOn:
           type: string
           format: date
@@ -4166,7 +4166,7 @@ components:
           description: Setor (masuk kas) atau tarik (keluar kas).
         amount:
           type: string
-          description: Nominal desimal string > 0 (tanpa float), mis. `"100000.0000"`.
+          description: Nominal desimal string > 0 (tanpa float), mis. `"100000.00"`.
         narration:
           type: string
           maxLength: 200
@@ -4189,10 +4189,10 @@ components:
           enum: [DEPOSIT, WITHDRAWAL]
         amount:
           type: string
-          description: Nominal desimal string 4 desimal (tanpa float).
+          description: Nominal desimal string 2 desimal (tanpa float).
         balanceAfter:
           type: string
-          description: Saldo rekening setelah transaksi, desimal string 4 desimal.
+          description: Saldo rekening setelah transaksi, desimal string 2 desimal.
         businessDate:
           type: string
           format: date
@@ -4218,7 +4218,7 @@ components:
           enum: [DEPOSIT, WITHDRAWAL]
         amount:
           type: string
-          description: Nominal desimal string 4 desimal (tanpa float).
+          description: Nominal desimal string 2 desimal (tanpa float).
         businessDate:
           type: string
           format: date
@@ -4280,7 +4280,7 @@ components:
           enum: [IN, OUT]
         amount:
           type: string
-          description: Nominal desimal string 4 desimal (tanpa float).
+          description: Nominal desimal string 2 desimal (tanpa float).
         businessDate:
           type: string
           format: date
@@ -4314,7 +4314,7 @@ components:
           description: Rekening tujuan (harus `ACTIVE` dan **berbeda** dari sumber).
         amount:
           type: string
-          description: Nominal desimal string > 0 (tanpa float), mis. `"100000.0000"`.
+          description: Nominal desimal string > 0 (tanpa float), mis. `"100000.00"`.
         narration:
           type: string
           maxLength: 200
@@ -4348,13 +4348,13 @@ components:
           format: uuid
         amount:
           type: string
-          description: Nominal desimal string 4 desimal (tanpa float).
+          description: Nominal desimal string 2 desimal (tanpa float).
         sourceBalanceAfter:
           type: string
-          description: Saldo rekening sumber setelah PB, desimal string 4 desimal.
+          description: Saldo rekening sumber setelah PB, desimal string 2 desimal.
         destinationBalanceAfter:
           type: string
-          description: Saldo rekening tujuan setelah PB, desimal string 4 desimal.
+          description: Saldo rekening tujuan setelah PB, desimal string 2 desimal.
         businessDate:
           type: string
           format: date
@@ -4371,7 +4371,7 @@ components:
           description: Cabang sesi kas; izin `teller.session.open` harus dipegang di sini.
         openingFloat:
           type: string
-          description: Float awal laci sebagai desimal string ≥ 0 (tanpa float), mis. `"500000.0000"`.
+          description: Float awal laci sebagai desimal string ≥ 0 (tanpa float), mis. `"500000.00"`.
         note:
           type: string
           maxLength: 200
@@ -4404,7 +4404,7 @@ components:
           enum: [OPEN]
         openingFloat:
           type: string
-          description: Float awal laci, desimal string 4 desimal (tanpa float).
+          description: Float awal laci, desimal string 2 desimal (tanpa float).
         openedAt:
           type: string
           description: ISO-8601 UTC.
@@ -4442,10 +4442,10 @@ components:
           enum: [CLOSED]
         openingFloat:
           type: string
-          description: Float awal laci, desimal string 4 desimal (tanpa float).
+          description: Float awal laci, desimal string 2 desimal (tanpa float).
         countedCash:
           type: string
-          description: Kas fisik yang dihitung, desimal string 4 desimal.
+          description: Kas fisik yang dihitung, desimal string 2 desimal.
         expectedCash:
           type: string
           description: |
@@ -4473,7 +4473,7 @@ components:
           format: uuid
         balance:
           type: string
-          description: Saldo kas fisik vault cabang, desimal string 4 desimal (tanpa float).
+          description: Saldo kas fisik vault cabang, desimal string 2 desimal (tanpa float).
 
     TellerVaultTopUpRequest:
       type: object
@@ -4486,7 +4486,7 @@ components:
           description: Cabang yang vault-nya diisi; izin `teller.vault.submit` harus dipegang di sini.
         amount:
           type: string
-          description: Nominal top-up sebagai desimal string > 0 (tanpa float), mis. `"5000000.0000"`.
+          description: Nominal top-up sebagai desimal string > 0 (tanpa float), mis. `"5000000.00"`.
         sourceAccount:
           type: string
           maxLength: 32
@@ -4510,7 +4510,7 @@ components:
           format: uuid
         amount:
           type: string
-          description: Nominal pengajuan, desimal string 4 desimal.
+          description: Nominal pengajuan, desimal string 2 desimal.
         sourceAccount:
           type: string
         note:
@@ -4556,7 +4556,7 @@ components:
           $ref: "#/components/schemas/TellerVaultTopUpRecord"
         balanceAfter:
           type: string
-          description: Saldo vault setelah persetujuan, desimal string 4 desimal.
+          description: Saldo vault setelah persetujuan, desimal string 2 desimal.
 
     TellerVaultTopUpRejectRequest:
       type: object

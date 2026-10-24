@@ -35,7 +35,7 @@
     class: kebijakan
     compliance: NEEDS-COMPLIANCE-REVIEW
     note: "Plafon float laci per sesi; angka pilot pemilik 24 Okt 2026 (K-5)."
-  default_pack: { base: "2000000.0000" }
+  default_pack: { base: "2000000.00" }
 
 - key: teller.cash.limit_deposit
   type: money
@@ -46,7 +46,7 @@
     class: kebijakan
     compliance: NEEDS-COMPLIANCE-REVIEW
     note: "Plafon setor tunai per transaksi; angka pilot pemilik 24 Okt 2026 (K-5)."
-  default_pack: { base: "10000000.0000" }
+  default_pack: { base: "10000000.00" }
 
 - key: teller.cash.limit_withdrawal
   type: money
@@ -57,7 +57,7 @@
     class: kebijakan
     compliance: NEEDS-COMPLIANCE-REVIEW
     note: "Plafon tarik tunai per transaksi; angka pilot pemilik 24 Okt 2026 (K-5)."
-  default_pack: { base: "5000000.0000" }
+  default_pack: { base: "5000000.00" }
 
 - key: teller.vault.limit_topup_per_request
   type: money
@@ -68,4 +68,4 @@
     class: kebijakan
     compliance: NEEDS-COMPLIANCE-REVIEW
     note: "Plafon satu pengajuan top-up vault; angka pilot pemilik 24 Okt 2026 (K-5)."
-  default_pack: { base: "25000000.0000" }
+  default_pack: { base: "25000000.00" }

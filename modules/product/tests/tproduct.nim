@@ -79,7 +79,7 @@ suite "product: binding parameter":
     ParamBinding(paramKey: key, value: value)
 
   test "minimal satu binding dan hanya namespace product.":
-    check validateBindings(@[binding("product.savings.min_balance", %"0.0000")]).len == 1
+    check validateBindings(@[binding("product.savings.min_balance", %"0.00")]).len == 1
     expect ValueError:
       discard validateBindings(newSeq[ParamBinding]())
     expect ValueError:
@@ -88,8 +88,8 @@ suite "product: binding parameter":
   test "kunci ganda dan nilai null ditolak":
     expect ValueError:
       discard validateBindings(@[
-        binding("product.savings.admin_fee", %"0.0000"),
-        binding("product.savings.admin_fee", %"1.0000")])
+        binding("product.savings.admin_fee", %"0.00"),
+        binding("product.savings.admin_fee", %"1.00")])
     expect ValueError:
       discard validateBindings(@[binding("product.savings.admin_fee", newJNull())])
 

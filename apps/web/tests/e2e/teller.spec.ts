@@ -130,7 +130,7 @@ async function createAccountFixture(request: APIRequestContext): Promise<Fixture
       name: `Tabungan E2E ${suffix}`,
       productType: "SAVINGS",
       effectiveFrom: todayIso(),
-      bindings: { "product.savings.min_balance": "0.0000" },
+      bindings: { "product.savings.min_balance": "0.00" },
     },
   });
   expect(product.status(), `buat produk: ${await product.text()}`).toBe(201);
@@ -258,7 +258,7 @@ test.describe.serial("teller: sesi kas, setor, tutup", () => {
     });
     expect(account.status()).toBe(200);
     const body = (await account.json()) as { balance: string };
-    expect(body.balance).toBe("10.0000");
+    expect(body.balance).toBe("10.00");
   });
 
   test("axe: panel sesi tanpa sesi, sesi terbuka, dan hasil tutup × 2 tema × 2 locale", async ({

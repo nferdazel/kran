@@ -112,7 +112,7 @@ block:
     insertProduct(d, prod, Id(Actor))
     insertVersion(d, ver, Id(Actor))
     insertBinding(d, ver.versionId, ParamBinding(paramKey: "product.savings.min_balance",
-      value: %"0.0000"))
+      value: %"0.00"))
     1)
   doAssert approveVersion(db, ver.versionId, Id(Approver)), "versi produk fixture gagal di-approve"
 
@@ -121,28 +121,28 @@ block:
   insertAccount(AccC, "2220000001", BranchB, $prod.productId, $ver.versionId)
 
   # Mutasi: A setor 100, tarik 30, PB keluar 20 → 50. B menerima PB 20. C belum bermutasi → 0.
-  seedJournal("bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbb1", "RECON_DEPOSIT", "100.0000")
-  seedJournal("bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbb2", "RECON_WITHDRAWAL", "30.0000")
-  seedJournal("bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbb3", "RECON_TRANSFER", "20.0000")
+  seedJournal("bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbb1", "RECON_DEPOSIT", "100.00")
+  seedJournal("bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbb2", "RECON_WITHDRAWAL", "30.00")
+  seedJournal("bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbb3", "RECON_TRANSFER", "20.00")
   exec(sql"""
     INSERT INTO deposit.transaction
       (transaction_id, tx_type, account_id, amount, business_date, journal_id, created_by)
-    VALUES (md5('itreconcile|cash-deposit')::uuid, 'CASH_DEPOSIT', ?::uuid, '100.0000',
+    VALUES (md5('itreconcile|cash-deposit')::uuid, 'CASH_DEPOSIT', ?::uuid, '100.00',
             current_date, 'bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbb1'::uuid, ?::uuid),
-           (md5('itreconcile|cash-withdrawal')::uuid, 'CASH_WITHDRAWAL', ?::uuid, '30.0000',
+           (md5('itreconcile|cash-withdrawal')::uuid, 'CASH_WITHDRAWAL', ?::uuid, '30.00',
             current_date, 'bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbb2'::uuid, ?::uuid)""",
     AccA, Actor, AccA, Actor)
   exec(sql"""
     INSERT INTO deposit.transfer
       (transfer_id, source_account_id, destination_account_id, amount, business_date,
        journal_id, created_by)
-    VALUES (md5('itreconcile|transfer')::uuid, ?::uuid, ?::uuid, '20.0000', current_date,
+    VALUES (md5('itreconcile|transfer')::uuid, ?::uuid, ?::uuid, '20.00', current_date,
             'bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbb3'::uuid, ?::uuid)""",
     AccA, AccB, Actor)
 
-  setBalance(AccA, "50.0000")
-  setBalance(AccB, "20.0000")
-  setBalance(AccC, "0.0000")
+  setBalance(AccA, "50.00")
+  setBalance(AccB, "20.00")
+  setBalance(AccC, "0.00")
 
 suite "rekonsiliasi saldo simpanan (T-101)":
   test "cache bersih + hitungan rekening; PB dihitung di kedua sisi":
@@ -154,23 +154,23 @@ suite "rekonsiliasi saldo simpanan (T-101)":
     check accountBalanceMismatches(db, BranchA).len == 0
 
   test "selisih dilaporkan dengan arah dan nilai yang benar":
-    setBalance(AccB, "25.0000")
+    setBalance(AccB, "25.00")
     let found = accountBalanceMismatches(db, "")
     check found.len == 1
     check found[0].accountNo == "1110000002"
     check found[0].branchId == BranchA
-    check found[0].cached == "25.0000"
-    check found[0].expected == "20.0000"
-    check found[0].delta == "5.0000"
+    check found[0].cached == "25.00"
+    check found[0].expected == "20.00"
+    check found[0].delta == "5.00"
     check runReconcileDeposits(db, "") == 1
-    setBalance(AccB, "20.0000")
+    setBalance(AccB, "20.00")
     check runReconcileDeposits(db, "") == 0
 
   test "filter cabang menyaring; cache yang hilang ikut dilaporkan":
     check CtlUsage.contains(reconcileDepositsCmd)
     check runReconcileDeposits(db, "bukan-uuid") == 2
 
-    exec(sql"UPDATE deposit.account_balance SET balance = '7.5000' WHERE account_id = ?::uuid",
+    exec(sql"UPDATE deposit.account_balance SET balance = '7.50' WHERE account_id = ?::uuid",
       AccC)
     check accountBalanceMismatches(db, BranchA).len == 0
     let scoped = accountBalanceMismatches(db, BranchB)
@@ -181,7 +181,7 @@ suite "rekonsiliasi saldo simpanan (T-101)":
     let missing = accountBalanceMismatches(db, BranchB)
     check missing.len == 1
     check missing[0].cached.len == 0
-    check missing[0].expected == "0.0000"
+    check missing[0].expected == "0.00"
     check textOf(sql"""
       SELECT count(*)::text FROM deposit.account_balance WHERE account_id = ?::uuid""",
       AccC) == "0"

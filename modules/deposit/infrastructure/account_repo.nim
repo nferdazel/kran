@@ -18,7 +18,7 @@ const
     "a.product_version_id, p.code, a.branch_id, a.account_type, a.status, " &
     "to_char(a.opened_on, 'YYYY-MM-DD'), " &
     "to_char(a.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), " &
-    "coalesce(b.balance::text, '0.0000'), coalesce(p.savings_kind, '')"
+    "coalesce(b.balance::text, '0.00'), coalesce(p.savings_kind, '')"
 
 proc accountOf(row: Row): Account =
   let parsedBalance = moneyFromString(row[11])

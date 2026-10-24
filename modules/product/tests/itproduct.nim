@@ -39,7 +39,7 @@ proc newProduct(code = "SAV01", ptype = ptSavings): Product =
   Product(productId: newId(testClock), code: code, name: "Simpanan Sukarela",
     productType: ptype)
 
-proc binding(key = "product.savings.min_balance", value = "0.0000"): ParamBinding =
+proc binding(key = "product.savings.min_balance", value = "0.00"): ParamBinding =
   ParamBinding(paramKey: key, value: %value)
 
 proc saveVersion(p: Product, versionNo: int, fromIso: string,
@@ -73,7 +73,7 @@ suite "product: penyimpanan & status versi":
     created = newProduct()
     insertProduct(created)
     let v1 = saveVersion(created, 1, "2026-10-01",
-      @[binding(), binding("product.savings.admin_fee", "5000.0000")])
+      @[binding(), binding("product.savings.admin_fee", "5000.00")])
     let stored = productByCode(db, "SAV01")
     check stored.isSome
     check stored.get().productType == ptSavings
@@ -142,7 +142,7 @@ suite "product: tumpang tindih & penutupan versi":
     insertProduct(p)
     let v1 = saveVersion(p, 1, "2026-10-01")
     let v2 = saveVersion(p, 2, "2026-11-01")
-    let v3 = saveVersion(p, 3, "2026-10-15", @[binding("product.savings.min_balance", "7.0000")])
+    let v3 = saveVersion(p, 3, "2026-10-15", @[binding("product.savings.min_balance", "7.00")])
     # Ketiganya DRAFT dan boleh bertumpang tindih (EXCLUDE hanya berlaku untuk ACTIVE).
     check versionsOf(db, p.productId).len == 3
     check openVersion(db, p.productId).isNone
@@ -228,7 +228,7 @@ suite "product: tumpang tindih & penutupan versi":
     let v2 = versionsOf(db, p.productId)[1]
     expectDbError(proc() = db.exec(
       sql"UPDATE product.product_param_binding SET value = ?::jsonb WHERE version_id = ?",
-      $ %*"1.0000", $v2.versionId))
+      $ %*"1.00", $v2.versionId))
     expectDbError(proc() = db.exec(
       sql"DELETE FROM product.product_param_binding WHERE version_id = ?", $v2.versionId))
 

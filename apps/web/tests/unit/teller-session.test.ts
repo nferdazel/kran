@@ -44,10 +44,10 @@ function problem(status: number, reason?: string, i18nKey = "error_conflict"): P
 
 describe("parseCashCount", () => {
   it("meneruskan aturan parser uang, kecuali nol yang diterima", () => {
-    expect(parseCashCount("125000,25")).toEqual({ ok: true, value: "125000.2500" });
-    expect(parseCashCount("0000125")).toEqual({ ok: true, value: "125.0000" });
-    expect(parseCashCount("0")).toEqual({ ok: true, value: "0.0000" });
-    expect(parseCashCount("00,00")).toEqual({ ok: true, value: "0.0000" });
+    expect(parseCashCount("125000,25")).toEqual({ ok: true, value: "125000.25" });
+    expect(parseCashCount("0000125")).toEqual({ ok: true, value: "125.00" });
+    expect(parseCashCount("0")).toEqual({ ok: true, value: "0.00" });
+    expect(parseCashCount("00,00")).toEqual({ ok: true, value: "0.00" });
     expect(parseCashCount("")).toEqual({ ok: false, error: "empty" });
     expect(parseCashCount("12,345")).toEqual({ ok: false, error: "too_precise" });
     expect(parseCashCount("12x")).toEqual({ ok: false, error: "invalid_format" });
@@ -55,12 +55,12 @@ describe("parseCashCount", () => {
 });
 
 describe("validateOpeningFloat", () => {
-  it("menerima nilai biasa dan nol, menormalkan ke 4 desimal", () => {
-    expect(validateOpeningFloat("500000")).toEqual({ ok: true, amount: "500000.0000" });
-    expect(validateOpeningFloat("150000,5")).toEqual({ ok: true, amount: "150000.5000" });
+  it("menerima nilai biasa dan nol, menormalkan ke 2 desimal", () => {
+    expect(validateOpeningFloat("500000")).toEqual({ ok: true, amount: "500000.00" });
+    expect(validateOpeningFloat("150000,5")).toEqual({ ok: true, amount: "150000.50" });
     // Laci boleh kosong: nol diterima, berbeda dari nominal transaksi.
-    expect(validateOpeningFloat("0")).toEqual({ ok: true, amount: "0.0000" });
-    expect(validateOpeningFloat("0,00")).toEqual({ ok: true, amount: "0.0000" });
+    expect(validateOpeningFloat("0")).toEqual({ ok: true, amount: "0.00" });
+    expect(validateOpeningFloat("0,00")).toEqual({ ok: true, amount: "0.00" });
   });
 
   it("menunjuk field float awal dengan pesan tiap galat parser", () => {
@@ -89,8 +89,8 @@ describe("validateCountedCash", () => {
       ok: false,
       error: { field: "countedCash", message: m.teller_session_error_counted_required() },
     });
-    expect(validateCountedCash("0")).toEqual({ ok: true, amount: "0.0000" });
-    expect(validateCountedCash("250000,75")).toEqual({ ok: true, amount: "250000.7500" });
+    expect(validateCountedCash("0")).toEqual({ ok: true, amount: "0.00" });
+    expect(validateCountedCash("250000,75")).toEqual({ ok: true, amount: "250000.75" });
   });
 });
 
@@ -107,24 +107,24 @@ describe("sessionNoteError", () => {
 
 describe("sidik kunci idempotensi sesi", () => {
   it("berubah ketika nilai kas atau catatan berubah", () => {
-    const first = sessionOpenIdentity({ branchId: BRANCH, openingFloat: "500000.0000", note: "" });
-    expect(first).toBe(sessionOpenIdentity({ branchId: BRANCH, openingFloat: "500000.0000", note: "" }));
+    const first = sessionOpenIdentity({ branchId: BRANCH, openingFloat: "500000.00", note: "" });
+    expect(first).toBe(sessionOpenIdentity({ branchId: BRANCH, openingFloat: "500000.00", note: "" }));
     expect(
-      first === sessionOpenIdentity({ branchId: BRANCH, openingFloat: "500001.0000", note: "" }),
+      first === sessionOpenIdentity({ branchId: BRANCH, openingFloat: "500001.00", note: "" }),
     ).toBe(false);
     expect(
-      first === sessionOpenIdentity({ branchId: BRANCH, openingFloat: "500000.0000", note: "kas pagi" }),
+      first === sessionOpenIdentity({ branchId: BRANCH, openingFloat: "500000.00", note: "kas pagi" }),
     ).toBe(false);
   });
 
   it("buka dan tutup tidak pernah bertabrakan", () => {
     expect(
-      sessionCloseIdentity({ sessionId: SESSION, countedCash: "0.0000", note: "" }) ===
-        sessionCloseIdentity({ sessionId: SESSION, countedCash: "0.0000", note: "" }),
+      sessionCloseIdentity({ sessionId: SESSION, countedCash: "0.00", note: "" }) ===
+        sessionCloseIdentity({ sessionId: SESSION, countedCash: "0.00", note: "" }),
     ).toBe(true);
     expect(
-      sessionCloseIdentity({ sessionId: SESSION, countedCash: "0.0000", note: "" }) ===
-        sessionOpenIdentity({ branchId: SESSION, openingFloat: "0.0000", note: "" }),
+      sessionCloseIdentity({ sessionId: SESSION, countedCash: "0.00", note: "" }) ===
+        sessionOpenIdentity({ branchId: SESSION, openingFloat: "0.00", note: "" }),
     ).toBe(false);
   });
 });
@@ -233,18 +233,18 @@ describe("tellerSessionProblemMessage: params.reason", () => {
 
 describe("selisih kas", () => {
   it("membaca arah dari tanda desimal string", () => {
-    expect(varianceDirection("0.0000")).toBe("even");
+    expect(varianceDirection("0.00")).toBe("even");
     expect(varianceDirection("0,00")).toBe("even");
-    expect(varianceDirection("-0.0000")).toBe("even");
-    expect(varianceDirection("25000.0000")).toBe("over");
-    expect(varianceDirection("-50000.0000")).toBe("short");
+    expect(varianceDirection("-0.00")).toBe("even");
+    expect(varianceDirection("25000.00")).toBe("over");
+    expect(varianceDirection("-50000.00")).toBe("short");
   });
 
   it("menyebut selisih dengan kata + nominal bertanda, nol sebagai kata saja", () => {
-    expect(varianceSummary("0.0000")).toBe(m.teller_session_variance_even());
-    expect(varianceSummary("-50000.0000")).toContain(m.teller_session_variance_short());
-    expect(varianceSummary("-50000.0000")).toMatch(/-50[.,]000/);
-    expect(varianceSummary("12500.0000")).toContain(m.teller_session_variance_over());
-    expect(varianceSummary("12500.0000")).toMatch(/12[.,]500/);
+    expect(varianceSummary("0.00")).toBe(m.teller_session_variance_even());
+    expect(varianceSummary("-50000.00")).toContain(m.teller_session_variance_short());
+    expect(varianceSummary("-50000.00")).toMatch(/-50[.,]000/);
+    expect(varianceSummary("12500.00")).toContain(m.teller_session_variance_over());
+    expect(varianceSummary("12500.00")).toMatch(/12[.,]500/);
   });
 });

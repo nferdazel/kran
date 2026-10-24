@@ -39,7 +39,7 @@
   let toInput = $state("");
   let statement = $state<AccountStatement | null>(null);
   let rows = $state<StatementRow[]>([]);
-  let totals = $state<StatementTotals>({ inflow: "0.0000", outflow: "0.0000", net: "0.0000" });
+  let totals = $state<StatementTotals>({ inflow: "0.00", outflow: "0.00", net: "0.00" });
   let loading = $state(false);
   let error = $state("");
   let rangeErrorText = $state("");

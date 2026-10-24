@@ -23,7 +23,7 @@
     class: komersial-konservatif
     compliance: NEEDS-COMPLIANCE-REVIEW
     note: tidak menagih; angka final menunggu pemilik
-  default_pack: { base: "0.0000" }
+  default_pack: { base: "0.00" }
 
 - key: product.savings.admin_fee
   type: money
@@ -34,7 +34,7 @@
     class: komersial-konservatif
     compliance: NEEDS-COMPLIANCE-REVIEW
     note: tidak menagih; angka final menunggu pemilik
-  default_pack: { base: "0.0000" }
+  default_pack: { base: "0.00" }
 
 # --- Akrual simpanan (O-084, D-094): BENTUK tanpa nilai --------------------------------------
 # Kunci ini sengaja **tanpa `default_pack`**: angka rate/basis/pembulatan untuk produk nyata

@@ -74,24 +74,24 @@ describe("validateRange", () => {
 
 describe("sortStatementRows", () => {
   it("mengurutkan menurut tanggal dan stabil pada tanggal sama", () => {
-    const first = row({ direction: "IN", amount: "1.0000", businessDate: "2026-10-02" });
-    const second = row({ direction: "OUT", amount: "2.0000", businessDate: "2026-10-01" });
-    const third = row({ direction: "IN", amount: "3.0000", businessDate: "2026-10-02" });
+    const first = row({ direction: "IN", amount: "1.00", businessDate: "2026-10-02" });
+    const second = row({ direction: "OUT", amount: "2.00", businessDate: "2026-10-01" });
+    const third = row({ direction: "IN", amount: "3.00", businessDate: "2026-10-02" });
     const sorted = sortStatementRows([first, second, third]);
-    expect(sorted.map((r) => r.amount)).toEqual(["2.0000", "1.0000", "3.0000"]);
+    expect(sorted.map((r) => r.amount)).toEqual(["2.00", "1.00", "3.00"]);
   });
 });
 
 describe("statementReference", () => {
   it("memakai id tunai atau id PB, tepat satu terisi", () => {
-    expect(statementReference(row({ direction: "IN", amount: "1.0000", businessDate: "2026-10-01" }))).toBe(
+    expect(statementReference(row({ direction: "IN", amount: "1.00", businessDate: "2026-10-01" }))).toBe(
       "11111111-1111-4111-8111-111111111111",
     );
     expect(
       statementReference(
         row({
           direction: "OUT",
-          amount: "1.0000",
+          amount: "1.00",
           businessDate: "2026-10-01",
           transactionId: null,
           transferId: "22222222-2222-4222-8222-222222222222",
@@ -104,29 +104,29 @@ describe("statementReference", () => {
 describe("statementTotals", () => {
   it("menjumlahkan masuk dan keluar terpisah; net = masuk - keluar", () => {
     const totals = statementTotals([
-      row({ direction: "IN", amount: "100.0000", businessDate: "2026-10-01" }),
-      row({ direction: "IN", amount: "50.0000", businessDate: "2026-10-02" }),
+      row({ direction: "IN", amount: "100.00", businessDate: "2026-10-01" }),
+      row({ direction: "IN", amount: "50.00", businessDate: "2026-10-02" }),
       row({
         direction: "OUT",
-        amount: "30.0000",
+        amount: "30.00",
         businessDate: "2026-10-03",
         transactionId: null,
         transferId: "33333333-3333-4333-8333-333333333333",
       }),
     ]);
-    expect(totals).toEqual({ inflow: "150.0000", outflow: "30.0000", net: "120.0000" });
+    expect(totals).toEqual({ inflow: "150.00", outflow: "30.00", net: "120.00" });
   });
 
   it("net negatif bila keluar melebihi masuk", () => {
     const totals = statementTotals([
-      row({ direction: "IN", amount: "10.0000", businessDate: "2026-10-01" }),
-      row({ direction: "OUT", amount: "25.0000", businessDate: "2026-10-02" }),
+      row({ direction: "IN", amount: "10.00", businessDate: "2026-10-01" }),
+      row({ direction: "OUT", amount: "25.00", businessDate: "2026-10-02" }),
     ]);
-    expect(totals).toEqual({ inflow: "10.0000", outflow: "25.0000", net: "-15.0000" });
+    expect(totals).toEqual({ inflow: "10.00", outflow: "25.00", net: "-15.00" });
   });
 
   it("tanpa baris = nol", () => {
-    expect(statementTotals([])).toEqual({ inflow: "0.0000", outflow: "0.0000", net: "0.0000" });
+    expect(statementTotals([])).toEqual({ inflow: "0.00", outflow: "0.00", net: "0.00" });
   });
 
   it("tipe status statement tersedia dari kontrak (dipakai halaman)", () => {

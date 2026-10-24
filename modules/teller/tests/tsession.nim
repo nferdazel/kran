@@ -67,9 +67,10 @@ suite "teller: variance":
     check varianceOf(money(125_0000), money(120_0000)) == money(5_0000)
     check varianceOf(money(115_0000), money(120_0000)) == money(-5_0000)
 
-  test "skala 4 desimal, tanpa float":
+  test "skala 2 desimal (sen), tanpa float":
+    # Selisih sekecil yang bisa disimpan = 0,01 (D-136).
     check varianceOf(money(100_0001), money(100_0000)) == money(1)
-    check varianceOf(money(100_0001), money(100_0000)).toDecimalString == "0.0001"
+    check varianceOf(money(100_0001), money(100_0000)).toDecimalString == "0.01"
 
 suite "teller: bentuk sesi baru":
   test "sesi baru OPEN tanpa kolom penutup":

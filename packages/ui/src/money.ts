@@ -14,7 +14,7 @@ export type MoneyDecimals = 2 | 4;
 export interface MoneyOptions {
   /** Locale BCP-47 untuk pemisah ribuan/desimal. */
   locale?: string;
-  /** 4 untuk jurnal/laporan (default), 2 untuk layar tunai. */
+  /** Desimal tampilan; `2` (default) adalah skala penyimpanan (D-136). */
   decimals?: MoneyDecimals;
 }
 
@@ -32,7 +32,7 @@ function groupInteger(digits: string, locale: string): string {
 
 export function formatMoney(decimal: string, options: MoneyOptions = {}): string {
   const locale = options.locale ?? "id-ID";
-  const decimals = options.decimals ?? 4;
+  const decimals = options.decimals ?? 2;
 
   const match = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(decimal.trim());
   if (!match) {
@@ -70,7 +70,7 @@ export function formatMoney(decimal: string, options: MoneyOptions = {}): string
  * Kedua masukan dibulatkan half-even ke `decimals` lebih dulu, lalu dijumlahkan sebagai `BigInt`.
  * Keluaran berupa desimal polos (tanpa pemisah ribuan) supaya bisa diformat sekali di lapisan UI.
  */
-export function addMoney(a: string, b: string, decimals: MoneyDecimals = 4): string {
+export function addMoney(a: string, b: string, decimals: MoneyDecimals = 2): string {
   const sum = scaledValue(a, decimals) + scaledValue(b, decimals);
   const scale = 10n ** BigInt(decimals);
   const negative = sum < 0n;
@@ -87,7 +87,7 @@ export type MoneyInputResult =
   | { ok: false; error: MoneyInputError };
 
 /**
- * Membaca nominal yang diketik teller menjadi desimal polos 4 desimal (spec §13, D-097).
+ * Membaca nominal yang diketik teller menjadi desimal polos 2 desimal (spec §13, D-136).
  *
  * Aturan, sengaja ketat supaya tidak ada tebakan: digit saja, satu pemisah desimal (`,` atau `.`),
  * maksimum 2 desimal, tanpa pemisah ribuan, tanpa tanda. Nilai `> 0`. Tidak menyentuh `Number`:
@@ -112,7 +112,7 @@ export function parseMoneyInput(raw: string): MoneyInputResult {
   }
 
   const intPart = intDigits.replace(/^0+(?=\d)/, "");
-  const value = `${intPart}.${fraction.padEnd(4, "0")}`;
+  const value = `${intPart}.${fraction.padEnd(2, "0")}`;
   if (intPart === "0" && /^0*$/.test(fraction)) {
     return { ok: false, error: "not_positive" };
   }

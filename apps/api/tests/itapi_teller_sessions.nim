@@ -110,7 +110,7 @@ block:
 
   # Vault: BranchA cukup, BranchB kecil (uji insufficient), BranchD untuk konkurensi; BranchC sengaja
   # tanpa baris (uji vault_not_configured).
-  for (branch, balance) in [(BranchA, "1000.0000"), (BranchB, "50.0000"), (BranchD, "100.0000")]:
+  for (branch, balance) in [(BranchA, "1000.00"), (BranchB, "50.00"), (BranchD, "100.00")]:
     execScript(db, "INSERT INTO teller.vault (branch_id, balance) VALUES ('" & branch & "', '" &
       balance & "')")
   dbPool.release(db)
@@ -271,14 +271,14 @@ proc reasonOf(reply: Reply): string =
 
 suite "sessions: autentikasi & izin":
   test "tanpa sesi → 401":
-    let reply = openSession("", BranchA, "0.0000")
+    let reply = openSession("", BranchA, "0.00")
     check reply.code == 401
     checkProblem(SessionsPath, "POST", "401", reply.body)
 
   test "izin hanya di cabang lain → 403 branch_not_allowed":
     let token = tokenOf(login(BranchMakerUser))
     check token.len > 0
-    let reply = openSession(token, BranchA, "0.0000", "sess-403-" & $epochTime())
+    let reply = openSession(token, BranchA, "0.00", "sess-403-" & $epochTime())
     check reply.code == 403
     checkProblem(SessionsPath, "POST", "403", reply.body)
     check reasonOf(reply) == "branch_not_allowed"
@@ -292,20 +292,20 @@ suite "sessions: validasi 400":
     let token = tokenOf(login(MakerUser))
     check token.len > 0
 
-    let badBranch = openSession(token, "bukan-uuid", "0.0000")
+    let badBranch = openSession(token, "bukan-uuid", "0.00")
     check badBranch.code == 400
     checkProblem(SessionsPath, "POST", "400", badBranch.body)
 
-    for bad in ["-5.0000", "abc", "1.00001"]:
+    for bad in ["-5.00", "abc", "1.00001"]:
       let reply = openSession(token, BranchA, bad)
       check reply.code == 400
       checkProblem(SessionsPath, "POST", "400", reply.body)
 
-    let longNote = postJson(SessionsPath, openBody(BranchA, "0.0000", repeat('n', 201)), token)
+    let longNote = postJson(SessionsPath, openBody(BranchA, "0.00", repeat('n', 201)), token)
     check longNote.code == 400
     checkProblem(SessionsPath, "POST", "400", longNote.body)
 
-    let tanpaKunci = postJson(SessionsPath, openBody(BranchA, "0.0000"), token, sendKey = false)
+    let tanpaKunci = postJson(SessionsPath, openBody(BranchA, "0.00"), token, sendKey = false)
     check tanpaKunci.code == 400
     checkProblem(SessionsPath, "POST", "400", tanpaKunci.body)
 
@@ -320,7 +320,7 @@ suite "sessions: validasi 400":
 suite "sessions: buka & vault":
   test "vault belum dikonfigurasi → 409 vault_not_configured":
     let token = tokenOf(login(MakerUser))
-    let reply = openSession(token, BranchC, "0.0000", "sess-novault-" & $epochTime())
+    let reply = openSession(token, BranchC, "0.00", "sess-novault-" & $epochTime())
     check reply.code == 409
     checkProblem(SessionsPath, "POST", "409", reply.body)
     check reasonOf(reply) == "vault_not_configured"
@@ -328,7 +328,7 @@ suite "sessions: buka & vault":
   test "vault kurang → 409 insufficient_vault, vault utuh":
     let token = tokenOf(login(MakerUser))
     let before = vaultOf(BranchB)
-    let reply = openSession(token, BranchB, "100.0000", "sess-insuf-" & $epochTime())
+    let reply = openSession(token, BranchB, "100.00", "sess-insuf-" & $epochTime())
     check reply.code == 409
     check reply.body["params"]["reason"].getStr() == "insufficient_vault"
     check vaultOf(BranchB) == before
@@ -338,7 +338,7 @@ suite "sessions: buka & vault":
     let before = vaultOf(BranchA)
     # Plafon `teller.cash.limit_opening_float` = 2.000.000; dicek lebih dulu daripada saldo vault,
     # sehingga alasan penolakan pasti plafon, bukan `insufficient_vault`.
-    let reply = openSession(token, BranchA, "2000000.0001", "sess-limit-" & $epochTime())
+    let reply = openSession(token, BranchA, "2000000.01", "sess-limit-" & $epochTime())
     check reply.code == 409
     checkProblem(SessionsPath, "POST", "409", reply.body)
     check reasonOf(reply) == "cash_limit_exceeded"
@@ -352,58 +352,58 @@ suite "sessions: buka & vault":
 
     let opensBefore = auditCount("teller.session.open")
     let openEventsBefore = outboxCount("TellerSessionOpened")
-    let open = postJson(SessionsPath, openBody(BranchB, "40.0000", "shift pagi"), token,
+    let open = postJson(SessionsPath, openBody(BranchB, "40.00", "shift pagi"), token,
       "sess-debit-" & $epochTime())
     check open.code == 201
     checkJson(SessionsPath, "POST", "201", open.body)
     check open.body["status"].getStr() == "OPEN"
     check open.body["branchId"].getStr() == BranchB
-    check open.body["openingFloat"].getStr() == "40.0000"
+    check open.body["openingFloat"].getStr() == "40.00"
     check open.body["openedAt"].getStr().len > 0
     check open.body["businessDate"].getStr() == BusinessDate
     check open.body["note"].getStr() == "shift pagi"
     check auditCount("teller.session.open") == opensBefore + 1
     check outboxCount("TellerSessionOpened") == openEventsBefore + 1
-    check vaultOf(BranchB) == "10.0000"
+    check vaultOf(BranchB) == "10.00"
     let sessionId = open.body["sessionId"].getStr()
 
     # expected = opening float (tanpa movement) = 40; counted 36 → variance -4 (kas kurang).
     let closesBefore = auditCount("teller.session.close")
     let closeEventsBefore = outboxCount("TellerSessionClosed")
     let close = postJson(SessionsPath & "/" & sessionId & "/close",
-      %*{"countedCash": "36.0000", "note": "kurang 4"}, token,
+      %*{"countedCash": "36.00", "note": "kurang 4"}, token,
       "sess-debit-close-" & $epochTime())
     check close.code == 200
     checkJson(ClosePath, "POST", "200", close.body)
     check close.body["status"].getStr() == "CLOSED"
-    check close.body["openingFloat"].getStr() == "40.0000"
-    check close.body["expectedCash"].getStr() == "40.0000"
-    check close.body["countedCash"].getStr() == "36.0000"
-    check close.body["variance"].getStr() == "-4.0000"
+    check close.body["openingFloat"].getStr() == "40.00"
+    check close.body["expectedCash"].getStr() == "40.00"
+    check close.body["countedCash"].getStr() == "36.00"
+    check close.body["variance"].getStr() == "-4.00"
     check close.body["closedAt"].getStr().len > 0
     check close.body["businessDate"].getStr() == BusinessDate
     check close.body["note"].getStr() == "kurang 4"
     check auditCount("teller.session.close") == closesBefore + 1
     check outboxCount("TellerSessionClosed") == closeEventsBefore + 1
     # Vault = 50 - 40 (buka) + 36 (counted fisik) = 46.
-    check vaultOf(BranchB) == "46.0000"
+    check vaultOf(BranchB) == "46.00"
 
   test "note buka tidak hilang saat tutup tanpa note":
     let token = tokenOf(login(MakerUser))
-    let open = postJson(SessionsPath, openBody(BranchB, "10.0000", "kas shift malam"), token,
+    let open = postJson(SessionsPath, openBody(BranchB, "10.00", "kas shift malam"), token,
       "sess-note-" & $epochTime())
     check open.code == 201
     check open.body["note"].getStr() == "kas shift malam"
     let sessionId = open.body["sessionId"].getStr()
 
     let close = postJson(SessionsPath & "/" & sessionId & "/close",
-      %*{"countedCash": "10.0000"}, token, "sess-note-close-" & $epochTime())
+      %*{"countedCash": "10.00"}, token, "sess-note-close-" & $epochTime())
     check close.code == 200
     check close.body["note"].getStr() == "kas shift malam"
 
   test "jurnal sesi kas tidak bisa dibalik lewat buku besar (T-123)":
     let token = tokenOf(login(MakerUser))
-    let open = postJson(SessionsPath, openBody(BranchA, "10.0000"), token,
+    let open = postJson(SessionsPath, openBody(BranchA, "10.00"), token,
       "sess-reverse-" & $epochTime())
     check open.code == 201
     let sessionId = open.body["sessionId"].getStr()
@@ -421,30 +421,30 @@ suite "sessions: buka & vault":
 
     # Tutup supaya tidak meninggalkan sesi OPEN untuk test berikutnya.
     let close = postJson(SessionsPath & "/" & sessionId & "/close",
-      %*{"countedCash": "10.0000"}, token, "sess-reverse-close-" & $epochTime())
+      %*{"countedCash": "10.00"}, token, "sess-reverse-close-" & $epochTime())
     check close.code == 200
 
   test "buka 201 → current 200; sesi kedua → 409; idempotensi & tutup":
     let token = tokenOf(login(MakerUser))
     let openKey = "sess-open-idem-" & $epochTime()
-    let open = openSession(token, BranchA, "0.0000", openKey)
+    let open = openSession(token, BranchA, "0.00", openKey)
     check open.code == 201
     let sessionId = open.body["sessionId"].getStr()
 
     # Replay buka: 200 + header, sesi sama, vault tidak terdebit dua kali.
     let vaultBeforeReplay = vaultOf(BranchA)
-    let replay = openSession(token, BranchA, "0.0000", openKey)
+    let replay = openSession(token, BranchA, "0.00", openKey)
     check replay.code == 200
     check replay.replayed == "true"
     check replay.body["sessionId"].getStr() == sessionId
     check vaultOf(BranchA) == vaultBeforeReplay
     # Isi beda pada kunci yang sama → 409.
-    let mismatch = openSession(token, BranchA, "1.0000", openKey)
+    let mismatch = openSession(token, BranchA, "1.00", openKey)
     check mismatch.code == 409
     checkProblem(SessionsPath, "POST", "409", mismatch.body)
 
     # Sesi kedua untuk (teller, cabang) yang sama → 409.
-    let dup = openSession(token, BranchA, "0.0000", "sess-dup-" & $epochTime())
+    let dup = openSession(token, BranchA, "0.00", "sess-dup-" & $epochTime())
     check dup.code == 409
     check dup.body["params"]["reason"].getStr() == "session_already_open"
 
@@ -457,19 +457,19 @@ suite "sessions: buka & vault":
 
     # Tutup dengan counted = expected (0) → variance 0.
     let closeKey = "sess-close-idem-" & $epochTime()
-    let close = closeSession(token, sessionId, "0.0000", closeKey)
+    let close = closeSession(token, sessionId, "0.00", closeKey)
     check close.code == 200
-    check close.body["expectedCash"].getStr() == "0.0000"
-    check close.body["variance"].getStr() == "0.0000"
+    check close.body["expectedCash"].getStr() == "0.00"
+    check close.body["variance"].getStr() == "0.00"
 
     # Tutup kedua → 409 session_not_open (bukan 404).
-    let closeAgain = closeSession(token, sessionId, "0.0000")
+    let closeAgain = closeSession(token, sessionId, "0.00")
     check closeAgain.code == 409
     check closeAgain.body["params"]["reason"].getStr() == "session_not_open"
 
     # Replay tutup → 200 + header, tidak menambah vault lagi.
     let vaultAfterClose = vaultOf(BranchA)
-    let closeReplay = closeSession(token, sessionId, "0.0000", closeKey)
+    let closeReplay = closeSession(token, sessionId, "0.00", closeKey)
     check closeReplay.code == 200
     check closeReplay.replayed == "true"
     check vaultOf(BranchA) == vaultAfterClose
@@ -482,7 +482,7 @@ suite "sessions: buka & vault":
 
   test "close sesi tak dikenal → 404":
     let token = tokenOf(login(MakerUser))
-    let reply = closeSession(token, "00000000-0000-7000-8000-000000000000", "0.0000")
+    let reply = closeSession(token, "00000000-0000-7000-8000-000000000000", "0.00")
     check reply.code == 404
     checkProblem(ClosePath, "POST", "404", reply.body)
 
@@ -490,17 +490,17 @@ suite "sessions: kepemilikan":
   test "sesi milik teller lain → 409 session_not_owned":
     let maker = tokenOf(login(MakerUser))
     let other = tokenOf(login(OtherTellerUser))
-    let open = openSession(maker, BranchA, "0.0000", "sess-own-" & $epochTime())
+    let open = openSession(maker, BranchA, "0.00", "sess-own-" & $epochTime())
     check open.code == 201
     let sessionId = open.body["sessionId"].getStr()
 
-    let deny = closeSession(other, sessionId, "0.0000")
+    let deny = closeSession(other, sessionId, "0.00")
     check deny.code == 409
     checkProblem(ClosePath, "POST", "409", deny.body)
     check deny.body["params"]["reason"].getStr() == "session_not_owned"
 
     # Pemiliknya tetap bisa menutup (bukti 409 tadi bukan karena sesi rusak).
-    let mine = closeSession(maker, sessionId, "0.0000")
+    let mine = closeSession(maker, sessionId, "0.00")
     check mine.code == 200
 
 var closeCodes: array[2, int]
@@ -525,14 +525,14 @@ proc closeWorker(args: CloseArgs) {.thread.} =
 suite "sessions: dua penutupan bersamaan":
   test "satu 200, satu 409, vault bertambah sekali":
     let token = tokenOf(login(MakerUser))
-    let open = openSession(token, BranchD, "0.0000")
+    let open = openSession(token, BranchD, "0.00")
     check open.code == 201
     let sessionId = open.body["sessionId"].getStr()
-    check vaultOf(BranchD) == "100.0000"
+    check vaultOf(BranchD) == "100.00"
 
     closeCodes = [0, 0]
     let path = SessionsPath & "/" & sessionId & "/close"
-    let payload = $ %*{"countedCash": "30.0000"}
+    let payload = $ %*{"countedCash": "30.00"}
     var w1, w2: Thread[CloseArgs]
     createThread(w1, closeWorker, CloseArgs(token: token, path: path, payload: payload,
       key: "sess-race-1-" & $epochTime(), slot: 0))
@@ -545,4 +545,4 @@ suite "sessions: dua penutupan bersamaan":
     codes.sort()
     check codes == @[200, 409]
     # 100 + 30 (counted sekali) = 130; kalau dua kali jadi 160.
-    check vaultOf(BranchD) == "130.0000"
+    check vaultOf(BranchD) == "130.00"

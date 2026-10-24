@@ -41,7 +41,7 @@ export interface TellerSessionFormError {
 const ZERO_INPUT_PATTERN = /^0+(?:[.,]0{1,2})?$/;
 
 /**
- * Hitungan kas (float awal atau kas hasil hitung) → desimal polos 4 desimal. Sama ketat dengan
+ * Hitungan kas (float awal atau kas hasil hitung) → desimal polos 2 desimal. Sama ketat dengan
  * `parseMoneyInput` (satu pintu uang, D-097), kecuali satu hal: nol diterima, karena laci boleh
  * kosong dan selisih nol adalah hasil normal.
  */
@@ -51,7 +51,7 @@ export function parseCashCount(
   const parsed = parseMoneyInput(raw);
   if (parsed.ok) return parsed;
   if (parsed.error === "not_positive" && ZERO_INPUT_PATTERN.test(raw.trim())) {
-    return { ok: true, value: "0.0000" };
+    return { ok: true, value: "0.00" };
   }
   return parsed;
 }

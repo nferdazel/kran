@@ -45,8 +45,8 @@ WITH cash AS (
    WHERE (? = '' OR a.branch_id::text = ?)
 )
 SELECT a.account_no, a.branch_id::text, coalesce(b.balance::text, ''),
-       e.balance::numeric(24,4)::text,
-       (coalesce(b.balance, 0) - e.balance)::numeric(24,4)::text
+       e.balance::numeric(24,2)::text,
+       (coalesce(b.balance, 0) - e.balance)::numeric(24,2)::text
   FROM expected e
   JOIN deposit.account a ON a.account_id = e.account_id
   LEFT JOIN deposit.account_balance b ON b.account_id = e.account_id

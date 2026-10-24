@@ -208,7 +208,7 @@ test.describe.serial("vault: pengajuan dan keputusan top-up", () => {
     const pending = await topUps(request, checkerCookie, "PENDING");
     const submitted = pending.find((item) => item.note.includes(suffix));
     expect(submitted, "pengajuan baru ada di daftar PENDING").toBeDefined();
-    expect(submitted?.amount).toBe("50000.0000");
+    expect(submitted?.amount).toBe("50000.00");
 
     // 2. Persetujuan (checker, akun berbeda).
     await browserLogin(page, checkerCookie);

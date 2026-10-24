@@ -62,7 +62,7 @@ proc fixture(): tuple[party: Party, product: Product, version: ProductVersion] =
     insertProduct(d, prod, actor)
     insertVersion(d, v, actor)
     insertBinding(d, v.versionId, ParamBinding(paramKey: "product.savings.min_balance",
-      value: %"0.0000"))
+      value: %"0.00"))
     1)
   doAssert approveVersion(db, v.versionId, approver), "versi produk uji gagal di-approve"
   (p, prod, v)

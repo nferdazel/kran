@@ -51,9 +51,9 @@ describe("isAccountId", () => {
 });
 
 describe("validateAmount", () => {
-  it("menerima nominal dan menormalkan ke 4 desimal", () => {
-    expect(validateAmount("150000")).toEqual({ ok: true, amount: "150000.0000" });
-    expect(validateAmount("150000,5")).toEqual({ ok: true, amount: "150000.5000" });
+  it("menerima nominal dan menormalkan ke 2 desimal", () => {
+    expect(validateAmount("150000")).toEqual({ ok: true, amount: "150000.00" });
+    expect(validateAmount("150000,5")).toEqual({ ok: true, amount: "150000.50" });
   });
 
   it("memetakan setiap galat parser ke pesan yang berbeda", () => {
@@ -77,7 +77,7 @@ describe("validateAmount", () => {
 
 describe("previewAmount", () => {
   it("memberi desimal polos saat sah dan string kosong saat belum", () => {
-    expect(previewAmount("250000,50")).toBe("250000.5000");
+    expect(previewAmount("250000,50")).toBe("250000.50");
     expect(previewAmount("")).toBe("");
     expect(previewAmount("0")).toBe("");
   });
@@ -90,7 +90,7 @@ describe("validateCashForm", () => {
     ).toEqual({
       ok: true,
       accountId: ACCOUNT,
-      amount: "300000.0000",
+      amount: "300000.00",
       narration: "setoran awal",
     });
   });
@@ -128,7 +128,7 @@ describe("validateTransferForm", () => {
       ok: true,
       sourceAccountId: ACCOUNT,
       destinationAccountId: OTHER_ACCOUNT,
-      amount: "50000.0000",
+      amount: "50000.00",
       narration: "",
     });
   });
@@ -165,20 +165,20 @@ describe("sidik kunci idempotensi", () => {
     const first = cashIdentity({
       accountId: ACCOUNT,
       direction: "WITHDRAWAL",
-      amount: "100000.0000",
+      amount: "100000.00",
       narration: "",
     });
     const second = cashIdentity({
       accountId: ACCOUNT,
       direction: "WITHDRAWAL",
-      amount: "100001.0000",
+      amount: "100001.00",
       narration: "",
     });
     expect(first).toBe(
       cashIdentity({
         accountId: ACCOUNT,
         direction: "WITHDRAWAL",
-        amount: "100000.0000",
+        amount: "100000.00",
         narration: "",
       }),
     );
@@ -190,14 +190,14 @@ describe("sidik kunci idempotensi", () => {
       transferIdentity({
         sourceAccountId: ACCOUNT,
         destinationAccountId: OTHER_ACCOUNT,
-        amount: "1.0000",
+        amount: "1.00",
         narration: "",
       }),
     ).toBe(
       transferIdentity({
         sourceAccountId: ACCOUNT,
         destinationAccountId: OTHER_ACCOUNT,
-        amount: "1.0000",
+        amount: "1.00",
         narration: "",
       }),
     );
@@ -206,13 +206,13 @@ describe("sidik kunci idempotensi", () => {
       transferIdentity({
         sourceAccountId: ACCOUNT,
         destinationAccountId: OTHER_ACCOUNT,
-        amount: "1.0000",
+        amount: "1.00",
         narration: "",
       }) ===
         cashIdentity({
           accountId: ACCOUNT,
           direction: "DEPOSIT",
-          amount: "1.0000",
+          amount: "1.00",
           narration: "",
         }),
     ).toBe(false);

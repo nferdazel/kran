@@ -105,7 +105,7 @@ async function createCashFixture(request: APIRequestContext): Promise<Fixture> {
       name: `Tabungan Cetak ${suffix}`,
       productType: "SAVINGS",
       effectiveFrom: todayIso(),
-      bindings: { "product.savings.min_balance": "0.0000" },
+      bindings: { "product.savings.min_balance": "0.00" },
     },
   });
   expect(product.status(), `buat produk: ${await product.text()}`).toBe(201);
@@ -140,7 +140,7 @@ async function createCashFixture(request: APIRequestContext): Promise<Fixture> {
 
   const session = await request.post(`${API}/api/v1/teller/sessions`, {
     headers: { Cookie: maker, "Idempotency-Key": `e2e-print-session-${suffix}` },
-    data: { branchId: BRANCH, openingFloat: "1000.0000" },
+    data: { branchId: BRANCH, openingFloat: "1000.00" },
   });
   expect([200, 201], `buka sesi: ${await session.text()}`).toContain(session.status());
 
@@ -149,7 +149,7 @@ async function createCashFixture(request: APIRequestContext): Promise<Fixture> {
     data: {
       accountId: opened.accountId,
       direction: "DEPOSIT",
-      amount: "25.0000",
+      amount: "25.00",
       narration: "cetak uji",
     },
   });

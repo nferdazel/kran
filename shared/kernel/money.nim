@@ -1,4 +1,4 @@
-## Money — uang fixed-point skala 10⁴ dalam int64 (spec §9.1(2), ADR-011).
+## Money — uang fixed-point skala 10² (sen) dalam int64 (spec §9.1(2), ADR-011, D-136).
 ##
 ## **Tidak ada `float` di berkas ini.** Pembulatan yang dipakai seragam: **half-to-even**
 ## (banker's rounding), karena pembulatan "selalu ke atas" membuat bias pada akrual besar.
@@ -16,18 +16,18 @@ type
   ## `ArithmeticOverflowError` supaya aturan overflow hanya ada satu.
   MoneyOverflowError* = ArithmeticOverflowError
   Money* = object
-    units: int64 ## unit terkecil = 10⁻⁴; private agar tidak dibuat sembarangan
+    units: int64 ## unit terkecil = 10⁻² (sen); private agar tidak dibuat sembarangan
 
 const
-  moneyScale* = 4
-  moneyScaleFactor* = 10_000'i64
+  moneyScale* = 2
+  moneyScaleFactor* = 100'i64
   rateDenominator* = 1_000_000'i64 ## 1e6 = penyebut untuk perkalian dengan Rate
 
 proc zero*(): Money {.inline.} =
   Money(units: 0)
 
 proc money*(minorUnits: int64): Money {.inline.} =
-  ## Membungkus unit terkecil (10⁻⁴). `money(15000000)` = 1500,0000.
+  ## Membungkus unit terkecil (10⁻²). `money(150000)` = 1500,00.
   Money(units: minorUnits)
 
 proc minorUnits*(m: Money): int64 {.inline.} =
@@ -88,8 +88,8 @@ proc moneyErr(msg: string, code = "KRAN-1101"): AppError {.inline.} =
   appError(code, "error.money.invalid", aekValidation, msg)
 
 proc moneyFromString*(s: string): AppResult[Money] =
-  ## Bentuk yang diterima: `[+-]?angka[.desimal]` dengan **maksimum 4 desimal**
-  ## (skala penyimpanan spec §9.1(2)). Lebih dari 4 desimal ditolak, bukan dibulatkan.
+  ## Bentuk yang diterima: `[+-]?angka[.desimal]` dengan **maksimum `moneyScale` desimal**
+  ## (skala penyimpanan spec §9.1(2)). Lebih dari itu ditolak, bukan dibulatkan.
   var t = s.strip()
   if t.len == 0:
     return err[Money, AppError](moneyErr("string kosong"))
@@ -145,25 +145,13 @@ proc moneyFromString*(s: string): AppResult[Money] =
     result = err[Money, AppError](moneyErr("angka terlalu besar: " & s, "KRAN-1102"))
 
 proc toDecimalString*(m: Money): string =
-  ## Bentuk kanonik untuk API/kontrak: **selalu 4 desimal**, mis. "1500000.0000".
+  ## Bentuk kanonik untuk API/kontrak: **selalu `moneyScale` desimal**, mis. "1500000.00".
   let neg = m.units < 0
   let a = (if neg: checkedNeg(m.units) else: m.units)
   var frac = $(a mod moneyScaleFactor)
   while frac.len < moneyScale:
     frac = "0" & frac
   (if neg: "-" else: "") & $(a div moneyScaleFactor) & "." & frac
-
-proc toDisplayString*(m: Money): string =
-  ## Bentuk untuk tampilan umum: 2 desimal, half-to-even (spec §16.2: IDR tanpa desimal
-  ## di tampilan umum tetap ditampilkan tanpa pemotongan nilai — pemformatan locale
-  ## dilakukan frontend; ini hanya representasi ringkas).
-  let cents = divRoundHalfEven(m.units, 100)
-  let neg = cents < 0
-  let a = (if neg: checkedNeg(cents) else: cents)
-  var frac = $(a mod 100)
-  while frac.len < 2:
-    frac = "0" & frac
-  (if neg: "-" else: "") & $(a div 100) & "." & frac
 
 proc applyRate*(m: Money, r: Rate): Money =
   ## Money × Rate dengan pembulatan half-to-even. Perkalian didekomposisi agar tidak

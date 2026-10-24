@@ -251,35 +251,35 @@ INSERT INTO platform.param_value
   (param_value_id, key, scope_type, scope_id, value, effective_from, status,
    maker, checker, reason)
 VALUES
-  (md5('product.savings.admin_fee|base')::uuid, 'product.savings.admin_fee', 'GLOBAL', NULL, '"0.0000"'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+  (md5('product.savings.admin_fee|base')::uuid, 'product.savings.admin_fee', 'GLOBAL', NULL, '"0.00"'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
 ON CONFLICT (param_value_id) DO NOTHING;
 
 INSERT INTO platform.param_value
   (param_value_id, key, scope_type, scope_id, value, effective_from, status,
    maker, checker, reason)
 VALUES
-  (md5('product.savings.min_balance|base')::uuid, 'product.savings.min_balance', 'GLOBAL', NULL, '"0.0000"'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+  (md5('product.savings.min_balance|base')::uuid, 'product.savings.min_balance', 'GLOBAL', NULL, '"0.00"'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
 ON CONFLICT (param_value_id) DO NOTHING;
 
 INSERT INTO platform.param_value
   (param_value_id, key, scope_type, scope_id, value, effective_from, status,
    maker, checker, reason)
 VALUES
-  (md5('teller.cash.limit_deposit|base')::uuid, 'teller.cash.limit_deposit', 'GLOBAL', NULL, '"10000000.0000"'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+  (md5('teller.cash.limit_deposit|base')::uuid, 'teller.cash.limit_deposit', 'GLOBAL', NULL, '"10000000.00"'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
 ON CONFLICT (param_value_id) DO NOTHING;
 
 INSERT INTO platform.param_value
   (param_value_id, key, scope_type, scope_id, value, effective_from, status,
    maker, checker, reason)
 VALUES
-  (md5('teller.cash.limit_opening_float|base')::uuid, 'teller.cash.limit_opening_float', 'GLOBAL', NULL, '"2000000.0000"'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+  (md5('teller.cash.limit_opening_float|base')::uuid, 'teller.cash.limit_opening_float', 'GLOBAL', NULL, '"2000000.00"'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
 ON CONFLICT (param_value_id) DO NOTHING;
 
 INSERT INTO platform.param_value
   (param_value_id, key, scope_type, scope_id, value, effective_from, status,
    maker, checker, reason)
 VALUES
-  (md5('teller.cash.limit_withdrawal|base')::uuid, 'teller.cash.limit_withdrawal', 'GLOBAL', NULL, '"5000000.0000"'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+  (md5('teller.cash.limit_withdrawal|base')::uuid, 'teller.cash.limit_withdrawal', 'GLOBAL', NULL, '"5000000.00"'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
 ON CONFLICT (param_value_id) DO NOTHING;
 
 INSERT INTO platform.param_value
@@ -293,6 +293,6 @@ INSERT INTO platform.param_value
   (param_value_id, key, scope_type, scope_id, value, effective_from, status,
    maker, checker, reason)
 VALUES
-  (md5('teller.vault.limit_topup_per_request|base')::uuid, 'teller.vault.limit_topup_per_request', 'GLOBAL', NULL, '"25000000.0000"'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+  (md5('teller.vault.limit_topup_per_request|base')::uuid, 'teller.vault.limit_topup_per_request', 'GLOBAL', NULL, '"25000000.00"'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
 ON CONFLICT (param_value_id) DO NOTHING;
 
