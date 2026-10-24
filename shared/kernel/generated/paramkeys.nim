@@ -21,6 +21,7 @@ const paramKeys*: seq[string] = @[
   "party.kyc.default_risk_level",
   "party.kyc.review_months",
   "party.kyc.risk_levels",
+  "party.person.sex_values",
   "platform.calendar.fiscal_year_start_month",
   "platform.calendar.weekend_days",
   "platform.idempotency.ttl_hours",
@@ -81,6 +82,8 @@ const P_party_kyc_default_risk_level* = ParamKey[string]("party.kyc.default_risk
 const P_party_kyc_review_months* = ParamKey[JsonNode]("party.kyc.review_months")
 
 const P_party_kyc_risk_levels* = ParamKey[JsonNode]("party.kyc.risk_levels")
+
+const P_party_person_sex_values* = ParamKey[JsonNode]("party.person.sex_values")
 
 const P_platform_calendar_fiscal_year_start_month* = ParamKey[int64]("platform.calendar.fiscal_year_start_month")
 
@@ -290,6 +293,17 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.party.kyc.risk_levels",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "party.person.sex_values",
+    module: "party",
+    valueType: pvtJson,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.party.person.sex_values",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(
