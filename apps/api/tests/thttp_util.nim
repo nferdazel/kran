@@ -4,7 +4,7 @@
 ## `SameSite=Strict` untuk handshake WebSocket; salah di sini berarti stream bisa dibuka dari situs
 ## lain memakai cookie sesi pengguna.
 
-import std/unittest
+import std/[strutils, unittest]
 
 import mummy
 
@@ -38,3 +38,16 @@ suite "headersWithType (T-128/SEC-3)":
       let headers = headersWithType(contentType)
       check headers["Content-Type"] == contentType
       check headers["Cache-Control"] == "no-store"
+
+suite "sanitizeCorrelationId (T-133/API-10)":
+  test "id wajar dipakai apa adanya":
+    check sanitizeCorrelationId("req-1234_ab.cd:ef") == "req-1234_ab.cd:ef"
+    check sanitizeCorrelationId("  4bf92f3577b34da6  ") == "4bf92f3577b34da6"
+
+  test "kosong, kepanjangan, atau berisi karakter lain diganti (bukan dipotong)":
+    check sanitizeCorrelationId("") == ""
+    check sanitizeCorrelationId("   ") == ""
+    check sanitizeCorrelationId(repeat('a', maxCorrelationIdLength + 1)) == ""
+    check sanitizeCorrelationId("id dengan spasi") == ""
+    check sanitizeCorrelationId("id\nbaru") == ""
+    check sanitizeCorrelationId("id;palsu") == ""

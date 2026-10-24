@@ -245,7 +245,7 @@
       <p class="kran-muted">{m.users_empty()}</p>
     {:else}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div class="kran-table-wrap" role="region" tabindex="0" aria-label={m.users_title()}>
+      <div class="kran-table-wrap" role="region" tabindex="0" aria-label={m.common_table_region({ name: m.users_title() })}>
         <table class="kran-table">
           <caption class="kran-visually-hidden">{m.users_title()}</caption>
           <thead>

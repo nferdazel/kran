@@ -188,7 +188,7 @@ proc autoIdemKey(): string =
   "it-deposit-" & $idemCounter
 
 proc call(verb, path, payload, token: string, idempotencyKey = "",
-    sendKey = true): Reply =
+    sendKey = true, contentType = "application/json"): Reply =
   let client = newHttpClient(timeout = 15000)
   defer: client.close()
   if token.len > 0:
@@ -197,8 +197,8 @@ proc call(verb, path, payload, token: string, idempotencyKey = "",
   if verb == "GET":
     response = client.get(baseUrl & path)
   else:
-    if payload.len > 0:
-      client.headers["Content-Type"] = "application/json"
+    if payload.len > 0 and contentType.len > 0:
+      client.headers["Content-Type"] = contentType
     if sendKey:
       client.headers["Idempotency-Key"] =
         if idempotencyKey.len > 0: idempotencyKey else: autoIdemKey()
@@ -492,6 +492,25 @@ test "idempotency: kunci sama replay, isi beda 409, tanpa header 400":
   let tanpaKunci = postJson(AccountsPath, accountBody(), token, sendKey = false)
   check tanpaKunci.code == 400
   checkProblem(AccountsPath, "POST", "400", tanpaKunci.body)
+
+  # Tipe media salah = 415, bukan parse yang gagal sebagai 400 (T-133/API-4). Tidak ada rekening
+  # yang boleh tercipta: pemeriksaan terjadi di pembungkus, sebelum handler menyentuh transaksi.
+  let accountsBefore415 = dbCount(sql(accounts))
+  let auditsBefore415 = dbCount(sql(audits))
+  for contentType in ["text/plain", ""]:
+    let wrongType = call("POST", AccountsPath, $accountBody(), token,
+      contentType = contentType)
+    check wrongType.code == 415
+    checkProblem(AccountsPath, "POST", "415", wrongType.body)
+    check wrongType.body["code"].getStr() == "UNSUPPORTED_MEDIA_TYPE"
+    check dbCount(sql(accounts)) == accountsBefore415
+    check dbCount(sql(audits)) == auditsBefore415
+
+  # Kunci yang ada tetapi tidak sah = permintaan salah (400), bukan kerusakan server (T-133/API-5).
+  for key in ["   ", repeat('k', 201), "kunci\tdengan\ttab"]:
+    let invalid = postJson(AccountsPath, accountBody(), token, key)
+    check invalid.code == 400
+    checkProblem(AccountsPath, "POST", "400", invalid.body)
 
 suite "deposit: data server rusak → 500 (T-099)":
   test "nomor urut sequence melebihi lebar → 500, bukan 400, tanpa rekening baru":

@@ -2724,6 +2724,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            503: components["responses"]["Problem"];
         };
     };
     login: {
@@ -2770,6 +2771,7 @@ export interface operations {
                 };
             };
             405: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             /**
              * @description Terlalu banyak percobaan login dari alamat ini (`params.reason` = `rate_limited`).
              *     Pembatasnya melindungi kapasitas KDF/pool, bukan kebijakan akun: akun yang benar pun
@@ -2819,6 +2821,7 @@ export interface operations {
             405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     logout: {
@@ -2851,6 +2854,7 @@ export interface operations {
             405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     changePassword: {
@@ -2904,8 +2908,10 @@ export interface operations {
                 };
             };
             405: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     getMfaStatus: {
@@ -2947,6 +2953,7 @@ export interface operations {
             405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     startMfaEnrolment: {
@@ -2997,6 +3004,7 @@ export interface operations {
             };
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     verifyMfaEnrolment: {
@@ -3059,8 +3067,10 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     listParams: {
@@ -3089,6 +3099,7 @@ export interface operations {
             405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     submitParamChange: {
@@ -3153,8 +3164,10 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     approveParamChange: {
@@ -3207,6 +3220,7 @@ export interface operations {
             };
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     rejectParamChange: {
@@ -3263,8 +3277,10 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     listAudit: {
@@ -3295,6 +3311,7 @@ export interface operations {
             405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     searchParties: {
@@ -3325,7 +3342,10 @@ export interface operations {
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     createParty: {
@@ -3373,6 +3393,7 @@ export interface operations {
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             /**
              * @description Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda). Duplikat
              *     konkuren tidak sampai ke sini: permintaan kedua menunggu transaksi pemenang lalu
@@ -3386,7 +3407,10 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     getParty: {
@@ -3412,7 +3436,10 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     addIdentityDoc: {
@@ -3444,9 +3471,12 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     getPartyKyc: {
@@ -3473,7 +3503,10 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     ratePartyRisk: {
@@ -3525,6 +3558,7 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             /**
              * @description Kunci idempotensi sudah dipakai untuk permintaan lain (isi/operasi berbeda). Duplikat
              *     konkuren tidak sampai ke sini: permintaan kedua menunggu transaksi pemenang lalu
@@ -3538,7 +3572,10 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     unmaskIdentityDoc: {
@@ -3571,8 +3608,11 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     getPartyDetail: {
@@ -3599,7 +3639,10 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     upsertPartyDetail: {
@@ -3631,8 +3674,11 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     unmaskPartyDetail: {
@@ -3664,8 +3710,11 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     listCoa: {
@@ -3692,7 +3741,10 @@ export interface operations {
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     createCoa: {
@@ -3720,8 +3772,12 @@ export interface operations {
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     listPeriods: {
@@ -3744,7 +3800,10 @@ export interface operations {
             };
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     openPeriod: {
@@ -3772,8 +3831,12 @@ export interface operations {
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     closePeriod: {
@@ -3804,8 +3867,12 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     listJournals: {
@@ -3832,7 +3899,10 @@ export interface operations {
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     getJournal: {
@@ -3858,7 +3928,10 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     reverseJournal: {
@@ -3900,6 +3973,7 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             /**
              * @description Konflik: jurnal sudah pernah dibalik, jurnal asal adalah jurnal pembalik (tidak bisa
              *     dibalik lagi), `Idempotency-Key` sudah dipakai untuk jurnal lain, periode tanggal
@@ -3918,7 +3992,10 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     getTrialBalance: {
@@ -3945,7 +4022,10 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     getLedgerBalances: {
@@ -3972,7 +4052,10 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     listProducts: {
@@ -3998,7 +4081,10 @@ export interface operations {
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     createProduct: {
@@ -4026,8 +4112,12 @@ export interface operations {
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     getProduct: {
@@ -4053,7 +4143,10 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     createProductVersion: {
@@ -4084,8 +4177,12 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     approveProductVersion: {
@@ -4113,8 +4210,11 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     rejectProductVersion: {
@@ -4146,8 +4246,12 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     listDepositAccounts: {
@@ -4174,7 +4278,10 @@ export interface operations {
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     openDepositAccount: {
@@ -4222,8 +4329,12 @@ export interface operations {
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     getDepositAccount: {
@@ -4249,7 +4360,10 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     getAccountStatement: {
@@ -4281,7 +4395,10 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     openTellerSession: {
@@ -4329,8 +4446,12 @@ export interface operations {
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     getCurrentTellerSession: {
@@ -4358,7 +4479,10 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     closeTellerSession: {
@@ -4400,8 +4524,12 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     getTellerVault: {
@@ -4429,7 +4557,10 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     listTellerVaultTopUps: {
@@ -4460,7 +4591,10 @@ export interface operations {
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     submitTellerVaultTopUp: {
@@ -4509,8 +4643,12 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     approveTellerVaultTopUp: {
@@ -4544,8 +4682,11 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     rejectTellerVaultTopUp: {
@@ -4576,8 +4717,12 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     postCashTransaction: {
@@ -4626,8 +4771,12 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     getCashTransactionSlip: {
@@ -4653,7 +4802,10 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     postTransfer: {
@@ -4702,8 +4854,12 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     listUsers: {
@@ -4729,7 +4885,10 @@ export interface operations {
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     listBranches: {
@@ -4752,7 +4911,10 @@ export interface operations {
             };
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     listRoles: {
@@ -4775,7 +4937,10 @@ export interface operations {
             };
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     assignUserRole: {
@@ -4807,8 +4972,12 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     revokeUserRole: {
@@ -4837,8 +5006,11 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     disableUser: {
@@ -4865,8 +5037,11 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     enableUser: {
@@ -4893,8 +5068,11 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
     unlockUser: {
@@ -4921,8 +5099,11 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
         };
     };
 }

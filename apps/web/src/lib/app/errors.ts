@@ -21,6 +21,7 @@ const PROBLEM_MESSAGES: Record<string, () => string> = {
   error_service_unavailable: () => m.error_service_unavailable(),
   error_too_many_requests: () => m.error_too_many_requests(),
   error_unauthorized: () => m.error_unauthorized(),
+  error_unsupported_media_type: () => m.error_unsupported_media_type(),
   error_upgrade_required: () => m.error_upgrade_required(),
 };
 

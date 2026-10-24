@@ -3490,3 +3490,47 @@ alur login yang justru diuji).
 Mitigasinya: nilainya hanya muncul di `playwright.config.ts`, tidak ada di `ops/env/*.example`, dan
 logika pembatasnya tetap diuji dengan default (`tlogin_guard`, `itapi_users`). Bila kelak batas ini
 sering disetel di produksi, jalur naiknya tetap D-140: pindahkan ke parameter dan hapus env.
+
+## D-145 — Tipe media & deklarasi respons diperiksa di pembungkus, bukan per handler (25 Okt 2026)
+
+**Konteks.** Audit 24 Okt 2026 menemukan dua hal yang sejenis: badan JSON diterima tanpa memeriksa
+`Content-Type` sehingga `text/plain` yang kebetulan berbentuk JSON diproses (API-4), dan kontrak
+tidak mendeklarasikan `405`/`501`/`503` padahal router/wrapper benar-benar mengembalikannya
+(API-3). Keduanya bukan bug satu rute; keduanya sifat dari lapisan yang membungkus semua rute.
+
+**Keputusan.** Dua-duanya ditangani di satu tempat:
+
+1. `requestHandler` (`apps/api/src/server.nim`) menolak badan non-JSON dengan `415` sebelum router
+   dipanggil (`acceptsJsonBody` di `http_util.nim`). Badan kosong tetap boleh.
+2. Kontrak mendeklarasikan `405` di **semua** operasi, `501`+`503` di operasi ber-`security`, dan
+   `415` di operasi ber-`requestBody`. `tools/openapi` menegakkannya (`findings`), jadi operasi
+   baru tidak bisa lupa.
+
+**Ditolak.** Memeriksa `Content-Type` di tiap handler (61 tempat, dan rute baru bisa lupa);
+memakai 400 untuk tipe media salah (menyalahkan isi padahal masalahnya tipe, dan klien tidak bisa
+membedakan salah format dari salah data).
+
+**Konsekuensi.** Klien yang mengirim badan tanpa `Content-Type` sekarang menerima `415` — termasuk
+skrip uji/SQL manual; ini perubahan perilaku yang disengaja dan dicatat di `docs/tasks/T-133.md`.
+`ProblemKind` mendapat satu nilai baru (`UNSUPPORTED_MEDIA_TYPE`) beserta kunci katalog
+`error_unsupported_media_type` (id+en), karena UI menerjemahkan `i18nKey`, bukan `title`.
+
+## D-146 — Batas `minimum`/`maximum` berlaku juga untuk nilai string desimal (25 Okt 2026)
+
+**Konteks.** Parameter `money`/`rate` disimpan sebagai **string** desimal (spec §13, D-136),
+sementara `validateAgainstSchema` hanya membandingkan `minimum`/`maximum` untuk nilai JSON numerik.
+Akibatnya schema `{"minimum": 0}` pada `teller.cash.limit_deposit` tidak menahan `"-1.00"`: nilai
+negatif lolos submit **dan** approve, lalu dipakai sebagai plafon kas.
+
+**Keputusan.** Bila nilai berbentuk string desimal (`-?digit+(.digit+)?`, `isDecimalString`), batas
+numerik schema ikut diperiksa. Bentuk lain (tanggal, enum, teks) tidak dibandingkan.
+
+**Ditolak.** Mengubah tipe parameter menjadi angka JSON (menghilangkan presisi & melanggar D-136);
+menambahkan validasi khusus di handler submit (aturan yang sama harus hidup di approve dan di
+`ctl`); menafsirkan **semua** string sebagai angka (tanggal `2026-10-24` akan gagal di schema yang
+punya `minimum`).
+
+**Konsekuensi.** Perbandingan batas memakai `parseFloat` (seperti cabang numerik yang sudah ada) —
+hanya untuk perbandingan, bukan aritmetika uang; nilai money sampai 1e12 tetap eksak di `double`.
+Nilai desimal dengan lebih dari 15 digit signifikan bisa dibulatkan saat **dibandingkan**, bukan saat
+disimpan; itu batas yang tercatat di `docs/ACCEPTED-LIMITS.md`.

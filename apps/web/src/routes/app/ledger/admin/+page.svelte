@@ -382,7 +382,13 @@
       {#if periods.length === 0}
         <p class="kran-muted">{m.ledger_admin_periods_empty()}</p>
       {:else}
-        <div class="kran-table-wrap" role="region" aria-label={m.ledger_admin_periods_heading()}>
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <div
+          class="kran-table-wrap"
+          role="region"
+          tabindex="0"
+          aria-label={m.common_table_region({ name: m.ledger_admin_periods_heading() })}
+        >
           <table class="kran-table">
             <caption class="kran-visually-hidden">{m.ledger_admin_periods_caption()}</caption>
             <thead>
@@ -539,7 +545,13 @@
       {#if accounts.length === 0}
         <p class="kran-muted">{m.ledger_admin_coa_empty()}</p>
       {:else}
-        <div class="kran-table-wrap" role="region" aria-label={m.ledger_admin_coa_heading()}>
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <div
+          class="kran-table-wrap"
+          role="region"
+          tabindex="0"
+          aria-label={m.common_table_region({ name: m.ledger_admin_coa_heading() })}
+        >
           <table class="kran-table">
             <caption class="kran-visually-hidden">{m.ledger_admin_coa_caption()}</caption>
             <thead>

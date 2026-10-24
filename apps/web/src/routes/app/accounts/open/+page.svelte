@@ -46,6 +46,14 @@
   let searchError = $state("");
   let selected = $state<PartySummary | null>(null);
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Permintaan pencarian yang sedang berjalan; dibatalkan saat ada ketikan baru (T-133/UI-10). */
+  let searchController: AbortController | undefined;
+  /**
+   * Nomor urut permintaan: jawaban yang datang terlambat (mis. jaringan lambat) tidak boleh
+   * menimpa hasil pencarian yang lebih baru. Abort saja tidak cukup — respons yang sudah di jalan
+   * bisa tetap tiba lebih dulu daripada pembatalannya.
+   */
+  let searchSeq = 0;
 
   // Produk simpanan.
   let products = $state<ProductSummary[]>([]);
@@ -80,10 +88,16 @@
   }
 
   async function runSearch(term: string): Promise<void> {
+    searchController?.abort();
+    const controller = new AbortController();
+    searchController = controller;
+    searchSeq += 1;
+    const seq = searchSeq;
     searching = true;
     searchError = "";
     try {
-      const { data: body, response, error } = await searchParties(term);
+      const { data: body, response, error } = await searchParties(term, undefined, controller.signal);
+      if (seq !== searchSeq) return;
       if (!response.ok || !body) {
         results = [];
         searchError = api.isProblem(error)
@@ -93,10 +107,12 @@
       }
       results = body.items;
     } catch {
+      // Dibatalkan = bukan kegagalan: pengguna sudah mengetik sesuatu yang lebih baru.
+      if (seq !== searchSeq || controller.signal.aborted) return;
       results = [];
       searchError = m.accounts_member_error();
     } finally {
-      searching = false;
+      if (seq === searchSeq) searching = false;
     }
   }
 
@@ -206,6 +222,12 @@
 
   onMount(() => {
     if (canManage) void loadProducts();
+    // Bersihkan timer & permintaan yang masih berjalan saat layar ditinggalkan (T-133/UI-10):
+    // tanpa ini, timer yatim tetap menembak setelah komponen hilang.
+    return () => {
+      if (searchTimer !== undefined) clearTimeout(searchTimer);
+      searchController?.abort();
+    };
   });
 </script>
 

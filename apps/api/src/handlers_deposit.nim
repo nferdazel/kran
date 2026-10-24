@@ -104,6 +104,14 @@ proc handleOpenDepositAccount*(app: AppContext, req: Request) {.gcsafe.} =
   if not requireIdempotencyKey(req):
     req.respondProblem(pkBadRequest, "Bad Request", "Idempotency-Key wajib diisi")
     return
+  # Kunci yang **ada tetapi tidak sah** (kosong setelah trim, terlalu panjang, berisi karakter
+  # kontrol) adalah permintaan salah, bukan kerusakan server. Tanpa pemeriksaan ini, `ValueError`
+  # dari validator muncul di dalam transaksi dan handler menerjemahkannya jadi 500 (T-133/API-5).
+  try:
+    discard validateIdempotencyKey(req.headers[idempotencyHeader])
+  except ValueError as e:
+    req.respondProblem(pkBadRequest, "Bad Request", e.msg)
+    return
 
   let branchRaw = $branchId.value()
   let asOf = businessDateIso(app.clock)

@@ -354,13 +354,31 @@ suite "platform: audit_log — verifikasi tahan urutan commit (O-038, T-052)":
     check falseAlarms.len == 2
     check parseBiggestInt(falseAlarms[0][0]) == slowSeq
 
+    # Ujung rantai = baris yang hash-nya belum dipakai siapa pun, **bukan** `seq` terbesar
+    # (T-133/DB-8). Append berikutnya harus menempel ke `slow` (yang commit terakhir), bukan ke
+    # `fast` (seq lebih besar): menempel ke `fast` membuat cabang, dan sejak migrasi 0049 cabang
+    # ditolak index unik sehingga setiap operasi teraudit akan gagal 500.
+    let tailHash = appendAudit(db, newAuditEntry(ctx, "kran.test.o038.tail", "probe", "o038-tail",
+      sysClock))
+    let tailRow = db.getRow(sql"""SELECT prev_hash FROM platform.audit_log
+      WHERE action = 'kran.test.o038.tail' ORDER BY seq DESC LIMIT 1""")
+    check tailRow[0] == slowRow[1] # = hash baris `slow`, ujung rantai sebenarnya
+    check tailHash != slowRow[1]
+    let rantai = verifyChain(db, slowSeq)
+    check rantai.len == 3
+    check chainOk(rantai)
+
   test "rantai bercabang (dua baris menunjuk pendahulu yang sama) tetap terdeteksi":
     ## Cabang tidak bisa lahir dari jalur normal: trigger rantai selalu merantai ke baris terakhir
-    ## yang commit. Keadaan ini ditulis langsung (trigger dilewati) supaya aturan `link_ok` diuji apa
-    ## adanya; hash baris cabang dihitung ulang agar `row_hash_ok` tetap benar.
+    ## yang commit, dan sejak T-133/DB-8 index unik `prev_hash` menolaknya di tingkat basis data.
+    ## Keadaan ini tetap ditulis langsung (index + trigger dilewati) supaya aturan `link_ok` diuji
+    ## apa adanya — verifikasi harus tetap menemukan cabang pada data lama/restore dump yang dibuat
+    ## **sebelum** index itu ada. Setelah diuji, baris sintetis dihapus dan index dipasang kembali
+    ## agar sisa suite berjalan pada skema yang sama dengan produksi.
     let lastRow = db.getRow(sql"""SELECT seq, prev_hash FROM platform.audit_log
       ORDER BY seq DESC LIMIT 1""")
 
+    exec(db, sql"DROP INDEX platform.audit_log_prev_hash_unique_idx")
     exec(db, sql"ALTER TABLE platform.audit_log DISABLE TRIGGER audit_log_chain_trg")
     exec(db, sql"ALTER TABLE platform.audit_log DISABLE TRIGGER audit_log_no_change_trg")
     exec(db, sql"""INSERT INTO platform.audit_log
@@ -380,6 +398,28 @@ suite "platform: audit_log — verifikasi tahan urutan commit (O-038, T-052)":
     check not rows[0].linkOk # baris lama: pendahulunya kini dipakai bersama
     check not rows[1].linkOk # baris cabang
     check not chainOk(rows)
+
+    # Kembalikan skema: hapus baris cabang sintetis, pasang lagi index uniknya.
+    exec(db, sql"ALTER TABLE platform.audit_log DISABLE TRIGGER audit_log_no_change_trg")
+    discard db.execAffectedRows(
+      sql"DELETE FROM platform.audit_log WHERE action = 'kran.test.o038.fork'")
+    exec(db, sql"ALTER TABLE platform.audit_log ENABLE TRIGGER audit_log_no_change_trg")
+    exec(db, sql"""CREATE UNIQUE INDEX IF NOT EXISTS audit_log_prev_hash_unique_idx
+      ON platform.audit_log (prev_hash)""")
+
+  test "rantai bercabang ditolak basis data sejak index unik (T-133/DB-8)":
+    ## Pasangan dari test di atas: percabangan **baru** tidak mungkin lahir lagi, bahkan bila
+    ## trigger dilewati. Yang menahan adalah index `UNIQUE (prev_hash)`, bukan trigger.
+    let lastRow = db.getRow(sql"""SELECT seq, prev_hash FROM platform.audit_log
+      ORDER BY seq DESC LIMIT 1""")
+    exec(db, sql"ALTER TABLE platform.audit_log DISABLE TRIGGER audit_log_chain_trg")
+    defer:
+      exec(db, sql"ALTER TABLE platform.audit_log ENABLE TRIGGER audit_log_chain_trg")
+    expect DbError:
+      exec(db, sql"""INSERT INTO platform.audit_log
+        (audit_id, action, resource_type, resource_id, prev_hash, hash)
+        VALUES (gen_random_uuid(), 'kran.test.o038.fork2', 'probe', 'o038-fork2', ?,
+                repeat('0', 64))""", lastRow[1])
 
 suite "platform: daftar audit — visibilitas per cabang (O-032, D-046 butir 6)":
   ## Diuji di lapis repo (aturan penyaringan) — pasangan HTTP-nya ada di `itapi_auth` (suite

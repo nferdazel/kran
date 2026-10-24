@@ -112,7 +112,14 @@ proc requestHandler*(app: AppContext): RequestHandler =
     beginRequestScope(req)
     let started = epochTime()
     try:
-      inner(req)
+      # T-133/API-4: kontrak menyatakan badan permintaan JSON; badan yang datang dengan tipe lain
+      # ditolak di sini (415) alih-alih di-parse dan gagal sebagai 400 yang menyalahkan isinya.
+      # Satu pemeriksaan di pembungkus, jadi tidak ada rute yang bisa lupa.
+      if acceptsJsonBody(req):
+        inner(req)
+      else:
+        req.respondProblem(pkUnsupportedMediaType, "Unsupported Media Type",
+          "badan permintaan harus application/json")
     finally:
       endRequest()
       logAccess(req, requestScopeStatus(), int64((epochTime() - started) * 1000))

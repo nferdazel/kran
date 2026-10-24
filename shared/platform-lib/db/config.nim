@@ -13,7 +13,8 @@
 ##   KRAN_DB_STATEMENT_TIMEOUT_MS   statement_timeout libpq (default 15000)
 ##   KRAN_DB_QUERY_DEADLINE_MS      batas satu blok kerja `withConn`/`withTx` (default
 ##                                  statement_timeout + 5000; wajib > statement_timeout)
-##   KRAN_DB_VALIDATE_ON_ACQUIRE    `1`/`0` — cek `PQstatus` saat ambil koneksi (default 1)
+##   KRAN_DB_VALIDATE_ON_ACQUIRE    `1`/`0` — `select 1` pada koneksi yang diambil dari pool
+##                                  (default 1; bukan hanya `PQstatus`, lihat `pool.nim`)
 ##
 ## `KRAN_DB_QUERY_DEADLINE_MS` menutup kasus koneksi yang membeku di tengah kueri (perantara yang
 ## tetap meng-ACK, jadi keepalive tidak memicu). Satuannya **blok kerja**, sedangkan

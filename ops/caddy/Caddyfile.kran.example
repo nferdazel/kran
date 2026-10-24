@@ -29,8 +29,29 @@ cbs.qouver.com {
 	# server; `deploy-vps.sh` menjalankan `restorecon` tiap swap). Tanpa itu Caddy menerima 403/404.
 	root * /srv/qouver/apps/kran/web
 
+	# T-133/OPS-14: batas badan permintaan. Tanpa ini klien bisa mengirim body sebesar apa pun dan
+	# Caddy meneruskannya (atau menahannya di disk/memori) sebelum API sempat menolak. Batas ini
+	# teknis, bukan kebijakan bisnis: 1 MB jauh di atas body terbesar yang sah (jurnal, parameter,
+	# form) dan tetap menutup kiriman sampah berukuran raksasa.
+	request_body {
+		max_size 1MB
+	}
+
 	handle /api/* {
-		reverse_proxy 127.0.0.1:8095
+		reverse_proxy 127.0.0.1:8095 {
+			# T-133/OPS-14: timeout transport. Default Caddy membiarkan koneksi ke upstream
+			# menggantung; permintaan lambat menahan goroutine tanpa batas dan membuat
+			# `/readyz`/health gate tidak mencerminkan layanan yang benar-benar melayani.
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 30s
+				read_timeout 30s
+				write_timeout 60s
+				# Koneksi keepalive ke upstream dipendekkan supaya restart container
+				# (deploy) tidak menunggu koneksi lama habis dulu.
+				keepalive 30s
+			}
+		}
 	}
 	handle {
 		try_files {path} /index.html

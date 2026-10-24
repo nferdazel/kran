@@ -187,7 +187,7 @@
           class="kran-table-wrap"
           role="region"
           tabindex="0"
-          aria-label={m.products_drafts_heading()}
+          aria-label={m.common_table_region({ name: m.products_drafts_heading() })}
         >
           <table class="kran-table">
             <caption class="kran-visually-hidden">{m.products_drafts_caption()}</caption>
@@ -310,7 +310,7 @@
       <p class="kran-muted">{m.products_empty()}</p>
     {:else}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div class="kran-table-wrap" role="region" tabindex="0" aria-label={m.products_catalogue_heading()}>
+      <div class="kran-table-wrap" role="region" tabindex="0" aria-label={m.common_table_region({ name: m.products_catalogue_heading() })}>
         <table class="kran-table">
           <caption class="kran-visually-hidden">{m.products_caption()}</caption>
           <thead>

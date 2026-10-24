@@ -55,7 +55,10 @@ async function prepare(page: Page, theme = "light"): Promise<void> {
 }
 
 function region(page: Page, name: string): Locator {
-  return page.getByRole("region", { name });
+  // `exact`: nama landmark dicocokkan persis. Sejak T-133/UI-9 tabel bergulir di dalamnya juga
+  // ber-`role="region"` dengan label "Tabel: …", dan pencocokan longgar Playwright (substring)
+  // membuat dua elemen cocok untuk satu bagian.
+  return page.getByRole("region", { name, exact: true });
 }
 
 /**

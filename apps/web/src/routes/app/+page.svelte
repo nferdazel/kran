@@ -176,7 +176,14 @@
   /** Nilai form mengikuti tipe nilai aktif: angka → number, array/objek → JSON, sisanya teks. */
   function coerceValue(raw: string, current: unknown): unknown {
     const text = raw.trim();
-    if (typeof current === "number") return Number(text);
+    if (typeof current === "number") {
+      const parsed = Number(text);
+      // `Number("")` = 0 dan `Number("abc")` = NaN; keduanya berakhir sebagai nilai kosong/NULL di
+      // body sehingga server menjawab 400 tanpa menyebut field. Lebih baik ditolak di sini dengan
+      // pesan yang terbaca (T-133/UI-12).
+      if (!Number.isFinite(parsed)) throw new Error("nilai bukan angka");
+      return parsed;
+    }
     if (typeof current === "object" && current !== null) return JSON.parse(text);
     return text;
   }
@@ -202,7 +209,7 @@
       value = coerceValue(formValue, currentRow.value);
     } catch {
       sending = false;
-      errorMessage = m.error_bad_request();
+      errorMessage = m.param_error_value_invalid();
       return;
     }
 
@@ -445,7 +452,13 @@
         {#if pending.length === 0}
           <p class="kran-muted">{m.params_pending_empty()}</p>
         {:else}
-          <div class="kran-table-wrap">
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <div
+            class="kran-table-wrap"
+            role="region"
+            tabindex="0"
+            aria-label={m.common_table_region({ name: m.params_pending_heading() })}
+          >
             <table class="kran-table">
               <thead>
                 <tr>
@@ -505,7 +518,13 @@
         {#if active.length === 0}
           <p class="kran-muted">{m.params_active_empty()}</p>
         {:else}
-          <div class="kran-table-wrap">
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <div
+            class="kran-table-wrap"
+            role="region"
+            tabindex="0"
+            aria-label={m.common_table_region({ name: m.params_active_heading() })}
+          >
             <table class="kran-table">
               <thead>
                 <tr>
@@ -553,7 +572,13 @@
         {#if audit.length === 0}
           <p class="kran-muted">{m.audit_empty()}</p>
         {:else}
-          <div class="kran-table-wrap">
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <div
+            class="kran-table-wrap"
+            role="region"
+            tabindex="0"
+            aria-label={m.common_table_region({ name: m.audit_heading() })}
+          >
             <table class="kran-table">
               <thead>
                 <tr>

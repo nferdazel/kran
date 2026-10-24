@@ -44,6 +44,11 @@ Volume=/srv/qouver/apps/kran/monorepo/modules:/monorepo/modules:z,ro
 Exec=--role=api --port=8095 --address=0.0.0.0 --root=/monorepo
 NoNewPrivileges=true
 DropCapability=ALL
+# T-133/OPS-15: **tidak ada** `HealthCmd=` di sini meski audit memintanya. Healthcheck Podman
+# berjalan *di dalam* container, dan image runtime sengaja hanya berisi `kran-api` (tanpa curl/wget)
+# — perintah yang menguji HTTP tidak tersedia. Kesehatan yang sebenarnya dijaga di dua tempat:
+# `Restart=always` untuk proses yang mati, dan health gate deploy (`/readyz`, deadline 60 dtk) plus
+# pemeriksaan image yang melayani. Keterbatasan ini tercatat di `docs/ACCEPTED-LIMITS.md`.
 
 [Service]
 Restart=always
@@ -51,6 +56,13 @@ Restart=always
 # yang sama (paritas dengan unit native sebelumnya, termasuk KEK hilang/rusak).
 RestartPreventExitStatus=2
 RestartSec=3
+# T-133/OPS-15: /tmp milik container sendiri, tidak berbagi direktori temporer host.
+PrivateTmp=true
+# T-133/OPS-15: batas memori sebagai **pengaman kebocoran**, bukan hasil pengukuran kebutuhan.
+# API berjalan dengan pool 8 koneksi dan pemakaian normal puluhan MB; 1 GB berarti kebocoran atau
+# fan-out tak terbatas membunuh container ini (lalu `Restart=always` menyalakannya lagi) alih-alih
+# membuat seluruh VPS kehabisan memori. Naikkan bila log OOM benar-benar muncul.
+MemoryMax=1G
 
 [Install]
 WantedBy=default.target

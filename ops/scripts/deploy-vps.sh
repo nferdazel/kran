@@ -45,6 +45,22 @@ mkdir -p "$APP_DIR/logs"
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG"; }
 die() { log "ERROR: $*"; exit 1; }
 
+# OPS-11 (T-133): batas waktu gate kesehatan. Sebelumnya 15 percobaan × (3 dtk timeout + 2 dtk
+# jeda) = hingga 75 dtk, melewati batas spec §21.4 (30–60 dtk) yang justru mencegah container
+# rusak menahan deploy. Sekarang deadline total 60 dtk; percobaan hanya dijalankan selama sisa
+# waktu masih ada, jadi angka ini adalah batas nyata, bukan sekadar rata-rata.
+HEALTH_GATE_SECONDS="${KRAN_HEALTH_GATE_SECONDS:-60}"
+wait_healthy() {
+  local deadline=$((SECONDS + HEALTH_GATE_SECONDS))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
 # Konfigurasi aplikasi (termasuk KRAN_DATABASE_URL/KEK). Unit systemd memuatnya lewat
 # EnvironmentFile, tetapi jalur hook (webhook.service) tidak mewarisi env itu — deploy dari push
 # gagal di migration gate dengan "KRAN_DATABASE_URL kosong" (ditemukan di T-045, 16 Okt 2026).
@@ -52,11 +68,25 @@ die() { log "ERROR: $*"; exit 1; }
 # drop-in webhook) tetap dari lingkungan.
 ENV_FILE="${KRAN_ENV_FILE:-$APP_DIR/env/kran-prod.env}"
 if [ -f "$ENV_FILE" ]; then
+  # OPS-16 (T-133): berkas ini memuat kredensial DB dan path KEK. Berkas yang terbaca pengguna
+  # lain adalah kebocoran, bukan urusan kenyamanan — jadi diperiksa **sebelum** di-source, bukan
+  # sesudah isinya masuk ke lingkungan proses. Owner boleh root (deploy dari systemd) atau user
+  # yang menjalankan skrip ini.
+  env_mode="$(stat -c '%a' "$ENV_FILE" 2>/dev/null || echo '')"
+  if [ -z "$env_mode" ]; then
+    log "==> WARN: mode $ENV_FILE tidak terbaca (stat tidak tersedia) — pemeriksaan izin dilewati"
+  elif [ "$env_mode" != "600" ] && [ "$env_mode" != "400" ]; then
+    die "mode $ENV_FILE = $env_mode (harus 600/400): kredensial DB/KEK terbaca pengguna lain"
+  fi
+  env_owner="$(stat -c '%U' "$ENV_FILE" 2>/dev/null || echo '')"
+  if [ -n "$env_owner" ] && [ "$env_owner" != "$(id -un)" ] && [ "$env_owner" != "root" ]; then
+    die "$ENV_FILE dimiliki $env_owner, bukan $(id -un)/root"
+  fi
   set -a
   # shellcheck disable=SC1090
   . "$ENV_FILE"
   set +a
-  log "==> env aplikasi dimuat: $ENV_FILE"
+  log "==> env aplikasi dimuat: $ENV_FILE (mode $env_mode, owner ${env_owner:-?})"
 fi
 
 # Container dijalankan quadlet `kran-api.container`, dan di sana `--port`/`--address`/`--root`
@@ -471,15 +501,28 @@ systemctl --user daemon-reload
 systemctl --user restart kran-api
 systemctl --user restart kran-worker
 
-# 11. HEALTH GATE + auto-rollback (spec §21.4 #11): poll /readyz x15.
+# 11. HEALTH GATE + auto-rollback (spec §21.4 #11): poll /readyz dengan deadline 60 dtk (OPS-11).
 healthy=0
-for _ in {1..15}; do
-  if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
-    healthy=1
-    break
+if wait_healthy; then
+  healthy=1
+fi
+
+# OPS-11: `/readyz` sehat hanya membuktikan **ada** yang menjawab. Yang harus dibuktikan adalah
+# bahwa yang menjawab adalah image yang baru dibangun. Container yang masih jalan dari image lama
+# (restart gagal, `AutoUpdate=local` tidak terpakai) juga sehat — dan deploy akan tercatat sukses
+# untuk kode yang tidak pernah berjalan.
+if [ "$healthy" -eq 1 ]; then
+  running_image="$(podman inspect --format '{{.Image}}' kran-api 2>/dev/null || echo '')"
+  local_image="$(podman image inspect --format '{{.Id}}' localhost/kran-api:local 2>/dev/null || echo '')"
+  if [ -n "$running_image" ] && [ -n "$local_image" ] && [ "$running_image" != "$local_image" ]; then
+    log "==> ERROR: container kran-api berjalan dari image ${running_image:0:19}, bukan :local ${local_image:0:19}"
+    healthy=0
+  elif [ -z "$running_image" ] || [ -z "$local_image" ]; then
+    log "==> WARN: tidak bisa membandingkan image container dengan :local (podman inspect kosong)"
+  else
+    log "==> revisi yang melayani = image ${local_image:0:19} (:local)"
   fi
-  sleep 2
-done
+fi
 
 if [ "$healthy" -ne 1 ]; then
   log "==> ERROR: $HEALTH_URL tidak sehat setelah restart; auto-rollback"
@@ -504,13 +547,9 @@ if [ "$healthy" -ne 1 ]; then
   # OPS-4 (T-131): rollback yang tidak sehat **bukan** rollback selesai. Tanpa pemeriksaan kedua,
   # log hanya mengatakan "rollback" sementara layanan tetap mati dan tidak ada yang tahu.
   rollback_healthy=0
-  for _ in {1..15}; do
-    if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
-      rollback_healthy=1
-      break
-    fi
-    sleep 2
-  done
+  if wait_healthy; then
+    rollback_healthy=1
+  fi
   if [ "$rollback_healthy" -eq 1 ]; then
     log "==> rollback selesai dan sehat ($HEALTH_URL OK) — deploy revision $REVID dianggap GAGAL"
   else

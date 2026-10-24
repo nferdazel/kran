@@ -16,8 +16,11 @@ const HttpMethods* = ["GET", "POST", "PUT", "PATCH", "DELETE"]
 type
   Operation* = object
     path*: string
-    httpMethod*: string ## huruf besar: "GET"
+    httpMethod*: string            ## huruf besar: "GET"
     operationId*: string
+    secured*: bool                 ## operasi mendeklarasikan `security` (butuh sesi/izin)
+    hasRequestBody*: bool          ## operasi menerima badan permintaan
+    declaredStatuses*: seq[string] ## kunci `responses` yang benar-benar ditulis kontrak
 
   DeclaredRoute* = object
     httpMethod*: string
@@ -53,10 +56,17 @@ proc loadContract*(content, origin: string): Contract =
       let verb = rawMethod.toUpperAscii()
       if verb notin HttpMethods:
         continue
+      var statuses: seq[string]
+      if operation.hasKey("responses"):
+        for status, _ in operation["responses"]:
+          statuses.add status
       result.operations.add Operation(
         path: path,
         httpMethod: verb,
         operationId: operation{"operationId"}.getStr(""),
+        secured: operation.hasKey("security") and operation["security"].len > 0,
+        hasRequestBody: operation.hasKey("requestBody"),
+        declaredStatuses: statuses,
       )
 
 proc loadSchemaFile*(path: string): Contract =
@@ -102,6 +112,25 @@ proc findings*(declared: seq[DeclaredRoute], contract: Contract): seq[string] =
   for k, op in byKey:
     if not declaredKeys.hasKey(k):
       result.add "kontrak punya operasi yang tidak diimplementasikan: " & k &
+        " (operationId: " & op.operationId & ")"
+
+  # Respons tingkat framework (T-133/API-3). Keduanya benar-benar dikembalikan tetapi sebelumnya
+  # tidak pernah dideklarasikan: `405` dari router (`methodNotAllowedHandler`), `501` dari
+  # `requirePrincipal` saat basis data belum dikonfigurasi. Kontrak yang tidak menyebutnya membuat
+  # klien generik menyimpulkan "tidak mungkin terjadi" — padahal itu jawaban normal di deployment
+  # yang belum punya `KRAN_DATABASE_URL`.
+  for k, op in byKey:
+    if "405" notin op.declaredStatuses:
+      result.add "operasi tidak mendeklarasikan 405 (router menolak method lain): " & k &
+        " (operationId: " & op.operationId & ")"
+    if op.secured and "501" notin op.declaredStatuses:
+      result.add "operasi ber-auth tidak mendeklarasikan 501 (database belum dikonfigurasi): " & k &
+        " (operationId: " & op.operationId & ")"
+    if op.secured and "503" notin op.declaredStatuses:
+      result.add "operasi ber-auth tidak mendeklarasikan 503 (pool DB habis, penangan terakhir): " &
+        k & " (operationId: " & op.operationId & ")"
+    if op.hasRequestBody and "415" notin op.declaredStatuses:
+      result.add "operasi berbadan tidak mendeklarasikan 415 (tipe media ditolak): " & k &
         " (operationId: " & op.operationId & ")"
 
 proc resolveRef*(contract: Contract, node: JsonNode): JsonNode =
