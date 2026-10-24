@@ -2494,5 +2494,16 @@ berkas; `./task openapi` sinkron; `tcontract` 6 OK. DB dev: `itapi_teller_vault`
 `itposting` 10 OK, `ittransaction` 8 OK, `itparam` 28 OK, `itparamservice` 9 OK,
 `itapi_journal` 15 OK, `itapi_ledger` 16 OK, `itapi_deposit` 17 OK, `itapi_fase1` 7 OK.
 
+**Produksi (deploy `49e6915`, 24 Okt 2026).** Migrasi `0033`–`0035` terpasang; `checker.pilot`
+diberi peran `cash_admin` (audit `user.role_grant`) sebagai penyetuju kedua. Bukti: pengajuan top-up
+`100.000` oleh `admin` → saldo vault tetap `12.700.000`; persetujuan `checker.pilot` → vault
+`12.800.000` + jurnal `D 101.1 / K 102`; persetujuan ulang 409 `topup_request_not_pending`;
+self-approval 409 `self_approval` (pengajuan uji lalu ditolak beralasan). Sesi kas `teller.pilot`:
+buka float `100.000` (jurnal `D 101.2 / K 101.1`), setor tunai `50.000` ke `0010000013`, tutup
+`counted=150.000` variance `0` (jurnal `D 101.1 / K 101.2`); saldo `101.2` dan `101.9` kembali **nol**,
+`101.1` = `150.000`.
+
 **Sisa.** Keputusan pemilik K-3 (staf minimum/break-glass), K-4 (format bukti override), K-5 (batas
-nominal kas → O-099/T-122), K-6 (konfirmasi pemetaan GL), K-8 (`teller` top-up); UI vault (T-121).
+nominal kas → O-099/T-122), K-6 (konfirmasi pemetaan GL), K-8 (`teller` top-up); UI vault (T-121);
+**O-105**: saldo vault pilot `10.000.000` belum punya jurnal pembuka (GL kas `2.850.000` vs vault
+`12.850.000`) — perlu keputusan akun sumber saldo awal + reklasifikasi `101` historis.
