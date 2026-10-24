@@ -247,6 +247,23 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "party.person.sex_values",
+    "module": "party",
+    "valueType": "json",
+    "tsType": "unknown",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.party.person.sex_values",
+    "jsonSchema": {
+      "type": "array"
+    }
+  },
+  {
     "key": "platform.calendar.fiscal_year_start_month",
     "module": "platform",
     "valueType": "integer",

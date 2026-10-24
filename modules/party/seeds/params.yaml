@@ -48,6 +48,17 @@
   provenance: { class: kebijakan }
   default_pack: { base: 32 }
 
+# Jenis kelamin yang dikenal (T-078). Disimpan terenkripsi seperti field PII lain; daftar ini
+# hanya menentukan nilai mana yang sah. Ditulis dengan gaya apa pun di parameter, nilai tersimpan
+# satu bentuk (huruf besar), pola yang sama dengan jenis dokumen/tingkat risiko.
+- key: party.person.sex_values
+  type: json
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { type: array }
+  sensitivity: NORMAL
+  provenance: { class: kebijakan, compliance: NEEDS-COMPLIANCE-REVIEW }
+  default_pack: { base: ["MALE", "FEMALE"] } # NEEDS-COMPLIANCE-REVIEW
+
 # Tingkat risiko yang dikenal sistem (rating manual oleh petugas; urutan = ringan → berat).
 - key: party.kyc.risk_levels
   type: json
