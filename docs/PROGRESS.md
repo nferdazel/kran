@@ -2759,3 +2759,32 @@ Sisa O-023 dipasang atas permintaan pemilik (D-139), setelah D-053 menundanya.
 menghasilkan `@typescript-eslint/no-unused-vars` (bukti `.svelte` benar-benar dilint);
 `./task lint-web` `ok`; `./task check` hijau; `./task e2e` **46 passed** (3,3 m);
 `pnpm install --frozen-lockfile` sinkron.
+
+## 24 Okt 2026 — audit menyeluruh sebelum Fase 3
+
+Delapan reviewer paralel (keamanan/OWASP, ledger & uang, skema & migrasi, API & kontrak, frontend,
+ops/CI/supply chain, arsitektur & performa, kualitas test) memeriksa commit `2a3c101`. Orchestrator
+memverifikasi ulang setiap kandidat BLOCKER/MAJOR dari kode; yang tidak terbukti tidak dimasukkan.
+Laporan lengkap: `docs/audit/2026-10-24-codebase-audit.md`. **Belum ada kode yang diubah.**
+
+Hasil: **3 BLOCKER, 15 MAJOR, 33 MINOR, 8 NIT.**
+
+BLOCKER yang terverifikasi:
+
+- Job CI `web-e2e` tidak punya Postgres, sementara 9 dari 11 spec e2e memanggil
+  `test.skip(!process.env.KRAN_DATABASE_URL, …)` — CI hanya menjalankan halaman login + keyboard.
+- `resetTestSchemas` (`tools/dbtools/lib.nim:463-480`) melakukan `DROP SCHEMA … CASCADE` **tanpa**
+  penjaga `_dev`/`_test`, tidak seperti `seed --dev`.
+- `POST /users/{id}/roles` mengizinkan `ops_admin` memberi dirinya `platform_admin`: tidak ada
+  larangan self-grant, tidak ada syarat "pemberi memegang izin peran itu", `platform_admin` memang
+  tidak dipasangkan SoD.
+
+MAJOR yang paling berdampak: sesi kas terkunci permanen bila periode ditutup lebih dulu; login tanpa
+rate limit sambil memegang koneksi pool (PBKDF2 600k); `router.errorHandler` tidak dipasang sehingga
+`PoolError` menjadi 500 telanjang tanpa log; Mummy 40 worker vs pool 8 + `/readyz` memakai pool
+sendiri; N+1 di daftar rekening/pengguna; `X-Forwarded-For` klien di-cast `inet` di dalam transaksi
+audit; radio PB tidak bisa dipilih tanpa sesi kas; empat layar operator tanpa axe/e2e; `kran_runtime`
+punya UPDATE/DELETE pada jurnal; `vault_topup_request.journal_id` tanpa FK/UNIQUE; spec §21.7
+mengklaim kompensasi rilis yang tidak ada.
+
+Rencana remediasi: `BACKLOG.md` T-126…T-133 (batch A–B wajib sebelum Fase 3).
