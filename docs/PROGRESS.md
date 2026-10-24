@@ -2788,3 +2788,21 @@ punya UPDATE/DELETE pada jurnal; `vault_topup_request.journal_id` tanpa FK/UNIQU
 mengklaim kompensasi rilis yang tidak ada.
 
 Rencana remediasi: `BACKLOG.md` T-126…T-133 (batch A–B wajib sebelum Fase 3).
+
+## 24 Okt 2026 — T-126: gate web berhenti berbohong
+
+Job `web-e2e` tidak punya database, jadi 9 dari 11 spec Playwright melewati dirinya sendiri dan CI
+tetap hijau; unit test `apps/web` (121 test) tidak dijalankan gate mana pun.
+
+- `apps/web` kini punya `vitest` 5.0.4 + config + script `test`; `./task e2e` menjalankannya.
+- `requireDatabase()` (`apps/web/tests/e2e/db.ts`) **melempar** bila `CI` diset tanpa
+  `KRAN_DATABASE_URL`; sembilan spec memakainya, bukan `test.skip` lagi.
+- `./task e2e` menyimpan log Playwright dan menolak bila test yang berjalan < `KRAN_E2E_MIN_TESTS`
+  (default 40).
+- `./task ci` menolak tanpa database (opt-out eksplisit `KRAN_ALLOW_NO_DB=1`).
+- Job CI `web-e2e` mendapat `services: postgres:18`, `KRAN_DATABASE_URL`, setup Nim + cache +
+  `libpcre3`.
+
+**Bukti.** Unit web 121 lulus; `CI=1 KRAN_DATABASE_URL= playwright test --list` melempar dari
+`requireDatabase`; `./task e2e` **46 passed** dengan `ok: e2e green: 46 test`; `./task check` dan
+`lint-web` hijau. Detail: `docs/tasks/T-126.md`.

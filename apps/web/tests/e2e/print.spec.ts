@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { requireDatabase } from "./db.js";
 
 /**
  * Cetak Fase 2 (T-094a/T-094b, D-127): browser print, bukan PDF server.
@@ -15,7 +16,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
  * bukan audit cetak, bukan kop lembaga. `page.pdf()` tidak dipakai (bukan bukti layout).
  */
 
-test.skip(!process.env.KRAN_DATABASE_URL, "KRAN_DATABASE_URL kosong — API e2e tidak dijalankan");
+requireDatabase();
 
 declare global {
   interface Window {

@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { expect, test } from "@playwright/test";
+import { requireDatabase } from "./db.js";
 
 /**
  * Berhenti bersih (T-024, O-025) dan drain permintaan berjalan (T-032, O-047): `SIGTERM` harus
@@ -14,7 +15,7 @@ import { expect, test } from "@playwright/test";
  * tidak boleh diganggu, dan pengujian ini tidak butuh UI. Biner dibangun `./task e2e` lebih dulu.
  */
 
-test.skip(!process.env.KRAN_DATABASE_URL, "KRAN_DATABASE_URL kosong — API tidak dijalankan");
+requireDatabase();
 
 const DEV_USER = { username: "dev.maker", password: "rahasia-panjang-123" };
 

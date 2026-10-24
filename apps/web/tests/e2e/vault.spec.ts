@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { requireDatabase } from "./db.js";
 
 /**
  * Vault kas (T-121): alur nyata ajukan → setujui → tolak, keyboard-only, plus gate axe pada
@@ -14,7 +15,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
  * API (bukan teks UI), dan tidak ada selisih saldo saat pengajuan ditolak.
  */
 
-test.skip(!process.env.KRAN_DATABASE_URL, "KRAN_DATABASE_URL kosong — API e2e tidak dijalankan");
+requireDatabase();
 
 const API = "http://127.0.0.1:8099";
 const BRANCH = "e2e00000-0000-4000-8000-000000000001";

@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { requireDatabase } from "./db.js";
 
 /**
  * Teller Fase 2 (T-109): alur nyata buka sesi → setor → tutup, keyboard-only, plus gate axe pada
@@ -12,7 +13,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
  * Batas yang diuji: tanpa F-key (T-095); seluruh interaksi memakai Tab/Enter/fokus.
  */
 
-test.skip(!process.env.KRAN_DATABASE_URL, "KRAN_DATABASE_URL kosong — API e2e tidak dijalankan");
+requireDatabase();
 
 // Port tetap dari playwright.config.ts (API e2e sengaja beda dari API dev).
 const API = "http://127.0.0.1:8099";
