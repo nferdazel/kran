@@ -37,7 +37,7 @@ const
 type
   ## Kesalahan konfigurasi/operasional (parameter hilang/salah bentuk). Dijawab 500 dengan pesan
   ## non-internal — permintaannya sah, server yang belum siap (spec §10.6, §13).
-  KycConfigError = object of ValueError
+  KycConfigError* = object of ValueError
 
 proc jsonOrNull(s: string): JsonNode =
   ## Tanggal kosong dikirim `null` (kontrak: `["string","null"]`), bukan string kosong.
@@ -92,7 +92,7 @@ proc intParam(db: DbConn, key, asOf: string): int =
     raise newException(KycConfigError, "parameter " & key & " bukan angka")
   int(node.getInt)
 
-proc listParam(db: DbConn, key, asOf: string): seq[string] =
+proc listParam*(db: DbConn, key, asOf: string): seq[string] =
   try:
     stringList(paramNode(db, key, asOf), key)
   except KycConfigError:
@@ -114,7 +114,7 @@ proc mapInt(node: JsonNode, key, paramName: string): int =
   except ValueError as e:
     raise newException(KycConfigError, e.msg)
 
-proc requireCrypto(app: AppContext, req: Request): bool =
+proc requireCrypto*(app: AppContext, req: Request): bool =
   ## Fail-closed tanpa KEK: jangan pernah menyimpan/membuka nomor tanpa kunci (pola MFA T-046).
   if app.fieldCrypto.isConfigured:
     return true
