@@ -2806,3 +2806,12 @@ tetap hijau; unit test `apps/web` (121 test) tidak dijalankan gate mana pun.
 **Bukti.** Unit web 121 lulus; `CI=1 KRAN_DATABASE_URL= playwright test --list` melempar dari
 `requireDatabase`; `./task e2e` **46 passed** dengan `ok: e2e green: 46 test`; `./task check` dan
 `lint-web` hijau. Detail: `docs/tasks/T-126.md`.
+
+## 24 Okt 2026 — T-127: penghapus schema berhenti menerima database produksi
+
+`resetTestSchemas` melakukan `DROP SCHEMA … CASCADE` tanpa memeriksa database. Sekarang nama DB
+dibaca dari `SELECT current_database()` dan ditolak kecuali berakhir `_dev`/`_test`; aturan itu
+dipakai bersama `devSeedDbAllowed` lewat `testDbNameAllowed`.
+
+**Bukti.** `./task test tdbtools` 3 suite `[OK]` (termasuk `kran`, `kran_prod`, `kran_devx`
+ditolak); `./task test itplatform` hijau pada `kran_dev`.

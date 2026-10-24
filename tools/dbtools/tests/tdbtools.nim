@@ -297,3 +297,12 @@ suite "dbtools: penjagaan seed dev (O-062)":
     check not devSeedDbAllowed("postgres://u:p@h:5432/kran_prod")
     check not devSeedDbAllowed("postgres://u:p@h:5432/kran_devx")
     check not devSeedDbAllowed("")
+
+  test "nama database dev/test untuk reset schema (T-127)":
+    check testDbNameAllowed("kran_dev")
+    check testDbNameAllowed("kran_test")
+    check testDbNameAllowed("cbs_dev")
+    check not testDbNameAllowed("kran")
+    check not testDbNameAllowed("kran_prod")
+    check not testDbNameAllowed("kran_devx")
+    check not testDbNameAllowed("")
