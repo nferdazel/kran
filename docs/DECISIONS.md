@@ -3105,3 +3105,30 @@ divalidasi ke rekening bank; bukti sumber adalah alasan pengajuan + akun COA yan
 nominal kas (K-5/O-099) dan jumlah staf minimum (K-3) tetap keputusan pemilik. Rollback binary ke
 sebelum rilis ini menghentikan jurnal kas baru tetapi jurnal lama tetap ada (tidak ada pembalik
 otomatis).
+
+## D-133 — Plafon nominal kas pilot sebagai parameter (K-5/O-099)
+
+**Konteks.** Jalur kas (opening float, setor/tarik tunai, top-up vault) berjalan tanpa batas
+nominal: nominal berapa pun diterima selama saldo cukup. Angka batas adalah kebijakan pemilik
+(spec §10.5), bukan pilihan teknis, dan O-099 belum ditutup. SME akuntansi mengusulkan empat
+parameter beserta angka pilot (`docs/proposals/t-118-sme-accounting.md` §1).
+
+**Keputusan (disetujui pemilik 24 Okt 2026).**
+1. Empat parameter `money` di `modules/teller/seeds/params.yaml`: `teller.cash.limit_opening_float`
+   (**2.000.000**), `teller.cash.limit_deposit` (**10.000.000**),
+   `teller.cash.limit_withdrawal` (**5.000.000**), `teller.vault.limit_topup_per_request`
+   (**25.000.000**). Scope `GLOBAL`/`INSTITUTION`, `sensitivity: NORMAL`,
+   `provenance.class: kebijakan`, `compliance: NEEDS-COMPLIANCE-REVIEW`.
+2. Pengecekan di **handler** (`cash_limit.cashLimit`), bukan domain: domain tetap murni dan limit
+   adalah data runtime. Parameter hilang/rusak → 500 (`CashLimitConfigError`), yaitu fail-closed;
+   jalur kas tidak berjalan tanpa plafon diam-diam.
+3. Pelanggaran plafon = **409** `cash_limit_exceeded` (float/setor/tarik) dan
+   `topup_exceeds_limit` (top-up), bukan 400: bentuk permintaan sah, keadaan bisnis yang menolak.
+   Nominal **tepat** di plafon diterima (`>`, bukan `>=`). Nominal yang ditolak tidak menyentuh
+   saldo, sesi, atau jurnal.
+4. Angka ini **bukan** angka regulasi/kepatuhan; bila compliance atau pemilik menetapkan angka
+   lain, yang berubah hanya nilai parameter (maker-checker parameter), bukan kode.
+
+**Konsekuensi.** Limit hanya plafon kebijakan: cek saldo vault/`insufficient_funds` tetap berlaku
+dan bisa menolak lebih dulu. Akumulasi harian, plafon saldo vault, dan toleransi variance sengaja
+**tidak** diadopsi sekarang (usulan opsional SME) — ditunda sampai ada kebutuhan pilot yang nyata.

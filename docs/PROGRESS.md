@@ -2507,3 +2507,27 @@ buka float `100.000` (jurnal `D 101.2 / K 101.1`), setor tunai `50.000` ke `0010
 nominal kas → O-099/T-122), K-6 (konfirmasi pemetaan GL), K-8 (`teller` top-up); UI vault (T-121);
 **O-105**: saldo vault pilot `10.000.000` belum punya jurnal pembuka (GL kas `2.850.000` vs vault
 `12.850.000`) — perlu keputusan akun sumber saldo awal + reklasifikasi `101` historis.
+
+## 24 Okt 2026 — plafon nominal kas jadi parameter (T-122/K-5, D-133)
+
+Pemilik menyetujui angka plafon pilot dari memo SME akuntansi; jalur kas tidak lagi menerima
+nominal tanpa batas.
+
+- Empat parameter `money` di `modules/teller/seeds/params.yaml`: opening float **2.000.000**,
+  setor **10.000.000**, tarik **5.000.000**, top-up per pengajuan **25.000.000** (termasuk batas
+  top-up vault, jadi nilainya bukan konstanta di handler). Provenance `kebijakan` +
+  `NEEDS-COMPLIANCE-REVIEW` — angka pilot, bukan regulasi.
+- `apps/api/src/cash_limit.nim` membaca plafon pada tanggal bisnis (scope institusi); tiga handler
+  (buka sesi, setor/tarik, submit top-up) menolak **409** `cash_limit_exceeded`/`topup_exceeds_limit`
+  sebelum saldo/sesi/jurnal disentuh. Nominal tepat di plafon diterima; parameter hilang = 500
+  (fail-closed). Domain tetap murni.
+- Kontrak: `params.reason` baru didokumentasikan; deskripsi buka sesi yang masih bilang "tanpa
+  jurnal GL" diperbaiki.
+
+**Bukti.** `./task check-fast` hijau (paramgen in sync); `./task lint` 214 berkas; `./task openapi`
+sinkron; `tcontract` 6 OK; DB dev `itapi_teller_sessions` 13 OK, `itapi_teller_vault` 18 OK,
+`itapi_teller` 43 OK.
+
+**Sisa.** Akumulasi harian, plafon saldo vault, dan toleransi variance (usulan opsional SME) belum
+diadopsi. Keputusan pemilik lain tetap terbuka: K-3, K-4, K-6, K-8 (O-102), O-105 (akun sumber saldo
+awal 10 jt), UI vault (T-121).
