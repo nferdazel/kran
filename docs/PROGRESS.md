@@ -2441,3 +2441,30 @@ Tiga celah O-103 ditutup; semuanya dirilis ke produksi (`d6b0552`, `/readyz` 200
   rekening final).
 - Nice-to-have: handler ledger mengirim `params.reason` (`period_no_overlap`, `coa_code_uq`,
   jurnal sudah dibalik) supaya UI tidak perlu fallback per aksi.
+
+## 24 Okt 2026 — master cabang & nomor rekening ber-kode cabang (T-120, D-130)
+
+Keputusan pemilik atas O-104/O-101 diimplementasikan dan dirilis.
+
+- **Master cabang**: `platform.branch` (kode **3 digit** unik + nama + status). Migrasi
+  `platform/0030` mendaftarkan cabang pilot `001` / `Cabang Pilot`. Pendaftaran cabang baru lewat
+  `ctl create-branch --branch-code --branch-name` (audit `branch.create`).
+- **Nomor rekening**: `formatAccountNo(branchCode, seqNo)` = kode cabang 3 digit + nomor urut 7
+  digit (mis. `0010000006`). `POST /api/v1/deposit/accounts` menolak cabang yang belum terdaftar
+  (409 `branch_not_registered`); migrasi `deposit/0031` menyeragamkan rekening lama (nomor baru
+  dari `deposit.account_seq`, nomor lama tidak didaur ulang).
+- **Seed dev**: cabang uji `002` (`packs/base/seed/0004_dev_branch.sql`) dan pembersihan grant
+  `platform_admin` sisa suite integrasi pada akun dev, supaya gate e2e maker/checker tidak
+  bergantung pada state DB.
+
+**Bukti.** `./task check-fast` hijau (i18n 570 kunci/locale); `./task lint` 212 berkas; web vitest
+111; `svelte-check` 0/0; `./task test taccount`/`itaccount`/`itapi_deposit`/`itapi_roles` PASS;
+**e2e pusat 43 passed** (nomor rekening dev tampil `002…`).
+
+**Memo keputusan T-118** (`docs/proposals/t-118-operator-governance.md`): usulan SoD, pemecahan
+`platform_admin` (`ops_admin`/`ledger_admin`/`cash_admin`), maker-checker top-up vault, perlakuan GL
+kas (O-097), dan delapan keputusan K-1…K-8 untuk pemilik. Tidak ada regulasi yang dikarang; semua
+angka tetap keputusan pemilik.
+
+**Sisa.** O-101 (endpoint/UI master cabang), O-104 (check digit bila compliance menuntut), K-1…K-8
+(T-118) menunggu pemilik.
