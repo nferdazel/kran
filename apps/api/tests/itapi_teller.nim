@@ -1100,6 +1100,18 @@ suite "teller: sesi kas menggerbang transaksi tunai (T-093b)":
       cashBody(SessionBranchAccountId, "WITHDRAWAL", "20.0000"), token)
     check withdraw.code == 201
 
+    # Plafon per transaksi (K-5/O-099) dicek sebelum saldo/jurnal: di atas plafon = 409 tanpa
+    # movement baru, dan alasannya plafon (bukan saldo kurang).
+    let overDeposit = postJson(CashPath,
+      cashBody(SessionBranchAccountId, "DEPOSIT", "10000000.0001"), token)
+    check overDeposit.code == 409
+    checkProblem(CashPath, "POST", "409", overDeposit.body)
+    check overDeposit.body["params"]["reason"].getStr() == "cash_limit_exceeded"
+    let overWithdraw = postJson(CashPath,
+      cashBody(SessionBranchAccountId, "WITHDRAWAL", "5000000.0001"), token)
+    check overWithdraw.code == 409
+    check overWithdraw.body["params"]["reason"].getStr() == "cash_limit_exceeded"
+
     check cashMovementCount(sessionId) == 2
     check cashMovementTypeCount(sessionId, "CASH_IN") == 1
     check cashMovementTypeCount(sessionId, "CASH_OUT") == 1
