@@ -4,8 +4,8 @@
 ## yang sama. Modul `deposit` tetap murni (domain + repo SQL).
 ##
 ## Rekening adalah objek **ber-cabang**: izin dipegang di cabang rekening (`authorizedAtBranch`),
-## bukan tingkat institusi. Nomor rekening provisoris (10 digit dari sequence) — lihat
-## `deposit/domain/account.nim` (**NEEDS-COMPLIANCE-REVIEW**).
+## bukan tingkat institusi. Nomor rekening = kode cabang 3 digit + nomor urut 7 digit (D-135);
+## cabang **wajib terdaftar** di master cabang (`platform.branch`) supaya prefiksnya nyata.
 
 import std/[algorithm, json, options, strutils]
 
@@ -16,7 +16,7 @@ import "platform-lib/db/pool"
 
 import kernel/[clock, ids, money, result]
 import platform/domain/[audit, idempotency, scope]
-import platform/infrastructure/[audit_repo, auth_service]
+import platform/infrastructure/[audit_repo, auth_service, branch_repo]
 import deposit/domain/account
 import deposit/domain/transaction
 import deposit/domain/transfer
@@ -124,6 +124,15 @@ proc handleOpenDepositAccount*(app: AppContext, req: Request) {.gcsafe.} =
               problem = "izin " & permissionDepositAccountManage & " tidak dipegang di cabang ini"
               raise newException(ValueError, problem)
 
+            # Nomor rekening memakai kode cabang (D-135), jadi cabang harus terdaftar dulu.
+            let branchOpt = branchById(db, branchId.value())
+            if branchOpt.isNone:
+              status = 409
+              reason = "branch_not_registered"
+              problem = "cabang belum terdaftar di master cabang (kode 3 digit belum ada)"
+              raise newException(ValueError, problem)
+            let branchCode = branchOpt.get().code
+
             let partyOpt = partyById(db, partyId.value())
             if partyOpt.isNone or partyOpt.get().status != psActive:
               status = 409
@@ -156,8 +165,8 @@ proc handleOpenDepositAccount*(app: AppContext, req: Request) {.gcsafe.} =
             let account =
               try:
                 newAccount(newId(app.clock), partyId.value(), prod.productId,
-                  versionOpt.get().versionId, prod.code, branchId.value(), businessDate,
-                  nextAccountSeq(db))
+                  versionOpt.get().versionId, prod.code, branchId.value(), branchCode,
+                  businessDate, nextAccountSeq(db))
               except ValueError:
                 # Nomor urut tidak muat lebar / data tidak sah = kondisi operator, bukan 400.
                 raise newException(DepositAccountConfigError,

@@ -54,3 +54,15 @@ SELECT u.user_id, r.role_id, NULL
     OR (u.username = 'dev.checker' AND r.code = 'param_checker')
     OR (u.username = 'dev.firstlogin' AND r.code = 'param_maker')
 ON CONFLICT DO NOTHING;
+
+-- Determinisme e2e: suite integrasi berbagi DB dev yang sama dan sebagian (mis. `itapi_deposit`)
+-- memberi `dev.maker` grant `platform_admin` untuk menguji jalur sukses. Grant itu tidak selalu
+-- dikembalikan, sehingga maker bisa menyetujui dan seluruh menu tampil — gate e2e "maker tidak
+-- boleh approve" lalu gagal karena sisa state, bukan karena kode. Buang **hanya** grant
+-- `platform_admin` milik akun dev ini.
+DELETE FROM platform.user_role ur
+ USING platform.app_user u, platform.role r
+ WHERE ur.user_id = u.user_id
+   AND ur.role_id = r.role_id
+   AND u.username IN ('dev.maker', 'dev.checker')
+   AND r.code = 'platform_admin';

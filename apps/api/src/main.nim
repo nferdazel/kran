@@ -36,7 +36,8 @@ import dbtools/lib
 
 import kernel/[auditcontext, clock, ids]
 import platform/domain/[audit, authz, event, scope]
-import platform/infrastructure/[audit_repo, auth_repo, auth_service, outbox_repo, realtime_config]
+import platform/infrastructure/[audit_repo, auth_repo, auth_service, branch_repo, outbox_repo,
+  realtime_config]
 
 import ./access
 import ./context
@@ -73,6 +74,10 @@ const
   enableUserCmd* = "enable-user"
   unlockUserCmd* = "unlock-user"
 
+  ## Mendaftarkan cabang baru di master cabang (D-135). Nomor rekening memakai kode cabang, jadi
+  ## cabang tanpa kode tidak bisa dipakai membuka rekening.
+  createBranchCmd* = "create-branch"
+
   ## Perintah `ctl` yang menerima `--username` (semua perintah yang menyasar satu pengguna).
   usernameCommands* = [bootstrapAdminCmd, resetPasswordCmd, createUserCmd, assignRoleCmd,
                        revokeRoleCmd, disableUserCmd, enableUserCmd, unlockUserCmd]
@@ -100,6 +105,7 @@ const Usage =
   "pemakaian: kran-api --role=api|migrate|ctl|worker [--root=<dir>] [--port=8080] " &
   "[--address=127.0.0.1] [--version=<string>] [--check|--up|--seed|--contract|--down N] " &
   "[--username=<nama>] [--user-role=<peran>] [--branch=<uuid>] [--full-name=<nama>] " &
+  "[--branch-code=<3 digit>] [--branch-name=<nama>] " &
   "[--out=<berkas>] [<perintah ctl>]"
 
 type
@@ -108,15 +114,17 @@ type
     port: int
     address: string
     version: string
-    root: string     ## akar repo untuk `--role=migrate` (letak `modules/*/migrations`)
-    cmd: string      ## perintah posisi untuk `--role=ctl`
-    sub: string      ## subperintah `--role=migrate`: --check | --up | --seed | --contract | --down
-    subArg: string   ## angka `N` untuk `--role=migrate --down N`
-    username: string ## `--role=ctl bootstrap-admin`: nama admin pertama
-    userRole: string ## `--role=ctl create-user`: role RBAC yang diberikan
-    branchId: string ## `--role=ctl create-user`: cabang penugasan role (opsional)
-    fullName: string ## `--role=ctl create-user`: nama tampilan (opsional)
-    outPath: string  ## `--role=ctl audit-anchor`: berkas tujuan (append)
+    root: string       ## akar repo untuk `--role=migrate` (letak `modules/*/migrations`)
+    cmd: string        ## perintah posisi untuk `--role=ctl`
+    sub: string        ## subperintah `--role=migrate`: --check | --up | --seed | --contract | --down
+    subArg: string     ## angka `N` untuk `--role=migrate --down N`
+    username: string   ## `--role=ctl bootstrap-admin`: nama admin pertama
+    userRole: string   ## `--role=ctl create-user`: role RBAC yang diberikan
+    branchId: string   ## `--role=ctl create-user`: cabang penugasan role (opsional)
+    fullName: string   ## `--role=ctl create-user`: nama tampilan (opsional)
+    branchCode: string ## `--role=ctl create-branch`: kode 3 digit
+    branchName: string ## `--role=ctl create-branch`: nama cabang
+    outPath: string    ## `--role=ctl audit-anchor`: berkas tujuan (append)
 
 proc die(msg: string) =
   stderr.writeLine "kran-api: " & msg
@@ -151,6 +159,10 @@ proc parseArgs(argv: seq[string]): CliOptions =
       result.branchId = arg["--branch=".len .. ^1]
     elif arg.startsWith("--full-name="):
       result.fullName = arg["--full-name=".len .. ^1]
+    elif arg.startsWith("--branch-code="):
+      result.branchCode = arg["--branch-code=".len .. ^1]
+    elif arg.startsWith("--branch-name="):
+      result.branchName = arg["--branch-name=".len .. ^1]
     elif arg.startsWith("--out="):
       result.outPath = arg["--out=".len .. ^1]
     elif arg.startsWith("--root="):
@@ -187,6 +199,9 @@ proc parseArgs(argv: seq[string]): CliOptions =
   if result.fullName.len > 0 and
      not (result.role == roleCtl and result.cmd == createUserCmd):
     die("--full-name hanya untuk `--role=ctl " & createUserCmd & "`")
+  if (result.branchCode.len > 0 or result.branchName.len > 0) and
+     not (result.role == roleCtl and result.cmd == createBranchCmd):
+    die("--branch-code dan --branch-name hanya untuk `--role=ctl " & createBranchCmd & "`")
 
 var shutdownRequested: Atomic[bool]
 
@@ -260,6 +275,8 @@ const CtlUsage* =
   "                    INACTIVE -> ACTIVE; audit user.enable)\n" &
   "  unlock-user     : unlock a LOCKED user and clear the failure counter (requires\n" &
   "                    --username=<name>; only LOCKED -> ACTIVE; audit user.unlock)\n" &
+  "  create-branch   : register a branch in the branch master (requires --branch-code=<3 digits>,\n" &
+  "                    --branch-name=<name>; the code is the account-number prefix; audit branch.create)\n" &
   "  daycloser-status: (belum ada di Fase 0 → kode 3)\n" &
   "  help            : tampilkan bantuan ini"
 
@@ -429,6 +446,36 @@ proc runCreateUser*(db: DbConn, username, roleCode, branchId, fullName: string,
     stderr.writeLine "kran-api: user provisioning was rejected (username taken or role unknown)"
     return (3, "")
   (0, password)
+
+proc runCreateBranch*(db: DbConn, code, name: string, clock: Clock): int =
+  ## Mendaftarkan cabang di master cabang (D-135). Kode 3 digit adalah prefiks nomor rekening,
+  ## jadi bentuknya diperiksa sebelum menulis dan kode yang sudah dipakai ditolak.
+  ##
+  ## Kode keluar: 0 berhasil, 1 gagal menulis, 2 argumen kurang, 3 ditolak (kode tidak sah atau
+  ## sudah dipakai). Pemanggil wajib `withRoleDb(..., useTx = true)`: cabang + audit harus lahir
+  ## bersama.
+  let branchName = name.strip
+  if code.len == 0 or branchName.len == 0:
+    stderr.writeLine "kran-api: `ctl " & createBranchCmd &
+      "` butuh --branch-code=<3 digit> dan --branch-name=<nama>"
+    return 2
+  if not validBranchCode(code):
+    stderr.writeLine "kran-api: kode cabang harus tepat 3 digit, bukan '" & code & "'"
+    return 3
+  let now = clock.now()
+  let nowIso = utcIso(now)
+  let branchId = newId(clock)
+  if not insertBranch(db, branchId, code, branchName):
+    stderr.writeLine "kran-api: kode cabang '" & code & "' sudah dipakai"
+    return 3
+
+  let instScope = institutionScope()
+  let ctx = newAuditContext(Id(""), device = "kran-api ctl",
+    reason = "create branch", startedAt = now)
+  discard appendAudit(db, newAuditEntry(ctx, "branch.create", "branch", $branchId, clock,
+    businessDate = businessDateFor(db, instScope, nowIso),
+    after = %*{"branchId": $branchId, "code": code, "name": branchName}))
+  0
 
 proc resetUserPassword*(db: DbConn, username: string, clock: Clock): tuple[code: int,
     password: string] =
@@ -640,12 +687,12 @@ proc runAuditAnchor*(db: DbConn, clock: Clock, outPath: string): string =
       f.close()
 
 proc runCtl*(command, root: string, username = "", outPath = "", userRole = "",
-             branchId = "", fullName = ""): int =
+             branchId = "", fullName = "", branchCode = "", branchName = ""): int =
   ## Peran `ctl`: perintah operasional yang aman (read-only), dipakai skrip ops dan freeze gate.
   ## Pengecualian yang memang menulis: `bootstrap-admin` (sekali-jalan), `create-user`
   ## (provisioning akun operator), `reset-password` (pemulihan darurat), dan siklus hidup pengguna
-  ## `assign-role`/`revoke-role`/`disable-user`/`enable-user`/`unlock-user` — semuanya dengan audit
-  ## dan (bila relevan) pencabutan sesi dalam satu transaksi.
+  ## `assign-role`/`revoke-role`/`disable-user`/`enable-user`/`unlock-user`/`create-branch` —
+  ## semuanya dengan audit dan (bila relevan) pencabutan sesi dalam satu transaksi.
   if command.len == 0 or command == "help":
     echo CtlUsage
     return 0
@@ -696,6 +743,9 @@ proc runCtl*(command, root: string, username = "", outPath = "", userRole = "",
   of unlockUserCmd:
     withRoleDb(proc(db: DbConn): int {.closure.} =
       runUnlockUser(db, username, systemClock()), useTx = true)
+  of createBranchCmd:
+    withRoleDb(proc(db: DbConn): int {.closure.} =
+      runCreateBranch(db, branchCode, branchName, systemClock()), useTx = true)
   of auditAnchorCmd:
     withRoleDb(proc(db: DbConn): int {.closure.} =
       echo runAuditAnchor(db, systemClock(), outPath)
@@ -872,7 +922,7 @@ proc main() =
     quit(runMigrate(opts.root, opts.sub, opts.subArg))
   if opts.role == roleCtl:
     quit(runCtl(opts.cmd, opts.root, opts.username, opts.outPath, opts.userRole,
-      opts.branchId, opts.fullName))
+      opts.branchId, opts.fullName, opts.branchCode, opts.branchName))
   if opts.role == roleWorker:
     quit(runWorker())
 

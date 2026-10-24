@@ -9,8 +9,9 @@
  *  - `GET /products` hanya memuat versi `ACTIVE`; `currentVersion` null berarti tidak ada versi
  *    yang berlaku, jadi produk itu tidak bisa dipilih.
  *  - `POST /deposit/accounts` mewajibkan `Idempotency-Key`. Konflik domain 409 membawa
- *    `params.reason` (`party_not_active`, `branch_mismatch`, `product_not_active`), jadi pemetaannya
- *    per `reason` (pola `productProblemMessage`/`tellerProblemMessage`).
+ *    `params.reason` (`party_not_active`, `branch_mismatch`, `product_not_active`,
+ *    `branch_not_registered`), jadi pemetaannya per `reason` (pola
+ *    `productProblemMessage`/`tellerProblemMessage`).
  */
 
 import type { Problem } from "@kran/api-client";
@@ -55,6 +56,7 @@ const OPEN_REASON_MESSAGES: Record<string, () => string> = {
   party_not_active: () => m.accounts_error_party_not_active(),
   branch_mismatch: () => m.accounts_error_branch_mismatch(),
   product_not_active: () => m.accounts_error_product_not_active(),
+  branch_not_registered: () => m.accounts_error_branch_not_registered(),
 };
 
 /**
