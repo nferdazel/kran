@@ -158,8 +158,9 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 11
+        # Tanpa `version:`: action membaca `packageManager` di package.json (OPS-3/T-131), jadi CI,
+        # build image di VPS, dan mesin lokal memakai pnpm yang sama — termasuk kebijakan
+        # `minimumReleaseAge`/`allowBuilds` yang hanya dipatuhi versi baru.
 
       - name: Setup Node
         uses: actions/setup-node@v4

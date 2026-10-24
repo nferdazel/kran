@@ -1071,7 +1071,7 @@ ops/
 
 | Kebutuhan KRAN | Pola existing | Keputusan |
 |---|---|---|
-| Artefak yang diuji = yang di-deploy | Build ulang di VPS setelah CI hijau | Diterima. Kompensasi: toolchain Nim & base image **dipin (digest)**, tag `:<sha>`, `.deployed_rev`, hash binary di `releases/<sha>/`, build reproducible diupayakan |
+| Artefak yang diuji = yang di-deploy | Build ulang di VPS setelah CI hijau | Diterima. Kompensasi yang **benar-benar ada** (OPS-8/T-131): base image dipin **digest** dan tarball Nim diverifikasi SHA-256 (`apps/api/Dockerfile`), `.deployed_rev`, dan manifest rilis satu baris di `$APP_DIR/releases.txt` (rev, image ID, sha256 biner gate, waktu). Tag `:<sha>` **tidak** dipakai — retensi image hanya `:local`/`:prev` (kontrak emas §3.4); `releases/<sha>/` tidak dibuat karena menggandakan biner per commit. Build **belum** reproducible: `nimble` tanpa lockfile, dicatat di `docs/ACCEPTED-LIMITS.md` |
 | Staging dengan data teranonimisasi | Tidak ada (satu stack prod) | **Usulan**: stack staging di VPS yang sama, port/ DB/ hostname berbeda, di-deploy dari branch `staging` (ref-guard diperluas eksplisit: `main`→prod, `staging`→staging). Data prod tidak pernah disalin mentah (`dbtools anonymize`) |
 | Artefak kepatuhan per rilis | CI tidak upload artifact | Disimpan di server (`releases/<sha>/`), bukan di Actions |
 | Approval manual sebelum prod | Push ke `main` = deploy | Diatur lewat **branch protection** (PR review wajib) + deploy hanya dari `main`. Untuk perubahan kritis tambahkan tag/rilis manual sebagai pemicu (opsional) |

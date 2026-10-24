@@ -3431,3 +3431,31 @@ cukup untuk 40 worker — membalik masalahnya: 40 koneksi Postgres per instance.
 diganti daftar proxy tepercaya (`KRAN_TRUSTED_PROXIES`), karena semua permintaan akan datang dari
 alamat proxy dan audit kehilangan IP klien. Sampai itu terjadi, salah konfigurasi itu akan terlihat
 sebagai semua IP audit sama dengan alamat proxy — bukan sebagai IP palsu yang lolos.
+
+## D-143 — Artefak rilis: manifest satu baris, bukan tag `:<sha>` (24 Okt 2026)
+
+**Konteks.** Spec §21.7 mengklaim kompensasi "build ulang di VPS" berupa base image dipin digest, tag
+image `:<sha>`, dan hash biner di `releases/<sha>/`. Audit 24 Okt 2026 (OPS-8) menemukan tidak satu
+pun dari tiga itu ada. Dua pilihan: mengimplementasikan klaim spec, atau mengoreksi spec.
+
+**Keputusan.** Base image dipin digest dan tarball Nim diverifikasi SHA-256 (keduanya murah dan
+langsung menutup supply chain). Tag `:<sha>` dan direktori `releases/<sha>/` **tidak** dibuat:
+
+1. Tag per commit bertabrakan langsung dengan kontrak emas §3.4 (retensi hanya `:local`/`:prev`).
+   Tanpa pemangkas yang benar, setiap deploy meninggalkan satu image — persis masalah OPS-2 yang baru
+   saja ditutup.
+2. `releases/<sha>/` menggandakan biner (~30 MB) per commit untuk informasi yang sudah ada di git dan
+   di `.deployed_rev`.
+
+Sebagai gantinya, setiap deploy menambahkan **satu baris** ke `$APP_DIR/releases.txt`: waktu UTC, rev
+penuh, image ID `:local`, dan sha256 biner gate. Cukup untuk menjawab "apa yang berjalan di produksi
+pada tanggal X" dan "apakah dua build dari rev yang sama menghasilkan biner identik".
+
+**Ditolak.** Menyimpan N image terakhir dengan tag SHA (retensi bertabrakan kontrak, dan rollback
+hanya butuh satu versi sebelumnya). Menyimpan artefak rilis di GitHub Actions (spec §21.7 menolak:
+kepatuhan disimpan di server).
+
+**Konsekuensi.** Rollback hanya bisa ke satu versi sebelumnya (`:prev`) — bila butuh lebih jauh,
+deploy ulang rev lama lewat `git`. Kolom sha256 di manifest akan menunjukkan build yang tidak
+reproducible (nimble tanpa lockfile) sebagai nilai berbeda untuk rev yang sama; itu memang gunanya,
+dan batasnya tercatat di `docs/ACCEPTED-LIMITS.md`.

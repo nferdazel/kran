@@ -14,14 +14,38 @@
       }
     ],
     "trigger-rule": {
-      "match": {
-        "type": "payload-hmac-sha256",
-        "secret": "YOUR_WEBHOOK_HMAC_SECRET",
-        "parameter": {
-          "source": "header",
-          "name": "X-Hub-Signature-256"
+      "and": [
+        {
+          "match": {
+            "type": "payload-hmac-sha256",
+            "secret": "YOUR_WEBHOOK_HMAC_SECRET",
+            "parameter": {
+              "source": "header",
+              "name": "X-Hub-Signature-256"
+            }
+          }
+        },
+        {
+          "match": {
+            "type": "value",
+            "value": "push",
+            "parameter": {
+              "source": "header",
+              "name": "X-GitHub-Event"
+            }
+          }
+        },
+        {
+          "match": {
+            "type": "value",
+            "value": "kran",
+            "parameter": {
+              "source": "payload",
+              "name": "repository.name"
+            }
+          }
         }
-      }
+      ]
     }
   }
 ]

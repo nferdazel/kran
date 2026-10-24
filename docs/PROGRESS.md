@@ -2871,3 +2871,24 @@ query role per akun. `X-Forwarded-For` dipercaya apa adanya, dan tidak ada acces
 **Bukti.** `tidentity` 5, `taccess_log` 4, `itapi` (503 dengan `Retry-After` + probe pool tertutup),
 `tapi`/`tcontract`/`itapi_deposit`/`itapi_users` hijau; `check`, `lint-web`, `build` hijau. Detail:
 `docs/tasks/T-130.md`.
+
+## 24 Okt 2026 — T-131: deploy berhenti berbohong tentang dirinya
+
+Sepuluh temuan kontrak deploy ditutup. Yang paling berbahaya bukan yang rumit: `flock` gagal keluar
+dengan kode 0, jadi webhook mencatat "deploy sukses" untuk commit yang tidak pernah di-deploy, dan
+rollback yang gagal tetap dilaporkan sebagai rollback selesai.
+
+- `flock` gagal → `exit 1`; unit quadlet dipasang **setelah** gate lolos, bukan sebelum.
+- Retensi image memakai ID image `:prev` yang tergeser (bukan regex tag SHA yang tidak pernah ada);
+  retensi dump pra-deploy `KRAN_PREDEPLOY_KEEP` (default 10).
+- `packageManager: pnpm@11.25.0`; CI membaca `packageManager`, deploy memeriksa versinya dan batal
+  bila tidak ada.
+- `Dockerfile`: base image dipin digest, tarball Nim diverifikasi SHA-256.
+- Webhook: HMAC + `X-GitHub-Event: push` + `repository.name`; skrip melewati rev yang sudah ter-deploy
+  (`KRAN_FORCE_DEPLOY=1` untuk memaksa).
+- Spec §21.7 dikoreksi sesuai kenyataan; `:<sha>`/`releases/<sha>/` tidak dipakai (kontrak emas
+  retensi) dan manifest `releases.txt` jadi bukti rilis.
+
+**Bukti.** `./task check` hijau (8 skrip `bash -n` + shellcheck), `ci.yml` valid dengan 4 job
+ber-`timeout-minutes: 15`, `build` hijau. Perilaku skrip baru terbukti pada deploy berikutnya —
+belum diuji di VPS dari sesi ini. Detail: `docs/tasks/T-131.md`.
