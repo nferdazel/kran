@@ -45,6 +45,11 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
   untuk jalur aplikasi, bukan terhadap superuser.
 - Pembalik memakai akun dari jurnal asal; bila akun sudah dinonaktifkan, pembalik ditolak
   (fail-closed) — kebijakan alternatif dicatat **O-079**.
+- **Jurnal milik subledger tidak bisa dibalik** (D-135): bila `deposit.transaction`,
+  `deposit.transfer`, `teller.teller_session`, atau `teller.vault_topup_request` menunjuk jurnal
+  itu, pembalik ditolak `409 journal_owned_by_subledger` + `params.subledger`. Alasannya: pembalik
+  hanya memutar GL, sedangkan saldo rekening/vault/sesi tidak ikut berubah. Koreksi lewat modul
+  asal. Deteksi: `apps/api/src/journal_ownership.nim` (data, bukan daftar event).
 
 ## Posting rule & konsumen outbox (T-074)
 

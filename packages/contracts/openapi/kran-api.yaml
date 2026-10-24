@@ -1423,7 +1423,19 @@ paths:
         "404":
           $ref: "#/components/responses/Problem"
         "409":
-          $ref: "#/components/responses/Problem"
+          description: |
+            Konflik: jurnal sudah pernah dibalik, jurnal asal adalah jurnal pembalik (tidak bisa
+            dibalik lagi), `Idempotency-Key` sudah dipakai untuk jurnal lain, periode tanggal
+            bisnis jurnal sudah ditutup, akun jurnal tidak `postable`/aktif, atau jurnal milik
+            subledger. Kasus terakhir menjawab `params.reason` = `journal_owned_by_subledger` +
+            `params.subledger` (`deposit.transaction`, `deposit.transfer`,
+            `teller.teller_session`, `teller.vault_topup_request`): pembalik hanya memutar GL,
+            sedangkan saldo rekening/vault/sesi tidak ikut berubah, jadi koreksi harus lewat modul
+            asal.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
         "500":
           $ref: "#/components/responses/Problem"
 
