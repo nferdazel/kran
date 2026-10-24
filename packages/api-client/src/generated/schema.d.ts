@@ -541,6 +541,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/parties/{partyId}/detail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detail party dalam bentuk tersamar
+         * @description Mengembalikan detail party dalam **bentuk tersamar** (tanpa dekripsi) — hanya dua karakter
+         *     terakhir tiap field. Membuka nilai asli punya endpoint sendiri (`unmask`) yang butuh izin
+         *     tambahan + alasan + audit. Butuh `party.party.read` di cabang party; party atau detail yang
+         *     tidak ada dijawab 404.
+         */
+        get: operations["getPartyDetail"];
+        /**
+         * Simpan detail party (orang/lembaga) + alamat
+         * @description Menyimpan detail sesuai **jenis party**: `PERSON` wajib blok `person` (nama resmi, tanggal
+         *     lahir, jenis kelamin, pekerjaan) dan dilarang `org`; `ORG` sebaliknya. Tiap nilai
+         *     disimpan **terenkripsi** (field-level, AAD = nama tabel) dengan *blind index* dan bentuk
+         *     tersamar; nilai aslinya tidak pernah tersimpan. `address` opsional (bila tidak dikirim,
+         *     alamat yang ada dibiarkan). Butuh izin `party.kyc.manage` di cabang party. Bila
+         *     `KRAN_KEK_FILE` belum diatur, endpoint menjawab 501 (fail-closed).
+         */
+        put: operations["upsertPartyDetail"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/parties/{partyId}/detail/unmask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Buka detail party (unmask)
+         * @description Mengembalikan nilai asli detail party (orang/lembaga + alamat). Butuh izin
+         *     `party.identity_doc.read` (izin baca PII modul `party`) di cabang party **dan** alasan pada
+         *     badan permintaan; setiap pembukaan menulis audit `party.detail.unmask` (tanpa PII).
+         *     Detail yang tidak ada dijawab 404. Bila `KRAN_KEK_FILE` belum diatur, endpoint menjawab 501
+         *     (fail-closed).
+         */
+        post: operations["unmaskPartyDetail"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ledger/coa": {
         parameters: {
             query?: never;
@@ -1835,6 +1891,89 @@ export interface components {
             assessedAt: string;
             nextReviewDue: string | null;
         };
+        /**
+         * @description Detail party per jenis party. `person` wajib untuk `PERSON` (dan `org` dilarang), `org`
+         *     wajib untuk `ORG` (dan `person` dilarang); kecocokan divalidasi server → 400.
+         */
+        PartyDetailUpdate: {
+            person?: components["schemas"]["PersonDetailCreate"];
+            org?: components["schemas"]["OrgDetailCreate"];
+            address?: components["schemas"]["AddressInput"];
+        };
+        PersonDetailCreate: {
+            /** @description Nama resmi (PII; disimpan terenkripsi, tidak diterbitkan ke event). */
+            legalName: string;
+            /** @description Tanggal lahir `YYYY-MM-DD`. Bentuk tidak sah atau melewati tanggal bisnis → 400. */
+            birthDate: string;
+            /** @description Harus termasuk daftar parameter `party.person.sex_values`. */
+            sex: string;
+            /** @description Pekerjaan (opsional). */
+            occupation?: string;
+        };
+        OrgDetailCreate: {
+            /** @description Nama resmi lembaga (PII; disimpan terenkripsi). */
+            legalName: string;
+        };
+        AddressInput: {
+            /** @description Baris alamat (PII; disimpan terenkripsi). */
+            line: string;
+            /** @description Kota (opsional). */
+            city?: string;
+            /** @description Kode pos (opsional). */
+            postalCode?: string;
+        };
+        /**
+         * @description Detail party dalam bentuk **tersamar** (dua karakter terakhir tiap field). Nilai asli hanya
+         *     lewat `unmask`.
+         */
+        PartyDetailView: {
+            /** Format: uuid */
+            partyId: string;
+            /** @enum {string} */
+            kind: "PERSON" | "ORG";
+            person: components["schemas"]["PersonDetailLast2"];
+            org: components["schemas"]["OrgDetailLast2"];
+            address: components["schemas"]["AddressLast2"];
+            /** @description ISO-8601 UTC. */
+            updatedAt: string;
+        };
+        PersonDetailLast2: {
+            legalNameLast2: string;
+            birthDateLast2: string;
+            sexLast2: string;
+            occupationLast2: string;
+        } | null;
+        OrgDetailLast2: {
+            legalNameLast2: string;
+        } | null;
+        AddressLast2: {
+            lineLast2: string;
+            cityLast2: string;
+            postalCodeLast2: string;
+        } | null;
+        PartyDetailUnmasked: {
+            /** Format: uuid */
+            partyId: string;
+            /** @enum {string} */
+            kind: "PERSON" | "ORG";
+            person: components["schemas"]["PersonDetailFull"];
+            org: components["schemas"]["OrgDetailFull"];
+            address: components["schemas"]["AddressFull"];
+        };
+        PersonDetailFull: {
+            legalName: string;
+            birthDate: string;
+            sex: string;
+            occupation: string;
+        } | null;
+        OrgDetailFull: {
+            legalName: string;
+        } | null;
+        AddressFull: {
+            line: string;
+            city: string;
+            postalCode: string;
+        } | null;
         CoaCreate: {
             /** @description Harus cocok dengan parameter `ledger.coa.code_pattern`. */
             code: string;
@@ -3408,6 +3547,99 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IdentityDocUnmasked"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+        };
+    };
+    getPartyDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Id party (UUID). */
+                partyId: components["parameters"]["PartyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Detail party (tersamar) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartyDetailView"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+        };
+    };
+    upsertPartyDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Id party (UUID). */
+                partyId: components["parameters"]["PartyId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartyDetailUpdate"];
+            };
+        };
+        responses: {
+            /** @description Detail tersimpan (respons memuat bentuk tersamar) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartyDetailView"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+        };
+    };
+    unmaskPartyDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Id party (UUID). */
+                partyId: components["parameters"]["PartyId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnmaskRequest"];
+            };
+        };
+        responses: {
+            /** @description Detail party (nilai asli) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartyDetailUnmasked"];
                 };
             };
             400: components["responses"]["Problem"];
