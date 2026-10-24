@@ -170,6 +170,11 @@ jobs:
         # diam-diam mengganti set lib itu.
         run: pnpm --filter @kran/web exec playwright install chromium
 
+      - name: ./task lint-web
+        # eslint: typescript-eslint + aturan svelte/* non-a11y (D-139). Job ini sudah
+        # `pnpm install`; job `nim-check` sengaja tidak, jadi lint web tidak masuk `./task check`.
+        run: ./task lint-web
+
       - name: ./task openapi
         # lint kontrak OpenAPI + klien TS sinkron + typecheck paket klien
         run: ./task openapi

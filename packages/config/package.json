@@ -3,9 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "comment": "Konfigurasi bersama sisi TS (spec §7): tsconfig dasar + eslint flat config.",
+  "comment": "Konfigurasi bersama sisi TS (spec §7): tsconfig dasar. ESLint flat config hidup di akar repo (D-139) karena berjalan sebagai satu gate workspace.",
   "exports": {
-    "./tsconfig.base.json": "./tsconfig.base.json",
-    "./eslint": "./eslint.js"
+    "./tsconfig.base.json": "./tsconfig.base.json"
   }
 }
