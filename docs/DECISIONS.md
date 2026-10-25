@@ -3534,3 +3534,35 @@ punya `minimum`).
 hanya untuk perbandingan, bukan aritmetika uang; nilai money sampai 1e12 tetap eksak di `double`.
 Nilai desimal dengan lebih dari 15 digit signifikan bisa dibulatkan saat **dibandingkan**, bukan saat
 disimpan; itu batas yang tercatat di `docs/ACCEPTED-LIMITS.md`.
+
+## D-147 — Batas badan permintaan di Caddy; perubahan konfigurasi = restart (25 Okt 2026)
+
+**Konteks.** Audit 24 Okt 2026 (OPS-14) mencatat contoh Caddy tanpa batas badan dan tanpa timeout
+transport: klien bisa mengirim body sebesar apa pun dan Caddy menahannya (disk/memori) sebelum API
+sempat menolak. Saat dipasang di server, dua hal tak terduga muncul dan keduanya perlu dicatat.
+
+**Keputusan.**
+
+1. `request_body { max_size 1MB }` di blok `cbs.qouver.com`, plus timeout transport pada
+   `reverse_proxy` API (`dial` 5 s, `response_header` 30 s, `read` 30 s, `write` 60 s,
+   `keepalive` 30 s). 1 MB jauh di atas body sah terbesar; angkanya batas teknis, bukan kebijakan.
+2. **Tidak** memakai matcher `Content-Length` untuk mengubah 502 menjadi 413. Go membuang
+   `Content-Length` dari header permintaan (`http.Request.ContentLength`), jadi
+   `header_regexp Content-Length …` dan `{http.request.header.Content-Length}` tidak pernah cocok —
+   sudah dicoba dan terbukti mati. Status yang terlihat karena itu 413 (body chunked, dibaca Caddy)
+   atau 502 (body ber-`Content-Length`, `reverse_proxy` memutus aliran). Yang penting tetap terjaga:
+   badan tidak pernah sampai ke API.
+3. Prosedur perubahan konfigurasi di host ini adalah **`systemctl restart caddy`**, bukan `reload`:
+   server memakai `admin off` (audit H-5), sehingga `caddy reload` gagal dengan
+   `dial tcp [::1]:2019: connection refused`. Restart memutus koneksi berjalan ~1 detik — ongkos
+   yang diterima untuk menutup admin API.
+
+**Ditolak.** Menghidupkan admin API di localhost hanya agar `reload` bekerja (itu justru yang
+ditutup audit H-5). Menaruh batas body juga di aplikasi sebagai ganti Caddy (mummy membaca body
+sebelum handler, jadi batas di sana tidak mencegah penahanan body — hanya status yang lebih rapi).
+Memakai angka batas yang berbeda antara matcher dan `max_size` (dua angka yang harus dijaga selaras
+adalah sumber bug, dan matcher-nya memang tidak bisa bekerja).
+
+**Konsekuensi.** Klien menerima 502 untuk kiriman kebesaran ber-`Content-Length`; itu tercatat di
+`docs/ACCEPTED-LIMITS.md` §3 sebagai batas dengan cara mendeteksi. `ops/caddy/Caddyfile.kran.example`
+memuat catatan perilaku ini supaya contoh dan kenyataan tidak menyimpang lagi.

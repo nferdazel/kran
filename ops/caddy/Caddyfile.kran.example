@@ -4,7 +4,10 @@
 # di ops/caddy), audit server 2026-10-13 §4 (P2: header keamanan tidak seragam).
 #
 # Ini CONTOH: file Caddyfile di server (/etc/caddy/Caddyfile) tetap sumber
-# kebenaran. Salin blok yang relevan, lalu `caddy validate` + `systemctl reload caddy`.
+# kebenaran. Salin blok yang relevan, lalu `caddy validate --adapter caddyfile` +
+# **`systemctl restart caddy`** — bukan `reload`: server ini memakai `admin off` (audit H-5),
+# sehingga `caddy reload` gagal dengan "connection refused" ke 127.0.0.1:2019. Restart memutus
+# koneksi yang sedang berjalan selama ~1 detik.
 # Hostname sudah diputuskan (D-043, 16 Okt 2026): KRAN memakai `cbs.qouver.com` yang sama dengan
 # sistem lama — DNS tidak disentuh, yang berubah hanya upstream saat peralihan.
 
