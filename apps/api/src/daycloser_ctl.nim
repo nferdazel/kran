@@ -7,6 +7,9 @@
 ## Perintah (sengaja terpisah dari `runCtl` umum karena memegang pool sendiri):
 ##   daycloser-status                     status untuk operator & gate deploy (kode keluar)
 ##   daycloser-run --business-date=...    rencanakan + jalankan penutupan satu hari
+##   daycloser-run --business-date=... --mode=SIMULATION
+##                                        dry-run: tampilkan rencana task/chunk, tanpa menulis apa pun
+##                                        (spec §11.7)
 ##   daycloser-resume --run=<uuid>        lanjutkan run PAUSED/FAILED/BLOCKED
 ##   daycloser-pause  --run=<uuid>        hentikan di batas chunk (langsung bila tak ada proses)
 ##   daycloser-cancel --run=<uuid>        batalkan; tanggal buku yang dibekukan dibuka kembali
@@ -115,6 +118,11 @@ proc runCmd(pool: DbPool; clock: Clock; businessDateRaw: string; bootstrap: bool
   report(startRunAction(pool, clock, businessDateRaw, bootstrap), echoBody = true,
     requireCompleted = true)
 
+proc simulateCmd(pool: DbPool; clock: Clock; businessDateRaw: string): int =
+  ## Dry-run tidak pernah "berhasil menutup", jadi `requireCompleted` tidak dipakai: laporan
+  ## rencana yang tercetak adalah hasilnya, dan kode keluar mengikuti status aksinya.
+  report(startSimulationAction(pool, clock, businessDateRaw), echoBody = true)
+
 proc resumeCmd(pool: DbPool; clock: Clock; runIdRaw: string): int =
   report(resumeRunAction(pool, clock, runIdRaw), echoBody = true, requireCompleted = true)
 
@@ -123,7 +131,7 @@ proc controlCmd(pool: DbPool; clock: Clock; runIdRaw: string;
   report(controlRunAction(pool, clock, runIdRaw, control), echoBody = true)
 
 proc runDayCloserCtl*(command, businessDate, runId: string;
-                      bootstrap = false): int =
+                      bootstrap = false; simulate = false): int =
   ## Titik masuk dari `main`. Kode keluar: 0 sukses/idle, 1 gagal atau ada penutupan yang belum
   ## selesai (gate deploy membacanya sebagai "tahan"), 2 salah pakai/konfigurasi, 3 ditolak
   ## pada keadaan sekarang.
@@ -136,7 +144,11 @@ proc runDayCloserCtl*(command, businessDate, runId: string;
   try:
     case command
     of dayCloserStatusCmd: statusCmd(pool, clock)
-    of dayCloserRunCmd: runCmd(pool, clock, businessDate, bootstrap)
+    of dayCloserRunCmd:
+      if simulate:
+        simulateCmd(pool, clock, businessDate)
+      else:
+        runCmd(pool, clock, businessDate, bootstrap)
     of dayCloserResumeCmd: resumeCmd(pool, clock, runId)
     of dayCloserPauseCmd: controlCmd(pool, clock, runId, rcPause)
     of dayCloserCancelCmd: controlCmd(pool, clock, runId, rcCancel)

@@ -4149,3 +4149,38 @@ oleh gate-nya sendiri. Ini bukan teori: `./task bench-eod --accounts 100` langsu
   diuji lewat `itdaycloser_gates` ("jurnal milik run penutupan sendiri tidak dihitung terlambat").
 - Kolom ini juga menjawab pertanyaan audit "jurnal ini lahir dari run mana" tanpa membongkar
   `idempotency_key`.
+
+## D-159 — `SIMULATION` = dry-run tingkat rencana, bukan eksekusi di transaksi ter-rollback (28 Okt 2026)
+
+**Konteks.** Spec §11.7 meminta dry-run/simulasi: "jalankan di transaksi yang di-*rollback* (atau di
+salinan skema) untuk pratinjau dampak (jurnal, saldo) tanpa commit". T-140 harus memilih bentuknya
+dengan waktu yang tersedia. Kolom `daycloser.run.mode` sudah menerima `SIMULATION`, tetapi `ctl`
+selalu menulis `REAL`.
+
+**Keputusan.** `ctl daycloser-run --mode=SIMULATION` menjalankan **perencanaan** yang sama dengan run
+nyata (`planTasks`: resolve task sesuai level tanggal, hitung chunk lewat `countChunks`), mencetak
+rencana itu sebagai JSON (`"writes": false`), lalu berhenti. Tidak ada baris run, jurnal, saldo,
+event, atau perubahan tanggal buku.
+
+Alasan tidak memilih "eksekusi di transaksi ter-rollback" sekarang:
+
+1. **Task menulis lewat pool sendiri-sendiri.** Setiap chunk membuka `withTx`/`withConn` dari
+   `DbPool`, jadi "satu transaksi besar yang di-rollback" berarti mengubah semua task menerima
+   koneksi/transaksi dari luar — perubahan arsitektur pada kode yang sudah diuji, bukan flag.
+2. **Rollback tidak membuktikan yang dijanjikan.** Efek samping di luar DB (event outbox yang
+   dikirim worker, berkas, audit anchor) tidak ikut batal; pratinjau yang mengklaim "dampak penuh"
+   justru menyesatkan.
+3. **Yang paling sering ditanyakan operator** ("apakah tanggal ini bisa ditutup, task apa yang
+   jalan, berapa chunk") sudah terjawab tanpa menulis apa pun.
+
+**Konsekuensi.**
+
+- Dry-run **tidak** membuktikan task akan berhasil: `DAY-331` (binding produk kurang), `DAY-343`
+  (tanpa rekening tujuan), atau `DAY-344` (rule ambigu) baru terlihat pada run nyata. Batas ini
+  ditulis di `docs/ACCEPTED-LIMITS.md`, bukan disembunyikan.
+- Penolakan yang bersifat keadaan (bukan hari kerja, tanggal buku berbeda, run ganda) **ikut**
+  diperiksa, supaya pratinjau tidak menjanjikan run yang toh ditolak.
+- `run.mode` tetap hanya berisi `REAL` karena dry-run tidak membuat run; kolom itu disiapkan untuk
+  mode yang benar-benar mengeksekusi (pekerjaan lanjutan bila dibutuhkan).
+- `planTasks` dipisahkan dari `planRun` (yang menyimpan baris run) supaya kedua jalur memakai
+  perencanaan yang sama — dua perencana berbeda cepat atau lambat menyimpang.

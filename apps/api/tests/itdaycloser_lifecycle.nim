@@ -17,7 +17,7 @@ import "platform-lib/db/config"
 import "platform-lib/db/pool"
 import dbtools/lib
 
-import kernel/dayclose
+import kernel/[clock, dayclose]
 
 import daycloser/domain/[run, types]
 import daycloser/infrastructure/run_repo
@@ -25,6 +25,7 @@ import platform/domain/[calendar, scope]
 import platform/infrastructure/calendar_repo
 
 import ../src/daycloser_ctl
+import ../src/daycloser_service
 
 const
   repoRoot = "."
@@ -157,6 +158,37 @@ suite "dayclose: siklus business date lewat ctl":
 
     # Setelah pulih, tanggal itu bisa ditutup seperti biasa.
     check runDayCloserCtl(dayCloserRunCmd, Thursday, "") == 0
+    check bd().get.currentDate == Friday
+
+suite "dayclose: dry-run SIMULATION":
+  test "dry-run mencetak rencana yang sama dengan run nyata tanpa menulis apa pun":
+    let runsBefore = parseInt(db.getValue(sql"SELECT count(*) FROM daycloser.run"))
+    let journalsBefore = parseInt(db.getValue(sql"SELECT count(*) FROM ledger.journal"))
+    let res = startSimulationAction(dbPool, systemClock(), Friday)
+    check res.status == asOk
+    check res.code == "simulated"
+    # Rencana memuat task deposit yang akan menulis, dan menyatakan bahwa dry-run tidak menulis.
+    check "deposit.interest_accrual" in res.message
+    check "deposit.maturity_aro" in res.message
+    check "\"mode\": \"SIMULATION\"" in res.message
+    check "\"writes\": false" in res.message
+    # Tidak ada baris run, jurnal, atau perubahan tanggal buku.
+    check parseInt(db.getValue(sql"SELECT count(*) FROM daycloser.run")) == runsBefore
+    check parseInt(db.getValue(sql"SELECT count(*) FROM ledger.journal")) == journalsBefore
+    check bd().get.currentDate == Friday
+    check bd().get.state == bdsOpen
+
+  test "ctl dry-run keluar 0 dan tidak memajukan tanggal buku":
+    check runDayCloserCtl(dayCloserRunCmd, Friday, "", simulate = true) == 0
+    check bd().get.currentDate == Friday
+    check bd().get.state == bdsOpen
+    check db.getValue(sql"""
+      SELECT count(*)::text FROM daycloser.run WHERE business_date = ?::date""", Friday) == "0"
+
+  test "dry-run menolak tanggal yang bukan tanggal buku atau bukan hari kerja":
+    # Sama seperti run nyata: pratinjau tidak menjanjikan run yang toh akan ditolak.
+    check runDayCloserCtl(dayCloserRunCmd, Thursday, "", simulate = true) == 3
+    check runDayCloserCtl(dayCloserRunCmd, Saturday, "", simulate = true) == 3
     check bd().get.currentDate == Friday
 
 # E2E berjalan setelah suite ini pada DB yang sama: jangan tinggalkan tanggal buku dalam keadaan

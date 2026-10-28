@@ -39,6 +39,7 @@ import platform/domain/[audit, authz, event, scope]
 import platform/infrastructure/[audit_repo, auth_repo, auth_service, branch_repo, outbox_repo,
   realtime_config]
 
+import daycloser/domain/types
 import deposit/infrastructure/reconcile_repo
 import ledger/infrastructure/journal_repo
 import teller/infrastructure/session_repo
@@ -146,6 +147,7 @@ type
     businessDate: string ## `--role=ctl post-opening-balance|daycloser-run`: tanggal buku
     runId: string        ## `--role=ctl daycloser-*`: run yang disentuh
     bootstrap: bool      ## `--role=ctl daycloser-run`: tetapkan tanggal buku pertama
+    simulate: bool       ## `--role=ctl daycloser-run --mode=SIMULATION`: dry-run tanpa menulis
 
 proc die(msg: string) =
   stderr.writeLine "kran-api: " & msg
@@ -192,6 +194,12 @@ proc parseArgs(argv: seq[string]): CliOptions =
       result.runId = arg["--run=".len .. ^1]
     elif arg == "--bootstrap":
       result.bootstrap = true
+    elif arg.startsWith("--mode="):
+      let mode = arg["--mode=".len .. ^1].strip().toUpperAscii
+      if mode == $rmSimulation:
+        result.simulate = true
+      elif mode != $rmReal:
+        die("--mode hanya REAL atau SIMULATION: " & arg)
     elif arg.startsWith("--out="):
       result.outPath = arg["--out=".len .. ^1]
     elif arg.startsWith("--root="):
@@ -246,6 +254,11 @@ proc parseArgs(argv: seq[string]): CliOptions =
   if result.bootstrap and
      not (result.role == roleCtl and result.cmd == dayCloserRunCmd):
     die("--bootstrap hanya untuk `--role=ctl " & dayCloserRunCmd & "`")
+  if result.simulate and
+     not (result.role == roleCtl and result.cmd == dayCloserRunCmd):
+    die("--mode=SIMULATION hanya untuk `--role=ctl " & dayCloserRunCmd & "`")
+  if result.simulate and result.bootstrap:
+    die("--mode=SIMULATION tidak boleh digabung --bootstrap (dry-run tidak menetapkan tanggal buku)")
   if result.fullName.len > 0 and
      not (result.role == roleCtl and result.cmd == createUserCmd):
     die("--full-name hanya untuk `--role=ctl " & createUserCmd & "`")
@@ -1110,7 +1123,8 @@ proc main() =
   if opts.role == roleMigrate:
     quit(runMigrate(opts.root, opts.sub, opts.subArg))
   if opts.role == roleCtl and opts.cmd in dayCloserCommands:
-    quit(runDayCloserCtl(opts.cmd, opts.businessDate, opts.runId, opts.bootstrap))
+    quit(runDayCloserCtl(opts.cmd, opts.businessDate, opts.runId, opts.bootstrap,
+      opts.simulate))
   if opts.role == roleCtl:
     quit(runCtl(opts.cmd, opts.root, opts.username, opts.outPath, opts.userRole,
       opts.branchId, opts.fullName, opts.branchCode, opts.branchName, opts.amount,

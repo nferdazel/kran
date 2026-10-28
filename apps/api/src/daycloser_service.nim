@@ -409,6 +409,74 @@ proc startRunAction*(pool: DbPool; clock: Clock; businessDateRaw: string;
     unlockScope(lockConn, dayCloseScopeType, "")
     pool.release(lockConn)
 
+proc startSimulationAction*(pool: DbPool; clock: Clock; businessDateRaw: string): ActionResult =
+  ## Dry-run `SIMULATION` (spec §11.7): menyusun rencana task/chunk yang **sama** dengan run nyata,
+  ## lalu berhenti. Tidak menulis baris run, tidak menjalankan chunk, tidak membekukan tanggal.
+  ##
+  ## Yang diperiksa sama dengan `startRunAction` (hari kerja, tanggal buku, run ganda) supaya
+  ## pratinjau tidak menjanjikan run yang toh akan ditolak. Yang **tidak** dibuktikan: apakah task
+  ## akan gagal saat menulis (mis. `DAY-331` konfigurasi produk). Dry-run tingkat rencana, bukan
+  ## eksekusi di transaksi ter-rollback — batas ini dicatat di `docs/ACCEPTED-LIMITS.md`.
+  let dateRaw = businessDateRaw.strip
+  if dateRaw.len == 0:
+    return resultOf(asInvalid, "business_date_required",
+      "perintah ini butuh tanggal buku (YYYY-MM-DD)")
+  let parsedDate = parseBusinessDate(dateRaw)
+  if parsedDate.isErr:
+    return resultOf(asInvalid, "invalid_business_date", "tanggal tidak sah: " & dateRaw)
+
+  var info: WorkingDayInfo
+  var bd: Option[BusinessDateRow]
+  var existing: Option[RunSnapshot]
+  discard pool.withConn(proc(db: DbConn): int =
+    info = workingDayInfo(db, institutionScope(), dateRaw)
+    bd = businessDateOf(db, institutionScope())
+    existing = db.runForDate(dayCloseScopeType, "", dateRaw)
+    1)
+
+  if not info.isWorkingDay:
+    return resultOf(asConflict, "not_working_day",
+      dateRaw & " bukan hari kerja menurut kalender institusi")
+  if existing.isSome and existing.get.state != rsCanceled:
+    return resultOf(asConflict, "run_exists",
+      "sudah ada run untuk " & dateRaw & " (" & $existing.get.state & ", " &
+      existing.get.runId & "); dry-run tidak merencanakan run kedua")
+  if bd.isNone:
+    return resultOf(asConflict, "bootstrap_required",
+      "belum ada baris business_date; dry-run butuh tanggal buku yang sudah ditetapkan")
+  if bd.get.currentDate != dateRaw:
+    return resultOf(asConflict, "business_date_mismatch",
+      "tanggal buku berjalan " & bd.get.currentDate & ", bukan " & dateRaw)
+  if bd.get.state != bdsOpen:
+    return resultOf(asConflict, "business_date_closed",
+      "tanggal buku " & dateRaw & " berstatus " & $bd.get.state &
+      "; dry-run hanya untuk tanggal OPEN")
+
+  let reg = newRegistry()
+  registerDayCloseTasks(reg, pool)
+  let config = pool.withConn(proc(db: DbConn): Config = readConfig(db, dateRaw))
+  let req = RunRequest(scopeType: dayCloseScopeType, scopeId: "", businessDate: dateRaw,
+    levels: info.closeLevels, mode: rmSimulation, config: config)
+  # `runId` hanya dipakai sebagai konteks task; tidak ada baris run yang dibuat.
+  let planned = planTasks(reg, $newId(clock), req)
+
+  var tasks = newJArray()
+  var totalChunks = 0
+  for p in planned:
+    totalChunks += p.chunks.len
+    tasks.add %*{"id": p.taskId, "kind": $p.kind, "critical": p.critical,
+      "chunks": p.chunks.len}
+  let report = %*{
+    "mode": $rmSimulation,
+    "businessDate": dateRaw,
+    "levels": levelsCsv(info.closeLevels),
+    "chunkSize": config.chunkSize,
+    "tasks": tasks,
+    "totalChunks": totalChunks,
+    "writes": false,
+  }
+  resultOf(asOk, "simulated", report.pretty)
+
 proc resumeRunAction*(pool: DbPool; clock: Clock; runIdRaw: string): ActionResult =
   ## Lanjutkan run yang belum berakhir (`PAUSED`/`FAILED`/`BLOCKED`). Run yang sudah
   ## `COMPLETED`/`CANCELED` ditolak: mengulangnya akan menutup tanggal yang sudah maju.
