@@ -20,7 +20,10 @@ const
 
 type
   AccountType* = enum
+    ## `TIME_DEPOSIT` (D-152) = deposito berjangka: rekening yang sama, ditambah jatuh tempo/ARO di
+    ## DB. Perilaku jatuh tempo & ARO menyusul di T-138d, jadi tipe ini belum punya konstruktor.
     atSavings = "SAVINGS"
+    atTimeDeposit = "TIME_DEPOSIT"
 
   AccountStatus* = enum
     asActive = "ACTIVE"
