@@ -40,6 +40,17 @@ type
     rmReal = "REAL"
     rmSimulation = "SIMULATION"
 
+  TxnPolicyDuringClose* = enum
+    ## Kebijakan transaksi daring saat business date `CLOSING` (spec §11.5 #3).
+    ##
+    ## Spec menyebut "ditolak/antri"; **antrean belum diimplementasikan** dan tidak dideklarasikan
+    ## sebagai nilai yang sah, karena nilai yang tidak bisa ditegakkan hanya akan berbohong ke
+    ## operator. `REJECT` = 409 `business_date_closing` untuk semua perubahan lewat HTTP;
+    ## `ALLOW` = institusi tetap melayani transaksi selama penutupan berjalan (mis. layanan 24
+    ## jam) dan memikul sendiri risiko race dengan task penutup.
+    tpcReject = "REJECT"
+    tpcAllow = "ALLOW"
+
   RunState* = enum
     rsPlanned = "PLANNED"
     rsPrecheck = "PRECHECK"

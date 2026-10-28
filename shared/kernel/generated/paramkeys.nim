@@ -11,6 +11,7 @@ const paramKeys*: seq[string] = @[
   "daycloser.chunk_size",
   "daycloser.max_attempts",
   "daycloser.retry_backoff_seconds",
+  "daycloser.txn_policy_during_close",
   "ledger.coa.code_pattern",
   "ledger.posting.batch_size",
   "ledger.posting.lease_seconds",
@@ -65,6 +66,8 @@ const P_daycloser_chunk_size* = ParamKey[int64]("daycloser.chunk_size")
 const P_daycloser_max_attempts* = ParamKey[int64]("daycloser.max_attempts")
 
 const P_daycloser_retry_backoff_seconds* = ParamKey[int64]("daycloser.retry_backoff_seconds")
+
+const P_daycloser_txn_policy_during_close* = ParamKey[string]("daycloser.txn_policy_during_close")
 
 const P_ledger_coa_code_pattern* = ParamKey[string]("ledger.coa.code_pattern")
 
@@ -192,6 +195,17 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.daycloser.retry_backoff_seconds",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "daycloser.txn_policy_during_close",
+    module: "daycloser",
+    valueType: pvtEnum,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.txn_policy_during_close",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(

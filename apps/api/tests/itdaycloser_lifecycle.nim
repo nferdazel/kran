@@ -1,0 +1,165 @@
+## Test integrasi siklus business date lewat perintah `ctl` day-close (T-135) — butuh
+## `KRAN_DATABASE_URL`.
+##
+## Yang dibuktikan di sini adalah hal yang tidak bisa dibuktikan unit test: perintah `ctl` yang
+## sebenarnya memindahkan `platform.business_date` (`OPEN → CLOSING → CLOSED → rollover`), menulis
+## event `BusinessDateOpened` di transaksi yang sama, menolak run kedua pada tanggal yang sama, dan
+## membuka kembali tanggal yang dibekukan saat run dibatalkan.
+##
+## Test ini me-reset seluruh schema di DB dev (pola suite integrasi lain) dan menghapus baris
+## `business_date` di akhir supaya suite berikutnya/e2e mulai dari keadaan tanpa penutupan.
+
+import std/[options, os, strutils, times, unittest]
+
+import db_connector/db_postgres
+
+import "platform-lib/db/config"
+import "platform-lib/db/pool"
+import dbtools/lib
+
+import kernel/dayclose
+
+import daycloser/domain/[run, types]
+import daycloser/infrastructure/run_repo
+import platform/domain/[calendar, scope]
+import platform/infrastructure/calendar_repo
+
+import ../src/daycloser_ctl
+
+const
+  repoRoot = "."
+  ## Senin–Jumat kerja, Sabtu/Minggu libur (pack `base`), tanpa hari libur tersemai.
+  Monday = "2026-10-26"
+  Tuesday = "2026-10-27"
+  Wednesday = "2026-10-28"
+  Thursday = "2026-10-29"
+  Friday = "2026-10-30"
+  Saturday = "2026-10-31"
+
+let envT = envTableFromProcess()
+if not databaseUrlSet(envT):
+  echo "itdaycloser_lifecycle: KRAN_DATABASE_URL kosong — dilewati"
+  quit(0)
+
+let dbPool = newDbPool(dbConfigFromEnv(envT))
+let db = dbPool.acquire()
+
+resetTestSchemas(db, repoRoot)
+discard applyMigrations(db, repoRoot)
+execScript(db, readFile(repoRoot / "packs/base/generated/param_definitions.sql"))
+execScript(db, readFile(repoRoot / "packs/base/generated/param_values.sql"))
+
+proc bd(): Option[BusinessDateRow] =
+  businessDateOf(db, institutionScope())
+
+proc isoStamp(): string =
+  format(getTime().utc, "yyyy-MM-dd'T'HH:mm:ss'Z'")
+
+proc runState(runId: string): string =
+  db.getValue(sql"SELECT state FROM daycloser.run WHERE run_id = ?::uuid", runId)
+
+proc auditCount(action: string): int =
+  parseInt(db.getValue(sql"SELECT count(*) FROM platform.audit_log WHERE action = ?", action))
+
+proc openedEventPayload(nextDate: string): string =
+  db.getValue(sql"""
+    SELECT coalesce(payload->>'businessDate', '')
+      FROM platform.outbox
+     WHERE event_type = 'BusinessDateOpened'
+       AND payload->>'businessDate' = ?""", nextDate)
+
+proc seedRun(runId, businessDate: string; state: RunState) =
+  ## Run yang "mati" pada tanggal yang sudah dibekukan: keadaan yang tersisa setelah proses
+  ## `daycloser-run` dibunuh di tengah, atau setelah run gagal dan belum ditangani.
+  discard dbPool.withTx(proc(d: DbConn): int =
+    d.insertRun(runId, RunRequest(scopeType: "INSTITUTION", scopeId: "",
+      businessDate: businessDate, levels: {clEOD}, mode: rmReal,
+      config: Config(chunkSize: 10, maxAttempts: 1, retryBackoffSeconds: 0)), @[], isoStamp())
+    d.setRunState(runId, state, isoStamp(), "")
+    1)
+
+proc seedPausedRun(runId, businessDate: string) =
+  seedRun(runId, businessDate, rsPaused)
+  execScript(db, "UPDATE platform.business_date SET state = 'CLOSING'")
+
+suite "dayclose: siklus business date lewat ctl":
+  test "bootstrap menutup hari pertama, menyegel, dan rollover ke hari kerja berikutnya":
+    check bd().isNone
+    check runDayCloserCtl(dayCloserRunCmd, Monday, "", bootstrap = true) == 0
+
+    let row = bd().get
+    check row.currentDate == Tuesday
+    check row.state == bdsOpen
+    check openedEventPayload(Tuesday) == Tuesday
+    check auditCount("daycloser.date.freeze") == 1
+    check auditCount("daycloser.date.rollover") == 1
+    check auditCount("daycloser.run.finish") == 1
+
+    let runId = db.getValue(sql"""
+      SELECT run_id::text FROM daycloser.run WHERE business_date = ?::date""", Monday)
+    check runState(runId) == "COMPLETED"
+    check db.getValue(sql"""
+      SELECT coalesce(length(summary_hash), 0)::text FROM daycloser.run
+       WHERE run_id = ?::uuid""", runId) == "64"
+
+  test "tanggal lain dan bootstrap kedua ditolak tanpa mengubah tanggal buku":
+    check runDayCloserCtl(dayCloserRunCmd, Wednesday, "") == 3
+    check runDayCloserCtl(dayCloserRunCmd, Tuesday, "", bootstrap = true) == 3
+    check runDayCloserCtl(dayCloserRunCmd, Saturday, "") == 3
+    check bd().get.currentDate == Tuesday
+    check bd().get.state == bdsOpen
+
+  test "tanggal buku berjalan ditutup lalu maju satu hari kerja":
+    check runDayCloserCtl(dayCloserRunCmd, Tuesday, "") == 0
+    check bd().get.currentDate == Wednesday
+    check bd().get.state == bdsOpen
+    check openedEventPayload(Wednesday) == Wednesday
+
+  test "CLOSING menahan run baru & gate deploy; cancel membuka kembali tanggal":
+    let runId = "01900000-0000-7000-8000-0000000000aa"
+    seedPausedRun(runId, Wednesday)
+
+    check runDayCloserCtl(dayCloserStatusCmd, "", "") == 1
+    check runDayCloserCtl(dayCloserRunCmd, Wednesday, "") == 3
+    check bd().get.state == bdsClosing
+
+    check runDayCloserCtl(dayCloserCancelCmd, "", runId) == 0
+    check runState(runId) == "CANCELED"
+    check bd().get.state == bdsOpen
+    check bd().get.currentDate == Wednesday
+    check auditCount("daycloser.run.cancel") == 1
+    check runDayCloserCtl(dayCloserStatusCmd, "", "") == 0
+
+  test "tanggal yang sudah punya run tidak bisa ditutup dua kali":
+    check runDayCloserCtl(dayCloserRunCmd, Monday, "") == 3
+    check bd().get.currentDate == Wednesday
+
+  test "tanggal yang run-nya dibatalkan bisa ditutup lagi (bukan jalan buntu)":
+    # Tanpa ini, satu pembatalan membekukan tanggal itu selamanya: satu-satunya cara memajukan
+    # buku adalah menyegel run untuk tanggal tersebut, sementara run baru selalu ditolak.
+    check runDayCloserCtl(dayCloserRunCmd, Wednesday, "") == 0
+    check bd().get.currentDate == Thursday
+    check bd().get.state == bdsOpen
+    check db.getValue(sql"""
+      SELECT count(*)::text FROM daycloser.run WHERE business_date = ?::date""",
+      Wednesday) == "2"
+
+  test "pemulihan: run CANCELED yang meninggalkan tanggal CLOSING bisa dibuka":
+    let runId = "01900000-0000-7000-8000-0000000000bb"
+    seedRun(runId, Thursday, rsCanceled)
+    execScript(db, "UPDATE platform.business_date SET state = 'CLOSING'")
+    check runDayCloserCtl(dayCloserStatusCmd, "", "") == 1
+
+    check runDayCloserCtl(dayCloserCancelCmd, "", runId) == 0
+    check bd().get.state == bdsOpen
+    check bd().get.currentDate == Thursday
+    check runDayCloserCtl(dayCloserStatusCmd, "", "") == 0
+
+    # Setelah pulih, tanggal itu bisa ditutup seperti biasa.
+    check runDayCloserCtl(dayCloserRunCmd, Thursday, "") == 0
+    check bd().get.currentDate == Friday
+
+# E2E berjalan setelah suite ini pada DB yang sama: jangan tinggalkan tanggal buku dalam keadaan
+# yang menahan perubahan HTTP.
+block:
+  execScript(db, "DELETE FROM platform.business_date")

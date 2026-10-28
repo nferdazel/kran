@@ -134,6 +134,13 @@ suite "daycloser: fase & state machine":
     expect DayCloserError:
       discard parseRunControl("STOP")
 
+  test "kebijakan transaksi saat closing hanya nilai yang bisa ditegakkan":
+    check parseTxnPolicy("REJECT") == tpcReject
+    check parseTxnPolicy("ALLOW") == tpcAllow
+    # Spec menyebut "antri"; antrean belum ada, jadi nilainya sengaja tidak sah.
+    expect DayCloserError:
+      discard parseTxnPolicy("QUEUE")
+
 suite "daycloser: rencana chunk":
   let ctx = TaskContext(runId: "r", scopeType: "INSTITUTION", scopeId: "",
     businessDate: "2026-10-25", levels: {clEOD}, mode: rmReal, chunkSize: 10)
@@ -184,3 +191,180 @@ suite "daycloser: nilai kernel":
     check parseConfig(c.configJson) == c
     expect DayCloserError:
       discard parseConfig(%*{"chunkSize": 0, "maxAttempts": 1, "retryBackoffSeconds": 0})
+
+# --- orkestrasi dengan Store palsu ---------------------------------------------------------------
+#
+# Port `Store` sengaja palsu di sini: yang diuji adalah **urutan** fase (freeze sebelum task proses,
+# seal terakhir, tidak ada seal saat gagal/batal) — bukan SQL. Siklus business date yang sebenarnya
+# diuji lewat perintah `ctl` di `apps/api/tests/itdaycloser_lifecycle.nim`.
+
+type
+  FakeRun = ref object
+    snap: RunSnapshot
+    calls: seq[string]
+    control: RunControl
+    sealFails: bool
+
+proc pos(calls: seq[string]; needle: string): int =
+  for i, c in calls:
+    if c == needle:
+      return i
+  -1
+
+proc fakeStore(f: FakeRun): Store =
+  proc createRun(runId: string; req: RunRequest; plan: seq[PlannedTask]) =
+    f.snap = RunSnapshot(runId: runId, scopeType: req.scopeType, scopeId: req.scopeId,
+      businessDate: req.businessDate, levels: req.levels, mode: req.mode,
+      state: rsPlanned, control: rcNone, config: req.config, paramSnapshotHash: "hash",
+      tasks: plan.mapIt(TaskProgress(taskId: it.taskId, kind: it.kind,
+        critical: it.critical, state: tsPending,
+        chunks: it.chunks.mapIt(ChunkProgress(chunkNo: it.chunkNo, state: csPending)))))
+    f.calls.add "createRun"
+
+  proc findTask(taskId: string): int =
+    for i, t in f.snap.tasks:
+      if t.taskId == taskId:
+        return i
+    -1
+
+  proc snapshot(runId: string): RunSnapshot =
+    f.snap
+
+  proc setRunState(runId: string; st: RunState; at: string; summaryHash: string) =
+    f.snap.state = st
+    f.calls.add "run:" & $st
+
+  proc freezeDate(runId: string) =
+    f.calls.add "freeze"
+
+  proc sealRun(runId: string; at, summaryHash: string) =
+    if f.sealFails:
+      raise newException(DayCloserError, "segel gagal")
+    f.snap.state = rsCompleted
+    f.calls.add "seal"
+
+
+  proc setTaskState(runId: string; taskId: TaskId; st: TaskState; at: string;
+                    err, metrics: JsonNode) =
+    let i = findTask(taskId)
+    if i >= 0:
+      f.snap.tasks[i].state = st
+    f.calls.add "task:" & taskId & ":" & $st
+
+  proc setChunkState(runId: string; taskId: TaskId; chunkNo: int; st: ChunkState;
+                     at: string; err: JsonNode) =
+    let i = findTask(taskId)
+    if i >= 0:
+      for j, ch in f.snap.tasks[i].chunks:
+        if ch.chunkNo == chunkNo:
+          f.snap.tasks[i].chunks[j].state = st
+    f.calls.add "chunk:" & taskId & ":" & $st
+
+  proc controlOf(runId: string): RunControl =
+    f.control
+
+  proc setControl(runId: string; control: RunControl) =
+    f.control = control
+
+  proc resetInFlight(runId: string) =
+    f.calls.add "resetInFlight"
+
+  proc cancelRun(runId: string; at: string) =
+    # Port atomik: task + run + tanggal dalam satu panggilan. Fake mencatatnya sebagai satu
+    # langkah supaya test urutan tidak bisa "lulus" karena tiga tulisan terpisah.
+    for i in 0 ..< f.snap.tasks.len:
+      if f.snap.tasks[i].state in {tsPending, tsReady, tsFailed}:
+        f.snap.tasks[i].state = tsCanceled
+    f.snap.state = rsCanceled
+    f.calls.add "cancel"
+
+  Store(createRun: createRun, snapshot: snapshot, setRunState: setRunState,
+    freezeDate: freezeDate, sealRun: sealRun, cancelRun: cancelRun,
+    setTaskState: setTaskState, setChunkState: setChunkState, controlOf: controlOf,
+    setControl: setControl, resetInFlight: resetInFlight)
+
+proc phaseTask(id: string; kind: TaskKind; f: FakeRun; critical = true;
+               failWith = ""): DayCloseTask =
+  DayCloseTask(id: id, module: "platform", levels: {clEOD}, kind: kind, dependsOn: @[],
+    critical: critical, idempotency: imPerBusinessDate, partition: psSingle,
+    requiredParams: @[],
+    run: proc(ctx: TaskContext, chunk: Chunk): TaskResult =
+    f.calls.add "ran:" & id
+    if failWith.len > 0:
+      return err[TaskOutcome, TaskError](taskError(failWith, "gagal (uji)"))
+    ok[TaskOutcome, TaskError](okOutcome()))
+
+proc fakeRequest(): RunRequest =
+  RunRequest(scopeType: "INSTITUTION", scopeId: "", businessDate: "2026-10-26",
+    levels: {clEOD}, mode: rmReal,
+    config: Config(chunkSize: 10, maxAttempts: 1, retryBackoffSeconds: 0))
+
+proc quiet(line: string) = discard
+proc fixedNow(): string = "2026-10-26T00:00:00Z"
+proc noSleep(ms: int) = discard
+
+suite "daycloser: urutan fase business date":
+  test "freeze terjadi setelah precheck dan sebelum task proses; seal terakhir":
+    let f = FakeRun()
+    let reg = newRegistry()
+    reg.register phaseTask("platform.pre", tkPreCheck, f)
+    reg.register phaseTask("platform.body", tkProcess, f)
+    reg.register phaseTask("platform.report", tkReport, f)
+    reg.register phaseTask("platform.post", tkPostCheck, f)
+    let outcome = startRun(reg, f.fakeStore(), "run-ok", fakeRequest(),
+      fixedNow, noSleep, quiet)
+    check outcome.state == rsCompleted
+    check pos(f.calls, "freeze") >= 0
+    check pos(f.calls, "freeze") < pos(f.calls, "run:RUNNING")
+    check pos(f.calls, "freeze") > pos(f.calls, "task:platform.pre:SUCCEEDED")
+    check pos(f.calls, "seal") == f.calls.len - 1
+    # Laporan berjalan di fase yang sama dengan proses, setelah freeze.
+    check pos(f.calls, "ran:platform.report") > pos(f.calls, "freeze")
+    check pos(f.calls, "ran:platform.post") > pos(f.calls, "ran:platform.body")
+
+  test "precheck kritis gagal: tidak ada freeze, tidak ada seal, run FAILED":
+    let f = FakeRun()
+    let reg = newRegistry()
+    reg.register phaseTask("platform.pre", tkPreCheck, f, failWith = "DAY-300")
+    reg.register phaseTask("platform.body", tkProcess, f)
+    let outcome = startRun(reg, f.fakeStore(), "run-fail", fakeRequest(),
+      fixedNow, noSleep, quiet)
+    check outcome.state == rsFailed
+    check pos(f.calls, "freeze") == -1
+    check pos(f.calls, "seal") == -1
+    check pos(f.calls, "ran:platform.body") == -1
+
+  test "segel gagal tidak meninggalkan run COMPLETED":
+    let f = FakeRun()
+    f.sealFails = true
+    let reg = newRegistry()
+    reg.register phaseTask("platform.body", tkProcess, f)
+    expect DayCloserError:
+      discard startRun(reg, f.fakeStore(), "run-seal", fakeRequest(),
+        fixedNow, noSleep, quiet)
+    check f.snap.state == rsPostcheck
+    check pos(f.calls, "seal") == -1
+
+  test "cancel membatalkan sisa task dan membuka kembali tanggal buku":
+    let f = FakeRun()
+    f.control = rcCancel
+    let reg = newRegistry()
+    reg.register phaseTask("platform.body", tkProcess, f)
+    let outcome = startRun(reg, f.fakeStore(), "run-cancel", fakeRequest(),
+      fixedNow, noSleep, quiet)
+    check outcome.state == rsCanceled
+    check pos(f.calls, "cancel") >= 0
+    check pos(f.calls, "seal") == -1
+    check pos(f.calls, "ran:platform.body") == -1
+
+  test "pause tidak membuka tanggal buku dan tidak menyegel":
+    let f = FakeRun()
+    f.control = rcPause
+    let reg = newRegistry()
+    reg.register phaseTask("platform.body", tkProcess, f)
+    let outcome = startRun(reg, f.fakeStore(), "run-pause", fakeRequest(),
+      fixedNow, noSleep, quiet)
+    check outcome.state == rsPaused
+    check pos(f.calls, "seal") == -1
+    check pos(f.calls, "cancel") == -1
+    check pos(f.calls, "ran:platform.body") == -1

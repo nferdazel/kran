@@ -71,6 +71,27 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "daycloser.txn_policy_during_close",
+    "module": "daycloser",
+    "valueType": "enum",
+    "tsType": "\"REJECT\" | \"ALLOW\"",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.txn_policy_during_close",
+    "jsonSchema": {
+      "enum": [
+        "REJECT",
+        "ALLOW"
+      ],
+      "description": "REJECT = semua perubahan HTTP ditolak 409 saat CLOSING; ALLOW = layanan tetap jalan (risiko race ditanggung institusi)"
+    }
+  },
+  {
     "key": "ledger.coa.code_pattern",
     "module": "ledger",
     "valueType": "string",

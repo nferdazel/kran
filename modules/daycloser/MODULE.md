@@ -7,8 +7,8 @@ terjadwal institusi dijalankan: modul lain mendaftarkan task, tidak membuat batc
 ## Tujuan & Bounded Context
 
 Modul ini memiliki **urutan** penutupan: registry task, DAG dependensi, rencana chunk, state
-machine run/task/chunk, retry, pause/cancel, resume, segel hash hasil run, dan salinan registry
-untuk UI/audit.
+machine run/task/chunk, retry, pause/cancel, resume, segel hash hasil run, siklus business date
+(freeze → tutup → rollover), dan salinan registry untuk UI/audit.
 
 Modul ini **bukan** pemilik aturan bisnis. Akrual, jatuh tempo, dormant, snapshot saldo, dan tutup
 periode GL adalah task milik modul masing-masing (`ledger`, `deposit`, `lending`, …) yang
@@ -28,6 +28,14 @@ Tidak ada aggregate bisnis. Invarian yang ditegakkan:
   `FAILED` dicoba lagi. Rencana chunk dibekukan saat run dibuat.
 - **Parameter dibekukan per run** (`param_snapshot`), sehingga mengubah `daycloser.*` di tengah
   run tidak mengubah perilaku run yang sedang berjalan.
+- **Tanggal buku mengikuti run**, bukan perintah terpisah: `OPEN → CLOSING` setelah PRECHECK,
+  `CLOSING → CLOSED` + rollover ke hari kerja berikutnya + event `BusinessDateOpened` saat seal
+  (satu transaksi). Pembatalan run membuka kembali tanggal yang dibekukannya (`CLOSING → OPEN`)
+  dalam **satu transaksi** dengan `CANCELED`; `CLOSED` tidak pernah dibuka (spec §11.7).
+- **Tanggal yang run-nya `CANCELED` boleh ditutup lagi** (run baru), karena tidak ada jalan lain
+  memajukan buku. Task penutupan wajib idempoten per business date.
+- **Selama `CLOSING`, perubahan HTTP ditolak** `409 business_date_closing` kecuali rute
+  autentikasi, atau bila `daycloser.txn_policy_during_close = ALLOW`.
 - **Task kritis gagal = run FAILED.** Task non-kritis yang gagal dicatat, run tetap selesai
   (penutupan tidak boleh tertahan oleh pekerjaan opsional).
 - **Skip hanya untuk task non-kritis dan hanya pada task satu-chunk** — task multi-chunk yang
@@ -51,7 +59,11 @@ mendaftarkan task dan menjalankan run.
 
 ## Event dipublish / dikonsumsi (versi)
 
-Belum ada. Progress realtime (`DayCloseProgress`) menyusul bersama UI monitor (T-139).
+| Event | v | Kapan | Payload |
+|---|---|---|---|
+| `BusinessDateOpened` | 1 | saat seal, satu transaksi dengan `run → COMPLETED` dan rollover | `businessDate` (tanggal baru), `closedDate`, `scopeType`, `scopeId`, `runId` |
+
+Progress realtime (`DayCloseProgress`) menyusul bersama UI monitor (T-139).
 
 ## Parameter key (+ sensitivitas, regulatory_refs)
 
@@ -60,9 +72,13 @@ Belum ada. Progress realtime (`DayCloseProgress`) menyusul bersama UI monitor (T
 | `daycloser.chunk_size` | jumlah entitas per chunk (default 1000) |
 | `daycloser.max_attempts` | percobaan maksimum per chunk/task |
 | `daycloser.retry_backoff_seconds` | jeda tetap antar percobaan |
+| `daycloser.txn_policy_during_close` | `REJECT` (default) menolak semua perubahan HTTP saat `CLOSING`; `ALLOW` membiarkannya (risiko race ditanggung institusi) |
 
-Semuanya kelas `teknis`, `NORMAL`, tanpa referensi regulasi. Paralelisme & timeout task belum
-diparameterkan karena belum ditegakkan (lihat `docs/ACCEPTED-LIMITS.md`).
+`chunk_size`, `max_attempts`, dan `retry_backoff_seconds` kelas `teknis`; sensivitas `NORMAL`;
+tanpa referensi regulasi. `txn_policy_during_close` kelas **kebijakan** dengan
+`compliance: NEEDS-COMPLIANCE-REVIEW` (pilihan `ALLOW` adalah keputusan operasional institusi, bukan
+anjuran). Paralelisme & timeout task belum diparameterkan karena belum ditegakkan (lihat
+`docs/ACCEPTED-LIMITS.md`).
 
 ## Tabel & schema
 
@@ -97,3 +113,5 @@ Tidak ada. Kerangka ini teknis; kewajiban retensi/audit penutupan mengikuti modu
 
 - D-148: snapshot parameter inline (bukan FK), `scope_id` teks, kolom `control`, eksekusi chunk
   sekuensial, kode keluar `ctl daycloser-status` sebagai kontrak gate deploy.
+- D-149: siklus business date dimiliki run; seal + rollover satu transaksi; `CLOSING → OPEN` hanya
+  sebagai abort; gerbang HTTP terpusat; bootstrap tanggal buku eksplisit.

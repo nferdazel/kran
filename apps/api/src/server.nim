@@ -12,6 +12,7 @@ import "platform-lib/db/pool"
 import "platform-lib/log"
 
 import ./context
+import ./close_guard
 import ./drain
 import ./events
 import ./health
@@ -112,6 +113,16 @@ proc requestHandler*(app: AppContext): RequestHandler =
     beginRequestScope(req)
     let started = epochTime()
     try:
+      # Spec §11.5 #3: selama business date `CLOSING`, perubahan lewat HTTP ditolak kecuali
+      # institusi memilih `daycloser.txn_policy_during_close = ALLOW`. Satu pemeriksaan di
+      # pembungkus, jadi rute baru tidak bisa lupa (sama seperti 415/405 di bawah).
+      if closeGuardApplies($req.httpMethod, req.path) and
+          not app.pool.isNil and not app.clock.isNil and
+          closeGuardVerdict(app.pool, businessDateIso(app.clock)) == cgBlock:
+        req.respondProblem(newProblem(pkConflict, "Conflict",
+          "business date sedang ditutup", traceId = traceIdFrom(req),
+          params = @[("reason", "business_date_closing")]))
+        return
       # T-133/API-4: kontrak menyatakan badan permintaan JSON; badan yang datang dengan tipe lain
       # ditolak di sini (415) alih-alih di-parse dan gagal sebagai 400 yang menyalahkan isinya.
       # Satu pemeriksaan di pembungkus, jadi tidak ada rute yang bisa lupa.

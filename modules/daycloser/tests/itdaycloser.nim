@@ -76,18 +76,23 @@ proc storeFor(pool: DbPool): Store =
     discard pool.withConn(proc(d: DbConn): int =
       d.resetInFlight(runId)
       1)
-  proc completeRun(runId: string; at, summaryHash: string) =
+  proc sealRun(runId: string; at, summaryHash: string) =
     discard pool.withConn(proc(d: DbConn): int =
       d.setRunState(runId, rsCompleted, at, summaryHash)
       1)
-  proc cancelRemaining(runId: string; at: string) =
-    discard pool.withConn(proc(d: DbConn): int =
+  proc cancelRun(runId: string; at: string) =
+    # Siklus business date diuji lewat `ctl` di `apps/api/tests/itdaycloser_lifecycle.nim`; di sini
+    # yang diuji hanya tulisan task + state run, tanpa menyentuh `platform.business_date`.
+    discard pool.withTx(proc(d: DbConn): int =
       d.cancelRemaining(runId, at)
+      d.setRunState(runId, rsCanceled, at, "")
       1)
   Store(createRun: createRun, snapshot: snapshot, setRunState: setRunState,
-        completeRun: completeRun, setTaskState: setTaskState, setChunkState: setChunkState,
-        controlOf: controlOf, setControl: setControl, resetInFlight: resetInFlight,
-        cancelRemaining: cancelRemaining)
+        freezeDate: proc(runId: string) = discard,
+        sealRun: sealRun,
+        cancelRun: cancelRun,
+        setTaskState: setTaskState, setChunkState: setChunkState,
+        controlOf: controlOf, setControl: setControl, resetInFlight: resetInFlight)
 
 proc recordingTask(id: string; rec: Recorder; chunks = 1; critical = true;
                    deps: seq[string] = @[]; kind = tkProcess): DayCloseTask =

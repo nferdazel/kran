@@ -12,10 +12,10 @@ repo** (atau dengan `--root=<dir>` yang menunjuk ke sana), karena migrasi dibaca
 | `ctl` | `kran-api --role=ctl verify-audit` | **0** rantai audit utuh, **1** ada entri tidak utuh |
 | `ctl` | `kran-api --role=ctl outbox-status` | **0** (hanya mencetak jumlah per status) |
 | `ctl` | `kran-api --role=ctl daycloser-status` | **0** tidak ada penutupan berjalan, **1** ada run aktif atau business date `CLOSING` (gate deploy menahan), **2** DB/konfigurasi tidak terbaca (juga menahan) |
-| `ctl` | `kran-api --role=ctl daycloser-run --business-date=<YYYY-MM-DD>` | **0** run `COMPLETED`, **1** run `FAILED`/`BLOCKED`, **3** ditolak (bukan hari kerja, run lain berjalan), **2** argumen/parameter salah |
+| `ctl` | `kran-api --role=ctl daycloser-run --business-date=<YYYY-MM-DD> [--bootstrap]` | **0** run `COMPLETED` (tanggal buku maju), **1** run `FAILED`/`BLOCKED`, **3** ditolak (bukan hari kerja, bukan tanggal buku berjalan, run sudah ada, belum ada tanggal buku tanpa `--bootstrap`), **2** argumen/parameter salah |
 | `ctl` | `kran-api --role=ctl daycloser-resume --run=<uuid>` | **0** run selesai `COMPLETED`, **1** masih gagal, **3** run sudah berakhir atau lock dipegang proses lain, **2** argumen kurang |
 | `ctl` | `kran-api --role=ctl daycloser-pause --run=<uuid>` | **0** permintaan dicatat (dibaca di batas chunk), **3** run sudah berakhir, **2** tanpa `--run` |
-| `ctl` | `kran-api --role=ctl daycloser-cancel --run=<uuid>` | **0** permintaan dicatat, **3** run sudah berakhir, **2** tanpa `--run` |
+| `ctl` | `kran-api --role=ctl daycloser-cancel --run=<uuid>` | **0** run dibatalkan (langsung bila tidak ada proses hidup; tanggal buku yang dibekukan dibuka kembali), **3** run sudah berakhir, **2** tanpa `--run` |
 | `ctl` | `kran-api --role=ctl bootstrap-admin --username=<nama>` | **0** admin dibuat, **3** sudah ada pemegang role admin, **2** tanpa `--username` |
 | `ctl` | `kran-api --role=ctl reset-password --username=<nama>` | **0** kata sandi baru dicetak sekali, **1** gagal menulis/acak, **2** tanpa `--username`, **3** pengguna tidak ada |
 | `ctl` | `kran-api --role=ctl audit-anchor [--out=<berkas>]` | **0** baris anchor dicetak (dan ditambahkan ke berkas), **1** gagal menulis, **2** tanpa DB |

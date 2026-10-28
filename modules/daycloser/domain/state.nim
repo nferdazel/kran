@@ -56,6 +56,12 @@ proc parsePartitionStrategy*(s: string): PartitionStrategy =
       return p
   raise newException(DayCloserError, "strategi partisi tidak dikenal: " & s)
 
+proc parseTxnPolicy*(s: string): TxnPolicyDuringClose =
+  for p in TxnPolicyDuringClose:
+    if $p == s.strip:
+      return p
+  raise newException(DayCloserError, "kebijakan transaksi saat closing tidak dikenal: " & s)
+
 proc canResume*(s: RunState): bool =
   ## Resume adalah **gerbang operator**, bukan transisi otomatis: ia boleh masuk kembali dari
   ## state mana pun yang belum selesai. `canTransition` tetap ketat untuk transisi normal

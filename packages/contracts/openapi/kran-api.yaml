@@ -1192,6 +1192,8 @@ paths:
             schema:
               $ref: "#/components/schemas/UnmaskRequest"
       responses:
+        "409":
+          $ref: "#/components/responses/Problem"
         "503":
           $ref: "#/components/responses/Problem"
         "415":
@@ -1240,6 +1242,8 @@ paths:
             schema:
               $ref: "#/components/schemas/PartyDetailUpdate"
       responses:
+        "409":
+          $ref: "#/components/responses/Problem"
         "503":
           $ref: "#/components/responses/Problem"
         "415":
@@ -1321,6 +1325,8 @@ paths:
             schema:
               $ref: "#/components/schemas/UnmaskRequest"
       responses:
+        "409":
+          $ref: "#/components/responses/Problem"
         "503":
           $ref: "#/components/responses/Problem"
         "415":
