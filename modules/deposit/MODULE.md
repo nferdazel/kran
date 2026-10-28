@@ -100,8 +100,9 @@ berjalan **sebelum** `ledger/0003`). `deposit/0008` menambah grant runtime untuk
 - `THIRTY_360` memakai konvensi **30/360 US (NASD)** dengan aturan tertulis di docstring; rentang
   pendek di akhir bulan bisa menghasilkan 0 hari (artefak konvensi). `NEEDS-COMPLIANCE-REVIEW`:
   konvensi ini perlu konfirmasi compliance, dan `ACT_365` adalah default institusi (D-152).
-- **Nominal bunga belum ada di sini** (butuh `Money` × rate × hari, pembulatan skala 2, dan review
-  manusia — AGENTS.md §8). `accrualDays` hanya menjawab berapa hari yang harus dikalikan.
+- **Nominal bunga**: `domain/interest.nim` (`interestForRange`, T-138c) — `pokok × rate × hari /
+  basis`, dibulatkan **sekali** ke sen dengan HALF_EVEN. `HUMAN-REVIEW-REQUIRED` (AGENTS.md §8):
+  rumus bunga adalah area kritis.
 
 ## Deposito berjangka (T-138b, D-152)
 
@@ -114,10 +115,36 @@ backfill: rekening tabungan tidak punya jatuh tempo, dan arti "aktivitas" baru d
 task dormant. Domain hanya mengenal tipe barunya (`AccountType.atTimeDeposit`); perilaku jatuh
 tempo/ARO masih tugas T-138d, akrual T-138c, dan dormant T-138e.
 
-`status` **belum** menerima `DORMANT`: nilainya ditetapkan T-138e bersama aturannya. Rule/akun GL
-bunga (D-152: `203 BUNGA AKRUAL`) **belum** ada — kode `203` sudah dipakai `TITIPAN PENGURUS`
-(`ledger/0036`), jadi penomoran akun akrual menunggu keputusan pemilik. Nilai parameter default
-(2,5% p.a., `ACT_365`) tetap **NEEDS-COMPLIANCE-REVIEW** (D-152).
+`status` **belum** menerima `DORMANT`: nilainya ditetapkan T-138e bersama aturannya. Akun/rule GL
+bunga ada di `ledger/0065` dengan **`204` BUNGA AKRUAL** — bukan `203`, yang sudah dipakai
+`TITIPAN PENGURUS` sejak `ledger/0036` (amendemen D-152). Pokok deposito sendiri masuk
+`202 SIMPANAN BERJANGKA`; rule pemisahnya per jenis rekening belum ada (butuh `accountType` di
+payload event) sehingga deposito berjangka **belum boleh** dibuka untuk anggota nyata. Nilai
+parameter default (2,5% p.a., `ACT_365`) tetap **NEEDS-COMPLIANCE-REVIEW** (D-152).
+
+## Akrual bunga harian (T-138c, D-152)
+
+Task day-close `deposit.interest_accrual` (EOD, fase proses, **kritis**, `psByChunkCount`) berjalan
+di composition root (`apps/api/src/daycloser_deposit.nim`) karena satu transaksi per chunk menulis
+tiga hal sekaligus: baris `deposit.interest_accrual`, jurnal `InterestAccrued`, dan event outbox.
+
+| Aspek | Aturan |
+|---|---|
+| Rekening | `account_type = TIME_DEPOSIT` dan `status <> 'CLOSED'` (ACTIVE + DORMANT — dormant membatasi transaksi, bukan perjanjian bunga) |
+| Atribut | binding versi produk yang dipin rekening: `product.savings.interest_rate`, `day_count_basis`, `rounding_scale`. Tidak ada → **DAY-331**, penutupan ditahan |
+| Rentang | dari `opened_on` (atau hari setelah akrual terakhir) sampai tanggal buku, inklusif |
+| Pembulatan | **sekali per rentang**: `cumulative` = bunga dari `opened_on` dibulatkan ke skala produk; `amount` = `cumulative` − `cumulative` baris terakhir |
+| Jurnal | D `501 BEBAN BUNGA` / K `204 BUNGA AKRUAL`, ditulis **sinkron** di transaksi yang sama; event `InterestAccrued` **tanpa** header `accounting` (jurnal sudah ada) |
+| Nol | pokok/rate nol atau bagian hari itu nol → baris tercatat (`amount = 0.00`, `journal_id` NULL), **tanpa** jurnal nol |
+| Idempoten | PK `(account_id, business_date)` + kunci jurnal `interest.accrual:<akun>:<tanggal>`; tanggal yang sudah punya baris dilewati |
+
+Konsekuensi yang disengaja: `SUM(amount)` per rekening selalu sama dengan satu pembulatan bunga
+rentang penuh, jadi tidak ada drift beberapa sen terhadap bunga yang dijanjikan di akhir tenor.
+Basis 30/360 bisa menghasilkan 0 hari untuk rentang pendek di akhir bulan; hari itu tidak mencatat
+baris dan ketinggalannya ikut pada hari berikutnya (kumulatif dihitung dari `opened_on`).
+
+Kode kegagalan `DAY-330`…`DAY-337` ada di `docs/runbooks/dayclose.md`; semuanya kritis, jadi run
+berhenti `FAILED` dan dapat dilanjutkan (`resume`) setelah penyebabnya diperbaiki.
 
 ## Event
 

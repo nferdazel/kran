@@ -768,5 +768,13 @@
   "dayclose_code_325": "Penutupan periode gagal karena galat basis data. Periode tetap OPEN, periksa log lalu resume.",
   "dayclose_code_326": "Sesi kas OPEN di rentang periode yang akan ditutup. Batalkan run, tutup sesinya, lalu jalankan lagi.",
   "dayclose_code_327": "Periode berubah status di tengah penutupan. Periksa ledger.period.",
-  "dayclose_code_328": "Periode sebelumnya masih OPEN. Tutup periode sebelumnya lebih dulu."
+  "dayclose_code_328": "Periode sebelumnya masih OPEN. Tutup periode sebelumnya lebih dulu.",
+  "dayclose_code_330": "Daftar rekening akrual gagal dibaca karena galat basis data. Task dicoba ulang otomatis.",
+  "dayclose_code_331": "Versi produk rekening tidak punya atribut akrual (rate, basis hari, atau skala pembulatan) atau bentuknya salah. Lengkapi binding versi produknya.",
+  "dayclose_code_332": "Tanggal rekening atau tanggal buku tidak sah (data rusak).",
+  "dayclose_code_333": "Jurnal akrual tidak bisa dibuat: posting rule akrual tidak tersedia atau ambigu, atau periode tanggal buku sudah ditutup.",
+  "dayclose_code_334": "Akrual untuk rekening dan tanggal ini sudah ada. Task seharusnya idempoten; selidiki penulisan ganda.",
+  "dayclose_code_335": "Bunga kumulatif menurun karena pokok berkurang tanpa koreksi akrual. Periksa mutasi rekening.",
+  "dayclose_code_336": "Nilai bunga melampaui batas bilangan. Periksa pokok dan rate produk.",
+  "dayclose_code_337": "Baris akrual gagal disimpan karena galat basis data. Task dicoba ulang otomatis."
 }

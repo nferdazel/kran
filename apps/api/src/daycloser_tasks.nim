@@ -19,6 +19,7 @@ import kernel/[dayclose, result]
 import daycloser/domain/[registry, types]
 import daycloser/infrastructure/run_repo
 
+import ./daycloser_deposit
 import ./daycloser_gates
 import ./daycloser_ledger
 
@@ -68,6 +69,11 @@ proc registerDayCloseTasks*(reg: Registry; pool: DbPool) =
 
   # Gate pra & pasca-tutup (spec §11.5 langkah 2 & 5). Kritis: gagal = run BLOCKED.
   registerGates(reg, pool)
+
+  # Akrual bunga deposito (T-138c). Didaftarkan **sebelum** pekerjaan buku besar: urutan registrasi
+  # adalah urutan eksekusi dalam satu fase, dan snapshot saldo harian sebaiknya melihat jurnal
+  # akrual hari itu, bukan jurnal kemarin.
+  registerDepositTasks(reg, pool)
 
   # Pekerjaan buku besar (spec §11.6): snapshot saldo harian + tutup periode GL bulanan (T-137).
   registerLedgerTasks(reg, pool)
