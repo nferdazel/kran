@@ -47,6 +47,15 @@ suite "deposit: tipe & status":
     expect ValueError:
       discard parseAccountStatus("DORMANT")
 
+  test "instruksi ARO dikenal, nilai asing ditolak (D-155)":
+    check parseAroInstruction("none") == aiNone
+    check parseAroInstruction(" PRINCIPAL ") == aiPrincipal
+    check parseAroInstruction("principal_and_interest") == aiPrincipalAndInterest
+    expect ValueError:
+      discard parseAroInstruction("")
+    expect ValueError:
+      discard parseAroInstruction("ROLLOVER")
+
 suite "deposit: bentuk rekening":
   proc sample(seqNo = 1'i64): Account =
     newAccount(Id("11111111-1111-7111-8111-111111111111"),

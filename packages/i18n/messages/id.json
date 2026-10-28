@@ -776,5 +776,13 @@
   "dayclose_code_334": "Akrual untuk rekening dan tanggal ini sudah ada. Task seharusnya idempoten; selidiki penulisan ganda.",
   "dayclose_code_335": "Bunga kumulatif menurun karena pokok berkurang tanpa koreksi akrual. Periksa mutasi rekening.",
   "dayclose_code_336": "Nilai bunga melampaui batas bilangan. Periksa pokok dan rate produk.",
-  "dayclose_code_337": "Baris akrual gagal disimpan karena galat basis data. Task dicoba ulang otomatis."
+  "dayclose_code_337": "Baris akrual gagal disimpan karena galat basis data. Task dicoba ulang otomatis.",
+  "dayclose_code_340": "Daftar rekening jatuh tempo gagal dibaca karena galat basis data. Task dicoba ulang otomatis.",
+  "dayclose_code_341": "Deposito berjangka yang jatuh tempo tidak punya instruksi perpanjangan (aro_instruction). Data rusak; isi NONE, PRINCIPAL, atau PRINCIPAL_AND_INTEREST lalu resume.",
+  "dayclose_code_342": "Tanggal rekening, jatuh tempo, atau tanggal buku tidak sah (data rusak).",
+  "dayclose_code_343": "Deposito yang jatuh tempo tidak punya rekening simpanan aktif di cabang yang sama untuk menerima pokok atau bunga. Buka rekening tujuan, lalu resume penutupan.",
+  "dayclose_code_344": "Jurnal jatuh tempo tidak bisa dibuat: posting rule tidak tersedia atau ambigu, atau periode tanggal buku sudah ditutup.",
+  "dayclose_code_345": "Perpindahan jatuh tempo gagal disimpan, atau saldo rekening berubah saat diproses. Ulangi; selidiki mutasi bersamaan bila berulang.",
+  "dayclose_code_346": "Deposito berjangka punya instruksi perpanjangan (aro_instruction) yang tidak dikenal. Data rusak; task tidak menebak.",
+  "dayclose_code_347": "Tenor perpanjangan tidak sah: tanggal jatuh tempo tidak setelah tanggal buka rekening. Perbaiki tanggal rekening sebelum resume."
 }

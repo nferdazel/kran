@@ -264,10 +264,18 @@ bunga deposito berjangka:
   Rule generik `0005`/`0012` tetap untuk tabungan; `specificityOf` memilih yang berkondisi karena
   kondisi menambah kekhususan, dan `postJournalSync` sudah mengirim `accountType` di payload.
   Penarikan sebelum jatuh tempo belum punya penalti — keputusan produk terbuka (O-108).
-- Jatuh tempo (`MaturityPosted` D 202 / K 201 dan `InterestPosted` D 204 / K 201) menyusul bersama
-  task `deposit.maturity_aro`; sampai itu mendarat, deposito berjangka belum boleh dibuka untuk
-  anggota nyata.
-- `NEEDS-COMPLIANCE-REVIEW`: penomoran akun dan penempatan beban di `501` adalah struktur pilot,
-  bukan kutipan SAK/PSAK (REG-011 `V!`).
+- Jatuh tempo deposito berjangka (`ledger/0069`, T-138d/D-155) menambah dua rule generik:
+
+  | Event | Jurnal | Kapan |
+  |---|---|---|
+  | `DepositMatured` | **D 202 SIMPANAN BERJANGKA / K 201 SIMPANAN ANGGOTA** | ARO `NONE`: pokok pindah ke rekening simpanan anggota |
+  | `InterestCapitalized` | **D 204 BUNGA AKRUAL / K 202 SIMPANAN BERJANGKA** | ARO `PRINCIPAL_AND_INTEREST`: bunga menjadi pokok |
+
+  Bunga yang dibayar ke rekening simpanan memakai `InterestPosted` yang sudah ada (`0065`) — tidak
+  diduplikasi, karena dua rule untuk event yang sama akan membuat `selectRule` ambigu. Pokok yang
+  diperpanjang (ARO `PRINCIPAL`) dan bunga nol tidak dijurnal: saldo tidak berubah dan ledger menolak
+  jurnal nol.
+- `NEEDS-COMPLIANCE-REVIEW`: penomoran akun (`201`/`202`/`204`) dan penempatan beban di `501` adalah
+  struktur pilot, bukan kutipan SAK/PSAK (REG-011 `V!`).
 - Angka akrual (rate, basis hari, skala pembulatan) tetap **parameter produk** (`product.savings.*`,
   D-137/O-084), tidak pernah nilai di kode atau di migrasi.

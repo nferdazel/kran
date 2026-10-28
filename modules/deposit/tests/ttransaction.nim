@@ -25,8 +25,28 @@ suite "deposit: arah & tipe transaksi":
     check sourceEventOf(cdWithdrawal) == "DepositWithdrawn"
     check parseTransactionType("cash_deposit") == ttCashDeposit
     check parseTransactionType("CASH_WITHDRAWAL") == ttCashWithdrawal
+    check parseTransactionType("maturity_out") == ttMaturityOut
+    check parseTransactionType("MATURITY_IN") == ttMaturityIn
+    check parseTransactionType("INTEREST_CREDIT") == ttInterestCredit
     expect ValueError:
       discard parseTransactionType("TRANSFER")
+
+  test "arah kas hanya untuk transaksi tunai; jatuh tempo bukan slip setoran":
+    check cashDirectionOf(ttCashDeposit) == cdDeposit
+    check cashDirectionOf(ttCashWithdrawal) == cdWithdrawal
+    for t in [ttMaturityOut, ttMaturityIn, ttInterestCredit]:
+      check not isCashTransaction(t)
+      expect ValueError:
+        discard cashDirectionOf(t)
+    check isCashTransaction(ttCashDeposit)
+    check isCashTransaction(ttCashWithdrawal)
+
+  test "arah rekening koran mengikuti efek saldo, bukan arah kas":
+    check statementDirectionOf(ttCashDeposit) == "IN"
+    check statementDirectionOf(ttCashWithdrawal) == "OUT"
+    check statementDirectionOf(ttMaturityIn) == "IN"
+    check statementDirectionOf(ttInterestCredit) == "IN"
+    check statementDirectionOf(ttMaturityOut) == "OUT"
 
 suite "deposit: nominal & narration":
   test "nominal harus positif":

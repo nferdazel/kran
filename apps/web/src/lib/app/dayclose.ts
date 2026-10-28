@@ -304,6 +304,14 @@ const ERROR_CODE_HINTS: Record<string, () => string> = {
   "DAY-335": () => m.dayclose_code_335(),
   "DAY-336": () => m.dayclose_code_336(),
   "DAY-337": () => m.dayclose_code_337(),
+  "DAY-340": () => m.dayclose_code_340(),
+  "DAY-341": () => m.dayclose_code_341(),
+  "DAY-342": () => m.dayclose_code_342(),
+  "DAY-343": () => m.dayclose_code_343(),
+  "DAY-344": () => m.dayclose_code_344(),
+  "DAY-345": () => m.dayclose_code_345(),
+  "DAY-346": () => m.dayclose_code_346(),
+  "DAY-347": () => m.dayclose_code_347(),
 };
 
 /** Keterangan singkat kode galat, hanya untuk kode yang tercatat di runbook. */

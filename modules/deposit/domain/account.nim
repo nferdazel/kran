@@ -21,13 +21,21 @@ const
 type
   AccountType* = enum
     ## `TIME_DEPOSIT` (D-152) = deposito berjangka: rekening yang sama, ditambah jatuh tempo/ARO di
-    ## DB. Perilaku jatuh tempo & ARO menyusul di T-138d, jadi tipe ini belum punya konstruktor.
+    ## DB. Perpindahan saat jatuh tempo ditangani task day-close `deposit.maturity_aro` (T-138d).
     atSavings = "SAVINGS"
     atTimeDeposit = "TIME_DEPOSIT"
 
   AccountStatus* = enum
     asActive = "ACTIVE"
     asClosed = "CLOSED"
+
+  AroInstruction* = enum
+    ## Instruksi automatic roll-over saat deposito berjangka jatuh tempo (T-138b/D-152,
+    ## CHECK `deposit_account_aro_instruction_chk`). Nilai string = nilai kolom DB.
+    ## Keputusan artinya milik D-155, bukan modul ini.
+    aiNone = "NONE"
+    aiPrincipal = "PRINCIPAL"
+    aiPrincipalAndInterest = "PRINCIPAL_AND_INTEREST"
 
   Account* = object
     accountId*: Id
@@ -60,6 +68,14 @@ proc parseAccountStatus*(raw: string): AccountStatus =
     if $st == s:
       return st
   raise newException(ValueError, "status rekening tidak dikenal: " & raw)
+
+proc parseAroInstruction*(raw: string): AroInstruction =
+  ## Tanpa fallback: instruksi yang tidak dikenal adalah data rusak, bukan "pakai NONE".
+  let s = raw.strip.toUpperAscii()
+  for aro in AroInstruction:
+    if $aro == s:
+      return aro
+  raise newException(ValueError, "instruksi ARO tidak dikenal: " & raw)
 
 proc validBranchCode*(branchCode: string): bool =
   ## Kode cabang = tepat `branchCodeWidth` digit. Sumbernya master cabang, tetapi domain tetap

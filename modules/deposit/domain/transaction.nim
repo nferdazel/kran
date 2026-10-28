@@ -30,10 +30,17 @@ type
     cdDeposit = "DEPOSIT"
     cdWithdrawal = "WITHDRAWAL"
 
-  ## Tipe baris `deposit.transaction` (cermin CHECK kolom DB).
+  ## Tipe baris `deposit.transaction` (cermin CHECK kolom DB, migrasi `deposit/0068`).
+  ##
+  ## `MATURITY_*`/`INTEREST_CREDIT` (T-138d) bukan transaksi tunai: jatuh tempo deposito
+  ## memindahkan saldo antar-rekening dan membayar bunga akrual tanpa kas yang bergerak. Memakai
+  ## `CASH_*` untuk keduanya akan berbohong di rekening koran anggota dan di rekonsiliasi.
   TransactionType* = enum
     ttCashDeposit = "CASH_DEPOSIT"
     ttCashWithdrawal = "CASH_WITHDRAWAL"
+    ttMaturityOut = "MATURITY_OUT"
+    ttMaturityIn = "MATURITY_IN"
+    ttInterestCredit = "INTEREST_CREDIT"
 
   Transaction* = object
     transactionId*: Id
@@ -67,9 +74,28 @@ proc txTypeOf*(d: CashDirection): TransactionType =
 proc cashDirectionOf*(t: TransactionType): CashDirection =
   ## Kebalikan `txTypeOf`: baris transaksi tunai → arah API. Dipakai endpoint baca slip
   ## (T-094a) yang membaca baris tersimpan, bukan permintaan masuk.
+  ##
+  ## Jenis non-tunai **melempar** `ValueError`: slip kas hanya untuk baris yang benar-benar
+  ## memindahkan uang tunai. Mengarang `DEPOSIT`/`WITHDRAWAL` untuk jatuh tempo akan menampilkan
+  ## slip setoran palsu; arah rekening koran memakai `statementDirectionOf`.
   case t
   of ttCashDeposit: cdDeposit
   of ttCashWithdrawal: cdWithdrawal
+  of ttMaturityOut, ttMaturityIn, ttInterestCredit:
+    raise newException(ValueError,
+      "jenis transaksi " & $t & " bukan transaksi tunai (tidak punya arah kas)")
+
+proc isCashTransaction*(t: TransactionType): bool =
+  ## `true` hanya untuk baris yang lahir dari transaksi tunai teller (T-088b).
+  t in {ttCashDeposit, ttCashWithdrawal}
+
+proc statementDirectionOf*(t: TransactionType): string =
+  ## Arah baris subledger untuk rekening koran (T-094b): `IN` menambah saldo rekening, `OUT`
+  ## mengurangi. Semua jenis baris punya arah saldo, termasuk yang tidak memindahkan kas —
+  ## karena itu arah statement tidak boleh diturunkan dari `cashDirectionOf`.
+  case t
+  of ttCashDeposit, ttMaturityIn, ttInterestCredit: "IN"
+  of ttCashWithdrawal, ttMaturityOut: "OUT"
 
 proc sourceEventOf*(d: CashDirection): string =
   ## Event ledger yang dipakai posting rule: setor = `DepositPosted` (D 101/K 201),

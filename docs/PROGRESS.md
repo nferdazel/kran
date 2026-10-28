@@ -3339,3 +3339,56 @@ akrual **kritis** (menahan penutupan); pembulatan **sekali per rentang** (kumula
 
 **Batas**: bunga belum diposting ke rekening (T-138d), deposito belum punya jatuh tempo/ARO, dan
 `deposit.maturity_aro`/`dormant` belum ada. **HUMAN-REVIEW-REQUIRED**: rumus & pembulatan bunga.
+
+---
+
+## 2026-10-28 — T-138d jatuh tempo deposito berjangka: ARO NONE/PRINCIPAL/PRINCIPAL_AND_INTEREST
+
+**Konteks**: akrual harian (T-138c) sudah mencatat bunga dan batas `maturity_date − 1`, rule pokok
+`202` sudah ada, tetapi belum ada yang **memindahkan** pokok/bunga saat jatuh tempo. Deposito yang
+jatuh tempo hanya berhenti berbunga dan tetap terbuka selamanya.
+
+**Keputusan pemilik (D-155)**: `NONE` = pokok+bunga ke `201`; `PRINCIPAL` = bunga ke `201`, pokok
+diperpanjang; `PRINCIPAL_AND_INTEREST` = bunga dikapitalisasi (`InterestCapitalized` D 204/K 202);
+tenor perpanjangan = tenor semula; keterlambatan proses tidak menambah bunga.
+
+**Yang berubah**
+
+- `modules/deposit/migrations/0068_deposit_transaction_maturity.sql` (**contract** + `destructive`,
+  allowlist deploy): `tx_type` menerima `MATURITY_OUT`/`MATURITY_IN`/`INTEREST_CREDIT`, dan UNIQUE
+  `journal_id` menjadi `(journal_id, account_id)` supaya satu jurnal perpindahan pokok bisa
+  mencerminkan dua rekening. Alasan lengkap di header migrasi + O-110.
+- `modules/ledger/migrations/0069_ledger_posting_rules_maturity.sql`: `DepositMatured` D 202/K 201,
+  `InterestCapitalized` D 204/K 202 (`NEEDS-COMPLIANCE-REVIEW`, idempoten). `InterestPosted` dipakai
+  ulang dari `0065`.
+- Domain: `TransactionType` + tiga jenis baru, `cashDirectionOf` melempar `ValueError` untuk jenis
+  non-tunai, `statementDirectionOf` untuk rekening koran; `parseAroInstruction` (tanpa fallback).
+- `modules/deposit/infrastructure/maturity_repo.nim`: halaman rekening jatuh tempo (jendela
+  `row_number()` di atas seluruh rekening berjangka — offset pada himpunan yang menyusut melewati
+  rekening), rekening simpanan tujuan, tutup rekening, majukan `maturity_date`, sesuaikan saldo.
+- `apps/api/src/daycloser_deposit.nim`: task `deposit.maturity_aro` (EOD, proses, kritis,
+  `psByChunkCount`, `imPerBusinessDate`, `dependsOn: deposit.interest_accrual`). Satu `withTx` per
+  chunk: jurnal sinkron + baris `deposit.transaction` + mutasi saldo + perubahan status/jatuh tempo.
+- `reconcile_repo`: tanda per jenis baris (IN positif, OUT negatif); jenis tak dikenal membuat
+  `expected` NULL sehingga rekeningnya dilaporkan, bukan dihitung sebagai keluar.
+- Runbook + i18n: `DAY-340`…`DAY-347` (id+en) + `dayclose.ts`.
+
+**Bukti**
+
+- `itdaycloser_deposit` **19 `[OK]`** (11 akrual + 8 baru): `NONE` → D 202/K 201 10.000.000 dan
+  D 204/K 201 13.013,70, deposito `CLOSED` saldo 0, simpanan 10.013.013,70, tiga baris subledger
+  (pokok keluar/masuk satu jurnal), rekonsiliasi bersih untuk kedua rekening; tanpa rekening tujuan =
+  `DAY-343` tanpa perubahan; `PRINCIPAL` → jatuh tempo 2026-11-08, bunga ke simpanan;
+  `PRINCIPAL_AND_INTEREST` → `InterestCapitalized`, saldo 10.013.013,70, tanpa rekening simpanan;
+  run ulang tidak menggandakan; proses terlambat tetap 13.013,70; paginasi chunk 2 tidak melewati
+  rekening; `aro_instruction` kosong = `DAY-341`.
+- Regresi: `ittransaction` 8, `ittransfer` 6, `itreconcile` 3, `itapi_teller` 46, `itapi_deposit` 17,
+  `itdaycloser_ledger` 7, `itdaycloser_gates` 12, `itdaycloser_auto` 7, `itdaycloser_lifecycle` 7,
+  `itapi_dayclose` 10 — hijau. `./task fmt`, `archcheck`, `nomagic`, `dbtools validate`, `i18n` hijau.
+- Catatan lingkungan: worktree ini dipakai bersama sesi lain (D-156, guard `time_deposit_locked`).
+  Satu run `itapi_teller` sempat gagal saat berkas sesi itu sedang setengah jadi; run berikutnya
+  hijau 46/46 dengan berkas yang sama sekali lagi. Tidak ada kegagalan yang berasal dari perubahan
+  T-138d.
+
+**Batas**: siklus ARO kedua (O-109), penalti/pencairan dini (O-108/D-156), belum ada endpoint buka
+deposito berjangka. **HUMAN-REVIEW-REQUIRED**: pergerakan uang jatuh tempo.

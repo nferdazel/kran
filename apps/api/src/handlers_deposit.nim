@@ -424,7 +424,9 @@ proc handleGetAccountStatement*(app: AppContext, req: Request) {.gcsafe.} =
         let probeLimit = maxStatementRows + 1
         var items: seq[StatementItem]
         for tx in transactionsForStatement(db, account.accountId, fromDate, toDate, probeLimit):
-          let direction = if tx.txType == ttCashDeposit: "IN" else: "OUT"
+          # Arah saldo, bukan arah kas: baris jatuh tempo (MATURITY_*) bukan transaksi tunai
+          # tetapi tetap menambah/mengurangi saldo rekening di rekening koran (T-138d).
+          let direction = statementDirectionOf(tx.txType)
           items.add StatementItem(
             sortKey: tx.businessDate & "/" & tx.createdAt & "/0",
             row: statementRowJson("CASH", direction, tx.amount.toDecimalString,

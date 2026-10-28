@@ -140,6 +140,14 @@ SELECT t.task_id, t.state, t.error->>'code' AS code, t.metrics
 | `DAY-335` | bunga kumulatif menurun | pokok berkurang tanpa koreksi akrual; periksa mutasi rekening deposito itu |
 | `DAY-336` | nilai bunga melampaui batas bilangan | pokok/rate produk tidak wajar; periksa binding |
 | `DAY-337` | baris akrual gagal disimpan | galat basis data; task dicoba ulang otomatis |
+| `DAY-340` | daftar rekening jatuh tempo gagal dibaca | galat basis data; task dicoba ulang otomatis |
+| `DAY-341` | deposito berjangka yang jatuh tempo tidak punya `aro_instruction` | data rusak: task **tidak menebak** ARO. Tentukan instruksi anggota (`NONE`/`PRINCIPAL`/`PRINCIPAL_AND_INTEREST`) lewat jalur resmi, lalu `daycloser-resume` |
+| `DAY-342` | tanggal rekening/jatuh tempo/tanggal buku tidak sah | data rusak; periksa `deposit.account.opened_on`, `maturity_date`, dan `platform.business_date` |
+| `DAY-343` | deposito jatuh tempo tanpa rekening simpanan aktif di cabang yang sama | prasyarat operasional (pola `DAY-301`): buka rekening simpanan tujuan untuk anggota itu, lalu `daycloser-resume`. Pesan galat menyebut nomor rekening deposito |
+| `DAY-344` | jurnal jatuh tempo tidak bisa dibuat | periksa rule `DepositMatured`/`InterestPosted`/`InterestCapitalized` (seed `ledger/0065`, `ledger/0069`) dan status periode tanggal buku |
+| `DAY-345` | perpindahan jatuh tempo gagal disimpan, atau saldo berubah di tengah proses | galat basis data/mutasi bersamaan; task dicoba ulang. Bila berulang, selidiki transaksi yang menyentuh rekening itu pada tanggal yang sama |
+| `DAY-346` | `aro_instruction` tidak dikenal | data rusak (CHECK DB seharusnya menolak); perbaiki nilainya, jangan menganggap `NONE` |
+| `DAY-347` | tenor perpanjangan tidak sah (`maturity_date` ≤ `opened_on`) | perbaiki tanggal rekening; ARO `PRINCIPAL*` tidak bisa menghitung tenor semula |
 
 Karena gate **pra**-tutup berjalan sebelum freeze, kegagalannya tidak membekukan tanggal: institusi
 masih bisa melayani, tetapi tanggal itu tidak bisa ditutup dua kali (run `BLOCKED` harus di-resume
