@@ -4,7 +4,8 @@ Rekening simpanan anggota (spec §9.2, §23 Fase 2). Nomor rekening dibentuk dar
 disimpan satu baris per rekening sebagai cache untuk operasi teller.
 
 Status: **T-088a** (skema + buka/baca rekening) + **T-088b** (transaksi tunai setor/tarik + posting
-jurnal sinkron) + **T-088c** (pemindahbukuan/PB antar rekening). UI teller = T-088d.
+jurnal sinkron) + **T-088c** (pemindahbukuan/PB antar rekening) + **T-138c/d** (akrual bunga harian,
+jatuh tempo/ARO deposito berjangka). UI teller = T-088d.
 
 ## Tabel (migrasi `0001` schema+sequence, `0003` rekening, `0004` transaksi, `0005` immutability, `0006` grant runtime, `0007` transfer, `0008` grant transfer)
 
@@ -12,7 +13,7 @@ jurnal sinkron) + **T-088c** (pemindahbukuan/PB antar rekening). UI teller = T-0
 |---|---|
 | `deposit.account` | Identitas rekening: `account_no` (unik), `party_id`, `product_id`, `product_version_id`, `branch_id`, `account_type` (`SAVINGS`/`TIME_DEPOSIT`), `status` (`ACTIVE`/`CLOSED`), `opened_on`, plus `maturity_date`/`aro_instruction`/`last_activity` untuk deposito berjangka (nullable, T-138b). Satu cabang per rekening. |
 | `deposit.account_balance` | Satu baris per rekening: `balance numeric(24,2)` dengan CHECK `balance >= 0`. Cache; sumber kebenaran tetap jurnal ledger (spec §9.1(4)). |
-| `deposit.transaction` | Transaksi tunai (T-088b): `tx_type` (`CASH_DEPOSIT`/`CASH_WITHDRAWAL`), `account_id`, `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (UNIQUE, FK `ledger.journal`). Satu baris = satu jurnal. |
+| `deposit.transaction` | Subledger rekening: `tx_type` (`CASH_DEPOSIT`/`CASH_WITHDRAWAL` dari teller, `MATURITY_OUT`/`MATURITY_IN`/`INTEREST_CREDIT` dari jatuh tempo deposito — `0068`), `account_id`, `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (FK `ledger.journal`, UNIQUE **`(journal_id, account_id)`**). Satu baris = satu jurnal per rekening; satu jurnal boleh mencatat dua rekening untuk perpindahan jatuh tempo (`NONE`). |
 | `deposit.transfer` | Pemindahbukuan/PB (T-088c): `source_account_id` + `destination_account_id` (FK `deposit.account`, CHECK berbeda), `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (UNIQUE, FK `ledger.journal`). Satu baris = satu perpindahan = satu jurnal. |
 
 `deposit.account_seq` memberi nomor urut rekening. **Nomor berkas tidak berurutan rapat**: tabel
@@ -148,6 +149,49 @@ baris dan ketinggalannya ikut pada hari berikutnya (kumulatif dihitung dari `ope
 Kode kegagalan `DAY-330`…`DAY-337` ada di `docs/runbooks/dayclose.md`; semuanya kritis, jadi run
 berhenti `FAILED` dan dapat dilanjutkan (`resume`) setelah penyebabnya diperbaiki.
 
+## Jatuh tempo & ARO (T-138d, D-155)
+
+Task day-close `deposit.maturity_aro` (EOD, fase proses, **kritis**, `psByChunkCount`) berjalan
+**sesudah** `deposit.interest_accrual` (`dependsOn`) karena bunga hari terakhir tenor harus sudah
+tercatat sebelum dipindahkan. Semua langkah satu rekening berada dalam **satu `withTx` per chunk**.
+
+Keputusan per `aro_instruction` (D-155):
+
+| ARO | Pokok | Bunga | Baris subledger | Jurnal |
+|---|---|---|---|---|
+| `NONE` | pindah ke rekening simpanan, deposito `CLOSED` | bayar ke rekening simpanan | `MATURITY_OUT` (deposito) + `MATURITY_IN` (simpanan, jurnal yang sama) + `INTEREST_CREDIT` (simpanan) | `DepositMatured` D 202/K 201, `InterestPosted` D 204/K 201 |
+| `PRINCIPAL` | tetap, `maturity_date` maju satu tenor | bayar ke rekening simpanan | `INTEREST_CREDIT` (simpanan) | `InterestPosted` D 204/K 201 (bunga 0 → tanpa jurnal) |
+| `PRINCIPAL_AND_INTEREST` | tetap + bunga dikapitalisasi, `maturity_date` maju | jadi pokok | `INTEREST_CREDIT` (deposito) | `InterestCapitalized` D 204/K 202 |
+
+- **Bunga yang dipindahkan** = `cumulative` akrual terakhir rekening itu (bunga yang sudah dijurnal
+  `InterestAccrued` tetapi belum dibayar); rekening tanpa baris akrual = bunga 0.
+- **Tenor perpanjangan** = tenor semula (`maturity_date − opened_on`), dihitung dari jatuh tempo lama.
+- **Prasyarat**: rekening simpanan `ACTIVE` milik party yang sama di cabang yang sama
+  (`activeSavingsAccount`, urut `account_no`). Tidak ada → `DAY-343` (pola `DAY-301`), bukan "tidak
+  berlaku".
+- **Idempoten**: keadaan berubah di transaksi yang sama (`CLOSED` atau `maturity_date` maju), jadi
+  rekening yang sudah diproses tidak lagi masuk halaman; kunci jurnal `maturity:<akun>:<tanggal>` dan
+  `interest.post:<akun>:<tanggal>` adalah lapis kedua.
+- **`aro_instruction` kosong = `DAY-341`**, nilai asing = `DAY-346`. Task **tidak menebak** ARO.
+- **Paginasi** memakai jendela `row_number()` di atas **seluruh** rekening `TIME_DEPOSIT`, bukan
+  `LIMIT/OFFSET` pada himpunan "jatuh tempo": task mengubah `status`/`maturity_date`, dan offset pada
+  himpunan yang menyusut akan melewati rekening (akrual aman karena ia tidak mengubah populasi).
+- **Keterlambatan** proses tidak menambah bunga (akrual berhenti di `maturity_date − 1`); perpindahan
+  diposting pada tanggal buku saat prosesnya berjalan.
+- Migrasi tipe baris: `deposit/0068` (contract + destructive, terdaftar di
+  `ops/migrations/contract-auto.txt`). Rule GL: `ledger/0069`.
+- Kode kegagalan `DAY-340`…`DAY-347` ada di runbook + katalog i18n (id+en).
+- **Batas yang belum tertutup**: siklus ARO **kedua** belum diputuskan — akrual tidak di-reset setelah
+  pembayaran bunga dan `maturity_date − opened_on` bukan lagi tenor semula pada siklus berikutnya
+  (`docs/OPEN_ITEMS.md` O-109). Juga: penarikan sebelum jatuh tempo tanpa penalti (O-108), dan belum
+  ada endpoint untuk membuka deposito berjangka.
+- **NEEDS-COMPLIANCE-REVIEW** (kode akun `202`/`204`/`501`) dan **HUMAN-REVIEW-REQUIRED** (pergerakan
+  uang jatuh tempo, AGENTS.md §8) tetap berlaku.
+
+Deposito berjangka kini punya alur jatuh tempo lengkap untuk **satu siklus**, tetapi belum boleh
+dibuka untuk anggota nyata sebelum O-109 diputuskan, penalti penarikan dini (O-108) dan parameter
+compliance (O-084) dikonfirmasi.
+
 ## Event
 
 - **Buka rekening**: tanpa event outbox — hanya audit `deposit.account.open` (belum ada konsumen,
@@ -180,11 +224,16 @@ Tidak ada parameter baru di seed/packs untuk T-088b:
 
 ## Rekonsiliasi cache (T-101)
 
-`account_balance` adalah cache; baris di `deposit.transaction` (tunai) dan `deposit.transfer` (PB)
-adalah sumbernya. `kran-api --role=ctl reconcile-deposits [--branch=<uuid>]` membandingkan
-`expected = Σ tunai masuk − Σ tunai keluar + Σ PB masuk − Σ PB keluar` dengan cache, mencetak setiap
-rekening yang berbeda (termasuk cache yang hilang), dan keluar **1** bila ada selisih. Baca saja:
-koreksi harus lewat penyelidikan, bukan ditulis ulang alat ini.
+`account_balance` adalah cache; baris di `deposit.transaction` (tunai + perpindahan jatuh tempo) dan
+`deposit.transfer` (PB) adalah sumbernya. `kran-api --role=ctl reconcile-deposits [--branch=<uuid>]`
+membandingkan
+`expected = Σ masuk − Σ keluar` (tunai, perpindahan jatuh tempo, dan PB di kedua arah) dengan cache,
+mencetak setiap rekening yang berbeda (termasuk cache yang hilang), dan keluar **1** bila ada selisih.
+Baca saja: koreksi harus lewat penyelidikan, bukan ditulis ulang alat ini.
+
+Tanda per jenis baris: `CASH_DEPOSIT`/`MATURITY_IN`/`INTEREST_CREDIT` menambah saldo,
+`CASH_WITHDRAWAL`/`MATURITY_OUT` mengurangi. Baris dengan jenis yang tidak dikenal membuat `expected`
+kosong (NULL) sehingga rekeningnya **dilaporkan** — bukan dihitung sebagai keluar (D-155).
 
 Kenapa bukan `journal_line`: kedua kaki PB memakai akun `201` yang sama (net-nol), jadi jurnal tidak
 bisa memisahkan saldo per rekening (D-124). Jurnal simpanan yang dibalik di ledger juga tidak

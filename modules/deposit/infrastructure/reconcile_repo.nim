@@ -1,7 +1,8 @@
 ## Rekonsiliasi cache saldo rekening simpanan terhadap baris sumbernya (T-101).
 ##
 ## `deposit.account_balance` adalah **cache**; sumber kebenaran mutasi rekening ada di
-## `deposit.transaction` (tunai, T-088b) dan `deposit.transfer` (pemindahbukuan, T-088c/D-124).
+## `deposit.transaction` (tunai T-088b + perpindahan jatuh tempo T-138d) dan `deposit.transfer`
+## (pemindahbukuan, T-088c/D-124).
 ## Rekonsiliasi **tidak** memakai jurnal per rekening: jurnal PB sengaja net-nol di akun `201`
 ## (kedua kaki akun GL yang sama), jadi saldo per rekening tidak bisa direkonstruksi dari
 ## `journal_line` saja (lihat `docs/ACCEPTED-LIMITS.md`).
@@ -22,11 +23,24 @@ type
     delta*: string  ## cache − seharusnya
 
 const reconciliationSql = """
-WITH cash AS (
-  SELECT t.account_id,
-         sum(CASE WHEN t.tx_type = 'CASH_DEPOSIT' THEN t.amount ELSE -t.amount END) AS net
+WITH typed AS (
+  SELECT t.account_id, t.amount,
+         CASE t.tx_type
+           WHEN 'CASH_DEPOSIT' THEN 1
+           WHEN 'CASH_WITHDRAWAL' THEN -1
+           WHEN 'MATURITY_OUT' THEN -1
+           WHEN 'MATURITY_IN' THEN 1
+           WHEN 'INTEREST_CREDIT' THEN 1
+         END AS sign
     FROM deposit.transaction t
-   GROUP BY t.account_id
+), cash AS (
+  SELECT account_id, sum(sign * amount) AS net
+    FROM typed
+   GROUP BY account_id
+), unmapped AS (
+  -- Jenis baris yang tidak dikenal **tidak** boleh diam-diam dihitung sebagai keluar: sum()
+  -- melewati NULL, jadi tanpa penanda ini saldo yang direkonstruksi akan kurang tanpa suara.
+  SELECT DISTINCT account_id FROM typed WHERE sign IS NULL
 ), incoming AS (
   SELECT tr.destination_account_id AS account_id, sum(tr.amount) AS net
     FROM deposit.transfer tr
@@ -37,9 +51,13 @@ WITH cash AS (
    GROUP BY tr.source_account_id
 ), expected AS (
   SELECT a.account_id,
-         coalesce(c.net, 0) + coalesce(i.net, 0) - coalesce(o.net, 0) AS balance
+         CASE WHEN u.account_id IS NULL
+              THEN coalesce(c.net, 0) + coalesce(i.net, 0) - coalesce(o.net, 0)
+              ELSE NULL
+         END AS balance
     FROM deposit.account a
     LEFT JOIN cash c ON c.account_id = a.account_id
+    LEFT JOIN unmapped u ON u.account_id = a.account_id
     LEFT JOIN incoming i ON i.account_id = a.account_id
     LEFT JOIN outgoing o ON o.account_id = a.account_id
    WHERE (? = '' OR a.branch_id::text = ?)
@@ -54,7 +72,13 @@ SELECT a.account_no, a.branch_id::text, coalesce(b.balance::text, ''),
  ORDER BY a.account_no"""
 
 proc accountBalanceMismatches*(db: DbConn, branchId = ""): seq[BalanceMismatch] =
-  ## Rekening yang cache saldonya tidak sama dengan mutasi tunai + PB. `branchId` kosong = semua.
+  ## Rekening yang cache saldonya tidak sama dengan mutasi tunai + perpindahan jatuh tempo + PB.
+  ## `branchId` kosong = semua.
+  ##
+  ## Tanda mengikuti jenis baris: `CASH_DEPOSIT`/`MATURITY_IN`/`INTEREST_CREDIT` menambah saldo,
+  ## `CASH_WITHDRAWAL`/`MATURITY_OUT` mengurangi (D-155: jatuh tempo tidak memindahkan kas, jadi
+  ## dulu `CASH_*` tidak bisa dipakai). Baris dengan jenis yang tidak dikenal membuat `expected`
+  ## kosong (`NULL`) — sengaja gagal-terang, bukan selisih palsu yang diam.
   ##
   ## Rekening tanpa baris `account_balance` ikut dilaporkan (`cached == ""`): cache yang hilang
   ## bukan "tidak ada masalah", melainkan keadaan yang membuat saldo tidak bisa dibaca.

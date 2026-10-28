@@ -1,10 +1,18 @@
-## Task `deposit.interest_accrual` untuk kerangka day-close (T-138c, spec §11.6 "akrual bunga").
+## Task `deposit.interest_accrual` (T-138c) dan `deposit.maturity_aro` (T-138d) untuk kerangka
+## day-close (spec §11.6 "akrual bunga", "jatuh tempo/ARO").
 ##
-## Satu chunk = satu halaman rekening berjangka. Untuk tiap rekening, task menghitung bunga yang
-## **belum** diakrualkan sampai tanggal buku, mencatatnya di `deposit.interest_accrual`, dan
-## menjurnal `InterestAccrued` (D 501 / K 204) di transaksi yang sama. Tanpa jurnal, akrual hanya
+## **Akrual.** Satu chunk = satu halaman rekening berjangka. Untuk tiap rekening, task menghitung
+## bunga yang **belum** diakrualkan sampai tanggal buku, mencatatnya di `deposit.interest_accrual`,
+## dan menjurnal `InterestAccrued` (D 501 / K 204) di transaksi yang sama. Tanpa jurnal, akrual hanya
 ## angka di subledger; tanpa baris akrual, jurnal tidak bisa dipertanggungjawabkan. Keduanya satu
 ## fakta, jadi satu `withTx` per chunk.
+##
+## **Jatuh tempo.** Setelah akrual hari itu selesai (task ini bergantung pada `interest_accrual`),
+## rekening yang `maturity_date <= tanggal buku` dipindahkan sesuai `aro_instruction` (keputusan
+## pemilik D-155): pokok+bunga ke rekening simpanan (`NONE`), bunga saja ke rekening simpanan
+## (`PRINCIPAL`), atau bunga menjadi pokok (`PRINCIPAL_AND_INTEREST`). Setiap perpindahan dijurnal
+## **sinkron** di transaksi chunk yang sama dengan mutasi saldo dan baris `deposit.transaction`,
+## karena `reconcile-deposits` merekonstruksi saldo dari baris subledger (D-155).
 ##
 ## **Pembulatan sekali per rentang** (keputusan pemilik, 28 Okt 2026): yang dibulatkan adalah bunga
 ## kumulatif dari `opened_on` sampai tanggal buku, lalu bagian hari itu = selisihnya terhadap
@@ -12,15 +20,20 @@
 ## dari bunga yang dijanjikan di akhir tenor.
 ##
 ## **Kritis** (keputusan pemilik): kegagalan satu rekening menahan penutupan. Bunga yang kurang
-## tanpa ada yang menahannya adalah temuan audit yang muncul berbulan-bulan kemudian.
+## tanpa ada yang menahannya adalah temuan audit yang muncul berbulan-bulan kemudian; pokok yang
+## tidak berpindah saat jatuh tempo sama.
 ##
 ## **Idempoten**: PK `(account_id, business_date)` menolak akrual kedua, kunci idempotensi jurnal
 ## `interest.accrual:<akun>:<tanggal>` menolak jurnal kedua, dan rekening yang sudah punya baris
-## untuk tanggal buku dilewati. Menjalankan ulang penutupan tanggal yang sama tidak mengubah angka.
+## untuk tanggal buku dilewati. Jatuh tempo mengubah keadaan di transaksi yang sama (`status`
+## `CLOSED` atau `maturity_date` maju), jadi rekening yang sudah diproses tidak lagi muncul di
+## halaman berikutnya; kunci jurnal `maturity:<akun>:<tanggal>` dan `interest.post:<akun>:<tanggal>`
+## adalah lapis kedua. Menjalankan ulang penutupan tanggal yang sama tidak mengubah angka.
 ##
-## **HUMAN-REVIEW-REQUIRED**: area kritis (rumus bunga + jurnal, AGENTS.md §8).
+## **HUMAN-REVIEW-REQUIRED**: area kritis (rumus bunga, perpindahan pokok/bunga, jurnal; AGENTS.md
+## §8).
 ##
-## Kode kegagalan (stabil, dipakai UI/runbook):
+## Kode kegagalan akrual (stabil, dipakai UI/runbook):
 ##   DAY-330 daftar rekening gagal dibaca (bisa diulang)
 ##   DAY-331 binding produk tidak ada / bentuknya salah
 ##   DAY-332 tanggal rekening/buku tidak sah
@@ -29,8 +42,18 @@
 ##   DAY-335 akrual menurun (pokok berkurang tanpa koreksi akrual)
 ##   DAY-336 nilai akrual melampaui batas bilangan
 ##   DAY-337 baris akrual gagal disimpan (bisa diulang)
+##
+## Kode kegagalan jatuh tempo:
+##   DAY-340 daftar rekening jatuh tempo gagal dibaca (bisa diulang)
+##   DAY-341 `aro_instruction` kosong pada deposito berjangka (data rusak; jangan menebak ARO)
+##   DAY-342 tanggal rekening/jatuh tempo tidak sah
+##   DAY-343 rekening simpanan tujuan tidak ada (prasyarat operasional, pola `DAY-301`)
+##   DAY-344 jurnal jatuh tempo tidak bisa dibuat (rule hilang/ambigu, periode tertutup)
+##   DAY-345 perpindahan gagal disimpan / saldo berubah di tengah proses (bisa diulang)
+##   DAY-346 `aro_instruction` tidak dikenal (data rusak)
+##   DAY-347 tenor perpanjangan tidak sah (`maturity_date` tidak setelah `opened_on`)
 
-import std/[json, strutils]
+import std/[json, options, strutils]
 
 import db_connector/db_postgres
 
@@ -41,8 +64,8 @@ import kernel/[businessdate, clock, dayclose, ids, money, rate, result]
 import platform/domain/event
 import platform/infrastructure/outbox_repo
 
-import deposit/domain/[account, daycount, interest]
-import deposit/infrastructure/interest_repo
+import deposit/domain/[account, daycount, interest, transaction]
+import deposit/infrastructure/[interest_repo, maturity_repo, transaction_repo]
 
 import daycloser/domain/[registry, types]
 
@@ -51,6 +74,7 @@ import ./posting
 
 const
   interestAccrualTaskId* = "deposit.interest_accrual"
+  maturityAroTaskId* = "deposit.maturity_aro"
 
   ## Kunci binding versi produk yang dibaca. Nama atribut ditetapkan kode
   ## (`modules/product/seeds/params.yaml`); nilainya tetap milik produk (spec §10.5, D-137).
@@ -58,15 +82,20 @@ const
   basisParamKey = "product.savings.day_count_basis"
   scaleParamKey = "product.savings.rounding_scale"
 
+  ## Awalan kunci idempotensi jurnal jatuh tempo (lapis kedua, pola `interest.accrual:`).
+  maturityJournalPrefix = "maturity:"
+  interestPostJournalPrefix = "interest.post:"
+
 type
-  AccrualAbort = object of CatchableError
-    ## Kegagalan yang **bukan** soal I/O: konfigurasi produk rusak atau angka tidak masuk akal.
-    ## Menaikkannya membatalkan transaksi chunk, jadi tidak ada akrual setengah jadi.
+  DepositAbort = object of CatchableError
+    ## Kegagalan yang **bukan** soal I/O: konfigurasi produk rusak, data rekening rusak, atau
+    ## prasyarat operasional hilang. Menaikkannya membatalkan transaksi chunk, jadi tidak ada
+    ## akrual/perpindahan setengah jadi.
     code*: string
     metrics*: JsonNode
 
-proc abort(code, message: string; metrics: JsonNode = nil): ref AccrualAbort =
-  result = newException(AccrualAbort, message)
+proc abort(code, message: string; metrics: JsonNode = nil): ref DepositAbort =
+  result = newException(DepositAbort, message)
   result.code = code
   result.metrics = metrics
 
@@ -113,11 +142,16 @@ proc quantize(amount: Money; scale: int): Money =
     step *= 10
   amount.div(step) * step
 
-proc parseDate(iso, what: string): BusinessDate =
+proc dateOf(iso, what, code: string): BusinessDate =
+  ## Parse tanggal dengan kode kegagalan milik pemanggil: akrual memakai `DAY-332`, jatuh tempo
+  ## memakai `DAY-342`, supaya operator tahu task mana yang berhenti.
   let parsed = parseBusinessDate(iso)
   if parsed.isErr:
-    raise abort("DAY-332", what & " bukan tanggal sah: " & iso)
+    raise abort(code, what & " bukan tanggal sah: " & iso)
   parsed.value()
+
+proc parseDate(iso, what: string): BusinessDate =
+  dateOf(iso, what, "DAY-332")
 
 proc parseMoney(text, what: string): Money =
   let parsed = moneyFromString(text)
@@ -261,7 +295,7 @@ proc runChunk(pool: DbPool; clock: Clock; ctx: TaskContext; chunk: Chunk): TaskR
         else:
           inc zeroed
       1)
-  except AccrualAbort as e:
+  except DepositAbort as e:
     return err[TaskOutcome, TaskError](taskError(e.code, e.msg, metrics = e.metrics))
   except ValueError as e:
     # `selectRule`/`buildLines` menolak rule yang tidak ada atau ambigu: konfigurasi, bukan I/O.
@@ -274,6 +308,210 @@ proc runChunk(pool: DbPool; clock: Clock; ctx: TaskContext; chunk: Chunk): TaskR
   ok[TaskOutcome, TaskError](okOutcome(%*{
     "accounts": accounts.len, "accrued": accrued, "zero": zeroed, "skipped": already,
     "total": total.toDecimalString, "businessDate": ctx.businessDate}))
+
+# ---------------------------------------------------------------------------------------------
+# Jatuh tempo / ARO (T-138d, D-155)
+# ---------------------------------------------------------------------------------------------
+
+type
+  MaturityOutcome = object
+    ## Angka satu rekening untuk metrics chunk. Nol = tidak ada yang berpindah.
+    closed: bool
+    rolledOver: bool
+    principalMoved: Money
+    interestPaid: Money
+    interestCapitalized: Money
+
+proc parseAroOf(item: MaturityAccount): AroInstruction =
+  ## Instrumen ARO wajib ada untuk deposito berjangka yang jatuh tempo. Kosong atau nilai asing =
+  ## data rusak; task **berhenti** daripada menebak (`NONE` yang salah menutup rekening anggota).
+  let a = item.account
+  if item.aroInstruction.len == 0:
+    raise abort("DAY-341", "rekening " & a.accountNo &
+      ": aro_instruction kosong pada deposito berjangka; lengkapi instruksinya")
+  try:
+    return parseAroInstruction(item.aroInstruction)
+  except ValueError:
+    raise abort("DAY-346", "rekening " & a.accountNo & ": aro_instruction tidak dikenal ('" &
+      item.aroInstruction & "')")
+
+proc maturityDateOf(item: MaturityAccount): BusinessDate =
+  dateOf(item.maturityDate, "maturity_date rekening " & item.account.accountNo, "DAY-342")
+
+proc nextMaturity(item: MaturityAccount): string =
+  ## Tenor perpanjangan = tenor semula (`maturity_date − opened_on`), dihitung dari tanggal jatuh
+  ## tempo lama (D-155 butir 5). Tidak ada parameter tenor per produk.
+  let a = item.account
+  let opened = dateOf(a.openedOn, "opened_on rekening " & a.accountNo, "DAY-342")
+  let maturity = maturityDateOf(item)
+  let tenorDays = daysBetween(opened, maturity)
+  if tenorDays <= 0:
+    raise abort("DAY-347", "rekening " & a.accountNo & ": tenor perpanjangan tidak sah (" &
+      a.openedOn & ".." & item.maturityDate & ")")
+  addDays(maturity, tenorDays).toIso
+
+proc journalOf(db: DbConn; clock: Clock; ctx: TaskContext; a: Account; eventType: string;
+               amount: Money; keyPrefix: string): Id =
+  ## Jurnal perpindahan jatuh tempo, ditulis sinkron. Kunci idempotensi
+  ## `<awalan><akun>:<tanggal buku>` mencegah jurnal kedua bila task dijalankan ulang untuk tanggal
+  ## yang sama (lapis kedua setelah perubahan keadaan rekening).
+  postRuleJournalSync(db, clock, eventType, amount, a.branchId, a.accountId, ctx.businessDate,
+    keyPrefix & $a.accountId & ":" & ctx.businessDate, systemActor,
+    %*{"product": a.productCode, "accountType": $a.accountType})
+
+proc recordMovement(db: DbConn; clock: Clock; accountId: Id; txType: TransactionType;
+                    amount: Money; businessDate, narration: string; journalId: Id) =
+  ## Baris subledger untuk perpindahan jatuh tempo. `journalId` boleh sama untuk dua rekening
+  ## (satu jurnal = satu fakta GL, dua baris = dua efek rekening); UNIQUE `(journal_id, account_id)`
+  ## menjaga agar rekening yang sama tidak dicatat dua kali.
+  insertTransaction(db, Transaction(
+    transactionId: newId(clock), txType: txType, accountId: accountId, amount: amount,
+    businessDate: businessDate, narration: narration, journalId: journalId), systemActor)
+
+proc savingsTarget(db: DbConn; item: MaturityAccount; what: string): Id =
+  ## Rekening simpanan tujuan pembayaran pokok/bunga. Tidak ada = prasyarat operasional hilang
+  ## (D-155): bukan "tidak berlaku", karena uang anggota tidak punya tempat mendarat.
+  let found = activeSavingsAccount(db, item.account.partyId, item.account.branchId)
+  if found.isNone:
+    raise abort("DAY-343", "rekening " & item.account.accountNo &
+      ": tidak ada rekening simpanan ACTIVE di cabang yang sama untuk menerima " & what &
+      "; buka rekening tujuan lalu resume penutupan")
+  found.get()
+
+proc settleNone(db: DbConn; clock: Clock; ctx: TaskContext; item: MaturityAccount;
+                principal, interest: Money): MaturityOutcome =
+  ## ARO `NONE` (D-155 butir 2): pokok + bunga pindah ke rekening simpanan, deposito ditutup.
+  let a = item.account
+  let target = if principal.isPositive or interest.isPositive:
+      savingsTarget(db, item, "pokok dan bunga jatuh tempo") else: Id("")
+
+  if principal.isPositive:
+    let journalId = journalOf(db, clock, ctx, a, "DepositMatured", principal,
+      maturityJournalPrefix)
+    recordMovement(db, clock, a.accountId, ttMaturityOut, principal, ctx.businessDate,
+      "Pindah jatuh tempo ke rekening simpanan", journalId)
+    recordMovement(db, clock, target, ttMaturityIn, principal, ctx.businessDate,
+      "Jatuh tempo deposito " & a.accountNo, journalId)
+    let left = adjustBalance(db, a.accountId, -principal)
+    if left.isNone or not left.get().isZero:
+      raise abort("DAY-345", "rekening " & a.accountNo &
+        ": saldo tidak bisa dinolkan saat jatuh tempo (berubah selama proses?)")
+    if adjustBalance(db, target, principal).isNone:
+      raise abort("DAY-345", "rekening tujuan " & $target & ": baris saldo tidak ada")
+    result.principalMoved = principal
+
+  if interest.isPositive:
+    let journalId = journalOf(db, clock, ctx, a, "InterestPosted", interest,
+      interestPostJournalPrefix)
+    recordMovement(db, clock, target, ttInterestCredit, interest, ctx.businessDate,
+      "Bunga deposito " & a.accountNo, journalId)
+    if adjustBalance(db, target, interest).isNone:
+      raise abort("DAY-345", "rekening tujuan " & $target & ": baris saldo tidak ada")
+    result.interestPaid = interest
+
+  closeAccount(db, a.accountId, systemActor)
+  result.closed = true
+
+proc settlePrincipal(db: DbConn; clock: Clock; ctx: TaskContext; item: MaturityAccount;
+                     interest: Money): MaturityOutcome =
+  ## ARO `PRINCIPAL` (D-155 butir 3): pokok diperpanjang, bunga dibayar ke rekening simpanan.
+  let a = item.account
+  if interest.isPositive:
+    let target = savingsTarget(db, item, "bunga jatuh tempo")
+    let journalId = journalOf(db, clock, ctx, a, "InterestPosted", interest,
+      interestPostJournalPrefix)
+    recordMovement(db, clock, target, ttInterestCredit, interest, ctx.businessDate,
+      "Bunga deposito " & a.accountNo, journalId)
+    if adjustBalance(db, target, interest).isNone:
+      raise abort("DAY-345", "rekening tujuan " & $target & ": baris saldo tidak ada")
+    result.interestPaid = interest
+
+  setMaturityDate(db, a.accountId, nextMaturity(item), systemActor)
+  result.rolledOver = true
+
+proc settlePrincipalAndInterest(db: DbConn; clock: Clock; ctx: TaskContext;
+                                item: MaturityAccount; interest: Money): MaturityOutcome =
+  ## ARO `PRINCIPAL_AND_INTEREST` (D-155 butir 4): bunga dikapitalisasi menjadi pokok.
+  let a = item.account
+  if interest.isPositive:
+    let journalId = journalOf(db, clock, ctx, a, "InterestCapitalized", interest,
+      interestPostJournalPrefix)
+    recordMovement(db, clock, a.accountId, ttInterestCredit, interest, ctx.businessDate,
+      "Kapitalisasi bunga deposito", journalId)
+    if adjustBalance(db, a.accountId, interest).isNone:
+      raise abort("DAY-345", "rekening " & a.accountNo & ": baris saldo tidak ada")
+    result.interestCapitalized = interest
+
+  setMaturityDate(db, a.accountId, nextMaturity(item), systemActor)
+  result.rolledOver = true
+
+proc settleMaturity(db: DbConn; clock: Clock; ctx: TaskContext; item: MaturityAccount):
+    MaturityOutcome =
+  ## Keputusan ARO untuk satu rekening yang sudah jatuh tempo. Pokok yang berpindah adalah **saldo
+  ## rekening** (bukan angka lain): subledger harus tetap merekonstruksi saldo yang sama.
+  let aro = parseAroOf(item)
+  let principal = item.account.balance
+  let interest = item.accruedInterest
+  # Tanggal divalidasi lebih dulu untuk semua ARO: rekening yang tanggalnya rusak tidak boleh
+  # diproses sebagian.
+  discard maturityDateOf(item)
+  case aro
+  of aiNone: settleNone(db, clock, ctx, item, principal, interest)
+  of aiPrincipal: settlePrincipal(db, clock, ctx, item, interest)
+  of aiPrincipalAndInterest: settlePrincipalAndInterest(db, clock, ctx, item, interest)
+
+proc countMaturityChunks(pool: DbPool; chunkSize: int): Result[int, TaskError] =
+  ## Jumlah halaman himpunan **stabil** (seluruh rekening berjangka), bukan jumlah yang jatuh tempo:
+  ## halaman dihitung di atas himpunan yang tidak berubah selama run (lihat `maturity_repo`).
+  try:
+    let total = pool.withConn(proc(db: DbConn): int64 = countMaturityCandidates(db))
+    if chunkSize < 1:
+      raise newException(ValueError, "chunk size harus >= 1")
+    ok[int, TaskError](int((total + int64(chunkSize) - 1) div int64(chunkSize)))
+  except IOError as e:
+    err[int, TaskError](taskError("DAY-340",
+      "jumlah rekening jatuh tempo gagal dibaca: " & e.msg, retryable = true))
+
+proc runMaturityChunk(pool: DbPool; clock: Clock; ctx: TaskContext; chunk: Chunk): TaskResult =
+  var items: seq[MaturityAccount]
+  try:
+    items = pool.withConn(proc(db: DbConn): seq[MaturityAccount] =
+      dueMaturitiesPage(db, ctx.businessDate, chunk.chunkNo * ctx.chunkSize, ctx.chunkSize))
+  except IOError as e:
+    return err[TaskOutcome, TaskError](taskError("DAY-340",
+      "halaman rekening jatuh tempo gagal dibaca: " & e.msg, retryable = true))
+
+  var closed, rolled = 0
+  var principalMoved = zero()
+  var interestPaid = zero()
+  var interestCapitalized = zero()
+  try:
+    discard pool.withTx(proc(db: DbConn): int =
+      for item in items:
+        let settled = settleMaturity(db, clock, ctx, item)
+        if settled.closed:
+          inc closed
+        if settled.rolledOver:
+          inc rolled
+        principalMoved = principalMoved + settled.principalMoved
+        interestPaid = interestPaid + settled.interestPaid
+        interestCapitalized = interestCapitalized + settled.interestCapitalized
+      1)
+  except DepositAbort as e:
+    return err[TaskOutcome, TaskError](taskError(e.code, e.msg, metrics = e.metrics))
+  except ValueError as e:
+    # `selectRule`/`buildLines` menolak rule yang tidak ada atau ambigu: konfigurasi, bukan I/O.
+    return err[TaskOutcome, TaskError](taskError("DAY-344",
+      "posting rule jatuh tempo tidak bisa dipakai: " & e.msg))
+  except IOError as e:
+    return err[TaskOutcome, TaskError](taskError("DAY-345",
+      "perpindahan jatuh tempo gagal disimpan: " & e.msg, retryable = true))
+
+  ok[TaskOutcome, TaskError](okOutcome(%*{
+    "accounts": items.len, "closed": closed, "rolledOver": rolled,
+    "principal": principalMoved.toDecimalString, "interestPaid": interestPaid.toDecimalString,
+    "interestCapitalized": interestCapitalized.toDecimalString,
+    "businessDate": ctx.businessDate}))
 
 proc registerDepositTasks*(reg: Registry; pool: DbPool) =
   let clock = systemClock()
@@ -292,3 +530,21 @@ proc registerDepositTasks*(reg: Registry; pool: DbPool) =
     countChunks(pool, chunkSize),
     run: proc(ctx: TaskContext; chunk: Chunk): TaskResult =
     runChunk(pool, clock, ctx, chunk))
+
+  # Jatuh tempo **sesudah** akrual: bunga hari terakhir tenor harus sudah tercatat sebelum
+  # dipindahkan/dikapitalisasi. `dependsOn` membuat urutan itu bagian dari kontrak registry, bukan
+  # kebetulan urutan abjad id.
+  reg.register DayCloseTask(
+    id: maturityAroTaskId,
+    module: "deposit",
+    levels: {clEOD},
+    kind: tkProcess,
+    dependsOn: @[interestAccrualTaskId],
+    critical: true,
+    idempotency: imPerBusinessDate,
+    partition: psByChunkCount,
+    requiredParams: @[],
+    countChunks: proc(ctx: TaskContext; chunkSize: int): Result[int, TaskError] =
+    countMaturityChunks(pool, chunkSize),
+    run: proc(ctx: TaskContext; chunk: Chunk): TaskResult =
+    runMaturityChunk(pool, clock, ctx, chunk))

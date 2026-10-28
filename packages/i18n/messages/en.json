@@ -776,5 +776,13 @@
   "dayclose_code_334": "An accrual for this account and date already exists. The task is supposed to be idempotent; investigate the duplicate write.",
   "dayclose_code_335": "Cumulative interest decreased because the principal shrank without an accrual correction. Check the account movements.",
   "dayclose_code_336": "The interest amount exceeds the numeric range. Check the principal and the product rate.",
-  "dayclose_code_337": "The accrual row could not be stored because of a database error. The task retries automatically."
+  "dayclose_code_337": "The accrual row could not be stored because of a database error. The task retries automatically.",
+  "dayclose_code_340": "The maturity account list could not be read because of a database error. The task retries automatically.",
+  "dayclose_code_341": "A matured time deposit has no roll-over instruction (aro_instruction). The data is corrupt; fill in NONE, PRINCIPAL, or PRINCIPAL_AND_INTEREST before resuming.",
+  "dayclose_code_342": "An account, maturity, or business date is invalid (corrupt data).",
+  "dayclose_code_343": "A matured time deposit has no active savings account in the same branch to receive the principal or interest. Open the destination account, then resume the close.",
+  "dayclose_code_344": "The maturity journal could not be created: the posting rule is missing or ambiguous, or the business date's period is already closed.",
+  "dayclose_code_345": "The maturity transfer could not be stored, or the account balance changed while it was being processed. Retry; investigate concurrent movements if it repeats.",
+  "dayclose_code_346": "A time deposit has an unknown roll-over instruction (aro_instruction). The data is corrupt; the task does not guess.",
+  "dayclose_code_347": "The renewal term is invalid: the maturity date is not after the account opening date. Fix the account dates before resuming."
 }
