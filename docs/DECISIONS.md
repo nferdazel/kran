@@ -3822,3 +3822,42 @@ mendapat `DAY-324` di akhir bulan, bukan laporan tanpa dasar.
     ter-commit, dengan `accountDiff` (maks 20) sebagai bukti.
 12. **Penutupan berurutan.** Periode OPEN yang berakhir sebelum periode yang akan ditutup menahan
     penutupan (`DAY-328`) — aturan yang sebelumnya hanya diserahkan ke day-close di dokumentasi.
+
+## D-152 — Model akrual bunga, deposito berjangka, dan dormant (28 Okt 2026)
+
+**Konteks.** T-138 (spec §11.6: akrual bunga harian, jatuh tempo/ARO, deteksi dormant) tidak bisa
+dikerjakan tanpa tiga keputusan yang tidak bisa disimpulkan dari spec: model data deposito
+berjangka, akuntansi bunga harian, dan nilai parameter akrual (O-084). Modul deposit saat itu hanya
+punya `account_type = SAVINGS`, status `ACTIVE|CLOSED`, tanpa kolom jatuh tempo/ARO/aktivitas, tanpa
+rule GL bunga, dan tanpa nilai parameter akrual.
+
+**Keputusan (pemilik, 28 Okt 2026).**
+
+1. **Deposito berjangka = `account_type` baru + kolom akun.** Tambah `TIME_DEPOSIT` pada
+   `deposit.account.account_type`, plus `maturity_date`, `aro_instruction` (`NONE|PRINCIPAL|
+   PRINCIPAL_AND_INTEREST`), dan `last_activity` (tanggal transaksi terakhir). Produk tetap satu
+   katalog (`product`), dibedakan lewat `product_type`/`savings_kind` seperti sekarang.
+2. **Akrual bunga dijurnal di GL setiap hari.** Setiap EOD: **D 501 BEBAN BUNGA / K 203 BUNGA
+   AKRUAL** (akun COA baru `203`, LIABILITY, postable, `NEEDS-COMPLIANCE-REVIEW`). Saat posting ke
+   rekening: **D 203 / K 201 SIMPANAN ANGGOTA**. Dengan begitu beban berjalan terlihat harian dan
+   kewajiban bunga yang belum dibayar tidak bercampur dengan saldo simpanan.
+3. **Nilai parameter akrual default** (provisional, `NEEDS-COMPLIANCE-REVIEW`, wajib dikonfirmasi
+   compliance sebelum data anggota nyata): `interest_rate` **2,5% p.a.**, `day_count_basis`
+   **ACT_365**, `rounding_mode` `HALF_EVEN` (tetap, kernel), `rounding_scale` **2**,
+   `interest_posting` **`MATURITY`**. Nilai ini menjadi `default_pack` supaya akrual berjalan di
+   pilot; produk yang binding-nya diubah tetap memakai nilai produk.
+4. **Dormant = 12 bulan tanpa aktivitas.** Parameter `deposit.dormant.after_months` (default **12**,
+   `NEEDS-COMPLIANCE-REVIEW`). Rekening tanpa transaksi selama ambang itu ditandai status
+   **`DORMANT`**; **tidak** ada penutupan otomatis, dan rekening dormant tetap dapat menerima
+   setoran (aturan penolakan transaksi dormant adalah keputusan lanjutan).
+
+**Konsekuensi.**
+
+- Ketiga pekerjaan itu tetap `HUMAN-REVIEW-REQUIRED` saat implementasi: rumus bunga/akrual masuk
+  area kritis AGENTS.md §8, jadi hasilnya harus ditinjau manusia sebelum dinyatakan selesai.
+- `203 BUNGA AKRUAL` adalah akun baru di COA dasar (migrasi expand + seed rule), bukan angka di kode.
+- Nilai default di atas **bukan** anjuran regulasi; ia hanya membuat sistem bisa berjalan. Bila
+  compliance menetapkan angka lain, perubahan terjadi lewat parameter/versi produk, bukan kode.
+- T-138 dipecah: (a) helper day-count + bunga murni (tanpa parameter), (b) migrasi model akun +
+  rule GL, (c) task akrual dengan checkpoint `PER_ENTITY`, (d) task jatuh tempo/ARO, (e) task
+  dormant.

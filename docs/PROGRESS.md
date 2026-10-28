@@ -3165,3 +3165,35 @@ dan belum menutup periode GL bulanan. Spec §11.5 langkah 6 menempatkan snapshot
 masih dibuat manual (`DAY-324`); penutupan periode tidak bisa dibatalkan (karena itu dijalankan
 paling akhir); periode yang berakhir di tengah bulan tidak ditutup oleh EOM. Berikutnya: T-139
 (API + UI monitor/aksi + penjadwal) — T-138 menunggu keputusan pemilik yang kini sudah ada (D-152).
+
+---
+
+## 2026-10-28 — T-138a helper day-count (bagian dari T-138) SELESAI
+
+**Konteks**: keputusan pemilik (D-152) menetapkan akrual bunga harian dengan default `ACT_365`,
+tetapi repo belum punya hitungan hari sama sekali (tidak ada ACT/365, ACT/360, 30/360).
+
+**Yang berubah**
+
+- `modules/deposit/domain/daycount.nim` (baru, domain murni): `DayCountBasis`
+  (`dcAct365`/`dcAct360`/`dcThirty360`, nilai string sama persis dengan parameter
+  `product.savings.day_count_basis`), `parseDayCountBasis` (tanpa fallback; nilai tak dikenal
+  `ValueError`), `basisDays`, `accrualDays(basis, startsOn, endsOn)`.
+- 30/360 memakai konvensi **US (NASD)** dengan aturan tertulis di docstring; konsekuensinya
+  (rentang pendek di akhir bulan bisa 0 hari) dicatat, begitu pula alasan `ACT_365` menjadi default.
+- `modules/deposit/tests/tdaycount.nim` (baru): 20 test; `modules/deposit/MODULE.md` bagian baru.
+- Tidak ada uang di berkas ini: nominal bunga sengaja belum dihitung (menunggu potongan b/c dan
+  review manusia, AGENTS.md §8).
+
+**Bukti**
+
+- `./task test tdaycount` **20 `[OK]`** — termasuk ACT/365 vs ACT/360 memakai hari kalender yang
+  sama, kabisat (2024 = 366), golden 30/360 (`31 Jan → 28 Feb 2026 = 28`, `31 Jan → 31 Mar = 60`,
+  `31 Jan 2026 → 31 Jan 2027 = 360`, `30 Jan → 31 Jan = 0`, aturan "keduanya akhir Februari"),
+  urutan terbalik & tanggal tidak sah ditolak.
+- `./task nomagic` hijau (konstanta 365/360/30/31 diberi alasan konvensi), `./task archcheck` hijau,
+  `./task fmt` stabil.
+
+**Batas/berikutnya**: konvensi 30/360 perlu konfirmasi compliance (alternatif 30E/360); potongan
+(b) migrasi model + rule GL, (c) task akrual dengan checkpoint, (d) jatuh tempo/ARO, (e) dormant
+belum dikerjakan.
