@@ -4,23 +4,16 @@
 ## kalender (akhir pekan, awal tahun fiskal) dari parameter (spec §10.5). Yang tinggal di sini
 ## hanya invarian matematis & aturan transisi state.
 ##
-## Catatan penempatan: `CloseLevel` untuk sementara hidup di sini karena kalender yang
-## menentukannya. Saat modul `daycloser` (Fase 3) lahir, tipe ini pindah ke sana dan modul ini
-## hanya menyediakan `closeLevelsFor`.
+## `CloseLevel` hidup di kernel (`kernel/dayclose`) karena dipakai dua modul: kalender yang
+## menentukannya dan `daycloser` yang melaksanakannya. Modul ini hanya menyediakan
+## `closeLevelsFor` + aturan transisi business date.
 
-import std/[json, sets, strutils]
-import kernel/[businessdate, result]
+import std/[json, sets]
+import kernel/[businessdate, dayclose, result]
+
+export dayclose
 
 type
-  CloseLevel* = enum
-    ## Level penutupan; kaskade ditentukan kalender (spec §11.2). `EOW` belum dipakai
-    ## (opsional di spec) — butuh parameter hari penutupan mingguan, menyusul bersama daycloser.
-    clEOD = "EOD"
-    clEOW = "EOW"
-    clEOM = "EOM"
-    clEOQ = "EOQ"
-    clEOY = "EOY"
-
   BusinessDateState* = enum
     bdsOpen = "OPEN"
     bdsClosing = "CLOSING"
@@ -128,17 +121,3 @@ proc parseState*(s: string): BusinessDateState =
     if $st == s:
       return st
   raise newException(ValueError, "state business date tidak dikenal: " & s)
-
-proc parseCloseLevel*(s: string): CloseLevel =
-  for lvl in CloseLevel:
-    if $lvl == s:
-      return lvl
-  raise newException(ValueError, "close level tidak dikenal: " & s)
-
-proc levelsCsv*(levels: set[CloseLevel]): string =
-  ## Urutan tetap (EOD, EOW, EOM, EOQ, EOY) supaya deterministik di DB & test.
-  var parts: seq[string]
-  for lvl in CloseLevel:
-    if lvl in levels:
-      parts.add $lvl
-  parts.join(",")

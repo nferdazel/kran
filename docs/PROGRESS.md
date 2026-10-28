@@ -2950,3 +2950,38 @@ Sisanya — 24 butir dari API-7/8/9 sampai UI-7/8 — **tidak** dikerjakan dan s
 klien sinkron), `lint-web`, seluruh unit/properti/integrasi, dan Playwright **54 test** hijau
 (termasuk gate axe 4 layar administrasi dan alur keyboard). `caddy validate` di server:
 `Valid configuration`. Detail: `docs/tasks/T-133.md`, D-145, D-146.
+
+---
+
+## 2026-10-28 — Fase 3 dibuka: kerangka `daycloser` (T-134) SELESAI
+
+**Konteks**: Fase 0–2 + batch audit A–D selesai. Fase 3 dimulai di branch lokal
+`feat/fase3-dayclose` (tidak di-push; `main` tetap `021a988` = revisi produksi).
+
+**Yang dikirim**
+
+- `modules/daycloser`: domain (kontrak task, state machine run/task/chunk, registry DAG, rencana
+  chunk, checkpoint), application (`planRun`/`executeRun`/`resumeRun` di atas port `Store`),
+  infrastructure (Postgres + advisory lock), migrasi `0051` (schema `daycloser`).
+- `shared/kernel/dayclose.nim`: `CloseLevel` pindah dari `platform/domain/calendar` (D-148).
+- `apps/api/src/daycloser_ctl.nim`: `ctl daycloser-status|run|resume|pause|cancel` + task pertama
+  `platform.idempotency_sweep` (menutup T-089; O-094 selesai sebagian).
+- `ops/scripts/deploy-vps.sh`: freeze gate memakai **kode keluar** `daycloser-status`
+  (0 = idle; selain 0 = tahan; fail-closed), bukan grep teks.
+- Dokumentasi: `docs/tasks/T-134.md`, `MODULE.md` modul, D-148, `ACCEPTED-LIMITS` §3 (chunk
+  sekuensial, tanpa timeout/dry-run, belum ada penjadwal), `OPEN_ITEMS` O-013 (selesai) &
+  O-094 (sebagian), runbook `ops-cli.md`, backlog Fase 3 (T-134…T-140).
+
+**Bukti**
+
+- `./task ci` **hijau**: `check` (240 berkas, batas modul, tanpa magic number, paramgen sinkron,
+  i18n, 8 skrip shell), `openapi`, seluruh unit/properti/integrasi, Playwright **54 test**.
+- `./task test tdaycloser` 19 `[OK]`; `./task test itdaycloser` 17 `[OK]`;
+  `./task test tcalendar` dan `./task test itapi_roles` hijau (kontrak gate 0/1 teruji).
+- `ctl` di DB dev: run 2026-10-26 (EOD) & 2026-10-30 (EOD,EOM) `COMPLETED` + segel + audit
+  `daycloser.run.start/.finish`; 31 Okt/25 Okt (akhir pekan) ditolak kode 3; status idle → 0.
+- Review independen: 1 BLOCKER + 3 MAJOR + 8 MINOR; semua diperbaiki dan diuji (resume+CANCEL,
+  skip task kritis, registry drift, audit atomik, segel chunk, gate test, lock eksplisit,
+  tanggal masa depan, `PoolError`).
+
+**Batas/berikutnya**: T-135 (freeze/rollover business date, kebijakan transaksi saat closing).

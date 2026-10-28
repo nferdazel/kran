@@ -45,6 +45,7 @@ import teller/infrastructure/session_repo
 
 import ./access
 import ./context
+import ./daycloser_ctl
 import ./deposit_posting
 import ./drain
 import ./events
@@ -121,7 +122,7 @@ const Usage =
   "[--address=127.0.0.1] [--version=<string>] [--check|--up|--seed|--contract|--down N] " &
   "[--username=<nama>] [--user-role=<peran>] [--branch=<uuid>] [--full-name=<nama>] " &
   "[--branch-code=<3 digit>] [--branch-name=<nama>] " &
-  "[--amount=<nominal>] [--business-date=<YYYY-MM-DD>] " &
+  "[--amount=<nominal>] [--business-date=<YYYY-MM-DD>] [--run=<uuid>] " &
   "[--out=<berkas>] [<perintah ctl>]"
 
 type
@@ -142,7 +143,8 @@ type
     branchName: string   ## `--role=ctl create-branch`: nama cabang
     outPath: string      ## `--role=ctl audit-anchor`: berkas tujuan (append)
     amount: string       ## `--role=ctl post-opening-balance`: nominal saldo awal
-    businessDate: string ## `--role=ctl post-opening-balance`: tanggal buku YYYY-MM-DD
+    businessDate: string ## `--role=ctl post-opening-balance|daycloser-run`: tanggal buku
+    runId: string        ## `--role=ctl daycloser-*`: run yang disentuh
 
 proc die(msg: string) =
   stderr.writeLine "kran-api: " & msg
@@ -185,6 +187,8 @@ proc parseArgs(argv: seq[string]): CliOptions =
       result.amount = arg["--amount=".len .. ^1]
     elif arg.startsWith("--business-date="):
       result.businessDate = arg["--business-date=".len .. ^1]
+    elif arg.startsWith("--run="):
+      result.runId = arg["--run=".len .. ^1]
     elif arg.startsWith("--out="):
       result.outPath = arg["--out=".len .. ^1]
     elif arg.startsWith("--root="):
@@ -224,9 +228,18 @@ proc parseArgs(argv: seq[string]): CliOptions =
            result.cmd in [openingBalanceCmd, reconcileDepositsCmd])):
     die("--branch hanya untuk perintah ctl: " &
       (@roleAssignmentCommands & @[openingBalanceCmd, reconcileDepositsCmd]).join(", "))
-  if (result.amount.len > 0 or result.businessDate.len > 0) and
+  if result.amount.len > 0 and
      not (result.role == roleCtl and result.cmd == openingBalanceCmd):
-    die("--amount dan --business-date hanya untuk `--role=ctl " & openingBalanceCmd & "`")
+    die("--amount hanya untuk `--role=ctl " & openingBalanceCmd & "`")
+  if result.businessDate.len > 0 and
+     not (result.role == roleCtl and
+          result.cmd in [openingBalanceCmd, dayCloserRunCmd]):
+    die("--business-date hanya untuk `--role=ctl " & openingBalanceCmd & "` atau " &
+      dayCloserRunCmd)
+  if result.runId.len > 0 and
+     not (result.role == roleCtl and
+          result.cmd in [dayCloserResumeCmd, dayCloserPauseCmd, dayCloserCancelCmd]):
+    die("--run hanya untuk perintah ctl day-close yang menerima run id")
   if result.fullName.len > 0 and
      not (result.role == roleCtl and result.cmd == createUserCmd):
     die("--full-name hanya untuk `--role=ctl " & createUserCmd & "`")
@@ -314,7 +327,13 @@ const CtlUsage* =
   "                    --username=<operator>, --branch=<uuid>, --amount=<nominal>,\n" &
   "                    --business-date=<YYYY-MM-DD>; rule LedgerCashOpening, audit\n" &
   "                    ledger.opening_balance; idempotent per branch)\n" &
-  "  daycloser-status: (belum ada di Fase 0 → kode 3)\n" &
+  "  daycloser-status: status penutupan berjalan (kode keluar 1 = ada run aktif atau\n" &
+  "                    tanggal buku CLOSING; gate deploy membacanya sebagai tahan)\n" &
+  "  daycloser-run   : rencanakan + jalankan penutupan (butuh --business-date=<YYYY-MM-DD>;\n" &
+  "                    level ditentukan kalender institusi, bukan argumen)\n" &
+  "  daycloser-resume: lanjutkan run PAUSED/FAILED/BLOCKED (butuh --run=<uuid>)\n" &
+  "  daycloser-pause : minta berhenti di batas chunk berikutnya (butuh --run=<uuid>)\n" &
+  "  daycloser-cancel: minta batal; sisa task ditandai CANCELED (butuh --run=<uuid>)\n" &
   "  help            : tampilkan bantuan ini"
 
 proc withRoleDb*(body: proc(db: DbConn): int, useTx = false): int =
@@ -943,13 +962,6 @@ proc runCtl*(command, root: string, username = "", outPath = "", userRole = "",
       for status in [Pending, InFlight, Done, Dead]:
         echo "  " & $status & ": " & $countByStatus(db, status)
       0)
-  of "daycloser-status":
-    # Dipanggil freeze gate `ops/scripts/deploy-vps.sh`. Framework `daycloser` belum ada di
-    # Fase 0, jadi perintahnya **dikenali tapi belum diimplementasikan** (kode 3) — lebih jelas
-    # daripada "perintah tidak dikenal" (kode 2) yang terbaca seperti salah ketik.
-    stderr.writeLine "kran-api: ctl daycloser-status belum ada di Fase 0 (framework daycloser " &
-      "menyusul; lihat docs/OPEN_ITEMS.md O-013)"
-    3
   else:
     stderr.writeLine "kran-api: perintah ctl tidak dikenal: '" & command & "'"
     stderr.writeLine CtlUsage
@@ -1090,6 +1102,8 @@ proc main() =
 
   if opts.role == roleMigrate:
     quit(runMigrate(opts.root, opts.sub, opts.subArg))
+  if opts.role == roleCtl and opts.cmd in dayCloserCommands:
+    quit(runDayCloserCtl(opts.cmd, opts.businessDate, opts.runId))
   if opts.role == roleCtl:
     quit(runCtl(opts.cmd, opts.root, opts.username, opts.outPath, opts.userRole,
       opts.branchId, opts.fullName, opts.branchCode, opts.branchName, opts.amount,

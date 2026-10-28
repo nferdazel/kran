@@ -8,6 +8,9 @@ import ../rate
 import std/json
 
 const paramKeys*: seq[string] = @[
+  "daycloser.chunk_size",
+  "daycloser.max_attempts",
+  "daycloser.retry_backoff_seconds",
   "ledger.coa.code_pattern",
   "ledger.posting.batch_size",
   "ledger.posting.lease_seconds",
@@ -56,6 +59,12 @@ const paramKeys*: seq[string] = @[
   "teller.vault.cash_account",
   "teller.vault.limit_topup_per_request",
 ]
+
+const P_daycloser_chunk_size* = ParamKey[int64]("daycloser.chunk_size")
+
+const P_daycloser_max_attempts* = ParamKey[int64]("daycloser.max_attempts")
+
+const P_daycloser_retry_backoff_seconds* = ParamKey[int64]("daycloser.retry_backoff_seconds")
 
 const P_ledger_coa_code_pattern* = ParamKey[string]("ledger.coa.code_pattern")
 
@@ -152,6 +161,39 @@ const P_teller_vault_cash_account* = ParamKey[string]("teller.vault.cash_account
 const P_teller_vault_limit_topup_per_request* = ParamKey[Money]("teller.vault.limit_topup_per_request")
 
 const paramDefinitions*: seq[ParamDefinition] = @[
+  ParamDefinition(
+    key: "daycloser.chunk_size",
+    module: "daycloser",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.chunk_size",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "daycloser.max_attempts",
+    module: "daycloser",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.max_attempts",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "daycloser.retry_backoff_seconds",
+    module: "daycloser",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.retry_backoff_seconds",
+    sinceVersion: "0.1.0",
+  ),
   ParamDefinition(
     key: "ledger.coa.code_pattern",
     module: "ledger",

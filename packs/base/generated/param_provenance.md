@@ -10,6 +10,9 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 
 | key | kelas | disemai | penanda | catatan |
 |---|---|---|---|---|
+| `daycloser.chunk_size` | teknis | base | - | Jumlah entitas per chunk. Angka awal 1000; disetel setelah benchmark EOD (T-140). |
+| `daycloser.max_attempts` | teknis | base | - | Percobaan maksimum per chunk/task sebelum dinyatakan FAILED. |
+| `daycloser.retry_backoff_seconds` | teknis | base | - | Jeda tetap antar percobaan. Backoff eksponensial menyusul bersama worker pool (T-140). |
 | `ledger.coa.code_pattern` | teknis | base | - | - |
 | `ledger.posting.batch_size` | teknis | base | - | - |
 | `ledger.posting.lease_seconds` | teknis | base | - | - |
@@ -62,7 +65,7 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 
 | kelas | jumlah definisi |
 |---|---|
-| teknis | 15 |
+| teknis | 18 |
 | kebijakan | 25 |
 | komersial-konservatif | 2 |
 | belum-bermakna | 0 |
