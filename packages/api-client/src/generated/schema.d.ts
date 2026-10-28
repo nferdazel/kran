@@ -1240,7 +1240,9 @@ export interface paths {
          *     `teller.cash.limit_deposit`/`teller.cash.limit_withdrawal`), `account_not_active`,
          *     `insufficient_funds`, `period_closed`,
          *     `savings_kind_locked` (penarikan dari rekening bersimpanan pokok/wajib belum didukung;
-         *     saldo & jurnal tidak berubah).
+         *     saldo & jurnal tidak berubah), `time_deposit_locked` (penarikan dari deposito berjangka
+         *     sebelum jatuh tempo belum didukung: pokok yang berkurang membuat akrual `DAY-335` tidak
+         *     punya jalur koreksi; `HUMAN-REVIEW-REQUIRED`).
          *
          *     Rekening bersimpanan pokok/wajib (`savingsKind` POKOK/WAJIB) memakai akun ekuitas terpisah
          *     (`301.1`/`301.2`, **provisional**, `NEEDS-COMPLIANCE-REVIEW`) untuk setoran; rekening lain
@@ -1309,7 +1311,10 @@ export interface paths {
          *     (`params.reason=branch_not_allowed` bila hanya di cabang lain). Konflik domain 409 memakai
          *     `params.reason`: `account_not_active`, `insufficient_funds`, `period_closed`,
          *     `savings_kind_locked` (PB yang menyentuh rekening bersimpanan pokok/wajib, di sisi mana pun, belum didukung),
-         *     `transfer_kind_mismatch` (jenis simpanan sumber dan tujuan berbeda). Saat 409 saldo & jurnal
+         *     `transfer_kind_mismatch` (jenis simpanan sumber dan tujuan berbeda),
+         *     `time_deposit_locked` (PB yang menyentuh rekening deposito berjangka di sisi mana pun belum
+         *     didukung: rule `DepositTransferred` belum memisahkan pokok berjangka ke akun `202`;
+         *     `HUMAN-REVIEW-REQUIRED`). Saat 409 saldo & jurnal
          *     tidak berubah.
          *
          *     **HUMAN-REVIEW-REQUIRED** (jalur finansial, AGENTS.md §8).
