@@ -1,6 +1,6 @@
 ## Unit test laporan `ledger` (T-075): penjumlahan & keseimbangan di layer domain.
 
-import std/unittest
+import std/[sequtils, strutils, unittest]
 
 import kernel/[ids, money]
 import ../api
@@ -63,3 +63,30 @@ suite "report: gerbang snapshot (D-096)":
   test "keduanya kosong → cocok (tidak ada angka untuk dibantah)":
     check snapshotMatches(@[], @[])
 
+
+suite "report: bukti selisih snapshot":
+  test "selisih nominal menyebut akun dan kedua angkanya":
+    let diff = snapshotDiff(@[bl("101", 100_0000, 0, 50_0000, 0)],
+                            @[snap("101", 149_9999, 0)], 20)
+    check diff.len == 1
+    check "101" in diff[0]
+    check ("cache=" & money(149_9999).toDecimalString) in diff[0]
+    check ("jurnal=" & money(150_0000).toDecimalString) in diff[0]
+
+  test "akun hanya di satu sisi ikut disebut":
+    let diff = snapshotDiff(@[bl("101", 100_0000, 0, 0, 0), bl("201", 0, 100_0000, 0, 0)],
+                            @[snap("101", 100_0000, 0), snap("999", 1, 0)], 20)
+    check diff.len == 2
+    check diff.anyIt("999" in it and "tidak ada di jurnal" in it)
+    check diff.anyIt("201" in it and "tidak ada di cache" in it)
+
+  test "jumlah baris bukti dibatasi":
+    var lines: seq[BalanceLine]
+    var snaps: seq[SnapshotTotal]
+    for i in 0 ..< 30:
+      lines.add bl("90" & $i, 100_0000, 0, 0, 0)
+      snaps.add snap("90" & $i, 1, 0)
+    check snapshotDiff(lines, snaps, 5).len == 5
+
+  test "snapshot yang cocok tidak menghasilkan bukti":
+    check snapshotDiff(@[bl("101", 100_0000, 0, 0, 0)], @[snap("101", 100_0000, 0)], 20).len == 0

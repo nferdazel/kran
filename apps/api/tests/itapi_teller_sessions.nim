@@ -176,7 +176,11 @@ proc autoIdemKey(): string =
 
 proc call(verb, path, payload, token: string, idempotencyKey = "",
     sendKey = true): Reply =
-  let client = newHttpClient(timeout = 15000)
+  # 30 dtk, bukan 15: suite ini login lewat hash kata sandi pada DB dev yang diakses lewat
+  # tunnel SSH. Tunnel yang tersendat sesaat membuat `readLine` timeout dan test gagal karena
+  # infrastruktur, bukan karena perilaku (pernah terjadi di gate penuh 28 Okt 2026). Batas ini
+  # hanya kelonggaran waktu tunggu, bukan pelonggaran assertion.
+  let client = newHttpClient(timeout = 30000)
   defer: client.close()
   if token.len > 0:
     client.headers["Cookie"] = CookieName & "=" & token
