@@ -118,9 +118,11 @@ tempo/ARO masih tugas T-138d, akrual T-138c, dan dormant T-138e.
 `status` **belum** menerima `DORMANT`: nilainya ditetapkan T-138e bersama aturannya. Akun/rule GL
 bunga ada di `ledger/0065` dengan **`204` BUNGA AKRUAL** — bukan `203`, yang sudah dipakai
 `TITIPAN PENGURUS` sejak `ledger/0036` (amendemen D-152). Pokok deposito sendiri masuk
-`202 SIMPANAN BERJANGKA`; rule pemisahnya per jenis rekening belum ada (butuh `accountType` di
-payload event) sehingga deposito berjangka **belum boleh** dibuka untuk anggota nyata. Nilai
-parameter default (2,5% p.a., `ACT_365`) tetap **NEEDS-COMPLIANCE-REVIEW** (D-152).
+`202 SIMPANAN BERJANGKA` lewat rule berkondisi `accountType = TIME_DEPOSIT` (`ledger/0067`:
+`DepositPosted` D 101.2/K 202, `DepositWithdrawn` D 202/K 101.2). Jatuh tempo/ARO belum ada, jadi
+deposito berjangka **belum boleh** dibuka untuk anggota nyata sampai `deposit.maturity_aro`
+mendarat. Penarikan sebelum jatuh tempo juga belum punya penalti (O-108). Nilai parameter default
+(2,5% p.a., `ACT_365`) tetap **NEEDS-COMPLIANCE-REVIEW** (D-152).
 
 ## Akrual bunga harian (T-138c, D-152)
 
