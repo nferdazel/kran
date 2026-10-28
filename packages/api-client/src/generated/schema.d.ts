@@ -1237,8 +1237,9 @@ export interface paths {
          *     `params.reason`: `no_open_session` (tidak ada sesi kas `OPEN` untuk teller di cabang rekening),
          *     `session_business_date_mismatch` (sesi `OPEN` ada tetapi untuk tanggal bisnis lain; tutup
          *     sesi itu dulu), `cash_limit_exceeded` (nominal melebihi parameter
-         *     `teller.cash.limit_deposit`/`teller.cash.limit_withdrawal`), `account_not_active`,
-         *     `insufficient_funds`, `period_closed`,
+         *     `teller.cash.limit_deposit`/`teller.cash.limit_withdrawal`), `account_not_active`
+         *     (rekening `CLOSED`, atau penarikan dari rekening `DORMANT` — setoran ke rekening
+         *     `DORMANT` tetap diterima, D-157), `insufficient_funds`, `period_closed`,
          *     `savings_kind_locked` (penarikan dari rekening bersimpanan pokok/wajib belum didukung;
          *     saldo & jurnal tidak berubah), `time_deposit_locked` (penarikan dari deposito berjangka
          *     sebelum jatuh tempo belum didukung: pokok yang berkurang membuat akrual `DAY-335` tidak
@@ -2512,10 +2513,15 @@ export interface components {
             /** Format: uuid */
             branchId: string;
             /** @enum {string} */
-            accountType: "SAVINGS";
+            accountType: "SAVINGS" | "TIME_DEPOSIT";
             savingsKind?: components["schemas"]["SavingsKind"];
-            /** @enum {string} */
-            status: "ACTIVE" | "CLOSED";
+            /**
+             * @description `DORMANT` = tanpa aktivitas lebih lama dari `deposit.dormant.after_months` (task
+             *     `deposit.dormant`). Rekening dormant tetap menerima **setoran** tunai, tetap diakrualkan,
+             *     dan kembali `ACTIVE` pada penutupan berikutnya setelah ada aktivitas (D-157).
+             * @enum {string}
+             */
+            status: "ACTIVE" | "CLOSED" | "DORMANT";
             /** @description Saldo desimal string 2 desimal (tanpa float), mis. `"0.00"`. */
             balance: string;
             /** Format: date */

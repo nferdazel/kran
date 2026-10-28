@@ -785,5 +785,9 @@
   "dayclose_code_344": "The maturity journal could not be created: the posting rule is missing or ambiguous, or the business date's period is already closed.",
   "dayclose_code_345": "The maturity transfer could not be stored, or the account balance changed while it was being processed. Retry; investigate concurrent movements if it repeats.",
   "dayclose_code_346": "A time deposit has an unknown roll-over instruction (aro_instruction). The data is corrupt; the task does not guess.",
-  "dayclose_code_347": "The renewal term is invalid: the maturity date is not after the account opening date. Fix the account dates before resuming."
+  "dayclose_code_347": "The renewal term is invalid: the maturity date is not after the account opening date. Fix the account dates before resuming.",
+  "dayclose_code_350": "The dormant account list could not be read because of a database error. The task is retried automatically.",
+  "dayclose_code_351": "The dormant threshold parameter (deposit.dormant.after_months) is missing or is not a valid number of months. Set the institution parameter, then resume.",
+  "dayclose_code_352": "Account data is corrupt: unknown account status. Fix the row before resuming.",
+  "dayclose_code_353": "The dormant status could not be saved because of a database error. Retry; no money moved."
 }

@@ -11,7 +11,7 @@ jatuh tempo/ARO deposito berjangka). UI teller = T-088d.
 
 | Tabel | Isi |
 |---|---|
-| `deposit.account` | Identitas rekening: `account_no` (unik), `party_id`, `product_id`, `product_version_id`, `branch_id`, `account_type` (`SAVINGS`/`TIME_DEPOSIT`), `status` (`ACTIVE`/`CLOSED`), `opened_on`, plus `maturity_date`/`aro_instruction`/`last_activity` untuk deposito berjangka (nullable, T-138b). Satu cabang per rekening. |
+| `deposit.account` | Identitas rekening: `account_no` (unik), `party_id`, `product_id`, `product_version_id`, `branch_id`, `account_type` (`SAVINGS`/`TIME_DEPOSIT`), `status` (`ACTIVE`/`CLOSED`/`DORMANT` — `0071`), `opened_on`, plus `maturity_date`/`aro_instruction`/`last_activity` untuk deposito berjangka (nullable, T-138b). Satu cabang per rekening. |
 | `deposit.account_balance` | Satu baris per rekening: `balance numeric(24,2)` dengan CHECK `balance >= 0`. Cache; sumber kebenaran tetap jurnal ledger (spec §9.1(4)). |
 | `deposit.transaction` | Subledger rekening: `tx_type` (`CASH_DEPOSIT`/`CASH_WITHDRAWAL` dari teller, `MATURITY_OUT`/`MATURITY_IN`/`INTEREST_CREDIT` dari jatuh tempo deposito — `0068`), `account_id`, `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (FK `ledger.journal`, UNIQUE **`(journal_id, account_id)`**). Satu baris = satu jurnal per rekening; satu jurnal boleh mencatat dua rekening untuk perpindahan jatuh tempo (`NONE`). |
 | `deposit.transfer` | Pemindahbukuan/PB (T-088c): `source_account_id` + `destination_account_id` (FK `deposit.account`, CHECK berbeda), `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (UNIQUE, FK `ledger.journal`). Satu baris = satu perpindahan = satu jurnal. |
@@ -112,18 +112,19 @@ terpisah. Migrasi `deposit/0064_deposit_time_deposit` (bertanda `-- dbtools:cont
 mengganti CHECK `account_type` bawaan `0003`; `DROP CONSTRAINT` adalah DDL merusak yang dilarang
 jalur expand) menambah `maturity_date`, `aro_instruction`
 (`NONE`/`PRINCIPAL`/`PRINCIPAL_AND_INTEREST`), dan `last_activity` — semuanya **nullable**, tanpa
-backfill: rekening tabungan tidak punya jatuh tempo, dan arti "aktivitas" baru ditetapkan bersama
-task dormant. Domain hanya mengenal tipe barunya (`AccountType.atTimeDeposit`); perilaku jatuh
-tempo/ARO masih tugas T-138d, akrual T-138c, dan dormant T-138e.
+backfill: rekening tabungan tidak punya jatuh tempo. Domain hanya mengenal tipe barunya
+(`AccountType.atTimeDeposit`); perilaku jatuh tempo/ARO ada di T-138d, akrual di T-138c, dan dormant
+di T-138e (lihat bagian masing-masing).
 
-`status` **belum** menerima `DORMANT`: nilainya ditetapkan T-138e bersama aturannya. Akun/rule GL
+`status` menerima `DORMANT` sejak `deposit/0071` (contract) bersama aturannya di D-157. Akun/rule GL
 bunga ada di `ledger/0065` dengan **`204` BUNGA AKRUAL** — bukan `203`, yang sudah dipakai
 `TITIPAN PENGURUS` sejak `ledger/0036` (amendemen D-152). Pokok deposito sendiri masuk
 `202 SIMPANAN BERJANGKA` lewat rule berkondisi `accountType = TIME_DEPOSIT` (`ledger/0067`:
-`DepositPosted` D 101.2/K 202, `DepositWithdrawn` D 202/K 101.2). Jatuh tempo/ARO belum ada, jadi
-deposito berjangka **belum boleh** dibuka untuk anggota nyata sampai `deposit.maturity_aro`
-mendarat. Penarikan sebelum jatuh tempo juga belum punya penalti (O-108). Nilai parameter default
-(2,5% p.a., `ACT_365`) tetap **NEEDS-COMPLIANCE-REVIEW** (D-152).
+`DepositPosted` D 101.2/K 202, `DepositWithdrawn` D 202/K 101.2). Jatuh tempo/ARO ada di T-138d.
+Deposito berjangka **belum boleh** dibuka untuk anggota nyata: siklus ARO kedua belum benar
+(O-109), penarikan dini diblokir tanpa jalur koreksi (D-156/O-108), dan belum ada endpoint buka
+deposito. Nilai parameter akrual **wajib diikat versi produk** (D-152 amendemen kedua) dan tetap
+**NEEDS-COMPLIANCE-REVIEW**.
 
 ## Akrual bunga harian (T-138c, D-152)
 
@@ -192,6 +193,27 @@ Deposito berjangka kini punya alur jatuh tempo lengkap untuk **satu siklus**, te
 dibuka untuk anggota nyata sebelum O-109 diputuskan, penalti penarikan dini (O-108) dan parameter
 compliance (O-084) dikonfirmasi.
 
+## Dormant (T-138e, D-152 butir 4, D-157)
+
+Task day-close `deposit.dormant` (EOD, fase proses, **tidak kritis**, `psByChunkCount`, `dependsOn`
+`deposit.interest_accrual` + `deposit.maturity_aro`) menandai rekening yang aktivitas terakhirnya
+lebih lama dari parameter `deposit.dormant.after_months` (default 12) sebagai `DORMANT`, dan
+mengembalikan `DORMANT` ke `ACTIVE` begitu ada aktivitas lagi.
+
+- **Aktivitas** = `max(business_date)` dari `deposit.transaction` dan `deposit.transfer` (kedua
+  sisi), dengan `opened_on` sebagai batas bawah. **Bukan** kolom `deposit.account.last_activity`:
+  kolom itu tidak pernah ditulis jalur transaksi mana pun (O-111).
+- **Batas** memakai `<` terhadap `tanggal buku − N bulan` (aritmetika kalender PostgreSQL).
+- **Populasi yang dipaginasi** = `ACTIVE` + `DORMANT`, sehingga perpindahan status di antara
+  keduanya tidak menggeser offset.
+- **Tidak ada uang yang bergerak**: hanya `status` dan `updated_by` yang ditulis.
+- Rekening `DORMANT` **tetap diakrualkan** (akrual memakai `status <> 'CLOSED'`) dan **tetap menerima
+  setoran tunai**; penarikan/PB ditolak `409 account_not_active` sampai aturan penolakan transaksi
+  dormant diputuskan.
+- Kode kegagalan: `DAY-350` daftar gagal dibaca (bisa diulang) · `DAY-351` parameter ambang tidak
+  terbaca/bukan bulan ≥ 1 · `DAY-352` status rekening tidak dikenal · `DAY-353` status gagal
+  disimpan (bisa diulang).
+
 ## Event
 
 - **Buka rekening**: tanpa event outbox — hanya audit `deposit.account.open` (belum ada konsumen,
@@ -210,6 +232,12 @@ Tidak ada parameter baru di seed/packs untuk T-088b:
 - Batas nominal transaksi tunai lewat **parameter teller** (T-093/D-133):
   `teller.cash.limit_deposit`/`limit_withdrawal` dicek di handler teller sebelum mutasi (409
   `cash_limit_exceeded`); limit harian kumulatif belum ada — **NEEDS-COMPLIANCE-REVIEW**.
+- Ambang dormant `deposit.dormant.after_months` (integer, `GLOBAL`/`INSTITUTION`, default pack
+  **12**, T-138e/D-152 butir 4). Dibaca task `deposit.dormant` pada tanggal buku; nilai hilang atau
+  bukan bulan ≥ 1 = `DAY-351` (fail-closed, bukan tebakan). Nilainya **NEEDS-COMPLIANCE-REVIEW**.
+- Atribut akrual (`product.savings.interest_rate`, `day_count_basis`, `rounding_scale`) dibaca dari
+  **binding versi produk**, bukan dari `default_pack`; versi produk tanpa ketiganya menahan
+  penutupan dengan `DAY-331` (D-152 amendemen kedua).
 
 ## Batas
 

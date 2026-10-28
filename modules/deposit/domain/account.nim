@@ -28,6 +28,9 @@ type
   AccountStatus* = enum
     asActive = "ACTIVE"
     asClosed = "CLOSED"
+    ## Tanpa aktivitas lebih lama dari `deposit.dormant.after_months` (T-138e/D-157). Bukan status
+    ## akhir: task day-close mengembalikannya ke ACTIVE begitu rekening bertransaksi lagi.
+    asDormant = "DORMANT"
 
   AroInstruction* = enum
     ## Instruksi automatic roll-over saat deposito berjangka jatuh tempo (T-138b/D-152,

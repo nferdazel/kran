@@ -44,8 +44,10 @@ suite "deposit: tipe & status":
   test "status dikenal dan dinormalisasi":
     check parseAccountStatus("active") == asActive
     check parseAccountStatus("Closed") == asClosed
+    # DORMANT baru sah setelah T-138e/0071 punya aturan deteksi + reaktivasi (D-157).
+    check parseAccountStatus(" dormant ") == asDormant
     expect ValueError:
-      discard parseAccountStatus("DORMANT")
+      discard parseAccountStatus("FROZEN")
 
   test "instruksi ARO dikenal, nilai asing ditolak (D-155)":
     check parseAroInstruction("none") == aiNone

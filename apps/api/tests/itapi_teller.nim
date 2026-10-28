@@ -1035,6 +1035,25 @@ suite "teller: otorisasi cabang & keadaan rekening":
     check balanceOf(accountId) == "0.00"
     check txCount(accountId) == 0
 
+  test "rekening DORMANT: setoran diterima, penarikan 409 account_not_active":
+    # D-152 butir 4: dormant membatasi layanan, bukan setoran. Reaktivasi otomatis task
+    # `deposit.dormant` hanya bisa terjadi kalau setoran benar-benar diterima.
+    let token = tokenOf(login(MakerUser))
+    let accountId = freshAccount()
+    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+      exec(d, sql"UPDATE deposit.account SET status = 'DORMANT' WHERE account_id = ?", accountId)
+      1)
+
+    let deposit = postJson(CashPath, cashBody(accountId, "DEPOSIT", "20.00"), token)
+    check deposit.code == 201
+    check balanceOf(accountId) == "20.00"
+
+    let withdraw = postJson(CashPath, cashBody(accountId, "WITHDRAWAL", "5.00"), token)
+    check withdraw.code == 409
+    checkProblem(CashPath, "POST", "409", withdraw.body)
+    check withdraw.body["params"]["reason"].getStr() == "account_not_active"
+    check balanceOf(accountId) == "20.00"
+
   test "event tanpa posting rule → ValueError, tanpa jurnal":
     var raised = false
     try:

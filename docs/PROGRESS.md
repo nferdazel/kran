@@ -3392,3 +3392,34 @@ tenor perpanjangan = tenor semula; keterlambatan proses tidak menambah bunga.
 
 **Batas**: siklus ARO kedua (O-109), penalti/pencairan dini (O-108/D-156), belum ada endpoint buka
 deposito berjangka. **HUMAN-REVIEW-REQUIRED**: pergerakan uang jatuh tempo.
+
+## 2026-10-28 — T-138e dormant: status, ambang parameter, reaktivasi otomatis
+
+**Konteks**: D-152 butir 4 menetapkan ambang 12 bulan dan status `DORMANT`, tetapi tidak menjawab
+dari mana aktivitas dibaca, apakah batasnya inklusif, siapa yang mengembalikan status, dan apa yang
+boleh dilakukan rekening dormant (D-157).
+
+**Yang berubah**
+
+- `modules/deposit/migrations/0071_deposit_account_dormant_status.sql` (**contract** +
+  `destructive`, allowlist): CHECK `status` menerima `DORMANT`.
+- `modules/deposit/seeds/params.yaml` + artefak `paramgen`: `deposit.dormant.after_months`
+  (default pack `base` = 12, `NEEDS-COMPLIANCE-REVIEW`).
+- `modules/deposit/infrastructure/dormant_repo.nim`: halaman populasi stabil (`ACTIVE`+`DORMANT`),
+  aktivitas = `max(business_date)` dari `deposit.transaction` + `deposit.transfer` dengan
+  `opened_on` sebagai batas bawah; `stale` dihitung DB (`< tanggal buku − N bulan`).
+- `apps/api/src/daycloser_deposit.nim`: task `deposit.dormant` (EOD, proses, **tidak kritis**,
+  `dependsOn: interest_accrual + maturity_aro`), kode `DAY-350`…`DAY-353`.
+- Handler teller: rekening `DORMANT` tetap menerima **setoran**, penarikan ditolak
+  `409 account_not_active` (tanpa ini reaktivasi tidak mungkin terjadi).
+- Kontrak: `DepositAccount.status` + `accountType` (enum `TIME_DEPOSIT` sebelumnya tertinggal),
+  catatan setoran dormant di endpoint tunai; klien TS di-regenerate.
+- i18n id+en, `dayclose.ts`, runbook, `MODULE.md`, D-157, O-111.
+
+**Bukti**: `./task ci` hijau (termasuk e2e 59). `itdaycloser_deposit` **26 `[OK]`** (7 dormant baru:
+penandaan, batas `<` cutoff, reaktivasi, `CLOSED` tak disentuh, idempoten, `DAY-351` tanpa
+perubahan, paginasi chunk 2). `itapi_teller` **47 `[OK]`** (setoran ke `DORMANT` 201; penarikan 409
+tanpa mutasi). `taccount` 8 `[OK]`.
+
+**Batas**: aturan penolakan transaksi dormant (KYC/reaktivasi manual) belum diputuskan; kolom
+`last_activity` tidak dipakai (O-111).
