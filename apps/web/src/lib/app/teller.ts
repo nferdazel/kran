@@ -8,8 +8,8 @@
  *  - Konflik domain 409 selalu datang sebagai `i18nKey: "error_conflict"`; sebabnya ada di
  *    `params.reason` (`insufficient_funds`, `period_closed`, `account_not_active`,
  *    `branch_not_allowed`, `no_open_session`, `session_business_date_mismatch`,
- *    `savings_kind_locked`, `transfer_kind_mismatch`). Karena itu pemetaannya per `reason`, bukan
- *    lewat `i18nKey` (pola `paramProblemMessage` di `errors.ts`).
+ *    `savings_kind_locked`, `transfer_kind_mismatch`, `time_deposit_locked`). Karena itu pemetaannya
+ *    per `reason`, bukan lewat `i18nKey` (pola `paramProblemMessage` di `errors.ts`).
  *  - Endpoint sesi kas (T-093) tersedia, tetapi panel buka/tutup belum ada di layar ini (T-108).
  *  - Rekening dimuat lewat nomor (`GET /deposit/accounts?accountNo=`, T-105); `accountId` hanya
  *    dipakai setelah rekening ditemukan (untuk transaksi) dan untuk rekening tujuan PB.
@@ -259,6 +259,7 @@ const PROBLEM_REASON_MESSAGES: Record<string, () => string> = {
   no_open_session: () => m.teller_error_no_open_session(),
   session_business_date_mismatch: () => m.teller_error_session_business_date_mismatch(),
   savings_kind_locked: () => m.teller_error_savings_kind_locked(),
+  time_deposit_locked: () => m.teller_error_time_deposit_locked(),
   transfer_kind_mismatch: () => m.teller_error_transfer_kind_mismatch(),
 };
 

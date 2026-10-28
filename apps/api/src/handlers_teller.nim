@@ -265,6 +265,16 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
               problem = "rekening tidak berstatus ACTIVE"
               raise newException(ValueError, problem)
 
+            # Tarik dari deposito berjangka diblokir sampai ada jalur pencairan dini + koreksi akrual
+            # (O-108): akrual D-154 dihitung kumulatif dari `balance` saat ini, jadi pokok yang
+            # berkurang membuat `DAY-335` menahan penutupan tanpa jalan keluar. Setoran tetap boleh
+            # (pokok naik; efeknya hanya penyesuaian akrual, bukan dead-end).
+            if direction == cdWithdrawal and account.accountType == atTimeDeposit:
+              status = 409
+              reason = "time_deposit_locked"
+              problem = "penarikan dari rekening deposito berjangka belum didukung"
+              raise newException(ValueError, problem)
+
             # Tarik dari POKOK/WAJIB diblokir (setor tetap boleh): keluar anggota belum ada (T-111).
             if direction == cdWithdrawal and lockedSavingsKind(account.savingsKind):
               status = 409
@@ -577,6 +587,16 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
               status = 409
               reason = "account_not_active"
               problem = "rekening sumber atau tujuan tidak berstatus ACTIVE"
+              raise newException(ValueError, problem)
+
+            # PB yang menyentuh deposito berjangka diblokir: aturan `DepositTransferred` (0013)
+            # memakai `201` di kedua kaki, jadi pokok berjangka yang masuk lewat PB tidak pernah
+            # dipisah ke `202` (D-152) dan saat jatuh tempo `D 202` mendebit akun yang tidak pernah
+            # dikredit; pintu itu ditutup sampai pemisahan kedua kaki PB punya keputusan (O-108).
+            if source.accountType == atTimeDeposit or destination.accountType == atTimeDeposit:
+              status = 409
+              reason = "time_deposit_locked"
+              problem = "pemindahbukuan yang menyentuh rekening deposito berjangka belum didukung"
               raise newException(ValueError, problem)
 
             # PB yang menyentuh POKOK/WAJIB (sumber **atau** tujuan) diblokir: template satu D/K

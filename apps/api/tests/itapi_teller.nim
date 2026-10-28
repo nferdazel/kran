@@ -682,7 +682,7 @@ suite "teller: setor & tarik":
     check txCount(accountId) == rowsBefore
     check journalCount("DepositWithdrawn") == journalsBefore
 
-  test "deposito berjangka: pokok masuk 202, bukan 201 (T-138d)":
+  test "deposito berjangka: pokok masuk 202 (T-138d); tarik sebelum jatuh tempo 409":
     # D-152 (amendemen): kewajiban deposito dipisahkan dari tabungan supaya laporan bisa
     # membedakannya. Rule generik `DepositPosted` tetap untuk tabungan; rule berkondisi
     # `accountType` yang dipilih untuk rekening berjangka.
@@ -693,12 +693,35 @@ suite "teller: setor & tarik":
     let depositLines = journalLines(deposit.body["journalId"].getStr())
     check depositLines == @[("101.2", "500.00", "0.00"), ("202", "0.00", "500.00")]
 
+    # Pokok berjangka hanya boleh naik lewat teller. Penarikan ditahan karena akrual D-154
+    # dihitung dari `balance` saat ini: pokok yang turun membuat `DAY-335` menahan penutupan
+    # tanpa jalur koreksi (O-108).
+    let journalsBefore = journalCount("DepositWithdrawn")
     let withdraw = postJson(CashPath, cashBody(TimeDepositAccountId, "WITHDRAWAL", "200.00"),
       token)
-    check withdraw.code == 201
-    let withdrawLines = journalLines(withdraw.body["journalId"].getStr())
-    check withdrawLines == @[("202", "200.00", "0.00"), ("101.2", "0.00", "200.00")]
-    check balanceOf(TimeDepositAccountId) == "300.00"
+    check withdraw.code == 409
+    checkProblem(CashPath, "POST", "409", withdraw.body)
+    check withdraw.body["params"]["reason"].getStr() == "time_deposit_locked"
+    check balanceOf(TimeDepositAccountId) == "500.00"
+    check journalCount("DepositWithdrawn") == journalsBefore
+
+  test "PB yang menyentuh deposito berjangka → 409 time_deposit_locked":
+    # `DepositTransferred` (0013) memakai `201` di kedua kaki, jadi pokok berjangka yang masuk
+    # lewat PB tidak pernah dipisah ke `202` (D-152), dan jurnal jatuh tempo akan mendebit akun
+    # yang tidak pernah dikredit. Ditutup sampai pemisahan kedua kaki PB diputuskan (O-108).
+    let token = tokenOf(login(MakerUser))
+    let savings = freshAccount()
+    let fromTd = postJson(TransferPath,
+      transferBody(TimeDepositAccountId, savings, "10.00"), token)
+    check fromTd.code == 409
+    checkProblem(TransferPath, "POST", "409", fromTd.body)
+    check fromTd.body["params"]["reason"].getStr() == "time_deposit_locked"
+    let toTd = postJson(TransferPath,
+      transferBody(savings, TimeDepositAccountId, "10.00"), token)
+    check toTd.code == 409
+    checkProblem(TransferPath, "POST", "409", toTd.body)
+    check toTd.body["params"]["reason"].getStr() == "time_deposit_locked"
+    check transferCount(TimeDepositAccountId) == 0
 
 suite "teller: jurnal subledger tidak bisa dibalik (T-123)":
   test "jurnal transaksi tunai & PB ditolak 409 journal_owned_by_subledger":

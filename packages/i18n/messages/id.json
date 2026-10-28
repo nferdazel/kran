@@ -315,6 +315,7 @@
   "teller_error_no_open_session": "Belum ada sesi kas yang terbuka. Buka sesi kas dulu.",
   "teller_error_session_business_date_mismatch": "Masih ada sesi kas terbuka dari tanggal bisnis lain. Tutup sesi itu dulu, lalu buka sesi hari ini.",
   "teller_error_savings_kind_locked": "Simpanan pokok/wajib tidak bisa ditarik atau dipindahbukukan. Transaksi tidak disimpan.",
+  "teller_error_time_deposit_locked": "Deposito berjangka tidak bisa ditarik atau dipindahbukukan sebelum jatuh tempo. Transaksi tidak disimpan.",
   "teller_error_transfer_kind_mismatch": "Jenis simpanan rekening sumber dan tujuan berbeda. Transaksi tidak disimpan.",
   "teller_error_unknown_state": "Status transaksi belum pasti. Jangan ulangi dengan nominal berbeda. Simpan nomor referensi, lalu periksa mutasi rekening.",
   "teller_error_with_trace": "Rujukan {trace}.",

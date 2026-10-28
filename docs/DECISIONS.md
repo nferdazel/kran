@@ -3870,6 +3870,18 @@ rule GL bunga, dan tanpa nilai parameter akrual.
    (T-138c/d), bukan satu rule generik untuk semua simpanan.
 - Nilai default di atas **bukan** anjuran regulasi; ia hanya membuat sistem bisa berjalan. Bila
   compliance menetapkan angka lain, perubahan terjadi lewat parameter/versi produk, bukan kode.
+
+**Amendemen kedua (28 Okt 2026, saat implementasi T-138c).** Butir 3 di atas **tidak** dijalankan
+sebagai seed: `packs/base` tidak memuat nilai `interest_rate`/`day_count_basis`/`rounding_scale`, dan
+task akrual membaca `product.product_param_binding` milik versi produk yang di-pin rekening
+(pola `min_balance` di teller), bukan resolusi parameter berlapis. Karena itu:
+
+- Versi produk yang dipakai rekening `TIME_DEPOSIT` **wajib** mengikat ketiga atribut itu. Bila salah
+  satu tidak ada, task berhenti `DAY-331` dan penutupan ditahan — fail-closed, karena menebak rate
+  berarti mengarang angka bunga anggota.
+- Menambah baris seed **tanpa** mengubah cara task membaca parameter tidak akan berpengaruh. Bila
+  `default_pack` memang diinginkan, pekerjaannya adalah resolusi parameter di task, bukan seed.
+
 - T-138 dipecah: (a) helper day-count + bunga murni (tanpa parameter), (b) migrasi model akun +
   rule GL, (c) task akrual dengan checkpoint `PER_ENTITY`, (d) task jatuh tempo/ARO, (e) task
   dormant.
@@ -3987,3 +3999,44 @@ menentukan angka yang dijurnal, jadi diputuskan pemilik sebelum kode ditulis.
   `CASH_*`, karena tidak ada kas yang bergerak) ditambahkan lewat migrasi kontrak dan dipetakan di
   query rekonsiliasi.
 - **HUMAN-REVIEW-REQUIRED**: pergerakan uang jatuh tempo (AGENTS.md §8).
+
+## D-156 — Pokok deposito berjangka tidak boleh berubah di tengah tenor (28 Okt 2026)
+
+**Konteks.** Task akrual (D-154) menghitung bunga **kumulatif** dari `opened_on` dengan `principal`
+= saldo rekening **saat ini**, lalu menjurnal selisihnya terhadap baris akrual terakhir. Model itu
+benar hanya bila pokok tetap selama tenor. Review T-138c/T-138d menemukan dua jalur yang memecahkan
+asumsi itu, keduanya dibuka oleh handler teller yang sama dengan tabungan:
+
+1. **Penarikan tunai** mengurangi pokok → kumulatif baru lebih kecil dari yang sudah dijurnal →
+   `amount` negatif → `DAY-335` menahan penutupan **tanpa jalur keluar**: baris akrual tidak bisa
+   dikoreksi (jurnalnya immutable, menghapus baris meninggalkan jurnal di GL sehingga subledger dan
+   GL berbeda pendapat).
+2. **Pemindahbukuan** memakai rule generik `DepositTransferred` (`ledger/0013`, D 201 / K 201), jadi
+   pokok berjangka yang masuk lewat PB tidak pernah dipisah ke `202`; saat jatuh tempo
+   `DepositMatured` (D 202 / K 201) akan mendebit akun yang tidak pernah dikredit. Gate
+   `ledger.subledger_vs_gl` menjumlahkan `201`+`202`, sehingga kesalahan pemisahan ini **tidak**
+   terdeteksi.
+
+**Keputusan (sementara, sampai jalur pencairan dini + pemisahan PB diputuskan).**
+
+1. **Penarikan tunai dari rekening `TIME_DEPOSIT` ditolak** `409` dengan
+   `params.reason = time_deposit_locked`, tanpa mengubah saldo/jurnal.
+2. **PB yang menyentuh rekening `TIME_DEPOSIT` (sumber atau tujuan) ditolak** dengan reason yang
+   sama. Alasannya bukan kepraktisan: kedua kaki PB masih `201`, jadi menerimanya berarti mencatat
+   kewajiban berjangka di akun tabungan.
+3. **Setoran tunai tetap boleh.** Pokok yang naik tidak membuat jalur gagal: kumulatif membesar dan
+   selisihnya dijurnal sebagai penyesuaian. Konsekuensinya bunga hari-hari sebelumnya ikut dinilai
+   pada pokok baru (model kumulatif D-154), dicatat di `OPEN_ITEMS` O-108.
+4. **Rule `DepositWithdrawn` berkondisi `TIME_DEPOSIT` (`ledger/0067`) dibiarkan ada** meski belum
+   bisa dicapai: rule itu adalah akuntansi yang benar untuk pencairan dini, dan menghapusnya berarti
+   membuat migrasi kontrak kedua hanya untuk mengembalikannya nanti.
+
+**Konsekuensi.**
+
+- Rekening berjangka sekarang hanya bisa didanai lewat setoran tunai teller; pembukaan rekening
+  berjangka lewat API belum ada, jadi jalur ini baru dipakai fixture/test.
+- Bila kelak pencairan dini dibuka, yang dibutuhkan bukan sekadar menghapus guard: butuh mekanisme
+  koreksi akrual (baris pembalik, bukan hapus baris) plus keputusan penalti (O-108).
+- **HUMAN-REVIEW-REQUIRED**: keputusan ini membatasi transaksi pada jalur uang (AGENTS.md §8) dan
+  diambil tanpa keputusan produk eksplisit; guard-nya sengaja fail-closed.
+
