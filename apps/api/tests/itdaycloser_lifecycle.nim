@@ -187,9 +187,23 @@ suite "dayclose: dry-run SIMULATION":
 
   test "dry-run menolak tanggal yang bukan tanggal buku atau bukan hari kerja":
     # Sama seperti run nyata: pratinjau tidak menjanjikan run yang toh akan ditolak.
+    # `Thursday` sudah punya run `COMPLETED`, jadi penolakan di situ adalah `run_exists`; kasus
+    # "bukan tanggal buku" butuh hari kerja tanpa run (Senin 2 Nov 2026).
     check runDayCloserCtl(dayCloserRunCmd, Thursday, "", simulate = true) == 3
+    let mismatch = startSimulationAction(dbPool, systemClock(), "2026-11-02")
+    check mismatch.status == asConflict
+    check mismatch.code == "business_date_mismatch"
     check runDayCloserCtl(dayCloserRunCmd, Saturday, "", simulate = true) == 3
     check bd().get.currentDate == Friday
+
+  test "dry-run menolak tanggal buku CLOSING dengan kode yang sama seperti run nyata":
+    execScript(db, "UPDATE platform.business_date SET state = 'CLOSING'")
+    let res = startSimulationAction(dbPool, systemClock(), Friday)
+    check res.status == asConflict
+    check res.code == "business_date_closing"
+    check runDayCloserCtl(dayCloserRunCmd, Friday, "", simulate = true) == 3
+    execScript(db, "UPDATE platform.business_date SET state = 'OPEN'")
+    check bd().get.state == bdsOpen
 
 # E2E berjalan setelah suite ini pada DB yang sama: jangan tinggalkan tanggal buku dalam keadaan
 # yang menahan perubahan HTTP.

@@ -9,3 +9,4 @@ ledger/0060_ledger_period_system_close
 deposit/0064_deposit_time_deposit
 deposit/0068_deposit_transaction_maturity
 deposit/0071_deposit_account_dormant_status
+deposit/0072_deposit_account_last_activity_comment

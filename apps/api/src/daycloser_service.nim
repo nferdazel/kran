@@ -447,10 +447,16 @@ proc startSimulationAction*(pool: DbPool; clock: Clock; businessDateRaw: string)
   if bd.get.currentDate != dateRaw:
     return resultOf(asConflict, "business_date_mismatch",
       "tanggal buku berjalan " & bd.get.currentDate & ", bukan " & dateRaw)
+  if bd.get.state == bdsClosing:
+    # Kode yang sama dengan `startRunAction`: dry-run harus menolak dengan alasan yang sama,
+    # bukan kode umum yang menyamakan CLOSING dan CLOSED.
+    return resultOf(asConflict, "business_date_closing",
+      "tanggal buku " & dateRaw &
+      " sedang CLOSING; lanjutkan run yang ada atau batalkan sebelum memulai run baru")
   if bd.get.state != bdsOpen:
     return resultOf(asConflict, "business_date_closed",
       "tanggal buku " & dateRaw & " berstatus " & $bd.get.state &
-      "; dry-run hanya untuk tanggal OPEN")
+      "; tidak ada penutupan yang bisa dimulai")
 
   let reg = newRegistry()
   registerDayCloseTasks(reg, pool)

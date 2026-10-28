@@ -148,6 +148,7 @@ type
     runId: string        ## `--role=ctl daycloser-*`: run yang disentuh
     bootstrap: bool      ## `--role=ctl daycloser-run`: tetapkan tanggal buku pertama
     simulate: bool       ## `--role=ctl daycloser-run --mode=SIMULATION`: dry-run tanpa menulis
+    modeGiven: bool      ## `--mode` disebut eksplisit (validasi: hanya untuk ctl daycloser-run)
 
 proc die(msg: string) =
   stderr.writeLine "kran-api: " & msg
@@ -196,6 +197,7 @@ proc parseArgs(argv: seq[string]): CliOptions =
       result.bootstrap = true
     elif arg.startsWith("--mode="):
       let mode = arg["--mode=".len .. ^1].strip().toUpperAscii
+      result.modeGiven = true
       if mode == $rmSimulation:
         result.simulate = true
       elif mode != $rmReal:
@@ -254,9 +256,9 @@ proc parseArgs(argv: seq[string]): CliOptions =
   if result.bootstrap and
      not (result.role == roleCtl and result.cmd == dayCloserRunCmd):
     die("--bootstrap hanya untuk `--role=ctl " & dayCloserRunCmd & "`")
-  if result.simulate and
+  if result.modeGiven and
      not (result.role == roleCtl and result.cmd == dayCloserRunCmd):
-    die("--mode=SIMULATION hanya untuk `--role=ctl " & dayCloserRunCmd & "`")
+    die("--mode hanya untuk `--role=ctl " & dayCloserRunCmd & "`")
   if result.simulate and result.bootstrap:
     die("--mode=SIMULATION tidak boleh digabung --bootstrap (dry-run tidak menetapkan tanggal buku)")
   if result.fullName.len > 0 and
@@ -349,6 +351,7 @@ const CtlUsage* =
   "  daycloser-status: status penutupan berjalan (kode keluar 1 = ada run aktif atau\n" &
   "                    tanggal buku CLOSING; gate deploy membacanya sebagai tahan)\n" &
   "  daycloser-run   : rencanakan + jalankan penutupan (butuh --business-date=<YYYY-MM-DD>;\n" &
+  "                    --mode=SIMULATION = dry-run: cetak rencana task/chunk tanpa menulis apa pun)\n" &
   "                    level ditentukan kalender institusi, bukan argumen; tambah\n" &
   "                    --bootstrap HANYA untuk menetapkan tanggal buku pertama)\n" &
   "  daycloser-resume: lanjutkan run PAUSED/FAILED/BLOCKED (butuh --run=<uuid>)\n" &
