@@ -157,10 +157,23 @@ proc accrualOf(item: AccrualAccount; businessDate: string): AccrualCalc =
   let scale = roundingScaleOf(item.scaleValue, a.accountNo)
   let units = basisDays(basis)
 
-  # Hari akrual kumulatif sejak rekening dibuka sampai tanggal buku (inklusif). Basis 30/360 bisa
-  # menghasilkan 0 hari untuk rentang pendek di akhir bulan — artefak konvensi, bukan bug; rekening
-  # itu tidak mencatat baris hari ini dan ketinggalannya ikut pada hari berikutnya.
-  let cumulativeDays = accrualDays(basis, a.openedOn, addDays(through, 1).toIso)
+  # Bunga berhenti pada hari **sebelum** jatuh tempo (keputusan pemilik, D-155): tenor 365 hari
+  # dari 1 Okt 2026 berakhir 30 Sep 2027, dan maturity_date-nya 1 Okt 2027. Tanpa batas ini,
+  # deposit yang prosesnya terlambat akan berbunga melewati perjanjian.
+  var accrualThrough = through
+  if item.maturityDate.len > 0:
+    let maturity = parseDate(item.maturityDate, "maturity_date rekening " & a.accountNo)
+    let lastAccruing = addDays(maturity, -1)
+    if lastAccruing < accrualThrough:
+      accrualThrough = lastAccruing
+  if accrualThrough < opened:
+    return AccrualCalc(days: 0, amount: zero(), cumulative: zero(),
+      ratePercent: rate.toPercentString, basisDayCount: units)
+
+  # Hari akrual kumulatif sejak rekening dibuka sampai tanggal akrual terakhir (inklusif). Basis
+  # 30/360 bisa menghasilkan 0 hari untuk rentang pendek di akhir bulan — artefak konvensi, bukan
+  # bug; rekening itu tidak mencatat baris hari ini dan ketinggalannya ikut pada hari berikutnya.
+  let cumulativeDays = accrualDays(basis, a.openedOn, addDays(accrualThrough, 1).toIso)
   if cumulativeDays <= 0:
     # 30/360 bisa memberi 0 hari untuk rentang pendek di akhir bulan (artefak konvensi). Tidak ada
     # yang dicatat hari ini; ketinggalannya ikut pada hari berikutnya karena kumulatif dihitung
@@ -183,8 +196,14 @@ proc accrualOf(item: AccrualAccount; businessDate: string): AccrualCalc =
       " (pokok berkurang tanpa koreksi akrual?)")
 
   let rangeStart = if item.lastDate.len > 0: addDays(parseDate(item.lastDate,
-    "tanggal akrual terakhir rekening " & a.accountNo), 1).toIso else: a.openedOn
-  AccrualCalc(days: accrualDays(basis, rangeStart, addDays(through, 1).toIso),
+    "tanggal akrual terakhir rekening " & a.accountNo), 1) else: opened
+  # `accrualThrough` bisa berada **sebelum** awal rentang: rekening yang sudah diakrualkan sampai
+  # batas jatuh tempo lalu diproses lagi setelahnya. Itu bukan rentang terbalik yang salah, hanya
+  # tidak ada hari baru — dan `accrualDays` menolak urutan terbalik.
+  if accrualThrough < rangeStart:
+    return AccrualCalc(days: 0, amount: zero(), cumulative: zero(),
+      ratePercent: rate.toPercentString, basisDayCount: units)
+  AccrualCalc(days: accrualDays(basis, rangeStart.toIso, addDays(accrualThrough, 1).toIso),
     amount: amount, cumulative: cumulative, ratePercent: rate.toPercentString,
     basisDayCount: units)
 
