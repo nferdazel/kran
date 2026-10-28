@@ -57,6 +57,7 @@ describe("visibleNavLinks", () => {
       "/app/ledger/admin",
       "/app/teller",
       "/app/vault",
+      "/app/dayclose",
       "/app/accounts/open",
       "/app",
       "/app/products",
