@@ -3471,3 +3471,38 @@ satu MAJOR (interaksi dormant↔maturity) dan beberapa MINOR. Tidak ada BLOCKER.
 
 **Bukti**: `itdaycloser_deposit` **33 `[OK]`**, `itapi_teller` **49 `[OK]`**, `itdaycloser_gates`
 13 `[OK]`. `./task ci` dijalankan setelah perubahan ini (lihat entri berikutnya untuk hasil penuh).
+
+## 2026-10-28 — T-140 simulasi 12 bulan, benchmark EOD, dry-run SIMULATION: T-140 SELESAI
+
+**Konteks**: Fase 3 hanya bisa dinyatakan selesai bila penutupan terbukti berjalan setahun penuh,
+target performa §23 punya angka, dan dry-run §11.7 punya jalur. Ketiganya belum ada.
+
+**Yang berubah**
+
+- `apps/api/tests/itdaycloser_sim.nim` — simulasi 12 bulan: setiap hari kerja 2026 ditutup lewat
+  `startRunAction` dengan enam deposito (ARO `NONE`/`PRINCIPAL`/`PRINCIPAL_AND_INTEREST`) dan dua
+  tabungan; invarian akhir tahun (cache = subledger, akrual = beban GL, bunga dibayar = akrual
+  terakhir, dormant, debit = kredit, 12 periode tertutup). 5 `[OK]`, ±12 detik.
+- `tools/bench-eod` + `./task bench-eod --accounts N` — seed massal + satu penutupan penuh; menolak
+  database non-uji kecuali `--force`.
+- Gate `ledger.no_late_postings` memblokir setiap penutupan yang punya rekening berjangka karena
+  jurnal akrual/jatuh tempo milik run itu sendiri direkam setelah freeze → kolom
+  `ledger.journal.daycloser_run_id` (`ledger/0072`, expand) + plumbing `ctx.runId` (D-158).
+- Dry-run `SIMULATION`: `planTasks` dipisahkan dari `planRun`, `startSimulationAction` mencetak
+  rencana (task/chunk, `"writes": false`) tanpa menulis apa pun; `ctl daycloser-run --mode=`
+  (D-159). 3 `[OK]` di `itdaycloser_lifecycle`.
+- `docs/milestones/M3-report.md`, `docs/tasks/T-140.md`, `ACCEPTED-LIMITS` (target performa,
+  SIMULATION, chunk sekuensial), runbook §3a.
+
+**Bukti**
+
+- Benchmark (MacBook lokal, PostgreSQL 18, `kran_test`): 100 rekening 0,13 s; 1.000 0,62 s; 10.000
+  6,57 s; **100.000 133,45 s** (±1,33 ms/rekening), semuanya `COMPLETED`. Target §23 sisi simpanan
+  = ±7% dari 30 menit; 50k pinjaman belum ada (Fase 4).
+- `./task ci` hijau: seluruh suite Nim, kontrak OpenAPI, vitest **142**, Playwright **59**.
+- Suite terkait: `itdaycloser_sim` 5, `itdaycloser_deposit` 33, `itdaycloser_lifecycle` 10,
+  `itdaycloser_gates` 13, `itapi_teller` 49.
+
+**Batas**: dry-run tingkat rencana (D-159), chunk sekuensial, benchmark hardware lokal, 50k pinjaman
+belum ada, O-108…O-114 terbuka. **Milestone berhenti di sini menunggu tinjauan manusia**
+(AGENTS.md §7).
