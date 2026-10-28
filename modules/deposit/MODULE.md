@@ -90,6 +90,19 @@ berjalan **sebelum** `ledger/0003`). `deposit/0008` menambah grant runtime untuk
 - **Izin** `teller.transaction.post` diperiksa di **kedua** cabang rekening (sumber & tujuan).
 - **HUMAN-REVIEW-REQUIRED**: mutasi dua saldo + jurnal (AGENTS.md §8).
 
+## Hitung hari bunga (T-138a, D-152)
+
+`domain/daycount.nim` — murni, tanpa uang dan tanpa I/O:
+
+- `DayCountBasis` (`dcAct365`/`dcAct360`/`dcThirty360`, nilai string sama dengan parameter
+  `product.savings.day_count_basis`), `parseDayCountBasis` (tanpa fallback; nilai tak dikenal
+  `ValueError`), `basisDays` (365/360/360), `accrualDays(basis, startsOn, endsOn)`.
+- `THIRTY_360` memakai konvensi **30/360 US (NASD)** dengan aturan tertulis di docstring; rentang
+  pendek di akhir bulan bisa menghasilkan 0 hari (artefak konvensi). `NEEDS-COMPLIANCE-REVIEW`:
+  konvensi ini perlu konfirmasi compliance, dan `ACT_365` adalah default institusi (D-152).
+- **Nominal bunga belum ada di sini** (butuh `Money` × rate × hari, pembulatan skala 2, dan review
+  manusia — AGENTS.md §8). `accrualDays` hanya menjawab berapa hari yang harus dikalikan.
+
 ## Event
 
 - **Buka rekening**: tanpa event outbox — hanya audit `deposit.account.open` (belum ada konsumen,
