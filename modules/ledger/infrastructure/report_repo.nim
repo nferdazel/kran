@@ -111,6 +111,9 @@ proc latePostings*(db: DbConn, businessDate, frozenAtIso: string;
         FROM ledger.journal
        WHERE business_date = ?::date
          AND recorded_at > ?::timestamptz
+         -- Jurnal yang dibuat task penutupan itu sendiri (`ledger/0072`): akrual dan perpindahan
+         -- jatuh tempo memang direkam setelah freeze, dan itu bukan tulisan terlambat.
+         AND daycloser_run_id IS NULL
        ORDER BY recorded_at, journal_id
        LIMIT ?""", businessDate, frozenAtIso, idLimit):
     result.ids.add row[0]

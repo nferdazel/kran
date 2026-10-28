@@ -279,3 +279,14 @@ bunga deposito berjangka:
   struktur pilot, bukan kutipan SAK/PSAK (REG-011 `V!`).
 - Angka akrual (rate, basis hari, skala pembulatan) tetap **parameter produk** (`product.savings.*`,
   D-137/O-084), tidak pernah nilai di kode atau di migrasi.
+
+## Provenance jurnal penutupan (T-140, D-158)
+
+`ledger.journal.daycloser_run_id` (nullable, `ledger/0072`) menandai jurnal yang **dibuat task
+penutupan buku**; jurnal jalur bisnis membiarkannya `NULL`. Gate `ledger.no_late_postings`
+(`DAY-310`) mengabaikan jurnal ber-penanda, karena akrual dan perpindahan jatuh tempo memang
+merekam jurnal setelah freeze.
+
+Aturan untuk task penutupan baru: teruskan `ctx.runId` ke `postRuleJournalSync`/
+`postJournalSync`. Parameter itu opsional supaya pemanggil bisnis tidak perlu berubah, jadi
+kelalaian tidak gagal-kompilasi — pastikan lewat test task-nya.

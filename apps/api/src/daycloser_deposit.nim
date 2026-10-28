@@ -294,7 +294,7 @@ proc runChunk(pool: DbPool; clock: Clock; ctx: TaskContext; chunk: Chunk): TaskR
           journalId = postRuleJournalSync(db, clock, "InterestAccrued", calc.amount,
             a.branchId, a.accountId, ctx.businessDate,
             "interest.accrual:" & $a.accountId & ":" & ctx.businessDate, systemActor,
-            %*{"product": a.productCode, "accountType": $a.accountType})
+            %*{"product": a.productCode, "accountType": $a.accountType}, ctx.runId)
           # Event **tanpa** header `accounting`: jurnalnya sudah ditulis sinkron di atas, jadi
           # konsumen outbox tidak boleh memposting jurnal kedua (pola yang sama dengan transaksi
           # tunai teller). Header `accounting` hanya untuk event yang belum dijurnal.
@@ -378,7 +378,7 @@ proc journalOf(db: DbConn; clock: Clock; ctx: TaskContext; a: Account; eventType
   ## yang sama (lapis kedua setelah perubahan keadaan rekening).
   postRuleJournalSync(db, clock, eventType, amount, a.branchId, a.accountId, ctx.businessDate,
     keyPrefix & $a.accountId & ":" & ctx.businessDate, systemActor,
-    %*{"product": a.productCode, "accountType": $a.accountType})
+    %*{"product": a.productCode, "accountType": $a.accountType}, ctx.runId)
 
 proc recordMovement(db: DbConn; clock: Clock; accountId: Id; txType: TransactionType;
                     amount: Money; businessDate, narration: string; journalId: Id) =

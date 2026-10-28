@@ -4098,3 +4098,31 @@ dijawab kode:
 2. **Dua kondisi berhenti yang baru**: cache saldo rekening hilang (`DAY-348`, jangan tutup deposito
    tanpa memindahkan pokok) dan proses terlambat lebih dari satu tenor (`DAY-349`, karena tanggal
    jatuh tempo baru sudah lewat lagi → bunga siklus yang sama akan dibayar dua kali, O-109).
+
+## D-158 — Provenance jurnal penutupan: gate `no_late_postings` tidak boleh memblokir run oleh jurnalnya sendiri (28 Okt 2026)
+
+**Konteks.** Gate pasca-tutup `ledger.no_late_postings` (`DAY-310`, T-134) menandai jurnal
+**bertanggal buku** yang direkam setelah tanggal dibekukan; maksudnya menangkap tulisan HTTP yang
+lolos sebelum freeze lalu commit sesudahnya (TOCTOU). Benchmark EOD T-140 menemukan konsekuensi yang
+tidak terpikirkan saat gate ditulis: task penutupan **sendiri** juga menulis jurnal setelah freeze —
+akrual bunga (`InterestAccrued`) dan perpindahan jatuh tempo (`DepositMatured`/`InterestPosted`/
+`InterestCapitalized`) — sehingga setiap penutupan yang punya rekening berjangka berakhir `BLOCKED`
+oleh gate-nya sendiri. Ini bukan teori: `./task bench-eod --accounts 100` langsung `BLOCKED`
+`DAY-310` sebelum perbaikan ini.
+
+**Keputusan.** Tambah provenance eksplisit, bukan pengecualian berdasarkan nama event:
+
+1. `ledger.journal.daycloser_run_id` (nullable, `ledger/0072`, expand-only, tanpa FK lintas modul).
+2. `insertJournal`/`postRuleJournalSync`/`postJournalSync` menerima `daycloserRunId` (default kosong);
+   task `deposit.*` mengisi `ctx.runId`.
+3. `latePostings` mengabaikan jurnal ber-`daycloser_run_id`.
+
+**Konsekuensi.**
+
+- Jurnal dari jalur bisnis (teller, PB, penyesuaian manual) tetap tanpa penanda → tetap dinilai
+  gate seperti sebelumnya; tidak ada pelonggaran untuk tulisan yang seharusnya ditangkap.
+- Task penutupan baru yang menulis jurnal **wajib** meneruskan `ctx.runId`; parameter opsional
+  membuat kelalaian itu tidak gagal-kompilasi, jadi aturannya dicatat di `ledger/MODULE.md` dan
+  diuji lewat `itdaycloser_gates` ("jurnal milik run penutupan sendiri tidak dihitung terlambat").
+- Kolom ini juga menjawab pertanyaan audit "jurnal ini lahir dari run mana" tanpa membongkar
+  `idempotency_key`.
