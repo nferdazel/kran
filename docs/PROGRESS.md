@@ -3506,3 +3506,29 @@ target performa §23 punya angka, dan dry-run §11.7 punya jalur. Ketiganya belu
 **Batas**: dry-run tingkat rencana (D-159), chunk sekuensial, benchmark hardware lokal, 50k pinjaman
 belum ada, O-108…O-114 terbuka. **Milestone berhenti di sini menunggu tinjauan manusia**
 (AGENTS.md §7).
+
+## 2026-10-28 — T-140 review putaran 4: allowlist contract, kode dry-run, cakupan benchmark
+
+**Konteks**: review independen atas `88af816..HEAD` (T-140 + perbaikan putaran 3) menemukan satu
+MAJOR dan enam MINOR; tidak ada BLOCKER.
+
+**Yang berubah**
+
+- `ops/migrations/contract-auto.txt`: `deposit/0072` (COMMENT `last_activity`) didaftarkan — tanpa
+  itu `deploy-vps.sh` menolak deploy karena ada contract tertunda yang tidak di-allowlist.
+- Dry-run `SIMULATION`: kode penolakan `CLOSING` disamakan dengan run nyata
+  (`business_date_closing`); test memakai hari kerja tanpa run untuk kasus `business_date_mismatch`
+  dan menambah kasus `CLOSING`; `--mode` (termasuk `REAL`) hanya sah untuk `ctl daycloser-run` dan
+  muncul di `--help`.
+- D-157 butir 6 dikoreksi: `DAY-351` pada task non-kritis **tidak** menahan penutupan (run tetap
+  `COMPLETED`, task `FAILED`); runbook menyebut cara melihatnya, O-115 mencatat tidak adanya alert
+  otomatis.
+- Cakupan benchmark dinyatakan eksplisit di `tools/bench-eod`, `docs/tasks/T-140.md`, dan
+  `docs/milestones/M3-report.md`: seed tanpa `maturity_date` (task jatuh tempo hanya memindai) dan
+  tanggal uji bukan akhir bulan (tutup periode tidak berjalan) — angka 100k mengukur akrual +
+  dormant + snapshot + gate.
+- `docs/tasks/T-138.md`: catatan bukti tidak lagi menyebut `setAccountStatus` yang sudah dihapus.
+
+**Bukti**: `itdaycloser_lifecycle` 11 `[OK]` (termasuk dua kasus penolakan dry-run yang baru);
+`./task ci` hijau (suite Nim, kontrak OpenAPI, vitest 142, Playwright 59).
+

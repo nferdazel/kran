@@ -56,6 +56,12 @@ detik. Invarian yang diperiksa di akhir tahun:
 sama dengan `ctl`. Lingkungan: MacBook lokal (Apple Silicon), PostgreSQL 18, `kran_test`, chunk 1000,
 produk 2,5% ACT/365, saldo 10.000.000 per rekening.
 
+**Cakupan yang diukur jujur**: seed tidak mengisi `maturity_date`/`aro_instruction`, jadi task
+`deposit.maturity_aro` memindai halaman tetapi tidak memindahkan uang, dan tanggal 28 Okt bukan hari
+kerja terakhir bulan sehingga `ledger.period_close` tidak berjalan. Angka di bawah mengukur jalur
+**akrual + dormant + snapshot + gate**, bukan jalur tulis jatuh tempo atau tutup periode; keduanya
+diukur di simulasi 12 bulan (`itdaycloser_sim`), bukan pada 100k rekening.
+
 | Rekening | EOD | ms/rekening | Status |
 |---|---|---|---|
 | 100 | 0,13 s | 1,31 | `COMPLETED` |
@@ -77,6 +83,7 @@ anggaran waktu (133 detik dari 1.800 detik). Paralelisme chunk belum dibutuhkan 
 | **Penutupan hanya scope `INSTITUTION`** | Scope cabang belum punya pemanggil | Run cabang ditolak/berakhir `FAILED` (`ACCEPTED-LIMITS`) |
 | **Tidak ada timeout per task** | Belum diputuskan | Task menggantung menahan run sampai operator `daycloser-cancel` |
 | **Benchmark di hardware lokal**, bukan VPS entry-level | Tidak ada akses benchmark VPS | Angka 133 detik adalah batas atas optimistis; perlu diulang di VPS sebelum pilot |
+| **Benchmark tidak mengukur jalur tulis jatuh tempo/EOM** | Seed tanpa `maturity_date`, tanggal uji bukan akhir bulan | Angka 100k = akrual + dormant + snapshot + gate; jalur jatuh tempo & tutup periode dibuktikan di simulasi 12 bulan, belum pada skala 100k |
 | **Tutup otomatis rekening dormant tidak ada** (§11.6 "tutup otomatis") | Keputusan produk/regulasi belum ada | Rekening dormant menumpuk; laporan tetap menampilkannya sebagai rekening hidup (O-114) |
 | **Pencairan dini deposito diblokir** | Akrual kumulatif tidak punya jalur koreksi historis | Penarikan/PB yang menyentuh `TIME_DEPOSIT` ditolak 409 `time_deposit_locked` (D-156, O-108) |
 

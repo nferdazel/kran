@@ -10,6 +10,12 @@
 ## satu baris subledger per rekening, tanggal buku dan periode GL yang OPEN. Seed memakai SQL massal
 ## (`generate_series`): 100k panggilan per-rekening akan mengukur biaya seed, bukan biaya EOD.
 ##
+## **Cakupan yang diukur.** Rekening seed tidak diberi `maturity_date`/`aro_instruction`, jadi task
+## `deposit.maturity_aro` hanya memindai halaman tanpa memindahkan uang; tanggal buku bawaan juga
+## bukan hari kerja terakhir bulan, jadi `ledger.period_close` tidak berjalan. Angka yang keluar =
+## jalur **akrual + dormant + snapshot + gate**. Jalur tulis jatuh tempo dan tutup periode diukur di
+## simulasi 12 bulan (`apps/api/tests/itdaycloser_sim.nim`), bukan di sini.
+##
 ## **Keamanan.** Alat ini **menghapus seluruh schema** sebelum menyemai. Ia menolak berjalan bila
 ## nama database tidak mengandung `_bench` atau `_test`, kecuali `--force` diberikan — salah ketik
 ## di sini berarti menghapus data dev.

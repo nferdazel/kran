@@ -168,7 +168,7 @@ SELECT t.task_id, t.state, t.error->>'code' AS code, t.metrics
 | `DAY-348` | rekening jatuh tempo tanpa baris `deposit.account_balance` | cache saldo hilang: jangan tutup rekening (pokok bisa hilang tanpa jejak). Rekonstruksi saldo lewat `reconcile-deposits`, lalu `daycloser-resume` |
 | `DAY-349` | jatuh tempo baru sudah lewat lagi (proses terlambat > satu tenor) | siklus ARO kedua belum didukung (O-109). Selesaikan perpanjangan/pembayaran secara manual lewat jalur resmi, perbaiki `maturity_date`, lalu resume |
 | `DAY-350` | daftar rekening dormant gagal dibaca | galat basis data; task dicoba ulang otomatis |
-| `DAY-351` | parameter `deposit.dormant.after_months` tidak terbaca / bukan bulan ≥ 1 | lengkapi nilai parameter institusi (atau perbaiki tipenya) lewat maker-checker, lalu `daycloser-resume`. Task **tidak** menebak ambang: menandai rekening dormant tanpa dasar kebijakan lebih buruk daripada run gagal |
+| `DAY-351` | parameter `deposit.dormant.after_months` tidak terbaca / bukan bulan ≥ 1 | lengkapi nilai parameter institusi (atau perbaiki tipenya) lewat maker-checker, lalu `daycloser-resume`. Task **tidak** menebak ambang. Karena task dormant **non-kritis**, run tetap `COMPLETED` dengan task `FAILED`: deteksi/reaktivasi dormant berhenti sampai diperbaiki, jadi jangan menunggu run `BLOCKED` — periksa status task (`daycloser-status`, `/app/dayclose`) |
 | `DAY-352` | status rekening tidak dikenal saat membaca daftar dormant | data rusak; perbaiki `deposit.account.status` (CHECK `0071` seharusnya menolak nilai asing) |
 | `DAY-353` | status dormant gagal disimpan | galat basis data; task dicoba ulang. Tidak ada uang yang berpindah, dan task ini **tidak kritis** — penutupan tetap bisa selesai dengan mencatat kegagalan |
 

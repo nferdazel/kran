@@ -4071,8 +4071,13 @@ yang boleh dilakukan rekening dormant.
    menyentuh jurnal; kegagalannya dicatat `FAILED` dan bisa diulang, tetapi tidak menahan
    penutupan. Ini berbeda dari akrual (D-154) dan jatuh tempo (D-155) yang menyentuh angka.
 6. **Ambang wajib ada sebagai parameter aktif.** Parameter hilang/bukan bulan ≥ 1 = `DAY-351`,
-   bukan "lewati saja": menandai rekening dormant tanpa dasar kebijakan yang berlaku lebih buruk
-   daripada run gagal.
+   bukan "lewati saja": task tidak menebak ambang dan tidak memproses halaman itu.
+   **Koreksi (review putaran 4):** karena task ini non-kritis (butir 5), `DAY-351` **tidak**
+   menahan penutupan — run tetap `COMPLETED` dengan task berstatus `FAILED`. Akibatnya deteksi dan
+   reaktivasi dormant berhenti sampai parameternya diperbaiki, dan itu hanya terlihat bila operator
+   memeriksa status task (`daycloser-status`, halaman `/app/dayclose`). Tidak ada alert otomatis
+   untuk task non-kritis yang `FAILED`; dicatat sebagai O-115. Kalimat sebelumnya ("lebih buruk
+   daripada run gagal") tidak sesuai perilaku kode dan sudah dikoreksi, bukan dibiarkan.
 
 **Konsekuensi.**
 
