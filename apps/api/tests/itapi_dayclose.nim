@@ -27,6 +27,10 @@ const
   StatusPath = "/api/v1/dayclose/status"
   RunsPath = "/api/v1/dayclose/runs"
   RunPath = "/api/v1/dayclose/runs/{runId}"
+  StartPath = "/api/v1/dayclose/run"
+  ResumePath = "/api/v1/dayclose/runs/{runId}/resume"
+  PausePath = "/api/v1/dayclose/runs/{runId}/pause"
+  CancelPath = "/api/v1/dayclose/runs/{runId}/cancel"
   LoginPath = "/api/v1/auth/login"
   AdminUser = "dev.maker"
   OtherUser = "dev.checker"
@@ -122,7 +126,9 @@ proc call(verb, path, token: string): Reply =
   if verb == "GET":
     response = client.get(baseUrl & path)
   else:
-    response = client.post(baseUrl & path, "{}")
+    # Tanpa badan: aksi day-close tidak membaca apa pun dari badan, dan badan kosong selalu
+    # diterima pembungkus (badan bertipe lain dijawab 415).
+    response = client.post(baseUrl & path, "")
   result.code = response.code.int
   result.setCookie = response.headers.getOrDefault("Set-Cookie")
   result.body = newJNull()
@@ -321,6 +327,102 @@ suite "day-close: run tersimpan":
         check task["reason"].getStr() == "bukan akhir bulan"
     check chunkTotal == dbChunks
     check detail.body["taskCounts"]["total"].getInt() == dbTasks
+
+# ---------------------------------------------------------------------------------------------
+# Aksi (T-139a): endpoint memakai layanan yang sama dengan `ctl`.
+# ---------------------------------------------------------------------------------------------
+
+proc seedRun(state: string) =
+  execScript(db, "DELETE FROM daycloser.chunk")
+  execScript(db, "DELETE FROM daycloser.task")
+  execScript(db, "DELETE FROM daycloser.run")
+  let cfg = Config(chunkSize: 100, maxAttempts: 3, retryBackoffSeconds: 0)
+  execScript(db, """
+    INSERT INTO daycloser.run
+      (run_id, scope_type, scope_id, business_date, levels, mode, state, control,
+       param_snapshot, param_snapshot_hash, started_at)
+    VALUES ('""" & FixtureRunId & """', 'INSTITUTION', NULL, DATE '""" & FixtureDate &
+      """',
+            '{EOD}', 'REAL', '""" & state & """', 'NONE',
+            '""" & $cfg.configJson & """'::jsonb, '""" & configHash(cfg) & """', now())
+  """)
+  execScript(db, """
+    INSERT INTO daycloser.task (run_id, task_id, kind, critical, state, attempt)
+    VALUES ('""" & FixtureRunId & """', 'ledger.trial_balance', 'POSTCHECK', true, 'PENDING', 0)
+  """)
+  execScript(db, """
+    INSERT INTO daycloser.chunk (run_id, task_id, chunk_no, state, attempt)
+    VALUES ('""" & FixtureRunId & """', 'ledger.trial_balance', 0, 'PENDING', 0)
+  """)
+
+proc businessDateIn(state: string) =
+  execScript(db, "DELETE FROM platform.business_date")
+  execScript(db, """
+    INSERT INTO platform.business_date (scope_type, scope_id, current_business_date, state)
+    VALUES ('INSTITUTION', NULL, DATE '""" & FixtureDate & """', '""" & state & """')
+  """)
+
+suite "day-close: aksi":
+  test "tanpa sesi → 401 di keempat aksi":
+    for path in [StartPath, RunsPath & "/" & FixtureRunId & "/resume",
+                 RunsPath & "/" & FixtureRunId & "/pause",
+                 RunsPath & "/" & FixtureRunId & "/cancel"]:
+      check call("POST", path, "").code == 401
+
+  test "tanpa izin dayclose.run.manage → 403 problem":
+    seedRun("RUNNING")
+    for path in [RunsPath & "/" & FixtureRunId & "/pause",
+                 RunsPath & "/" & FixtureRunId & "/cancel"]:
+      let reply = call("POST", path, otherToken)
+      check reply.code == 403
+      checkProblem(PausePath, "POST", "403", reply.body)
+
+  test "run ditolak sebelum menyentuh orkestrasi: tanggal & bootstrap":
+    businessDateIn("OPEN")
+    let mismatch = call("POST", StartPath & "?businessDate=2026-10-29", adminToken)
+    check mismatch.code == 409
+    check mismatch.body["params"]["reason"].getStr() == "business_date_mismatch"
+    checkProblem(StartPath, "POST", "409", mismatch.body)
+
+    let invalid = call("POST", StartPath & "?businessDate=bukan-tanggal", adminToken)
+    check invalid.code == 400
+    checkProblem(StartPath, "POST", "400", invalid.body)
+
+    execScript(db, "DELETE FROM platform.business_date")
+    let bootstrap = call("POST", StartPath, adminToken)
+    check bootstrap.code == 409
+    check bootstrap.body["params"]["reason"].getStr() == "bootstrap_required"
+    checkProblem(StartPath, "POST", "409", bootstrap.body)
+
+  test "pause → 409 saat tidak berjalan; cancel membuka tanggal buku":
+    businessDateIn("CLOSING")
+    seedRun("RUNNING")
+    let paused = call("POST", RunsPath & "/" & FixtureRunId & "/pause", adminToken)
+    check paused.code == 200
+    # Pengecualian gerbang: aksi day-close tetap boleh menulis saat `CLOSING`.
+    check paused.body["state"].getStr() == "PAUSED"
+    checkJson(PausePath, "POST", "200", paused.body)
+
+    let again = call("POST", RunsPath & "/" & FixtureRunId & "/pause", adminToken)
+    check again.code == 409
+    check again.body["params"]["reason"].getStr() == "not_running"
+    checkProblem(PausePath, "POST", "409", again.body)
+
+    let canceled = call("POST", RunsPath & "/" & FixtureRunId & "/cancel", adminToken)
+    check canceled.code == 200
+    check canceled.body["state"].getStr() == "CANCELED"
+    checkJson(CancelPath, "POST", "200", canceled.body)
+    check dbCount(sql"""SELECT count(*)::text FROM platform.business_date WHERE state = 'OPEN'""") == 1
+
+    let resumed = call("POST", RunsPath & "/" & FixtureRunId & "/resume", adminToken)
+    check resumed.code == 409
+    check resumed.body["params"]["reason"].getStr() == "already_finished"
+    checkProblem(ResumePath, "POST", "409", resumed.body)
+
+    for path in [RunsPath & "/" & UnknownRunId & "/resume",
+                 RunsPath & "/" & UnknownRunId & "/pause",
+                 RunsPath & "/" & UnknownRunId & "/cancel"]:
+      check call("POST", path, adminToken).code == 404
 
 # Jangan tinggalkan tanggal buku `CLOSING` (atau run aktif) untuk suite/e2e berikutnya.
 execScript(db, "DELETE FROM platform.business_date")

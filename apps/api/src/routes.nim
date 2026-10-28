@@ -259,8 +259,12 @@ proc tellerVaultRoutes*(): seq[RouteSpec] =
   ]
 
 proc dayCloseRoutes*(): seq[RouteSpec] =
-  ## `daycloser` baca saja (T-139a): status tanggal buku, riwayat run, detail task/chunk.
-  ## Izin `dayclose.run.read`; aksi tulis menyusul di commit terpisah.
+  ## `daycloser` (T-139a): monitor baca + aksi operasional. Izin `dayclose.run.read` untuk
+  ## membaca, `dayclose.run.manage` untuk menjalankan/menghentikan; keduanya wajib grant tanpa
+  ## batas cabang karena penutupan adalah urusan institusi.
+  ##
+  ## Aksi harus tetap bisa dipakai saat business date `CLOSING` — itu justru saat operator
+  ## membutuhkannya; pengecualiannya di `close_guard.nim`, bukan di handler.
   @[
     RouteSpec(httpMethod: hmGet, path: "/api/v1/dayclose/status",
               operationId: "getDayCloseStatus", handler: handleDayCloseStatus),
@@ -268,6 +272,14 @@ proc dayCloseRoutes*(): seq[RouteSpec] =
               operationId: "listDayCloseRuns", handler: handleListDayCloseRuns),
     RouteSpec(httpMethod: hmGet, path: "/api/v1/dayclose/runs/{runId}",
               operationId: "getDayCloseRun", handler: handleGetDayCloseRun),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/dayclose/run",
+              operationId: "startDayClose", handler: handleStartDayClose),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/dayclose/runs/{runId}/resume",
+              operationId: "resumeDayClose", handler: handleResumeDayClose),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/dayclose/runs/{runId}/pause",
+              operationId: "pauseDayClose", handler: handlePauseDayClose),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/dayclose/runs/{runId}/cancel",
+              operationId: "cancelDayClose", handler: handleCancelDayClose),
   ]
 
 proc branchRoutes*(): seq[RouteSpec] =

@@ -30,18 +30,30 @@ type
     cgBlock
 
 const
-  ## Rute yang tetap boleh menulis saat `CLOSING`: masuk/keluar, ganti kata sandi, dan MFA.
-  ## Tanpa ini, penutupan yang macet juga mengunci operator dari sistem yang seharusnya ia
-  ## tangani. Awalan memakai garis miring penutup supaya `/api/v1/authorization/...` tidak ikut
-  ## terbuka hanya karena berawalan sama.
-  closeGuardExemptPrefix* = "/api/v1/auth/"
+  ## Rute yang tetap boleh menulis saat `CLOSING`.
+  ##
+  ## `auth/`: tanpa masuk/keluar, ganti kata sandi, dan MFA, penutupan yang macet juga mengunci
+  ## operator dari sistem yang seharusnya ia tangani.
+  ##
+  ## `dayclose/`: aksi resume/pause/cancel **hanya** berguna saat `CLOSING`; menolaknya di sini
+  ## berarti satu-satunya jalan keluar dari penutupan macet ada di server. Pengecualian ini tidak
+  ## melemahkan otorisasi — aksi tetap menuntut sesi, izin `dayclose.run.manage`, dan grant tanpa
+  ## batas cabang.
+  ##
+  ## Semua awalan memakai garis miring penutup supaya `/api/v1/authorization/...` atau
+  ## `/api/v1/daycloser/...` tidak ikut terbuka hanya karena berawalan sama. Daftar ini **satu
+  ## definisi** dengan `exemptWritePrefixes` di `tools/openapi/lib.nim` (dikunci test `topenapi`).
+  closeGuardExemptPrefixes* = ["/api/v1/auth/", "/api/v1/dayclose/"]
 
 proc closeGuardApplies*(httpMethod, path: string): bool =
   ## Murni: apakah permintaan ini termasuk yang dijaga. `GET/HEAD/OPTIONS` tidak pernah mengubah
   ## apa pun, jadi tidak perlu melihat basis data.
   if httpMethod notin ["POST", "PUT", "PATCH", "DELETE"]:
     return false
-  not path.startsWith(closeGuardExemptPrefix)
+  for prefix in closeGuardExemptPrefixes:
+    if path.startsWith(prefix):
+      return false
+  true
 
 proc txnPolicy(db: DbConn; asOf: string): TxnPolicyDuringClose =
   ## Kebijakan aktif institusi. Nilai hilang/rusak **menolak** transaksi: penutupan yang sedang

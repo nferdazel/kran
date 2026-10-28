@@ -73,7 +73,10 @@ proc bd(): Option[BusinessDateRow] =
 proc runState(businessDate: string): string =
   db.getValue(sql"""
     SELECT state FROM daycloser.run
-     WHERE business_date = ?::date ORDER BY started_at DESC LIMIT 1""", businessDate)
+     -- Waktu mulai bisa sama persis (dua run dalam satu detik), jadi `run_id` (UUIDv7) yang
+     -- memutuskan: test harus bertanya "run terakhir", bukan "baris mana yang terbaca lebih dulu".
+     WHERE business_date = ?::date ORDER BY started_at DESC, run_id DESC LIMIT 1""",
+    businessDate)
 
 proc taskOf(businessDate, taskId: string): tuple[state, code, metrics: string] =
   let rows = db.getAllRows(sql"""
@@ -81,7 +84,7 @@ proc taskOf(businessDate, taskId: string): tuple[state, code, metrics: string] =
       FROM daycloser.task t
       JOIN daycloser.run r USING (run_id)
      WHERE r.business_date = ?::date AND t.task_id = ?
-     ORDER BY r.started_at DESC LIMIT 1""", businessDate, taskId)
+     ORDER BY r.started_at DESC, r.run_id DESC LIMIT 1""", businessDate, taskId)
   if rows.len == 0:
     return ("", "", "")
   (rows[0][0], rows[0][1], rows[0][2])

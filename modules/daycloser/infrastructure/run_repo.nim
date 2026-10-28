@@ -253,7 +253,10 @@ proc latestRun*(db: DbConn; scopeType, scopeId: string): Option[RunSnapshot] =
   for row in db.getAllRows(sql"""
       SELECT run_id::text FROM daycloser.run
        WHERE scope_type = ? AND coalesce(scope_id, '') = ?
-       ORDER BY business_date DESC, started_at DESC NULLS LAST
+       -- `run_id` (UUIDv7, urut waktu) memutus seri: dua run untuk tanggal yang sama bisa
+       -- mulai pada detik yang sama (batalkan lalu ulang), dan tanpa pemutus itu "terakhir"
+       -- bergantung pada urutan fisik baris.
+       ORDER BY business_date DESC, started_at DESC NULLS LAST, run_id DESC
        LIMIT 1""", scopeType, scopeId):
     return some(db.snapshot(row[0]))
   none(RunSnapshot)
@@ -265,7 +268,10 @@ proc activeRunFor*(db: DbConn; scopeType, scopeId: string): Option[RunSnapshot] 
       SELECT run_id::text FROM daycloser.run
        WHERE scope_type = ? AND coalesce(scope_id, '') = ?
          AND state IN ('PLANNED','PRECHECK','RUNNING','POSTCHECK','PAUSED')
-       ORDER BY business_date DESC, started_at DESC NULLS LAST
+       -- `run_id` (UUIDv7, urut waktu) memutus seri: dua run untuk tanggal yang sama bisa
+       -- mulai pada detik yang sama (batalkan lalu ulang), dan tanpa pemutus itu "terakhir"
+       -- bergantung pada urutan fisik baris.
+       ORDER BY business_date DESC, started_at DESC NULLS LAST, run_id DESC
        LIMIT 1""", scopeType, scopeId):
     return some(db.snapshot(row[0]))
   none(RunSnapshot)
@@ -275,7 +281,10 @@ proc recentRuns*(db: DbConn; scopeType, scopeId: string; limit: int): seq[RunSna
   for row in db.getAllRows(sql"""
       SELECT run_id::text FROM daycloser.run
        WHERE scope_type = ? AND coalesce(scope_id, '') = ?
-       ORDER BY business_date DESC, started_at DESC NULLS LAST
+       -- `run_id` (UUIDv7, urut waktu) memutus seri: dua run untuk tanggal yang sama bisa
+       -- mulai pada detik yang sama (batalkan lalu ulang), dan tanpa pemutus itu "terakhir"
+       -- bergantung pada urutan fisik baris.
+       ORDER BY business_date DESC, started_at DESC NULLS LAST, run_id DESC
        LIMIT ?::int""", scopeType, scopeId, $limit):
     result.add db.snapshot(row[0])
 
