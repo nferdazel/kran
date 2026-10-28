@@ -4085,6 +4085,29 @@ yang boleh dilakukan rekening dormant.
   menerima setoran dari siapa pun yang tahu nomor rekeningnya — risiko yang sudah ada untuk rekening
   aktif dan dicatat sebagai pekerjaan lanjutan, bukan perilaku baru.
 
+**Amendemen D-157 (28 Okt 2026, review putaran 3).**
+
+1. **Rekening tabungan `DORMANT` sah menjadi tujuan pembayaran jatuh tempo.** D-155 amendemen 1
+   menyebut "rekening `SAVINGS` `ACTIVE` pertama", ditulis sebelum `DORMANT` ada. Setelah T-138e,
+   tabungan yang lama tidak dipakai bisa `DORMANT`, dan menolaknya membuat deposito anggota berakhir
+   `DAY-343` pada task **kritis** — sementara satu-satunya task yang bisa mereaktivasi
+   (`deposit.dormant`) berjalan sesudahnya, jadi reaktivasi tidak akan pernah terjadi. Kredit jatuh
+   tempo adalah aktivitas rekening, dan D-157 butir 3 memang mengembalikan rekening ke `ACTIVE` pada
+   penutupan berikutnya. Urutan `maturity_aro` → `dormant` tetap dipertahankan.
+2. **Keputusan status dormant dihitung di dalam `UPDATE`, bukan dari halaman yang sudah dibaca.**
+   Halaman dibaca di koneksi lain; bila `daycloser.txn_policy_during_close = ALLOW`, setoran yang
+   commit di antara baca dan tulis akan diabaikan dan rekening bertanda dormant padahal baru
+   beraktivitas. `markDormantIfStale`/`reactivateIfActive` mengulang predikat yang sama
+   (`last_at` vs cutoff) di dalam pernyataan tulis, jadi hasilnya konsisten dengan data saat commit
+   (sisa race versi sebaliknya tetap dicatat di O-112).
+3. **`updated_at = now()` ikut ditulis** saat status berubah, supaya ada jejak waktu. Audit event per
+   rekening **belum** ada: untuk 100k rekening itu 100k baris audit per penutupan dan keputusannya
+   milik pemilik (O-113).
+4. **Tutup otomatis tidak termasuk.** Spec §11.6 menyebut "deteksi rekening dormant/tutup otomatis";
+   T-138e hanya menandai `DORMANT` dan mereaktivasi otomatis. Penutupan otomatis rekening dormant
+   butuh keputusan produk/regulasi (sisa saldo, pemberitahuan anggota, hak anggota) dan tidak
+   dikarang di sini — dicatat O-114.
+
 **Amendemen D-155 (28 Okt 2026, review T-138d).** Dua hal yang tidak diputuskan D-155 tetapi harus
 dijawab kode:
 

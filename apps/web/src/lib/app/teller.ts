@@ -93,6 +93,21 @@ export function isAccountId(value: string): boolean {
   return UUID_PATTERN.test(value.trim());
 }
 
+const ACCOUNT_STATUS_LABELS: Record<DepositAccount["status"], () => string> = {
+  ACTIVE: () => m.teller_account_status_active(),
+  CLOSED: () => m.teller_account_status_closed(),
+  DORMANT: () => m.teller_account_status_dormant(),
+};
+
+/**
+ * Label status rekening di passbook teller. `DORMANT` bukan `CLOSED`: rekening masih bisa menerima
+ * setoran dan kembali aktif pada penutupan berikutnya (D-157), jadi keduanya tidak boleh disamakan.
+ */
+export function accountStatusLabel(status: DepositAccount["status"]): string {
+  const template = ACCOUNT_STATUS_LABELS[status];
+  return template === undefined ? status : template();
+}
+
 function amountErrorMessage(error: "empty" | "invalid_format" | "not_positive" | "too_precise"): string {
   if (error === "empty") return m.teller_error_amount_empty();
   if (error === "too_precise") return m.teller_error_amount_precision();

@@ -3448,3 +3448,26 @@ BLOCKER, dua MAJOR, dan beberapa MINOR. Semua diperbaiki sebelum T-138 ditandai 
 
 **Bukti**: `itdaycloser_deposit` **30 `[OK]`**, `itapi_teller` **48 `[OK]`**, `itapi_deposit` 17,
 `itreconcile` 3. `./task ci` hijau: seluruh suite Nim, kontrak OpenAPI, vitest 142, Playwright 59.
+
+## 2026-10-28 — T-138e review putaran 3: dormant sebagai tujuan jatuh tempo + label UI
+
+**Konteks**: review independen atas `88af816..HEAD` (T-138e dormant + perbaikan T-138d) menemukan
+satu MAJOR (interaksi dormant↔maturity) dan beberapa MINOR. Tidak ada BLOCKER.
+
+**Yang berubah**
+
+- `maturity_repo.activeSavingsAccount`: rekening tujuan menerima `ACTIVE` **atau `DORMANT`** (kredit
+  jatuh tempo = aktivitas; reaktivasi terjadi di task dormant pada penutupan yang sama).
+- `dormant_repo.markDormantIfStale`/`reactivateIfActive`: predikat status + cutoff diulang di dalam
+  `UPDATE` (bukan memakai hasil baca halaman), `updated_at = now()` ikut ditulis.
+- Web: `statementStatusLabel` dan badge passbook teller punya cabang `DORMANT` eksplisit; kunci i18n
+  `statement_status_dormant`/`teller_account_status_dormant` (id+en).
+- `deposit/0072` (contract, `COMMENT` saja): komentar `last_activity` menjadi jujur — kolom itu
+  tidak dipakai deteksi dormant (O-111).
+- Test: tujuan `DORMANT`, PB sebagai aktivitas, akrual pada rekening `DORMANT`, PB dari/ke `DORMANT`
+  di `itapi_teller`, dan `DAY-349` dengan bunga yang benar-benar sudah diakrualkan.
+- D-157 amendemen (1–4), O-112 diperluas, O-113 (audit transisi status) dan O-114 (tutup otomatis
+  spec §11.6) dicatat.
+
+**Bukti**: `itdaycloser_deposit` **33 `[OK]`**, `itapi_teller` **49 `[OK]`**, `itdaycloser_gates`
+13 `[OK]`. `./task ci` dijalankan setelah perubahan ini (lihat entri berikutnya untuk hasil penuh).

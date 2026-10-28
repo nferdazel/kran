@@ -38,8 +38,8 @@ import kernel/[clock, dayclose, ids, money, result]
 
 import daycloser/domain/[registry, types]
 
-import deposit/domain/[account, transaction]
-import deposit/infrastructure/[account_repo, reconcile_repo, transaction_repo]
+import deposit/domain/[account, transaction, transfer]
+import deposit/infrastructure/[account_repo, reconcile_repo, transaction_repo, transfer_repo]
 import party/domain/party
 import party/infrastructure/party_repo
 import product/domain/product
@@ -178,6 +178,20 @@ proc seedPrincipalMovement(version: ProductVersion; productCode, accountId, amou
       narration: "setoran pokok", journalId: journalId), systemActor)
     1)
 
+proc seedTransferActivity(version: ProductVersion; productCode: string;
+                          sourceId, destinationId: Id; businessDate: string) =
+  ## PB yang benar-benar tercatat (jurnal + baris `deposit.transfer`), dipakai membuktikan bahwa
+  ## aktivitas dormant juga dibaca dari PB — bukan hanya dari `deposit.transaction` (D-157 butir 1).
+  let value = moneyFromString("1000.00").value()
+  discard dbPool.withTx(proc(d: DbConn): int =
+    let journalId = postRuleJournalSync(d, testClock, "DepositTransferred", value, Id(BranchId),
+      sourceId, businessDate, "test.transfer:" & $sourceId & ":" & businessDate, systemActor,
+      %*{"product": productCode, "accountType": "SAVINGS"})
+    insertTransfer(d, Transfer(transferId: newId(testClock), sourceAccountId: sourceId,
+      destinationAccountId: destinationId, amount: value, businessDate: businessDate,
+      narration: "PB uji aktivitas", journalId: journalId), systemActor)
+    1)
+
 proc taskOf(reg: Registry; id: TaskId): DayCloseTask =
   for t in reg.all():
     if t.id == id:
@@ -195,8 +209,10 @@ proc maturityTask(): DayCloseTask =
   taskOf(reg, maturityAroTaskId)
 
 proc ctxOn(businessDate: string; chunkSize = 1000): TaskContext =
-  TaskContext(runId: "test", scopeType: "INSTITUTION", scopeId: "", businessDate: businessDate,
-    levels: {clEOD}, mode: rmReal, chunkSize: chunkSize)
+  ## `runId` harus UUID sah: task meneruskannya ke `ledger.journal.daycloser_run_id` (D-158), jadi
+  ## nilai seperti "test" membuat jurnal akrual gagal ditulis dan seluruh chunk kembali `DAY-337`.
+  TaskContext(runId: "11111111-1111-4111-8111-111111111111", scopeType: "INSTITUTION", scopeId: "",
+    businessDate: businessDate, levels: {clEOD}, mode: rmReal, chunkSize: chunkSize)
 
 proc accrualRow(accountId: Id; businessDate: string):
     tuple[principal, days, rate, basis, amount, cumulative, journalId: string] =
@@ -403,6 +419,16 @@ suite "akrual bunga: rekening yang tidak diakrualkan":
     let accountId = timeDeposit(std.version, std.product.code, "2026-11-02", "10000000.00")
     check runAt(AccrualDate).isOk
     check accrualRow(accountId, AccrualDate).amount == ""
+
+  test "rekening DORMANT tetap diakrualkan (D-154 butir 1, D-157)":
+    # Dormant membatasi layanan, bukan perjanjian bunga: predikat akrual `status <> 'CLOSED'`.
+    let accountId = timeDeposit(std.version, std.product.code, OpenedOn, "10000000.00",
+      status = "DORMANT")
+
+    check runAt(AccrualDate).isOk
+    let row = accrualRow(accountId, AccrualDate)
+    check row.amount == "19178.08"
+    check row.journalId.len > 0
 
 suite "akrual bunga: konfigurasi produk rusak":
   test "binding rate hilang = DAY-331 dan chunk dibatalkan utuh":
@@ -823,6 +849,18 @@ suite "dormant: penandaan status (T-138e)":
     check runDormantAt(DormantRunDate).isOk
     check stateOf(accountId).status == "ACTIVE"
 
+  test "PB masuk dan keluar menghitung sebagai aktivitas (D-157 butir 1)":
+    # Aktivitas dibaca dari `deposit.transaction` **dan** `deposit.transfer`; kalau lateral PB salah
+    # kolom/arah, rekening yang baru saja menerima PB akan salah ditandai dormant.
+    seedDormantMonths(DormantMonths)
+    let sender = savingsAccount(std.version, std.product.code, $newPartyRow(), "2024-01-01")
+    let receiver = savingsAccount(std.version, std.product.code, $newPartyRow(), "2024-01-01")
+    seedTransferActivity(std.version, std.product.code, sender, receiver, "2026-09-01")
+
+    check runDormantAt(DormantRunDate).isOk
+    check stateOf(sender).status == "ACTIVE"
+    check stateOf(receiver).status == "ACTIVE"
+
   test "rekening CLOSED tidak pernah disentuh":
     let closedId = timeDeposit(std.version, std.product.code, "2024-01-01", "0.00",
       status = "CLOSED")
@@ -947,6 +985,28 @@ suite "jatuh tempo: guard (review T-138d)":
     check balanceOf(pokokId) == "0.00"
     check stateOf(depositId).status == "CLOSED"
 
+  test "tabungan tujuan DORMANT tetap dipakai (bukan DAY-343) dan direaktivasi":
+    closeAllTimeDeposits()
+    seedDormantMonths(DormantMonths)
+    let partyId = newPartyRow()
+    let depositId = timeDeposit(std.version, std.product.code, OpenedOn, "10000000.00",
+      maturityDate = MaturityDate, aro = "NONE", partyId = $partyId)
+    let savingsId = savingsAccount(std.version, std.product.code, $partyId, OpenedOn)
+    seedPrincipalMovement(std.version, std.product.code, $depositId, "10000000.00", OpenedOn)
+    # Tabungan anggota lama tidak dipakai → DORMANT sebelum deposito jatuh tempo. Kredit jatuh tempo
+    # adalah aktivitas, jadi rekening ini tetap target yang sah (D-157 butir 3).
+    execScript(db, "UPDATE deposit.account SET status = 'DORMANT' WHERE account_id = '" &
+      $savingsId & "'")
+    check runAt(MaturityRunDate).isOk
+
+    check runMaturityAt(MaturityRunDate).isOk
+    check balanceOf(savingsId) == "10013013.70"
+    check stateOf(depositId).status == "CLOSED"
+
+    # Task dormant pada penutupan yang sama mengembalikannya ACTIVE.
+    check runDormantAt(DormantRunDate).isOk
+    check stateOf(savingsId).status == "ACTIVE"
+
   test "baris saldo hilang = DAY-348, deposito tidak ditutup":
     closeAllTimeDeposits()
     let partyId = newPartyRow()
@@ -967,7 +1027,13 @@ suite "jatuh tempo: guard (review T-138d)":
     let partyId = newPartyRow()
     let depositId = timeDeposit(std.version, std.product.code, OpenedOn, "10000000.00",
       maturityDate = MaturityDate, aro = "PRINCIPAL", partyId = $partyId)
-    discard savingsAccount(std.version, std.product.code, $partyId, OpenedOn)
+    let savingsId = savingsAccount(std.version, std.product.code, $partyId, OpenedOn)
+    seedPrincipalMovement(std.version, std.product.code, $depositId, "10000000.00", OpenedOn)
+    # Bunga tenor penuh diakrualkan lebih dulu supaya guard benar-benar diuji: tanpa ini
+    # `interest.post:` kosong bukan karena guard, melainkan karena bunganya memang nol.
+    check runAt(MaturityRunDate).isOk
+    # Baris akrual bertanggal **tanggal buku**, bukan hari terakhir bunga.
+    check accrualRow(depositId, MaturityRunDate).cumulative != ""
 
     # Tenor 19 hari: jatuh tempo 2026-10-20 → perpanjangan 2026-11-08, yang juga sudah lewat pada
     # 2026-12-01. Melanjutkan berarti membayar bunga siklus yang sama dua kali (O-109).
@@ -975,4 +1041,7 @@ suite "jatuh tempo: guard (review T-138d)":
     check not res.isOk
     check res.error.code == "DAY-349"
     check stateOf(depositId) == ("ACTIVE", MaturityDate)
+    check balanceOf(depositId) == "10000000.00"
+    check balanceOf(savingsId) == "0.00"
     check interestPostJournal(depositId, "2026-12-01").len == 0
+    check transactionsOf(savingsId, ttInterestCredit).len == 0
