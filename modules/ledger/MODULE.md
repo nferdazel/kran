@@ -259,9 +259,14 @@ bunga deposito berjangka:
 
 - `204`, **bukan** `203`: `203 TITIPAN PENGURUS` sudah dipakai sejak `0036`, dan `ON CONFLICT (code)
   DO NOTHING` akan membuat kesalahan itu tidak bersuara.
-- Pokok deposito masuk `202 SIMPANAN BERJANGKA`; rule pemisah per jenis rekening **belum** ada
-  (butuh kondisi `accountType` di payload event) — pekerjaan T-138c, dan sampai itu mendarat
-  deposito berjangka belum boleh dibuka untuk anggota nyata.
+- Pokok deposito masuk `202 SIMPANAN BERJANGKA` lewat rule **berkondisi** `accountType =
+  TIME_DEPOSIT` (`0067`): `DepositPosted` → D 101.2 / K 202 dan `DepositWithdrawn` → D 202 / K 101.2.
+  Rule generik `0005`/`0012` tetap untuk tabungan; `specificityOf` memilih yang berkondisi karena
+  kondisi menambah kekhususan, dan `postJournalSync` sudah mengirim `accountType` di payload.
+  Penarikan sebelum jatuh tempo belum punya penalti — keputusan produk terbuka (O-108).
+- Jatuh tempo (`MaturityPosted` D 202 / K 201 dan `InterestPosted` D 204 / K 201) menyusul bersama
+  task `deposit.maturity_aro`; sampai itu mendarat, deposito berjangka belum boleh dibuka untuk
+  anggota nyata.
 - `NEEDS-COMPLIANCE-REVIEW`: penomoran akun dan penempatan beban di `501` adalah struktur pilot,
   bukan kutipan SAK/PSAK (REG-011 `V!`).
 - Angka akrual (rate, basis hari, skala pembulatan) tetap **parameter produk** (`product.savings.*`,

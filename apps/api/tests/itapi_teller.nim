@@ -74,6 +74,7 @@ var
   HighMinAccountId: string
   SessionBranchAccountId: string
   ProductRuleAccountId: string
+  TimeDepositAccountId: string
   PokokAccountId: string
   PokokTransferAccountId: string
   WajibAccountId: string
@@ -226,6 +227,16 @@ block:
   doAssert approveVersion(db, verRule.versionId, approver), "versi rule produk gagal di-approve"
   ProductRuleAccountId = $seedAccount(party.partyId, prodRule.productId, verRule.versionId,
     Id(BranchId), "SAV-PROD")
+  # Rekening **deposito berjangka** (T-138d): pokok masuk `202`, bukan `201` (D-152). Tipenya
+  # diubah sebelum disimpan karena `newAccount` selalu melahirkan tabungan.
+  var td = newAccount(newId(fixtureClock), party.partyId, prod.productId, ver.versionId,
+    ProductCode, Id(BranchId), "001", "2026-10-01", nextAccountSeq(db))
+  td.accountType = atTimeDeposit
+  discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+    insertAccount(d, td, fixtureActor)
+    1)
+  TimeDepositAccountId = $td.accountId
+
   # GL 102/202 (bukan 101.2/201 rule generik) supaya pemilihan rule produk bisa dibedakan di test.
   discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
     insertRule(d, PostingRule(ruleId: newId(fixtureClock), eventType: "DepositPosted",
@@ -670,6 +681,24 @@ suite "teller: setor & tarik":
     check balanceOf(accountId) == "40.00"
     check txCount(accountId) == rowsBefore
     check journalCount("DepositWithdrawn") == journalsBefore
+
+  test "deposito berjangka: pokok masuk 202, bukan 201 (T-138d)":
+    # D-152 (amendemen): kewajiban deposito dipisahkan dari tabungan supaya laporan bisa
+    # membedakannya. Rule generik `DepositPosted` tetap untuk tabungan; rule berkondisi
+    # `accountType` yang dipilih untuk rekening berjangka.
+    let token = tokenOf(login(MakerUser))
+    let deposit = postJson(CashPath, cashBody(TimeDepositAccountId, "DEPOSIT", "500.00"), token)
+    check deposit.code == 201
+    check deposit.body["balanceAfter"].getStr() == "500.00"
+    let depositLines = journalLines(deposit.body["journalId"].getStr())
+    check depositLines == @[("101.2", "500.00", "0.00"), ("202", "0.00", "500.00")]
+
+    let withdraw = postJson(CashPath, cashBody(TimeDepositAccountId, "WITHDRAWAL", "200.00"),
+      token)
+    check withdraw.code == 201
+    let withdrawLines = journalLines(withdraw.body["journalId"].getStr())
+    check withdrawLines == @[("202", "200.00", "0.00"), ("101.2", "0.00", "200.00")]
+    check balanceOf(TimeDepositAccountId) == "300.00"
 
 suite "teller: jurnal subledger tidak bisa dibalik (T-123)":
   test "jurnal transaksi tunai & PB ditolak 409 journal_owned_by_subledger":
