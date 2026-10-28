@@ -246,3 +246,23 @@ keberadaan baris `balance_snapshot` pada `ends_on`.
   ketiga gate pasca-tutup; sesi kas OPEN di rentang periode (`DAY-326`) atau periode sebelumnya
   yang masih OPEN (`DAY-328`) menahan penutupan. Periode yang lebih panjang dari sebulan (tahunan)
   dilaporkan `NOT_DUE`; tidak ada periode sama sekali = `DAY-324`.
+
+## Akrual bunga deposito (T-138b, D-152 + amendemen)
+
+Migrasi `0065_ledger_interest_accrual.sql` menambah akun dan dua rule yang dibutuhkan akrual
+bunga deposito berjangka:
+
+| Event | Jurnal | Kapan |
+|---|---|---|
+| `InterestAccrued` | **D 501 BEBAN BUNGA / K 204 BUNGA AKRUAL** | setiap EOD untuk bunga yang berjalan (task T-138c) |
+| `InterestPosted` | **D 204 BUNGA AKRUAL / K 201 SIMPANAN ANGGOTA** | saat bunga benar-benar masuk rekening |
+
+- `204`, **bukan** `203`: `203 TITIPAN PENGURUS` sudah dipakai sejak `0036`, dan `ON CONFLICT (code)
+  DO NOTHING` akan membuat kesalahan itu tidak bersuara.
+- Pokok deposito masuk `202 SIMPANAN BERJANGKA`; rule pemisah per jenis rekening **belum** ada
+  (butuh kondisi `accountType` di payload event) — pekerjaan T-138c, dan sampai itu mendarat
+  deposito berjangka belum boleh dibuka untuk anggota nyata.
+- `NEEDS-COMPLIANCE-REVIEW`: penomoran akun dan penempatan beban di `501` adalah struktur pilot,
+  bukan kutipan SAK/PSAK (REG-011 `V!`).
+- Angka akrual (rate, basis hari, skala pembulatan) tetap **parameter produk** (`product.savings.*`,
+  D-137/O-084), tidak pernah nilai di kode atau di migrasi.
