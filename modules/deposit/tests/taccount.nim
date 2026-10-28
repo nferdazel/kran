@@ -31,11 +31,15 @@ suite "deposit: nomor rekening (kode cabang + nomor urut)":
       discard formatAccountNo("001", 10_000_000'i64) # 8 digit: tak muat selebar 7
 
 suite "deposit: tipe & status":
-  test "tipe hanya SAVINGS":
+  test "tipe SAVINGS/TIME_DEPOSIT dikenal, tipe lain ditolak":
     check parseAccountType("savings") == atSavings
     check parseAccountType(" SAVINGS ") == atSavings
+    check parseAccountType("time_deposit") == atTimeDeposit
+    check parseAccountType("Time_Deposit") == atTimeDeposit
     expect ValueError:
-      discard parseAccountType("TIME_DEPOSIT")
+      discard parseAccountType("GIRO")
+    expect ValueError:
+      discard parseAccountType("")
 
   test "status dikenal dan dinormalisasi":
     check parseAccountStatus("active") == asActive

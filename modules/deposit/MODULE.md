@@ -10,7 +10,7 @@ jurnal sinkron) + **T-088c** (pemindahbukuan/PB antar rekening). UI teller = T-0
 
 | Tabel | Isi |
 |---|---|
-| `deposit.account` | Identitas rekening: `account_no` (unik), `party_id`, `product_id`, `product_version_id`, `branch_id`, `account_type` (`SAVINGS`), `status` (`ACTIVE`/`CLOSED`), `opened_on`. Satu cabang per rekening. |
+| `deposit.account` | Identitas rekening: `account_no` (unik), `party_id`, `product_id`, `product_version_id`, `branch_id`, `account_type` (`SAVINGS`/`TIME_DEPOSIT`), `status` (`ACTIVE`/`CLOSED`), `opened_on`, plus `maturity_date`/`aro_instruction`/`last_activity` untuk deposito berjangka (nullable, T-138b). Satu cabang per rekening. |
 | `deposit.account_balance` | Satu baris per rekening: `balance numeric(24,2)` dengan CHECK `balance >= 0`. Cache; sumber kebenaran tetap jurnal ledger (spec §9.1(4)). |
 | `deposit.transaction` | Transaksi tunai (T-088b): `tx_type` (`CASH_DEPOSIT`/`CASH_WITHDRAWAL`), `account_id`, `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (UNIQUE, FK `ledger.journal`). Satu baris = satu jurnal. |
 | `deposit.transfer` | Pemindahbukuan/PB (T-088c): `source_account_id` + `destination_account_id` (FK `deposit.account`, CHECK berbeda), `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (UNIQUE, FK `ledger.journal`). Satu baris = satu perpindahan = satu jurnal. |
@@ -102,6 +102,22 @@ berjalan **sebelum** `ledger/0003`). `deposit/0008` menambah grant runtime untuk
   konvensi ini perlu konfirmasi compliance, dan `ACT_365` adalah default institusi (D-152).
 - **Nominal bunga belum ada di sini** (butuh `Money` × rate × hari, pembulatan skala 2, dan review
   manusia — AGENTS.md §8). `accrualDays` hanya menjawab berapa hari yang harus dikalikan.
+
+## Deposito berjangka (T-138b, D-152)
+
+Deposito berjangka adalah **rekening yang sama** dengan `account_type = TIME_DEPOSIT`, bukan tabel
+terpisah. Migrasi `deposit/0064_deposit_time_deposit` (bertanda `-- dbtools:contract` karena
+mengganti CHECK `account_type` bawaan `0003`; `DROP CONSTRAINT` adalah DDL merusak yang dilarang
+jalur expand) menambah `maturity_date`, `aro_instruction`
+(`NONE`/`PRINCIPAL`/`PRINCIPAL_AND_INTEREST`), dan `last_activity` — semuanya **nullable**, tanpa
+backfill: rekening tabungan tidak punya jatuh tempo, dan arti "aktivitas" baru ditetapkan bersama
+task dormant. Domain hanya mengenal tipe barunya (`AccountType.atTimeDeposit`); perilaku jatuh
+tempo/ARO masih tugas T-138d, akrual T-138c, dan dormant T-138e.
+
+`status` **belum** menerima `DORMANT`: nilainya ditetapkan T-138e bersama aturannya. Rule/akun GL
+bunga (D-152: `203 BUNGA AKRUAL`) **belum** ada — kode `203` sudah dipakai `TITIPAN PENGURUS`
+(`ledger/0036`), jadi penomoran akun akrual menunggu keputusan pemilik. Nilai parameter default
+(2,5% p.a., `ACT_365`) tetap **NEEDS-COMPLIANCE-REVIEW** (D-152).
 
 ## Event
 
