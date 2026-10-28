@@ -58,6 +58,13 @@ export const appNavLinks: readonly NavLink[] = [
     permissions: ["teller.vault.read"],
   },
   {
+    // Monitor penutupan buku + aksi operator (T-139). Izin baca dipakai sebagai gerbang menu;
+    // tombol Jalankan/Resume/Pause/Cancel disaring sendiri oleh `dayclose.run.manage`.
+    href: "/app/dayclose",
+    label: (locale) => m.common_nav_dayclose({}, { locale }),
+    permissions: ["dayclose.run.read"],
+  },
+  {
     href: "/app/accounts/open",
     label: (locale) => m.common_nav_accounts({}, { locale }),
     permissions: ["deposit.account.manage"],
