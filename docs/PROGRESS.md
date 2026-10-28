@@ -3532,3 +3532,7 @@ MAJOR dan enam MINOR; tidak ada BLOCKER.
 **Bukti**: `itdaycloser_lifecycle` 11 `[OK]` (termasuk dua kasus penolakan dry-run yang baru);
 `./task ci` hijau (suite Nim, kontrak OpenAPI, vitest 142, Playwright 59).
 
+**Tindak lanjut review putaran 5 (APPROVE, tanpa BLOCKER/MAJOR)**: runbook `DAY-351` tidak lagi
+menyuruh `daycloser-resume` (run `COMPLETED` tidak bisa di-resume — parameter diperbaiki, pemindaian
+ikut pada penutupan berikutnya); cakupan benchmark menambahkan bahwa task dormant hanya **memindai**
+(transisi nol karena rekening seed beraktivitas pada tanggal buku).
