@@ -3755,3 +3755,70 @@ jurnal cukup sehingga gate trial balance tidak perlu (trigger menjaga per jurnal
 Gate institusi-wide membuat run cabang (saat T-139 mendukungnya) memeriksa lebih ketat daripada
 kebutuhannya. Pemetaan subledger per jenis produk masih belum ada, sehingga selisih antar produk
 yang saling menutupi tidak terlihat — dicatat di batas.
+
+## D-151 — Task ledger day-close: snapshot dibuktikan, periode ditutup sebagai sistem (28 Okt 2026)
+
+**Konteks.** Spec §11.5 langkah 6 menempatkan snapshot saldo & trial balance harian di dalam seal,
+dan §11.6 mencantumkan "tutup periode GL" sebagai pekerjaan bulanan. Keduanya belum ada di
+kerangka. `daycloser` berjalan dari `ctl` tanpa sesi pengguna, sedangkan `ledger.period` mewajibkan
+`closed_by`/`updated_by` NOT NULL saat periode ditutup.
+
+**Keputusan.**
+
+1. **Snapshot ditulis lalu dibuktikan.** Task `ledger.daily_snapshot` memanggil
+   `rebuildSnapshot(asOf)` lalu membandingkan cache dengan jurnal lewat `snapshotMatches` — aturan
+   yang sama dengan laporan yang membaca cache. Snapshot yang tidak cocok membuat run gagal
+   (`DAY-321`/`DAY-322`), karena cache yang salah lebih buruk daripada tidak ada cache.
+2. **Bukti berupa sidik jari.** Metrics menyimpan `snapshotHash` (SHA-256 atas `akun|debit|kredit`
+   terurut). Dua run yang menghasilkan angka berbeda pasti berbeda hash-nya, tanpa menyimpan seluruh
+   tabel di `task.metrics`.
+3. **Tutup periode bergantung pada snapshot.** `ledger.period_close` mendeklarasikan
+   `dependsOn: @["ledger.daily_snapshot"]`: menutup periode tidak bisa dibatalkan, jadi bukti saldo
+   harus sudah ada sebelum pintu itu tertutup.
+4. **Penutupan oleh sistem memakai `closed_by` NULL.** `ctl` tidak punya pengguna; mengisi id
+   pengguna palsu akan mengarang pelaku. Migrasi `0060` melonggarkan CHECK (bukan menghapus data)
+   dan kolom itu didokumentasikan sebagai "NULL = proses sistem"; pelaku sebenarnya ada di audit
+   (`device = kran-api ctl`). Preseden yang sama dipakai `business_date.updated_by` (D-149).
+5. **Akhir bulan tanpa periode = gagal.** Kalender menyatakan hari itu akhir bulan, jadi tidak
+   adanya periode GL adalah konfigurasi yang hilang (`DAY-324`), bukan "tidak berlaku". Menutup bulan
+   tanpa buku besar yang ditutup akan membuat laporan bulanan tidak punya dasar.
+6. **Idempoten per business date.** Snapshot dibangun ulang (DELETE+INSERT untuk `as_of` itu);
+   periode yang sudah `CLOSED` dilaporkan `alreadyClosed: true` dan tidak menerbitkan event kedua
+   (dedup key `period.closed:<periodId>` sama dengan jalur HTTP).
+7. **Sesi kas OPEN di rentang periode menahan penutupan** (`DAY-326`), mencerminkan handler HTTP:
+   jurnal tutup sesi memakai `business_date` sesi, dan setelah periode CLOSED trigger menolaknya —
+   sesi itu tidak akan pernah bisa ditutup.
+
+**Ditolak.** Menutup periode tanpa memeriksa snapshot. Menyimpan id pengguna pertama sebagai
+"pelaku" penutupan sistem. Membuat periode otomatis di dalam penutupan (kebijakan periode = urusan
+administrasi, bukan efek samping EOD). Menjadikan kegagalan snapshot non-kritis (segel tanpa bukti
+saldo tidak berarti apa pun).
+
+**Konsekuensi.** Satu transaksi DELETE+INSERT per tanggal buku pada `ledger.balance_snapshot`
+(diukur T-140). Periode tetap dibuat manual; institusi yang lupa membuat periode bulan baru akan
+mendapat `DAY-324` di akhir bulan, bukan laporan tanpa dasar.
+
+**Amendemen setelah review independen (28 Okt 2026).**
+
+8. **Migrasi `0060` adalah contract, bukan hanya destructive.** DDL-nya `DROP CONSTRAINT`, dan
+   jalur deploy (`kran-api --role=migrate --up`) menolak seluruh migrasi destruktif. Berkas ditandai
+   `-- dbtools:contract` **dan** didaftarkan di `ops/migrations/contract-auto.txt`, sehingga deploy
+   menjalankannya lewat `--contract` setelah expand bersih. Diverifikasi dengan binary: `--up` 0,
+   `--check` menyebut `contract_pending` + id, `--contract` menerapkan, `--check` bersih. Aman
+   sebelum biner baru menerima trafik: biner lama tetap menulis `closed_by`/`updated_by` berisi
+   pengguna, yang memenuhi kedua cabang CHECK.
+9. **Periode yang ditutup = yang memuat tanggal buku dan berakhir di bulan yang sama.** EOM berjalan
+   pada hari **kerja** terakhir bulan (kalender), jadi `ends_on = tanggal buku` tidak pernah cocok
+   untuk periode bulan kalender (mis. 1–31 Okt, EOM 30 Okt). Periode yang memuat tanggal buku tetapi
+   berakhir di bulan lain (periode tahunan) dilaporkan `NOT_DUE` — bukan gagal: periode bulanan baru
+   akan bertabrakan dengan periode tahunan yang masih OPEN, sehingga kegagalan itu jalan buntu.
+   Tidak ada periode sama sekali tetap `DAY-324`.
+10. **Tutup periode adalah fase pasca-tutup.** Task-nya `tkPostCheck` dengan `dependsOn` snapshot +
+    `ledger.no_late_postings`, `ledger.subledger_vs_gl`, `ledger.trial_balance`. Menutup di fase
+    proses akan menolak jurnal akrual/pajak yang berjalan sesudahnya (trigger periode) dan membuat
+    kegagalan gate pasca-tutup tidak bisa diperbaiki (tidak ada reopen periode).
+11. **Snapshot yang tidak cocok di-rollback.** Rebuild, pembacaan, dan pembandingan berada dalam
+    satu transaksi; kegagalan melempar `SnapshotAbort` sehingga cache yang salah tidak pernah
+    ter-commit, dengan `accountDiff` (maks 20) sebagai bukti.
+12. **Penutupan berurutan.** Periode OPEN yang berakhir sebelum periode yang akan ditutup menahan
+    penutupan (`DAY-328`) — aturan yang sebelumnya hanya diserahkan ke day-close di dokumentasi.

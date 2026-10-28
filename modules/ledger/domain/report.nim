@@ -60,6 +60,31 @@ proc closingDebit*(l: BalanceLine): Money =
 proc closingCredit*(l: BalanceLine): Money =
   l.openingCredit + l.periodCredit
 
+proc snapshotDiff*(lines: openArray[BalanceLine],
+                   snapshot: openArray[SnapshotTotal], limit: int): seq[string] =
+  ## Akun yang berbeda antara cache `balance_snapshot` dan jurnal, dalam bentuk yang bisa dibaca
+  ## operator. Dipakai sebagai bukti saat gerbang rekonsiliasi gagal: "tidak cocok" saja tidak
+  ## menunjuk ke mana yang harus diselidiki. `limit` (wajib) menjaga ukuran bukti tetap kecil.
+  var cumulative = initTable[string, tuple[debit: Money, credit: Money]]()
+  for l in lines:
+    cumulative[l.accountCode] = (closingDebit(l), closingCredit(l))
+  var matched = initTable[string, bool]()
+  for s in snapshot:
+    if not cumulative.hasKey(s.accountCode):
+      result.add s.accountCode & ": ada di cache, tidak ada di jurnal"
+    else:
+      let c = cumulative[s.accountCode]
+      if c.debit != s.debit or c.credit != s.credit:
+        result.add s.accountCode & ": cache=" & s.debit.toDecimalString & "/" &
+          s.credit.toDecimalString & ", jurnal=" & c.debit.toDecimalString & "/" &
+          c.credit.toDecimalString
+      matched[s.accountCode] = true
+  for code, c in cumulative:
+    if (not c.debit.isZero or not c.credit.isZero) and not matched.getOrDefault(code, false):
+      result.add code & ": ada di jurnal, tidak ada di cache"
+  if result.len > limit:
+    result.setLen(limit)
+
 proc snapshotMatches*(lines: openArray[BalanceLine],
                       snapshot: openArray[SnapshotTotal]): bool =
   ## Gerbang rekonsiliasi D-096: cache kumulatif pada `endsOn` sama **per akun** dengan hasil

@@ -5,3 +5,4 @@
 # operator harus menjalankan `migrate --contract` manual.
 product/0004_product_version_contract
 product/0006_product_version_contract
+ledger/0060_ledger_period_system_close

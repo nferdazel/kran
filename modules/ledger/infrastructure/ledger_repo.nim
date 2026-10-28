@@ -109,13 +109,50 @@ proc periods*(db: DbConn): seq[Period] =
       " FROM ledger.period ORDER BY starts_on DESC LIMIT ?::int"), $listLimit):
     result.add periodOf(row)
 
+proc periodContaining*(db: DbConn, date: string): Option[Period] =
+  ## Periode yang **memuat** tanggal ini (`starts_on <= date <= ends_on`). Periode tidak boleh
+  ## tumpang tindih (`period_no_overlap`), jadi hasilnya paling banyak satu.
+  for row in db.getAllRows(sql(
+      "SELECT " & periodColumns &
+      " FROM ledger.period WHERE starts_on <= ?::date AND ends_on >= ?::date" &
+      " ORDER BY ends_on LIMIT 1"), date, date):
+    return some(periodOf(row))
+  none(Period)
+
+proc earlierOpenPeriod*(db: DbConn, startsOn: string): Option[Period] =
+  ## Periode OPEN terakhir yang berakhir sebelum periode ini dimulai. Buku besar ditutup berurutan:
+  ## menutup Oktober sementara September masih OPEN membuat laporan September tidak punya dasar
+  ## (bulan sesudahnya sudah final, bulan itu belum).
+  for row in db.getAllRows(sql(
+      "SELECT " & periodColumns &
+      " FROM ledger.period WHERE status = 'OPEN' AND ends_on < ?::date" &
+      " ORDER BY ends_on DESC LIMIT 1"), startsOn):
+    return some(periodOf(row))
+  none(Period)
+
+proc closePeriodBy(db: DbConn, periodId: Id, closedBy: string): string =
+  ## Satu jalur UPDATE untuk penutupan oleh pengguna maupun proses: `closedBy` kosong = sistem
+  ## (`NULL`), bukan id pengguna palsu. Dua salinan UPDATE yang terpisah cepat atau lambat
+  ## menyimpang pada aturan yang justru penting (kapan boleh CLOSED).
+  db.getValue(sql"""
+    UPDATE ledger.period
+       SET status = 'CLOSED', closed_at = now(), closed_by = NULLIF(?, '')::uuid,
+           updated_at = now(), updated_by = NULLIF(?, '')::uuid
+     WHERE period_id = ? AND status = 'OPEN'
+    RETURNING to_char(closed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')""",
+    closedBy, closedBy, $periodId)
+
+proc closePeriodSystem*(db: DbConn, periodId: Id): string =
+  ## Menutup periode tanpa pelaku manusia (day-close T-137). Mengembalikan `closed_at`
+  ## ISO-8601 UTC; hasil kosong = 0 baris terpengaruh (sudah ditutup / bukan OPEN), dan pemanggil
+  ## tidak boleh menulis audit/event.
+  ##
+  ## `closed_by`/`updated_by` sengaja NULL: pelakunya proses, dan id pengguna palsu lebih buruk
+  ## daripada kolom kosong yang jujur (pelaku sebenarnya ada di audit `device`).
+  closePeriodBy(db, periodId, "")
+
 proc closePeriod*(db: DbConn, periodId: Id, closedBy: Id): string =
   ## Menutup periode OPEN dan mengembalikan `closed_at` ISO-8601 UTC. **Hasil kosong** berarti
   ## UPDATE mengenai 0 baris: periode sudah ditutup transaksi lain (balapan) atau statusnya bukan
   ## OPEN. Pemanggil wajib memperlakukannya sebagai 409 dan **tidak** menulis audit/event.
-  db.getValue(sql"""
-    UPDATE ledger.period
-       SET status = 'CLOSED', closed_at = now(), closed_by = ?, updated_at = now(), updated_by = ?
-     WHERE period_id = ? AND status = 'OPEN'
-    RETURNING to_char(closed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')""",
-    $closedBy, $closedBy, $periodId)
+  closePeriodBy(db, periodId, $closedBy)

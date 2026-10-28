@@ -46,6 +46,17 @@ Alur yang dijalankan (spec §11.5): task `PRECHECK` → **freeze** (`CLOSING`) �
 `POSTCHECK` → **seal** (run `COMPLETED`, tanggal `CLOSED`, rollover ke hari kerja berikutnya, event
 `BusinessDateOpened`) — semuanya kecuali task dalam satu transaksi pada langkah seal.
 
+Task proses yang berjalan: sapuan idempotensi dan **snapshot saldo harian**
+(`ledger.daily_snapshot`, menulis + membuktikan cache saldo). Pada hari kerja terakhir bulan
+(level EOM) ditambah **tutup periode GL** (`ledger.period_close`) — dijalankan pada fase pasca-tutup,
+setelah snapshot dan gate, karena penutupan periode tidak bisa dibatalkan.
+
+Periode yang ditutup adalah periode yang **memuat tanggal buku dan berakhir di bulan yang sama**.
+Contoh: periode 1–31 Okt 2026 ditutup pada penutupan 30 Okt 2026 (hari kerja terakhir). Bila
+institusi memakai periode tahunan, penutupan bulanan melaporkan `NOT_DUE` (tidak ada yang jatuh
+tempo); bila tidak ada periode yang memuat tanggal itu sama sekali, run berhenti dengan `DAY-324`
+dan periode harus dibuat lewat API lebih dulu.
+
 Selama `CLOSING`, **semua perubahan lewat HTTP ditolak** `409` (`reason: business_date_closing`)
 kecuali masuk/keluar dan ganti kata sandi. Itu disengaja: transaksi yang menyelinap di tengah
 penutupan membuat gate pasca-tutup basi.
@@ -80,6 +91,15 @@ SELECT t.task_id, t.state, t.error->>'code' AS code, t.metrics
 | `DAY-310` | ada jurnal masuk setelah tanggal dibekukan | batalkan run, periksa jurnal itu, tutup ulang |
 | `DAY-311` | akun pada parameter gate tidak dikenal / non-aktif | perbaiki parameter (`daycloser.precheck.suspense_accounts`, `daycloser.postcheck.subledger_gl_accounts`) lewat maker-checker |
 | `DAY-312` | daftar akun pada parameter gate kosong | isi parameternya; daftar kosong akan mematikan gate tanpa memeriksa apa pun |
+| `DAY-320` | snapshot saldo gagal ditulis (galat basis data) | lihat pesan galat; task dicoba ulang otomatis, run berhenti bila tetap gagal |
+| `DAY-321` | snapshot saldo tidak sama dengan jurnal | jangan lanjut: bandingkan laporan `source=ledger` dengan `balance_snapshot` untuk tanggal itu. Rebuild-nya sudah di-rollback, jadi cache lama utuh. `metrics.accountDiff` menyebut akun yang berbeda |
+| `DAY-323` | periode GL tidak terbaca | galat basis data; coba `daycloser-resume` setelah DB sehat |
+| `DAY-325` | penutupan periode gagal (galat basis data) | periode tetap OPEN; periksa log, lalu `daycloser-resume` |
+| `DAY-327` | periode berubah status di tengah penutupan | periksa `ledger.period`; bila sudah CLOSED oleh operator lain, resume akan melaporkan `alreadyClosed` |
+| `DAY-322` | trial balance tidak seimbang saat snapshot | indikasi kerusakan data; jangan tutup buku |
+| `DAY-324` | akhir bulan tetapi tidak ada periode GL yang berakhir hari ini | buat periode GL-nya lebih dulu, lalu jalankan penutupan lagi |
+| `DAY-326` | sesi kas OPEN di rentang periode yang akan ditutup | batalkan run dulu (`daycloser-cancel`) — selama `CLOSING` semua tulisan HTTP ditolak, jadi sesi tidak bisa ditutup lewat aplikasi. Setelah tanggal kembali `OPEN`, tutup sesinya, lalu jalankan penutupan lagi |
+| `DAY-328` | periode sebelumnya masih OPEN | tutup periode sebelumnya lebih dulu (berurutan); menutup bulan yang lebih baru membuat laporan bulan lama tidak punya dasar |
 
 Karena gate **pra**-tutup berjalan sebelum freeze, kegagalannya tidak membekukan tanggal: institusi
 masih bisa melayani, tetapi tanggal itu tidak bisa ditutup dua kali (run `BLOCKED` harus di-resume

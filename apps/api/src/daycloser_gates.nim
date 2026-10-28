@@ -33,6 +33,8 @@ import ledger/domain/[coa, report]
 import ledger/infrastructure/[ledger_repo, report_repo]
 import teller/infrastructure/[session_repo, vault_request_repo]
 
+import ./daycloser_common
+
 type
   GateResult* = object
     ## Hasil satu gate. `metrics` tetap diisi saat gagal: angka yang menyebabkan penolakan adalah
@@ -45,10 +47,6 @@ type
   GateCheck* = proc(pool: DbPool; ctx: TaskContext): GateResult {.closure.}
 
 const
-  ## Batas bawah tanggal: gate menghitung saldo **kumulatif** sampai tanggal tutup, jadi rentang
-  ## dimulai sebelum jurnal pertama yang mungkin ada.
-  earliestDate = "0001-01-01"
-
   ## Jumlah id yang ikut disimpan sebagai bukti. Cukup untuk menunjuk masalah, tidak sampai
   ## membengkakkan `task.metrics`.
   evidenceLimit = 20

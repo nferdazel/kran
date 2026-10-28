@@ -233,3 +233,16 @@ keberadaan baris `balance_snapshot` pada `ends_on`.
   vault dijurnal **eksplisit** di handler approval (D `101.1`/K akun sumber, event
   `TellerVaultTopUp`). Jurnal ditulis sinkron di transaksi yang sama dengan mutasi vault; gate EOD
   tetap menunggu `daycloser` (Fase 3).
+
+## Dipakai day-close (T-137)
+
+- `ledger.daily_snapshot` (EOD): menulis ulang `ledger.balance_snapshot` untuk tanggal buku dan
+  membuktikan cache sama dengan jurnal (`snapshotMatches`) **dalam satu transaksi**; bila tidak
+  cocok, rebuild di-rollback dan `accountDiff` (maks 20) masuk `daycloser.task.metrics` bersama
+  `snapshotHash`.
+- `ledger.period_close` (EOM, fase pasca-tutup): menutup periode yang **memuat tanggal buku dan
+  berakhir di bulan yang sama** lewat `closePeriodSystem` (audit `ledger.period.close` + event
+  `period.closed`, `closed_by`/`updated_by` NULL = proses sistem). Bergantung pada snapshot dan
+  ketiga gate pasca-tutup; sesi kas OPEN di rentang periode (`DAY-326`) atau periode sebelumnya
+  yang masih OPEN (`DAY-328`) menahan penutupan. Periode yang lebih panjang dari sebulan (tahunan)
+  dilaporkan `NOT_DUE`; tidak ada periode sama sekali = `DAY-324`.

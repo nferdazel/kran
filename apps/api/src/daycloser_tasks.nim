@@ -20,6 +20,7 @@ import daycloser/domain/[registry, types]
 import daycloser/infrastructure/run_repo
 
 import ./daycloser_gates
+import ./daycloser_ledger
 
 const
   ## Task pertama yang terdaftar: menyapu klaim idempotensi kedaluwarsa (T-089, D-098).
@@ -67,6 +68,9 @@ proc registerDayCloseTasks*(reg: Registry; pool: DbPool) =
 
   # Gate pra & pasca-tutup (spec §11.5 langkah 2 & 5). Kritis: gagal = run BLOCKED.
   registerGates(reg, pool)
+
+  # Pekerjaan buku besar (spec §11.6): snapshot saldo harian + tutup periode GL bulanan (T-137).
+  registerLedgerTasks(reg, pool)
 
 proc syncRegistry*(pool: DbPool; reg: Registry) =
   ## Registry in-process adalah sumber kebenaran eksekusi; tabel hanya salinan untuk UI/audit.

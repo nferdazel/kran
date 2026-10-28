@@ -3111,3 +3111,57 @@ parameter salah ketik mematikan gate tanpa galat — kini `DAY-311`.
 kumulatif (biaya diukur T-140); pemetaan subledger per jenis produk belum ada; jurnal terlambat
 dideteksi bukan dicegah; `DAY-305`/`DAY-307` belum punya test (trigger DB / rantai FK). Berikutnya:
 T-137 (snapshot saldo + TB harian, tutup periode GL bulanan).
+
+---
+
+## 2026-10-28 — T-137 task ledger: snapshot harian + tutup periode GL SELESAI
+
+**Konteks**: setelah T-136, penutupan sudah memeriksa gate tetapi belum menulis bukti saldo harian
+dan belum menutup periode GL bulanan. Spec §11.5 langkah 6 menempatkan snapshot/TB di dalam seal;
+§11.6 mencantumkan tutup periode sebagai pekerjaan EOM.
+
+**Yang berubah**
+
+- `apps/api/src/daycloser_ledger.nim` (baru): `ledger.daily_snapshot` (EOD) menulis ulang
+  `ledger.balance_snapshot` lalu membuktikannya terhadap jurnal **dalam satu transaksi** — bila
+  tidak cocok, transaksi di-rollback (`SnapshotAbort`) dan `accountDiff` (maks 20 akun) masuk
+  metrics. `ledger.period_close` (EOM, `tkPostCheck`) menutup periode yang memuat tanggal buku dan
+  berakhir di bulan yang sama, setelah snapshot + tiga gate ledger.
+- `modules/ledger/infrastructure/ledger_repo.nim`: `periodContaining`, `earlierOpenPeriod`,
+  `closePeriodBy` (satu jalur UPDATE untuk pengguna maupun sistem; `closed_by` NULL = proses).
+- `modules/ledger/domain/report.nim`: `snapshotDiff` (bukti akun yang berbeda).
+- `modules/ledger/migrations/0060_ledger_period_system_close.sql` (baru, **contract**):
+  `updated_by` boleh NULL + CHECK periode tidak mewajibkan pelaku saat penutupan sistem; masuk
+  `ops/migrations/contract-auto.txt`.
+- `apps/api/src/daycloser_common.nim` (baru): `earliestDate` + `ctlAuditContext` bersama
+  gate/ledger/ctl (menghapus dua duplikasi).
+- Parameter tidak bertambah; akun COA tidak bertambah (bukan bagian T-137).
+- Dokumentasi: `docs/tasks/T-137.md`, D-151 (+amendemen), `modules/ledger/MODULE.md`, runbook
+  `dayclose.md` (kode `DAY-320/321/323/325/326/327/328`), `ACCEPTED-LIMITS`.
+
+**Bukti**
+
+- `./task test itdaycloser_ledger` 7 `[OK]`: snapshot tertulis + `snapshotHash`; periode `CLOSED`
+  dengan `closed_by` NULL, 1 audit + 1 event; run ulang idempoten (`alreadyClosed`, event tetap 1);
+  urutan DAG `period_close` setelah snapshot + 3 gate dan jenisnya `POSTCHECK`; `DAY-324` tanpa
+  periode (metrics menyebut tanggal); periode tahunan → `NOT_DUE` dan tetap OPEN; `DAY-328` saat
+  periode sebelumnya OPEN; `DAY-326` saat sesi kas OPEN.
+- `./task test treport` +4 `[OK]` untuk `snapshotDiff`.
+- `itdaycloser_gates` 12 `[OK]`, `tdaycloser` 24 `[OK]`, `itdaycloser`, `itdaycloser_lifecycle`,
+  `itapi_teller_sessions` hijau.
+- **Jalur deploy migrasi** (binary API, bukan harness): `--up` exit 0 (sebelumnya exit 3 karena
+  `destructivePending`), `--check` melaporkan `contract_pending=3` dengan id yang seluruhnya ada di
+  allowlist, `--contract` menerapkan 3, `--check` **86/86 tanpa drift**, CHECK `period_closed_chk`
+  berubah ke definisi baru.
+- `./task ci` **hijau penuh** (`.build/ci-t137c.log`, exit 0): 250 berkas `check`, openapi, eslint,
+  1265 `[OK]` unit/properti/integrasi, vitest web 125 + kontras 117, svelte-check 0/0,
+  Playwright 54.
+- Review independen: **2 BLOCKER + 1 MAJOR + 5 MINOR + 5 NIT**. BLOCKER migrasi (contract +
+  allowlist) dan pemilihan periode (memuat tanggal buku + bulan yang sama) diperbaiki dan
+  dibuktikan; MAJOR tutup periode dipindah ke fase pasca-tutup; MINOR rollback snapshot, metrics
+  `accountDiff`, runbook, `DAY-328`, dedup helper, dan test yang tidak bergantung urutan.
+
+**Batas/berikutnya**: `rebuildSnapshot` DELETE+INSERT per tanggal (benchmark T-140); periode GL
+masih dibuat manual (`DAY-324`); penutupan periode tidak bisa dibatalkan (karena itu dijalankan
+paling akhir); periode yang berakhir di tengah bulan tidak ditutup oleh EOM. Berikutnya: T-139
+(API + UI monitor/aksi + penjadwal) — T-138 menunggu keputusan pemilik yang kini sudah ada (D-152).

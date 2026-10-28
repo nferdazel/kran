@@ -31,6 +31,7 @@ import daycloser/application/orchestrator
 import daycloser/domain/[registry, run, types]
 import daycloser/infrastructure/run_repo
 
+import ./daycloser_common
 import ./daycloser_tasks
 
 const
@@ -49,10 +50,6 @@ const
 
 proc isoNow(clock: Clock): string =
   format(clock.now().utc, "yyyy-MM-dd'T'HH:mm:ss'Z'")
-
-proc ctlAuditContext(clock: Clock; reason: string): AuditContext =
-  ## `ctl` tidak punya pengguna: pelakunya tercatat lewat `device`, bukan user id palsu.
-  newAuditContext(Id(""), device = "kran-api ctl", reason = reason, startedAt = clock.now())
 
 proc assertInstitutionRun(snap: RunSnapshot; action: string) =
   if snap.scopeType != ctlScopeType or snap.scopeId.len > 0:
