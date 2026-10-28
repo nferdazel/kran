@@ -1,4 +1,5 @@
-## Test integrasi task `deposit.interest_accrual` (T-138c) — butuh `KRAN_DATABASE_URL`.
+## Test integrasi task day-close deposit (T-138c akrual, T-138d jatuh tempo/ARO) — butuh
+## `KRAN_DATABASE_URL`.
 ##
 ## Yang dibuktikan di sini tidak bisa dibuktikan unit test:
 ##   1. akrual menulis baris `deposit.interest_accrual` **dan** jurnal `InterestAccrued`
@@ -9,8 +10,15 @@
 ##   4. basis & skala dibaca dari binding versi produk (ACT/360, rounding 1 desimal);
 ##   5. rekening `CLOSED` dan rekening yang dibuka setelah tanggal buku tidak diakrualkan;
 ##   6. konfigurasi produk yang hilang **menahan penutupan** (DAY-331) dan membatalkan seluruh
-##      chunk — tidak ada akrual setengah jadi;
-##   7. `countChunks`/paginasi chunk memecah rekening tanpa duplikat.
+##      chunk — tidak ada akrual setengah jadi (rollback diuji dengan urutan `account_id` yang
+##      dipatok, karena id fixture bertimestamp sama);
+##   7. `countChunks`/paginasi chunk memproses setiap rekening tepat sekali (dibaca dari metrics
+##      task, bukan dari kueri offset yang dijalankan ulang).
+##
+## Jatuh tempo (`deposit.maturity_aro`): tiga instruksi ARO D-155, jurnal perpindahan, baris
+## subledger per rekening dengan jurnal yang sama, penutupan `NONE`, tenor perpanjangan, idempotensi
+## run ulang, paginasi saat populasi berubah, dan data rusak (ARO kosong/asing) yang menahan run.
+
 ##
 ## **HUMAN-REVIEW-REQUIRED**: angka bunga di test ini adalah area kritis (AGENTS.md §8). Golden
 ## value dihitung dengan oracle independen (`decimal` Python, ROUND_HALF_EVEN), bukan dari
@@ -18,7 +26,7 @@
 ##
 ## Suite ini me-reset seluruh schema (pola suite integrasi lain).
 
-import std/[json, options, os, sequtils, strutils, times, unittest]
+import std/[json, options, os, strutils, times, unittest]
 
 import db_connector/db_postgres
 
@@ -109,11 +117,17 @@ proc stdBindings(rate = "2.5"; basis = "ACT_365"; scale = "2"): seq[ParamBinding
     ParamBinding(paramKey: "product.savings.rounding_scale", value: %parseInt(scale))]
 
 proc timeDeposit(version: ProductVersion; productCode, openedOn, principal: string;
-                 status = "ACTIVE"; maturityDate = ""; aro = ""; partyId = ""): Id =
+                 status = "ACTIVE"; maturityDate = ""; aro = ""; partyId = "";
+                 fixedId = ""): Id =
   ## Rekening berjangka dengan saldo pokok. `newAccount` selalu melahirkan SAVINGS, jadi tipenya
   ## diubah sebelum disimpan (itulah yang dibaca task). `partyId` kosong = party baru (pola lama);
   ## diisi = rekening berbagi party dengan tabungan tujuan (T-138d).
-  var a = newAccount(newId(testClock),
+  ##
+  ## `fixedId` dipakai test yang butuh urutan `account_id` **deterministik**: `newId(fakeClock)`
+  ## memberi timestamp UUIDv7 yang sama, jadi urutannya ditentukan bit acak dan test rollback bisa
+  ## lolos tanpa membuktikan apa pun.
+  var a = newAccount(
+    (if fixedId.len == 0: newId(testClock) else: Id(fixedId)),
     (if partyId.len == 0: newPartyRow() else: Id(partyId)),
     version.productId, version.versionId, productCode, Id(BranchId), "142", openedOn,
     nextAccountSeq(db))
@@ -391,19 +405,29 @@ suite "akrual bunga: konfigurasi produk rusak":
   test "binding rate hilang = DAY-331 dan chunk dibatalkan utuh":
     let incomplete = newProductWith(@[
       ParamBinding(paramKey: "product.savings.min_balance", value: %"0.00")])
+    # Id dipilih tetap supaya urutan `account_id` deterministik: rekening sehat **sebelum** dan
+    # **sesudah** rekening rusak. Dengan `newId(fakeClock)` semua id bertimestamp sama, urutannya
+    # ditentukan bit acak, dan rekening rusak bisa terurut paling awal — ketiga assertion di bawah
+    # lalu lolos tanpa pernah membuktikan rollback.
+    let healthyFirst = timeDeposit(std.version, std.product.code, OpenedOn, "1000000.00",
+      fixedId = "f1000000-0000-7000-8000-0000000000a1")
     let brokenId = timeDeposit(incomplete.version, incomplete.product.code, OpenedOn,
-      "10000000.00")
-    # Rekening sehat di chunk yang sama: kalau akrualnya ikut ter-commit padahal chunk gagal,
-    # penutupan berikutnya akan menganggap hari itu sudah selesai.
-    let healthyId = timeDeposit(std.version, std.product.code, OpenedOn, "1000000.00")
+      "10000000.00", fixedId = "f1000000-0000-7000-8000-0000000000a2")
+    let healthyLast = timeDeposit(std.version, std.product.code, OpenedOn, "1000000.00",
+      fixedId = "f1000000-0000-7000-8000-0000000000a3")
+    # PostgreSQL membandingkan `uuid` per byte; teks kanonik adalah hex byte yang sama.
+    check $healthyFirst < $brokenId
+    check $brokenId < $healthyLast
     let uniqueDate = "2026-12-30"
 
     let res = runAt(uniqueDate)
     check not res.isOk
     check res.error.code == "DAY-331"
-    check accrualRow(brokenId, uniqueDate).amount == ""
-    check accrualRow(healthyId, uniqueDate).amount == ""
-    check journalOf(healthyId, uniqueDate).len == 0
+    # Satu chunk: rekening sehat pertama sudah ditulis sebelum rekening rusak gagal, jadi yang diuji
+    # adalah rollback chunk yang sungguh berisi baris, bukan chunk kosong.
+    for accountId in [healthyFirst, brokenId, healthyLast]:
+      check accrualRow(accountId, uniqueDate).amount == ""
+      check journalOf(accountId, uniqueDate).len == 0
 
     # Higiene test: keluarkan rekening rusak dari populasi akrual supaya test berikutnya tidak
     # blocked oleh konfigurasi yang memang sengaja salah.
@@ -411,7 +435,7 @@ suite "akrual bunga: konfigurasi produk rusak":
       $brokenId & "'")
 
 suite "akrual bunga: pembagian chunk":
-  test "countChunks dan paginasi tidak menduplikasi rekening":
+  test "countChunks dan paginasi memproses setiap rekening tepat sekali":
     let total = parseInt(db.getValue(sql"""
       SELECT count(*)::text FROM deposit.account
        WHERE account_type = 'TIME_DEPOSIT' AND status <> 'CLOSED'"""))
@@ -422,19 +446,33 @@ suite "akrual bunga: pembagian chunk":
     check counted.isOk
     check counted.value() == (total + 1) div 2
 
-    var seen: seq[string]
+    # Yang diperiksa adalah **apa yang diproses task** (`metrics.accounts` per chunk), bukan
+    # kueri offset yang dijalankan ulang: kueri ulang akan selalu konsisten dengan dirinya sendiri
+    # walau `runChunk` memakai offset yang salah. Jumlah total yang diproses harus sama dengan
+    # populasi — offset salah membuat rekening terlewat (kurang) atau diproses dua kali (lebih).
+    var processed = 0
     for i in 0 ..< counted.value():
       let res = runAt("2026-12-31", chunkNo = i, chunkSize = 2)
       # Rekening rusak sudah di-CLOSED; sisa populasi sehat.
       check res.isOk
-      let ids = db.getAllRows(sql"""
-        SELECT a.account_id::text FROM deposit.account a
-         WHERE a.account_type = 'TIME_DEPOSIT' AND a.status <> 'CLOSED'
-         ORDER BY a.account_id LIMIT 2 OFFSET ?::int""", $(i * 2))
-      for row in ids:
-        seen.add row[0]
-    check seen.len == total
-    check deduplicate(seen).len == total
+      let accounts = res.value().metrics["accounts"].getInt()
+      check accounts <= 2
+      processed += accounts
+    check processed == total
+
+    # Bukti kedua dari sisi data: setiap rekening yang berhak diakrualkan pada tanggal itu punya
+    # baris, dan tidak ada rekening di luar populasi yang mendapat baris.
+    let withRow = parseInt(db.getValue(sql"""
+      SELECT count(*)::text FROM deposit.interest_accrual ia
+        JOIN deposit.account a ON a.account_id = ia.account_id
+       WHERE ia.business_date = '2026-12-31'::date
+         AND a.account_type = 'TIME_DEPOSIT' AND a.status <> 'CLOSED'"""))
+    check withRow > 0
+    check parseInt(db.getValue(sql"""
+      SELECT count(*)::text FROM deposit.interest_accrual ia
+        JOIN deposit.account a ON a.account_id = ia.account_id
+       WHERE ia.business_date = '2026-12-31'::date
+         AND (a.account_type <> 'TIME_DEPOSIT' OR a.status = 'CLOSED')""")) == 0
 
 # ---------------------------------------------------------------------------------------------
 # Jatuh tempo / ARO (T-138d, D-155)

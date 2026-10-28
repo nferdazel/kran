@@ -13,11 +13,11 @@
 ## Tidak ada `UPDATE` saldo di sini: akrual menambah kewajiban (`204`) dan beban (`501`) lewat
 ## jurnal, bukan mengubah saldo rekening. Saldo baru berubah saat bunga diposting (T-138d).
 
-import std/[json, options, strutils]
+import std/[json, strutils]
 
 import db_connector/db_postgres
 
-import kernel/[ids, money, result]
+import kernel/ids
 import ../domain/account
 import ./account_repo
 
@@ -104,20 +104,3 @@ proc insertAccrual*(db: DbConn; accountId: Id; businessDate, principal, ratePerc
     $accountId, businessDate, principal, days, ratePercent, basisDays, amount, cumulative,
     $journalId).len > 0
 
-proc setAccrualJournal*(db: DbConn; accountId: Id; businessDate, journalId: string) =
-  ## Mengisi `journal_id` setelah jurnalnya benar-benar tertulis. Dipisah dari `insertAccrual`
-  ## supaya nilai nol tetap tercatat sebagai baris tanpa jurnal (jurnal nol ditolak ledger).
-  db.exec(sql"""
-    UPDATE deposit.interest_accrual SET journal_id = ?::uuid
-     WHERE account_id = ? AND business_date = ?::date""", journalId, $accountId, businessDate)
-
-proc accrualCumulativeOf*(db: DbConn; accountId: Id; businessDate: string): Option[Money] =
-  ## Total akrual tercatat sampai `businessDate` (untuk rekonsiliasi & test). `none` = tidak ada.
-  for row in db.getAllRows(sql"""
-      SELECT cumulative::text FROM deposit.interest_accrual
-       WHERE account_id = ? AND business_date = ?::date""", $accountId, businessDate):
-    let parsed = moneyFromString(row[0])
-    if parsed.isErr:
-      raise newException(ValueError, "cumulative akrual bukan desimal sah: " & row[0])
-    return some(parsed.value())
-  none(Money)

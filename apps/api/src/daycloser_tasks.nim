@@ -70,9 +70,12 @@ proc registerDayCloseTasks*(reg: Registry; pool: DbPool) =
   # Gate pra & pasca-tutup (spec §11.5 langkah 2 & 5). Kritis: gagal = run BLOCKED.
   registerGates(reg, pool)
 
-  # Akrual bunga deposito (T-138c). Didaftarkan **sebelum** pekerjaan buku besar: urutan registrasi
-  # adalah urutan eksekusi dalam satu fase, dan snapshot saldo harian sebaiknya melihat jurnal
-  # akrual hari itu, bukan jurnal kemarin.
+  # Akrual bunga deposito (T-138c) dan jatuh tempo/ARO (T-138d). Urutan eksekusi satu fase
+  # **bukan** urutan registrasi: registry mengurutkan topologis dengan tie-break alfabetis
+  # (`daycloser/domain/registry.nim`), jadi `deposit.*` kebetulan berjalan sebelum `ledger.*`
+  # karena id-nya, sedangkan urutan **antar** task deposit hanya dijamin `dependsOn` (lihat
+  # `registerDepositTasks`). Snapshot saldo harian sebaiknya melihat jurnal akrual hari itu,
+  # bukan jurnal kemarin.
   registerDepositTasks(reg, pool)
 
   # Pekerjaan buku besar (spec §11.6): snapshot saldo harian + tutup periode GL bulanan (T-137).
