@@ -40,7 +40,8 @@ Tidak ada aggregate bisnis. Invarian yang ditegakkan:
   (penutupan tidak boleh tertahan oleh pekerjaan opsional).
 - **Skip hanya untuk task non-kritis dan hanya pada task satu-chunk** — task multi-chunk yang
   berhenti di tengah meninggalkan pekerjaan separuh yang tak bisa dijelaskan. Task kritis yang
-  meminta skip = gagal, dan chunk-nya tidak pernah ditandai sukses.
+  meminta skip = gagal, dan chunk-nya tidak pernah ditandai sukses. Alasan skip disimpan di
+  `daycloser.task.reason` (migrasi `0062`) karena monitor membaca DB, bukan log.
 - **Registry divalidasi terhadap snapshot run** sebelum eksekusi/resume: task yang ditambah,
   dihapus, atau berubah kind/critical ditolak sebelum state run disentuh.
 - **Segel** (`summary_hash`) mencakup hash snapshot parameter, state/attempt task, dan

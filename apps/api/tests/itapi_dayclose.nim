@@ -251,19 +251,24 @@ suite "day-close: run tersimpan":
               '""" & snapshotJson & """'::jsonb, '""" & snapshotHash & """', now())
     """)
     execScript(db, """
-      INSERT INTO daycloser.task (run_id, task_id, kind, critical, state, attempt, error)
+      INSERT INTO daycloser.task (run_id, task_id, kind, critical, state, attempt, error, reason)
       VALUES ('""" & FixtureRunId &
         """', 'ledger.suspense_zero', 'POSTCHECK', true, 'FAILED', 2,
-              '{"code":"DAY-304","message":"saldo akun selisih tidak nol"}'::jsonb),
-             ('""" & FixtureRunId & """', 'ledger.trial_balance', 'POSTCHECK', true, 'SUCCEEDED',
-              1, NULL)
+              '{"code":"DAY-304","message":"saldo akun selisih tidak nol"}'::jsonb, NULL),
+             ('""" & FixtureRunId &
+        """', 'ledger.trial_balance', 'POSTCHECK', true, 'SUCCEEDED',
+              1, NULL, NULL),
+             ('""" & FixtureRunId & """', 'ledger.period_close', 'POSTCHECK', true, 'SKIPPED',
+              1, NULL, 'bukan akhir bulan')
     """)
     execScript(db, """
       INSERT INTO daycloser.chunk (run_id, task_id, chunk_no, state, attempt, error)
       VALUES ('""" & FixtureRunId &
         """', 'ledger.suspense_zero', 0, 'FAILED', 2,
               '{"code":"DAY-304"}'::jsonb),
-             ('""" & FixtureRunId & """', 'ledger.trial_balance', 0, 'SUCCEEDED', 1, NULL)
+             ('""" & FixtureRunId &
+        """', 'ledger.trial_balance', 0, 'SUCCEEDED', 1, NULL),
+             ('""" & FixtureRunId & """', 'ledger.period_close', 0, 'SUCCEEDED', 1, NULL)
     """)
 
     let status = getJson(StatusPath, adminToken)
@@ -274,9 +279,10 @@ suite "day-close: run tersimpan":
     check status.body["businessDate"]["frozenAt"].kind == JNull
     check status.body["activeRun"]["runId"].getStr() == FixtureRunId
     check status.body["activeRun"]["state"].getStr() == "RUNNING"
-    check status.body["activeRun"]["tasks"]["ok"].getInt() == 1
-    check status.body["activeRun"]["tasks"]["failed"].getInt() == 1
-    check status.body["activeRun"]["tasks"]["total"].getInt() == 2
+    check status.body["activeRun"]["taskCounts"]["ok"].getInt() == 1
+    check status.body["activeRun"]["taskCounts"]["failed"].getInt() == 1
+    check status.body["activeRun"]["taskCounts"]["skipped"].getInt() == 1
+    check status.body["activeRun"]["taskCounts"]["total"].getInt() == 3
     check status.body["latestRun"]["runId"].getStr() == FixtureRunId
 
     let runs = getJson(RunsPath, adminToken)
@@ -309,7 +315,12 @@ suite "day-close: run tersimpan":
         check task["chunks"][0]["state"].getStr() == "FAILED"
         check task["chunks"][0]["attempt"].getInt() == 2
         check task["chunks"][0]["errorCode"].getStr() == "DAY-304"
+      if task["taskId"].getStr() == "ledger.period_close":
+        check task["state"].getStr() == "SKIPPED"
+        # Alasan skip disimpan (migrasi `0062`): monitor harus bisa menjelaskan kenapa dilewati.
+        check task["reason"].getStr() == "bukan akhir bulan"
     check chunkTotal == dbChunks
+    check detail.body["taskCounts"]["total"].getInt() == dbTasks
 
 # Jangan tinggalkan tanggal buku `CLOSING` (atau run aktif) untuk suite/e2e berikutnya.
 execScript(db, "DELETE FROM platform.business_date")

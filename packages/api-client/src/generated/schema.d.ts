@@ -2140,8 +2140,8 @@ export interface components {
             attempt: number;
             errorCode: string | null;
             /**
-             * @description Alasan task di-`SKIPPED`. Belum dipersistensi (hanya `error` yang tersimpan), jadi
-             *     saat ini selalu `null`; kontrak membiarkannya nullable untuk commit berikutnya.
+             * @description Alasan task di-`SKIPPED` (dari `skipOutcome`). `null` untuk state lain dan untuk run
+             *     sebelum kolom ini ada (migrasi `0062`).
              */
             reason: string | null;
             chunks: components["schemas"]["DayCloseChunkState"][];
@@ -2162,12 +2162,11 @@ export interface components {
             finishedAt: string | null;
             /** @description Segel bukti hasil run; `null` sampai run `COMPLETED`. */
             summaryHash: string | null;
-            tasks: components["schemas"]["DayCloseTaskCounts"];
+            taskCounts: components["schemas"]["DayCloseTaskCounts"];
         };
         /**
-         * @description Ringkasan run + daftar task beserta chunk. Kunci `tasks` di sini **array**, bukan hitungan
-         *     seperti pada `DayCloseRunSummary`; hitungan tetap tersedia dari `GET /dayclose/runs` dan
-         *     `GET /dayclose/status`.
+         * @description Ringkasan run + daftar task beserta chunk. `taskCounts` sama artinya dengan pada
+         *     `DayCloseRunSummary`; `tasks` berisi state per task.
          */
         DayCloseRunDetail: {
             /** Format: uuid */
@@ -2182,6 +2181,7 @@ export interface components {
             startedAt: string;
             finishedAt: string | null;
             summaryHash: string | null;
+            taskCounts: components["schemas"]["DayCloseTaskCounts"];
             tasks: components["schemas"]["DayCloseTaskState"][];
         };
         DayCloseRunList: {

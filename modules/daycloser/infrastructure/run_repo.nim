@@ -98,7 +98,8 @@ proc snapshot*(db: DbConn; runId: string): RunSnapshot =
       "snapshot parameter run " & runId & " tidak cocok dengan hash-nya")
 
   for trow in db.getAllRows(sql"""
-      SELECT task_id, kind, critical, state, attempt, coalesce(error->>'code', '')
+      SELECT task_id, kind, critical, state, attempt, coalesce(error->>'code', ''),
+             coalesce(reason, '')
         FROM daycloser.task WHERE run_id = ?::uuid ORDER BY task_id""", runId):
     result.tasks.add TaskProgress(
       taskId: trow[0],
@@ -106,7 +107,8 @@ proc snapshot*(db: DbConn; runId: string): RunSnapshot =
       critical: trow[2] == "t",
       state: parseTaskState(trow[3]),
       attempt: parseInt(trow[4]),
-      errorCode: trow[5])
+      errorCode: trow[5],
+      reason: trow[6])
 
   for crow in db.getAllRows(sql"""
       SELECT task_id, chunk_no, state, attempt, coalesce(error->>'code', '')
@@ -133,7 +135,9 @@ proc setRunState*(db: DbConn; runId: string; st: RunState; at, summaryHash: stri
       "gagal memperbarui state run " & runId & " → " & $st)
 
 proc setTaskState*(db: DbConn; runId: string; taskId: TaskId; st: TaskState; at: string;
-                   err, metrics: JsonNode) =
+                   err, metrics: JsonNode; reason: string = "") =
+  ## `reason` hanya berisi sesuatu untuk state `SKIPPED`. Ditulis apa adanya tiap transisi supaya
+  ## percobaan ulang menghapus alasan lama, bukan mewarisinya.
   let affected = db.execAffectedRows(sql"""
     UPDATE daycloser.task
        SET state = ?,
@@ -143,11 +147,12 @@ proc setTaskState*(db: DbConn; runId: string; taskId: TaskId; st: TaskState; at:
            finished_at = CASE WHEN ? IN ('SUCCEEDED','FAILED','SKIPPED','CANCELED')
                               THEN ?::timestamptz ELSE NULL END,
            error = ?::jsonb,
-           metrics = COALESCE(?::jsonb, metrics)
+           metrics = COALESCE(?::jsonb, metrics),
+           reason = NULLIF(?, '')
      WHERE run_id = ?::uuid AND task_id = ?""",
     $st, $st, $st, at, $st, at,
     (if err.isNil: "null" else: $err), (if metrics.isNil: "null" else: $metrics),
-    runId, taskId)
+    reason, runId, taskId)
   if affected != 1:
     raise newException(DayCloserError,
       "gagal memperbarui task " & taskId & " pada run " & runId)
