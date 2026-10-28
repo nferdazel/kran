@@ -101,7 +101,10 @@ test("keyboard: muat ulang dan batas riwayat bisa dipakai tanpa tetikus", async 
   await page.goto("/app/dayclose");
   await expect(page.getByRole("heading", { level: 1, name: T.id.title })).toBeVisible();
 
+  // Kontrol sengaja disabled selama pemuatan: tunggu sampai bisa dipakai, jangan menguji balapan
+  // dengan fetch pertama (yang gagal ter-fokus saat disabled bukan cacat keyboard).
   const reload = page.getByRole("button", { name: T.id.reload, exact: true });
+  await expect(reload).toBeEnabled();
   await reload.focus();
   await expect(reload).toBeFocused();
   await reload.press("Enter");
@@ -112,9 +115,23 @@ test("keyboard: muat ulang dan batas riwayat bisa dipakai tanpa tetikus", async 
   ).toBeVisible();
   await expect(page.getByRole("alert")).toHaveCount(0);
 
+  // Kontrol riwayat harus tercapai dengan Tab dari tombol muat ulang: itu yang membuat halaman
+  // bisa dipakai tanpa tetikus. Perilaku panah di dalam `<select>` native (membuka popup) tidak
+  // diuji di sini — Chromium headless tidak merender popup itu, sehingga hasilnya mengukur
+  // browser, bukan aplikasi. Reaksi aplikasi terhadap perubahan nilainya diuji terpisah di bawah.
   const limit = page.getByLabel(T.id.limit, { exact: true });
-  await limit.focus();
-  await expect(limit).toBeFocused();
-  await page.keyboard.press("ArrowDown");
+  await expect(limit).toBeEnabled();
+  let reached = false;
+  for (let i = 0; i < 15; i += 1) {
+    await page.keyboard.press("Tab");
+    if (await limit.evaluate((element) => element === document.activeElement)) {
+      reached = true;
+      break;
+    }
+  }
+  expect(reached, "select batas riwayat tercapai dengan Tab").toBe(true);
+
+  await limit.selectOption("50");
   await expect(limit).toHaveValue("50");
+  await expect(page.getByRole("alert")).toHaveCount(0);
 });
