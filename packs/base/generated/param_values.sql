@@ -13,6 +13,27 @@ INSERT INTO platform.param_value
   (param_value_id, key, scope_type, scope_id, value, effective_from, status,
    maker, checker, reason)
 VALUES
+  (md5('daycloser.auto.enabled|base')::uuid, 'daycloser.auto.enabled', 'GLOBAL', NULL, 'false'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+ON CONFLICT (param_value_id) DO NOTHING;
+
+INSERT INTO platform.param_value
+  (param_value_id, key, scope_type, scope_id, value, effective_from, status,
+   maker, checker, reason)
+VALUES
+  (md5('daycloser.auto.run_at|base')::uuid, 'daycloser.auto.run_at', 'GLOBAL', NULL, '"23:30"'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+ON CONFLICT (param_value_id) DO NOTHING;
+
+INSERT INTO platform.param_value
+  (param_value_id, key, scope_type, scope_id, value, effective_from, status,
+   maker, checker, reason)
+VALUES
+  (md5('daycloser.auto.utc_offset_minutes|base')::uuid, 'daycloser.auto.utc_offset_minutes', 'GLOBAL', NULL, '0'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
+ON CONFLICT (param_value_id) DO NOTHING;
+
+INSERT INTO platform.param_value
+  (param_value_id, key, scope_type, scope_id, value, effective_from, status,
+   maker, checker, reason)
+VALUES
   (md5('daycloser.chunk_size|base')::uuid, 'daycloser.chunk_size', 'GLOBAL', NULL, '1000'::jsonb, DATE '1970-01-01', 'ACTIVE', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2', 'pack seed: base @ GLOBAL')
 ON CONFLICT (param_value_id) DO NOTHING;
 

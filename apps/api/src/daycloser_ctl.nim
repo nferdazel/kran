@@ -10,6 +10,8 @@
 ##   daycloser-resume --run=<uuid>        lanjutkan run PAUSED/FAILED/BLOCKED
 ##   daycloser-pause  --run=<uuid>        hentikan di batas chunk (langsung bila tak ada proses)
 ##   daycloser-cancel --run=<uuid>        batalkan; tanggal buku yang dibekukan dibuka kembali
+##   daycloser-auto                       jalankan penutupan bila jadwal parameter sudah tiba
+##                                        (dipanggil timer systemd; lihat ops/systemd)
 
 import std/[options, os, strutils, times]
 
@@ -26,6 +28,7 @@ import platform/infrastructure/calendar_repo
 import daycloser/domain/[run, types]
 import daycloser/infrastructure/run_repo
 
+import ./daycloser_auto
 import ./daycloser_service
 
 export daycloser_service
@@ -36,9 +39,10 @@ const
   dayCloserResumeCmd* = "daycloser-resume"
   dayCloserPauseCmd* = "daycloser-pause"
   dayCloserCancelCmd* = "daycloser-cancel"
+  dayCloserAutoCmd* = "daycloser-auto"
 
   dayCloserCommands* = [dayCloserStatusCmd, dayCloserRunCmd, dayCloserResumeCmd,
-                        dayCloserPauseCmd, dayCloserCancelCmd]
+                        dayCloserPauseCmd, dayCloserCancelCmd, dayCloserAutoCmd]
 
 proc printRun(snap: RunSnapshot) =
   var ok, failed, skipped, done = 0
@@ -136,6 +140,7 @@ proc runDayCloserCtl*(command, businessDate, runId: string;
     of dayCloserResumeCmd: resumeCmd(pool, clock, runId)
     of dayCloserPauseCmd: controlCmd(pool, clock, runId, rcPause)
     of dayCloserCancelCmd: controlCmd(pool, clock, runId, rcCancel)
+    of dayCloserAutoCmd: autoRun(pool, clock)
     else:
       stderr.writeLine "kran-api: perintah day-close tidak dikenal: " & command
       2

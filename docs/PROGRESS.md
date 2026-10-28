@@ -3233,3 +3233,35 @@ izin baca vs kelola dipisah; pengecualian gerbang sempit).
 **Batas/berikutnya**: penjadwal `daycloser-auto` (2b) dan halaman `/app/dayclose` (2c) belum ada;
 `daycloser.run.started_by` masih kosong untuk aksi HTTP (audit mencatat pelakunya) — dicatat di
 `ACCEPTED-LIMITS`.
+
+---
+
+## 2026-10-28 — T-139b penjadwal penutupan harian
+
+**Konteks**: O-094 mencatat belum ada pemicu harian; penutupan hanya berjalan bila operator
+menjalankan `ctl`. Monitoring sudah ada (T-139a), tetapi tanpa penjadwal buku tetap tidak maju
+sendiri.
+
+**Yang berubah**
+
+- `modules/daycloser/domain/schedule.nim` (baru, murni): `ClockTime`/`parseClockTime` (`HH:MM`,
+  bentuk lain ditolak), `localMinutesOfDay` (menit UTC + selisih zona, dibungkus 0..1439),
+  `dueNow`. Tidak ada tabel zona waktu: repo belum punya, jadi jam lokal + `utc_offset_minutes`
+  dinyatakan eksplisit (spec §22: simpan UTC, tampil lokal).
+- Parameter baru (`modules/daycloser/seeds/params.yaml` + artefak paramgen):
+  `daycloser.auto.enabled` (bool, default **false**), `daycloser.auto.run_at` (`HH:MM`,
+  default `23:30`), `daycloser.auto.utc_offset_minutes` (integer ±840, default 0).
+- `apps/api/src/daycloser_auto.nim` (baru): `ctl daycloser-auto`. Tidak melakukan apa pun (kode 0)
+  bila nonaktif, belum waktunya, tanggal buku tidak `OPEN`, atau sudah ada run untuk tanggal itu;
+  kode 3 bila belum ada `business_date` atau ditolak orkestrasi (mis. bukan hari kerja); kode 1 bila
+  penutupan berjalan tetapi tidak selesai. Parameter bertipe salah = kode 2, bukan "mati diam-diam".
+- `ops/systemd/kran-dayclose.{service,timer}`: cermin unit (biner host `--role=ctl`, tiap 5 menit).
+  **Tidak** dipasang oleh deploy; runbook mencatat langkahnya.
+
+**Bukti**: `tschedule` 7 `[OK]`; `itdaycloser_auto` 7 `[OK]` — nonaktif tidak menjalankan apa pun,
+jam lokal (offset 420) memicu sedangkan UTC belum, run yang sudah ada tidak diulang, tanggal buku
+belum ada → 3, `CLOSING` tidak disentuh, hari bukan kerja → 3 dari orkestrasi (bukan dari
+penjadwal).
+
+**Batas**: unit systemd belum dipasang di server (butuh akses operator); DST tidak didukung; jam
+dibaca per institusi, bukan per cabang.
