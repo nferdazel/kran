@@ -19,12 +19,15 @@ import daycloser/infrastructure/run_repo
 import ./access
 import ./context
 import ./db_bridge
+import ./daycloser_service
 import ./http_util
 import ./problem
 
 const
-  ## Izin dibaca dari katalog (migrasi `0061_platform_rbac_dayclose.sql`), bukan string bebas.
+  ## Izin dibaca dari katalog (migrasi `0061`/`0063`), bukan string bebas di handler.
   permissionDayCloseRead* = "dayclose.run.read"
+  ## Menjalankan/menghentikan penutupan. Dipisah dari izin baca: memantau bukan mengoperasikan.
+  permissionDayCloseManage* = "dayclose.run.manage"
 
   ## Batas jumlah run: nilai **teknis** (ukuran respons), bukan ambang bisnis.
   defaultDayCloseRunLimit* = 20 # nomagic:ok ukuran halaman default
@@ -245,3 +248,191 @@ proc handleGetDayCloseRun*(app: AppContext, req: Request) {.gcsafe.} =
     req.respondProblem(pkNotFound, "Not Found", "run day-close tidak ditemukan")
   else:
     req.respondProblem(pkInternal, "Internal Server Error", "detail day-close gagal dibaca")
+
+# ---------------------------------------------------------------------------------------------
+# Aksi (T-139a/actions): jalankan, resume, pause, batalkan.
+#
+# Handler tidak memuat aturan penutupan: semuanya lewat `daycloser_service.nim`, jalur yang sama
+# dengan `daycloser-*` di server. Yang dilakukan di sini hanya otorisasi, pemetaan hasil ke status
+# HTTP, dan pembacaan nilai yang memang milik HTTP (query/path).
+# ---------------------------------------------------------------------------------------------
+
+proc institutionStatus(app: AppContext; principal: Principal; permission: string): int {.gcsafe.} =
+  ## 200 = izin berlaku di tingkat institusi, 403 = grant terbatas cabang, 500 = basis data gagal.
+  var status = 500
+  try:
+    withDbConn(app.pool, proc(db: DbConn) {.gcsafe.} =
+      dbCalls:
+        status = if authorizedAtBranch(db, principal, "", permission): 200 else: 403)
+  except DbError:
+    status = 500
+  status
+
+proc respondAction(req: Request; res: ActionResult) =
+  ## Satu pemetaan untuk keempat aksi, supaya `run`/`resume`/`pause`/`cancel` tidak menjawab
+  ## status berbeda untuk sebab yang sama.
+  case res.status
+  of asOk:
+    if res.hasSnapshot:
+      req.respondJson(200, runSummaryJson(res.snapshot))
+    else:
+      req.respondJson(200, newJObject())
+  of asInvalid:
+    req.respondProblem(newProblem(pkBadRequest, "Bad Request", res.message,
+      traceId = traceIdFrom(req), params = @[("reason", res.code)]))
+  of asNotFound:
+    req.respondProblem(newProblem(pkNotFound, "Not Found", res.message,
+      traceId = traceIdFrom(req), params = @[("reason", res.code)]))
+  of asConflict, asBusy:
+    req.respondProblem(newProblem(pkConflict, "Conflict", res.message,
+      traceId = traceIdFrom(req), params = @[("reason", res.code)]))
+
+proc currentBusinessDate(app: AppContext): string {.gcsafe.} =
+  ## Tanggal buku berjalan, dibaca hanya bila pemanggil tidak menyebutkannya.
+  var date = ""
+  try:
+    withDbConn(app.pool, proc(db: DbConn) {.gcsafe.} =
+      dbCalls:
+        let row = businessDateOf(db, institutionScope())
+        if row.isSome:
+          date = row.get().currentDate)
+  except DbError:
+    date = ""
+  date
+
+proc handleStartDayClose*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `POST /api/v1/dayclose/run` — jalankan penutupan tanggal buku berjalan.
+  let principalOpt = requirePrincipal(app, req)
+  if principalOpt.isNone:
+    return
+  let principal = principalOpt.get()
+  if not requirePermission(app, req, principal, permissionDayCloseManage):
+    return
+  case app.institutionStatus(principal, permissionDayCloseManage)
+  of 403:
+    req.respondInstitutionOnly(permissionDayCloseManage)
+    return
+  of 500:
+    req.respondProblem(pkInternal, "Internal Server Error",
+      "status day-close gagal dibaca")
+    return
+  else: discard
+
+  var dateRaw = queryValue(req, "businessDate").strip()
+  if dateRaw.len == 0:
+    dateRaw = app.currentBusinessDate()
+    if dateRaw.len == 0:
+      req.respondProblem(newProblem(pkConflict, "Conflict",
+        "belum ada baris business_date; tetapkan tanggal buku pertama lewat ctl",
+        traceId = traceIdFrom(req), params = @[("reason", "bootstrap_required")]))
+      return
+  # Diminta eksplisit: endpoint ini tidak pernah "membuat" tanggal buku pertama.
+  var res: ActionResult
+  try:
+    {.cast(gcsafe).}:
+      res = startRunAction(app.pool, app.clock, dateRaw, bootstrap = false)
+  except DayCloserError as e:
+    req.respondProblem(newProblem(pkConflict, "Conflict", e.msg,
+      traceId = traceIdFrom(req), params = @[("reason", "dayclose_error")]))
+    return
+  except IOError:
+    req.respondProblem(pkInternal, "Internal Server Error",
+      "penutupan gagal dijalankan")
+    return
+  req.respondAction(res)
+
+proc handleResumeDayClose*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `POST /api/v1/dayclose/runs/{runId}/resume`.
+  let principalOpt = requirePrincipal(app, req)
+  if principalOpt.isNone:
+    return
+  let principal = principalOpt.get()
+  if not requirePermission(app, req, principal, permissionDayCloseManage):
+    return
+  case app.institutionStatus(principal, permissionDayCloseManage)
+  of 403:
+    req.respondInstitutionOnly(permissionDayCloseManage)
+    return
+  of 500:
+    req.respondProblem(pkInternal, "Internal Server Error",
+      "status day-close gagal dibaca")
+    return
+  else: discard
+
+  var res: ActionResult
+  try:
+    {.cast(gcsafe).}:
+      res = resumeRunAction(app.pool, app.clock, pathParam(req, "runId"))
+  except DayCloserError as e:
+    req.respondProblem(newProblem(pkConflict, "Conflict", e.msg,
+      traceId = traceIdFrom(req), params = @[("reason", "dayclose_error")]))
+    return
+  except IOError:
+    req.respondProblem(pkInternal, "Internal Server Error",
+      "run day-close gagal dilanjutkan")
+    return
+  req.respondAction(res)
+
+proc handlePauseDayClose*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `POST /api/v1/dayclose/runs/{runId}/pause` — berhenti di batas chunk.
+  let principalOpt = requirePrincipal(app, req)
+  if principalOpt.isNone:
+    return
+  let principal = principalOpt.get()
+  if not requirePermission(app, req, principal, permissionDayCloseManage):
+    return
+  case app.institutionStatus(principal, permissionDayCloseManage)
+  of 403:
+    req.respondInstitutionOnly(permissionDayCloseManage)
+    return
+  of 500:
+    req.respondProblem(pkInternal, "Internal Server Error",
+      "status day-close gagal dibaca")
+    return
+  else: discard
+
+  var res: ActionResult
+  try:
+    {.cast(gcsafe).}:
+      res = controlRunAction(app.pool, app.clock, pathParam(req, "runId"), rcPause)
+  except DayCloserError as e:
+    req.respondProblem(newProblem(pkConflict, "Conflict", e.msg,
+      traceId = traceIdFrom(req), params = @[("reason", "dayclose_error")]))
+    return
+  except IOError:
+    req.respondProblem(pkInternal, "Internal Server Error",
+      "run day-close gagal dipause")
+    return
+  req.respondAction(res)
+
+proc handleCancelDayClose*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `POST /api/v1/dayclose/runs/{runId}/cancel` — batalkan dan buka kembali tanggal buku.
+  let principalOpt = requirePrincipal(app, req)
+  if principalOpt.isNone:
+    return
+  let principal = principalOpt.get()
+  if not requirePermission(app, req, principal, permissionDayCloseManage):
+    return
+  case app.institutionStatus(principal, permissionDayCloseManage)
+  of 403:
+    req.respondInstitutionOnly(permissionDayCloseManage)
+    return
+  of 500:
+    req.respondProblem(pkInternal, "Internal Server Error",
+      "status day-close gagal dibaca")
+    return
+  else: discard
+
+  var res: ActionResult
+  try:
+    {.cast(gcsafe).}:
+      res = controlRunAction(app.pool, app.clock, pathParam(req, "runId"), rcCancel)
+  except DayCloserError as e:
+    req.respondProblem(newProblem(pkConflict, "Conflict", e.msg,
+      traceId = traceIdFrom(req), params = @[("reason", "dayclose_error")]))
+    return
+  except IOError:
+    req.respondProblem(pkInternal, "Internal Server Error",
+      "run day-close gagal dibatalkan")
+    return
+  req.respondAction(res)

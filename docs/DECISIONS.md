@@ -3861,3 +3861,38 @@ rule GL bunga, dan tanpa nilai parameter akrual.
 - T-138 dipecah: (a) helper day-count + bunga murni (tanpa parameter), (b) migrasi model akun +
   rule GL, (c) task akrual dengan checkpoint `PER_ENTITY`, (d) task jatuh tempo/ARO, (e) task
   dormant.
+
+## D-153 — Aksi day-close lewat HTTP: dieksekusi di permintaan, tanpa `Idempotency-Key` (28 Okt 2026)
+
+**Konteks.** T-139 meminta tombol Jalankan/Resume/Pause/Cancel di layar monitor, bukan hanya
+perintah `ctl` di server. Tiga hal harus diputuskan sebelum menulis handler: di mana orkestrasi
+berjalan, bagaimana klik ganda dicegah, dan bagaimana aksi tetap bisa dipakai justru saat buku
+sedang ditutup.
+
+**Keputusan.**
+
+1. **Eksekusi sinkron di dalam permintaan HTTP**, memakai layanan yang sama dengan `ctl`
+   (`apps/api/src/daycloser_service.nim`). Handler tidak memuat aturan penutupan sama sekali; ia
+   hanya mengotorisasi, memetakan hasil ke status HTTP, dan membaca query/path.
+   *Alternatif yang ditolak*: menjalankan orkestrasi di thread terpisah lalu menjawab `202`.
+   Itu menambah mesin keadaan baru (siapa pemilik run bila proses API mati di tengah?) tanpa
+   menyelesaikan masalah yang belum terbukti: durasi penutupan pilot masih detik, bukan menit.
+   Batasnya dicatat: permintaan menahan satu worker HTTP, dan klien harus memperlakukan batas
+   waktu sebagai "tidak tahu" lalu membaca `GET /dayclose/status` — bukan mengulang aksi.
+2. **Tanpa `Idempotency-Key`**, berbeda dari rencana awal T-139. Jalur idempotensi repo mengklaim
+   kunci *di dalam satu transaksi* dengan operasinya; penutupan berjalan lintas transaksi dan
+   memakai koneksi bergantian, jadi klaim itu tidak bisa dibungkus. Pengaman klik ganda tetap ada
+   dan lebih tepat: advisory lock per scope, index unik `run_one_per_date_uq`, dan pause/cancel
+   yang hanya menulis niat (idempoten). Klik kedua menerima `409` dengan kode mesin yang jelas.
+3. **Izin dipisah**: `dayclose.run.read` (0061) untuk memantau, `dayclose.run.manage` (0063)
+   untuk menjalankan/menghentikan. `ops_admin` hanya memegang yang baca; `platform_admin` dan
+   `ledger_admin` memegang keduanya. Keduanya tetap menuntut grant tanpa batas cabang (D-062).
+4. **Pengecualian gerbang `CLOSING`**: `/api/v1/dayclose/` masuk daftar pengecualian yang sudah
+   ada (`/api/v1/auth/`). Tanpa itu, satu-satunya jalan keluar dari penutupan macet ada di server.
+   Daftar pengecualian punya **satu definisi** yang dipakai runtime (`close_guard.nim`) dan gate
+   kontrak (`tools/openapi/lib.nim`), dan `topenapi` mengunci keduanya (termasuk memastikan
+   `/api/v1/daycloser/…` tidak ikut terbuka).
+
+**Konsekuensi.** Menjalankan penutupan dari UI tidak lagi memerlukan akses server, tetapi tetap
+tidak bisa menggantikan `ctl` untuk bootstrap tanggal buku pertama (`409 bootstrap_required`) —
+membuat tanggal buku adalah tindakan sekali seumur institusi, bukan tombol harian.

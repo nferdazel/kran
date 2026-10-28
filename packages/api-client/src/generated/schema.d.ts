@@ -1570,6 +1570,99 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/dayclose/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Jalankan penutupan tanggal buku
+         * @description Menjalankan penutupan untuk tanggal buku yang sedang berjalan (`businessDate` opsional,
+         *     hanya boleh sama dengan tanggal buku berjalan). Permintaan **menunggu** penutupan selesai
+         *     lalu mengembalikan ringkasan run terakhir — periksa `state` (`COMPLETED` berarti segel
+         *     berhasil, `FAILED`/`BLOCKED`/`PAUSED` berarti tidak). Klien harus memperlakukan batas
+         *     waktu sebagai "tidak tahu" dan membaca `GET /dayclose/status`, bukan mengulang aksi.
+         *
+         *     Klik ganda aman tanpa `Idempotency-Key`: scope dikunci advisory lock dan index unik
+         *     `run_one_per_date_uq` menolak run kedua untuk tanggal yang sama (`409 run_exists`).
+         */
+        post: operations["startDayClose"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dayclose/runs/{runId}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lanjutkan run day-close
+         * @description Melanjutkan run `PAUSED`/`FAILED`/`BLOCKED` dan menunggu sampai berhenti lagi. Run yang
+         *     sudah `COMPLETED`/`CANCELED` dijawab `409 already_finished`.
+         */
+        post: operations["resumeDayClose"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dayclose/runs/{runId}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hentikan run day-close di batas chunk
+         * @description Bila ada proses yang menjalankan run, niat `PAUSE` dicatat dan dibaca orkestrator di batas
+         *     chunk (`params.reason = control_requested`). Bila tidak ada proses, run langsung
+         *     `PAUSED`. Run yang tidak sedang berjalan dijawab `409 not_running`.
+         */
+        post: operations["pauseDayClose"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dayclose/runs/{runId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batalkan run day-close dan buka kembali tanggal buku
+         * @description Pembatalan **atomik**: sisa task `CANCELED`, run `CANCELED`, dan tanggal buku yang dibekukan
+         *     run itu dibuka kembali (`CLOSING → OPEN`). Run yang sudah berakhir dijawab
+         *     `409 already_finished`; pembatalan yang tanggalnya masih tertinggal `CLOSING` dipulihkan
+         *     dan dijawab `200` dengan `params.reason = already_canceled`.
+         */
+        post: operations["cancelDayClose"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5337,6 +5430,162 @@ export interface operations {
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
             405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    startDayClose: {
+        parameters: {
+            query?: {
+                businessDate?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run yang dijalankan (periksa `state`) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayCloseRunSummary"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            /**
+             * @description Ditolak keadaan sekarang (`params.reason`): `run_exists`, `not_working_day`,
+             *     `business_date_mismatch`, `bootstrap_required`, `bootstrap_not_allowed`,
+             *     `business_date_closing`, `business_date_closed`, `scope_locked`.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    resumeDayClose: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run setelah dilanjutkan (periksa `state`) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayCloseRunSummary"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            /** @description Ditolak keadaan sekarang (`params.reason`): `already_finished`, `scope_locked`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    pauseDayClose: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run setelah permintaan pause */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayCloseRunSummary"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            /** @description Ditolak keadaan sekarang (`params.reason`): `not_running`, `already_finished`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    cancelDayClose: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run setelah pembatalan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayCloseRunSummary"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            /** @description Ditolak keadaan sekarang (`params.reason`): `already_finished`, `scope_locked`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
             503: components["responses"]["Problem"];

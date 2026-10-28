@@ -92,6 +92,22 @@ paths:
           $ref: "#/components/responses/Problem"
         "409":
           $ref: "#/components/responses/Problem"
+  /api/v1/dayclose/run:
+    post:
+      operationId: startDayClose
+      responses:
+        "200":
+          description: ok
+        "405":
+          $ref: "#/components/responses/Problem"
+  /api/v1/daycloser/run:
+    post:
+      operationId: startDayCloser
+      responses:
+        "200":
+          description: ok
+        "405":
+          $ref: "#/components/responses/Problem"
 components:
   responses:
     Problem:
@@ -250,6 +266,22 @@ suite "findings (parity rute vs kontrak)":
       if "409" in item and "createRole" in item:
         inc missing409
     check missing409 == 1
+
+  test "rute dayclose dikecualikan dari 409, awalan yang mirip tidak":
+    # Aksi day-close justru harus bisa dipakai saat `CLOSING`, jadi kontraknya tidak diwajibkan
+    # menyebut 409. `/api/v1/daycloser/...` bukan awalan yang sama dan tetap wajib.
+    let c = loadContract(kontrak409, "contoh")
+    let f = findings(@[route("POST", "/api/v1/dayclose/run", "startDayClose"),
+                       route("POST", "/api/v1/daycloser/run", "startDayCloser")], c)
+    var exempted = 0
+    var lookalike = 0
+    for item in f:
+      if "409" in item and "POST /api/v1/dayclose/run" in item:
+        inc exempted
+      if "409" in item and "POST /api/v1/daycloser/run" in item:
+        inc lookalike
+    check exempted == 0
+    check lookalike == 1
 
   test "operasi tulis dengan 409 = tanpa temuan 409":
     let c = loadContract(kontrak409, "contoh")

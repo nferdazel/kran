@@ -3399,6 +3399,201 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/dayclose/run:
+    post:
+      operationId: startDayClose
+      tags: [dayclose]
+      summary: Jalankan penutupan tanggal buku
+      description: |
+        Menjalankan penutupan untuk tanggal buku yang sedang berjalan (`businessDate` opsional,
+        hanya boleh sama dengan tanggal buku berjalan). Permintaan **menunggu** penutupan selesai
+        lalu mengembalikan ringkasan run terakhir — periksa `state` (`COMPLETED` berarti segel
+        berhasil, `FAILED`/`BLOCKED`/`PAUSED` berarti tidak). Klien harus memperlakukan batas
+        waktu sebagai "tidak tahu" dan membaca `GET /dayclose/status`, bukan mengulang aksi.
+
+        Klik ganda aman tanpa `Idempotency-Key`: scope dikunci advisory lock dan index unik
+        `run_one_per_date_uq` menolak run kedua untuk tanggal yang sama (`409 run_exists`).
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: businessDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Run yang dijalankan (periksa `state`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DayCloseRunSummary"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "409":
+          description: |
+            Ditolak keadaan sekarang (`params.reason`): `run_exists`, `not_working_day`,
+            `business_date_mismatch`, `bootstrap_required`, `bootstrap_not_allowed`,
+            `business_date_closing`, `business_date_closed`, `scope_locked`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/dayclose/runs/{runId}/resume:
+    post:
+      operationId: resumeDayClose
+      tags: [dayclose]
+      summary: Lanjutkan run day-close
+      description: |
+        Melanjutkan run `PAUSED`/`FAILED`/`BLOCKED` dan menunggu sampai berhenti lagi. Run yang
+        sudah `COMPLETED`/`CANCELED` dijawab `409 already_finished`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Run setelah dilanjutkan (periksa `state`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DayCloseRunSummary"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "409":
+          description: |
+            Ditolak keadaan sekarang (`params.reason`): `already_finished`, `scope_locked`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/dayclose/runs/{runId}/pause:
+    post:
+      operationId: pauseDayClose
+      tags: [dayclose]
+      summary: Hentikan run day-close di batas chunk
+      description: |
+        Bila ada proses yang menjalankan run, niat `PAUSE` dicatat dan dibaca orkestrator di batas
+        chunk (`params.reason = control_requested`). Bila tidak ada proses, run langsung
+        `PAUSED`. Run yang tidak sedang berjalan dijawab `409 not_running`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Run setelah permintaan pause
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DayCloseRunSummary"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "409":
+          description: |
+            Ditolak keadaan sekarang (`params.reason`): `not_running`, `already_finished`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/dayclose/runs/{runId}/cancel:
+    post:
+      operationId: cancelDayClose
+      tags: [dayclose]
+      summary: Batalkan run day-close dan buka kembali tanggal buku
+      description: |
+        Pembatalan **atomik**: sisa task `CANCELED`, run `CANCELED`, dan tanggal buku yang dibekukan
+        run itu dibuka kembali (`CLOSING → OPEN`). Run yang sudah berakhir dijawab
+        `409 already_finished`; pembatalan yang tanggalnya masih tertinggal `CLOSING` dipulihkan
+        dan dijawab `200` dengan `params.reason = already_canceled`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Run setelah pembatalan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DayCloseRunSummary"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "409":
+          description: |
+            Ditolak keadaan sekarang (`params.reason`): `already_finished`, `scope_locked`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+
 components:
   securitySchemes:
     sessionCookie:

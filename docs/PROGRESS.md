@@ -3197,3 +3197,39 @@ tetapi repo belum punya hitungan hari sama sekali (tidak ada ACT/365, ACT/360, 3
 **Batas/berikutnya**: konvensi 30/360 perlu konfirmasi compliance (alternatif 30E/360); potongan
 (b) migrasi model + rule GL, (c) task akrual dengan checkpoint, (d) jatuh tempo/ARO, (e) dormant
 belum dikerjakan.
+
+---
+
+## 2026-10-28 — T-139a aksi day-close: tombol operator memakai jalur `ctl` yang sama
+
+**Konteks**: T-139a baca sudah ada, tetapi menutup buku masih hanya bisa dari server. Aksi
+resume/cancel juga terhalang gerbang `CLOSING` (dicatat `ACCEPTED-LIMITS`).
+
+**Yang berubah**
+
+- `apps/api/src/daycloser_service.nim` (baru): seluruh **keputusan** penutupan pindah dari
+  `daycloser_ctl.nim` — `startRunAction`, `resumeRunAction`, `controlRunAction` mengembalikan
+  `ActionResult` (status + kode mesin + snapshot), plus primitif yang dulu tinggal di `ctl`
+  (`freezeBusinessDate`, `sealAndRollover`, `cancelAndReopen`, `reopenBusinessDate`,
+  `cancelRunNow`, `makeStore`, `readConfig`, `auditRun`). `ctl` kini hanya mencetak dan memetakan
+  kode keluar; arti lama dipertahankan (run `BLOCKED`/`FAILED` tetap kode keluar 1).
+- `POST /api/v1/dayclose/run`, `/runs/{runId}/resume|pause|cancel` + izin `dayclose.run.manage`
+  (`modules/platform/migrations/0063_platform_rbac_dayclose_manage.sql`, untuk `platform_admin`
+  dan `ledger_admin`, wajib grant tanpa batas cabang).
+- `closeGuardExemptPrefixes` (runtime) = `exemptWritePrefixes` (gate kontrak) = auth + dayclose;
+  `topenapi` mengunci keduanya, termasuk memastikan `/api/v1/daycloser/…` tidak ikut terbuka.
+- `latestRun`/`activeRunFor`/`recentRuns`: `run_id DESC` sebagai pemutus seri `started_at`, supaya
+  "run terakhir" tidak bergantung urutan fisik baris saat dua run mulai pada detik yang sama.
+  `itdaycloser_gates` memakai pemutus yang sama supaya tidak goyah.
+
+**Keputusan**: D-153 (eksekusi sinkron di permintaan; tanpa `Idempotency-Key` karena jalur
+idempotensi repo mengklaim kunci di dalam satu transaksi, sedangkan penutupan lintas transaksi;
+izin baca vs kelola dipisah; pengecualian gerbang sempit).
+
+**Bukti**: `itapi_dayclose` 10 `[OK]`, `itdaycloser_lifecycle` 7, `itdaycloser_gates` 12,
+`itdaycloser_ledger` 7, `itdaycloser` 16, `tdaycloser` 27, `itapi_closeguard` 6, `topenapi` 30,
+`tcontract` 6; `check-fast` + `openapi` hijau. Gate penuh dijalankan setelah commit ini.
+
+**Batas/berikutnya**: penjadwal `daycloser-auto` (2b) dan halaman `/app/dayclose` (2c) belum ada;
+`daycloser.run.started_by` masih kosong untuk aksi HTTP (audit mencatat pelakunya) — dicatat di
+`ACCEPTED-LIMITS`.
