@@ -3837,9 +3837,10 @@ rule GL bunga, dan tanpa nilai parameter akrual.
    `deposit.account.account_type`, plus `maturity_date`, `aro_instruction` (`NONE|PRINCIPAL|
    PRINCIPAL_AND_INTEREST`), dan `last_activity` (tanggal transaksi terakhir). Produk tetap satu
    katalog (`product`), dibedakan lewat `product_type`/`savings_kind` seperti sekarang.
-2. **Akrual bunga dijurnal di GL setiap hari.** Setiap EOD: **D 501 BEBAN BUNGA / K 203 BUNGA
-   AKRUAL** (akun COA baru `203`, LIABILITY, postable, `NEEDS-COMPLIANCE-REVIEW`). Saat posting ke
-   rekening: **D 203 / K 201 SIMPANAN ANGGOTA**. Dengan begitu beban berjalan terlihat harian dan
+2. **Akrual bunga dijurnal di GL setiap hari.** Setiap EOD: **D 501 BEBAN BUNGA / K 204 BUNGA
+   AKRUAL** (akun COA baru `204`, LIABILITY, postable, `NEEDS-COMPLIANCE-REVIEW` — lihat amendemen
+   di bawah: nomor aslinya di keputusan ini `203`, sudah dipakai akun lain). Saat posting ke
+   rekening: **D 204 / K 201 SIMPANAN ANGGOTA**. Dengan begitu beban berjalan terlihat harian dan
    kewajiban bunga yang belum dibayar tidak bercampur dengan saldo simpanan.
 3. **Nilai parameter akrual default** (provisional, `NEEDS-COMPLIANCE-REVIEW`, wajib dikonfirmasi
    compliance sebelum data anggota nyata): `interest_rate` **2,5% p.a.**, `day_count_basis`
@@ -3855,7 +3856,18 @@ rule GL bunga, dan tanpa nilai parameter akrual.
 
 - Ketiga pekerjaan itu tetap `HUMAN-REVIEW-REQUIRED` saat implementasi: rumus bunga/akrual masuk
   area kritis AGENTS.md §8, jadi hasilnya harus ditinjau manusia sebelum dinyatakan selesai.
-- `203 BUNGA AKRUAL` adalah akun baru di COA dasar (migrasi expand + seed rule), bukan angka di kode.
+- `204 BUNGA AKRUAL` adalah akun baru di COA dasar (migrasi expand + seed rule), bukan angka di kode.
+
+**Amendemen (28 Okt 2026, keputusan pemilik setelah pemeriksaan COA).** Dua koreksi atas butir 2:
+
+1. **Nomor akun akrual adalah `204`, bukan `203`.** `203 TITIPAN PENGURUS` sudah ada sejak migrasi
+   `0036` (LIABILITY, saldo awal vault). Karena `coa_account` punya `UNIQUE (code)` dan seed memakai
+   `ON CONFLICT (code) DO NOTHING`, memakai `203` akan **diam-diam** memakai akun yang salah. Akun
+   baru memakai kode bebas berikutnya supaya tidak ada jurnal/saldo lama yang perlu dimigrasikan.
+2. **Pokok deposito berjangka masuk `202 SIMPANAN BERJANGKA`, bukan `201`.** Saat jatuh tempo,
+   pokok + bunga pindah ke rekening simpanan anggota (`201`). `201` tetap milik tabungan; `202`
+   memisahkan kewajiban deposito di laporan. Konsekuensi: rule posting per jenis rekening
+   (T-138c/d), bukan satu rule generik untuk semua simpanan.
 - Nilai default di atas **bukan** anjuran regulasi; ia hanya membuat sistem bisa berjalan. Bila
   compliance menetapkan angka lain, perubahan terjadi lewat parameter/versi produk, bukan kode.
 - T-138 dipecah: (a) helper day-count + bunga murni (tanpa parameter), (b) migrasi model akun +
