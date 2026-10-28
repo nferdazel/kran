@@ -221,9 +221,9 @@ proc makeStore(pool: DbPool; clock: Clock): Store =
       1)
 
   proc setTaskState(runId: string; taskId: TaskId; st: TaskState; at: string;
-                    err, metrics: JsonNode) =
+                    err, metrics: JsonNode; reason: string) =
     discard pool.withConn(proc(d: DbConn): int =
-      d.setTaskState(runId, taskId, st, at, err, metrics)
+      d.setTaskState(runId, taskId, st, at, err, metrics, reason)
       1)
 
   proc setChunkState(runId: string; taskId: TaskId; chunkNo: int; st: ChunkState;

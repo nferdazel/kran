@@ -4568,8 +4568,8 @@ components:
         reason:
           type: ["string", "null"]
           description: |
-            Alasan task di-`SKIPPED`. Belum dipersistensi (hanya `error` yang tersimpan), jadi
-            saat ini selalu `null`; kontrak membiarkannya nullable untuk commit berikutnya.
+            Alasan task di-`SKIPPED` (dari `skipOutcome`). `null` untuk state lain dan untuk run
+            sebelum kolom ini ada (migrasi `0062`).
         chunks:
           type: array
           items:
@@ -4579,7 +4579,7 @@ components:
       type: object
       additionalProperties: false
       required: [runId, businessDate, scopeType, levels, state, startedAt, finishedAt,
-                 summaryHash, tasks]
+                 summaryHash, taskCounts]
       properties:
         runId:
           type: string
@@ -4608,18 +4608,17 @@ components:
         summaryHash:
           type: ["string", "null"]
           description: Segel bukti hasil run; `null` sampai run `COMPLETED`.
-        tasks:
+        taskCounts:
           $ref: "#/components/schemas/DayCloseTaskCounts"
 
     DayCloseRunDetail:
       type: object
       additionalProperties: false
       required: [runId, businessDate, scopeType, levels, state, startedAt, finishedAt,
-                 summaryHash, tasks]
+                 summaryHash, taskCounts, tasks]
       description: |
-        Ringkasan run + daftar task beserta chunk. Kunci `tasks` di sini **array**, bukan hitungan
-        seperti pada `DayCloseRunSummary`; hitungan tetap tersedia dari `GET /dayclose/runs` dan
-        `GET /dayclose/status`.
+        Ringkasan run + daftar task beserta chunk. `taskCounts` sama artinya dengan pada
+        `DayCloseRunSummary`; `tasks` berisi state per task.
       properties:
         runId:
           type: string
@@ -4645,6 +4644,8 @@ components:
           type: ["string", "null"]
         summaryHash:
           type: ["string", "null"]
+        taskCounts:
+          $ref: "#/components/schemas/DayCloseTaskCounts"
         tasks:
           type: array
           items:

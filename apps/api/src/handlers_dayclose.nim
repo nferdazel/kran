@@ -80,9 +80,7 @@ proc taskJson(t: TaskProgress): JsonNode =
     "state": $t.state,
     "attempt": t.attempt,
     "errorCode": jsonOrNull(t.errorCode),
-    # Alasannya belum disimpan di DB (hanya `error` jsonb yang tersimpan), jadi selalu `null`.
-      # Kontrak membiarkannya nullable supaya commit berikutnya bisa mengisinya tanpa breaking.
-    "reason": newJNull(),
+    "reason": jsonOrNull(t.reason),
     "chunks": chunks,
   }
 
@@ -96,13 +94,12 @@ proc runSummaryJson(snap: RunSnapshot): JsonNode =
     "startedAt": snap.startedAt,
     "finishedAt": jsonOrNull(snap.finishedAt),
     "summaryHash": jsonOrNull(snap.summaryHash),
-    "tasks": taskCountsJson(snap),
+    "taskCounts": taskCountsJson(snap),
   }
 
 proc runDetailJson(snap: RunSnapshot): JsonNode =
-  ## Detail = ringkasan + daftar task. Kunci `tasks` pada ringkasan memuat **hitungan**, sedangkan
-  ## di detail kunci yang sama memuat daftar task beserta chunk-nya (kontrak T-139a); hitungannya
-  ## tetap tersedia dari `GET /dayclose/runs` dan `GET /dayclose/status`.
+  ## Detail = ringkasan + daftar task beserta chunk-nya. Hitungan tetap di `taskCounts` supaya
+  ## kunci yang sama tidak berarti dua hal berbeda di dua bentuk respons (ringkasan vs detail).
   result = runSummaryJson(snap)
   var tasks = newJArray()
   for t in snap.tasks:

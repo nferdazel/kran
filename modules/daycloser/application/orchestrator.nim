@@ -40,7 +40,8 @@ type
       ## Dipisah dari tiga port terpisah karena urutan yang setengah jadi meninggalkan
       ## `CANCELED` + `CLOSING` — keadaan yang menahan semua tulisan tanpa perintah pemulih.
     setTaskState*: proc(runId: string; taskId: TaskId; st: TaskState; at: string;
-                        err, metrics: JsonNode) {.closure.}
+                        err, metrics: JsonNode; reason: string) {.closure.}
+      ## `reason` wajib diteruskan: hanya terisi untuk `SKIPPED`, dan monitor membacanya dari DB.
     setChunkState*: proc(runId: string; taskId: TaskId; chunkNo: int; st: ChunkState;
                          at: string; err: JsonNode) {.closure.}
     controlOf*: proc(runId: string): RunControl {.closure.}
@@ -285,14 +286,14 @@ proc executeRun*(registry: Registry; store: Store; runId: string;
       if state in {rsPaused, rsCanceled}:
         return outcomeOf(store, runId, state)
 
-      store.setTaskState(runId, task.id, tsReady, now(), nil, nil)
-      store.setTaskState(runId, task.id, tsRunning, now(), nil, nil)
+      store.setTaskState(runId, task.id, tsReady, now(), nil, nil, "")
+      store.setTaskState(runId, task.id, tsRunning, now(), nil, nil, "")
       log(task.id & " mulai (" & $task.kind & ")")
       let r = runTask(store, task, ctx, progress, snap.config, runId, now, sleepMs, log)
       if r.stop != rcNone:
         # Task dikembalikan ke PENDING supaya status jujur: tidak ada pekerjaan yang sedang
         # berjalan saat operator meminta berhenti.
-        store.setTaskState(runId, task.id, tsPending, now(), nil, nil)
+        store.setTaskState(runId, task.id, tsPending, now(), nil, nil, "")
         if r.stop == rcCancel:
           cancelRun(store, runId, now())
           log("run " & runId & " dibatalkan operator di batas chunk")
@@ -302,7 +303,8 @@ proc executeRun*(registry: Registry; store: Store; runId: string;
         return outcomeOf(store, runId, rsPaused)
       store.setTaskState(runId, task.id, r.state, now(),
         (if r.state == tsFailed: errorJson(r.err) else: nil),
-        (if not r.metrics.isNil: r.metrics else: r.err.metrics))
+        (if not r.metrics.isNil: r.metrics else: r.err.metrics),
+        (if r.state == tsSkipped: r.reason else: ""))
       log(task.id & " → " & $r.state &
           (if r.state == tsSkipped: " (" & r.reason & ")" else: ""))
 

@@ -247,10 +247,11 @@ proc fakeStore(f: FakeRun): Store =
 
 
   proc setTaskState(runId: string; taskId: TaskId; st: TaskState; at: string;
-                    err, metrics: JsonNode) =
+                    err, metrics: JsonNode; reason: string) =
     let i = findTask(taskId)
     if i >= 0:
       f.snap.tasks[i].state = st
+      f.snap.tasks[i].reason = reason
     f.calls.add "task:" & taskId & ":" & $st
 
   proc setChunkState(runId: string; taskId: TaskId; chunkNo: int; st: ChunkState;
