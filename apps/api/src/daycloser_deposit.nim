@@ -54,10 +54,14 @@
 ##   DAY-341 `aro_instruction` kosong pada deposito berjangka (data rusak; jangan menebak ARO)
 ##   DAY-342 tanggal rekening/jatuh tempo tidak sah
 ##   DAY-343 rekening simpanan tujuan tidak ada (prasyarat operasional, pola `DAY-301`)
-##   DAY-344 jurnal jatuh tempo tidak bisa dibuat (rule hilang/ambigu, periode tertutup)
+##   DAY-344 jurnal jatuh tempo tidak bisa dibuat: posting rule hilang/ambigu. Periode tertutup
+##           **bukan** kode ini — galat periode datang sebagai `DbError` dan menjadi `DAY-345`
 ##   DAY-345 perpindahan gagal disimpan / saldo berubah di tengah proses (bisa diulang)
 ##   DAY-346 `aro_instruction` tidak dikenal (data rusak)
 ##   DAY-347 tenor perpanjangan tidak sah (`maturity_date` tidak setelah `opened_on`)
+##   DAY-348 baris saldo rekening tidak ada (cache hilang; jangan tutup tanpa memindahkan pokok)
+##   DAY-349 jatuh tempo baru tidak setelah tanggal buku (proses terlambat melebihi satu tenor,
+##           O-109: siklus ARO kedua belum didukung)
 ##
 ## Kode kegagalan dormant:
 ##   DAY-350 daftar rekening dormant gagal dibaca (bisa diulang)
@@ -466,12 +470,28 @@ proc settleMaturity(db: DbConn; clock: Clock; ctx: TaskContext; item: MaturityAc
     MaturityOutcome =
   ## Keputusan ARO untuk satu rekening yang sudah jatuh tempo. Pokok yang berpindah adalah **saldo
   ## rekening** (bukan angka lain): subledger harus tetap merekonstruksi saldo yang sama.
+  # Cache saldo yang hilang **bukan** "saldo nol": `accountOf` meng-`coalesce` saldo ke 0,00, dan
+  # tanpa guard ini deposito akan ditutup tanpa memindahkan pokok — kerugian yang tidak terlihat
+  # karena `DAY-307` (subledger vs GL) baru berjalan setelah task ini selesai.
+  if not item.hasBalance:
+    raise abort("DAY-348", "rekening " & item.account.accountNo &
+      ": baris saldo rekening tidak ada; rekonstruksi lewat `reconcile-deposits` sebelum jatuh tempo")
   let aro = parseAroOf(item)
   let principal = item.account.balance
   let interest = item.accruedInterest
   # Tanggal divalidasi lebih dulu untuk semua ARO: rekening yang tanggalnya rusak tidak boleh
   # diproses sebagian.
   discard maturityDateOf(item)
+  # ARO yang memperpanjang butuh tanggal jatuh tempo baru yang **masih di masa depan**. Bila proses
+  # terlambat lebih dari satu tenor, tenor berikutnya juga sudah lewat, dan run berikutnya akan
+  # membayar bunga siklus yang sama untuk kedua kalinya (O-109). Berhenti, jangan memutar tenor
+  # diam-diam.
+  if aro != aiNone:
+    let nextDate = nextMaturity(item)
+    if nextDate <= ctx.businessDate:
+      raise abort("DAY-349", "rekening " & item.account.accountNo & ": jatuh tempo baru " &
+        nextDate & " tidak setelah tanggal buku " & ctx.businessDate &
+        "; proses terlambat melebihi satu tenor (O-109)")
   case aro
   of aiNone: settleNone(db, clock, ctx, item, principal, interest)
   of aiPrincipal: settlePrincipal(db, clock, ctx, item, interest)

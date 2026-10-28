@@ -20,8 +20,8 @@ import openapi/lib
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
 
-import deposit/domain/account
-import deposit/infrastructure/account_repo
+import deposit/domain/[account, transaction]
+import deposit/infrastructure/[account_repo, transaction_repo]
 import ledger/domain/[coa, period, posting]
 import ledger/infrastructure/[ledger_repo, posting_repo]
 import party/domain/party
@@ -722,6 +722,46 @@ suite "teller: setor & tarik":
     checkProblem(TransferPath, "POST", "409", toTd.body)
     check toTd.body["params"]["reason"].getStr() == "time_deposit_locked"
     check transferCount(TimeDepositAccountId) == 0
+    # Penolakan terjadi sebelum mutasi: saldo kedua sisi dan jurnal tidak berubah.
+    check balanceOf(TimeDepositAccountId) == "500.00"
+    check balanceOf(savings) == "0.00"
+    check transferCount(savings) == 0
+
+  test "baris jatuh tempo: slip 404 (bukan 500) dan statement kind MATURITY":
+    let token = tokenOf(login(MakerUser))
+    # Baris perpindahan jatuh tempo (pokok keluar dari deposito, tanpa kas) ditulis lewat repo yang
+    # sama dengan task day-close, jadi bentuknya identik dengan produksi.
+    let maturityTxId = dbPool.withTx(proc(d: DbConn): string {.closure.} =
+      let journalId = postJournalSync(d, app.clock, "DepositMatured",
+        moneyFromString("100.00").value(), parseId(BranchId).value(),
+        parseId(TimeDepositAccountId).value(), BusinessDate,
+        "test.maturity:" & TimeDepositAccountId & ":" & BusinessDate, fixtureActor, ProductCode,
+        "TIME_DEPOSIT", "")
+      let txId = newId(app.clock)
+      insertTransaction(d, Transaction(transactionId: txId, txType: ttMaturityOut,
+        accountId: parseId(TimeDepositAccountId).value(), amount: moneyFromString("100.00").value(),
+        businessDate: BusinessDate, narration: "Pindah jatuh tempo", journalId: journalId),
+        fixtureActor)
+      $txId)
+
+    # Slip kas hanya untuk transaksi tunai: baris jatuh tempo = 404, bukan 500 "data rusak".
+    let slip = call("GET", CashPath & "/" & maturityTxId, "", token)
+    check slip.code == 404
+    checkProblem(SlipPath, "GET", "404", slip.body)
+
+    # Statement rekening tetap menampilkannya, dengan arah saldo dan kind sendiri.
+    let statement = call("GET", StatementPath.replace("{accountId}", TimeDepositAccountId) &
+      "?from=" & BusinessDate & "&to=" & BusinessDate, "", token)
+    check statement.code == 200
+    checkJson(StatementPath, "GET", "200", statement.body)
+    var found = false
+    for row in statement.body["rows"]:
+      if row["transactionId"].kind != JNull and row["transactionId"].getStr() == maturityTxId:
+        found = true
+        check row["kind"].getStr() == "MATURITY"
+        check row["direction"].getStr() == "OUT"
+        check row["amount"].getStr() == "100.00"
+    check found
 
 suite "teller: jurnal subledger tidak bisa dibalik (T-123)":
   test "jurnal transaksi tunai & PB ditolak 409 journal_owned_by_subledger":

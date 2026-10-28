@@ -97,8 +97,16 @@ export function statementDirectionLabel(direction: StatementDirection): string {
   return direction === "IN" ? m.statement_direction_in() : m.statement_direction_out();
 }
 
+const STATEMENT_KIND_LABELS: Record<StatementRow["kind"], () => string> = {
+  CASH: () => m.statement_kind_cash(),
+  TRANSFER: () => m.statement_kind_transfer(),
+  MATURITY: () => m.statement_kind_maturity(),
+};
+
+/** Label sumber baris statement. Nilai di luar kontrak ditampilkan apa adanya, bukan ditebak. */
 export function statementKindLabel(kind: StatementRow["kind"]): string {
-  return kind === "CASH" ? m.statement_kind_cash() : m.statement_kind_transfer();
+  const template = STATEMENT_KIND_LABELS[kind];
+  return template === undefined ? kind : template();
 }
 
 export function statementStatusLabel(status: AccountStatement["status"]): string {

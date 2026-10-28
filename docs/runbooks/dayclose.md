@@ -144,10 +144,12 @@ SELECT t.task_id, t.state, t.error->>'code' AS code, t.metrics
 | `DAY-341` | deposito berjangka yang jatuh tempo tidak punya `aro_instruction` | data rusak: task **tidak menebak** ARO. Tentukan instruksi anggota (`NONE`/`PRINCIPAL`/`PRINCIPAL_AND_INTEREST`) lewat jalur resmi, lalu `daycloser-resume` |
 | `DAY-342` | tanggal rekening/jatuh tempo/tanggal buku tidak sah | data rusak; periksa `deposit.account.opened_on`, `maturity_date`, dan `platform.business_date` |
 | `DAY-343` | deposito jatuh tempo tanpa rekening simpanan aktif di cabang yang sama | prasyarat operasional (pola `DAY-301`): buka rekening simpanan tujuan untuk anggota itu, lalu `daycloser-resume`. Pesan galat menyebut nomor rekening deposito |
-| `DAY-344` | jurnal jatuh tempo tidak bisa dibuat | periksa rule `DepositMatured`/`InterestPosted`/`InterestCapitalized` (seed `ledger/0065`, `ledger/0069`) dan status periode tanggal buku |
+| `DAY-344` | jurnal jatuh tempo tidak bisa dibuat | periksa rule `DepositMatured`/`InterestPosted`/`InterestCapitalized` (seed `ledger/0065`, `ledger/0069`). **Periode tertutup bukan kode ini**: galat periode dari trigger `ledger` muncul sebagai `DAY-345` (retryable) |
 | `DAY-345` | perpindahan jatuh tempo gagal disimpan, atau saldo berubah di tengah proses | galat basis data/mutasi bersamaan; task dicoba ulang. Bila berulang, selidiki transaksi yang menyentuh rekening itu pada tanggal yang sama |
 | `DAY-346` | `aro_instruction` tidak dikenal | data rusak (CHECK DB seharusnya menolak); perbaiki nilainya, jangan menganggap `NONE` |
 | `DAY-347` | tenor perpanjangan tidak sah (`maturity_date` ≤ `opened_on`) | perbaiki tanggal rekening; ARO `PRINCIPAL*` tidak bisa menghitung tenor semula |
+| `DAY-348` | rekening jatuh tempo tanpa baris `deposit.account_balance` | cache saldo hilang: jangan tutup rekening (pokok bisa hilang tanpa jejak). Rekonstruksi saldo lewat `reconcile-deposits`, lalu `daycloser-resume` |
+| `DAY-349` | jatuh tempo baru sudah lewat lagi (proses terlambat > satu tenor) | siklus ARO kedua belum didukung (O-109). Selesaikan perpanjangan/pembayaran secara manual lewat jalur resmi, perbaiki `maturity_date`, lalu resume |
 | `DAY-350` | daftar rekening dormant gagal dibaca | galat basis data; task dicoba ulang otomatis |
 | `DAY-351` | parameter `deposit.dormant.after_months` tidak terbaca / bukan bulan ≥ 1 | lengkapi nilai parameter institusi (atau perbaiki tipenya) lewat maker-checker, lalu `daycloser-resume`. Task **tidak** menebak ambang: menandai rekening dormant tanpa dasar kebijakan lebih buruk daripada run gagal |
 | `DAY-352` | status rekening tidak dikenal saat membaca daftar dormant | data rusak; perbaiki `deposit.account.status` (CHECK `0071` seharusnya menolak nilai asing) |

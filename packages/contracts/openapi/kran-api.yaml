@@ -5422,7 +5422,7 @@ components:
           description: Nomor rekening **provisoris** (10 digit).
         status:
           type: string
-          enum: [ACTIVE, CLOSED]
+          enum: [ACTIVE, CLOSED, DORMANT]
         branchId:
           type: string
           format: uuid
@@ -5443,15 +5443,16 @@ components:
       type: object
       additionalProperties: false
       description: |
-        Satu baris statement. `kind` membedakan sumber; tepat satu dari `transactionId` (CASH) atau
-        `transferId` (TRANSFER) terisi, yang lain `null`. `direction` relatif ke rekening yang
-        diminta: `IN` = masuk, `OUT` = keluar.
+        Satu baris statement. `kind` membedakan sumber; `CASH` = transaksi tunai teller, `MATURITY` =
+        perpindahan jatuh tempo deposito (pokok/bunga, tanpa kas), `TRANSFER` = pemindahbukuan.
+        Tepat satu dari `transactionId` (`CASH`/`MATURITY`) atau `transferId` (`TRANSFER`) terisi,
+        yang lain `null`. `direction` relatif ke rekening yang diminta: `IN` = masuk, `OUT` = keluar.
       required: [kind, direction, amount, businessDate, journalId, narration, transactionId,
                  transferId]
       properties:
         kind:
           type: string
-          enum: [CASH, TRANSFER]
+          enum: [CASH, TRANSFER, MATURITY]
         direction:
           type: string
           enum: [IN, OUT]
@@ -5470,7 +5471,10 @@ components:
         transactionId:
           type: [ "string", "null" ]
           format: uuid
-          description: Id transaksi tunai (kind `CASH`); `null` untuk baris PB.
+          description: |
+            Id baris `deposit.transaction` (kind `CASH` atau `MATURITY`); `null` untuk baris PB.
+            Slip cetak ulang hanya tersedia untuk kind `CASH` (`GET /teller/cash-transactions/{id}`
+            menjawab 404 untuk baris jatuh tempo).
         transferId:
           type: [ "string", "null" ]
           format: uuid

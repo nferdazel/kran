@@ -867,3 +867,112 @@ suite "dormant: penandaan status (T-138e)":
       check accounts <= 2
       processed += accounts
     check processed == total
+
+# ---------------------------------------------------------------------------------------------
+# Jatuh tempo: guard dan rollback (review T-138d)
+# ---------------------------------------------------------------------------------------------
+
+proc closeAllTimeDeposits() =
+  ## Higiene: hanya rekening yang dibuat test berikut yang boleh jatuh tempo pada tanggal uji.
+  ## Tanpa ini rekening dari suite lain (yang sudah `CLOSED`/diperpanjang) bisa membuat chunk
+  ## berhenti lebih dulu dengan kode lain, dan assertion jadi menebak urutan.
+  execScript(db, """
+    UPDATE deposit.account SET status = 'CLOSED'
+     WHERE account_type = 'TIME_DEPOSIT' AND status <> 'CLOSED'""")
+
+proc kindProduct(kind: SavingsKind): tuple[product: Product, version: ProductVersion] =
+  ## Produk simpanan berklasifikasi (POKOK/WAJIB) untuk menguji pemilihan rekening tujuan.
+  productSeq.inc
+  let prod = Product(productId: newId(testClock), code: "TDK" & align($productSeq, 3, '0'),
+    name: "Simpanan " & $kind, productType: ptSavings, savingsKind: some(kind))
+  let v = ProductVersion(versionId: newId(testClock), productId: prod.productId, versionNo: 1,
+    effectiveFrom: "2020-01-01")
+  discard dbPool.withTx(proc(d: DbConn): int =
+    insertProduct(d, prod, actor)
+    insertVersion(d, v, maker)
+    insertBinding(d, v.versionId,
+      ParamBinding(paramKey: "product.savings.min_balance", value: %"0.00"))
+    1)
+  doAssert approveVersion(db, v.versionId, actor), "versi produk POKOK gagal di-approve"
+  (prod, v)
+
+suite "jatuh tempo: guard (review T-138d)":
+
+  test "rekening sehat sebelum rekening rusak ikut dibatalkan (DAY-341)":
+    closeAllTimeDeposits()
+    let partyId = newPartyRow()
+    # Id tetap: urutan `account_id` deterministik, rekening sehat benar-benar diproses lebih dulu.
+    let healthyId = timeDeposit(std.version, std.product.code, OpenedOn, "5000000.00",
+      maturityDate = MaturityDate, aro = "NONE", partyId = $partyId,
+      fixedId = "f2000000-0000-7000-8000-0000000000a1")
+    let savingsId = savingsAccount(std.version, std.product.code, $partyId, OpenedOn)
+    let brokenId = timeDeposit(std.version, std.product.code, OpenedOn, "1000000.00",
+      maturityDate = MaturityDate, partyId = $partyId,
+      fixedId = "f2000000-0000-7000-8000-0000000000a2")
+    check $healthyId < $brokenId
+
+    let res = runMaturityAt(MaturityRunDate)
+    check not res.isOk
+    check res.error.code == "DAY-341"
+    # Rekening sehat sudah menulis jurnal + baris subledger sebelum chunk gagal: semuanya dibatalkan.
+    check stateOf(healthyId) == ("ACTIVE", MaturityDate)
+    check balanceOf(healthyId) == "5000000.00"
+    check transactionsOf(healthyId, ttMaturityOut).len == 0
+    check transactionsOf(savingsId, ttMaturityIn).len == 0
+    check balanceOf(savingsId) == "0.00"
+    check maturityJournal(healthyId, MaturityRunDate).len == 0
+    check interestPostJournal(healthyId, MaturityRunDate).len == 0
+
+  test "rekening POKOK bukan tujuan pembayaran: dipakai tabungan biasa (DAY-343 bila tidak ada)":
+    closeAllTimeDeposits()
+    let partyId = newPartyRow()
+    let pokok = kindProduct(skPokok)
+    # Rekening POKOK dibuat **lebih dulu** → `account_no` terkecil, jadi target default bila
+    # penyaring `savings_kind` hilang.
+    let pokokId = savingsAccount(pokok.version, pokok.product.code, $partyId, OpenedOn)
+    let depositId = timeDeposit(std.version, std.product.code, OpenedOn, "10000000.00",
+      maturityDate = MaturityDate, aro = "NONE", partyId = $partyId)
+    seedPrincipalMovement(std.version, std.product.code, $depositId, "10000000.00", OpenedOn)
+    # Bunga tenor penuh (19 hari) harus sudah tercatat sebelum perpindahan diuji.
+    check runAt(MaturityRunDate).isOk
+
+    # Tanpa tabungan biasa, tidak ada target yang sah: POKOK tidak boleh dipakai.
+    let noTarget = runMaturityAt(MaturityRunDate)
+    check not noTarget.isOk
+    check noTarget.error.code == "DAY-343"
+
+    let savingsId = savingsAccount(std.version, std.product.code, $partyId, OpenedOn)
+    check runMaturityAt(MaturityRunDate).isOk
+    check balanceOf(savingsId) == "10013013.70"
+    check balanceOf(pokokId) == "0.00"
+    check stateOf(depositId).status == "CLOSED"
+
+  test "baris saldo hilang = DAY-348, deposito tidak ditutup":
+    closeAllTimeDeposits()
+    let partyId = newPartyRow()
+    let depositId = timeDeposit(std.version, std.product.code, OpenedOn, "10000000.00",
+      maturityDate = MaturityDate, aro = "NONE", partyId = $partyId)
+    discard savingsAccount(std.version, std.product.code, $partyId, OpenedOn)
+    execScript(db, "DELETE FROM deposit.account_balance WHERE account_id = '" &
+      $depositId & "'")
+
+    let res = runMaturityAt(MaturityRunDate)
+    check not res.isOk
+    check res.error.code == "DAY-348"
+    check stateOf(depositId).status == "ACTIVE"
+    check transactionsOf(depositId, ttMaturityOut).len == 0
+
+  test "jatuh tempo baru sudah lewat (terlambat > satu tenor) = DAY-349":
+    closeAllTimeDeposits()
+    let partyId = newPartyRow()
+    let depositId = timeDeposit(std.version, std.product.code, OpenedOn, "10000000.00",
+      maturityDate = MaturityDate, aro = "PRINCIPAL", partyId = $partyId)
+    discard savingsAccount(std.version, std.product.code, $partyId, OpenedOn)
+
+    # Tenor 19 hari: jatuh tempo 2026-10-20 → perpanjangan 2026-11-08, yang juga sudah lewat pada
+    # 2026-12-01. Melanjutkan berarti membayar bunga siklus yang sama dua kali (O-109).
+    let res = runMaturityAt("2026-12-01")
+    check not res.isOk
+    check res.error.code == "DAY-349"
+    check stateOf(depositId) == ("ACTIVE", MaturityDate)
+    check interestPostJournal(depositId, "2026-12-01").len == 0

@@ -37,6 +37,7 @@ type
     maturityDate*: string ## ISO `yyyy-MM-dd`; `""` = tanpa jatuh tempo (tidak pernah jatuh tempo)
     aroInstruction*: string ## `NONE`/`PRINCIPAL`/`PRINCIPAL_AND_INTEREST`; `""` = belum diatur
     accruedInterest*: Money ## `cumulative` akrual terakhir = bunga yang belum dibayar; nol bila none
+    hasBalance*: bool ## `false` = baris `deposit.account_balance` tidak ada (cache hilang, bukan nol)
 
 proc countMaturityCandidates*(db: DbConn): int64 =
   ## Jumlah rekening yang **ikut dipaginasi**, bukan jumlah yang jatuh tempo: `countChunks` harus
@@ -59,7 +60,8 @@ proc dueMaturitiesPage*(db: DbConn; businessDate: string; offset, limit: int):
     SELECT """ & accountColumns & """,
            coalesce(to_char(a.maturity_date, 'YYYY-MM-DD'), ''),
            coalesce(a.aro_instruction, ''),
-           coalesce(latest.cumulative::text, '0.00')
+           coalesce(latest.cumulative::text, '0.00'),
+           b.account_id IS NOT NULL
       FROM deposit.account a
       JOIN ranked r ON r.account_id = a.account_id
       JOIN product.product p ON p.product_id = a.product_id
@@ -83,17 +85,27 @@ proc dueMaturitiesPage*(db: DbConn; businessDate: string; offset, limit: int):
       account: accountOf(row),
       maturityDate: row[13],
       aroInstruction: row[14],
-      accruedInterest: interest.value())
+      accruedInterest: interest.value(),
+      hasBalance: row[16] == "t")
 
 proc activeSavingsAccount*(db: DbConn; partyId, branchId: Id): Option[Id] =
   ## Rekening tabungan `ACTIVE` milik party yang sama di cabang yang sama, urut nomor rekening.
   ## `ORDER BY account_no LIMIT 1` = rekening pertama yang dibuka; pemilihan rekening tujuan bukan
   ## keputusan repo, dan anggota dengan beberapa tabungan memakai yang paling awal dibuka.
+  ##
+  ## **Simpanan POKOK/WAJIB dikecualikan.** GL-nya ekuitas (`301.1`/`301.2`, `ledger/0014`),
+  ## sedangkan perpindahan jatuh tempo mengkredit `201` (0065/0069); uang yang mendarat di sana akan
+  ## salah klasifikasi **dan** tidak bisa ditarik (penarikan POKOK/WAJIB diblokir sejak T-111).
+  ## Karena rekening POKOK biasanya yang pertama dibuka (`account_no` terkecil), tanpa penyaring ini
+  ## ia justru menjadi target default.
   let rows = db.getAllRows(sql"""
-    SELECT account_id FROM deposit.account
-     WHERE account_type = 'SAVINGS' AND status = 'ACTIVE'
-       AND party_id = ? AND branch_id = ?
-     ORDER BY account_no
+    SELECT a.account_id
+      FROM deposit.account a
+      JOIN product.product p ON p.product_id = a.product_id
+     WHERE a.account_type = 'SAVINGS' AND a.status = 'ACTIVE'
+       AND a.party_id = ? AND a.branch_id = ?
+       AND coalesce(p.savings_kind, '') NOT IN ('POKOK', 'WAJIB')
+     ORDER BY a.account_no
      LIMIT 1""", $partyId, $branchId)
   if rows.len == 0:
     return none(Id)
