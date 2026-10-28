@@ -17,6 +17,60 @@ export interface ParamDefinition {
 
 export const paramDefinitions: readonly ParamDefinition[] = [
   {
+    "key": "daycloser.chunk_size",
+    "module": "daycloser",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.chunk_size",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 100000
+    }
+  },
+  {
+    "key": "daycloser.max_attempts",
+    "module": "daycloser",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.max_attempts",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 10
+    }
+  },
+  {
+    "key": "daycloser.retry_backoff_seconds",
+    "module": "daycloser",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.retry_backoff_seconds",
+    "jsonSchema": {
+      "minimum": 0,
+      "maximum": 300
+    }
+  },
+  {
     "key": "ledger.coa.code_pattern",
     "module": "ledger",
     "valueType": "string",

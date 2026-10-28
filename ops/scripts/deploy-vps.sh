@@ -284,10 +284,16 @@ done
 
 # 4. FREEZE GATE (spec §21.4 #4, §11.7): jangan deploy saat day-close berjalan.
 # Biner gate jalan di host => pakai URL host (GATE_DB_URL), bukan nama service podman.
+# Keputusan diambil dari **kode keluar**, bukan teks: keluaran manusia bisa berubah tanpa
+# disadari, sedangkan kode keluar adalah kontrak `ctl` (0 = idle, selain 0 = tahan). Biner lama
+# yang belum mengenal perintah ini keluar 3 → tetap menahan deploy (fail-closed).
 if [ -x "$BIN" ]; then
-  freeze_out="$(KRAN_DATABASE_URL="$GATE_DB_URL" "$BIN" --role=ctl daycloser-status 2>&1 || true)"
-  if grep -qE '(^|[^A-Z])(RUNNING|CLOSING)([^A-Z]|$)' <<<"$freeze_out"; then
-    log "==> FREEZE: day-close RUNNING/CLOSING; deploy dibatalkan (coba lagi setelah selesai)"
+  set +e
+  freeze_out="$(KRAN_DATABASE_URL="$GATE_DB_URL" "$BIN" --role=ctl daycloser-status 2>&1)"
+  freeze_code=$?
+  set -e
+  if [ "$freeze_code" -ne 0 ]; then
+    log "==> FREEZE: day-close tidak idle (kode keluar $freeze_code); deploy dibatalkan"
     log "    status: $freeze_out"
     exit 0
   fi

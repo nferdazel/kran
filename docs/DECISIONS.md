@@ -3566,3 +3566,64 @@ adalah sumber bug, dan matcher-nya memang tidak bisa bekerja).
 **Konsekuensi.** Klien menerima 502 untuk kiriman kebesaran ber-`Content-Length`; itu tercatat di
 `docs/ACCEPTED-LIMITS.md` §3 sebagai batas dengan cara mendeteksi. `ops/caddy/Caddyfile.kran.example`
 memuat catatan perilaku ini supaya contoh dan kenyataan tidak menyimpang lagi.
+
+## D-148 — Kerangka `daycloser`: bentuk data, batas eksekusi, dan kontrak gate deploy (28 Okt 2026)
+
+**Konteks.** Fase 3 dibuka dengan T-134 (kerangka orkestrasi penutupan, spec §11). Ringkasan DDL
+spec §11.8 adalah sketsa; beberapa kolomnya tidak bisa dipakai apa adanya, dan beberapa sifat
+spec (paralelisme chunk, dry-run, timeout task) belum bisa ditegakkan tanpa worker pool dan desain
+task nyata. Keputusan di bawah mencatat penyimpangan yang disengaja supaya tidak terbaca sebagai
+kelalaian.
+
+**Keputusan.**
+
+1. **`CloseLevel` pindah ke `shared/kernel/dayclose.nim`.** Kalender (`platform`) menentukan level;
+   `daycloser` melaksanakannya. Menaruhnya di salah satu modul memaksa modul lain menembus
+   internalnya (dilarang `archcheck`), sedangkan tipe ini kosakata orkestrasi, bukan nilai bisnis.
+   `platform/domain/calendar` tetap menyediakan `closeLevelsFor` dan me-re-export tipe tersebut.
+2. **Snapshot parameter inline.** `daycloser.run.param_snapshot jsonb` + `param_snapshot_hash`
+   menggantikan `param_snapshot_id uuid` (spec §11.8). Tabel snapshot parameter institusi belum
+   ada; FK ke tabel yang tidak ada hanya menunda pekerjaan tanpa menambah jaminan. Isinya
+   konfigurasi efektif `daycloser.*` saat run dibuat dan dipakai ulang pada resume.
+3. **`scope_id` bertipe `text`**, sama dengan `platform.business_date`, karena scope dapat berupa
+   institusi (kosong) atau cabang. Kolom tambahan `control` (`NONE|PAUSE|CANCEL`) dibaca
+   orkestrator di batas chunk (spec §11.7).
+4. **Satu koneksi per operasi.** `pool.withConn/withTx` membawa batas `statement_timeout + margin`;
+   meminjam satu koneksi sepanjang run berjam-jam akan membuat pool memutus soket di tengah
+   pekerjaan yang sehat. Setiap operasi repositori memakai blok pendek; advisory lock dipegang
+   koneksi terpisah yang memang hidup selama perintah berjalan.
+5. **Chunk dijalankan sekuensial** dan **belum ada timeout per task.** Menegakkan keduanya butuh
+   worker pool (proses/thread dengan koneksi masing-masing) dan mekanisme pembunuh yang tidak bisa
+   dipalsukan dengan `sleep`. Ditunda ke T-140 bersama benchmark; dicatat di
+   `docs/ACCEPTED-LIMITS.md` §3.
+6. **`SIMULATION` belum diimplementasi.** Kolom `mode` sudah ada, tetapi `ctl` hanya menerima
+   `REAL` dan menolak mode lain. Menjalankan task nyata lalu rollback tidak cukup: task menulis
+   lewat pool (transaksi sendiri), jadi desain dry-run harus eksplisit — bersama T-140.
+7. **Freeze gate deploy memakai kode keluar** `ctl daycloser-status` (0 = idle, selain 0 = tahan;
+   `2` = tidak bisa ditentukan → tahan). Mengganti grep teks menghilangkan kelas bug "teks status
+   berubah, gate diam-diam lolos". Biner Fase 0 yang masih terpasang **mengenali** perintah ini
+   dan selalu keluar 3, jadi gate tetap menahan; keluaran tetap memuat `RUNNING`/`CLOSING` supaya
+   skrip lama (yang masih memakai grep) juga benar. Konsekuensi rollback: bila health gate
+   mengembalikan biner lama sementara skrip baru sudah terpasang, setiap deploy berikutnya
+   ditolak di gate (exit 0 dari webhook) sampai biner diganti manual — fail-closed, bukan diam.
+8. **Audit penutupan ditulis dalam transaksi yang sama dengan transisi akhir.** `Store.completeRun`
+   (diisi composition root) melakukan `UPDATE run SET COMPLETED` + `appendAudit(run.finish)` dalam
+   satu `withTx`, sehingga run tersegel tidak bisa ada tanpa bukti audit karena proses mati di
+   antara dua perintah. `run.start` tetap ditulis setelah baris run ada (`planRun` terpisah).
+9. **Registry divalidasi terhadap snapshot run sebelum eksekusi/resume.** Rencana chunk dibekukan,
+   tetapi daftar task dihitung dari registry hidup; task yang ditambah/dihapus atau berubah
+   kind/critical ditolak (`DAY-*`) sebelum state run disentuh, bukan dijalankan setengah.
+10. **Resume tidak membersihkan CANCEL.** Resume menghapus permintaan `PAUSE` (agar bisa lanjut)
+    tetapi mempertahankan `CANCEL`, sehingga run yang dipause bisa dibatalkan lewat jalur yang
+    benar-benar membaca control (tidak ada proses hidup saat pause). Segel `summary_hash` memuat
+    hash snapshot parameter + state/attempt tiap chunk, bukan hanya task.
+
+**Ditolak.** Menaruh `CloseLevel` di `daycloser/domain` lalu membuat `platform` mengimpor
+`daycloser/api` (arah dependensi terbalik: penentu level bergantung pada pelaksananya). Memakai
+`run_id` sebagai advisory lock key (dua run berbeda tanggal tetap bisa berjalan bersamaan; yang
+harus dikunci adalah **scope**). Menyimpan chunk sebagai JSON di satu kolom (kehilangan resume per
+chunk dan query status).
+
+**Konsekuensi.** EOD besar belum bisa memanfaatkan inti paralel; target performa §23 diukur di
+T-140 untuk 100k rekening simpanan. `daycloser-status` menjadi perintah yang wajib tetap murah
+(read-only) karena dipanggil setiap deploy.

@@ -1,0 +1,38 @@
+# Definisi parameter modul `daycloser` (spec §10.3, §11.4).
+#
+# Semua angka di sini **teknis**: ukuran potongan kerja, jumlah percobaan, dan jeda antar
+# percobaan. Tidak ada ambang bisnis (mis. batas dormant atau tarif akrual) di modul ini — itu
+# milik modul pemilik task dan pack.
+#
+# `default_pack` adalah nilai awal pack, BUKAN fallback kode: orkestrator gagal-cepat bila nilai
+# aktif tidak ada (spec §10.6).
+
+- key: daycloser.chunk_size
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 1, maximum: 100000 }
+  sensitivity: NORMAL
+  provenance:
+    class: teknis
+    note: "Jumlah entitas per chunk. Angka awal 1000; disetel setelah benchmark EOD (T-140)."
+  default_pack: { base: 1000 }
+
+- key: daycloser.max_attempts
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 1, maximum: 10 }
+  sensitivity: NORMAL
+  provenance:
+    class: teknis
+    note: "Percobaan maksimum per chunk/task sebelum dinyatakan FAILED."
+  default_pack: { base: 3 }
+
+- key: daycloser.retry_backoff_seconds
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 0, maximum: 300 }
+  sensitivity: NORMAL
+  provenance:
+    class: teknis
+    note: "Jeda tetap antar percobaan. Backoff eksponensial menyusul bersama worker pool (T-140)."
+  default_pack: { base: 5 }
