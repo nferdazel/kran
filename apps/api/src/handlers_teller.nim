@@ -259,10 +259,14 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
                 " tidak dipegang di cabang rekening ini"
               raise newException(ValueError, problem)
 
-            if account.status != asActive:
+            # DORMANT masih boleh menerima setoran (D-152 butir 4): tanpa itu reaktivasi otomatis
+            # task `deposit.dormant` tidak pernah bisa terjadi. Penarikan dari rekening dormant
+            # belum didukung — aturan penolakan transaksi dormant adalah keputusan lanjutan.
+            if account.status == asClosed or
+                (account.status == asDormant and direction == cdWithdrawal):
               status = 409
               reason = "account_not_active"
-              problem = "rekening tidak berstatus ACTIVE"
+              problem = "rekening tidak aktif untuk transaksi ini"
               raise newException(ValueError, problem)
 
             # Tarik dari deposito berjangka diblokir sampai ada jalur pencairan dini + koreksi akrual

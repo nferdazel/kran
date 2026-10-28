@@ -785,5 +785,9 @@
   "dayclose_code_344": "Jurnal jatuh tempo tidak bisa dibuat: posting rule tidak tersedia atau ambigu, atau periode tanggal buku sudah ditutup.",
   "dayclose_code_345": "Perpindahan jatuh tempo gagal disimpan, atau saldo rekening berubah saat diproses. Ulangi; selidiki mutasi bersamaan bila berulang.",
   "dayclose_code_346": "Deposito berjangka punya instruksi perpanjangan (aro_instruction) yang tidak dikenal. Data rusak; task tidak menebak.",
-  "dayclose_code_347": "Tenor perpanjangan tidak sah: tanggal jatuh tempo tidak setelah tanggal buka rekening. Perbaiki tanggal rekening sebelum resume."
+  "dayclose_code_347": "Tenor perpanjangan tidak sah: tanggal jatuh tempo tidak setelah tanggal buka rekening. Perbaiki tanggal rekening sebelum resume.",
+  "dayclose_code_350": "Daftar rekening dormant gagal dibaca karena galat basis data. Task dicoba ulang otomatis.",
+  "dayclose_code_351": "Parameter ambang dormant (deposit.dormant.after_months) tidak terbaca atau bukan jumlah bulan yang sah. Lengkapi parameter institusi, lalu resume.",
+  "dayclose_code_352": "Data rekening rusak: status rekening tidak dikenal. Perbaiki barisnya sebelum resume.",
+  "dayclose_code_353": "Status dormant gagal disimpan karena galat basis data. Ulangi; tidak ada uang yang berpindah."
 }

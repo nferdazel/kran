@@ -14,6 +14,12 @@
 ## **sinkron** di transaksi chunk yang sama dengan mutasi saldo dan baris `deposit.transaction`,
 ## karena `reconcile-deposits` merekonstruksi saldo dari baris subledger (D-155).
 ##
+## **Dormant.** Terakhir, rekening `ACTIVE` yang aktivitas terakhirnya lebih lama dari
+## `deposit.dormant.after_months` ditandai `DORMANT`, dan `DORMANT` yang kembali beraktivitas
+## dikembalikan `ACTIVE` (D-157). Aktivitas dibaca dari baris `deposit.transaction`/`deposit.transfer`
+## — bukan dari kolom `deposit.account.last_activity`, yang tidak pernah ditulis jalur transaksi
+## mana pun (O-111). Task ini **tidak** kritis: menandai status tidak memindahkan uang.
+##
 ## **Pembulatan sekali per rentang** (keputusan pemilik, 28 Okt 2026): yang dibulatkan adalah bunga
 ## kumulatif dari `opened_on` sampai tanggal buku, lalu bagian hari itu = selisihnya terhadap
 ## kumulatif baris terakhir. Membulatkan tiap hari lalu menjumlahkan akan menyimpang beberapa sen
@@ -52,6 +58,12 @@
 ##   DAY-345 perpindahan gagal disimpan / saldo berubah di tengah proses (bisa diulang)
 ##   DAY-346 `aro_instruction` tidak dikenal (data rusak)
 ##   DAY-347 tenor perpanjangan tidak sah (`maturity_date` tidak setelah `opened_on`)
+##
+## Kode kegagalan dormant:
+##   DAY-350 daftar rekening dormant gagal dibaca (bisa diulang)
+##   DAY-351 parameter `deposit.dormant.after_months` tidak terbaca / bukan bulan >= 1
+##   DAY-352 data rekening rusak (status tidak dikenal)
+##   DAY-353 status dormant gagal disimpan (bisa diulang)
 
 import std/[json, options, strutils]
 
@@ -59,13 +71,14 @@ import db_connector/db_postgres
 
 import "platform-lib/db/pool"
 
-import kernel/[businessdate, clock, dayclose, ids, money, rate, result]
+import kernel/[businessdate, clock, dayclose, ids, money, paramkey, rate, result]
+import kernel/generated/paramkeys
 
-import platform/domain/event
-import platform/infrastructure/outbox_repo
+import platform/domain/[event, scope]
+import platform/infrastructure/[outbox_repo, param_repo]
 
 import deposit/domain/[account, daycount, interest, transaction]
-import deposit/infrastructure/[interest_repo, maturity_repo, transaction_repo]
+import deposit/infrastructure/[dormant_repo, interest_repo, maturity_repo, transaction_repo]
 
 import daycloser/domain/[registry, types]
 
@@ -75,6 +88,10 @@ import ./posting
 const
   interestAccrualTaskId* = "deposit.interest_accrual"
   maturityAroTaskId* = "deposit.maturity_aro"
+  dormantTaskId* = "deposit.dormant"
+
+  ## Ambang dormant (D-152 butir 4): parameter institusi, bukan angka di kode.
+  dormantMonthsParamKey = "deposit.dormant.after_months"
 
   ## Kunci binding versi produk yang dibaca. Nama atribut ditetapkan kode
   ## (`modules/product/seeds/params.yaml`); nilainya tetap milik produk (spec §10.5, D-137).
@@ -513,6 +530,80 @@ proc runMaturityChunk(pool: DbPool; clock: Clock; ctx: TaskContext; chunk: Chunk
     "interestCapitalized": interestCapitalized.toDecimalString,
     "businessDate": ctx.businessDate}))
 
+# ---------------------------------------------------------------------------------------------
+# Dormant (T-138e, D-152 butir 4 / D-157)
+# ---------------------------------------------------------------------------------------------
+
+proc dormantMonths(db: DbConn; ctx: TaskContext): int =
+  ## Ambang dormant aktif pada tanggal buku. Hilang atau bukan bilangan positif = kesalahan
+  ## konfigurasi institusi (`DAY-351`), bukan "lewati saja": menebak ambang berarti menandai
+  ## rekening tanpa dasar kebijakan yang berlaku pada tanggal itu.
+  var value: JsonNode
+  try:
+    value = activeValueJson(db, keyString(P_deposit_dormant_after_months), ctx.businessDate,
+      lookupFor(institutionScope()))
+  except ValueError as e:
+    raise abort("DAY-351", "parameter " & dormantMonthsParamKey & " tidak terbaca: " & e.msg)
+  if value.kind != JInt or value.getInt < 1:
+    raise abort("DAY-351", "parameter " & dormantMonthsParamKey &
+      " harus bilangan bulan >= 1, bukan " & $value)
+  int(value.getInt)
+
+proc countDormantChunks(pool: DbPool; chunkSize: int): Result[int, TaskError] =
+  ## Halaman dihitung dari populasi stabil (`ACTIVE` + `DORMANT`), bukan dari jumlah yang akan
+  ## ditandai: jumlah itu baru diketahui setelah dibandingkan dengan ambang, dan chunk yang tidak
+  ## pernah dijalankan berarti rekening di dalamnya tidak pernah diperiksa.
+  try:
+    let total = pool.withConn(proc(db: DbConn): int64 = countDormantCandidates(db))
+    if chunkSize < 1:
+      raise newException(ValueError, "chunk size harus >= 1")
+    ok[int, TaskError](int((total + int64(chunkSize) - 1) div int64(chunkSize)))
+  except IOError as e:
+    err[int, TaskError](taskError("DAY-350", "jumlah rekening dormant gagal dibaca: " & e.msg,
+      retryable = true))
+
+proc runDormantChunk(pool: DbPool; ctx: TaskContext; chunk: Chunk): TaskResult =
+  var items: seq[DormantCandidate]
+  var months = 0
+  try:
+    let loaded = pool.withConn(proc(db: DbConn): tuple[items: seq[DormantCandidate]; months: int] =
+      let m = dormantMonths(db, ctx)
+      (dormantCandidatesPage(db, ctx.businessDate, m, chunk.chunkNo * ctx.chunkSize,
+        ctx.chunkSize), m))
+    items = loaded.items
+    months = loaded.months
+  except DepositAbort as e:
+    return err[TaskOutcome, TaskError](taskError(e.code, e.msg, metrics = e.metrics))
+  except ValueError as e:
+    # Status rekening yang tidak dikenal berarti data rusak, bukan I/O: jangan ulangi diam-diam.
+    return err[TaskOutcome, TaskError](taskError("DAY-352",
+      "data rekening dormant tidak bisa dibaca: " & e.msg))
+  except IOError as e:
+    return err[TaskOutcome, TaskError](taskError("DAY-350",
+      "halaman rekening dormant gagal dibaca: " & e.msg, retryable = true))
+
+  var dormanted, reactivated = 0
+  try:
+    discard pool.withTx(proc(db: DbConn): int =
+      for item in items:
+        if item.stale and item.status == asActive:
+          setAccountStatus(db, item.accountId, asDormant, systemActor)
+          inc dormanted
+        elif not item.stale and item.status == asDormant:
+          # Reaktivasi otomatis saat ada aktivitas (D-157): menahan rekening tetap dormant setelah
+          # setoran hanya akan membuat anggota menunggu tanpa sebab, dan penolakan transaksi
+          # dormant sendiri belum diputuskan (D-152 butir 4).
+          setAccountStatus(db, item.accountId, asActive, systemActor)
+          inc reactivated
+      1)
+  except IOError as e:
+    return err[TaskOutcome, TaskError](taskError("DAY-353",
+      "status dormant gagal disimpan: " & e.msg, retryable = true))
+
+  ok[TaskOutcome, TaskError](okOutcome(%*{
+    "accounts": items.len, "dormant": dormanted, "reactivated": reactivated,
+    "afterMonths": months, "businessDate": ctx.businessDate}))
+
 proc registerDepositTasks*(reg: Registry; pool: DbPool) =
   let clock = systemClock()
 
@@ -548,3 +639,22 @@ proc registerDepositTasks*(reg: Registry; pool: DbPool) =
     countMaturityChunks(pool, chunkSize),
     run: proc(ctx: TaskContext; chunk: Chunk): TaskResult =
     runMaturityChunk(pool, clock, ctx, chunk))
+
+  # Dormant **setelah** akrual dan jatuh tempo: rekening yang jatuh tempo hari itu sudah berubah
+  # statusnya (`CLOSED`) atau tanggalnya, sehingga tidak ikut dinilai dengan data kemarin.
+  # Tidak kritis: menandai status tidak memindahkan uang, jadi kegagalannya tidak boleh menahan
+  # penutupan buku — tetapi tetap tercatat `FAILED` dan bisa diulang (D-157).
+  reg.register DayCloseTask(
+    id: dormantTaskId,
+    module: "deposit",
+    levels: {clEOD},
+    kind: tkProcess,
+    dependsOn: @[interestAccrualTaskId, maturityAroTaskId],
+    critical: false,
+    idempotency: imPerBusinessDate,
+    partition: psByChunkCount,
+    requiredParams: @[dormantMonthsParamKey],
+    countChunks: proc(ctx: TaskContext; chunkSize: int): Result[int, TaskError] =
+    countDormantChunks(pool, chunkSize),
+    run: proc(ctx: TaskContext; chunk: Chunk): TaskResult =
+    runDormantChunk(pool, ctx, chunk))

@@ -177,6 +177,24 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "deposit.dormant.after_months",
+    "module": "deposit",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.deposit.dormant.after_months",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 120
+    }
+  },
+  {
     "key": "ledger.coa.code_pattern",
     "module": "ledger",
     "valueType": "string",

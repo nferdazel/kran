@@ -59,6 +59,9 @@ let db = dbPool.acquire()
 
 resetTestSchemas(db, ".")
 discard applyAllMigrations(db, ".")
+# `platform.param_value.key` memakai FK ke `param_definition`: suite dormant menyemai ambangnya
+# sendiri, jadi definisi parameter dasar harus ada lebih dulu.
+execScript(db, readFile("packs/base/generated/param_definitions.sql"))
 
 const
   repoRoot = "."
@@ -746,3 +749,121 @@ suite "jatuh tempo: data rusak":
 
     execScript(db, "UPDATE deposit.account SET status = 'CLOSED' WHERE account_id = '" &
       $depositId & "'")
+
+# ---------------------------------------------------------------------------------------------
+# Dormant (T-138e, D-152 butir 4 / D-157)
+# ---------------------------------------------------------------------------------------------
+
+const
+  DormantRunDate = "2026-10-28"
+  ## Harus sama dengan ambang default pack (`deposit.dormant.after_months`): cutoff = 2025-10-28.
+  DormantMonths = 12
+
+proc seedDormantMonths(months: int) =
+  ## Nilai parameter institusi untuk suite ini. Ditulis langsung ke `platform.param_value` (pola
+  ## `itapi_closeguard`), bukan lewat pack, supaya suite bisa menguji beberapa ambang.
+  execScript(db, """
+    INSERT INTO platform.param_value
+      (param_value_id, key, scope_type, scope_id, value, effective_from, status, maker, checker,
+       reason)
+    VALUES (md5('deposit.dormant.after_months|test')::uuid, 'deposit.dormant.after_months',
+            'GLOBAL', NULL, '""" & $months & """'::jsonb, DATE '1970-01-01', 'ACTIVE',
+            '00000000-0000-4000-8000-0000000000c9', '00000000-0000-4000-8000-0000000000ca',
+            'seed test dormant')
+    ON CONFLICT (param_value_id) DO UPDATE SET value = EXCLUDED.value
+  """)
+
+proc dormantTask(): DayCloseTask =
+  let reg = newRegistry()
+  registerDepositTasks(reg, dbPool)
+  taskOf(reg, dormantTaskId)
+
+proc runDormantAt(businessDate: string; chunkNo = 0; chunkSize = 1000): TaskResult =
+  dormantTask().run(ctxOn(businessDate, chunkSize), Chunk(chunkNo: chunkNo))
+
+proc dormantPopulation(): int =
+  parseInt(db.getValue(sql"""
+    SELECT count(*)::text FROM deposit.account
+     WHERE status IN ('ACTIVE', 'DORMANT')"""))
+
+suite "dormant: penandaan status (T-138e)":
+
+  test "tanpa aktivitas > ambang jadi DORMANT; yang beraktivitas tetap ACTIVE":
+    seedDormantMonths(DormantMonths)
+    let staleId = timeDeposit(std.version, std.product.code, "2024-01-01", "1000000.00")
+    let recentId = timeDeposit(std.version, std.product.code, "2024-01-01", "1000000.00")
+    seedPrincipalMovement(std.version, std.product.code, $recentId, "1000000.00", "2026-09-01")
+
+    let res = runDormantAt(DormantRunDate)
+    check res.isOk
+    check stateOf(staleId).status == "DORMANT"
+    check stateOf(recentId).status == "ACTIVE"
+    # Tidak ada uang yang bergerak dan tidak ada jurnal: menandai dormant bukan peristiwa akuntansi.
+    check balanceOf(staleId) == "1000000.00"
+    check transactionsOf(staleId, ttCashDeposit).len == 0
+
+  test "batas ambang: aktivitas tepat di cutoff belum dormant, sehari lebih lama sudah":
+    # cutoff = 2026-10-28 − 12 bulan = 2025-10-28; yang diuji adalah `<`, bukan `<=`.
+    let boundaryId = timeDeposit(std.version, std.product.code, "2025-10-28", "1000000.00")
+    let olderId = timeDeposit(std.version, std.product.code, "2025-10-27", "1000000.00")
+
+    check runDormantAt(DormantRunDate).isOk
+    check stateOf(boundaryId).status == "ACTIVE"
+    check stateOf(olderId).status == "DORMANT"
+
+  test "DORMANT kembali ACTIVE setelah ada aktivitas":
+    let accountId = timeDeposit(std.version, std.product.code, "2024-01-01", "1000000.00")
+    check runDormantAt(DormantRunDate).isOk
+    check stateOf(accountId).status == "DORMANT"
+
+    seedPrincipalMovement(std.version, std.product.code, $accountId, "1000.00", "2026-10-20")
+    execScript(db, """
+      UPDATE deposit.account_balance SET balance = balance + 1000.00
+       WHERE account_id = '""" & $accountId & """'""")
+    check runDormantAt(DormantRunDate).isOk
+    check stateOf(accountId).status == "ACTIVE"
+
+  test "rekening CLOSED tidak pernah disentuh":
+    let closedId = timeDeposit(std.version, std.product.code, "2024-01-01", "0.00",
+      status = "CLOSED")
+    check runDormantAt(DormantRunDate).isOk
+    check stateOf(closedId).status == "CLOSED"
+
+  test "run ulang tidak menandai dua kali (idempoten)":
+    let first = runDormantAt(DormantRunDate)
+    check first.isOk
+    let again = runDormantAt(DormantRunDate)
+    check again.isOk
+    check again.value().metrics["dormant"].getInt() == 0
+    check again.value().metrics["reactivated"].getInt() == 0
+
+  test "parameter ambang hilang = DAY-351 tanpa mengubah status":
+    let accountId = timeDeposit(std.version, std.product.code, "2024-01-01", "1000000.00")
+    execScript(db, """
+      DELETE FROM platform.param_value
+       WHERE param_value_id = md5('deposit.dormant.after_months|test')::uuid
+    """)
+    let res = runDormantAt(DormantRunDate)
+    check not res.isOk
+    check res.error.code == "DAY-351"
+    check stateOf(accountId).status == "ACTIVE"
+    seedDormantMonths(DormantMonths)
+
+  test "paginasi chunk 2 memeriksa setiap rekening dalam populasi stabil":
+    let total = dormantPopulation()
+    check total > 2
+    let t = dormantTask()
+    let counted = t.countChunks(ctxOn(DormantRunDate, chunkSize = 2), 2)
+    check counted.isOk
+    check counted.value() == (total + 1) div 2
+
+    # Status hanya berpindah ACTIVE <-> DORMANT, keduanya anggota populasi, jadi offset tidak
+    # bergeser; yang dibuktikan: setiap halaman diproses dan jumlahnya menutup populasi.
+    var processed = 0
+    for i in 0 ..< counted.value():
+      let res = runDormantAt(DormantRunDate, chunkNo = i, chunkSize = 2)
+      check res.isOk
+      let accounts = res.value().metrics["accounts"].getInt()
+      check accounts <= 2
+      processed += accounts
+    check processed == total

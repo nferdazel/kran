@@ -148,6 +148,10 @@ SELECT t.task_id, t.state, t.error->>'code' AS code, t.metrics
 | `DAY-345` | perpindahan jatuh tempo gagal disimpan, atau saldo berubah di tengah proses | galat basis data/mutasi bersamaan; task dicoba ulang. Bila berulang, selidiki transaksi yang menyentuh rekening itu pada tanggal yang sama |
 | `DAY-346` | `aro_instruction` tidak dikenal | data rusak (CHECK DB seharusnya menolak); perbaiki nilainya, jangan menganggap `NONE` |
 | `DAY-347` | tenor perpanjangan tidak sah (`maturity_date` ≤ `opened_on`) | perbaiki tanggal rekening; ARO `PRINCIPAL*` tidak bisa menghitung tenor semula |
+| `DAY-350` | daftar rekening dormant gagal dibaca | galat basis data; task dicoba ulang otomatis |
+| `DAY-351` | parameter `deposit.dormant.after_months` tidak terbaca / bukan bulan ≥ 1 | lengkapi nilai parameter institusi (atau perbaiki tipenya) lewat maker-checker, lalu `daycloser-resume`. Task **tidak** menebak ambang: menandai rekening dormant tanpa dasar kebijakan lebih buruk daripada run gagal |
+| `DAY-352` | status rekening tidak dikenal saat membaca daftar dormant | data rusak; perbaiki `deposit.account.status` (CHECK `0071` seharusnya menolak nilai asing) |
+| `DAY-353` | status dormant gagal disimpan | galat basis data; task dicoba ulang. Tidak ada uang yang berpindah, dan task ini **tidak kritis** — penutupan tetap bisa selesai dengan mencatat kegagalan |
 
 Karena gate **pra**-tutup berjalan sebelum freeze, kegagalannya tidak membekukan tanggal: institusi
 masih bisa melayani, tetapi tanggal itu tidak bisa ditutup dua kali (run `BLOCKED` harus di-resume

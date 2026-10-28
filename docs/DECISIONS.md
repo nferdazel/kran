@@ -4040,3 +4040,47 @@ asumsi itu, keduanya dibuka oleh handler teller yang sama dengan tabungan:
 - **HUMAN-REVIEW-REQUIRED**: keputusan ini membatasi transaksi pada jalur uang (AGENTS.md §8) dan
   diambil tanpa keputusan produk eksplisit; guard-nya sengaja fail-closed.
 
+
+## D-157 — Deteksi dormant: sumber aktivitas, batas, dan reaktivasi (28 Okt 2026)
+
+**Konteks.** D-152 butir 4 menetapkan ambang `deposit.dormant.after_months` = 12 dan status
+`DORMANT`, tetapi tidak menjawab empat hal yang menentukan kode T-138e: dari mana "aktivitas
+terakhir" dibaca, apakah batasnya inklusif, siapa yang mengembalikan rekening ke `ACTIVE`, dan apa
+yang boleh dilakukan rekening dormant.
+
+**Keputusan.**
+
+1. **Aktivitas dibaca dari subledger, bukan kolom `deposit.account.last_activity`.** Sumbernya baris
+   `deposit.transaction` (tunai + perpindahan jatuh tempo) dan `deposit.transfer` (PB di kedua
+   sisi); `opened_on` menjadi batas bawah. Kolom `last_activity` (ditambahkan `0064`) tidak pernah
+   ditulis jalur transaksi mana pun, sehingga membacanya akan membuat **semua** rekening terlihat
+   tidak aktif sejak dibuka. Satu sumber data yang sama dengan rekonsiliasi juga tidak bisa
+   melenceng. Kolom itu dibiarkan kosong dan dicatat di O-111.
+2. **Batas memakai `<` (lebih lama dari ambang).** Dengan tanggal buku 2026-10-28 dan ambang 12
+   bulan, cutoff = 2025-10-28: aktivitas **tepat** di cutoff belum dormant, sehari sebelumnya sudah.
+   Aritmetika bulan dilakukan PostgreSQL (`make_interval(months => N)`), jadi 31 Mar − 1 bulan
+   mengikuti kalender (28/29 Feb), bukan rata-rata 30 hari.
+3. **Reaktivasi otomatis pada penutupan berikutnya**, tanpa aksi operator: rekening `DORMANT` yang
+   punya aktivitas ≥ cutoff kembali `ACTIVE`. Penolakan transaksi dormant belum diputuskan D-152, dan
+   menahan rekening tetap dormant setelah setoran hanya membuat anggota menunggu tanpa sebab.
+4. **Dormant membatasi layanan, bukan setoran.** Setoran tunai ke rekening `DORMANT` diterima
+   (handler teller), penarikan dan PB masih ditolak `409 account_not_active` sampai aturan
+   penolakan transaksi dormant diputuskan. Tanpa setoran yang diterima, butir 3 tidak akan pernah
+   terjadi — guard lama (`status != ACTIVE`) membuat reaktivasi mustahil.
+5. **Task `deposit.dormant` tidak kritis.** Menandai status tidak memindahkan uang dan tidak
+   menyentuh jurnal; kegagalannya dicatat `FAILED` dan bisa diulang, tetapi tidak menahan
+   penutupan. Ini berbeda dari akrual (D-154) dan jatuh tempo (D-155) yang menyentuh angka.
+6. **Ambang wajib ada sebagai parameter aktif.** Parameter hilang/bukan bulan ≥ 1 = `DAY-351`,
+   bukan "lewati saja": menandai rekening dormant tanpa dasar kebijakan yang berlaku lebih buruk
+   daripada run gagal.
+
+**Konsekuensi.**
+
+- Himpunan yang dipaginasi adalah `ACTIVE` **dan** `DORMANT`; perpindahan status di antara keduanya
+  tidak mengubah keanggotaan himpunan, jadi `LIMIT/OFFSET` aman (berbeda dari task jatuh tempo yang
+  memakai jendela `row_number()`).
+- Akrual bunga tetap berjalan untuk rekening dormant: predikat D-154 `status <> 'CLOSED'` sudah
+  mencakupnya, dan status ini bukan pelanggaran perjanjian bunga.
+- Sampai ada aturan penolakan transaksi dormant (KYC/reaktivasi manual), rekening dormant masih bisa
+  menerima setoran dari siapa pun yang tahu nomor rekeningnya — risiko yang sudah ada untuk rekening
+  aktif dan dicatat sebagai pekerjaan lanjutan, bukan perilaku baru.
