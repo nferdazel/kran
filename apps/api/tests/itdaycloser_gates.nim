@@ -93,7 +93,8 @@ proc ctxOn(businessDate: string): TaskContext =
   TaskContext(runId: "test", scopeType: "INSTITUTION", scopeId: "", businessDate: businessDate,
               levels: {clEOD}, mode: rmReal, chunkSize: 100)
 
-proc postJournal(amount: string; debit, credit: string; businessDate: string) =
+proc postJournal(amount: string; debit, credit: string; businessDate: string;
+                 daycloserRunId = "") =
   ## Jurnal seimbang minimum (dua baris). Header + baris satu transaksi: trigger header memeriksa
   ## saat COMMIT.
   let journalId = db.getValue(sql"SELECT gen_random_uuid()::text")
@@ -101,9 +102,11 @@ proc postJournal(amount: string; debit, credit: string; businessDate: string) =
     discard d.execAffectedRows(sql"""
       INSERT INTO ledger.journal
         (journal_id, business_date, value_date, source_event, source_ref, idempotency_key,
-         created_by)
-      VALUES (?::uuid, ?::date, ?::date, 'GateFixture', ?::uuid, ?, ?::uuid)""",
-      journalId, businessDate, businessDate, journalId, "gate-fixture-" & journalId, actor)
+         created_by, daycloser_run_id)
+      VALUES (?::uuid, ?::date, ?::date, 'GateFixture', ?::uuid, ?, ?::uuid,
+              NULLIF(?, '')::uuid)""",
+      journalId, businessDate, businessDate, journalId, "gate-fixture-" & journalId, actor,
+      daycloserRunId)
     discard d.execAffectedRows(sql"""
       INSERT INTO ledger.journal_line (journal_id, line_no, gl_account, branch_id, debit, credit)
       VALUES (?::uuid, 1, ?, ?::uuid, ?::numeric, 0),
@@ -270,6 +273,25 @@ suite "gate day-close: dijalankan langsung":
     check not after.ok
     check after.code == "DAY-310"
     check after.metrics{"latePostings"}.getInt >= 1
+
+    execScript(db, """
+      UPDATE platform.business_date SET state = 'OPEN' WHERE scope_type = 'INSTITUTION'
+    """)
+    postJournal("10.00", "101.9", "101.1", Thursday)
+
+  test "jurnal milik run penutupan sendiri tidak dihitung terlambat (T-140)":
+    # Akrual dan perpindahan jatuh tempo memang merekam jurnal setelah freeze. Tanpa penanda
+    # provenance, gate ini memblokir setiap penutupan yang punya rekening berjangka.
+    execScript(db, """
+      UPDATE platform.business_date
+         SET state = 'CLOSING', updated_at = now()
+       WHERE scope_type = 'INSTITUTION'
+    """)
+    postJournal("10.00", "101.1", "101.9", Thursday,
+      daycloserRunId = "11111111-1111-4111-8111-111111111111")
+    let r = latePostingsCheck(dbPool, ctxOn(Thursday))
+    check r.ok
+    check r.metrics{"latePostings"}.getInt == 0
 
     execScript(db, """
       UPDATE platform.business_date SET state = 'OPEN' WHERE scope_type = 'INSTITUTION'

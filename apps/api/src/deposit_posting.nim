@@ -21,7 +21,7 @@ import ledger/infrastructure/[journal_repo, posting_repo]
 
 proc postRuleJournalSync*(db: DbConn, clock: Clock, eventType: string, amount: Money,
     branchId: Id, sourceRef: Id, businessDate, idempotencyKey: string, actor: Id,
-    payload: JsonNode): Id =
+    payload: JsonNode, daycloserRunId = ""): Id =
   ## Menulis satu jurnal double-entry dari posting rule `eventType` dengan `payload` sebagai
   ## konteks pemilihan rule. Dipakai transaksi tunai (payload produk/rekening) **dan** mutasi kas
   ## teller (payload kosong: rule teller tidak berkondisi).
@@ -35,14 +35,14 @@ proc postRuleJournalSync*(db: DbConn, clock: Clock, eventType: string, amount: M
     sourceRef: sourceRef,
     idempotencyKey: idempotencyKey,
     reversalOf: "")
-  discard insertJournal(db, journal, actor)
+  discard insertJournal(db, journal, actor, daycloserRunId)
   for line in lines:
     insertJournalLine(db, journal.journalId, line)
   journal.journalId
 
 proc postJournalSync*(db: DbConn, clock: Clock, eventType: string, amount: Money,
     branchId: Id, sourceRef: Id, businessDate, idempotencyKey: string,
-    actor: Id, productCode, accountType, savingsKind: string): Id =
+    actor: Id, productCode, accountType, savingsKind: string, daycloserRunId = ""): Id =
   ## Menulis satu jurnal double-entry dari posting rule `eventType` di transaksi pemanggil dan
   ## mengembalikan `journal_id`. Tidak ada rule/ambigu → `ValueError`; periode tertutup/tidak ada →
   ## `DbError` dari trigger `ledger` (pemanggil memetakannya ke 409 `period_closed`).
@@ -58,4 +58,4 @@ proc postJournalSync*(db: DbConn, clock: Clock, eventType: string, amount: Money
   if savingsKind.len > 0:
     payload["savingsKind"] = %savingsKind
   postRuleJournalSync(db, clock, eventType, amount, branchId, sourceRef, businessDate,
-    idempotencyKey, actor, payload)
+    idempotencyKey, actor, payload, daycloserRunId)

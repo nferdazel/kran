@@ -120,7 +120,7 @@ SELECT t.task_id, t.state, t.error->>'code' AS code, t.metrics
 | `DAY-306/307` | saldo subledger tidak terbaca / rekening tanpa baris saldo | jalankan `ctl reconcile-deposits`, selidiki |
 | `DAY-308` | total subledger ≠ GL | selidiki selisih; jangan "merapikan" dengan jurnal tanpa sebab |
 | `DAY-309` | pasca-tutup dijalankan saat tanggal bukan `CLOSING` (atau waktu pembekuan tidak terbaca) | jangan lanjut: periksa `platform.business_date`; ini indikasi keadaan yang tidak konsisten |
-| `DAY-310` | ada jurnal masuk setelah tanggal dibekukan | batalkan run, periksa jurnal itu, tutup ulang |
+| `DAY-310` | ada jurnal masuk setelah tanggal dibekukan | batalkan run, periksa jurnal itu, tutup ulang. Jurnal yang dibuat **task penutupan itu sendiri** (akrual/jatuh tempo, `journal.daycloser_run_id` terisi) tidak dihitung — bila kode ini muncul, pelakunya jalur bisnis yang lolos sebelum freeze |
 | `DAY-311` | akun pada parameter gate tidak dikenal / non-aktif | perbaiki parameter (`daycloser.precheck.suspense_accounts`, `daycloser.postcheck.subledger_gl_accounts`) lewat maker-checker |
 | `DAY-312` | daftar akun pada parameter gate kosong | isi parameternya; daftar kosong akan mematikan gate tanpa memeriksa apa pun |
 | `DAY-320` | snapshot saldo gagal ditulis (galat basis data) | lihat pesan galat; task dicoba ulang otomatis, run berhenti bila tetap gagal |
@@ -164,7 +164,7 @@ Saat `daycloser-resume`, **semua** gate dijalankan ulang (termasuk yang dulu lul
 yang disertifikasi gate pra-tutup bisa berubah selama run berhenti. Jadi run yang di-resume bisa
 kembali `BLOCKED` dengan kode yang berbeda — itu perilaku yang benar, bukan kegagalan resume.
 
-Jurnal yang dibuat **setelah** freeze untuk tanggal itu akan ditolak gate `DAY-310` saat resume.
+Jurnal jalur bisnis yang dibuat **setelah** freeze untuk tanggal itu akan ditolak gate `DAY-310` saat resume; jurnal milik run penutupan itu sendiri dibedakan lewat `journal.daycloser_run_id` (D-158).
 Jalur yang benar: batalkan run (`daycloser-cancel`), perbaiki buku, lalu jalankan penutupan lagi
 untuk tanggal yang sama.
 
