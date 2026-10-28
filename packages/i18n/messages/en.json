@@ -768,5 +768,13 @@
   "dayclose_code_325": "Closing the period failed because of a database error. The period stays OPEN, check the log, then resume.",
   "dayclose_code_326": "A cash session is open inside the period being closed. Cancel the run, close the session, then run again.",
   "dayclose_code_327": "A period changed state during the close. Check ledger.period.",
-  "dayclose_code_328": "The previous period is still OPEN. Close the previous period first."
+  "dayclose_code_328": "The previous period is still OPEN. Close the previous period first.",
+  "dayclose_code_330": "The accrual account list could not be read because of a database error. The task retries automatically.",
+  "dayclose_code_331": "The account's product version lacks an accrual attribute (rate, day-count basis, or rounding scale) or it is malformed. Complete the product version bindings.",
+  "dayclose_code_332": "The account date or business date is invalid (corrupt data).",
+  "dayclose_code_333": "The accrual journal could not be written: the accrual posting rule is missing or ambiguous, or the business date's period is already closed.",
+  "dayclose_code_334": "An accrual for this account and date already exists. The task is supposed to be idempotent; investigate the duplicate write.",
+  "dayclose_code_335": "Cumulative interest decreased because the principal shrank without an accrual correction. Check the account movements.",
+  "dayclose_code_336": "The interest amount exceeds the numeric range. Check the principal and the product rate.",
+  "dayclose_code_337": "The accrual row could not be stored because of a database error. The task retries automatically."
 }

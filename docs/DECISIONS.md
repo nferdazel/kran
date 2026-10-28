@@ -3908,3 +3908,42 @@ sedang ditutup.
 **Konsekuensi.** Menjalankan penutupan dari UI tidak lagi memerlukan akses server, tetapi tetap
 tidak bisa menggantikan `ctl` untuk bootstrap tanggal buku pertama (`409 bootstrap_required`) —
 membuat tanggal buku adalah tindakan sekali seumur institusi, bukan tombol harian.
+
+## D-154 — Akrual bunga harian: rekening mana, kapan ditahan, dan di mana dibulatkan (28 Okt 2026)
+
+**Konteks.** T-138c menjalankan akrual bunga deposito berjangka setiap EOD. Tiga hal tidak
+ditentukan D-152 dan harus diputuskan sebelum kode ditulis: rekening mana yang tetap berbunga,
+apa yang terjadi bila perhitungan gagal, dan pada titik mana pembulatan dilakukan (selisih beberapa
+sen per tenor adalah temuan audit, bukan pembulatan gaya).
+
+**Keputusan (pemilik, 28 Okt 2026).**
+
+1. **Rekening yang diakrualkan: ACTIVE + DORMANT**, bukan hanya ACTIVE. Status dormant membatasi
+   transaksi keluar/masuk, bukan perjanjian bunga yang sudah disepakati; menghentikan akrual karena
+   rekening tidak aktif akan mengurangi bunga yang dijanjikan di akhir tenor. `CLOSED` dikecualikan
+   (rekening sudah tidak ada). Predikatnya ditulis `status <> 'CLOSED'`, bukan daftar nilai, supaya
+   `DORMANT` (T-138e) otomatis ikut tanpa mengubah task.
+2. **Akrual gagal = kritis; penutupan ditahan.** Task berjalan `critical = true`, sehingga run
+   berhenti `FAILED` dan operator memperbaiki penyebabnya. Alternatif "lanjut dengan catatan"
+   ditolak: bunga yang kurang tanpa ada yang menahan hanya terlihat berbulan-bulan kemudian, saat
+   angkanya sudah dipakai laporan.
+3. **Pembulatan sekali per rentang, bukan per hari.** Yang dibulatkan adalah bunga **kumulatif**
+   sejak `opened_on` sampai tanggal buku; bagian yang dijurnal hari itu adalah selisihnya terhadap
+   kumulatif baris terakhir (`deposit.interest_accrual.amount` vs `.cumulative`). Membulatkan tiap
+   hari lalu menjumlahkan menyimpang beberapa sen dari bunga yang dijanjikan di akhir tenor, dan
+   selisih itu tidak bisa dikoreksi setelah jurnalnya immutable.
+4. **Jurnal ditulis sinkron di transaksi chunk**, bukan lewat konsumen outbox. Penutupan buku harus
+   selesai saat run selesai; jurnal yang masih menunggu worker berarti `ledger.period_close` (EOM)
+   bisa menutup periode sebelum akrual hari itu masuk. Event `InterestAccrued` yang diterbitkan
+   karena itu **tanpa** header `accounting`, supaya konsumen tidak memposting jurnal kedua.
+
+**Konsekuensi.**
+
+- Satu `withTx` per chunk: kegagalan satu rekening membatalkan seluruh chunk, jadi tidak ada akrual
+  setengah jadi yang membuat hari itu terlihat selesai. Pesan galat menyebut nomor rekening.
+- Pembulatan mengikuti `product.savings.rounding_scale` (0–2) dan diterapkan ke kumulatif **sebelum**
+  selisih dihitung, sehingga bagian harian tidak "mengembalikan" digit yang dibuang.
+- Basis 30/360 bisa memberi 0 hari untuk rentang pendek di akhir bulan; hari itu tidak mencatat
+  baris dan ketinggalannya ikut hari berikutnya, karena kumulatif dihitung dari `opened_on` (bukan
+  dari baris terakhir). Ini artefak konvensi yang sudah dicatat D-152.
+- **HUMAN-REVIEW-REQUIRED**: rumus bunga dan jurnalnya adalah area kritis (AGENTS.md §8).

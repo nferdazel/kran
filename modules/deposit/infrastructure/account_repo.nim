@@ -14,13 +14,15 @@ const
   ## Kolom akun + kode produk (join) + saldo (kiri, boleh kosong untuk baris lama) + klasifikasi
   ## simpanan produk (T-111; `''` = belum terklasifikasi). Saldo disimpan `numeric(24,2)` (D-136); dibaca
   ## sebagai teks desimal lalu diparse `moneyFromString` (tanpa float).
-  accountColumns = "a.account_id, a.account_no, a.party_id, a.product_id, " &
+  accountColumns* = "a.account_id, a.account_no, a.party_id, a.product_id, " &
     "a.product_version_id, p.code, a.branch_id, a.account_type, a.status, " &
     "to_char(a.opened_on, 'YYYY-MM-DD'), " &
     "to_char(a.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), " &
     "coalesce(b.balance::text, '0.00'), coalesce(p.savings_kind, '')"
 
-proc accountOf(row: Row): Account =
+proc accountOf*(row: Row): Account =
+  ## Dipakai juga `interest_repo` (daftar kolom yang sama) supaya tidak ada dua pembaca akun yang
+  ## bisa menyimpang.
   let parsedBalance = moneyFromString(row[11])
   if parsedBalance.isErr:
     raise newException(ValueError, "saldo rekening bukan desimal yang sah: " & row[11])

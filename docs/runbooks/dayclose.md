@@ -132,6 +132,14 @@ SELECT t.task_id, t.state, t.error->>'code' AS code, t.metrics
 | `DAY-324` | akhir bulan tetapi tidak ada periode GL yang berakhir hari ini | buat periode GL-nya lebih dulu, lalu jalankan penutupan lagi |
 | `DAY-326` | sesi kas OPEN di rentang periode yang akan ditutup | batalkan run dulu (`daycloser-cancel`) — selama `CLOSING` semua tulisan HTTP ditolak, jadi sesi tidak bisa ditutup lewat aplikasi. Setelah tanggal kembali `OPEN`, tutup sesinya, lalu jalankan penutupan lagi |
 | `DAY-328` | periode sebelumnya masih OPEN | tutup periode sebelumnya lebih dulu (berurutan); menutup bulan yang lebih baru membuat laporan bulan lama tidak punya dasar |
+| `DAY-330` | daftar rekening akrual gagal dibaca | galat basis data; task dicoba ulang otomatis, run berhenti bila tetap gagal |
+| `DAY-331` | versi produk rekening tidak punya atribut akrual yang sah (rate/basis/skala) | lengkapi binding versi produk lewat maker-checker, lalu `daycloser-resume`. Jangan mengakrualkan rekening tanpa perjanjian bunga yang jelas |
+| `DAY-332` | tanggal rekening/tanggal buku tidak sah | data rusak; periksa `deposit.account.opened_on` dan `platform.business_date` |
+| `DAY-333` | jurnal akrual tidak bisa dibuat | periksa rule `InterestAccrued` (seed `ledger/0065`) dan status periode tanggal buku |
+| `DAY-334` | akrual ganda untuk rekening+tanggal | task seharusnya idempoten; selidiki tulisan kedua (advisory lock dilewati?) |
+| `DAY-335` | bunga kumulatif menurun | pokok berkurang tanpa koreksi akrual; periksa mutasi rekening deposito itu |
+| `DAY-336` | nilai bunga melampaui batas bilangan | pokok/rate produk tidak wajar; periksa binding |
+| `DAY-337` | baris akrual gagal disimpan | galat basis data; task dicoba ulang otomatis |
 
 Karena gate **pra**-tutup berjalan sebelum freeze, kegagalannya tidak membekukan tanggal: institusi
 masih bisa melayani, tetapi tanggal itu tidak bisa ditutup dua kali (run `BLOCKED` harus di-resume

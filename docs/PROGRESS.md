@@ -3300,3 +3300,42 @@ tahu apakah penutupan berjalan, gagal, atau macet.
 
 **Batas**: realtime `daycloser.*` belum ada (polling 2,5 dtk), bootstrap tanggal buku tetap lewat
 `ctl`, simulasi/dry-run dan penutupan per cabang belum.
+
+---
+
+## 2026-10-28 — T-138c akrual bunga harian: subledger + jurnal dalam satu transaksi
+
+**Konteks**: (a) helper hari dan (b) model/akun sudah ada, tetapi belum ada yang menghitung bunga
+setiap malam. Tanpa task ini `204 BUNGA AKRUAL` tetap nol dan beban bunga tidak pernah muncul.
+
+**Keputusan pemilik (D-154)**: yang diakrualkan ACTIVE + DORMANT (`CLOSED` tidak); kegagalan
+akrual **kritis** (menahan penutupan); pembulatan **sekali per rentang** (kumulatif sejak
+`opened_on`, bagian harian = selisih terhadap baris terakhir).
+
+**Yang berubah**
+
+- `modules/deposit/domain/interest.nim` (T-138c commit pertama): `interestForRange` — `pokok × rate
+  × hari / basis` dengan dekomposisi agar tidak overflow, satu pembulatan HALF_EVEN. Golden test
+  memakai oracle `decimal` Python, bukan menyalin hasil implementasi.
+- `modules/deposit/migrations/0066_deposit_interest_accrual.sql`: tabel `deposit.interest_accrual`
+  (PK `(account_id, business_date)`, `amount` + `cumulative`).
+- `modules/deposit/infrastructure/interest_repo.nim`: satu kueri per chunk untuk rekening + binding
+  produk + akrual terakhir; `insertAccrual` idempoten.
+- `apps/api/src/daycloser_deposit.nim`: task `deposit.interest_accrual` (EOD, proses, kritis,
+  `psByChunkCount`). Satu `withTx` per chunk menulis baris akrual, jurnal `InterestAccrued`
+  (D 501 / K 204) **sinkron**, dan event outbox non-akuntansi (tanpa header `accounting`, supaya
+  konsumen tidak memposting jurnal kedua).
+- Didaftarkan **sebelum** task ledger supaya snapshot harian melihat akrual hari itu.
+- Runbook + i18n: `DAY-330`…`DAY-337` (id+en) supaya layar monitor menjelaskan sebab kegagalan.
+
+**Bukti**
+
+- `itdaycloser_deposit` 10 `[OK]`: 28 hari = 19.178,08; catch-up 5 + 23 hari = 19.178,08 (bukan 28
+  pembulatan harian); run ulang tidak menambah baris/jurnal; ACT/360 = 19.444,44; skala 1 =
+  19.178,1; pokok nol = baris tanpa jurnal; `CLOSED` & rekening masa depan dilewati; binding hilang
+  = `DAY-331` dengan seluruh chunk di-rollback; paginasi chunk tanpa duplikat.
+- Regresi day-close: `itdaycloser` 16, `lifecycle` 7, `gates` 12, `ledger` 7, `auto` 7,
+  `itapi_dayclose` 10, `itapi_roles` 29 — hijau. Gate penuh dijalankan setelah commit.
+
+**Batas**: bunga belum diposting ke rekening (T-138d), deposito belum punya jatuh tempo/ARO, dan
+`deposit.maturity_aro`/`dormant` belum ada. **HUMAN-REVIEW-REQUIRED**: rumus & pembulatan bunga.
