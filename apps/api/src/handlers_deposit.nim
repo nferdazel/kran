@@ -427,9 +427,12 @@ proc handleGetAccountStatement*(app: AppContext, req: Request) {.gcsafe.} =
           # Arah saldo, bukan arah kas: baris jatuh tempo (MATURITY_*) bukan transaksi tunai
           # tetapi tetap menambah/mengurangi saldo rekening di rekening koran (T-138d).
           let direction = statementDirectionOf(tx.txType)
+          # `kind` juga mengikuti sumbernya: baris jatuh tempo bukan "CASH" walau memakai
+          # `transactionId` yang sama (alasan `0068` memperkenalkan jenis transaksi baru).
+          let kind = if isCashTransaction(tx.txType): "CASH" else: "MATURITY"
           items.add StatementItem(
             sortKey: tx.businessDate & "/" & tx.createdAt & "/0",
-            row: statementRowJson("CASH", direction, tx.amount.toDecimalString,
+            row: statementRowJson(kind, direction, tx.amount.toDecimalString,
               tx.businessDate, $tx.journalId, tx.narration, $tx.transactionId, ""))
         for tr in transfersForStatement(db, account.accountId, fromDate, toDate, probeLimit):
           let direction = if $tr.sourceAccountId == $account.accountId: "OUT" else: "IN"

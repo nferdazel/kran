@@ -3423,3 +3423,28 @@ tanpa mutasi). `taccount` 8 `[OK]`.
 
 **Batas**: aturan penolakan transaksi dormant (KYC/reaktivasi manual) belum diputuskan; kolom
 `last_activity` tidak dipakai (O-111).
+
+## 2026-10-28 — T-138d review putaran 2: tujuan jatuh tempo, cache saldo, slip, statement
+
+**Konteks**: review independen atas `f10ebba..HEAD` (jatuh tempo/ARO + guard D-156) menemukan satu
+BLOCKER, dua MAJOR, dan beberapa MINOR. Semua diperbaiki sebelum T-138 ditandai selesai.
+
+**Yang berubah**
+
+- `modules/deposit/infrastructure/maturity_repo.nim`: rekening tujuan menyaring simpanan
+  POKOK/WAJIB (GL `301.x` tidak boleh menerima kredit `201`), dan halaman jatuh tempo menandai
+  `hasBalance` (baris saldo hilang ≠ saldo nol).
+- `apps/api/src/daycloser_deposit.nim`: `DAY-348` (cache saldo hilang, sebelum mutasi) dan `DAY-349`
+  (jatuh tempo baru sudah lewat → siklus ARO kedua, O-109). Klaim “periode tertutup” pada `DAY-344`
+  dihapus — galat periode memang `DAY-345`.
+- `apps/api/src/handlers_teller.nim`: slip untuk baris `MATURITY_*`/`INTEREST_CREDIT` → 404, bukan
+  500 (`isCashTransaction` akhirnya dipakai).
+- `apps/api/src/handlers_deposit.nim` + kontrak + klien + web: statement memakai `kind = MATURITY`
+  untuk baris jatuh tempo; `StatementResponse.status` menerima `DORMANT`.
+- Test: rollback chunk jatuh tempo (rekening sehat diproses lebih dulu, lalu dibatalkan), rekening
+  POKOK bukan target, `DAY-348`, `DAY-349`, slip 404, statement `MATURITY`, dan assert saldo/jurnal
+  pada guard PB.
+- D-155 amendemen (aturan pemilihan rekening tujuan), O-112 (race setoran saat penutupan).
+
+**Bukti**: `itdaycloser_deposit` **30 `[OK]`**, `itapi_teller` **48 `[OK]`**, `itapi_deposit` 17,
+`itreconcile` 3. `./task ci` hijau: seluruh suite Nim, kontrak OpenAPI, vitest 142, Playwright 59.

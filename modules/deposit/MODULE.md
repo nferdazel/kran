@@ -168,8 +168,10 @@ Keputusan per `aro_instruction` (D-155):
   `InterestAccrued` tetapi belum dibayar); rekening tanpa baris akrual = bunga 0.
 - **Tenor perpanjangan** = tenor semula (`maturity_date − opened_on`), dihitung dari jatuh tempo lama.
 - **Prasyarat**: rekening simpanan `ACTIVE` milik party yang sama di cabang yang sama
-  (`activeSavingsAccount`, urut `account_no`). Tidak ada → `DAY-343` (pola `DAY-301`), bukan "tidak
-  berlaku".
+  (`activeSavingsAccount`, urut `account_no`), **tanpa** simpanan POKOK/WAJIB — GL-nya ekuitas
+  `301.x` sedangkan perpindahan ini mengkredit `201`, dan penarikan POKOK/WAJIB diblokir. Tidak ada
+  yang memenuhi → `DAY-343` (pola `DAY-301`), bukan "tidak berlaku". Bila anggota punya beberapa
+  tabungan, yang dipakai adalah yang nomornya paling kecil (paling awal dibuka).
 - **Idempoten**: keadaan berubah di transaksi yang sama (`CLOSED` atau `maturity_date` maju), jadi
   rekening yang sudah diproses tidak lagi masuk halaman; kunci jurnal `maturity:<akun>:<tanggal>` dan
   `interest.post:<akun>:<tanggal>` adalah lapis kedua.
@@ -181,7 +183,12 @@ Keputusan per `aro_instruction` (D-155):
   diposting pada tanggal buku saat prosesnya berjalan.
 - Migrasi tipe baris: `deposit/0068` (contract + destructive, terdaftar di
   `ops/migrations/contract-auto.txt`). Rule GL: `ledger/0069`.
-- Kode kegagalan `DAY-340`…`DAY-347` ada di runbook + katalog i18n (id+en).
+- **Cache saldo hilang bukan saldo nol**: rekening tanpa baris `deposit.account_balance` menahan
+  task dengan `DAY-348` sebelum ada mutasi — menutup deposito tanpa memindahkan pokok tidak boleh
+  terjadi diam-diam.
+- **Proses terlambat lebih dari satu tenor** menahan task dengan `DAY-349`: tanggal jatuh tempo baru
+  sudah lewat lagi, dan melanjutkan berarti membayar bunga siklus yang sama dua kali (O-109).
+- Kode kegagalan `DAY-340`…`DAY-349` ada di runbook + katalog i18n (id+en).
 - **Batas yang belum tertutup**: siklus ARO **kedua** belum diputuskan — akrual tidak di-reset setelah
   pembayaran bunga dan `maturity_date − opened_on` bukan lagi tenor semula pada siklus berikutnya
   (`docs/OPEN_ITEMS.md` O-109). Juga: penarikan sebelum jatuh tempo tanpa penalti (O-108), dan belum

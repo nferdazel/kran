@@ -4084,3 +4084,17 @@ yang boleh dilakukan rekening dormant.
 - Sampai ada aturan penolakan transaksi dormant (KYC/reaktivasi manual), rekening dormant masih bisa
   menerima setoran dari siapa pun yang tahu nomor rekeningnya — risiko yang sudah ada untuk rekening
   aktif dan dicatat sebagai pekerjaan lanjutan, bukan perilaku baru.
+
+**Amendemen D-155 (28 Okt 2026, review T-138d).** Dua hal yang tidak diputuskan D-155 tetapi harus
+dijawab kode:
+
+1. **Rekening tujuan pembayaran** = rekening `SAVINGS` `ACTIVE` pertama (`account_no` terkecil)
+   milik party yang sama di cabang yang sama, **kecuali** simpanan POKOK/WAJIB. Alasannya bukan
+   preferensi: setoran POKOK/WAJIB dijurnal ke ekuitas `301.1`/`301.2` (`ledger/0014`), sedangkan
+   `DepositMatured`/`InterestPosted` mengkredit `201`, jadi uang yang mendarat di sana salah
+   klasifikasi — dan penarikan POKOK/WAJIB diblokir (T-111), sehingga dana anggota terkunci.
+   Rekening POKOK biasanya yang pertama dibuka, jadi tanpa penyaring ini ia justru jadi target
+   default. Tidak ada rekening yang memenuhi → `DAY-343`.
+2. **Dua kondisi berhenti yang baru**: cache saldo rekening hilang (`DAY-348`, jangan tutup deposito
+   tanpa memindahkan pokok) dan proses terlambat lebih dari satu tenor (`DAY-349`, karena tanggal
+   jatuh tempo baru sudah lewat lagi → bunga siklus yang sama akan dibayar dua kali, O-109).

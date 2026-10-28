@@ -99,7 +99,8 @@ proc cashTransactionJson(tx: Transaction, direction: CashDirection, balanceAfter
 
 proc cashTransactionSlipJson(tx: Transaction, accountNo: string): JsonNode =
   ## Slip cetak ulang (T-094a). **Tanpa** `balanceAfter`: saldo per transaksi tidak disimpan, dan
-  ## menghitung saldo berjalan dari subledger akan mengarang data (batas D-127).
+  ## menghitung saldo berjalan dari subledger akan mengarang data (batas D-127). Pemanggil sudah
+  ## memastikan barisnya benar-benar transaksi tunai (`isCashTransaction`).
   %*{
     "transactionId": $tx.transactionId,
     "journalId": $tx.journalId,
@@ -139,6 +140,12 @@ proc handleGetCashTransactionSlip*(app: AppContext, req: Request) {.gcsafe.} =
           problem = "transaksi tunai tidak ditemukan"
           return
         let tx = txOpt.get()
+        # Baris perpindahan jatuh tempo (`MATURITY_*`/`INTEREST_CREDIT`) tidak punya arah kas dan
+        # bukan slip tunai: 404, sama seperti id PB — bukan 500 "data tersimpan tidak bisa dibaca".
+        if not isCashTransaction(tx.txType):
+          status = 404
+          problem = "transaksi tunai tidak ditemukan"
+          return
         let accountOpt = accountById(db, tx.accountId)
         if accountOpt.isNone:
           status = 500

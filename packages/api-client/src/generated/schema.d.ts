@@ -2605,7 +2605,7 @@ export interface components {
             /** @description Nomor rekening **provisoris** (10 digit). */
             accountNo: string;
             /** @enum {string} */
-            status: "ACTIVE" | "CLOSED";
+            status: "ACTIVE" | "CLOSED" | "DORMANT";
             /** Format: uuid */
             branchId: string;
             /**
@@ -2621,13 +2621,14 @@ export interface components {
             rows: components["schemas"]["StatementRow"][];
         };
         /**
-         * @description Satu baris statement. `kind` membedakan sumber; tepat satu dari `transactionId` (CASH) atau
-         *     `transferId` (TRANSFER) terisi, yang lain `null`. `direction` relatif ke rekening yang
-         *     diminta: `IN` = masuk, `OUT` = keluar.
+         * @description Satu baris statement. `kind` membedakan sumber; `CASH` = transaksi tunai teller, `MATURITY` =
+         *     perpindahan jatuh tempo deposito (pokok/bunga, tanpa kas), `TRANSFER` = pemindahbukuan.
+         *     Tepat satu dari `transactionId` (`CASH`/`MATURITY`) atau `transferId` (`TRANSFER`) terisi,
+         *     yang lain `null`. `direction` relatif ke rekening yang diminta: `IN` = masuk, `OUT` = keluar.
          */
         StatementRow: {
             /** @enum {string} */
-            kind: "CASH" | "TRANSFER";
+            kind: "CASH" | "TRANSFER" | "MATURITY";
             /** @enum {string} */
             direction: "IN" | "OUT";
             /** @description Nominal desimal string 2 desimal (tanpa float). */
@@ -2640,7 +2641,9 @@ export interface components {
             narration: string;
             /**
              * Format: uuid
-             * @description Id transaksi tunai (kind `CASH`); `null` untuk baris PB.
+             * @description Id baris `deposit.transaction` (kind `CASH` atau `MATURITY`); `null` untuk baris PB.
+             *     Slip cetak ulang hanya tersedia untuk kind `CASH` (`GET /teller/cash-transactions/{id}`
+             *     menjawab 404 untuk baris jatuh tempo).
              */
             transactionId: string | null;
             /**
