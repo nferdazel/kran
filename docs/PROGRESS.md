@@ -3265,3 +3265,38 @@ penjadwal).
 
 **Batas**: unit systemd belum dipasang di server (butuh akses operator); DST tidak didukung; jam
 dibaca per institusi, bukan per cabang.
+
+---
+
+## 2026-10-28 — T-139c layar monitor penutupan buku: T-139 SELESAI
+
+**Konteks**: API dan penjadwal sudah ada; tanpa layar, operator tetap harus masuk ke server untuk
+tahu apakah penutupan berjalan, gagal, atau macet.
+
+**Yang berubah**
+
+- `apps/web/src/lib/app/dayclose.ts` (baru, murni + teruji vitest): tipe dari klien generated,
+  label/ikon/tone per state, aturan visibilitas aksi per state + izin, pemetaan `params.reason` ke
+  katalog, klien endpoint, dan jadwal polling.
+- `apps/web/src/routes/app/dayclose/+page.svelte` (baru): tanggal buku + state + `frozenAt`, kartu
+  run aktif dengan progres task/chunk, riwayat 20/50/100, detail task (`errorCode`, `reason`,
+  attempt), tombol Jalankan/Resume/Pause/Cancel dengan dialog konfirmasi native (Escape menutup,
+  fokus dikembalikan), polling 2,5 dtk yang berhenti sendiri.
+- `packages/i18n/messages/{id,en}.json`: 133 kunci baru per locale; menu `/app/dayclose` di
+  `nav.ts` bergerbang `dayclose.run.read`.
+- `apps/web/tests/unit/dayclose.test.ts` (17 test) + `apps/web/tests/e2e/dayclose.spec.ts`.
+
+**Bukti**
+
+- `svelte-check` 0 error / 0 warning; vitest 142 test (13 berkas); `./task lint-web` bersih;
+  `./task i18n` 770 kunci/locale tanpa temuan.
+- **e2e 59 lulus**, termasuk axe `/app/dayclose` di 2 tema × 2 locale (tanpa pelanggaran
+  serious/critical) dan jalur keyboard: Tab dari tombol muat ulang mencapai kontrol riwayat, Enter
+  memicu muat ulang, tidak ada `alert`.
+- Dua kegagalan awal e2e berasal dari spec yang saya tulis setelah subagent (bukan dari halaman):
+  fokus dikirim saat tombol masih disabled selama pemuatan, dan panah di `<select>` native tidak
+  mengubah nilai di Chromium headless. Spec diperbaiki agar mengukur aplikasi (tunggu enabled,
+  uji ketercapaian Tab + reaksi aplikasi), bukan perilaku browser — bukan assertion yang dilonggarkan.
+
+**Batas**: realtime `daycloser.*` belum ada (polling 2,5 dtk), bootstrap tanggal buku tetap lewat
+`ctl`, simulasi/dry-run dan penutupan per cabang belum.
