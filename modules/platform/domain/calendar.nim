@@ -116,6 +116,15 @@ proc canTransition*(current, next: BusinessDateState): bool =
   ##     approval berjenjang, belum ada di Fase 0.
   (current == bdsOpen and next == bdsClosing) or (current == bdsClosing and next == bdsClosed)
 
+proc canAbortClose*(current: BusinessDateState): bool =
+  ## Membatalkan **percobaan** penutupan yang belum tersegel: `CLOSING → OPEN`.
+  ##
+  ## Ini bukan reopen EOD: belum ada seal, belum ada laporan, dan hari itu tidak pernah
+  ## dinyatakan tutup — hanya dibekukan lalu gagal/dibatalkan. `CLOSED` tetap tidak bisa
+  ## dibuka kembali (spec §11.7); tanpa jalur abort ini, satu run yang dibatalkan akan
+  ## membekukan institusi selamanya.
+  current == bdsClosing
+
 proc parseState*(s: string): BusinessDateState =
   for st in BusinessDateState:
     if $st == s:

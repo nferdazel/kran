@@ -30,6 +30,7 @@
   "common_theme_label": "Tema",
   "common_theme_light": "Terang",
   "common_theme_system": "Sistem",
+  "error_business_date_closing": "Buku sedang ditutup. Coba lagi setelah penutupan selesai.",
   "error_bad_request": "Permintaan tidak valid.",
   "error_conflict": "Tindakan tidak dapat dilakukan karena bertentangan dengan data saat ini.",
   "error_forbidden": "Anda tidak memiliki izin untuk tindakan ini.",

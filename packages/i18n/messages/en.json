@@ -30,6 +30,7 @@
   "common_theme_label": "Theme",
   "common_theme_light": "Light",
   "common_theme_system": "System",
+  "error_business_date_closing": "The books are being closed. Try again once the close has finished.",
   "error_bad_request": "The request is not valid.",
   "error_conflict": "The action cannot be completed because it conflicts with the current data.",
   "error_forbidden": "You do not have permission for this action.",

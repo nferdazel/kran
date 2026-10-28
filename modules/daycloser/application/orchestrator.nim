@@ -6,8 +6,9 @@
 ## mengubah alur.
 ##
 ## Yang dijalankan orkestrator (spec §11.5):
-##   PRECHECK → gate awal → freeze (T-135) → RUNNING (process/report) → POSTCHECK → seal → rollover.
-## T-134 hanya memiliki PRECHECK/RUNNING/POSTCHECK + seal hash; freeze dan rollover milik T-135.
+##   PRECHECK → **freeze** (business date `CLOSING`) → RUNNING (process/report) → POSTCHECK →
+##   **seal** (run `COMPLETED`, tanggal `CLOSED`, rollover ke hari kerja berikutnya, event
+##   `BusinessDateOpened`). Pembatalan membuka kembali tanggal yang dibekukan run itu.
 
 import std/[json, sets, strutils]
 
@@ -25,9 +26,19 @@ type
     snapshot*: proc(runId: string): RunSnapshot {.closure.}
     setRunState*: proc(runId: string; st: RunState; at: string;
                         summaryHash: string) {.closure.}
-    completeRun*: proc(runId: string; at, summaryHash: string) {.closure.}
-      ## Transisi terakhir + audit `run.finish` **dalam satu transaksi** (composition root).
-      ## Dipisah dari `setRunState` supaya seal dan bukti audit tidak bisa terpisah oleh crash.
+    freezeDate*: proc(runId: string) {.closure.}
+      ## `OPEN → CLOSING` untuk tanggal run (spec §11.5 #3). Idempoten bila tanggal itu sudah
+      ## `CLOSING` — resume setelah crash tidak boleh gagal hanya karena freeze sudah terjadi.
+    sealRun*: proc(runId: string; at, summaryHash: string) {.closure.}
+      ## Transisi terakhir **dan** segel tanggal dalam satu transaksi (composition root):
+      ## `RUN → COMPLETED`, audit `run.finish`, `CLOSING → CLOSED`, rollover ke hari kerja
+      ## berikutnya, dan event `BusinessDateOpened`. Dipisah dari `setRunState` supaya run yang
+      ## tersegel tidak bisa ada tanpa tanggal yang ikut maju (dan sebaliknya).
+    cancelRun*: proc(runId, at: string) {.closure.}
+      ## Pembatalan **atomik**: sisa task `CANCELED`, run `CANCELED`, dan tanggal buku yang
+      ## dibekukan run itu dibuka kembali (`CLOSING → OPEN`) dalam satu transaksi.
+      ## Dipisah dari tiga port terpisah karena urutan yang setengah jadi meninggalkan
+      ## `CANCELED` + `CLOSING` — keadaan yang menahan semua tulisan tanpa perintah pemulih.
     setTaskState*: proc(runId: string; taskId: TaskId; st: TaskState; at: string;
                         err, metrics: JsonNode) {.closure.}
     setChunkState*: proc(runId: string; taskId: TaskId; chunkNo: int; st: ChunkState;
@@ -35,7 +46,6 @@ type
     controlOf*: proc(runId: string): RunControl {.closure.}
     setControl*: proc(runId: string; control: RunControl) {.closure.}
     resetInFlight*: proc(runId: string) {.closure.}
-    cancelRemaining*: proc(runId, at: string) {.closure.}
 
   Now* = proc(): string {.closure.} ## waktu ISO-8601 UTC
   Sleeper* = proc(ms: int) {.closure.} ## diuji dengan no-op
@@ -69,6 +79,13 @@ proc summaryOf(snap: RunSnapshot): string =
   result = utils.toHex(digest.data, lowercase = true)
   ctx.clear()
 
+proc cancelRun(store: Store; runId, at: string) =
+  ## Satu jalur pembatalan untuk dua titik (batas fase dan batas chunk). Ketiga tulisan (task,
+  ## run, tanggal) ada di **satu** transaksi milik port `cancelRun`: tanpa itu, crash di antaranya
+  ## meninggalkan `CANCELED` + `CLOSING` yang menolak semua tulisan dan tidak bisa diperbaiki
+  ## perintah mana pun.
+  store.cancelRun(runId, at)
+
 proc applyControl(store: Store; runId: string; current: RunState; at: string): RunState =
   ## Baca permintaan operator **di batas chunk** (spec §11.7). Hanya state yang sedang berjalan
   ## yang bisa dipause/dibatalkan; permintaan basi pada run yang sudah selesai diabaikan.
@@ -83,8 +100,7 @@ proc applyControl(store: Store; runId: string; current: RunState; at: string): R
       current
   of rcCancel:
     if current in {rsPrecheck, rsRunning, rsPostcheck}:
-      store.cancelRemaining(runId, at)
-      store.setRunState(runId, rsCanceled, at, "")
+      cancelRun(store, runId, at)
       rsCanceled
     else:
       current
@@ -238,6 +254,17 @@ proc executeRun*(registry: Registry; store: Store; runId: string;
     raise newException(DayCloserError,
       "executeRun dipanggil pada state " & $state & "; gunakan resumeRun")
   for phase in [rsPrecheck, rsRunning, rsPostcheck]:
+    if phase == rsRunning and state == rsPrecheck:
+      # Spec §11.5 #3: gate pra-tutup lulus → bekukan tanggal buku, baru jalankan task. Freeze
+      # adalah bagian dari run, bukan langkah operator terpisah: task yang memposting tidak boleh
+      # berjalan sementara transaksi daring masih diterima.
+      try:
+        store.freezeDate(runId)
+        log("tanggal buku " & snap.businessDate & " → CLOSING")
+      except DayCloserError as e:
+        store.setRunState(runId, rsFailed, now(), "")
+        log("run " & runId & " GAGAL membekukan tanggal buku: " & e.msg)
+        return outcomeOf(store, runId, rsFailed)
     if state != phase:
       if not canTransition(state, phase):
         raise newException(DayCloserError,
@@ -267,8 +294,7 @@ proc executeRun*(registry: Registry; store: Store; runId: string;
         # berjalan saat operator meminta berhenti.
         store.setTaskState(runId, task.id, tsPending, now(), nil, nil)
         if r.stop == rcCancel:
-          store.cancelRemaining(runId, now())
-          store.setRunState(runId, rsCanceled, now(), "")
+          cancelRun(store, runId, now())
           log("run " & runId & " dibatalkan operator di batas chunk")
           return outcomeOf(store, runId, rsCanceled)
         store.setRunState(runId, rsPaused, now(), "")
@@ -290,7 +316,7 @@ proc executeRun*(registry: Registry; store: Store; runId: string;
   let summary = summaryOf(snap)
   if not canTransition(state, rsCompleted):
     raise newException(DayCloserError, "run tidak bisa diselesaikan dari state " & $state)
-  store.completeRun(runId, now(), summary)
+  store.sealRun(runId, now(), summary)
   outcomeOf(store, runId, rsCompleted, summary)
 
 proc planRun*(registry: Registry; store: Store; runId: string; req: RunRequest): tuple[tasks, chunks: int] =

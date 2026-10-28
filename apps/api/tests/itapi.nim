@@ -175,7 +175,16 @@ suite "API-1: pool bermasalah dijawab problem+json, bukan 500 kosong":
 
     let client = newHttpClient(timeout = 15_000)
     defer: client.close()
-    let response = client.get(origin & "/api/v1/params")
+    # Thread server bisa belum selesai `bind` saat permintaan pertama dikirim; `httpclient`
+    # melempar `OSError` alih-alih mengembalikan kode (sama seperti test readyz di atas).
+    var response: Response
+    let deadline = epochTime() + 10.0
+    while epochTime() < deadline:
+      try:
+        response = client.get(origin & "/api/v1/params")
+        break
+      except CatchableError:
+        sleep(50)
     check response.code.int == 503
     check response.headers.getOrDefault("Content-Type").startsWith("application/problem+json")
     check response.headers.getOrDefault("Retry-After").len > 0

@@ -36,3 +36,21 @@
     class: teknis
     note: "Jeda tetap antar percobaan. Backoff eksponensial menyusul bersama worker pool (T-140)."
   default_pack: { base: 5 }
+
+# Kebijakan transaksi daring saat business date `CLOSING` (spec §11.5 #3).
+# Spec menyebut "ditolak/antri"; antrean belum ada, jadi hanya REJECT/ALLOW yang sah. Default
+# REJECT adalah pilihan paling aman: penutupan yang sedang berjalan tidak boleh disusul transaksi
+# yang bisa membuat gate pasca-tutup (rekonsiliasi, TB) basi sebelum segel ditulis.
+- key: daycloser.txn_policy_during_close
+  type: enum
+  scopes: [GLOBAL, INSTITUTION]
+  enum: [REJECT, ALLOW]
+  schema:
+    enum: [REJECT, ALLOW]
+    description: "REJECT = semua perubahan HTTP ditolak 409 saat CLOSING; ALLOW = layanan tetap jalan (risiko race ditanggung institusi)"
+  sensitivity: NORMAL
+  provenance:
+    class: kebijakan
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: "Pilihan kebijakan operasional institusi; nilai ALLOW belum diuji terhadap task penutup nyata (T-140)."
+  default_pack: { base: REJECT }

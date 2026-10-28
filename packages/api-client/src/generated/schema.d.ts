@@ -3609,6 +3609,7 @@ export interface operations {
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
             405: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
             415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
@@ -3675,6 +3676,7 @@ export interface operations {
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
             405: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
             415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
@@ -3711,6 +3713,7 @@ export interface operations {
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
             405: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
             415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];

@@ -2985,3 +2985,74 @@ klien sinkron), `lint-web`, seluruh unit/properti/integrasi, dan Playwright **54
   tanggal masa depan, `PoolError`).
 
 **Batas/berikutnya**: T-135 (freeze/rollover business date, kebijakan transaksi saat closing).
+
+---
+
+## 2026-10-28 — T-135 siklus business date (freeze → tutup → rollover) SELESAI
+
+**Konteks**: T-134 menyelesaikan run tanpa memindahkan `platform.business_date`. Satu run
+`COMPLETED` masih meninggalkan institusi pada tanggal yang sama, dan tidak ada jalan keluar untuk
+percobaan penutupan yang dibatalkan. Dikerjakan di `feat/fase3-dayclose` (belum di-push).
+
+**Yang berubah**
+
+- `modules/platform/domain/calendar.nim`: `canAbortClose` — satu-satunya jalur `CLOSING → OPEN`
+  (abort percobaan, bukan reopen EOD; `CLOSED` tetap terminal).
+- `modules/platform/infrastructure/calendar_repo.nim`: `abortClose` (`WHERE state = 'CLOSING'`),
+  `updated_by` boleh NULL untuk aksi `ctl`.
+- `modules/daycloser/application/orchestrator.nim`: port `freezeDate`/`sealRun`/`reopenDate`;
+  freeze terjadi **setelah** seluruh task `PRECHECK` dan **sebelum** state `RUNNING`; cancel
+  membatalkan sisa task lalu membuka kembali tanggal.
+- `apps/api/src/daycloser_ctl.nim`: `freezeBusinessDate`, `sealAndRollover` (satu transaksi:
+  `COMPLETED` + audit `run.finish` + `CLOSED` + rollover `nextWorkingDay` + outbox
+  `BusinessDateOpened`), `reopenBusinessDate`, `cancelRunNow`; `--bootstrap`; lock diambil
+  sebelum pemeriksaan keadaan; `daycloser-cancel` langsung berlaku bila tidak ada proses hidup.
+- `apps/api/src/close_guard.nim` + `server.nim`: selama `CLOSING`, semua `POST/PUT/PATCH/DELETE`
+  ditolak `409` (`reason: business_date_closing`) di pembungkus permintaan, kecuali
+  `/api/v1/auth/`; kebijakan `daycloser.txn_policy_during_close` (`REJECT` default, `ALLOW` opt-in);
+  parameter hilang/rusak fail-closed, DB tak terbaca fail-open.
+- Kontrak: `409` dideklarasikan pada **semua** operasi tulis non-auth; `tools/openapi` menegakkannya
+  (endpoint tulis baru tanpa 409 gagal di gate). Klien TS di-regenerasi.
+- i18n `error_business_date_closing` (id/en) + pemetaan `params.reason` di
+  `apps/web/src/lib/app/errors.ts`.
+- Dokumentasi: `docs/tasks/T-135.md`, D-149, `modules/daycloser/MODULE.md`, `ACCEPTED-LIMITS` §3
+  (QUEUE, scope cabang, biaya query gerbang, fail-open), `OPEN_ITEMS` O-094, runbook baru
+  `docs/runbooks/dayclose.md`, `ops-cli.md`.
+
+**Bukti**
+
+- `./task check-fast` hijau (fmt, lint, batas modul, tanpa magic number, paramgen sinkron, i18n,
+  8 skrip shell).
+- `./task test tdaycloser` 21 `[OK]` — 5 test urutan fase dengan `Store` palsu: freeze setelah
+  precheck & sebelum `RUNNING`, seal terakhir, tidak ada freeze/seal saat precheck gagal, seal
+  gagal tidak meninggalkan `COMPLETED`, cancel membatalkan sisa task + reopen, pause tidak
+  menyegel/membuka.
+- `./task test itdaycloser_lifecycle` 5 `[OK]` — lewat perintah `ctl` sungguhan: bootstrap
+  menutup Senin 26 Okt → tanggal buku Selasa 27 `OPEN` + event `BusinessDateOpened` + 3 audit;
+  tanggal lain/bootstrap kedua/akhir pekan ditolak (3) tanpa mengubah tanggal; penutupan 27 Okt
+  maju ke 28; `CLOSING` menahan `daycloser-run` (3) dan `daycloser-status` (1); cancel → run
+  `CANCELED` + tanggal `OPEN` + status kembali 0.
+- `./task test itapi_closeguard` 5 `[OK]` — HTTP sungguhan: 409 + `reason` saat `CLOSING`, `GET`
+  dan `/api/v1/auth/login` tidak diblokir, `ALLOW` meloloskan (lalu `REJECT` menahan lagi), `OPEN`
+  netral, tanpa baris `business_date` semua lolos ke handler (401).
+- `./task test tcloseguard` 2 `[OK]`; `./task test itcalendar` (abort OPEN/CLOSING/CLOSED),
+  `itdaycloser` 17 `[OK]`, `itapi_roles`, `itapi_deposit`, `tcontract` hijau.
+- `./task ci` **hijau penuh** (`.build/ci-t135b.log`, exit 0): `check` (244 berkas, batas modul,
+  tanpa magic number, paramgen sinkron, i18n, 8 skrip shell), `openapi`, `eslint`, seluruh
+  unit/properti (1240 `[OK]`), integrasi Postgres, vitest web 125 + token kontras 117,
+  svelte-check 0 error/0 warning, dan Playwright **54 passed** (axe 2 tema × 2 locale + keyboard +
+  alur login/maker-checker). Catatan: percobaan pertama gagal karena flake `itapi.nim` (request
+  dikirim sebelum thread server `bind`); diperbaiki dengan retry berbatas, bukan dengan melunakkan
+  assertion 503.
+
+- Review independen: **1 BLOCKER + 2 MAJOR + 5 MINOR + 3 NIT**. BLOCKER (tanggal yang run-nya
+  dibatalkan menjadi jalan buntu) dan kedua MAJOR (cancel+reopen tidak atomik; TOCTOU gerbang)
+  diperbaiki: run baru diizinkan setelah `CANCELED`, port `Store.cancelRun` menulis task+run+tanggal
+  dalam satu transaksi, `daycloser-cancel` pada run `CANCELED` menjadi jalur pemulihan, TOCTOU
+  dicatat + menjadi gate deteksi T-136. MINOR/NIT ikut dibereskan (awalan exempt kontrak, bootstrap
+  hanya di `runCmd`, test fail-closed, runbook `ALLOW`, MODULE.md).
+
+**Batas/berikutnya**: `QUEUE` (antrean transaksi) belum ada dan tidak dideklarasikan sah;
+penutupan per cabang belum diekspos; gerbang menambah satu query per permintaan tulis (diukur di
+T-140); gerbang adalah cek-lalu-jalan (TOCTOU tercatat); replay idempotensi saat `CLOSING` dijawab
+409; pemicu harian masih operator → T-139. Berikutnya: T-136 (gate pra/pasca-tutup).

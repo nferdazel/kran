@@ -145,6 +145,7 @@ type
     amount: string       ## `--role=ctl post-opening-balance`: nominal saldo awal
     businessDate: string ## `--role=ctl post-opening-balance|daycloser-run`: tanggal buku
     runId: string        ## `--role=ctl daycloser-*`: run yang disentuh
+    bootstrap: bool      ## `--role=ctl daycloser-run`: tetapkan tanggal buku pertama
 
 proc die(msg: string) =
   stderr.writeLine "kran-api: " & msg
@@ -189,6 +190,8 @@ proc parseArgs(argv: seq[string]): CliOptions =
       result.businessDate = arg["--business-date=".len .. ^1]
     elif arg.startsWith("--run="):
       result.runId = arg["--run=".len .. ^1]
+    elif arg == "--bootstrap":
+      result.bootstrap = true
     elif arg.startsWith("--out="):
       result.outPath = arg["--out=".len .. ^1]
     elif arg.startsWith("--root="):
@@ -240,6 +243,9 @@ proc parseArgs(argv: seq[string]): CliOptions =
      not (result.role == roleCtl and
           result.cmd in [dayCloserResumeCmd, dayCloserPauseCmd, dayCloserCancelCmd]):
     die("--run hanya untuk perintah ctl day-close yang menerima run id")
+  if result.bootstrap and
+     not (result.role == roleCtl and result.cmd == dayCloserRunCmd):
+    die("--bootstrap hanya untuk `--role=ctl " & dayCloserRunCmd & "`")
   if result.fullName.len > 0 and
      not (result.role == roleCtl and result.cmd == createUserCmd):
     die("--full-name hanya untuk `--role=ctl " & createUserCmd & "`")
@@ -330,7 +336,8 @@ const CtlUsage* =
   "  daycloser-status: status penutupan berjalan (kode keluar 1 = ada run aktif atau\n" &
   "                    tanggal buku CLOSING; gate deploy membacanya sebagai tahan)\n" &
   "  daycloser-run   : rencanakan + jalankan penutupan (butuh --business-date=<YYYY-MM-DD>;\n" &
-  "                    level ditentukan kalender institusi, bukan argumen)\n" &
+  "                    level ditentukan kalender institusi, bukan argumen; tambah\n" &
+  "                    --bootstrap HANYA untuk menetapkan tanggal buku pertama)\n" &
   "  daycloser-resume: lanjutkan run PAUSED/FAILED/BLOCKED (butuh --run=<uuid>)\n" &
   "  daycloser-pause : minta berhenti di batas chunk berikutnya (butuh --run=<uuid>)\n" &
   "  daycloser-cancel: minta batal; sisa task ditandai CANCELED (butuh --run=<uuid>)\n" &
@@ -1103,7 +1110,7 @@ proc main() =
   if opts.role == roleMigrate:
     quit(runMigrate(opts.root, opts.sub, opts.subArg))
   if opts.role == roleCtl and opts.cmd in dayCloserCommands:
-    quit(runDayCloserCtl(opts.cmd, opts.businessDate, opts.runId))
+    quit(runDayCloserCtl(opts.cmd, opts.businessDate, opts.runId, opts.bootstrap))
   if opts.role == roleCtl:
     quit(runCtl(opts.cmd, opts.root, opts.username, opts.outPath, opts.userRole,
       opts.branchId, opts.fullName, opts.branchCode, opts.branchName, opts.amount,

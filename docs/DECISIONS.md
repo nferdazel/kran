@@ -3627,3 +3627,69 @@ chunk dan query status).
 **Konsekuensi.** EOD besar belum bisa memanfaatkan inti paralel; target performa §23 diukur di
 T-140 untuk 100k rekening simpanan. `daycloser-status` menjadi perintah yang wajib tetap murah
 (read-only) karena dipanggil setiap deploy.
+
+## D-149 — Siklus business date: pemilik, abort, gerbang transaksi, dan bootstrap (28 Okt 2026)
+
+**Konteks.** T-134 menghasilkan kerangka yang bisa menyelesaikan run, tetapi belum memindahkan
+tanggal buku. Spec §11.5 menempatkan freeze/rollover sebagai langkah orkestrator, dan §11.3
+menggambarkan kegagalan sebagai "CLOSING (blocked)" — tanpa jalan keluar untuk run yang dibatalkan.
+Beberapa keputusan bentuk perlu dicatat supaya tidak terbaca sebagai kelalaian.
+
+**Keputusan.**
+
+1. **Tanggal buku dimiliki run, bukan operator terpisah.** `daycloser-run` membekukan tanggalnya
+   sendiri setelah seluruh task `PRECHECK` lulus. Perintah `freeze` terpisah akan menambah langkah
+   yang bisa lupa dipanggil, dan tujuannya (tidak ada task yang berjalan sementara transaksi masih
+   diterima) hanya tercapai bila keduanya satu alur.
+2. **Seal = satu transaksi.** `run → COMPLETED`, audit `run.finish`, `CLOSING → CLOSED`, rollover
+   ke `nextWorkingDay`, dan outbox `BusinessDateOpened` ditulis bersama. Run tersegel tanpa tanggal
+   maju (atau event tanpa fakta) adalah keadaan yang tidak bisa dijelaskan ke audit.
+3. **`CLOSING → OPEN` adalah abort, bukan reopen.** Bila run dibatalkan/gagal permanen, tanggal yang
+   dibekukan run itu dibuka kembali — belum ada segel, laporan, atau hari yang dinyatakan tutup.
+   `CLOSED → OPEN` tetap dilarang (spec §11.7) dan `abortClose` menolaknya lewat `WHERE state =
+   'CLOSING'`. Tanpa abort, satu pembatalan membekukan institusi selamanya karena tidak ada perintah
+   lain yang bisa memindahkan state.
+4. **Gerbang transaksi di pembungkus HTTP.** Selama `CLOSING`, **semua** `POST/PUT/PATCH/DELETE`
+   ditolak `409` (`params.reason = business_date_closing`) kecuali rute `/api/v1/auth/`. Penjagaan
+   per handler akan bolong setiap kali endpoint baru ditambahkan; larangan menyeluruh juga
+   menghindari perubahan parameter/produk yang bisa mengubah perilaku penutupan yang sedang berjalan.
+   Operator yang perlu memperbaiki sesuatu membatalkan run lebih dulu (jalur `ctl`), lalu mengulang.
+5. **Fail-open hanya untuk gangguan DB.** Bila query gerbang gagal (pool/soket), permintaan
+   diloloskan dan akan gagal sendiri saat menyentuh DB; menyamarkannya sebagai "buku ditutup" akan
+   menyesatkan. Sebaliknya, parameter kebijakan yang hilang/rusak **fail-closed**: penutupan yang
+   berjalan tidak boleh dilonggarkan oleh konfigurasi yang belum tersemai.
+6. **Bootstrap eksplisit.** Baris `platform.business_date` pertama hanya dibuat dengan
+   `--bootstrap`. Tanpa flag itu `ctl` menolak, sehingga salah ketik tanggal tidak menetapkan
+   tanggal buku yang salah secara permanen (dan tidak ada nilai "hari ini" yang ditanam di kode).
+7. **Cancel diterapkan bila tidak ada proses.** `daycloser-cancel` memeriksa advisory lock scope:
+   bila tidak ada proses hidup, cancel langsung menandai sisa task `CANCELED`, run `CANCELED`, dan
+   membuka kembali tanggal. Bila ada proses, ia menulis `control = CANCEL` seperti sebelumnya.
+8. **Kontrak menyebut 409 di semua operasi tulis non-auth**, dan `tools/openapi` menegakkannya.
+   Klien generik tidak boleh menyimpulkan bahwa 409 "tidak mungkin" pada endpoint tulis.
+
+**Ditolak.** Memakai `--force` untuk menutup tanggal yang sudah punya run (mengeksekusi ulang chunk
+task yang boleh `NONE` idempotensinya). Menambahkan nilai `QUEUE` pada kebijakan tanpa antrean yang
+benar-benar mengeksekusi (nilai yang tidak bisa ditegakkan = janji palsu). Menaruh gerbang di
+masing-masing handler. Membuka `CLOSED` untuk "koreksi cepat".
+
+**Konsekuensi.** Setiap permintaan tulis membayar satu query `business_date` (indeks
+`business_date_state_idx`) selama aplikasi hidup — diukur bersama EOD di T-140. Penutupan per cabang
+belum ada; `ctl` menolak scope selain institusi secara eksplisit.
+
+**Amendemen setelah review independen (28 Okt 2026).** Tiga koreksi yang mengubah keputusan, bukan
+sekadar perbaikan kode:
+
+9. **Tanggal yang run-nya `CANCELED` boleh ditutup lagi.** Versi pertama menolak run baru untuk
+   tanggal apa pun yang sudah punya baris run — termasuk yang dibatalkan — sehingga satu pembatalan
+   membekukan buku selamanya (tidak ada perintah lain yang bisa memajukan tanggal). Index unik DB
+   memang mengecualikan state terminal, jadi penghalangnya hanya logika `ctl`. Run ulang bergantung
+   pada idempotensi task (`imPerBusinessDate`); karena itu task dengan idempotensi `NONE` tidak
+   boleh didaftarkan ke penutupan.
+10. **Cancel + reopen satu transaksi.** Versi pertama menulis `CANCELED` lalu membuka tanggal di
+    transaksi kedua. Crash di antaranya meninggalkan `CANCELED` + `CLOSING`: semua tulisan ditolak
+    409 dan tidak ada perintah yang bisa memperbaikinya. Port `Store.cancelRun` kini melakukan
+    ketiganya (task, run, tanggal) dalam satu transaksi, dan `daycloser-cancel` pada run `CANCELED`
+    menjadi jalur pemulihan idempoten untuk keadaan yang sudah terlanjur.
+11. **Bootstrap hanya di `runCmd`.** Port `freezeBusinessDate` tidak lagi membuat baris
+    `business_date` diam-diam; tanpa baris ia menolak. Jalur lain (mis. `resume`) jadi tidak bisa
+    "membootstrap" tanggal tanpa pernyataan operator.
