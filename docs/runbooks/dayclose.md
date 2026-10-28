@@ -78,10 +78,12 @@ Alur yang dijalankan (spec §11.5): task `PRECHECK` → **freeze** (`CLOSING`) �
 `POSTCHECK` → **seal** (run `COMPLETED`, tanggal `CLOSED`, rollover ke hari kerja berikutnya, event
 `BusinessDateOpened`) — semuanya kecuali task dalam satu transaksi pada langkah seal.
 
-Task proses yang berjalan: sapuan idempotensi dan **snapshot saldo harian**
-(`ledger.daily_snapshot`, menulis + membuktikan cache saldo). Pada hari kerja terakhir bulan
-(level EOM) ditambah **tutup periode GL** (`ledger.period_close`) — dijalankan pada fase pasca-tutup,
-setelah snapshot dan gate, karena penutupan periode tidak bisa dibatalkan.
+Task proses yang berjalan: sapuan idempotensi, **akrual bunga deposito berjangka**
+(`deposit.interest_accrual`), **jatuh tempo/ARO** (`deposit.maturity_aro`), **deteksi dormant**
+(`deposit.dormant`), dan **snapshot saldo harian** (`ledger.daily_snapshot`, menulis + membuktikan
+cache saldo). Pada hari kerja terakhir bulan (level EOM) ditambah **tutup periode GL**
+(`ledger.period_close`) — dijalankan pada fase pasca-tutup, setelah snapshot dan gate, karena
+penutupan periode tidak bisa dibatalkan.
 
 Periode yang ditutup adalah periode yang **memuat tanggal buku dan berakhir di bulan yang sama**.
 Contoh: periode 1–31 Okt 2026 ditutup pada penutupan 30 Okt 2026 (hari kerja terakhir). Bila
@@ -96,6 +98,21 @@ penutupan membuat gate pasca-tutup basi.
 Bila institusi memang melayani 24 jam, `daycloser.txn_policy_during_close = ALLOW` harus ditetapkan
 **sebelum** penutupan dimulai: alur maker-checker juga lewat HTTP, jadi ikut diblokir saat
 `CLOSING`. Risiko race ditanggung institusi; belum diuji terhadap task penutup nyata (lihat
+`docs/ACCEPTED-LIMITS.md`).
+
+### 3a. Pratinjau sebelum menutup (dry-run `SIMULATION`)
+
+```bash
+kran-api --role=ctl daycloser-run --business-date=<tgl> --mode=SIMULATION; echo $?
+```
+
+Mencetak rencana penutupan (level, task, chunk, `"writes": false`) tanpa menulis apa pun: tidak ada
+baris run, jurnal, saldo, event, atau perubahan tanggal buku. Penolakan keadaan tetap diperiksa
+(hari kerja, tanggal buku, run ganda) supaya pratinjau tidak menjanjikan run yang toh ditolak.
+
+Yang **tidak** dibuktikan: apakah task akan berhasil saat menulis. `DAY-331` (binding akrual
+kurang), `DAY-343` (deposito tanpa rekening tujuan), dan `DAY-344` (rule ambigu) baru terlihat pada
+run nyata — dry-run ini tingkat rencana, bukan eksekusi di transaksi ter-rollback (D-159,
 `docs/ACCEPTED-LIMITS.md`).
 
 ## 3b. Gate yang memblokir (run `BLOCKED`)

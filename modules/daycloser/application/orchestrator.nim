@@ -328,30 +328,37 @@ proc executeRun*(registry: Registry; store: Store; runId: string;
   store.sealRun(runId, now(), summary)
   outcomeOf(store, runId, rsCompleted, summary)
 
-proc planRun*(registry: Registry; store: Store; runId: string; req: RunRequest): tuple[tasks, chunks: int] =
-  ## Menyusun rencana dan menulis baris run dalam state `PLANNED`. Dipisah dari eksekusi supaya
-  ## composition root bisa menulis audit `run.start` **setelah** baris run benar-benar ada.
-  ## Rencana chunk dihitung sebelum baris ditulis: kegagalan plan tidak boleh meninggalkan run
-  ## hantu.
+proc planTasks*(registry: Registry; runId: string; req: RunRequest): seq[PlannedTask] =
+  ## Rencana task + chunk **tanpa menulis apa pun**. Dipakai `planRun` (yang lalu menyimpan baris
+  ## run) dan dry-run `SIMULATION` (spec §11.7), yang memang tidak boleh mengubah data.
+  ##
+  ## `countChunks` setiap task adalah kueri baca-saja (itu sebabnya orkestrator boleh memanggilnya
+  ## sebelum run ada), jadi rencana di sini setara dengan yang akan dieksekusi run nyata.
   if req.levels == {}:
     raise newException(DayCloserError, "level penutupan kosong")
   let tasks = registry.resolve(req.levels)
   let ctx = TaskContext(runId: runId, scopeType: req.scopeType, scopeId: req.scopeId,
                         businessDate: req.businessDate, levels: req.levels, mode: req.mode,
                         chunkSize: req.config.chunkSize)
-  var plan: seq[PlannedTask]
   for t in tasks:
     let chunks = planChunks(t, ctx, req.config.chunkSize)
     if chunks.isErr:
       raise newException(DayCloserError,
         "rencana chunk " & t.id & " gagal: " & chunks.error.code & " " & chunks.error.message)
-    plan.add PlannedTask(taskId: t.id, kind: t.kind, critical: t.critical,
-                         chunks: chunks.value())
+    result.add PlannedTask(taskId: t.id, kind: t.kind, critical: t.critical,
+      chunks: chunks.value())
+
+proc planRun*(registry: Registry; store: Store; runId: string; req: RunRequest): tuple[tasks, chunks: int] =
+  ## Menyusun rencana dan menulis baris run dalam state `PLANNED`. Dipisah dari eksekusi supaya
+  ## composition root bisa menulis audit `run.start` **setelah** baris run benar-benar ada.
+  ## Rencana chunk dihitung sebelum baris ditulis: kegagalan plan tidak boleh meninggalkan run
+  ## hantu.
+  let plan = planTasks(registry, runId, req)
   store.createRun(runId, req, plan)
   var totalChunks = 0
   for p in plan:
     totalChunks += p.chunks.len
-  (tasks.len, totalChunks)
+  (plan.len, totalChunks)
 
 proc startRun*(registry: Registry; store: Store; runId: string; req: RunRequest;
                now: Now; sleepMs: Sleeper; log: Logger): RunOutcome =
