@@ -116,6 +116,19 @@ proc businessDateOf*(db: DbConn, scope: ScopeRef): Option[BusinessDateRow] =
     state: parseState(row[3]),
     updatedAt: row[4])
 
+proc businessDateFrozenAt*(db: DbConn, scope: ScopeRef): Option[string] =
+  ## Waktu `updated_at` dengan **presisi mikrodetik**. `businessDateOf` memakai format detik untuk
+  ## tampilan; gate jurnal-terlambat membandingkan waktu rekam jurnal, dan pembulatan ke detik akan
+  ## menuduh jurnal yang sebenarnya direkam sebelum pembekuan.
+  let raw = db.getValue(sql"""
+    SELECT to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS.USOF')
+      FROM platform.business_date
+     WHERE scope_type = ? AND coalesce(scope_id, '') = ?""",
+    $scope.scopeType, scope.scopeId)
+  if raw.len == 0:
+    return none(string)
+  some(raw)
+
 proc ensureBusinessDate*(db: DbConn, scope: ScopeRef, date: string,
                          actor: Id): bool =
   ## Membuat baris tanggal buku bila belum ada (bootstrap institusi baru).

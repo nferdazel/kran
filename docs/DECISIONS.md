@@ -3693,3 +3693,65 @@ sekadar perbaikan kode:
 11. **Bootstrap hanya di `runCmd`.** Port `freezeBusinessDate` tidak lagi membuat baris
     `business_date` diam-diam; tanpa baris ia menolak. Jalur lain (mis. `resume`) jadi tidak bisa
     "membootstrap" tanggal tanpa pernyataan operator.
+
+## D-150 — Gate pra/pasca-tutup: BLOCKED, bukti, dan deteksi jurnal terlambat (28 Okt 2026)
+
+**Konteks.** Spec §11.5 menempatkan pemeriksaan sebelum freeze dan sesudah eksekusi sebagai langkah
+tersendiri, dan §11.6 menyebut gate sebagai jenis task. Kerangka T-134/T-135 belum punya satu pun
+gate: run bisa "selesai" walau kas teller belum beres, ada pengajuan menggantung, atau saldo
+subledger tidak sama dengan GL. Kegagalan gate juga tidak bisa dibedakan dari task yang crash.
+
+**Keputusan.**
+
+1. **`BLOCKED` untuk gate, `FAILED` untuk proses.** Kegagalan task kritis berjenis `PRECHECK` atau
+   `POSTCHECK` menghasilkan run `BLOCKED`; `PROCESS`/`REPORT` tetap `FAILED`. Keduanya bisa
+   di-`resume`; bedanya pesan dan tindakan: `BLOCKED` = keadaan buku belum layak, `FAILED` =
+   eksekusi sakit. State `BLOCKED` sebelumnya hanya ada di state machine, tidak pernah dipakai.
+2. **Gate hanya membaca.** Tidak ada koreksi otomatis: selisih kas, suspense, atau subledger adalah
+   temuan yang harus diselidiki, dan "merapikan" angka di dalam penutupan justru menghapus bukti.
+3. **Gate PRECHECK berjalan sebelum freeze.** Konsekuensinya disengaja: kegagalan gate pra-tutup
+   **tidak** membekukan tanggal — institusi masih boleh melayani, dan yang menahan penutupan
+   adalah run `BLOCKED` (index unik menolak run kedua, `daycloser-run` mengarahkan ke resume).
+   Gate pasca-tutup berjalan saat tanggal sudah `CLOSING`, jadi kegagalannya meninggalkan tanggal
+   terbekukan sampai run di-resume atau dibatalkan.
+4. **Bukti tersimpan walau gagal.** `TaskError` membawa `metrics` supaya angka penyebab penolakan
+   (jumlah sesi terbuka, selisih subledger, id jurnal terlambat) masuk `daycloser.task.metrics`.
+   Tanpa itu, bukti hanya ada di log yang hilang.
+5. **Akun dari parameter.** `daycloser.precheck.suspense_accounts` (awal `101.9`) dan
+   `daycloser.postcheck.subledger_gl_accounts` (awal `201`,`202`) berkelas kebijakan dengan
+   `NEEDS-COMPLIANCE-REVIEW`; tidak ada kode akun di kode program.
+6. **Saldo dinilai menurut `account_type` COA.** Aset naik di debit, kewajiban/ekuitas/pendapatan
+   di kredit, beban di debit. Menebak dari kode akun akan salah begitu ada akun suspense berkewajiban.
+7. **Jurnal terlambat dideteksi di postcheck.** Gerbang HTTP adalah cek-lalu-jalan (TOCTOU yang
+   dicatat pada T-135): permintaan yang lolos sesaat sebelum freeze bisa commit sesudahnya. Gate
+   membandingkan `journal.recorded_at` dengan `business_date.updated_at` **berpresisi mikrodetik**
+   (`businessDateFrozenAt`); format detik untuk tampilan membuat jurnal yang direkam pada detik yang
+   sama salah dituduh.
+8. **Registry gate dibuat lewat proc per spesifikasi.** Closure yang dibuat di badan loop menangkap
+   satu variabel bersama di Nim, sehingga keenam gate menjalankan pemeriksaan yang terakhir ditulis.
+   Ini tertangkap test integrasi (semua gate melaporkan `DAY-309`); bentuk yang benar adalah
+   `gateTask(spec, pool)`.
+
+9. **Gate diulang saat resume, termasuk chunk-nya.** `resetInFlight` mengembalikan task **dan**
+   chunk gate yang `SUCCEEDED` ke `PENDING`. Alasannya: gate pra-tutup berjalan saat tanggal masih
+   `OPEN`, jadi sertifikatnya bisa basi selama run `BLOCKED`/`PAUSED` (sesi teller baru, selisih
+   kas). Reset task tanpa chunk tidak cukup — `runTask` melewati chunk `SUCCEEDED` dan menandai gate
+   sukses tanpa menjalankannya (metrics-nya `null`, itu yang membongkar bug ini).
+10. **Akun parameter divalidasi.** Akun yang tidak ada atau non-`ACTIVE` membuat gate **gagal**
+    (`DAY-311`), bukan lolos: akun fiktif tidak pernah muncul di laporan saldo, sehingga gate yang
+    "lulus" karena tidak memeriksa apa pun adalah kontrol yang mati diam-diam. Daftar kosong juga
+    gagal (`DAY-312`).
+11. **Cakupan jurnal terlambat dibatasi pada transaksi yang dimulai setelah freeze.**
+    `journal.recorded_at` memakai `now()` (= waktu mulai transaksi), jadi transaksi yang mulai
+    sebelum freeze dan commit sesudahnya tidak tertangkap gate. Batas ini dicatat di
+    `docs/ACCEPTED-LIMITS.md`; penutupan penuh butuh drain permintaan tulis (Fase 9).
+
+**Ditolak.** Menjalankan gate sebagai bagian dari satu task besar (kegagalan tidak bisa ditunjuk,
+dan bukti per gate hilang). Menyimpan bukti sebagai teks di `error`. Menaruh daftar akun di kode
+dengan alasan "toh cuma dua". Membuat gate menulis jurnal koreksi. Menganggap trigger keseimbangan
+jurnal cukup sehingga gate trial balance tidak perlu (trigger menjaga per jurnal, bukan agregat).
+
+**Konsekuensi.** Setiap penutupan menjalankan enam query agregat kumulatif (biaya diukur T-140).
+Gate institusi-wide membuat run cabang (saat T-139 mendukungnya) memeriksa lebih ketat daripada
+kebutuhannya. Pemetaan subledger per jenis produk masih belum ada, sehingga selisih antar produk
+yang saling menutupi tidak terlihat — dicatat di batas.

@@ -73,3 +73,23 @@ proc reconciledAccountCount*(db: DbConn, branchId = ""): int64 =
     SELECT count(*)::text FROM deposit.account a
      WHERE (? = '' OR a.branch_id::text = ?)""", branchId, branchId)
   if raw.len == 0: 0'i64 else: parseBiggestInt(raw).int64
+
+type
+  SubledgerTotal* = object
+    ## Total saldo subledger simpanan untuk dibandingkan dengan GL (gate pasca-tutup, spec §11.5).
+    ## `missingCache` > 0 berarti ada rekening tanpa baris saldo — totalnya tidak bisa dipercaya.
+    accounts*: int64
+    missingCache*: int64
+    total*: string ## desimal `numeric(24,2)`
+
+proc subledgerTotal*(db: DbConn): SubledgerTotal =
+  let row = db.getAllRows(sql"""
+    SELECT count(a.account_id)::text,
+           count(*) FILTER (WHERE b.balance IS NULL)::text,
+           coalesce(sum(b.balance), 0)::numeric(24, 2)::text
+      FROM deposit.account a
+      LEFT JOIN deposit.account_balance b ON b.account_id = a.account_id""")
+  if row.len > 0:
+    result.accounts = parseBiggestInt(row[0][0]).int64
+    result.missingCache = parseBiggestInt(row[0][1]).int64
+    result.total = row[0][2]

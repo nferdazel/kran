@@ -57,6 +57,28 @@ Tidak ada aggregate bisnis. Invarian yang ditegakkan:
 Registry, orkestrator, dan repositori **tidak** diekspor: hanya composition root (`apps/api`) yang
 mendaftarkan task dan menjalankan run.
 
+## Gate pra & pasca-tutup (T-136)
+
+Gate adalah task `PRECHECK`/`POSTCHECK` kritis yang **hanya membaca**; kegagalannya membuat run
+`BLOCKED` (bukan `FAILED`), dan angkanya tersimpan di `daycloser.task.metrics` walaupun gagal.
+
+| Task | Fase | Aturan | Kode temuan |
+|---|---|---|---|
+| `teller.sessions_closed` | PRECHECK | tidak ada sesi `OPEN` s.d. tanggal tutup; tidak ada sesi `CLOSED` bervarians ≠ 0 | `DAY-301`, `DAY-302` |
+| `teller.pending_approvals` | PRECHECK | tidak ada pengajuan top-up vault `PENDING` | `DAY-303` |
+| `ledger.suspense_zero` | PRECHECK | akun `daycloser.precheck.suspense_accounts` bersaldo nol (akun tidak dikenal → gagal) | `DAY-304`, `DAY-311`, `DAY-312` |
+| `ledger.trial_balance` | POSTCHECK | Σ debit = Σ kredit kumulatif | `DAY-305` |
+| `ledger.subledger_vs_gl` | POSTCHECK | total saldo rekening = saldo akun `daycloser.postcheck.subledger_gl_accounts` | `DAY-306/307/308` |
+| `ledger.no_late_postings` | POSTCHECK | tidak ada jurnal bertanggal tutup yang direkam setelah pembekuan (TOCTOU gerbang HTTP); tanggal tidak `CLOSING` → gagal | `DAY-309`, `DAY-310` |
+
+Karena PRECHECK berjalan sebelum freeze, kegagalan gate pra-tutup **tidak** membekukan tanggal buku;
+yang menahan adalah run `BLOCKED` itu sendiri. Kegagalan gate pasca-tutup meninggalkan tanggal
+`CLOSING` sampai run di-resume atau dibatalkan (D-150).
+
+`resume` mengulang **semua** gate (task dan chunk `SUCCEEDED` dikembalikan ke `PENDING`), karena
+keadaan yang disertifikasi gate pra-tutup bisa berubah selama run berhenti — sertifikat lama tidak
+boleh dipakai untuk menyegel.
+
 ## Event dipublish / dikonsumsi (versi)
 
 | Event | v | Kapan | Payload |
@@ -73,6 +95,8 @@ Progress realtime (`DayCloseProgress`) menyusul bersama UI monitor (T-139).
 | `daycloser.max_attempts` | percobaan maksimum per chunk/task |
 | `daycloser.retry_backoff_seconds` | jeda tetap antar percobaan |
 | `daycloser.txn_policy_during_close` | `REJECT` (default) menolak semua perubahan HTTP saat `CLOSING`; `ALLOW` membiarkannya (risiko race ditanggung institusi) |
+| `daycloser.precheck.suspense_accounts` | akun yang wajib bersaldo nol sebelum tutup (awal `101.9` selisih kas) |
+| `daycloser.postcheck.subledger_gl_accounts` | akun GL kewajiban pembanding total subledger simpanan (awal `201`, `202`) |
 
 `chunk_size`, `max_attempts`, dan `retry_backoff_seconds` kelas `teknis`; sensivitas `NORMAL`;
 tanpa referensi regulasi. `txn_policy_during_close` kelas **kebijakan** dengan

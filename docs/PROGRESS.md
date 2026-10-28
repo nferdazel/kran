@@ -3056,3 +3056,58 @@ percobaan penutupan yang dibatalkan. Dikerjakan di `feat/fase3-dayclose` (belum 
 penutupan per cabang belum diekspos; gerbang menambah satu query per permintaan tulis (diukur di
 T-140); gerbang adalah cek-lalu-jalan (TOCTOU tercatat); replay idempotensi saat `CLOSING` dijawab
 409; pemicu harian masih operator → T-139. Berikutnya: T-136 (gate pra/pasca-tutup).
+
+---
+
+## 2026-10-28 — T-136 gate pra/pasca-tutup SELESAI
+
+**Konteks**: setelah T-135, run bisa "selesai" walau kas teller belum beres, ada pengajuan
+menggantung, saldo selisih bukan nol, atau subledger tidak sama dengan GL. Spec §11.5 menempatkan
+pemeriksaan itu sebagai langkah tersendiri; kerangka belum punya satu pun gate.
+
+**Yang berubah**
+
+- `apps/api/src/daycloser_gates.nim` (baru): enam gate kritis.
+  PRECHECK — `teller.sessions_closed` (`DAY-301/302`), `teller.pending_approvals` (`DAY-303`),
+  `ledger.suspense_zero` (`DAY-304`, akun tak dikenal `DAY-311`, daftar kosong `DAY-312`).
+  POSTCHECK — `ledger.trial_balance` (`DAY-305`), `ledger.subledger_vs_gl` (`DAY-306/307/308`),
+  `ledger.no_late_postings` (`DAY-309/310`).
+- `BLOCKED` untuk gate, `FAILED` untuk task proses: kegagalan task kritis `PRECHECK`/`POSTCHECK`
+  → run `BLOCKED`. State `BLOCKED` sebelumnya hanya ada di state machine, tidak pernah dipakai.
+- Bukti: `TaskError` membawa `metrics`, jadi angka penyebab penolakan tersimpan di
+  `daycloser.task.metrics` walaupun gate gagal (sebelumnya `null`).
+- Primitif baca di modul: `sessionGate`, `pendingTopUpCount`, `subledgerTotal`, `latePostings`,
+  `businessDateFrozenAt` (timestamp presisi mikrodetik untuk pembanding jurnal).
+- Akun dari parameter JSON baru: `daycloser.precheck.suspense_accounts` (awal `101.9`) dan
+  `daycloser.postcheck.subledger_gl_accounts` (awal `201`,`202`); saldo dinilai menurut
+  `account_type` COA, bukan tebakan kode akun.
+- Registrasi task dipisah ke `apps/api/src/daycloser_tasks.nim` (ctl sudah 490 baris).
+- Dokumentasi: `docs/tasks/T-136.md`, D-150, `modules/daycloser/MODULE.md`, runbook `dayclose.md`
+  (tabel kode + catatan resume), `ACCEPTED-LIMITS` (gate institusi-wide, biaya kumulatif, pemetaan
+  subledger per produk, jurnal terlambat hanya yang dimulai setelah freeze).
+
+**Bukti**
+
+- `./task test itdaycloser_gates` 12 `[OK]`: sesi OPEN → `BLOCKED` `DAY-301` (`openSessions=1`),
+  tanggal tetap `OPEN`, run ulang ditolak 3, gate lulus **diperiksa ulang** saat resume (jurnal
+  selisih masuk selama `BLOCKED` → `DAY-304`), cancel → perbaiki → run ulang `COMPLETED`; pengajuan
+  top-up `DAY-303`; akun selisih `DAY-304`; kegagalan **pasca**-tutup lewat `ctl` (`DAY-308`,
+  tanggal tetap `CLOSING`, status 1, cancel memulihkan); `DAY-302/309/311/312`; gate lulus tetap
+  menyimpan bukti.
+- `./task test tdaycloser` 24 `[OK]` (BLOCKED precheck/postcheck, FAILED proses,
+  `canTransition(rsPostcheck, rsBlocked)`), `itdaycloser`/`itdaycloser_lifecycle`/`itapi_closeguard`
+  hijau, `./task check-fast` hijau.
+- `./task ci` **hijau penuh** (`.build/ci-t136b.log`, exit 0): `check` 247 berkas, openapi, eslint,
+  1254 `[OK]` unit/properti/integrasi, vitest web 125 + kontras 117, svelte-check 0/0,
+  Playwright 54.
+
+**Review independen**: 1 BLOCKER + 1 MAJOR + 5 MINOR + 3 NIT; semua BLOCKER/MAJOR dan MINOR yang
+murah diperbaiki. BLOCKER: gate `SUCCEEDED` tidak diulang saat resume, sehingga sertifikat pra-tutup
+bisa basi — `resetInFlight` kini mengulang task **dan chunk** gate (reset task saja membuat
+`runTask` melewati chunk `SUCCEEDED` dan menandai sukses tanpa menjalankan gate). MAJOR: akun
+parameter salah ketik mematikan gate tanpa galat — kini `DAY-311`.
+
+**Batas/berikutnya**: gate dihitung institusi-wide (satu run cabang belum didukung); saldo dibaca
+kumulatif (biaya diukur T-140); pemetaan subledger per jenis produk belum ada; jurnal terlambat
+dideteksi bukan dicegah; `DAY-305`/`DAY-307` belum punya test (trigger DB / rantai FK). Berikutnya:
+T-137 (snapshot saldo + TB harian, tutup periode GL bulanan).

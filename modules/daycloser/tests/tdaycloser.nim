@@ -96,9 +96,11 @@ suite "daycloser: fase & state machine":
     check phaseOf(tkReport) == rsRunning
     check phaseOf(tkPostCheck) == rsPostcheck
 
-  test "jalur run yang sah":
+  test "gate yang gagal memblokir dari fase mana pun":
     check canTransition(rsPlanned, rsPrecheck)
     check canTransition(rsPrecheck, rsRunning)
+    check canTransition(rsPrecheck, rsBlocked)
+    check canTransition(rsPostcheck, rsBlocked)
     check canTransition(rsRunning, rsPostcheck)
     check canTransition(rsPostcheck, rsCompleted)
     check canTransition(rsRunning, rsPaused)
@@ -322,17 +324,38 @@ suite "daycloser: urutan fase business date":
     check pos(f.calls, "ran:platform.report") > pos(f.calls, "freeze")
     check pos(f.calls, "ran:platform.post") > pos(f.calls, "ran:platform.body")
 
-  test "precheck kritis gagal: tidak ada freeze, tidak ada seal, run FAILED":
+  test "precheck kritis gagal: run BLOCKED, tanpa freeze & tanpa seal":
     let f = FakeRun()
     let reg = newRegistry()
     reg.register phaseTask("platform.pre", tkPreCheck, f, failWith = "DAY-300")
     reg.register phaseTask("platform.body", tkProcess, f)
-    let outcome = startRun(reg, f.fakeStore(), "run-fail", fakeRequest(),
+    let outcome = startRun(reg, f.fakeStore(), "run-blocked", fakeRequest(),
       fixedNow, noSleep, quiet)
-    check outcome.state == rsFailed
+    # Gate yang gagal memblokir penutupan (buku belum layak), bukan menandai eksekusi rusak.
+    check outcome.state == rsBlocked
     check pos(f.calls, "freeze") == -1
     check pos(f.calls, "seal") == -1
     check pos(f.calls, "ran:platform.body") == -1
+
+  test "task proses kritis gagal: run FAILED (bukan BLOCKED)":
+    let f = FakeRun()
+    let reg = newRegistry()
+    reg.register phaseTask("platform.body", tkProcess, f, failWith = "DAY-400")
+    let outcome = startRun(reg, f.fakeStore(), "run-failed", fakeRequest(),
+      fixedNow, noSleep, quiet)
+    check outcome.state == rsFailed
+    check pos(f.calls, "seal") == -1
+
+  test "postcheck kritis gagal: run BLOCKED setelah freeze, tanpa seal":
+    let f = FakeRun()
+    let reg = newRegistry()
+    reg.register phaseTask("platform.body", tkProcess, f)
+    reg.register phaseTask("platform.post", tkPostCheck, f, failWith = "DAY-401")
+    let outcome = startRun(reg, f.fakeStore(), "run-postblocked", fakeRequest(),
+      fixedNow, noSleep, quiet)
+    check outcome.state == rsBlocked
+    check pos(f.calls, "freeze") >= 0
+    check pos(f.calls, "seal") == -1
 
   test "segel gagal tidak meninggalkan run COMPLETED":
     let f = FakeRun()

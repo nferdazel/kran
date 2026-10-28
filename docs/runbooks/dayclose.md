@@ -55,6 +55,45 @@ Bila institusi memang melayani 24 jam, `daycloser.txn_policy_during_close = ALLO
 `CLOSING`. Risiko race ditanggung institusi; belum diuji terhadap task penutup nyata (lihat
 `docs/ACCEPTED-LIMITS.md`).
 
+## 3b. Gate yang memblokir (run `BLOCKED`)
+
+Run berhenti sebagai `BLOCKED` (bukan `FAILED`) bila **gate** gagal. Keluaran perintah menyebut
+task dan kodenya; angka penyebabnya ada di `daycloser.task.metrics`:
+
+```sql
+SELECT t.task_id, t.state, t.error->>'code' AS code, t.metrics
+  FROM daycloser.task t JOIN daycloser.run r USING (run_id)
+ WHERE r.business_date = DATE '2026-10-28'
+ ORDER BY t.task_id;
+```
+
+| Kode | Arti | Tindakan |
+|---|---|---|
+| `DAY-301` | sesi teller masih OPEN | tutup sesinya (kas dihitung) lewat aplikasi |
+| `DAY-302` | sesi ditutup dengan kas tidak seimbang | selesaikan selisihnya lebih dulu |
+| `DAY-303` | pengajuan top-up vault belum diputuskan | minta checker memutuskan |
+| `DAY-304` | akun selisih bersaldo | posting jurnal koreksi **setelah** membatalkan run ini |
+| `DAY-305` | trial balance tidak seimbang | jangan lanjut: selidiki jurnal, ini indikasi kerusakan data |
+| `DAY-306/307` | saldo subledger tidak terbaca / rekening tanpa baris saldo | jalankan `ctl reconcile-deposits`, selidiki |
+| `DAY-308` | total subledger ≠ GL | selidiki selisih; jangan "merapikan" dengan jurnal tanpa sebab |
+| `DAY-309` | pasca-tutup dijalankan saat tanggal bukan `CLOSING` (atau waktu pembekuan tidak terbaca) | jangan lanjut: periksa `platform.business_date`; ini indikasi keadaan yang tidak konsisten |
+| `DAY-310` | ada jurnal masuk setelah tanggal dibekukan | batalkan run, periksa jurnal itu, tutup ulang |
+| `DAY-311` | akun pada parameter gate tidak dikenal / non-aktif | perbaiki parameter (`daycloser.precheck.suspense_accounts`, `daycloser.postcheck.subledger_gl_accounts`) lewat maker-checker |
+| `DAY-312` | daftar akun pada parameter gate kosong | isi parameternya; daftar kosong akan mematikan gate tanpa memeriksa apa pun |
+
+Karena gate **pra**-tutup berjalan sebelum freeze, kegagalannya tidak membekukan tanggal: institusi
+masih bisa melayani, tetapi tanggal itu tidak bisa ditutup dua kali (run `BLOCKED` harus di-resume
+atau dibatalkan). Gate **pasca**-tutup berjalan saat tanggal sudah `CLOSING`, jadi semua tulisan
+ditahan sampai run diselesaikan.
+
+Saat `daycloser-resume`, **semua** gate dijalankan ulang (termasuk yang dulu lulus), karena keadaan
+yang disertifikasi gate pra-tutup bisa berubah selama run berhenti. Jadi run yang di-resume bisa
+kembali `BLOCKED` dengan kode yang berbeda — itu perilaku yang benar, bukan kegagalan resume.
+
+Jurnal yang dibuat **setelah** freeze untuk tanggal itu akan ditolak gate `DAY-310` saat resume.
+Jalur yang benar: batalkan run (`daycloser-cancel`), perbaiki buku, lalu jalankan penutupan lagi
+untuk tanggal yang sama.
+
 ## 4. Gagal atau berhenti di tengah
 
 `daycloser-run` keluar **1** bila run berakhir `FAILED`/`BLOCKED`. Tanggal buku **tetap
