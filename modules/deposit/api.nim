@@ -5,11 +5,11 @@
 ## composition root (`apps/api`) dan test modul.
 
 import ./domain/account
-import ./domain/daycount
+import ./domain/[daycount, interest]
 import ./domain/transaction
 import ./domain/transfer
 
 export account
-export daycount
+export daycount, interest
 export transaction
 export transfer
