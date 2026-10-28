@@ -3947,3 +3947,43 @@ sen per tenor adalah temuan audit, bukan pembulatan gaya).
   baris dan ketinggalannya ikut hari berikutnya, karena kumulatif dihitung dari `opened_on` (bukan
   dari baris terakhir). Ini artefak konvensi yang sudah dicatat D-152.
 - **HUMAN-REVIEW-REQUIRED**: rumus bunga dan jurnalnya adalah area kritis (AGENTS.md §8).
+
+## D-155 — Jatuh tempo deposito berjangka: kapan berhenti berbunga, ke mana bunga pergi, tenor perpanjangan (28 Okt 2026)
+
+**Konteks.** T-138d memproses deposito yang jatuh tempo. Empat hal tidak ditentukan D-152 dan
+menentukan angka yang dijurnal, jadi diputuskan pemilik sebelum kode ditulis.
+
+**Keputusan (pemilik, 28 Okt 2026).**
+
+1. **Jatuh tempo = EOD `maturity_date`.** Hari terakhir berbunga adalah **sehari sebelum**
+   `maturity_date`, sehingga tenor 365 hari dari 1 Okt 2026 berakhir 30 Sep 2027 dengan
+   `maturity_date = 1 Okt 2027`. Akibatnya task akrual membatasi hari kumulatifnya di
+   `maturity_date − 1`; tanpa batas itu deposito yang prosesnya terlambat berbunga melewati
+   perjanjian.
+2. **ARO `NONE`**: pokok dan bunga pindah ke rekening simpanan anggota (`201`) — `DepositMatured`
+   D 202 / K 201 (pokok) dan `InterestPosted` D 204 / K 201 (bunga).
+3. **ARO `PRINCIPAL`**: pokok diperpanjang, bunga ke rekening simpanan anggota
+   (`InterestPosted` D 204 / K 201).
+4. **ARO `PRINCIPAL_AND_INTEREST`**: keduanya diperpanjang; bunga **dikapitalisasi** menjadi pokok
+   lewat rule baru `InterestCapitalized` D 204 / K 202, lalu `principal` rekening naik. Alternatif
+   "biarkan bunga di 204" ditolak karena saldo rekening tidak lagi mencerminkan bunga yang
+   dijanjikan.
+5. **Tenor perpanjangan = tenor semula** (`maturity_date − opened_on`), dihitung dari tanggal jatuh
+   tempo lama. Tidak ada parameter tenor per produk; bila nanti dibutuhkan, ia parameter baru,
+   bukan perubahan rumus.
+6. **Keterlambatan proses tidak menambah bunga**: bila penutupan tanggal jatuh tempo macet dan
+   proses baru berjalan beberapa hari kemudian, akrual tetap berhenti di `maturity_date − 1` dan
+   perpindahan pokok/bunga diposting pada tanggal buku saat proses berjalan.
+
+**Konsekuensi.**
+
+- Task `deposit.maturity_aro` membutuhkan rekening simpanan tujuan untuk membayar pokok (`NONE`)
+  atau bunga (`NONE`/`PRINCIPAL`). Tidak ada rekening simpanan aktif di cabang yang sama =
+  prasyarat operasional yang hilang, bukan "tidak berlaku": task berhenti dengan kode yang
+  menyebut rekeningnya, dan operator membuka rekening tujuan sebelum `resume`. Ini pola yang sama
+  dengan gate sesi teller `DAY-301`.
+- Pergerakan pokok/bunga wajib tercermin di `deposit.transaction` **dan** jurnal, karena
+  `reconcile-deposits` merekonstruksi saldo dari baris subledger. Tipe transaksi baru (bukan
+  `CASH_*`, karena tidak ada kas yang bergerak) ditambahkan lewat migrasi kontrak dan dipetakan di
+  query rekonsiliasi.
+- **HUMAN-REVIEW-REQUIRED**: pergerakan uang jatuh tempo (AGENTS.md §8).

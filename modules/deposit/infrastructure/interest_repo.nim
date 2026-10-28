@@ -38,6 +38,7 @@ type
     scaleValue*: JsonNode
     lastDate*: string ## `""` = belum pernah diakrualkan
     lastCumulative*: string ## teks desimal; `"0.00"` bila belum pernah
+    maturityDate*: string ## `""` = tanpa jatuh tempo (rekening tabungan)
 
 proc countAccrualAccounts*(db: DbConn): int64 =
   ## Jumlah rekening yang akan diakrualkan. `status <> 'CLOSED'` (bukan daftar nilai) supaya
@@ -53,7 +54,8 @@ proc accrualAccountsPage*(db: DbConn; offset, limit: int): seq[AccrualAccount] =
   for row in db.getAllRows(sql("SELECT " & accountColumns &
       """,
              latest.business_date::text, coalesce(latest.cumulative::text, '0.00'),
-             rate.value::text, basis.value::text, scale.value::text
+             rate.value::text, basis.value::text, scale.value::text,
+             coalesce(to_char(a.maturity_date, 'YYYY-MM-DD'), '')
         FROM deposit.account a
         JOIN product.product p ON p.product_id = a.product_id
         LEFT JOIN deposit.account_balance b ON b.account_id = a.account_id
@@ -82,7 +84,8 @@ proc accrualAccountsPage*(db: DbConn; offset, limit: int): seq[AccrualAccount] =
       lastCumulative: row[14],
       rateValue: (if row[15].len == 0: nil else: parseJson(row[15])),
       basisValue: (if row[16].len == 0: nil else: parseJson(row[16])),
-      scaleValue: (if row[17].len == 0: nil else: parseJson(row[17])))
+      scaleValue: (if row[17].len == 0: nil else: parseJson(row[17])),
+      maturityDate: row[18])
 
 proc insertAccrual*(db: DbConn; accountId: Id; businessDate, principal, ratePercent,
                     amount, cumulative: string; days, basisDays: int;

@@ -134,7 +134,7 @@ tiga hal sekaligus: baris `deposit.interest_accrual`, jurnal `InterestAccrued`, 
 |---|---|
 | Rekening | `account_type = TIME_DEPOSIT` dan `status <> 'CLOSED'` (ACTIVE + DORMANT — dormant membatasi transaksi, bukan perjanjian bunga) |
 | Atribut | binding versi produk yang dipin rekening: `product.savings.interest_rate`, `day_count_basis`, `rounding_scale`. Tidak ada → **DAY-331**, penutupan ditahan |
-| Rentang | dari `opened_on` (atau hari setelah akrual terakhir) sampai tanggal buku, inklusif |
+| Rentang | dari `opened_on` (atau hari setelah akrual terakhir) sampai tanggal buku, inklusif — dibatasi `maturity_date − 1` bila rekening punya jatuh tempo (D-155) |
 | Pembulatan | **sekali per rentang**: `cumulative` = bunga dari `opened_on` dibulatkan ke skala produk; `amount` = `cumulative` − `cumulative` baris terakhir |
 | Jurnal | D `501 BEBAN BUNGA` / K `204 BUNGA AKRUAL`, ditulis **sinkron** di transaksi yang sama; event `InterestAccrued` **tanpa** header `accounting` (jurnal sudah ada) |
 | Nol | pokok/rate nol atau bagian hari itu nol → baris tercatat (`amount = 0.00`, `journal_id` NULL), **tanpa** jurnal nol |

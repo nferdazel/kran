@@ -107,7 +107,7 @@ proc stdBindings(rate = "2.5"; basis = "ACT_365"; scale = "2"): seq[ParamBinding
     ParamBinding(paramKey: "product.savings.rounding_scale", value: %parseInt(scale))]
 
 proc timeDeposit(version: ProductVersion; productCode, openedOn, principal: string;
-                 status = "ACTIVE"): Id =
+                 status = "ACTIVE"; maturityDate = ""): Id =
   ## Rekening berjangka dengan saldo pokok. `newAccount` selalu melahirkan SAVINGS, jadi tipenya
   ## diubah sebelum disimpan (itulah yang dibaca task).
   var a = newAccount(newId(testClock), newPartyRow(), version.productId, version.versionId,
@@ -119,6 +119,9 @@ proc timeDeposit(version: ProductVersion; productCode, openedOn, principal: stri
     d.exec(sql"""
       UPDATE deposit.account_balance SET balance = ?::numeric WHERE account_id = ?""",
       principal, $a.accountId)
+    if maturityDate.len > 0:
+      d.exec(sql"""UPDATE deposit.account SET maturity_date = ?::date WHERE account_id = ?""",
+        maturityDate, $a.accountId)
     1)
   a.accountId
 
@@ -258,6 +261,25 @@ suite "akrual bunga: atribut produk":
     check row.amount == "0.00"
     check row.journalId == ""
     check journalOf(accountId, AccrualDate).len == 0
+
+suite "akrual bunga: batas jatuh tempo (T-138d, D-155)":
+  test "bunga berhenti sehari sebelum maturity_date":
+    # Dibuka 1 Okt, jatuh tempo 20 Okt → hari terakhir berbunga 19 Okt (19 hari).
+    let accountId = timeDeposit(std.version, std.product.code, OpenedOn, "10000000.00",
+      maturityDate = "2026-10-20")
+
+    check runAt(AccrualDate).isOk
+    let row = accrualRow(accountId, AccrualDate)
+    # 10.000.000 × 2,5% × 19/365 = 13.013,6986… → 13.013,70
+    check row.amount == "13013.70"
+    check row.days == "19"
+
+    # Penutupan berikutnya tidak menambah bunga melewati perjanjian.
+    check runAt("2026-10-29").isOk
+    check accrualRow(accountId, "2026-10-29").amount == ""
+    check db.getValue(sql"""
+      SELECT count(*)::text FROM deposit.interest_accrual WHERE account_id = ?""",
+      $accountId) == "1"
 
 suite "akrual bunga: rekening yang tidak diakrualkan":
   test "rekening CLOSED tidak diakrualkan":
