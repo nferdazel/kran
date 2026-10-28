@@ -84,3 +84,39 @@
     compliance: NEEDS-COMPLIANCE-REVIEW
     note: "Akun GL kewajiban untuk total subledger simpanan; pemetaan per jenis produk = open item."
   default_pack: { base: ["201", "202"] }
+
+# Penjadwal penutupan harian (T-139b, O-094). Selama `enabled` mati, `daycloser-auto` tidak
+# melakukan apa pun — angka pemicu bukan nilai bisnis, tetapi **kapan** institusi menutup buku
+# adalah kebijakan operasionalnya, jadi waktunya parameter.
+#
+# `run_at` adalah jam **lokal** institusi (HH:MM) dan `utc_offset_minutes` menyatakan jarak zona
+# itu dari UTC. Repo belum punya tabel zona waktu (spec §22: simpan UTC, tampil lokal), jadi
+# selisih menit dipakai apa adanya; institusi dengan DST harus menyesuaikannya sendiri.
+- key: daycloser.auto.enabled
+  type: bool
+  scopes: [GLOBAL, INSTITUTION]
+  sensitivity: NORMAL
+  provenance:
+    class: kebijakan
+    note: "Saklar penjadwal harian. Default mati: tidak ada penutupan yang berjalan tanpa keputusan operator."
+  default_pack: { base: false }
+
+- key: daycloser.auto.run_at
+  type: string
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minLength: 5, maxLength: 5 }
+  sensitivity: NORMAL
+  provenance:
+    class: kebijakan
+    note: "Jam lokal penutupan otomatis (HH:MM). Bentuk selain HH:MM ditolak saat dibaca, bukan ditebak."
+  default_pack: { base: "23:30" }
+
+- key: daycloser.auto.utc_offset_minutes
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: -840, maximum: 840 }
+  sensitivity: NORMAL
+  provenance:
+    class: teknis
+    note: "Selisih zona institusi dari UTC dalam menit (WIB = 420). Batas ±14 jam = batas zona waktu dunia."
+  default_pack: { base: 0 }

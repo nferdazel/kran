@@ -10,6 +10,9 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 
 | key | kelas | disemai | penanda | catatan |
 |---|---|---|---|---|
+| `daycloser.auto.enabled` | kebijakan | base | - | Saklar penjadwal harian. Default mati: tidak ada penutupan yang berjalan tanpa keputusan operator. |
+| `daycloser.auto.run_at` | kebijakan | base | - | Jam lokal penutupan otomatis (HH:MM). Bentuk selain HH:MM ditolak saat dibaca, bukan ditebak. |
+| `daycloser.auto.utc_offset_minutes` | teknis | base | - | Selisih zona institusi dari UTC dalam menit (WIB = 420). Batas ±14 jam = batas zona waktu dunia. |
 | `daycloser.chunk_size` | teknis | base | - | Jumlah entitas per chunk. Angka awal 1000; disetel setelah benchmark EOD (T-140). |
 | `daycloser.max_attempts` | teknis | base | - | Percobaan maksimum per chunk/task sebelum dinyatakan FAILED. |
 | `daycloser.postcheck.subledger_gl_accounts` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Akun GL kewajiban untuk total subledger simpanan; pemetaan per jenis produk = open item. |
@@ -68,8 +71,8 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 
 | kelas | jumlah definisi |
 |---|---|
-| teknis | 18 |
-| kebijakan | 28 |
+| teknis | 19 |
+| kebijakan | 30 |
 | komersial-konservatif | 2 |
 | belum-bermakna | 0 |
 | regulasi-tidak-disemai | 5 |

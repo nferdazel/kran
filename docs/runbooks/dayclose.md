@@ -1,8 +1,19 @@
 # Runbook — penutupan buku (day-close)
 
 Kerangka `daycloser` (spec §11) menjalankan semua pekerjaan terjadwal institusi. **Tidak ada**
-batch/cron lain di modul mana pun (AGENTS.md §1.7). Sampai T-139 mendarat, penutupan dipicu
-operator lewat `ctl`; tidak ada penjadwal otomatis.
+batch/cron lain di modul mana pun (AGENTS.md §1.7). Penutupan bisa dipicu tiga cara, semuanya lewat
+jalur kode yang sama:
+
+| Pemicu | Kapan dipakai |
+|---|---|
+| `ctl daycloser-run` | operator menyiapkan/mengulang penutupan; satu-satunya jalur untuk `--bootstrap` |
+| `POST /api/v1/dayclose/run` (+ resume/pause/cancel) | tombol di layar `/app/dayclose` |
+| `ctl daycloser-auto` oleh timer systemd | penutupan harian otomatis sesuai jam parameter |
+
+Penjadwal memakai parameter `daycloser.auto.enabled` (default **mati**),
+`daycloser.auto.run_at` (jam **lokal** `HH:MM`), dan `daycloser.auto.utc_offset_minutes`
+(WIB = `420`). Unit + timer-nya ada di repo sebagai cermin (`ops/systemd/kran-dayclose.{service,timer}`);
+memasangnya butuh akses server dan **tidak** dilakukan `deploy-vps.sh`.
 
 Semua perintah dijalankan dari akar repo (atau `--root=<dir>`), dengan `KRAN_DATABASE_URL` yang
 menunjuk DB yang benar. Di server, bungkus dengan container API:
@@ -10,6 +21,27 @@ menunjuk DB yang benar. Di server, bungkus dengan container API:
 ```bash
 podman exec kran-api /usr/local/bin/kran-api --role=ctl daycloser-status
 ```
+
+## 0. Penjadwal otomatis (T-139b)
+
+```bash
+# Coba jalankan sekali secara manual (aman: tidak melakukan apa pun bila belum waktunya).
+podman exec kran-api /usr/local/bin/kran-api --role=ctl daycloser-auto; echo $?
+
+# Pasang di server (sekali):
+scp ops/systemd/kran-dayclose.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now kran-dayclose.timer
+systemctl --user list-timers kran-dayclose.timer
+```
+
+Kode keluar `daycloser-auto`: `0` = tidak ada yang perlu dikerjakan atau penutupan selesai,
+`1` = penutupan berjalan tetapi berakhir `BLOCKED`/`FAILED`/`PAUSED` (periksa
+`daycloser-status`, lalu resume/cancel), `2` = parameter tidak sah, `3` = ditolak keadaan
+(tanggal buku belum ada, atau bukan hari kerja). Log: `~/…/logs/dayclose-auto.log` di server.
+
+Bila jam tidak sesuai harapan: periksa `daycloser.auto.utc_offset_minutes`. Repo belum punya tabel
+zona waktu, jadi selisih menit itu yang dipakai — institusi dengan DST harus menyesuaikannya
+sendiri.
 
 ## 1. Keadaan yang mungkin
 

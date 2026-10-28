@@ -8,6 +8,9 @@ import ../rate
 import std/json
 
 const paramKeys*: seq[string] = @[
+  "daycloser.auto.enabled",
+  "daycloser.auto.run_at",
+  "daycloser.auto.utc_offset_minutes",
   "daycloser.chunk_size",
   "daycloser.max_attempts",
   "daycloser.postcheck.subledger_gl_accounts",
@@ -62,6 +65,12 @@ const paramKeys*: seq[string] = @[
   "teller.vault.cash_account",
   "teller.vault.limit_topup_per_request",
 ]
+
+const P_daycloser_auto_enabled* = ParamKey[bool]("daycloser.auto.enabled")
+
+const P_daycloser_auto_run_at* = ParamKey[string]("daycloser.auto.run_at")
+
+const P_daycloser_auto_utc_offset_minutes* = ParamKey[int64]("daycloser.auto.utc_offset_minutes")
 
 const P_daycloser_chunk_size* = ParamKey[int64]("daycloser.chunk_size")
 
@@ -170,6 +179,39 @@ const P_teller_vault_cash_account* = ParamKey[string]("teller.vault.cash_account
 const P_teller_vault_limit_topup_per_request* = ParamKey[Money]("teller.vault.limit_topup_per_request")
 
 const paramDefinitions*: seq[ParamDefinition] = @[
+  ParamDefinition(
+    key: "daycloser.auto.enabled",
+    module: "daycloser",
+    valueType: pvtBool,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.auto.enabled",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "daycloser.auto.run_at",
+    module: "daycloser",
+    valueType: pvtString,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.auto.run_at",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "daycloser.auto.utc_offset_minutes",
+    module: "daycloser",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.auto.utc_offset_minutes",
+    sinceVersion: "0.1.0",
+  ),
   ParamDefinition(
     key: "daycloser.chunk_size",
     module: "daycloser",

@@ -7,6 +7,6 @@
 ## Repositori DB sengaja tidak diekspor: test modul dan composition root boleh menyentuhnya,
 ## modul bisnis lain tidak (dijaga `tools/archcheck`).
 
-import ./domain/types
+import ./domain/[schedule, types]
 
-export types
+export schedule, types

@@ -17,6 +17,57 @@ export interface ParamDefinition {
 
 export const paramDefinitions: readonly ParamDefinition[] = [
   {
+    "key": "daycloser.auto.enabled",
+    "module": "daycloser",
+    "valueType": "bool",
+    "tsType": "boolean",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.auto.enabled",
+    "jsonSchema": null
+  },
+  {
+    "key": "daycloser.auto.run_at",
+    "module": "daycloser",
+    "valueType": "string",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.auto.run_at",
+    "jsonSchema": {
+      "minLength": 5,
+      "maxLength": 5
+    }
+  },
+  {
+    "key": "daycloser.auto.utc_offset_minutes",
+    "module": "daycloser",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.auto.utc_offset_minutes",
+    "jsonSchema": {
+      "minimum": -840,
+      "maximum": 840
+    }
+  },
+  {
     "key": "daycloser.chunk_size",
     "module": "daycloser",
     "valueType": "integer",
