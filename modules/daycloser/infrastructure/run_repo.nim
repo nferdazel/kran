@@ -253,6 +253,35 @@ proc latestRun*(db: DbConn; scopeType, scopeId: string): Option[RunSnapshot] =
     return some(db.snapshot(row[0]))
   none(RunSnapshot)
 
+proc activeRunFor*(db: DbConn; scopeType, scopeId: string): Option[RunSnapshot] =
+  ## Run yang masih berjalan untuk **satu** scope (spec §11.7 "UI monitor"). `activeRuns` sengaja
+  ## tidak dipakai di sini supaya status satu scope tidak menampilkan penutupan scope lain.
+  for row in db.getAllRows(sql"""
+      SELECT run_id::text FROM daycloser.run
+       WHERE scope_type = ? AND coalesce(scope_id, '') = ?
+         AND state IN ('PLANNED','PRECHECK','RUNNING','POSTCHECK','PAUSED')
+       ORDER BY business_date DESC, started_at DESC NULLS LAST
+       LIMIT 1""", scopeType, scopeId):
+    return some(db.snapshot(row[0]))
+  none(RunSnapshot)
+
+proc recentRuns*(db: DbConn; scopeType, scopeId: string; limit: int): seq[RunSnapshot] =
+  ## Riwayat run untuk satu scope, tanggal bisnis (lalu waktu mulai) terbaru lebih dulu.
+  for row in db.getAllRows(sql"""
+      SELECT run_id::text FROM daycloser.run
+       WHERE scope_type = ? AND coalesce(scope_id, '') = ?
+       ORDER BY business_date DESC, started_at DESC NULLS LAST
+       LIMIT ?::int""", scopeType, scopeId, $limit):
+    result.add db.snapshot(row[0])
+
+proc findSnapshot*(db: DbConn; runId: string): Option[RunSnapshot] =
+  ## `snapshot` melempar galat untuk run yang tidak ada (bagi orkestrator itu bug). Endpoint baca
+  ## memperlakukan "tidak ditemukan" sebagai jawaban biasa, jadi keberadaannya diperiksa dulu.
+  for row in db.getAllRows(sql"""
+      SELECT run_id::text FROM daycloser.run WHERE run_id = ?::uuid""", runId):
+    return some(db.snapshot(row[0]))
+  none(RunSnapshot)
+
 proc upsertRegistry*(db: DbConn; task: DayCloseTask) =
   db.exec(sql"""
     INSERT INTO daycloser.task_registry

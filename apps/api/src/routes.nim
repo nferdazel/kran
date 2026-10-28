@@ -13,6 +13,7 @@ import ./events
 import ./handlers_audit
 import ./handlers_auth
 import ./handlers_branches
+import ./handlers_dayclose
 import ./handlers_deposit
 import ./handlers_detail
 import ./handlers_journals
@@ -257,6 +258,18 @@ proc tellerVaultRoutes*(): seq[RouteSpec] =
               operationId: "rejectTellerVaultTopUp", handler: handleRejectTellerVaultTopUp),
   ]
 
+proc dayCloseRoutes*(): seq[RouteSpec] =
+  ## `daycloser` baca saja (T-139a): status tanggal buku, riwayat run, detail task/chunk.
+  ## Izin `dayclose.run.read`; aksi tulis menyusul di commit terpisah.
+  @[
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/dayclose/status",
+              operationId: "getDayCloseStatus", handler: handleDayCloseStatus),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/dayclose/runs",
+              operationId: "listDayCloseRuns", handler: handleListDayCloseRuns),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/dayclose/runs/{runId}",
+              operationId: "getDayCloseRun", handler: handleGetDayCloseRun),
+  ]
+
 proc branchRoutes*(): seq[RouteSpec] =
   ## Master cabang, baca saja (T-121/O-101). Penulisan tetap lewat `ctl create-branch`.
   @[
@@ -290,4 +303,4 @@ proc allRoutes*(): seq[RouteSpec] =
     partyRoutes() & kycRoutes() & detailRoutes() & ledgerRoutes() & journalRoutes() &
     productRoutes() &
     depositRoutes() & tellerRoutes() & tellerSessionRoutes() & tellerVaultRoutes() &
-    branchRoutes() & userRoutes() & eventRoutes()
+    branchRoutes() & userRoutes() & dayCloseRoutes() & eventRoutes()

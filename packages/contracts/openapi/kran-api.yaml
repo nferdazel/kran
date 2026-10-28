@@ -78,6 +78,11 @@ tags:
     description: |
       Data master platform: cabang (kode 3 digit + nama). Baca saja; pembuatan dan perubahan
       tetap lewat `ctl create-branch` (D-130).
+  - name: dayclose
+    description: |
+      Monitor penutupan buku (spec §11.7, T-139a): tanggal buku, riwayat run, dan detail
+      task/chunk. Baca saja — aksi run/resume/pause/cancel menyusul dan memakai jalur `ctl` yang
+      sama, bukan logika penutupan baru di HTTP.
 
 paths:
   /healthz:
@@ -3284,6 +3289,116 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/dayclose/status:
+    get:
+      operationId: getDayCloseStatus
+      tags: [dayclose]
+      summary: Status day-close
+      description: |
+        Tanggal buku institusi (tanggal, state, waktu beku), run yang sedang berjalan bila ada,
+        dan ringkasan run terakhir. `businessDate` bernilai `null` sebelum baris tanggal buku
+        dibuat (`ctl` bootstrap). Baca saja — tidak ada aksi penutupan di sini.
+      security:
+        - sessionCookie: []
+      responses:
+        "503":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "200":
+          description: Status tanggal buku dan run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DayCloseStatus"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/dayclose/runs:
+    get:
+      operationId: listDayCloseRuns
+      tags: [dayclose]
+      summary: Riwayat run day-close
+      description: |
+        Ringkasan run urut tanggal bisnis (lalu waktu mulai) terbaru lebih dulu. `limit` default
+        **20**, maksimum **100**; nilai di luar rentang itu atau bukan angka dijawab `400`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "503":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "200":
+          description: Daftar run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DayCloseRunList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/dayclose/runs/{runId}:
+    get:
+      operationId: getDayCloseRun
+      tags: [dayclose]
+      summary: Detail satu run day-close
+      description: |
+        Ringkasan run beserta state task dan chunk-nya. `runId` yang tidak ada maupun yang bukan
+        uuid dijawab `404` — keduanya berarti "run tidak ditemukan".
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "503":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "200":
+          description: Detail run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DayCloseRunDetail"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -4376,6 +4491,190 @@ components:
           minLength: 1
           maxLength: 500
           description: Alasan penutupan; masuk jejak audit.
+
+    DayCloseBusinessDate:
+      type: ["object", "null"]
+      additionalProperties: false
+      required: [date, state, frozenAt]
+      description: |
+        Tanggal buku institusi. `null` bila barisnya belum dibuat (bootstrap `ctl`).
+      properties:
+        date:
+          type: string
+          format: date
+        state:
+          type: string
+          enum: [OPEN, CLOSING, CLOSED]
+        frozenAt:
+          type: ["string", "null"]
+          description: ISO-8601 UTC saat state terakhir berubah; `null` selama `OPEN`.
+
+    DayCloseTaskCounts:
+      type: object
+      additionalProperties: false
+      required: [ok, failed, skipped, total]
+      properties:
+        ok:
+          type: integer
+          minimum: 0
+        failed:
+          type: integer
+          minimum: 0
+        skipped:
+          type: integer
+          minimum: 0
+        total:
+          type: integer
+          minimum: 0
+
+    DayCloseChunkState:
+      type: object
+      additionalProperties: false
+      required: [chunkNo, state, attempt, errorCode]
+      properties:
+        chunkNo:
+          type: integer
+          minimum: 0
+        state:
+          type: string
+          enum: [PENDING, RUNNING, SUCCEEDED, FAILED]
+        attempt:
+          type: integer
+          minimum: 0
+        errorCode:
+          type: ["string", "null"]
+          description: Kode stabil diagnostik, mis. `DAY-301`; `null` bila tidak ada galat.
+
+    DayCloseTaskState:
+      type: object
+      additionalProperties: false
+      required: [taskId, kind, critical, state, attempt, errorCode, reason, chunks]
+      properties:
+        taskId:
+          type: string
+        kind:
+          type: string
+          enum: [PRECHECK, PROCESS, POSTCHECK, REPORT]
+        critical:
+          type: boolean
+        state:
+          type: string
+          enum: [PENDING, READY, RUNNING, SUCCEEDED, FAILED, SKIPPED, CANCELED]
+        attempt:
+          type: integer
+          minimum: 0
+        errorCode:
+          type: ["string", "null"]
+        reason:
+          type: ["string", "null"]
+          description: |
+            Alasan task di-`SKIPPED`. Belum dipersistensi (hanya `error` yang tersimpan), jadi
+            saat ini selalu `null`; kontrak membiarkannya nullable untuk commit berikutnya.
+        chunks:
+          type: array
+          items:
+            $ref: "#/components/schemas/DayCloseChunkState"
+
+    DayCloseRunSummary:
+      type: object
+      additionalProperties: false
+      required: [runId, businessDate, scopeType, levels, state, startedAt, finishedAt,
+                 summaryHash, tasks]
+      properties:
+        runId:
+          type: string
+          format: uuid
+        businessDate:
+          type: string
+          format: date
+        scopeType:
+          type: string
+          enum: [INSTITUTION, BRANCH]
+        levels:
+          type: array
+          items:
+            type: string
+            enum: [EOD, EOW, EOM, EOQ, EOY]
+        state:
+          type: string
+          enum: [PLANNED, PRECHECK, RUNNING, POSTCHECK, COMPLETED, FAILED, BLOCKED, PAUSED,
+                 CANCELED]
+        startedAt:
+          type: string
+          description: ISO-8601 UTC.
+        finishedAt:
+          type: ["string", "null"]
+          description: ISO-8601 UTC; `null` selama run belum selesai.
+        summaryHash:
+          type: ["string", "null"]
+          description: Segel bukti hasil run; `null` sampai run `COMPLETED`.
+        tasks:
+          $ref: "#/components/schemas/DayCloseTaskCounts"
+
+    DayCloseRunDetail:
+      type: object
+      additionalProperties: false
+      required: [runId, businessDate, scopeType, levels, state, startedAt, finishedAt,
+                 summaryHash, tasks]
+      description: |
+        Ringkasan run + daftar task beserta chunk. Kunci `tasks` di sini **array**, bukan hitungan
+        seperti pada `DayCloseRunSummary`; hitungan tetap tersedia dari `GET /dayclose/runs` dan
+        `GET /dayclose/status`.
+      properties:
+        runId:
+          type: string
+          format: uuid
+        businessDate:
+          type: string
+          format: date
+        scopeType:
+          type: string
+          enum: [INSTITUTION, BRANCH]
+        levels:
+          type: array
+          items:
+            type: string
+            enum: [EOD, EOW, EOM, EOQ, EOY]
+        state:
+          type: string
+          enum: [PLANNED, PRECHECK, RUNNING, POSTCHECK, COMPLETED, FAILED, BLOCKED, PAUSED,
+                 CANCELED]
+        startedAt:
+          type: string
+        finishedAt:
+          type: ["string", "null"]
+        summaryHash:
+          type: ["string", "null"]
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/DayCloseTaskState"
+
+    DayCloseRunList:
+      type: object
+      additionalProperties: false
+      required: [runs]
+      properties:
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/DayCloseRunSummary"
+
+    DayCloseStatus:
+      type: object
+      additionalProperties: false
+      required: [businessDate, activeRun, latestRun]
+      properties:
+        businessDate:
+          $ref: "#/components/schemas/DayCloseBusinessDate"
+        activeRun:
+          oneOf:
+            - $ref: "#/components/schemas/DayCloseRunSummary"
+            - type: "null"
+        latestRun:
+          oneOf:
+            - $ref: "#/components/schemas/DayCloseRunSummary"
+            - type: "null"
 
     JournalLine:
       type: object

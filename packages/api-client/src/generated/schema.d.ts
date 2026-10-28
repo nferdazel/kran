@@ -1506,6 +1506,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/dayclose/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Status day-close
+         * @description Tanggal buku institusi (tanggal, state, waktu beku), run yang sedang berjalan bila ada,
+         *     dan ringkasan run terakhir. `businessDate` bernilai `null` sebelum baris tanggal buku
+         *     dibuat (`ctl` bootstrap). Baca saja — tidak ada aksi penutupan di sini.
+         */
+        get: operations["getDayCloseStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dayclose/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Riwayat run day-close
+         * @description Ringkasan run urut tanggal bisnis (lalu waktu mulai) terbaru lebih dulu. `limit` default
+         *     **20**, maksimum **100**; nilai di luar rentang itu atau bukan angka dijawab `400`.
+         */
+        get: operations["listDayCloseRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dayclose/runs/{runId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detail satu run day-close
+         * @description Ringkasan run beserta state task dan chunk-nya. `runId` yang tidak ada maupun yang bukan
+         *     uuid dijawab `404` — keduanya berarti "run tidak ditemukan".
+         */
+        get: operations["getDayCloseRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2042,6 +2106,91 @@ export interface components {
         PeriodCloseRequest: {
             /** @description Alasan penutupan; masuk jejak audit. */
             reason: string;
+        };
+        /** @description Tanggal buku institusi. `null` bila barisnya belum dibuat (bootstrap `ctl`). */
+        DayCloseBusinessDate: {
+            /** Format: date */
+            date: string;
+            /** @enum {string} */
+            state: "OPEN" | "CLOSING" | "CLOSED";
+            /** @description ISO-8601 UTC saat state terakhir berubah; `null` selama `OPEN`. */
+            frozenAt: string | null;
+        } | null;
+        DayCloseTaskCounts: {
+            ok: number;
+            failed: number;
+            skipped: number;
+            total: number;
+        };
+        DayCloseChunkState: {
+            chunkNo: number;
+            /** @enum {string} */
+            state: "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED";
+            attempt: number;
+            /** @description Kode stabil diagnostik, mis. `DAY-301`; `null` bila tidak ada galat. */
+            errorCode: string | null;
+        };
+        DayCloseTaskState: {
+            taskId: string;
+            /** @enum {string} */
+            kind: "PRECHECK" | "PROCESS" | "POSTCHECK" | "REPORT";
+            critical: boolean;
+            /** @enum {string} */
+            state: "PENDING" | "READY" | "RUNNING" | "SUCCEEDED" | "FAILED" | "SKIPPED" | "CANCELED";
+            attempt: number;
+            errorCode: string | null;
+            /**
+             * @description Alasan task di-`SKIPPED`. Belum dipersistensi (hanya `error` yang tersimpan), jadi
+             *     saat ini selalu `null`; kontrak membiarkannya nullable untuk commit berikutnya.
+             */
+            reason: string | null;
+            chunks: components["schemas"]["DayCloseChunkState"][];
+        };
+        DayCloseRunSummary: {
+            /** Format: uuid */
+            runId: string;
+            /** Format: date */
+            businessDate: string;
+            /** @enum {string} */
+            scopeType: "INSTITUTION" | "BRANCH";
+            levels: ("EOD" | "EOW" | "EOM" | "EOQ" | "EOY")[];
+            /** @enum {string} */
+            state: "PLANNED" | "PRECHECK" | "RUNNING" | "POSTCHECK" | "COMPLETED" | "FAILED" | "BLOCKED" | "PAUSED" | "CANCELED";
+            /** @description ISO-8601 UTC. */
+            startedAt: string;
+            /** @description ISO-8601 UTC; `null` selama run belum selesai. */
+            finishedAt: string | null;
+            /** @description Segel bukti hasil run; `null` sampai run `COMPLETED`. */
+            summaryHash: string | null;
+            tasks: components["schemas"]["DayCloseTaskCounts"];
+        };
+        /**
+         * @description Ringkasan run + daftar task beserta chunk. Kunci `tasks` di sini **array**, bukan hitungan
+         *     seperti pada `DayCloseRunSummary`; hitungan tetap tersedia dari `GET /dayclose/runs` dan
+         *     `GET /dayclose/status`.
+         */
+        DayCloseRunDetail: {
+            /** Format: uuid */
+            runId: string;
+            /** Format: date */
+            businessDate: string;
+            /** @enum {string} */
+            scopeType: "INSTITUTION" | "BRANCH";
+            levels: ("EOD" | "EOW" | "EOM" | "EOQ" | "EOY")[];
+            /** @enum {string} */
+            state: "PLANNED" | "PRECHECK" | "RUNNING" | "POSTCHECK" | "COMPLETED" | "FAILED" | "BLOCKED" | "PAUSED" | "CANCELED";
+            startedAt: string;
+            finishedAt: string | null;
+            summaryHash: string | null;
+            tasks: components["schemas"]["DayCloseTaskState"][];
+        };
+        DayCloseRunList: {
+            runs: components["schemas"]["DayCloseRunSummary"][];
+        };
+        DayCloseStatus: {
+            businessDate: components["schemas"]["DayCloseBusinessDate"];
+            activeRun: components["schemas"]["DayCloseRunSummary"] | null;
+            latestRun: components["schemas"]["DayCloseRunSummary"] | null;
         };
         JournalLine: {
             lineNo: number;
@@ -5104,6 +5253,90 @@ export interface operations {
             404: components["responses"]["Problem"];
             405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    getDayCloseStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Status tanggal buku dan run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayCloseStatus"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    listDayCloseRuns: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayCloseRunList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    getDayCloseRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Detail run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayCloseRunDetail"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
             503: components["responses"]["Problem"];
