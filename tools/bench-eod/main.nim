@@ -12,8 +12,10 @@
 ##
 ## **Cakupan yang diukur.** Rekening seed tidak diberi `maturity_date`/`aro_instruction`, jadi task
 ## `deposit.maturity_aro` hanya memindai halaman tanpa memindahkan uang; tanggal buku bawaan juga
-## bukan hari kerja terakhir bulan, jadi `ledger.period_close` tidak berjalan. Angka yang keluar =
-## jalur **akrual + dormant + snapshot + gate**. Jalur tulis jatuh tempo dan tutup periode diukur di
+## bukan hari kerja terakhir bulan, jadi `ledger.period_close` tidak berjalan. Task dormant juga
+## hanya **memindai**: rekening seed beraktivitas pada tanggal buku (cutoff 12 bulan ke belakang),
+## sehingga tidak ada transisi status. Angka yang keluar = jalur **akrual + pemindaian dormant +
+## snapshot + gate**. Jalur tulis jatuh tempo, transisi dormant, dan tutup periode diukur di
 ## simulasi 12 bulan (`apps/api/tests/itdaycloser_sim.nim`), bukan di sini.
 ##
 ## **Keamanan.** Alat ini **menghapus seluruh schema** sebelum menyemai. Ia menolak berjalan bila
