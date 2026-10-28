@@ -18,6 +18,7 @@
 #   ./task dbtools migrate|status|validate   SQL migrations (requires KRAN_DATABASE_URL)
 #   ./task scaffold <name> [--dry-run]       scaffold a new module (spec §5.5)
 #   ./task bench-password [--iterations N]   benchmark password hashing cost (T-060)
+#   ./task bench-eod --accounts N             seed N rekening sintetis + ukur satu EOD (T-140)
 #   ./task help
 #
 # Pure POSIX script chosen over Taskfile/just: zero new tooling dependencies,
@@ -523,6 +524,14 @@ case "${1:-help}" in
     nim c -d:release $NIMFLAGS --out:"$BIN/bench-password" "$ROOT/tools/bench-password/main.nim" >/dev/null \
       || die "failed to build bench-password tool"
     exec "$BIN/bench-password" "$@"
+    ;;
+  bench-eod)
+    # `-d:release` sama seperti biner produksi: yang diukur EOD, bukan biaya build debug.
+    shift
+    mkdir -p "$BIN"
+    nim c -d:release $NIMFLAGS --out:"$BIN/bench-eod" "$ROOT/tools/bench-eod/main.nim" >/dev/null \
+      || die "failed to build bench-eod tool"
+    exec "$BIN/bench-eod" "$@"
     ;;
   help | -h | --help) cmd_help ;;
   *) die "unknown command: $1 (try ./task help)" ;;
