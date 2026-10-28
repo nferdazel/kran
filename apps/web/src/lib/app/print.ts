@@ -109,8 +109,16 @@ export function statementKindLabel(kind: StatementRow["kind"]): string {
   return template === undefined ? kind : template();
 }
 
+const STATEMENT_STATUS_LABELS: Record<AccountStatement["status"], () => string> = {
+  ACTIVE: () => m.statement_status_active(),
+  CLOSED: () => m.statement_status_closed(),
+  DORMANT: () => m.statement_status_dormant(),
+};
+
+/** Label status rekening di rekening koran. Dormant bukan "ditutup" — rekeningnya masih hidup. */
 export function statementStatusLabel(status: AccountStatement["status"]): string {
-  return status === "ACTIVE" ? m.statement_status_active() : m.statement_status_closed();
+  const template = STATEMENT_STATUS_LABELS[status];
+  return template === undefined ? status : template();
 }
 
 /** Tanda arah ditulis sebagai tanda + kata, bukan warna saja (spec §15.4). */

@@ -167,10 +167,11 @@ Keputusan per `aro_instruction` (D-155):
 - **Bunga yang dipindahkan** = `cumulative` akrual terakhir rekening itu (bunga yang sudah dijurnal
   `InterestAccrued` tetapi belum dibayar); rekening tanpa baris akrual = bunga 0.
 - **Tenor perpanjangan** = tenor semula (`maturity_date − opened_on`), dihitung dari jatuh tempo lama.
-- **Prasyarat**: rekening simpanan `ACTIVE` milik party yang sama di cabang yang sama
-  (`activeSavingsAccount`, urut `account_no`), **tanpa** simpanan POKOK/WAJIB — GL-nya ekuitas
+- **Prasyarat**: rekening simpanan `ACTIVE` **atau `DORMANT`** milik party yang sama di cabang yang
+  sama (`activeSavingsAccount`, urut `account_no`), **tanpa** simpanan POKOK/WAJIB — GL-nya ekuitas
   `301.x` sedangkan perpindahan ini mengkredit `201`, dan penarikan POKOK/WAJIB diblokir. Tidak ada
-  yang memenuhi → `DAY-343` (pola `DAY-301`), bukan "tidak berlaku". Bila anggota punya beberapa
+  yang memenuhi → `DAY-343` (pola `DAY-301`), bukan "tidak berlaku". Rekening `DORMANT` direaktivasi
+  task `deposit.dormant` pada penutupan yang sama (D-157 amendemen 1). Bila anggota punya beberapa
   tabungan, yang dipakai adalah yang nomornya paling kecil (paling awal dibuka).
 - **Idempoten**: keadaan berubah di transaksi yang sama (`CLOSED` atau `maturity_date` maju), jadi
   rekening yang sudah diproses tidak lagi masuk halaman; kunci jurnal `maturity:<akun>:<tanggal>` dan
@@ -213,7 +214,10 @@ mengembalikan `DORMANT` ke `ACTIVE` begitu ada aktivitas lagi.
 - **Batas** memakai `<` terhadap `tanggal buku − N bulan` (aritmetika kalender PostgreSQL).
 - **Populasi yang dipaginasi** = `ACTIVE` + `DORMANT`, sehingga perpindahan status di antara
   keduanya tidak menggeser offset.
-- **Tidak ada uang yang bergerak**: hanya `status` dan `updated_by` yang ditulis.
+- **Tidak ada uang yang bergerak**: hanya `status`, `updated_by`, dan `updated_at` yang ditulis.
+  Keputusan diulang **di dalam** `UPDATE` (`markDormantIfStale`/`reactivateIfActive`), jadi setoran
+  yang commit setelah halaman dibaca tidak diabaikan. Audit per transisi belum ada (O-113), dan
+  penutupan otomatis rekening dormant belum diputuskan (O-114).
 - Rekening `DORMANT` **tetap diakrualkan** (akrual memakai `status <> 'CLOSED'`) dan **tetap menerima
   setoran tunai**; penarikan/PB ditolak `409 account_not_active` sampai aturan penolakan transaksi
   dormant diputuskan.

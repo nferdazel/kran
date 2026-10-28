@@ -1094,6 +1094,32 @@ suite "teller: otorisasi cabang & keadaan rekening":
     check withdraw.body["params"]["reason"].getStr() == "account_not_active"
     check balanceOf(accountId) == "20.00"
 
+  test "PB dari atau ke rekening DORMANT → 409 account_not_active tanpa mutasi":
+    # D-157 butir 4: dormant membatasi layanan keluar. PB **dari** dormant jelas keluar; PB **ke**
+    # dormant juga ditolak karena guard status di handler berlaku untuk kedua sisi.
+    let token = tokenOf(login(MakerUser))
+    let dormantId = freshAccount()
+    let normalId = freshAccount()
+    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+      exec(d, sql"UPDATE deposit.account SET status = 'DORMANT' WHERE account_id = ?", dormantId)
+      1)
+    discard postJson(CashPath, cashBody(normalId, "DEPOSIT", "100.00"), token)
+
+    let fromDormant = postJson(TransferPath, transferBody(dormantId, normalId, "10.00"), token)
+    check fromDormant.code == 409
+    checkProblem(TransferPath, "POST", "409", fromDormant.body)
+    check fromDormant.body["params"]["reason"].getStr() == "account_not_active"
+
+    let toDormant = postJson(TransferPath, transferBody(normalId, dormantId, "10.00"), token)
+    check toDormant.code == 409
+    checkProblem(TransferPath, "POST", "409", toDormant.body)
+    check toDormant.body["params"]["reason"].getStr() == "account_not_active"
+
+    check balanceOf(normalId) == "100.00"
+    check balanceOf(dormantId) == "0.00"
+    check transferCount(dormantId) == 0
+    check transferCount(normalId) == 0
+
   test "event tanpa posting rule → ValueError, tanpa jurnal":
     var raised = false
     try:

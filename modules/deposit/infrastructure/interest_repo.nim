@@ -42,8 +42,8 @@ type
 
 proc countAccrualAccounts*(db: DbConn): int64 =
   ## Jumlah rekening yang akan diakrualkan. `status <> 'CLOSED'` (bukan daftar nilai) supaya
-  ## DORMANT — yang belum ada di CHECK sampai T-138e — otomatis ikut, sesuai keputusan pemilik:
-  ## dormant membatasi transaksi, bukan perjanjian bunga.
+  ## `DORMANT` (`0071`) otomatis ikut tanpa mengubah task, sesuai keputusan pemilik: dormant
+  ## membatasi transaksi, bukan perjanjian bunga (D-154 butir 1, D-157).
   int64(parseInt(db.getValue(sql"""
     SELECT count(*)::text FROM deposit.account
      WHERE account_type = 'TIME_DEPOSIT' AND status <> 'CLOSED'""")))

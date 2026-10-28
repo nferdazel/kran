@@ -606,15 +606,17 @@ proc runDormantChunk(pool: DbPool; ctx: TaskContext; chunk: Chunk): TaskResult =
   try:
     discard pool.withTx(proc(db: DbConn): int =
       for item in items:
+        # Keputusan dihitung ulang di dalam `UPDATE` (predikat yang sama dengan halaman): halaman
+        # dibaca di transaksi lain, jadi setoran yang commit di antaranya tidak boleh diabaikan.
         if item.stale and item.status == asActive:
-          setAccountStatus(db, item.accountId, asDormant, systemActor)
-          inc dormanted
+          if markDormantIfStale(db, item.accountId, ctx.businessDate, months, systemActor):
+            inc dormanted
         elif not item.stale and item.status == asDormant:
           # Reaktivasi otomatis saat ada aktivitas (D-157): menahan rekening tetap dormant setelah
           # setoran hanya akan membuat anggota menunggu tanpa sebab, dan penolakan transaksi
           # dormant sendiri belum diputuskan (D-152 butir 4).
-          setAccountStatus(db, item.accountId, asActive, systemActor)
-          inc reactivated
+          if reactivateIfActive(db, item.accountId, ctx.businessDate, months, systemActor):
+            inc reactivated
       1)
   except IOError as e:
     return err[TaskOutcome, TaskError](taskError("DAY-353",

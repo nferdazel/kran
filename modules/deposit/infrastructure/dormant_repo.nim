@@ -73,9 +73,42 @@ proc dormantCandidatesPage*(db: DbConn; businessDate: string; afterMonths, offse
       lastActivity: row[2],
       stale: row[3] == "t")
 
-proc setAccountStatus*(db: DbConn; accountId: Id; status: AccountStatus; actor: Id) =
-  ## Satu-satunya tulisan task dormant: status rekening + jejak `updated_by`. Tidak menyentuh saldo,
-  ## baris transaksi, atau jurnal — menandai dormant bukan peristiwa akuntansi.
-  db.exec(sql"""
-    UPDATE deposit.account SET status = ?, updated_by = ?
-     WHERE account_id = ?""", $status, $actor, $accountId)
+const
+  ## Ekspresi aktivitas terakhir yang sama dengan kueri halaman. Dipakai ulang di `UPDATE` supaya
+  ## keputusan status dihitung **di dalam** pernyataan tulis: setoran yang commit di antara baca
+  ## halaman dan tulis tidak boleh diabaikan (review T-138e; pola yang sama dengan O-112).
+  lastActivityExpr = """greatest(
+        a.opened_on,
+        coalesce((SELECT max(t.business_date) FROM deposit.transaction t
+                   WHERE t.account_id = a.account_id), a.opened_on),
+        coalesce((SELECT max(p.business_date) FROM deposit.transfer p
+                   WHERE p.source_account_id = a.account_id
+                      OR p.destination_account_id = a.account_id), a.opened_on))"""
+
+proc markDormantIfStale*(db: DbConn; accountId: Id; businessDate: string; afterMonths: int;
+                         actor: Id): bool =
+  ## Menandai `DORMANT` **hanya bila** rekening masih `ACTIVE` dan aktivitas terakhirnya memang
+  ## lebih lama dari ambang. `true` = baris berubah.
+  for _ in db.getAllRows(sql("""
+      UPDATE deposit.account a
+         SET status = 'DORMANT', updated_by = ?, updated_at = now()
+       WHERE a.account_id = ? AND a.status = 'ACTIVE'
+         AND """ & lastActivityExpr &
+      """ < ?::date - make_interval(months => ?::int)
+      RETURNING a.account_id::text"""), $actor, $accountId, businessDate, $afterMonths):
+    return true
+  false
+
+proc reactivateIfActive*(db: DbConn; accountId: Id; businessDate: string; afterMonths: int;
+                         actor: Id): bool =
+  ## Mengembalikan `DORMANT` ke `ACTIVE` bila rekening sudah beraktivitas lagi (D-157 butir 3).
+  ## `true` = baris berubah.
+  for _ in db.getAllRows(sql("""
+      UPDATE deposit.account a
+         SET status = 'ACTIVE', updated_by = ?, updated_at = now()
+       WHERE a.account_id = ? AND a.status = 'DORMANT'
+         AND """ & lastActivityExpr &
+      """ >= ?::date - make_interval(months => ?::int)
+      RETURNING a.account_id::text"""), $actor, $accountId, businessDate, $afterMonths):
+    return true
+  false

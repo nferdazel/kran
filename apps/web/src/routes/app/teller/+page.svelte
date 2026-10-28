@@ -50,6 +50,7 @@
     SHORTCUT_PARAM_KEYS,
     cashIdentity,
     ACCOUNT_NO_MAX_LENGTH,
+    accountStatusLabel,
     loadDepositAccountByNo,
     newIdempotencyKey,
     postCashTransaction,
@@ -889,7 +890,7 @@
             </div>
             <span class={loaded.status === "ACTIVE" ? "kran-badge kran-badge--ok" : "kran-badge"}>
               <span aria-hidden="true">{loaded.status === "ACTIVE" ? "✔" : "○"}</span>
-              <span>{loaded.status === "ACTIVE" ? m.teller_account_status_active() : m.teller_account_status_closed()}</span>
+              <span>{accountStatusLabel(loaded.status)}</span>
             </span>
           </div>
 

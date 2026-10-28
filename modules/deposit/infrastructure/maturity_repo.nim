@@ -93,6 +93,11 @@ proc activeSavingsAccount*(db: DbConn; partyId, branchId: Id): Option[Id] =
   ## `ORDER BY account_no LIMIT 1` = rekening pertama yang dibuka; pemilihan rekening tujuan bukan
   ## keputusan repo, dan anggota dengan beberapa tabungan memakai yang paling awal dibuka.
   ##
+  ## **Rekening `DORMANT` boleh menjadi target.** Kredit jatuh tempo adalah aktivitas rekening, dan
+  ## task `deposit.dormant` berjalan sesudah task ini sehingga pada penutupan yang sama rekening itu
+  ## kembali `ACTIVE` (D-157 butir 3). Menolaknya akan membuat deposito anggota berakhir `DAY-343`
+  ## hanya karena tabungannya lama tidak dipakai — dan reaktivasi tidak akan pernah terjadi.
+  ##
   ## **Simpanan POKOK/WAJIB dikecualikan.** GL-nya ekuitas (`301.1`/`301.2`, `ledger/0014`),
   ## sedangkan perpindahan jatuh tempo mengkredit `201` (0065/0069); uang yang mendarat di sana akan
   ## salah klasifikasi **dan** tidak bisa ditarik (penarikan POKOK/WAJIB diblokir sejak T-111).
@@ -102,7 +107,7 @@ proc activeSavingsAccount*(db: DbConn; partyId, branchId: Id): Option[Id] =
     SELECT a.account_id
       FROM deposit.account a
       JOIN product.product p ON p.product_id = a.product_id
-     WHERE a.account_type = 'SAVINGS' AND a.status = 'ACTIVE'
+     WHERE a.account_type = 'SAVINGS' AND a.status IN ('ACTIVE', 'DORMANT')
        AND a.party_id = ? AND a.branch_id = ?
        AND coalesce(p.savings_kind, '') NOT IN ('POKOK', 'WAJIB')
      ORDER BY a.account_no
