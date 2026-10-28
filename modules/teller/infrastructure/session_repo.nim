@@ -129,6 +129,34 @@ proc openSessionCount*(db: DbConn, startsOn, endsOn: string): int64 =
      WHERE s.status = 'OPEN'
        AND s.business_date BETWEEN ?::date AND ?::date""", startsOn, endsOn).parseBiggestInt
 
+type
+  SessionGate* = object
+    ## Rekap sesi yang menghalangi penutupan (spec §11.5 #2): masih `OPEN`, atau sudah `CLOSED`
+    ## dengan kas tidak seimbang. `problemIds` dibatasi supaya bukti tidak membengkak.
+    openSessions*: int64
+    unbalanced*: int64
+    problemIds*: seq[string]
+
+proc sessionGate*(db: DbConn, upToDate: string; idLimit = 20): SessionGate =
+  ## `upToDate` inklusif: sesi yang masih terbuka dari hari sebelumnya juga menghalangi penutupan
+  ## hari ini — justru itu keadaan yang paling perlu dilihat.
+  let counts = db.getAllRows(sql"""
+    SELECT count(*) FILTER (WHERE status = 'OPEN')::text,
+           count(*) FILTER (WHERE status = 'CLOSED' AND variance <> 0)::text
+      FROM teller.teller_session
+     WHERE business_date <= ?::date""", upToDate)
+  if counts.len > 0:
+    result.openSessions = parseBiggestInt(counts[0][0]).int64
+    result.unbalanced = parseBiggestInt(counts[0][1]).int64
+  for row in db.getAllRows(sql"""
+      SELECT session_id::text
+        FROM teller.teller_session
+       WHERE business_date <= ?::date
+         AND (status = 'OPEN' OR (status = 'CLOSED' AND variance <> 0))
+       ORDER BY business_date, session_id
+       LIMIT ?""", upToDate, idLimit):
+    result.problemIds.add row[0]
+
 proc sessionById*(db: DbConn, sessionId: Id): Option[TellerSession] =
   let rows = db.getAllRows(
     sql("SELECT " & sessionColumns & " FROM teller.teller_session WHERE session_id = ?"), $sessionId)

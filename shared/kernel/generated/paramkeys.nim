@@ -10,6 +10,8 @@ import std/json
 const paramKeys*: seq[string] = @[
   "daycloser.chunk_size",
   "daycloser.max_attempts",
+  "daycloser.postcheck.subledger_gl_accounts",
+  "daycloser.precheck.suspense_accounts",
   "daycloser.retry_backoff_seconds",
   "daycloser.txn_policy_during_close",
   "ledger.coa.code_pattern",
@@ -64,6 +66,10 @@ const paramKeys*: seq[string] = @[
 const P_daycloser_chunk_size* = ParamKey[int64]("daycloser.chunk_size")
 
 const P_daycloser_max_attempts* = ParamKey[int64]("daycloser.max_attempts")
+
+const P_daycloser_postcheck_subledger_gl_accounts* = ParamKey[JsonNode]("daycloser.postcheck.subledger_gl_accounts")
+
+const P_daycloser_precheck_suspense_accounts* = ParamKey[JsonNode]("daycloser.precheck.suspense_accounts")
 
 const P_daycloser_retry_backoff_seconds* = ParamKey[int64]("daycloser.retry_backoff_seconds")
 
@@ -184,6 +190,28 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.daycloser.max_attempts",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "daycloser.postcheck.subledger_gl_accounts",
+    module: "daycloser",
+    valueType: pvtJson,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.postcheck.subledger_gl_accounts",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "daycloser.precheck.suspense_accounts",
+    module: "daycloser",
+    valueType: pvtJson,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.precheck.suspense_accounts",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(

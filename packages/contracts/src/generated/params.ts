@@ -53,6 +53,40 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "daycloser.postcheck.subledger_gl_accounts",
+    "module": "daycloser",
+    "valueType": "json",
+    "tsType": "unknown",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.postcheck.subledger_gl_accounts",
+    "jsonSchema": {
+      "type": "array"
+    }
+  },
+  {
+    "key": "daycloser.precheck.suspense_accounts",
+    "module": "daycloser",
+    "valueType": "json",
+    "tsType": "unknown",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.precheck.suspense_accounts",
+    "jsonSchema": {
+      "type": "array"
+    }
+  },
+  {
     "key": "daycloser.retry_backoff_seconds",
     "module": "daycloser",
     "valueType": "integer",

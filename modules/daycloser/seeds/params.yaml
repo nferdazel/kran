@@ -54,3 +54,33 @@
     compliance: NEEDS-COMPLIANCE-REVIEW
     note: "Pilihan kebijakan operasional institusi; nilai ALLOW belum diuji terhadap task penutup nyata (T-140)."
   default_pack: { base: REJECT }
+
+# Akun yang wajib bersaldo nol sebelum penutupan (spec §11.5 #2 "suspense = 0"). Akun antar-kantor
+# belum ada di COA Fase 3; yang ada adalah `101.9 SELISIH KAS` (selisih kas teller yang belum
+# diselesaikan). Daftar ini parameter, bukan literal di kode, supaya institusi bisa menambah akun
+# suspense lain tanpa mengubah gate. Saldo dinilai menurut `account_type` COA (aset: debit−kredit).
+- key: daycloser.precheck.suspense_accounts
+  type: json
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { type: array }
+  sensitivity: NORMAL
+  provenance:
+    class: kebijakan
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: "Daftar akun selisih/suspense yang wajib nol sebelum tutup; nilai awal hanya 101.9 karena akun antar-kantor belum ada."
+  default_pack: { base: ["101.9"] }
+
+# Akun GL kewajiban yang menampung subledger simpanan (spec §11.5 #5 "saldo subledger = GL").
+# 201 SIMPANAN ANGGOTA, 202 SIMPANAN BERJANGKA (COA dasar). Gate membandingkan **total** subledger
+# dengan total akun-akun ini: pemetaan per jenis produk belum ada, dan pemetaan per rekening tidak
+# mungkin karena jurnal pemindahbukuan sengaja net-nol di akun yang sama.
+- key: daycloser.postcheck.subledger_gl_accounts
+  type: json
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { type: array }
+  sensitivity: NORMAL
+  provenance:
+    class: kebijakan
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: "Akun GL kewajiban untuk total subledger simpanan; pemetaan per jenis produk = open item."
+  default_pack: { base: ["201", "202"] }

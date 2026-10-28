@@ -1,7 +1,7 @@
 ## Query laporan (T-075). Trial balance dihitung dari `journal_line` (sumber kebenaran), bukan
 ## dari cache `balance_snapshot`.
 
-import std/options
+import std/[options, strutils]
 
 import kernel/[ids, money]
 
@@ -100,3 +100,18 @@ proc rebuildSnapshot*(db: DbConn, asOf: string) =
   ## Fungsi SQL mengembalikan satu baris (void); `exec` pada SELECT yang mengembalikan hasil
   ## menghasilkan error kosong di driver, jadi hasilnya dibaca lewat `getValue` dan dibuang.
   discard db.getValue(sql"SELECT ledger.rebuild_balance_snapshot(?::date)", asOf)
+
+proc latePostings*(db: DbConn, businessDate, frozenAtIso: string;
+                   idLimit = 20): tuple[count: int64, ids: seq[string]] =
+  ## Jurnal bertanggal `businessDate` yang **direkam setelah** tanggal dibekukan. Gerbang HTTP
+  ## adalah cek-lalu-jalan (TOCTOU): permintaan yang lolos sebelum freeze bisa commit sesudahnya.
+  ## Gate ini yang menangkapnya, bukan asumsi bahwa race tidak terjadi.
+  for row in db.getAllRows(sql"""
+      SELECT journal_id::text, count(*) OVER ()::text
+        FROM ledger.journal
+       WHERE business_date = ?::date
+         AND recorded_at > ?::timestamptz
+       ORDER BY recorded_at, journal_id
+       LIMIT ?""", businessDate, frozenAtIso, idLimit):
+    result.ids.add row[0]
+    result.count = parseBiggestInt(row[1]).int64

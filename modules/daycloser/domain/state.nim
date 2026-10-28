@@ -75,7 +75,7 @@ proc canTransition*(current, next: RunState): bool =
   of rsPlanned: next in {rsPrecheck, rsCanceled}
   of rsPrecheck: next in {rsRunning, rsBlocked, rsFailed, rsPaused, rsCanceled}
   of rsRunning: next in {rsPostcheck, rsFailed, rsPaused, rsCanceled}
-  of rsPostcheck: next in {rsCompleted, rsFailed, rsPaused, rsCanceled}
+  of rsPostcheck: next in {rsCompleted, rsBlocked, rsFailed, rsPaused, rsCanceled}
   # Resume selalu masuk kembali lewat PRECHECK; fase yang sudah selesai dilewati berdasarkan
   # state task, sehingga orkestrator tidak perlu mengingat "paused di fase mana".
   of rsPaused: next in {rsPrecheck, rsCanceled}

@@ -84,9 +84,10 @@ type
     rcCancel = "CANCEL"
 
   TaskError* = object
-    code*: string    ## kode stabil untuk log/UI (bukan kalimat untuk pengguna)
-    message*: string ## diagnostik
-    retryable*: bool ## boleh dicoba ulang pada chunk yang sama
+    code*: string      ## kode stabil untuk log/UI (bukan kalimat untuk pengguna)
+    message*: string   ## diagnostik
+    retryable*: bool   ## boleh dicoba ulang pada chunk yang sama
+    metrics*: JsonNode ## bukti yang menyebabkan kegagalan (mis. jumlah sesi terbuka); boleh nil
 
   TaskOutcome* = object
     skipped*: bool     ## task tidak relevan untuk segmen/hari ini (spec §11.7 "skip by rule")
@@ -131,8 +132,11 @@ type
     ## sama dengan kegagalan task.
     verify*: proc(ctx: TaskContext): TaskResult {.closure.}
 
-proc taskError*(code, message: string, retryable = false): TaskError =
-  TaskError(code: code, message: message, retryable: retryable)
+proc taskError*(code, message: string, retryable = false,
+                metrics: JsonNode = nil): TaskError =
+  ## `metrics` terpisah dari pesan: `error` menyimpan diagnosis, `metrics` angka yang bisa
+  ## dibandingkan antar run (bukti gate tetap ada walau gate gagal).
+  TaskError(code: code, message: message, retryable: retryable, metrics: metrics)
 
 proc okOutcome*(metrics: JsonNode = nil): TaskOutcome =
   TaskOutcome(metrics: metrics)

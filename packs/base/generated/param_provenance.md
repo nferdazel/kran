@@ -12,6 +12,8 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 |---|---|---|---|---|
 | `daycloser.chunk_size` | teknis | base | - | Jumlah entitas per chunk. Angka awal 1000; disetel setelah benchmark EOD (T-140). |
 | `daycloser.max_attempts` | teknis | base | - | Percobaan maksimum per chunk/task sebelum dinyatakan FAILED. |
+| `daycloser.postcheck.subledger_gl_accounts` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Akun GL kewajiban untuk total subledger simpanan; pemetaan per jenis produk = open item. |
+| `daycloser.precheck.suspense_accounts` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Daftar akun selisih/suspense yang wajib nol sebelum tutup; nilai awal hanya 101.9 karena akun antar-kantor belum ada. |
 | `daycloser.retry_backoff_seconds` | teknis | base | - | Jeda tetap antar percobaan. Backoff eksponensial menyusul bersama worker pool (T-140). |
 | `daycloser.txn_policy_during_close` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Pilihan kebijakan operasional institusi; nilai ALLOW belum diuji terhadap task penutup nyata (T-140). |
 | `ledger.coa.code_pattern` | teknis | base | - | - |
@@ -67,7 +69,7 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | kelas | jumlah definisi |
 |---|---|
 | teknis | 18 |
-| kebijakan | 26 |
+| kebijakan | 28 |
 | komersial-konservatif | 2 |
 | belum-bermakna | 0 |
 | regulasi-tidak-disemai | 5 |

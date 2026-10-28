@@ -301,15 +301,22 @@ proc executeRun*(registry: Registry; store: Store; runId: string;
         log("run " & runId & " dipause operator di batas chunk")
         return outcomeOf(store, runId, rsPaused)
       store.setTaskState(runId, task.id, r.state, now(),
-        (if r.state == tsFailed: errorJson(r.err) else: nil), r.metrics)
+        (if r.state == tsFailed: errorJson(r.err) else: nil),
+        (if not r.metrics.isNil: r.metrics else: r.err.metrics))
       log(task.id & " → " & $r.state &
           (if r.state == tsSkipped: " (" & r.reason & ")" else: ""))
 
       if r.state == tsFailed:
         if task.critical:
-          store.setRunState(runId, rsFailed, now(), "")
-          log("run " & runId & " GAGAL: task kritis " & task.id & " (" & r.err.code & ")")
-          return outcomeOf(store, runId, rsFailed)
+          # Gate yang gagal **memblokir** penutupan; task proses yang gagal menandai run rusak.
+          # Bedanya penting bagi operator: BLOCKED = buku belum layak ditutup (perbaiki keadaan),
+          # FAILED = eksekusinya sendiri sakit (perbaiki sistem). Keduanya bisa di-resume.
+          let halted = if task.kind in {tkPreCheck, tkPostCheck}: rsBlocked else: rsFailed
+          store.setRunState(runId, halted, now(), "")
+          log("run " & runId & " " &
+            (if halted == rsBlocked: "DIBLOKIR" else: "GAGAL") &
+            ": task kritis " & task.id & " (" & r.err.code & ")")
+          return outcomeOf(store, runId, halted)
         log("task non-kritis " & task.id & " gagal (" & r.err.code & "); penutupan lanjut")
 
   snap = store.snapshot(runId)

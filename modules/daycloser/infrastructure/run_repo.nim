@@ -186,12 +186,25 @@ proc setControl*(db: DbConn; runId: string; control: RunControl) =
 proc resetInFlight*(db: DbConn; runId: string) =
   ## Sisa proses yang mati: chunk/task `RUNNING` dikembalikan ke `PENDING` supaya resume
   ## mengulangnya. Chunk `FAILED` sengaja dibiarkan — itu jejak percobaan sebelumnya.
+  ##
+  ## **Gate yang sudah `SUCCEEDED` ikut diulang**, termasuk chunk-nya. Gate pra-tutup berjalan
+  ## saat tanggal buku masih `OPEN`, jadi keadaan yang disertifikasinya bisa berubah selama run
+  ## `BLOCKED`/`PAUSED` (sesi teller baru, selisih kas). Kalau task di-reset tetapi chunk-nya
+  ## tidak, `runTask` akan melewati chunk `SUCCEEDED` dan menandai gate sukses **tanpa
+  ## menjalankannya** — sertifikat basi dengan label baru.
   discard db.execAffectedRows(sql"""
-    UPDATE daycloser.chunk SET state = 'PENDING'
-     WHERE run_id = ?::uuid AND state = 'RUNNING'""", runId)
+    UPDATE daycloser.chunk c SET state = 'PENDING', error = NULL
+     WHERE c.run_id = ?::uuid
+       AND (c.state = 'RUNNING'
+            OR (c.state = 'SUCCEEDED' AND c.task_id IN (
+                  SELECT t.task_id FROM daycloser.task t
+                   WHERE t.run_id = c.run_id AND t.kind IN ('PRECHECK', 'POSTCHECK'))))""",
+    runId)
   discard db.execAffectedRows(sql"""
-    UPDATE daycloser.task SET state = 'PENDING', finished_at = NULL
-     WHERE run_id = ?::uuid AND state = 'RUNNING'""", runId)
+    UPDATE daycloser.task SET state = 'PENDING', finished_at = NULL, error = NULL
+     WHERE run_id = ?::uuid
+       AND (state = 'RUNNING' OR (state = 'SUCCEEDED' AND kind IN ('PRECHECK', 'POSTCHECK')))""",
+    runId)
 
 proc cancelRemaining*(db: DbConn; runId, at: string) =
   discard db.execAffectedRows(sql"""
