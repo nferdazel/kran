@@ -14,6 +14,12 @@
 ## **sinkron** di transaksi chunk yang sama dengan mutasi saldo dan baris `deposit.transaction`,
 ## karena `reconcile-deposits` merekonstruksi saldo dari baris subledger (D-155).
 ##
+## **Keputusan memakai baris terkunci, bukan halaman.** Halaman kandidat dibaca di luar transaksi
+## chunk, jadi setiap rekening dikunci (`FOR UPDATE`) dan dibaca ulang sebelum keputusan ARO
+## (`maturity_repo.lockMaturityAccount`, O-112). Jalur teller mengunci baris yang sama sebelum cek
+## status, sehingga setoran tunai dan penutupan jatuh tempo tidak bisa saling menyalip: tidak ada
+## rekening `CLOSED` bersaldo karena setoran yang lolos cek status basi.
+##
 ## **Dormant.** Terakhir, rekening `ACTIVE` yang aktivitas terakhirnya lebih lama dari
 ## `deposit.dormant.after_months` ditandai `DORMANT`, dan `DORMANT` yang kembali beraktivitas
 ## dikembalikan `ACTIVE` (D-157). Aktivitas dibaca dari baris `deposit.transaction`/`deposit.transfer`
@@ -466,10 +472,20 @@ proc settlePrincipalAndInterest(db: DbConn; clock: Clock; ctx: TaskContext;
   setMaturityDate(db, a.accountId, nextMaturity(item), systemActor)
   result.rolledOver = true
 
-proc settleMaturity(db: DbConn; clock: Clock; ctx: TaskContext; item: MaturityAccount):
-    MaturityOutcome =
+proc settleMaturity(db: DbConn; clock: Clock; ctx: TaskContext; candidate: MaturityAccount):
+    Option[MaturityOutcome] =
   ## Keputusan ARO untuk satu rekening yang sudah jatuh tempo. Pokok yang berpindah adalah **saldo
   ## rekening** (bukan angka lain): subledger harus tetap merekonstruksi saldo yang sama.
+  ##
+  ## Kandidat berasal dari halaman yang dibaca **di luar** transaksi chunk, jadi keputusan tidak
+  ## boleh memakai data itu apa adanya (O-112). Baris rekening dikunci lebih dulu, lalu seluruh
+  ## kolom keputusan dibaca ulang: `none` = rekening sudah tidak berhak diproses pada tanggal buku
+  ## (ditutup jalur lain, atau jatuh temponya sudah dimajukan), dan pemanggil melewatinya **tanpa**
+  ## memindahkan uang.
+  let locked = lockMaturityAccount(db, candidate.account.accountId, ctx.businessDate)
+  if locked.isNone:
+    return none(MaturityOutcome)
+  let item = locked.get()
   # Cache saldo yang hilang **bukan** "saldo nol": `accountOf` meng-`coalesce` saldo ke 0,00, dan
   # tanpa guard ini deposito akan ditutup tanpa memindahkan pokok — kerugian yang tidak terlihat
   # karena `DAY-307` (subledger vs GL) baru berjalan setelah task ini selesai.
@@ -493,9 +509,9 @@ proc settleMaturity(db: DbConn; clock: Clock; ctx: TaskContext; item: MaturityAc
         nextDate & " tidak setelah tanggal buku " & ctx.businessDate &
         "; proses terlambat melebihi satu tenor (O-109)")
   case aro
-  of aiNone: settleNone(db, clock, ctx, item, principal, interest)
-  of aiPrincipal: settlePrincipal(db, clock, ctx, item, interest)
-  of aiPrincipalAndInterest: settlePrincipalAndInterest(db, clock, ctx, item, interest)
+  of aiNone: some(settleNone(db, clock, ctx, item, principal, interest))
+  of aiPrincipal: some(settlePrincipal(db, clock, ctx, item, interest))
+  of aiPrincipalAndInterest: some(settlePrincipalAndInterest(db, clock, ctx, item, interest))
 
 proc countMaturityChunks(pool: DbPool; chunkSize: int): Result[int, TaskError] =
   ## Jumlah halaman himpunan **stabil** (seluruh rekening berjangka), bukan jumlah yang jatuh tempo:
@@ -518,21 +534,27 @@ proc runMaturityChunk(pool: DbPool; clock: Clock; ctx: TaskContext; chunk: Chunk
     return err[TaskOutcome, TaskError](taskError("DAY-340",
       "halaman rekening jatuh tempo gagal dibaca: " & e.msg, retryable = true))
 
-  var closed, rolled = 0
+  var closed, rolled, skipped = 0
   var principalMoved = zero()
   var interestPaid = zero()
   var interestCapitalized = zero()
   try:
     discard pool.withTx(proc(db: DbConn): int =
-      for item in items:
-        let settled = settleMaturity(db, clock, ctx, item)
-        if settled.closed:
+      for candidate in items:
+        let settled = settleMaturity(db, clock, ctx, candidate)
+        if settled.isNone:
+          # Kandidat basi: status atau jatuh temponya berubah sebelum chunk berjalan. Tidak ada uang
+          # yang berpindah, dan rekening itu bukan pekerjaan task ini lagi (O-112).
+          inc skipped
+          continue
+        let outcome = settled.get()
+        if outcome.closed:
           inc closed
-        if settled.rolledOver:
+        if outcome.rolledOver:
           inc rolled
-        principalMoved = principalMoved + settled.principalMoved
-        interestPaid = interestPaid + settled.interestPaid
-        interestCapitalized = interestCapitalized + settled.interestCapitalized
+        principalMoved = principalMoved + outcome.principalMoved
+        interestPaid = interestPaid + outcome.interestPaid
+        interestCapitalized = interestCapitalized + outcome.interestCapitalized
       1)
   except DepositAbort as e:
     return err[TaskOutcome, TaskError](taskError(e.code, e.msg, metrics = e.metrics))
@@ -545,7 +567,7 @@ proc runMaturityChunk(pool: DbPool; clock: Clock; ctx: TaskContext; chunk: Chunk
       "perpindahan jatuh tempo gagal disimpan: " & e.msg, retryable = true))
 
   ok[TaskOutcome, TaskError](okOutcome(%*{
-    "accounts": items.len, "closed": closed, "rolledOver": rolled,
+    "accounts": items.len, "closed": closed, "rolledOver": rolled, "skipped": skipped,
     "principal": principalMoved.toDecimalString, "interestPaid": interestPaid.toDecimalString,
     "interestCapitalized": interestCapitalized.toDecimalString,
     "businessDate": ctx.businessDate}))

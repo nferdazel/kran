@@ -1,10 +1,15 @@
 ## Repositori `deposit` pemindahbukuan (T-088c). SQL murni; aturan bisnis di domain + pemanggil.
 ##
-## **Anti-deadlock:** sebelum memutasi, baris saldo kedua rekening dikunci `SELECT ... FOR UPDATE`
-## dalam urutan `account_id` **naik** (deterministik). Dua PB berlawanan arah (A→B dan B→A) selalu
-## mengunci baris terkecil dulu, jadi tidak ada siklus tunggu. Setelah kedua baris terkunci, urutan
-## UPDATE bebas — dan kegagalan syarat saldo (`decreaseBalance`) terjadi **sebelum** saldo tujuan
-## ditambah, sehingga 0 baris tidak meninggalkan kredit pada rekening tujuan.
+## **Anti-deadlock:** pemanggil mengunci **baris rekening** kedua sisi lebih dulu
+## (`lockTransferAccounts`, urutan `account_id` naik), baru baris saldo (`lockBalancesAscending`,
+## urutan yang sama). Urutan seragam **rekening → saldo** dipakai semua penulis saldo: jalur tunai
+## teller, PB, dan task jatuh tempo. Tanpa kunci rekening, PB memegang saldo sumber lalu menunggu
+## `FOR KEY SHARE` di baris rekening (FK `deposit_transfer`) sementara setoran tunai memegang
+## rekening dan menunggu saldo — siklus `40P01` (O-112/D-161).
+##
+## Setelah kedua baris terkunci, urutan UPDATE bebas — dan kegagalan syarat saldo
+## (`decreaseBalance`) terjadi **sebelum** saldo tujuan ditambah, sehingga 0 baris tidak
+## meninggalkan kredit pada rekening tujuan.
 ##
 ## Modul ini sengaja tidak mengimpor internal `platform`/`ledger` (archcheck rule C): jurnal ditulis
 ## pemanggil (`apps/api`) dalam transaksi yang sama.
@@ -38,6 +43,19 @@ proc transferOf(row: Row): Transfer =
     narration: row[5],
     journalId: Id(row[6]),
     createdAt: row[7])
+
+proc lockTransferAccounts*(db: DbConn, sourceId, destinationId: Id) =
+  ## Mengunci baris `deposit.account` kedua sisi dalam urutan `account_id` naik, **sebelum** baris
+  ## saldo disentuh. Pemanggil wajib membaca ulang status rekening sesudah kunci: nilai yang
+  ## dibaca sebelum kunci bisa sudah basi.
+  ##
+  ## Baris yang tidak ada dilewati; pemanggil yang memetakan rekening hilang ke 404.
+  let (first, second) =
+    if sourceId < destinationId: (sourceId, destinationId)
+    else: (destinationId, sourceId)
+  for id in [first, second]:
+    discard db.getAllRows(sql"""
+      SELECT account_id FROM deposit.account WHERE account_id = ? FOR UPDATE""", $id)
 
 proc lockBalancesAscending(db: DbConn, sourceId, destinationId: Id) =
   ## Kunci kedua baris saldo dalam urutan `account_id` naik (deterministik) supaya dua PB berlawanan

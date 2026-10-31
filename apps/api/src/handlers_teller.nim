@@ -248,6 +248,13 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
           dbCalls:
             var accountOpt: Option[Account]
             try:
+              # Kunci baris rekening **sebelum** status/saldo dibaca (O-112): task
+              # `deposit.maturity_aro` mengunci baris yang sama sebelum memutuskan, jadi setoran
+              # dan penutupan jatuh tempo terserialisasi di satu baris ini. Tanpa itu setoran yang
+              # sudah lolos cek status bisa commit setelah deposito ditutup (rekening `CLOSED`
+              # bersaldo). Kunci diambil lebih dulu dari kunci lain jalur ini (sesi kas, baris
+              # saldo) supaya urutan kunci sama dengan jalur jatuh tempo (rekening → saldo).
+              lockAccountForUpdate(db, accountId.value())
               accountOpt = accountById(db, accountId.value())
             except ValueError:
               status = 500
@@ -567,6 +574,12 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
           dbCalls:
             var sourceOpt, destinationOpt: Option[Account]
             try:
+              # Kunci rekening **sebelum** membaca dan sebelum baris saldo dikunci
+              # (`applyTransferBalances`). Urutan rekening → saldo sama dengan jalur tunai dan task
+              # jatuh tempo; tanpa ini PB memegang saldo lalu menunggu KEY SHARE rekening (FK
+              # `deposit_transfer`) sementara setoran tunai memegang rekening dan menunggu saldo
+              # → `40P01` (O-112/D-161). Status dibaca sesudah kunci, jadi tidak basi.
+              lockTransferAccounts(db, sourceId, destinationId)
               sourceOpt = accountById(db, sourceId)
               destinationOpt = accountById(db, destinationId)
             except ValueError:
