@@ -61,6 +61,117 @@ wait_healthy() {
   return 1
 }
 
+# Gerbang CI (D-178): deploy hanya untuk commit yang benar-benar hijau di GitHub Actions.
+# Push ke `main` memicu CI dan webhook **bersamaan**, jadi webhook tiba jauh sebelum CI selesai.
+# Tanpa gerbang ini commit merah tetap ter-deploy: 1 Nov 2026 build web mati di host (Node 26 tanpa
+# corepack) sementara CI hijau, API naik, web tertinggal 6 hari tanpa sinyal apa pun.
+#
+# Nama check di bawah = nama job di `.github/workflows/ci.yml`. Mengganti nama job tanpa
+# memperbarui daftar ini membuat gate gagal-closed (timeout), bukan diam-diam lolos.
+CI_EXPECTED='Nim (check + unit/property test)
+DB (integrasi, Postgres 18)
+Web (svelte-check + axe + Playwright)
+Security (gitleaks)'
+
+# Hanya `success` yang hijau: `skipped`/`neutral` = check tidak berjalan, dan check yang hilang
+# selamanya (job dihapus/dinonaktifkan) juga tidak boleh lolos. Satu nama dinilai dari run
+# terbaru, karena re-run bisa meninggalkan beberapa run untuk satu check.
+CI_GATE_PY=$(cat <<'PY'
+import json, os, sys
+
+expected = [n for n in os.environ.get("EXPECTED_CI_CHECKS", "").splitlines() if n]
+payload = json.load(sys.stdin)
+runs = payload.get("check_runs") or []
+
+newest = {}
+for run in runs:
+    name = run.get("name") or ""
+    if name not in expected:
+        continue
+    key = (run.get("started_at") or "", run.get("id") or 0)
+    cur = newest.get(name)
+    if cur is None or key > (cur.get("started_at") or "", cur.get("id") or 0):
+        newest[name] = run
+
+pending, failed = [], []
+for name in expected:
+    run = newest.get(name)
+    if run is None or run.get("status") != "completed":
+        pending.append(name)
+    elif run.get("conclusion") != "success":
+        failed.append("%s=%s" % (name, run.get("conclusion")))
+
+if failed:
+    print("FAILED " + ", ".join(failed))
+elif pending:
+    print("PENDING " + ", ".join(pending))
+else:
+    print("OK")
+PY
+)
+
+ci_gate() { # ci_gate <rev>
+  local rev="$1"
+  if [ "${KRAN_SKIP_CI_GATE:-0}" = "1" ]; then
+    log "==> WARN: GERBANG CI DILEWATI (KRAN_SKIP_CI_GATE=1) — hanya untuk pemulihan darurat"
+    return 0
+  fi
+
+  # CI tidak berjalan untuk perubahan dokumen (`paths-ignore` di ci.yml). Menunggu check yang
+  # tidak akan pernah muncul hanya menghabiskan batas waktu; deploy tetap jalan karena tidak ada
+  # yang dibangun ulang.
+  local code_changes
+  code_changes="$(printf '%s\n' "$CHANGED_FILES" | grep -vE '^(docs/|.*\.md$)' | grep -v '^$' || true)"
+  if [ -z "$code_changes" ]; then
+    log "==> GERBANG CI: dilewati (hanya dokumen berubah, CI juga tidak berjalan)"
+    return 0
+  fi
+
+  local repo="${KRAN_GITHUB_REPO:-nferdazel/kran}"
+  local wait_seconds="${KRAN_CI_WAIT_SECONDS:-900}"
+  local api="https://api.github.com/repos/${repo}/commits/${rev}/check-runs?per_page=100"
+  local auth=()
+  # Repo ini publik, jadi token opsional (batas 60 permintaan/jam tanpa token). Kalau ada,
+  # dipakai — batasnya lebih longgar dan tidak bergantung pada IP bersama.
+  if [ -n "${KRAN_GITHUB_TOKEN:-}" ]; then
+    auth=(-H "Authorization: Bearer ${KRAN_GITHUB_TOKEN}")
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    die "GERBANG CI: python3 tidak ada di host — pasang python3 atau KRAN_SKIP_CI_GATE=1 (darurat)"
+  fi
+
+  log "==> GERBANG CI: menunggu ${wait_seconds}s untuk ${rev:0:12} di ${repo}"
+  local deadline=$((SECONDS + wait_seconds))
+  local body verdict
+  while :; do
+    if ! body="$(curl -fsS --max-time 20 "${auth[@]}" \
+      -H "Accept: application/vnd.github+json" "$api")"; then
+      die "GERBANG CI: gagal membaca check-run dari GitHub API (${repo}); deploy dibatalkan"
+    fi
+    verdict="$(printf '%s' "$body" | EXPECTED_CI_CHECKS="$CI_EXPECTED" python3 -c "$CI_GATE_PY")" ||
+      die "GERBANG CI: jawaban GitHub tidak bisa dibaca (fail-closed)"
+
+    case "$verdict" in
+      OK)
+        log "==> GERBANG CI: semua check hijau"
+        return 0
+        ;;
+      FAILED*)
+        die "GERBANG CI: ${verdict#FAILED } — commit ini tidak di-deploy"
+        ;;
+      PENDING*) : ;;
+      *)
+        die "GERBANG CI: jawaban tidak dikenal: $verdict (fail-closed)"
+        ;;
+    esac
+
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      die "GERBANG CI: timeout ${wait_seconds}s, masih menunggu: ${verdict#PENDING }"
+    fi
+    sleep 20
+  done
+}
+
 # Konfigurasi aplikasi (termasuk KRAN_DATABASE_URL/KEK). Unit systemd memuatnya lewat
 # EnvironmentFile, tetapi jalur hook (webhook.service) tidak mewarisi env itu — deploy dari push
 # gagal di migration gate dengan "KRAN_DATABASE_URL kosong" (ditemukan di T-045, 16 Okt 2026).
@@ -147,11 +258,14 @@ fi
 
 # 2. Lock (spec §21.4 #2): satu deploy pada satu waktu.
 exec 9>"$APP_DIR/.deploy.lock"
-if ! flock -n 9; then
-  # OPS-1 (T-131): keluar 0 berarti webhook melihat "deploy sukses" padahal commit ini **tidak
-  # pernah** di-deploy. Produksi lalu tertinggal dari `main` tanpa sinyal apa pun. Gagal jelas;
-  # push berikutnya (atau deploy manual) memicu ulang.
-  log "==> ERROR: deploy lain masih berjalan (lock $APP_DIR/.deploy.lock); commit ini TIDAK di-deploy"
+# OPS-1 (T-131): keluar 0 berarti webhook melihat "deploy sukses" padahal commit ini **tidak
+# pernah** di-deploy, jadi kegagalan harus jelas. Tapi `-n` (langsung gagal) ikut membuang commit
+# yang sah saat beberapa push datang beruntun: deploy kedua berhenti, `main` tertinggal, dan tidak
+# ada yang memicu ulang. Karena itu menunggu (default 900 dtk, D-178) lalu gagal dengan pesan yang
+# menyebut commit-nya.
+LOCK_WAIT="${KRAN_DEPLOY_LOCK_WAIT:-900}"
+if ! flock -w "$LOCK_WAIT" 9; then
+  log "==> ERROR: deploy lain masih berjalan setelah ${LOCK_WAIT}s (lock $APP_DIR/.deploy.lock); commit ini TIDAK di-deploy"
   exit 1
 fi
 
@@ -201,6 +315,8 @@ if [ "$IS_FIRST" -eq 0 ] && [ -f "$STATE_FILE" ] && [ "$(cat "$STATE_FILE")" = "
   log "==> skip: rev $REVID sudah ter-deploy (delivery duplikat/replay; KRAN_FORCE_DEPLOY=1 untuk paksa)"
   exit 0
 fi
+
+ci_gate "$NEW_REV"
 
 # Self-update: sinkronkan skrip repo -> server. Pakai .new + mv (rename) supaya
 # bash tidak membaca file yang sedang ditimpa — lihat catatan di skyward.
