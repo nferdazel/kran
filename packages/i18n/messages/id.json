@@ -828,5 +828,6 @@
   "teller_session_branch_mismatch": "Sesi kas yang dipilih ada di cabang lain. Pilih cabang rekening ini atau tutup sesi di cabang itu.",
   "teller_session_branches_failed": "Daftar cabang gagal dimuat.",
   "teller_review_time_deposit_notice": "Untuk deposito berjangka, angka ini adalah pokok. Dana yang dibayarkan ke anggota = pokok + bunga − penalti, dihitung server saat dikonfirmasi.",
-  "teller_session_branches_empty": "Belum ada cabang yang bisa dipilih. Minta admin menambah master cabang."
+  "teller_session_branches_empty": "Belum ada cabang yang bisa dipilih. Minta admin menambah master cabang.",
+  "password_hint_policy": "Kebijakan saat ini: minimal {minLength} karakter, minimal {minClasses} jenis karakter (huruf besar, huruf kecil, angka, simbol), dan tidak boleh sama dengan {historyCount} kata sandi terakhir."
 }
