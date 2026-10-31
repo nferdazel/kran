@@ -4189,3 +4189,54 @@ Alasan tidak memilih "eksekusi di transaksi ter-rollback" sekarang:
   mode yang benar-benar mengeksekusi (pekerjaan lanjutan bila dibutuhkan).
 - `planTasks` dipisahkan dari `planRun` (yang menyimpan baris run) supaya kedua jalur memakai
   perencanaan yang sama — dua perencana berbeda cepat atau lambat menyimpang.
+
+## D-160 — Arah desain v2: netral dingin, satu aksen, satu keluarga huruf (31 Okt 2026)
+
+**Konteks.** Pemilik memutuskan redesign UI total setelah Fase 3. Audit UI/UX (laporan SME 31 Okt
+2026, `docs/proposals/design-v2-direction.md`) menemukan masalahnya bukan di arah warna melainkan
+di struktur: `packages/ui` tidak punya satu komponen pun (hanya CSS, 0 komponen Svelte), 1.344 baris
+CSS ditulis ulang per halaman, layar kas 1.834 baris dalam satu berkas tanpa `<table>`, buka kas
+terkunci di balik memuat rekening anggota, pengaturan tema/bahasa menjadi 5 tab-stop sebelum konten,
+dan 37 tombol `:disabled` tanpa style sama sekali. Pelanggaran `DESIGN.md` v1 sendiri hanya 8
+deklarasi di 3 berkas.
+
+**Keputusan.** Arah v2 menggantikan D-075/D-115:
+
+1. Basis netral dingin dan **satu aksen plum** (`#5B2A5E` terang, `#D9A0D4` gelap), bukan kertas
+   hangat + hijau tua. Plum dipilih karena tidak bertabrakan dengan empat warna status yang harus
+   tetap terbaca sebagai status. Penggantian aksen di kemudian hari = ganti token, bukan ganti
+   keputusan.
+2. **Satu keluarga huruf: IBM Plex Sans.** `IBM Plex Mono` dihapus dari antarmuka, termasuk kolom
+   uang dan struk; angka uang memakai `tabular-nums slashed-zero`. Plex Sans dipertahankan karena
+   angka tabularnya sudah dipakai sistem ini, sehingga tidak perlu font baru untuk fitur yang sudah
+   terbukti.
+3. Dial **ENERGY 2 / RHYTHM 2 / MOTION 2**, dengan angka tetap 0 ms.
+4. Komitmen struktural (§11 `DESIGN.md`): satu titik fokus per layar, navigasi bergrup, pengaturan
+   keluar dari alur Tab konten, layar kas sebagai stasiun kerja, dan aturan visual tinggal di token
+   + komponen bersama, bukan per halaman.
+
+**Alasan.** Pemilik memilih karakter "hangat & manusiawi" dengan palet netral dingin dan tipografi
+sans ber-angka-tabular. Mempertahankan arah v1 berarti mempertahankan metafora "buku besar berkulit
+hangat" yang tidak lagi diinginkan pemilik, sementara mengganti huruf tanpa alasan fungsional akan
+menambah risiko tanpa manfaat terukur.
+
+**Konsekuensi.**
+
+- `DESIGN.md` diganti pada hari yang sama. Implementasi bertahap (fase 0–6, `DESIGN.md` §12);
+  sampai sebuah fase selesai, penyimpangan yang sudah ada sebelum D-160 dicatat sebagai utang
+  migrasi di PR, bukan temuan review. Penyimpangan baru tetap gagal review.
+- Matriks kontras `packages/ui/tests/tokens.contrast.test.ts` harus diperluas ke pasangan v2
+  **sebelum** token dipakai; token tanpa uji = gagal review.
+- Spesifikasi e2e yang mengunci struktur/teks (urutan Tab, teks layar) ikut berubah bila layarnya
+  ikut dimigrasi; perubahan itu bagian dari fase yang bersangkutan, bukan pelonggaran gate.
+- Layar kas pada fase 3 membutuhkan endpoint `GET /teller/sessions/{id}/transactions` yang belum
+  ada di kontrak; itu perubahan API lewat jalur OpenAPI + contract test, bukan tambalan UI.
+- `docs/proposals/design-v2-direction.md` menjadi catatan asal-usul arah dan tidak lagi mengikat.
+
+**Alternatif yang ditolak.** (a) Tetap pada arah v1 dan hanya membangun component layer
+("Opsi B"): ditolak pemilik karena arah visualnya memang ingin diganti. (b) Bedah terarah 12–15
+hari tanpa component layer ("Opsi C"): ditolak karena menyisakan 1.344 baris CSS duplikat.
+(c) Mengganti keluarga huruf sekaligus: ditolak sampai ada kandidat yang dukungan angka
+tabularnya diverifikasi, bukan diasumsikan.
+
+**Status.** Disetujui pemilik 31 Okt 2026.
