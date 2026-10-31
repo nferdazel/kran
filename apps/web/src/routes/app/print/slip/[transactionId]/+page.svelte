@@ -11,6 +11,7 @@
    * (tidak disimpan) dan bukan PDF resmi/arsip.
    */
   import { goto } from "$app/navigation";
+  import { resolve } from "$app/paths";
   import { onMount } from "svelte";
 
   import * as m from "#lib/paraglide/messages.js";
@@ -35,7 +36,7 @@
     try {
       const { data, response } = await loadCashTransactionSlip(params.transactionId);
       if (response.status === 401) {
-        await goto("/login");
+        await goto(resolve("/login"));
         return;
       }
       if (!response.ok || !data) {

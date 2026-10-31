@@ -10,14 +10,17 @@
  */
 
 import type { AppLocale } from "#lib/app/i18n.js";
+import type { NavHref } from "#lib/app/nav.js";
 
 export type PaletteSource = {
-  readonly href: string;
+  /** Tujuan yang sudah di-resolve (lihat `NavHref` di `nav.ts`). */
+  readonly href: NavHref;
   readonly label: (locale?: AppLocale) => string;
 };
 
 export type PaletteAction = {
-  readonly href: string;
+  /** Tujuan yang sudah di-resolve: pemanggil tidak perlu (dan tidak boleh) me-resolve lagi. */
+  readonly href: NavHref;
   /** Label bahasa aktif (yang ditampilkan). */
   readonly label: string;
   /** Kata kunci pencarian (huruf kecil, unik): label tiap locale + href. */

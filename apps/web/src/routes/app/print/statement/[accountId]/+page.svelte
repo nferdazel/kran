@@ -10,6 +10,7 @@
    * PII minimal: nomor rekening, nominal, narasi, cabang. Tanpa nama/NIK/alamat.
    */
   import { goto } from "$app/navigation";
+  import { resolve } from "$app/paths";
   import { page } from "$app/state";
   import { onMount } from "svelte";
 
@@ -56,7 +57,7 @@
     try {
       const { data, response } = await loadAccountStatement(params.accountId, range.from, range.to);
       if (response.status === 401) {
-        await goto("/login");
+        await goto(resolve("/login"));
         return;
       }
       if (!response.ok || !data) {

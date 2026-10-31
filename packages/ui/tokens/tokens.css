@@ -251,6 +251,16 @@ body {
   line-height: var(--line-height-base);
 }
 
+/* Kode dan identitas teknis memakai keluarga huruf yang sama (DESIGN §2: tanpa mono).
+   Tanpa aturan ini `<code>` kembali ke monospace bawaan peramban di layar yang CSS lokalnya
+   dihapus. */
+code,
+kbd,
+samp {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
 h1,
 h2,
 h3,
