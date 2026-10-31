@@ -5,8 +5,9 @@ import { expect, test, type Page } from "@playwright/test";
  * Tab/Enter/panah, termasuk skip link, grup radio tema, dan select bahasa.
  *
  * Urutan fokus yang diuji adalah urutan DOM yang sebenarnya:
- *   skip link → radio tema (3) → grup radio bahasa → field formulir login. Halaman publik tidak
- *   menampilkan menu area kerja (nav hanya untuk `/app`).
+ *   skip link → field formulir login → tombol kirim → pengaturan tampilan di footer. Halaman publik
+ *   tidak menampilkan menu area kerja (nav hanya untuk `/app`), dan pengaturan tema/bahasa tidak
+ *   lagi mendahului konten (DESIGN §10).
  */
 
 async function gotoApp(page: Page, locale = "id", theme = "light"): Promise<void> {
@@ -84,7 +85,12 @@ test("setiap kontrol dapat dijangkau keyboard dalam urutan logis", async ({ page
     urutan.push(await activeElement(page));
   }
 
-  // Tiap grup radio punya satu tab stop (radio terpilih), lalu langsung field form login:
-  // header publik tidak merender tautan navigasi area kerja.
-  expect(urutan).toEqual(["input:radio:theme", "input:radio:locale", "input:text:username"]);
+  // Pengaturan tampilan pindah ke footer (DESIGN §10): konten lebih dulu, pengaturan sesudahnya.
+  // Urutan: field login, lalu submit; radio tema/bahasa tidak lagi mendahului isi halaman.
+  expect(urutan).toEqual(["input:text:username", "input:password:password", "button:submit:"]);
+
+  // Pengaturan tampilan tetap bisa dijangkau keyboard, hanya saja sesudah konten.
+  await page.getByRole("radio", { name: "Terang" }).focus();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("radio", { name: "Indonesia" })).toBeFocused();
 });

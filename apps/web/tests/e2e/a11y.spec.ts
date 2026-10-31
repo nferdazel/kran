@@ -97,8 +97,9 @@ test("struktur shell: landmark, judul halaman, dan indikator business date", asy
   // Judul halaman unik per rute (spec §17.1).
   await expect(page).toHaveTitle(titlePattern(TEXT.id.appTitle));
 
-  // Indikator business date selalu tampak (spec §14.3).
-  await expect(page.getByText("Tanggal bisnis")).toBeVisible();
+  // Halaman publik tidak punya sesi, jadi tidak ada tanggal bisnis yang diketahui: indikator
+  // tidak dirender sama sekali lebih baik daripada menampilkan tanggal karangan.
+  await expect(page.getByText("Tanggal bisnis")).toHaveCount(0);
 });
 
 test("ganti tema mengubah atribut dan mengumumkannya lewat live region", async ({ page }) => {

@@ -13,7 +13,12 @@
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
   import { problemMessage } from "#lib/app/errors.js";
-  import { appNavLinks, sessionPermissions, visibleNavLinks } from "#lib/app/nav.js";
+  import {
+    appNavLinks,
+    landingHref,
+    sessionPermissions,
+    visibleNavLinks,
+  } from "#lib/app/nav.js";
 
   let username = $state("");
   let password = $state("");
@@ -57,8 +62,9 @@
       // "tidak berizin". Ambil sesi sekali, lalu pilih tautan nav pertama yang boleh dibuka;
       // admin tetap mendarat di buku besar (tautan pertama).
       const { data: session } = await api.GET("/api/v1/auth/session");
-      const target =
-        visibleNavLinks(appNavLinks, sessionPermissions(session))[0]?.href ?? "/app";
+      // Tujuan pendaratan dipilih fungsi yang sama dengan `/app` dan palette, supaya tiga jalur
+      // masuk tidak pernah menyimpang.
+      const target = landingHref(visibleNavLinks(appNavLinks, sessionPermissions(session)));
       await goto(target);
     } catch {
       // Jaringan putus / proxy mati bukan "kredensial salah": tanpa penanganan ini `submitting`
