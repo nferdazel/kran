@@ -4240,3 +4240,12 @@ hari tanpa component layer ("Opsi C"): ditolak karena menyisakan 1.344 baris CSS
 tabularnya diverifikasi, bukan diasumsikan.
 
 **Status.** Disetujui pemilik 31 Okt 2026.
+
+**Catatan dependensi dan gerbang (31 Okt 2026, setelah review).** `packages/ui` kini memakai
+`svelte` dan `@sveltejs/vite-plugin-svelte` sebagai devDependency **dengan versi persis yang sudah
+dipakai `apps/web`** (5.57.2 / 7.3.1, resolusi lockfile yang sama). Tidak ada dependensi runtime
+baru dan tidak ada pustaka uji baru: test komponen memakai `render` dari `svelte/server`, bukan
+jsdom/testing-library. Sebagai gantinya paket itu mendapat `tsconfig.json` dan `svelte-check`
+sendiri, dijalankan `./task lint-web` (dan karena itu ikut job CI `web-e2e`) — tanpa gerbang ini
+komponen bersama tidak punya pemeriksaan tipe/a11y statis sama sekali, karena `svelte-check`
+`apps/web` hanya memindai paketnya sendiri dan eslint mematikan `svelte/a11y-*` (D-139).

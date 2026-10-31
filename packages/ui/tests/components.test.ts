@@ -50,6 +50,21 @@ describe("Button", () => {
     ).toContain('class="kran-button kran-button--destructive"');
   });
 
+  it("atribut tombol lain diteruskan (name/value/aria-label), bukan ditelan komponen", () => {
+    const { body: html } = render(Button, {
+      props: {
+        name: "decision",
+        value: "approve",
+        "aria-label": "Setujui pengajuan",
+        children: text("Setujui"),
+      },
+    });
+
+    expect(html).toContain('name="decision"');
+    expect(html).toContain('value="approve"');
+    expect(html).toContain('aria-label="Setujui pengajuan"');
+  });
+
   it("type diteruskan (submit) tanpa mengubah kelas", () => {
     const { body: html } = render(Button, {
       props: { type: "submit", children: text("Kirim") },
@@ -188,7 +203,7 @@ describe("StatusBadge", () => {
 });
 
 describe("Alert", () => {
-  it("kegagalan memakai role=alert dengan judul heading", () => {
+  it("kegagalan memakai role=alert dengan judul non-heading", () => {
     const { body: html } = render(Alert, {
       props: {
         tone: "negative",
@@ -198,14 +213,16 @@ describe("Alert", () => {
     });
 
     expect(html).toContain('role="alert"');
-    expect(html).toContain('<h2 class="kran-alert__title">Setoran tidak tersimpan</h2>');
+    expect(html).toContain('<p class="kran-alert__title">Setoran tidak tersimpan</p>');
+    expect(html).not.toContain("<h2");
     expect(html).toContain("Ulangi transaksi.");
   });
 
-  it("peringatan juga assertive", () => {
-    expect(
-      render(Alert, { props: { tone: "warning", title: "Kas belum dibuka" } }).body,
-    ).toContain('role="alert"');
+  it("peringatan tidak assertive: hanya kegagalan yang memotong pembaca layar", () => {
+    const { body: html } = render(Alert, { props: { tone: "warning", title: "Kas belum dibuka" } });
+
+    expect(html).toContain('role="status"');
+    expect(html).not.toContain('role="alert"');
   });
 
   it("tone lain memakai role=status (polite)", () => {
@@ -278,14 +295,27 @@ describe("Money", () => {
     expect(render(Money, { props: { value: "-12.5" } }).body).toContain("-12,50");
   });
 
-  it("muted menambah kelas muted, currency hanya diumumkan (bukan diulang di tiap sel)", () => {
-    const { body: html } = render(Money, {
-      props: { value: "250000", currency: "IDR", muted: true },
-    });
+  it("currency hanya diumumkan, bukan diulang di tiap sel", () => {
+    const { body: html } = render(Money, { props: { value: "250000", currency: "IDR" } });
 
-    expect(html).toContain('class="kran-money kran-muted"');
+    expect(html).toContain('class="kran-money"');
+    expect(html).not.toContain("kran-muted");
     expect(html).toMatch(/<span class="kran-visually-hidden">\sIDR<\/span>/);
     expect(html).not.toContain(">250.000,00 IDR<");
+  });
+
+  it("locale diteruskan: en-US memakai pemisah Inggris", () => {
+    expect(render(Money, { props: { value: "1234567.89", locale: "en-US" } }).body).toContain(
+      "1,234,567.89",
+    );
+    expect(render(Money, { props: { value: "1234567.89" } }).body).toContain("1.234.567,89");
+  });
+
+  it("nilai kosong dirender kosong, bukan melempar atau mengarang nol", () => {
+    const { body: html } = render(Money, { props: { value: "   " } });
+
+    expect(html).not.toContain("NaN");
+    expect(html).not.toContain("0,00");
   });
 });
 
@@ -310,8 +340,7 @@ describe("DataTable", () => {
   it("caption wajib dirender di dalam <table>", () => {
     const html = table();
 
-    expect(html).toContain("<caption>Saldo per akun</caption>");
-    expect(html.indexOf("<caption>")).toBeGreaterThan(html.indexOf("<table"));
+    expect(html).toMatch(/<table class="kran-table"><caption>Saldo per akun<\/caption>/);
   });
 
   it("pembungkus adalah region berlabel yang bisa digulir dengan keyboard", () => {
@@ -346,6 +375,12 @@ describe("DataTable", () => {
   it("kolom numerics diformat money.ts dengan kelas kran-num kran-money", () => {
     expect(table()).toContain(
       '<td class="kran-num kran-money">1.234.567,89</td>',
+    );
+  });
+
+  it("locale diteruskan ke kolom numerics", () => {
+    expect(table({ locale: "en-US" })).toContain(
+      '<td class="kran-num kran-money">1,234,567.89</td>',
     );
   });
 

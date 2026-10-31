@@ -151,7 +151,9 @@ Aturan yang mengikat:
 - Durasi 150–200 ms untuk elemen non-angka (hover, expand, dialog); **0 ms untuk angka**. Tidak
   ada animasi pada baris/saldo yang berubah, count-up, skeleton yang menggeser layout, atau pulse
   abadi.
-- `prefers-reduced-motion`: semua transisi 0 ms; state akhir tetap terbaca.
+- `prefers-reduced-motion`: semua transisi 0 ms; state akhir tetap terbaca. Satu pengecualian
+  teknis: 1 ms (bukan 0) supaya `transitionend`/`animationend` tetap terkirim ke logika yang
+  menunggunya — tidak terlihat, dan tidak mengubah tata letak.
 - Toast: punya live region + tombol tutup, tidak menutupi tombol simpan/cetak, error tidak
   auto-hilang.
 
