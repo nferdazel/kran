@@ -3709,3 +3709,17 @@ pertama. Cetak sudah diverifikasi `print.spec.ts`. Baseline visual tetap O-022 (
 
 **T-143**: istilah internal di katalog operator (`ledger.period`, "runbook", "UUID") diganti bahasa
 kerja; layar admin buku besar sengaja tetap menyebut UUID karena tugasnya menempel ID jurnal.
+
+**Tinjauan independen (31 Okt 2026)** menemukan satu BLOCKER dan satu MAJOR sebelum merge:
+
+- `ops/migrations/contract-auto.txt` belum memuat `deposit/0074_...`: gate deploy fail-closed akan
+  menghentikan deploy walau migrasi itu syarat fitur. Sudah ditambahkan; `migrate --check` melaporkan
+  `contract_pending=0`.
+- Layar tinjau PB hanya menampilkan pokok. Kini ada catatan eksplisit bahwa untuk deposito berjangka
+  dana yang dibayarkan = pokok + bunga − penalti (dihitung server), berlaku untuk tunai dan PB.
+
+Temuan MINOR yang ikut ditutup: audit PB mencatat ketiga jurnal + pokok; kunci jurnal pencairan dini
+diturunkan dari `Idempotency-Key` (`tellerJournalSubKey`), bukan `transferId`; `loadSession` punya
+penjaga respons basi; daftar cabang kosong punya pesan; test baru untuk penalti 0% (tanpa jurnal
+penalti), PB ke rekening berjangka (tetap 409), dan Δ subledger vs GL (`201`+`202`) yang tidak
+berubah karena PB — bukti klaim gate `ledger.subledger_vs_gl`. `itapi_teller` kini **58 OK**.

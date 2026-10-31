@@ -80,6 +80,7 @@ var
   NoPenaltyTdAccountId: string
   EarlyTransferTdId: string
   EarlyTransferDestId: string
+  ZeroPenaltyTdId: string
   PartialTdId: string
   MaturedTdId: string
   MinBalanceTdId: string
@@ -317,6 +318,16 @@ block:
   let (minProduct, minVersion) = seedTdProduct("SAV-TDMIN", "1.0", "50.00")
   MinBalanceTdId = $seedTimeDeposit(minProduct, minVersion, "SAV-TDMIN", "1000.00",
     "2026-12-31")
+  # Penalti 0% (binding ada, tarif nol): jurnal penalti dilewati, dana masuk tetap pokok + bunga.
+  let (zeroProduct, zeroVersion) = seedTdProduct("SAV-TDZERO", "0.0")
+  ZeroPenaltyTdId = $seedTimeDeposit(zeroProduct, zeroVersion, "SAV-TDZERO", "1000.00",
+    "2026-12-31")
+  execScript(db, """
+    INSERT INTO deposit.interest_accrual
+      (account_id, business_date, principal, days, rate_percent, basis_days, amount, cumulative)
+    VALUES ('""" & ZeroPenaltyTdId & """', '""" & BusinessDate & """'::date, 1000.00, 1,
+            2.5000, 365, 0.00, 5.00)
+  """)
 
   # GL 102/202 (bukan 101.2/201 rule generik) supaya pemilihan rule produk bisa dibedakan di test.
   discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
@@ -517,6 +528,12 @@ proc dbText(query: SqlQuery, args: varargs[string, `$`]): string =
 proc balanceOf(accountId: string): string =
   dbText(sql"SELECT balance::text FROM deposit.account_balance WHERE account_id = ?", accountId)
 
+proc glLiabilityTotal(): string =
+  ## Saldo akun kewajiban simpanan (`201`+`202`, kredit normal) dari baris jurnal.
+  dbText(sql"""
+    SELECT coalesce(sum(credit - debit), 0)::numeric(24, 2)::text
+      FROM ledger.journal_line WHERE gl_account IN ('201', '202')""")
+
 proc journalLines(journalId: string): seq[tuple[gl, debit, credit: string]] =
   let conn = dbPool.acquire()
   try:
@@ -535,6 +552,20 @@ proc journalLinesByKey(key: string): seq[tuple[gl, debit, credit: string]] =
       SELECT l.gl_account, l.debit::text, l.credit::text
         FROM ledger.journal_line l JOIN ledger.journal j USING (journal_id)
        WHERE j.idempotency_key = ? ORDER BY l.line_no""", key):
+      result.add((row[0], row[1], row[2]))
+  finally:
+    dbPool.release(conn)
+
+proc journalLinesByEvent(eventType, sourceRef: string): seq[tuple[gl, debit, credit: string]] =
+  ## Baris jurnal berdasarkan `source_event` + `source_ref` (PB pencairan dini memposting beberapa
+  ## jurnal untuk satu referensi, jadi kunci idempotensi tidak bisa dipakai sebagai pencari).
+  let conn = dbPool.acquire()
+  try:
+    for row in conn.getAllRows(sql"""
+      SELECT l.gl_account, l.debit::text, l.credit::text
+        FROM ledger.journal_line l JOIN ledger.journal j USING (journal_id)
+       WHERE j.source_event = ? AND j.source_ref = ?::uuid ORDER BY l.line_no""",
+        eventType, sourceRef):
       result.add((row[0], row[1], row[2]))
   finally:
     dbPool.release(conn)
@@ -841,6 +872,8 @@ suite "teller: setor & tarik":
 
   test "pencairan dini PB: tujuan menerima pokok + bunga − penalti, tiga jurnal":
     let token = tokenOf(login(MakerUser))
+    let subBefore = dbPool.withConn(proc(d: DbConn): string {.closure.} = subledgerTotal(d).total)
+    let glBefore = glLiabilityTotal()
     let res = postJson(TransferPath,
       transferBody(EarlyTransferTdId, EarlyTransferDestId, "1000.00"), token)
     check res.code == 201
@@ -863,9 +896,9 @@ suite "teller: setor & tarik":
     let transferId = res.body["transferId"].getStr()
     check journalLines(res.body["journalId"].getStr()) ==
       @[("202", "1000.00", "0.00"), ("201", "0.00", "1000.00")]
-    check journalLinesByKey("early.transfer.interest:" & transferId) ==
+    check journalLinesByEvent("InterestPaidEarlyViaTransfer", transferId) ==
       @[("204", "13.70", "0.00"), ("201", "0.00", "13.70")]
-    check journalLinesByKey("early.transfer.penalty:" & transferId) ==
+    check journalLinesByEvent("EarlyWithdrawalPenaltyViaTransfer", transferId) ==
       @[("201", "20.00", "0.00"), ("403", "0.00", "20.00")]
 
     # Baris subledger tujuan: bunga masuk, penalti keluar.
@@ -890,6 +923,14 @@ suite "teller: setor & tarik":
       if item.accountNo == destNo:
         involved.add item
     check involved.len == 0
+
+    # Gate `ledger.subledger_vs_gl` hanya membandingkan **total**. Suite ini menyemai saldo tanpa
+    # baris subledger, jadi selisihnya tidak nol sejak awal — yang harus dijaga adalah selisih itu
+    # tidak **berubah** karena PB: Δ(201+202) harus sama dengan Δ total saldo subledger.
+    let subAfter = dbPool.withConn(proc(d: DbConn): string {.closure.} = subledgerTotal(d).total)
+    let glAfter = glLiabilityTotal()
+    check moneyFromString(glAfter).value() - moneyFromString(glBefore).value() ==
+      moneyFromString(subAfter).value() - moneyFromString(subBefore).value()
 
     # Rekening koran: sumber hanya pokok (TRANSFER OUT); tujuan tiga baris, satu di antaranya
     # berlabel EARLY_WITHDRAWAL — bukan MATURITY.
@@ -936,6 +977,36 @@ suite "teller: setor & tarik":
       SELECT count(*)::text FROM deposit.transfer
        WHERE source_account_id IN (?::uuid, ?::uuid, ?::uuid)""",
       PartialTdId, NoPenaltyTdAccountId, MaturedTdId) == 0
+
+  test "pencairan dini PB dengan penalti nol: tanpa jurnal penalti, dana masuk pokok + bunga":
+    let token = tokenOf(login(MakerUser))
+    let res = postJson(TransferPath,
+      transferBody(ZeroPenaltyTdId, EarlyTransferDestId, "1000.00"), token)
+    check res.code == 201
+    check res.body["earlyWithdrawal"]["penalty"].getStr() == "0.00"
+    check res.body["earlyWithdrawal"]["creditedAmount"].getStr() == "1005.00"
+    check res.body["destinationBalanceAfter"].getStr() == "1998.70"
+    check balanceOf(ZeroPenaltyTdId) == "0.00"
+    # Hanya dua jurnal: pokok dan bunga; tarif 0 tidak boleh memposting jurnal nol.
+    check dbCount(sql"""
+      SELECT count(*)::text FROM ledger.journal
+       WHERE source_ref = ?::uuid""", res.body["transferId"].getStr()) == 2
+    check dbText(sql"""
+      SELECT string_agg(tx_type, ',' ORDER BY tx_type)
+        FROM deposit.transaction WHERE journal_id IN (
+          SELECT journal_id FROM ledger.journal WHERE source_ref = ?::uuid)""",
+      res.body["transferId"].getStr()) == "INTEREST_PAID_EARLY"
+
+  test "PB ke rekening deposito berjangka tetap ditolak":
+    let token = tokenOf(login(MakerUser))
+    let before = balanceOf(PokokAccountId)
+    let destinationBefore = balanceOf(TimeDepositAccountId)
+    let res = postJson(TransferPath,
+      transferBody(PokokAccountId, TimeDepositAccountId, "10.00"), token)
+    check res.code == 409
+    check res.body["params"]["reason"].getStr() == "time_deposit_locked"
+    check balanceOf(PokokAccountId) == before
+    check balanceOf(TimeDepositAccountId) == destinationBefore
 
   test "pencairan dini tunai: min_balance produk tidak menghalangi penutupan rekening":
     let token = tokenOf(login(MakerUser))

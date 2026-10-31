@@ -826,5 +826,7 @@
   "teller_session_branch_placeholder": "Choose a branch",
   "teller_session_need_branch": "Choose a branch to open cash, or load a member account.",
   "teller_session_branch_mismatch": "The selected cash session is in another branch. Choose this account's branch or close that session.",
-  "teller_session_branches_failed": "The branch list could not be loaded."
+  "teller_session_branches_failed": "The branch list could not be loaded.",
+  "teller_review_time_deposit_notice": "For a time deposit this figure is the principal. The amount paid to the member = principal + interest − penalty, computed by the server on confirmation.",
+  "teller_session_branches_empty": "No branch is available to choose. Ask an admin to add a branch."
 }

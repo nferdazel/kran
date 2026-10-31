@@ -131,6 +131,17 @@ proc validateNarration*(raw: string): string =
     raise newException(ValueError, "narration melebihi " & $maxNarrationLength & " karakter")
   s
 
+proc tellerJournalSubKey*(journalKey, part: string): string =
+  ## Kunci jurnal tambahan untuk satu permintaan yang memposting beberapa jurnal (pencairan dini
+  ## PB, T-148). Diturunkan dari `journalKey` supaya replay `Idempotency-Key` yang sama tetap
+  ## tertahan `ledger.journal.idempotency_key`, bukan bergantung pada status rekening.
+  let combined = journalKey & ":" & part
+  if combined.len > maxJournalIdempotencyKeyLength:
+    raise newException(ValueError,
+      "Idempotency-Key terlalu panjang untuk kunci jurnal (maks " &
+      $maxJournalIdempotencyKeyLength & " karakter gabungan)")
+  combined
+
 proc tellerJournalKey*(principalId, key: string): string =
   ## `teller:<principalId>:<Idempotency-Key>` — kunci idempotensi jurnal (T-088 §3). Ditolak bila
   ## melebihi batas kolom `ledger.journal.idempotency_key` (200): lebih baik 400 terang daripada
