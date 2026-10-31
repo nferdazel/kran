@@ -3359,6 +3359,7 @@ export interface operations {
             };
             405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
             503: components["responses"]["Problem"];
         };
     };
