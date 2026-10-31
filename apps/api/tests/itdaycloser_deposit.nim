@@ -39,7 +39,8 @@ import kernel/[clock, dayclose, ids, money, result]
 import daycloser/domain/[registry, types]
 
 import deposit/domain/[account, transaction, transfer]
-import deposit/infrastructure/[account_repo, reconcile_repo, transaction_repo, transfer_repo]
+import deposit/infrastructure/[account_repo, maturity_repo, reconcile_repo, transaction_repo,
+  transfer_repo]
 import party/domain/party
 import party/infrastructure/party_repo
 import product/domain/product
@@ -1045,3 +1046,184 @@ suite "jatuh tempo: guard (review T-138d)":
     check balanceOf(savingsId) == "0.00"
     check interestPostJournal(depositId, "2026-12-01").len == 0
     check transactionsOf(savingsId, ttInterestCredit).len == 0
+
+# ---------------------------------------------------------------------------------------------
+# O-112: kunci baris `deposit.account` (jalur teller <-> task jatuh tempo)
+# ---------------------------------------------------------------------------------------------
+#
+# Invarian yang dibuktikan: rekening tidak pernah berakhir `CLOSED` **bersaldo**, dan perpindahan
+# jatuh tempo memakai saldo **sesudah** kunci didapat — bukan saldo basi dari halaman kandidat yang
+# dibaca di luar transaksi chunk.
+#
+# Dua koneksi nyata (bukan simulasi urutan): satu koneksi memegang baris rekening `FOR UPDATE`,
+# pekerja lain menjalankan task di thread sendiri. Sinkronisasinya `pg_blocking_pids` — bukan
+# `sleep` sebagai penentu — jadi hasilnya tidak bergantung timing mesin.
+
+type
+  LockArgs = object
+    accountId: Id
+    businessDate: string
+
+var
+  ## Hasil pekerja thread: 0 = belum jalan, 1 = sukses / kunci didapat, -1 = task gagal.
+  settleResult = 0
+  lockResult = 0
+
+proc settleWorker(businessDate: string) {.thread.} =
+  ## Menjalankan task jatuh tempo pada koneksi pool sendiri, bukan `db` milik test: transaksi chunk
+  ## harus benar-benar berjalan di koneksi lain saat test memegang kuncinya.
+  {.cast(gcsafe).}:
+    settleResult = (if runMaturityAt(businessDate).isOk: 1 else: -1)
+
+proc lockWorker(args: LockArgs) {.thread.} =
+  {.cast(gcsafe).}:
+    lockResult = dbPool.withConn(proc(d: DbConn): int =
+      (if lockMaturityAccount(d, args.accountId, args.businessDate).isSome: 1 else: 0))
+
+proc blockedByHolder(pid: string): int =
+  ## Jumlah sesi yang menunggu lock `pid`, transitif (pola `itapi_teller_vault`): `pg_blocking_pids`
+  ## hanya memberi penghalang langsung, padahal penunggu kedua bisa mengantre di belakang yang
+  ## pertama. Ini yang membuat "pekerja benar-benar menunggu" deterministik.
+  let conn = dbPool.acquire()
+  try:
+    parseInt(conn.getValue(sql"""
+      WITH RECURSIVE blocked(pid) AS (
+        SELECT a.pid FROM pg_stat_activity a
+         WHERE a.datname = current_database() AND a.pid <> pg_backend_pid()
+           AND ?::int = ANY(pg_blocking_pids(a.pid))
+        UNION
+        SELECT a.pid FROM pg_stat_activity a
+          JOIN blocked b ON b.pid = ANY(pg_blocking_pids(a.pid))
+      )
+      SELECT count(*)::text FROM blocked""", pid))
+  finally:
+    dbPool.release(conn)
+
+proc waitBlockedOn(pid: string): int =
+  ## Tunggu sampai setidaknya satu sesi menunggu lock `pid` (batas 5 s = jaring aman supaya test
+  ## tidak menggantung; jalannya test tidak bergantung pada angka ini).
+  let deadline = epochTime() + 5.0
+  result = 0
+  while epochTime() < deadline and result == 0:
+    result = blockedByHolder(pid)
+    if result == 0:
+      sleep(5)
+
+suite "kunci baris rekening (O-112)":
+  test "penutupan menunggu kunci dan memindahkan saldo sesudah kunci":
+    closeAllTimeDeposits()
+    let partyId = newPartyRow()
+    let depositId = timeDeposit(std.version, std.product.code, OpenedOn, "10000000.00",
+      maturityDate = MaturityDate, aro = "NONE", partyId = $partyId)
+    let savingsId = savingsAccount(std.version, std.product.code, $partyId, OpenedOn)
+    seedPrincipalMovement(std.version, std.product.code, $depositId, "10000000.00", OpenedOn)
+    check runAt(MaturityRunDate).isOk
+
+    # Koneksi penahan memegang baris rekening — posisi transaksi teller yang sedang berjalan.
+    let side = dbPool.acquire()
+    defer: dbPool.release(side)
+    exec(side, sql"BEGIN")
+    lockAccountForUpdate(side, depositId)
+    let holderPid = side.getValue(sql"SELECT pg_backend_pid()")
+
+    settleResult = 0
+    var worker: Thread[string]
+    createThread(worker, settleWorker, MaturityRunDate)
+    let blocked = waitBlockedOn(holderPid)
+
+    # Setoran tunai yang sudah lolos cek status: saldo naik **sebelum** kunci dilepas. Halaman
+    # kandidat sudah dibaca pekerja, jadi saldo ini hanya terlihat bila kunci + baca ulang bekerja.
+    exec(side, sql"""
+      UPDATE deposit.account_balance SET balance = balance + 500000.00
+       WHERE account_id = ?""", $depositId)
+    exec(side, sql"COMMIT")
+    joinThread(worker)
+
+    check blocked >= 1
+    check settleResult == 1
+    check stateOf(depositId) == ("CLOSED", MaturityDate)
+    # Invarian: `CLOSED` tidak pernah bersaldo, dan pokok yang dipindahkan = saldo sesudah kunci
+    # (10.500.000), bukan 10.000.000 dari halaman kandidat. Tanpa kunci, `adjustBalance` menyisakan
+    # 500.000 → `DAY-345`, chunk dibatalkan, rekening tetap `ACTIVE`.
+    check balanceOf(depositId) == "0.00"
+    check balanceOf(savingsId) == "10513013.70"
+    let lines = maturityJournal(depositId, MaturityRunDate)
+    check lines.len == 2
+    check lines[0].debit == "10500000.00"
+    check lines[1].credit == "10500000.00"
+
+  test "kunci jalur teller adalah baris yang sama dengan jalur jatuh tempo":
+    # Membuktikan mutual exclusion tanpa harness HTTP: kunci yang diambil jalur setoran tunai
+    # (`lockAccountForUpdate`) menahan pembacaan terkunci jalur jatuh tempo pada baris yang sama.
+    closeAllTimeDeposits()
+    let partyId = newPartyRow()
+    let depositId = timeDeposit(std.version, std.product.code, OpenedOn, "10000000.00",
+      maturityDate = MaturityDate, aro = "NONE", partyId = $partyId)
+    let savingsId = savingsAccount(std.version, std.product.code, $partyId, OpenedOn)
+
+    let side = dbPool.acquire()
+    defer: dbPool.release(side)
+    exec(side, sql"BEGIN")
+    lockAccountForUpdate(side, depositId)
+    let holderPid = side.getValue(sql"SELECT pg_backend_pid()")
+
+    lockResult = 0
+    var worker: Thread[LockArgs]
+    createThread(worker, lockWorker, LockArgs(accountId: depositId,
+      businessDate: MaturityRunDate))
+    let blocked = waitBlockedOn(holderPid)
+    exec(side, sql"COMMIT")
+    joinThread(worker)
+
+    check blocked >= 1
+    check lockResult == 1
+    # Tidak ada uang yang berpindah: yang diuji hanya serialisasi.
+    check stateOf(depositId) == ("ACTIVE", MaturityDate)
+    check balanceOf(depositId) == "10000000.00"
+    check balanceOf(savingsId) == "0.00"
+
+  test "rekening yang berubah sebelum chunk berjalan dilewati, kolom dibaca ulang":
+    closeAllTimeDeposits()
+    let partyId = newPartyRow()
+    let depositId = timeDeposit(std.version, std.product.code, OpenedOn, "10000000.00",
+      maturityDate = MaturityDate, aro = "NONE", partyId = $partyId)
+    let savingsId = savingsAccount(std.version, std.product.code, $partyId, OpenedOn)
+    seedPrincipalMovement(std.version, std.product.code, $depositId, "10000000.00", OpenedOn)
+    check runAt(MaturityRunDate).isOk
+
+    # Kandidat masih berhak saat halaman dibaca.
+    let before = lockMaturityAccount(db, depositId, MaturityRunDate)
+    check before.isSome
+    check before.get().account.balance == moneyFromString("10000000.00").value()
+    check before.get().accruedInterest == moneyFromString("13013.70").value()
+    check before.get().hasBalance
+
+    # Proses lain menutup rekening sebelum chunk berjalan: bukan lagi pekerjaan task ini.
+    execScript(db, "UPDATE deposit.account SET status = 'CLOSED' WHERE account_id = '" &
+      $depositId & "'")
+    check lockMaturityAccount(db, depositId, MaturityRunDate).isNone
+
+    # Jatuh tempo yang sudah dimajukan (perpanjangan oleh proses lain) juga bukan pekerjaan tanggal
+    # buku ini.
+    execScript(db, """
+      UPDATE deposit.account SET status = 'ACTIVE', maturity_date = DATE '2027-01-01'
+       WHERE account_id = '""" & $depositId & """'""")
+    check lockMaturityAccount(db, depositId, MaturityRunDate).isNone
+
+    # Kolom keputusan (saldo) dibaca **sesudah** kunci: perubahan yang commit sebelum kunci didapat
+    # ikut terbaca, bukan nilai dari halaman kandidat.
+    execScript(db, """
+      UPDATE deposit.account SET maturity_date = DATE '""" & MaturityDate &
+        """'
+       WHERE account_id = '""" & $depositId & """'""")
+    execScript(db, """
+      UPDATE deposit.account_balance SET balance = balance + 200000.00
+       WHERE account_id = '""" & $depositId & """'""")
+    let after = lockMaturityAccount(db, depositId, MaturityRunDate)
+    check after.isSome
+    check after.get().account.balance == moneyFromString("10200000.00").value()
+
+    check runMaturityAt(MaturityRunDate).isOk
+    check stateOf(depositId) == ("CLOSED", MaturityDate)
+    check balanceOf(depositId) == "0.00"
+    check balanceOf(savingsId) == "10213013.70"

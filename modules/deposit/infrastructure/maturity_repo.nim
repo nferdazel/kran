@@ -20,6 +20,13 @@
 ## `TIME_DEPOSIT` (`row_number()`), lalu penyaring jatuh tempo diterapkan sesudahnya: setiap rekening
 ## muncul tepat di satu halaman, dan halaman yang isinya kosong hanya berarti tidak ada yang jatuh
 ## tempo di jendela itu.
+##
+## **Keputusan tidak boleh memakai halaman apa adanya (O-112).** Halaman dibaca di luar transaksi
+## chunk, jadi rekening di dalamnya bisa sudah berubah saat chunk berjalan: setoran tunai yang sudah
+## lolos cek status bisa commit setelah rekening ditutup task ini (rekening `CLOSED` bersaldo, tanpa
+## akrual lanjutan). Karena itu `lockMaturityAccount` mengunci baris rekening (`FOR UPDATE`) dan
+## membaca ulang seluruh kolom keputusan sesudah kunci didapat. `lockAccountForUpdate` adalah kunci
+## baris yang sama untuk jalur teller, supaya kedua jalur terserialisasi di satu baris.
 
 import std/[options, strutils]
 
@@ -46,24 +53,19 @@ proc countMaturityCandidates*(db: DbConn): int64 =
   int64(parseInt(db.getValue(sql"""
     SELECT count(*)::text FROM deposit.account WHERE account_type = 'TIME_DEPOSIT'""")))
 
-proc dueMaturitiesPage*(db: DbConn; businessDate: string; offset, limit: int):
-    seq[MaturityAccount] =
-  ## Rekening berjangka yang jatuh tempo pada `businessDate` (`maturity_date <= tanggal buku`,
-  ## status bukan `CLOSED`), diambil dari jendela `offset+1 .. offset+limit` himpunan stabil.
-  ## Urut `account_id` supaya dua panggilan dengan jendela berbeda tidak tumpang tindih.
-  let query = """
-    WITH ranked AS (
-      SELECT a.account_id, row_number() OVER (ORDER BY a.account_id) AS rn
-        FROM deposit.account a
-       WHERE a.account_type = 'TIME_DEPOSIT'
-    )
-    SELECT """ & accountColumns & """,
+const
+  ## Daftar kolom keputusan ARO: akun + kode produk + saldo (`accountColumns`), lalu jatuh tempo,
+  ## instruksi ARO, `cumulative` akrual terakhir, dan keberadaan baris saldo. Satu sumber untuk
+  ## halaman kandidat dan pembacaan terkunci supaya keduanya tidak bisa menyimpang.
+  maturityColumns = accountColumns & """,
            coalesce(to_char(a.maturity_date, 'YYYY-MM-DD'), ''),
            coalesce(a.aro_instruction, ''),
            coalesce(latest.cumulative::text, '0.00'),
-           b.account_id IS NOT NULL
+           b.account_id IS NOT NULL"""
+
+  ## Sumber + join yang sama untuk kedua pembaca (produk, saldo, akrual terakhir).
+  maturityFrom = """
       FROM deposit.account a
-      JOIN ranked r ON r.account_id = a.account_id
       JOIN product.product p ON p.product_id = a.product_id
       LEFT JOIN deposit.account_balance b ON b.account_id = a.account_id
       LEFT JOIN LATERAL (
@@ -72,21 +74,70 @@ proc dueMaturitiesPage*(db: DbConn; businessDate: string; offset, limit: int):
          WHERE ia.account_id = a.account_id
          ORDER BY ia.business_date DESC
          LIMIT 1
-      ) latest ON true
+      ) latest ON true"""
+
+  ## Predikat "berhak diproses pada tanggal buku". Dipakai halaman kandidat **dan** pembacaan
+  ## terkunci: rekening yang statusnya `CLOSED` atau jatuh temponya sudah dimajukan bukan lagi
+  ## pekerjaan task ini.
+  maturityPredicate = """a.status <> 'CLOSED' AND a.maturity_date <= ?::date"""
+
+proc maturityAccountOf*(row: Row): MaturityAccount =
+  ## Satu baris `maturityColumns` → `MaturityAccount`. Dipakai kedua pembaca; indeks kolom
+  ## (13/14/15/16) mengikuti `accountColumns` yang berakhir di indeks 12.
+  let interest = moneyFromString(row[15])
+  if interest.isErr:
+    raise newException(ValueError, "bunga akrual rekening bukan desimal sah: " & row[15])
+  MaturityAccount(
+    account: accountOf(row),
+    maturityDate: row[13],
+    aroInstruction: row[14],
+    accruedInterest: interest.value(),
+    hasBalance: row[16] == "t")
+
+proc dueMaturitiesPage*(db: DbConn; businessDate: string; offset, limit: int):
+    seq[MaturityAccount] =
+  ## Rekening berjangka yang jatuh tempo pada `businessDate` (`maturity_date <= tanggal buku`,
+  ## status bukan `CLOSED`), diambil dari jendela `offset+1 .. offset+limit` himpunan stabil.
+  ## Urut `account_id` supaya dua panggilan dengan jendela berbeda tidak tumpang tindih.
+  ##
+  ## Hasil halaman adalah **kandidat**, bukan keputusan: baris bisa berubah sebelum chunk berjalan
+  ## (lihat `lockMaturityAccount`).
+  let query = """
+    WITH ranked AS (
+      SELECT a.account_id, row_number() OVER (ORDER BY a.account_id) AS rn
+        FROM deposit.account a
+       WHERE a.account_type = 'TIME_DEPOSIT'
+    )
+    SELECT """ & maturityColumns & maturityFrom &
+      """
+      JOIN ranked r ON r.account_id = a.account_id
      WHERE r.rn > ?::int AND r.rn <= ?::int
-       AND a.status <> 'CLOSED'
-       AND a.maturity_date <= ?::date
+       AND """ & maturityPredicate & """
      ORDER BY a.account_id"""
   for row in db.getAllRows(sql(query), $offset, $(offset + limit), businessDate):
-    let interest = moneyFromString(row[15])
-    if interest.isErr:
-      raise newException(ValueError, "bunga akrual rekening bukan desimal sah: " & row[15])
-    result.add MaturityAccount(
-      account: accountOf(row),
-      maturityDate: row[13],
-      aroInstruction: row[14],
-      accruedInterest: interest.value(),
-      hasBalance: row[16] == "t")
+    result.add maturityAccountOf(row)
+
+proc lockMaturityAccount*(db: DbConn; accountId: Id; businessDate: string):
+    Option[MaturityAccount] =
+  ## Rekening jatuh tempo yang **terkunci**, dibaca ulang sesudah kuncinya didapat. `none` = rekening
+  ## tidak lagi berhak diproses pada `businessDate` (sudah `CLOSED`, atau jatuh temponya sudah
+  ## dimajukan proses lain); pemanggil wajib melewatinya tanpa memindahkan uang.
+  ##
+  ## Dua pernyataan, bukan satu `SELECT ... FOR UPDATE` berisi join: pernyataan baca kedua memakai
+  ## snapshot baru (READ COMMITTED), sehingga saldo dan akrual yang berubah sebelum kunci didapat
+  ## ikut terbaca, tanpa bergantung pada perilaku `EvalPlanQual` untuk baris hasil join.
+  if db.getAllRows(sql("""
+      SELECT a.account_id
+        FROM deposit.account a
+       WHERE a.account_id = ? AND """ & maturityPredicate & """
+        FOR UPDATE OF a"""), $accountId, businessDate).len == 0:
+    return none(MaturityAccount)
+  let rows = db.getAllRows(sql("SELECT " & maturityColumns & maturityFrom &
+    """
+     WHERE a.account_id = ? AND """ & maturityPredicate), $accountId, businessDate)
+  if rows.len == 0:
+    return none(MaturityAccount)
+  some(maturityAccountOf(rows[0]))
 
 proc activeSavingsAccount*(db: DbConn; partyId, branchId: Id): Option[Id] =
   ## Rekening tabungan `ACTIVE` milik party yang sama di cabang yang sama, urut nomor rekening.

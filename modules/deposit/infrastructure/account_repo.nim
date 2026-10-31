@@ -96,3 +96,17 @@ proc accountsByParty*(db: DbConn, partyId: Id, limit = 200): seq[Account] =
        ORDER BY a.account_no
        LIMIT ?::int"""), $partyId, $limit):
     result.add accountOf(row)
+
+proc lockAccountForUpdate*(db: DbConn; accountId: Id) =
+  ## Mengunci baris `deposit.account` sampai transaksi pemanggil selesai. Ini titik serialisasi
+  ## jalur teller (setor/tarik/PB) dan task `deposit.maturity_aro` (O-112/D-161): keduanya harus
+  ## memutuskan dari status dan saldo yang sama, bukan dari bacaan yang dibuat sebelum lawannya
+  ## commit.
+  ##
+  ## Kunci **hanya** baris rekening. Baris `deposit.account_balance` dikunci `UPDATE` jalur
+  ## masing-masing sesudahnya; semua penulis saldo mengambil kunci rekening lebih dulu (teller,
+  ## PB, jatuh tempo), sehingga urutannya seragam rekening → saldo dan tidak ada siklus tunggu.
+  ## `FOR UPDATE` di sini bukan "kunci untuk dibaca": pemanggil tetap harus **membaca ulang**
+  ## rekening sesudahnya.
+  discard db.getAllRows(sql"""
+    SELECT account_id FROM deposit.account WHERE account_id = ? FOR UPDATE""", $accountId)
