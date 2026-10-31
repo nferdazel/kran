@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # O-092: alert untuk KRAN — `/readyz` tidak sehat dan event outbox DEAD.
+# O-115: ditambah probe task day-close **non-kritis** yang `FAILED`. Run tetap `COMPLETED` saat
+# task seperti itu gagal, jadi tanpa probe ini tidak ada sinyal apa pun selain halaman monitor.
 #
 # Kenapa terpisah dari `system-health.sh`: skrip itu hanya mengirim heartbeat metrik host ke fond.
 # Probe `/readyz` KRAN punya arti sendiri (DB, migrasi, realtime, worker, DEAD) dan harus memberi
@@ -27,7 +29,7 @@ mkdir -p "$STATE_DIR"
 DEPLOY_LOCK="${KRAN_DEPLOY_LOCK:-/srv/qouver/apps/kran/.deploy.lock}"
 if [ -e "$DEPLOY_LOCK" ] && command -v flock >/dev/null 2>&1; then
   if exec 8>>"$DEPLOY_LOCK" && ! flock -n 8; then
-    printf '[%s] status=deploy code=- dead=- send=0 (deploy berjalan)\n' \
+    printf '[%s] status=deploy code=- dead=- tasks=- send=0 (deploy berjalan)\n' \
       "$(date '+%Y-%m-%d %H:%M:%S')"
     exit 0
   fi
@@ -56,6 +58,37 @@ dead_count() {
     "select count(*) from platform.outbox where status = 'DEAD'" 2>/dev/null | tr -d '[:space:]'
 }
 
+# O-115: count task `FAILED` yang `critical = false` pada run institusi `COMPLETED` terakhir
+# (business_date terbesar). Run yang lebih baru dan bersih membuat probe ini kembali 0, jadi alert
+# hilang sendiri tanpa operator perlu menandai apa pun.
+# Keluaran satu baris: "<jumlah>|<business_date>|<task_id (code, chunk=n); ...>".
+# Kosong = probe gagal (psql/podman tidak tersedia) — sama seperti `dead="?"`.
+failed_tasks_probe() {
+  podman exec qouver-postgres psql -U qouver -d kran -tAc "
+with latest as (
+  select run_id, business_date from daycloser.run
+  where scope_type = 'INSTITUTION' and state = 'COMPLETED'
+  order by business_date desc, finished_at desc nulls last
+  limit 1
+), failed as (
+  select t.task_id,
+         coalesce(t.error->>'code', '?') as code,
+         (select count(*) from daycloser.chunk c
+           where c.run_id = t.run_id and c.task_id = t.task_id) as chunks
+  from daycloser.task t
+  join latest l on l.run_id = t.run_id
+  where t.state = 'FAILED' and t.critical = false
+)
+select (select count(*) from failed) || '|' ||
+       coalesce((select max(business_date)::text from latest), '') || '|' ||
+       coalesce((select string_agg(
+                   task_id || ' (' || code ||
+                   case when chunks > 0 then ', chunk=' || chunks else '' end || ')',
+                   '; ' order by task_id)
+                 from failed), '')
+" 2>/dev/null | tr -d '\r'
+}
+
 http_body="$(curl -sS -m 10 -w '\n%{http_code}' "$HEALTH_URL" 2>/dev/null)"
 curl_rc=$?
 code="$(tail -n1 <<<"$http_body" 2>/dev/null)"
@@ -63,6 +96,22 @@ json="$(sed '$d' <<<"$http_body" 2>/dev/null)"
 [ -n "$code" ] || code="000"
 dead="$(dead_count)"
 [ -n "$dead" ] || dead="?"
+
+failed_raw="$(failed_tasks_probe)"
+task_count="?"
+task_date=""
+task_detail=""
+if [ -n "$failed_raw" ]; then
+  task_count="${failed_raw%%|*}"
+  rest="${failed_raw#*|}"
+  task_date="${rest%%|*}"
+  if [ "$rest" != "${rest#*|}" ]; then
+    task_detail="${rest#*|}"
+  fi
+fi
+case "$task_count" in
+  '' | *[!0-9]*) task_count="?" ;;
+esac
 
 failing=""
 if [ "$curl_rc" -ne 0 ] || [ "$code" != "200" ]; then
@@ -81,12 +130,15 @@ PY
   failing="${failing:-tidak ada detail}"
 fi
 
-if [ "$code" = "200" ] && [ "$dead" = "0" ]; then
+if [ "$code" = "200" ] && [ "$dead" = "0" ] && [ "$task_count" = "0" ]; then
   status="ok"
-  message="KRAN OK: /readyz 200, outbox DEAD 0"
+  message="KRAN OK: /readyz 200, outbox DEAD 0, task FAILED non-kritis 0"
 else
   status="bad"
-  message="KRAN ALERT: /readyz HTTP ${code}${failing:+ ($failing)}; outbox DEAD ${dead}"
+  message="KRAN ALERT: /readyz HTTP ${code}${failing:+ ($failing)}; outbox DEAD ${dead}; task FAILED non-kritis ${task_count}"
+  if [ "$task_count" != "0" ] && [ "$task_count" != "?" ] && [ -n "$task_detail" ]; then
+    message="${message} (run ${task_date}: ${task_detail})"
+  fi
 fi
 
 now="$(date +%s)"
@@ -114,5 +166,5 @@ if [ "$status" = "ok" ] && [ "$should_send" -eq 0 ]; then
   printf '%s %s\n' "$status" "$now" > "$STATE_FILE"
 fi
 
-printf '[%s] status=%s code=%s dead=%s send=%s\n' \
-  "$(date '+%Y-%m-%d %H:%M:%S')" "$status" "$code" "$dead" "$should_send"
+printf '[%s] status=%s code=%s dead=%s tasks=%s send=%s\n' \
+  "$(date '+%Y-%m-%d %H:%M:%S')" "$status" "$code" "$dead" "$task_count" "$should_send"
