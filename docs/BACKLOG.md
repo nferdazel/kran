@@ -276,3 +276,15 @@ mesin, bukan penilaian selera.
 | T-154 | DONE | Peristiwa `param.changed` disaring per cabang pelanggan | O-070, D-173 | T-058, T-030 | **31 Okt 2026 DONE**: gerbang topik tanpa dimensi cabang (`authorizedAnyBranch`), `EventScope` per langganan disaring di hub dan saat replay, cakupan kosong = gagal-tertutup, `TopicPolicy.eventScope` wajib. Bukti: `trealtime` 30 OK, `itapi_ws` 22 OK (dua klien beda cabang), `itapi_auth` 48 OK, `itrealtime` 5 OK |
 | T-155 | DONE | Penutupan otomatis rekening dormant bersaldo nol (24 bulan) | O-114, D-174 | T-138e, T-150 | **31 Okt 2026 DONE**: task `deposit.dormant_close` (non-kritis, setelah dormant) menutup hanya `DORMANT` bersaldo nol dengan aktivitas terakhir > 24 bulan (parameter); paginasi `DORMANT`+`CLOSED` stabil, audit per chunk di transaksi yang sama. Bukti: `itdaycloser_deposit` 46 OK (6 test baru). **HUMAN-REVIEW-REQUIRED** (dasar 24 bulan) |
 | T-156 | DONE | Visual regression dengan baseline Linux sebagai gate | O-022, D-177 | T-010, T-149 | **31 Okt 2026 DONE**: `visual.spec.ts` (masuk + buku besar × 2 tema, tanggal buku di-mask) hanya jalan di Linux; baseline dihasilkan `visual-baseline.yml` di runner yang sama lalu di-commit; dispatch tanpa `update` membandingkan. Bukti: baseline run 41219502893 cocok pada run banding 41220380661, e2e lokal 63 lulus/4 skip |
+
+## Rilis & gerbang deploy (dibuka 1 Nov 2026)
+
+Sumber: **D-178**, `docs/RELEASE.md`. Dipicu kejadian nyata: produksi menyajikan bundle web dari
+25 Okt selama ~6 hari sementara CI hijau dan API ter-deploy (build web di host mati di
+`corepack: command not found`). Kriteria selesai dapat diverifikasi mesin.
+
+| ID | Status | Tujuan | Deps | Kriteria selesai (dapat diverifikasi mesin) |
+|---|---|---|---|---|
+| T-157 | DONE | `VERSION` sebagai satu sumber versi + stempel ke API/web + gate kesamaan | — | **1 Nov 2026 DONE**: `tools/gen-version.sh` menulis `version_gen.nim` + `version.ts`; `./task version-check` (bagian `check`/`check-fast`) gagal bila `VERSION` ≠ `kran.nimble` ≠ `package.json` ≠ dua berkas generated; footer menampilkan versi. Bukti: `./task build`, `check-fast` (`ok: v0.1.0`), svelte-check 0 error |
+| T-158 | DONE | `./task release`: bump dari Conventional Commits, CHANGELOG, gate, commit, tag anotasi | T-157 | **1 Nov 2026 DONE**: `tools/gen-changelog.sh` (Keep a Changelog, blok per kategori) + `cmd_release` di `task`; `release.yml` (tag `v*`) memverifikasi `VERSION == tag` + manifest + generated lalu membuat release idempoten, hanya tag terbaru `--latest`. Bukti: `sh -n task`, `release.yml` lint workflow, `gh release` idempoten |
+| T-159 | DONE | Deploy menunggu check-run CI (fail-closed) + lock berbatas waktu | T-157 | **1 Nov 2026 DONE**: `ci_gate` di `deploy-vps.sh` menunggu 4 nama job `ci.yml`, hanya `success`, run terbaru per nama, timeout/check hilang = gagal, perubahan dokumen dilewati, `KRAN_SKIP_CI_GATE=1` darurat; `flock -w` (default 900 dtk). Bukti: shellcheck bersih, harness gate pada SHA hijau `d6358a1` = `OK`, payload kosong = `PENDING`, `failure`+`skipped` = `FAILED`, run terbaru menang |

@@ -30,6 +30,8 @@ diam-diam memilih; catat di `docs/DECISIONS.md` dan eskalasi (lihat §8).
 `task e2e`     → Playwright (e2e + axe 2 tema + svelte-check); visual regression belum ada (O-022)
 `task lint-web` → eslint (typescript-eslint + `svelte/*` non-a11y); butuh `pnpm install`
 `task ci`      → semua di atas (harus hijau sebelum menyatakan task selesai; DoD tidak berubah).
+`task version` → cetak `VERSION` (satu sumber untuk API, web, `kran.nimble`, `package.json`).
+`task release` → bump + CHANGELOG + gate + commit + tag anotasi (D-178, `docs/RELEASE.md`).
 Selama implementasi pakai `task verify <modul>`; `nim check` penuh di-shard paralel (D-077).
 Kalau perintah ini belum ada, MEMBUATNYA adalah task pertama (Fase 0, T-001).
 
@@ -41,6 +43,9 @@ Kalau perintah ini belum ada, MEMBUATNYA adalah task pertama (Fase 0, T-001).
   eksplisit meminta menulis *file* di repo (bukan menjalankan di server).
 - Jangan commit secret/ data nyata. Data uji selalu sintetis.
 - Conventional commits; satu commit = satu perubahan logis.
+- `task release` membuat tag anotasi `vX.Y.Z`. Tag adalah **penanda**, bukan pemicu deploy:
+  deploy tetap dari push ke `main`, dan `deploy-vps.sh` menunggu check-run CI hijau untuk commit
+  itu sebelum membangun apa pun (D-178, `docs/RELEASE.md`).
 
 ## 4. Protokol loop per task (WAJIB)
 Ambil task teratas berstatus `READY` dari `docs/BACKLOG.md`, lalu:

@@ -3815,3 +3815,33 @@ hanya di Linux (di macOS test melewati diri sendiri). Baseline dihasilkan `visua
 runner `ubuntu-24.04` dan di-commit; dispatch tanpa `update` hanya membandingkan — run 41219502893
 menghasilkan baseline, run 41220380661 membandingkannya dan hijau. Gate berjalan lewat `./task e2e`
 di job `web-e2e`, tanpa job e2e kedua.
+
+## 2026-11-01 — Versi tunggal, rilis bertag, gerbang CI di deploy (T-157…T-159)
+
+**Konteks nyata**: produksi menyajikan `_app/immutable/assets/0.Bg8lA1au.css` (desain v1, 25 Okt)
+selama ~6 hari. `deploy.log` berhenti di `==> Build web (pnpm)...`; journal webhook memuat
+`corepack: command not found` (host Node 26). CI hijau sepanjang waktu karena Actions memakai
+`pnpm/action-setup`, bukan corepack. Deploy juga tidak pernah menunggu CI, dan repo tidak punya
+versi yang bisa dipetakan ke build yang berjalan.
+
+**T-157** (D-178): `VERSION` = `0.1.0` menjadi satu sumber. `tools/gen-version.sh` menstempel ke
+`apps/api/src/version_gen.nim` (`AppVersion`/`AppCommit`) dan `apps/web/src/lib/version.ts`;
+`version.nim` membaca konstanta itu dengan `KRAN_VERSION` sebagai override; footer shell menampilkan
+`v{APP_VERSION}`. `./task version-check` dijalankan di dalam `check`/`check-fast`.
+Bukti: `./task build` ok, `./task check-fast` → `ok: v0.1.0`, `svelte-check` 0 error, `lint-web` ok.
+
+**T-158** (D-178): `tools/gen-changelog.sh` + `cmd_release`. Bump diturunkan dari Conventional
+Commits sejak tag `v*` terakhir, `CHANGELOG.md` disusun per kategori, gate `check-fast` + `build`,
+commit `chore: release`, tag anotasi, push `--follow-tags`, `gh release`. `.github/workflows/release.yml`
+(tag `v*`, `timeout-minutes: 15`) memverifikasi `VERSION == tag` **dan** manifest + berkas generated
+lalu membuat release idempoten; hanya tag terbaru `--latest`.
+
+**T-159** (D-178): `ci_gate` di `deploy-vps.sh` menunggu empat check-run `ci.yml` untuk SHA yang
+di-deploy — hanya `success` hijau, run terbaru per nama, check hilang/timeout = gagal, perubahan
+dokumen dilewati, `KRAN_SKIP_CI_GATE=1` hanya darurat. Lock deploy kini `flock -w` (default 900 dtk)
+supaya push beruntun mengantre, bukan meninggalkan `main` tanpa deploy.
+Bukti: `bash -n` + shellcheck bersih; harness gate: SHA hijau `d6358a1` → `OK`, payload kosong →
+`PENDING` (4 nama), `failure`+`skipped` → `FAILED`, run terbaru mengalahkan run lama.
+
+Gate yang dijalankan: `build`, `check-fast` (version sync, nimpretty 270 berkas, archcheck,
+lint-nomagic, paramgen, i18n, 8 skrip shell), `lint-web`, svelte-check web + ui.

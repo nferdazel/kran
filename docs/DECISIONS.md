@@ -4626,3 +4626,38 @@ ambang longgar hanya akan membuat gate itu hijau tanpa menangkap perubahan.
 menjalankan workflow dengan input `update` dan meninjau artefak sebelum commit. Ambang
 `maxDiffPixelRatio: 0.01` dipilih supaya perbedaan antialiasing kecil tidak memerahkan gate, tetapi
 perubahan tata letak/warna tetap tertangkap.
+
+## D-178 — Versi tunggal, rilis bertag, dan gerbang CI di deploy (1 Nov 2026)
+
+**Konteks.** 1 Nov 2026 produksi menyajikan bundle web dari 25 Okt selama ~6 hari. CI pada
+`main` hijau dan API ter-deploy, tetapi deploy berhenti tepat setelah build API: host memakai Node 26
+yang tidak lagi membawa `corepack`, sehingga `corepack pnpm install` mati dan web tidak pernah
+di-swap. Tidak ada satu pun pemeriksaan yang membandingkan "commit di `main`" dengan "yang benar-benar
+melayani". Selain itu repo belum punya versi: `package.json` `0.0.0`, `kran.nimble` `0.1.0`,
+`apps/api/src/version.nim` hanya fallback, jadi laporan bug tidak bisa dipetakan ke kode yang jalan.
+
+**Keputusan** (diadaptasi dari model rilis `majadu`/T-033, dengan dua celahnya ditutup).
+
+1. `VERSION` di root adalah satu-satunya sumber versi. `tools/gen-version.sh` menstempelnya ke
+   `apps/api/src/version_gen.nim` dan `apps/web/src/lib/version.ts` saat `./task build`;
+   `./task version-check` (bagian dari `check`/`check-fast`) mewajibkan `VERSION` == `kran.nimble`
+   == `package.json` == kedua berkas generated. Footer web menampilkan versi itu.
+2. `./task release [major|minor|patch] [--skip-check] [--no-push]`: bump diturunkan dari
+   Conventional Commits sejak tag `v*` terakhir (`!:`/`BREAKING CHANGE` → major, `feat:` → minor,
+   selain itu patch), `CHANGELOG.md` disusun `tools/gen-changelog.sh` (Keep a Changelog), gate
+   `check-fast` + `build`, commit `chore: release vX.Y.Z`, tag **anotasi**, push `--follow-tags`,
+   lalu `gh release`. Repo ini tidak memakai DCO, jadi tidak ada `-s`.
+3. Tag adalah **penanda**, bukan pemicu deploy (D-013). `release.yml` (trigger `tags: v*`)
+   memverifikasi tag == `VERSION` + manifest + berkas generated (celah yang di majadu masih terbuka),
+   lalu membuat GitHub Release secara idempoten; hanya tag terbaru mendapat badge *Latest*.
+4. `ops/scripts/deploy-vps.sh` menunggu check-run GitHub untuk SHA yang di-deploy: empat nama job
+   `ci.yml`, hanya `success` yang hijau, satu nama dinilai dari run terbaru, check hilang/timeout =
+   gagal (fail-closed). Perubahan dokumen melewati gerbang karena CI juga tidak berjalan di sana.
+   Escape hatch `KRAN_SKIP_CI_GATE=1` hanya untuk pemulihan darurat dan tercatat `WARN`.
+5. Lock deploy kini menunggu (`flock -w`, default 900 dtk), bukan langsung gagal: beberapa push
+   beruntun sebelumnya meninggalkan `main` tidak ter-deploy tanpa ada yang memicu ulang.
+
+**Konsekuensi.** Deploy bisa memakan waktu hingga ~15 menit lebih lama saat CI belum selesai; kalau
+CI merah, deploy berhenti sebelum menyentuh apa pun. Nama job di `ci.yml` menjadi kontrak yang harus
+ikut diperbarui bersama `CI_EXPECTED` (O-119). Gate rilis lokal sengaja bukan `./task ci` penuh; e2e
+butuh stack khusus, dan jaminan menyeluruh datang dari CI pada commit yang sama yang menahan deploy.
