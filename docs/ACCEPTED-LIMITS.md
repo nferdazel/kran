@@ -164,6 +164,15 @@ keputusan tata kelola (O-102).
   `platform.user_role` (berapa akun memegang `platform_admin`), `platform.role_conflict`. Pemilik:
   O-102 (K-3/K-4).
 
+## 4d. Retensi `response_body` idempotensi (31 Okt 2026)
+
+- **Batas:** `platform.idempotency_key.response_body` boleh memuat PII (nama, nomor rekening, saldo)
+  sampai barisnya kedaluwarsa. Retensi = `platform.idempotency.ttl_hours` (default 24 jam), ditegakkan
+  task `platform.idempotency_sweep`; 30 hari adalah batas atas yang tidak boleh dilewati (D-175).
+  **Ketergantungan:** bila sweep dimatikan/`FAILED` berulang, retensi tidak terjaga — baris bertahan
+  sampai task dijalankan lagi. Cara deteksi: `SELECT max(expires_at) FROM platform.idempotency_key`
+  dan status task di `daycloser.run_task`. Pemilik: O-093, D-118.
+
 ## 5. Cara memakai dokumen ini
 
 - Menemukan batas baru saat mengerjakan task → tambahkan baris (dampak, cara deteksi, pemilik), jangan

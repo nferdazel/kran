@@ -4488,3 +4488,120 @@ O-113 mencatat bahwa perubahan status dormant tidak meninggalkan jejak audit.
 (`dormant_repo`), bukan kolom. Bila kelak kolom diperlukan, tambahkan kolom + jalur tulis + penjaga,
 bukan menghidupkan kembali jalur lama. Pemetaan audit `daycloser_run` tetap konsisten dengan
 `daycloser.run.finish` yang sudah ada.
+
+## D-171 — Penerus `effectiveTo` boleh GLOBAL; kandidat kebijakan sesi hanya dinilai pada scope yang dibaca (31 Okt 2026)
+
+**Konteks.** Dua temuan O-067 dan O-044 sama-sama soal "menilai hal yang tidak berpengaruh".
+`effectiveToGapProblem` hanya menerima penerus pada (key, scope_type, scope_id) yang sama, padahal
+resolusi (`resolveCandidate`) juga mencocokkan baris `GLOBAL` untuk pembaca cabang. Sebaliknya,
+`sessionPolicyCandidateProblem` menilai kandidat di scope mana pun, padahal login hanya membaca
+`INSTITUTION:""` + `GLOBAL`.
+
+**Keputusan** (pilihan A pada kedua item, interview pemilik 31 Okt 2026).
+
+1. Penerus sah = baris lain pada key yang sama dengan **scope yang sama** atau **GLOBAL**, status
+   `ACTIVE`/`SUPERSEDED`/`PENDING`, dan masih berlaku pada tanggal `effective_to`. Cabang lain dan
+   institusi ber-id lain tetap bukan penerus.
+2. Pemeriksaan kombinasi kebijakan sesi hanya berjalan untuk kandidat yang benar-benar dibaca login:
+   `GLOBAL` atau `INSTITUTION` dengan `scope_id` kosong. Kandidat `BRANCH`/`PRODUCT`/… dilewati.
+
+**Konsekuensi.** Perubahan yang tidak akan pernah dibaca aplikasi tidak lagi ditolak dengan alasan
+yang membingungkan; penolakan tetap berlaku untuk kandidat yang berpengaruh. Bukti: `itparam` (31
+OK) memuat kasus penerus GLOBAL dan cabang lain; `itauth` (29 OK) memuat kandidat BRANCH/INSTITUTION
+ber-id yang dilewati.
+
+## D-172 — Bentuk nilai JSON parameter dibatasi kedalaman dan tanpa `null` (31 Okt 2026)
+
+**Konteks.** O-087: binding `pvtJson` hanya dibatasi ukuran (16 KiB), bentuknya bebas. Konsumen
+(binding produk, seed pack) bisa menerima struktur sangat dalam atau `null` yang ambigu antara
+"nilai kosong" dan "parameter tidak ada".
+
+**Keputusan** (pilihan A, interview 31 Okt 2026). `jsonFormProblem` di
+`modules/platform/domain/param.nim` menjadi satu-satunya batas bentuk: kedalaman maksimum 8, `null`
+ditolak di mana pun, dan angka non-terhingga ditolak. Dipanggil dari `submitValue` (semua jalur
+tulis: handler, `ctl`, seed) **dan** pemeriksaan binding produk, supaya tidak ada jalur yang lebih
+longgar.
+
+**Konsekuensi.** Batas ini bentuk, bukan schema bisnis: arti struktur tetap milik konsumennya.
+Kedalaman 8 dipilih sebagai batas teknis (`nomagic:ok`) dan bisa dinaikkan bila ada struktur sah
+yang lebih dalam — tetapi harus lewat keputusan baru, bukan diam-diam. Bukti: `tparam` (25 OK),
+`itparam` (30 OK, termasuk penolakan nilai terlalu dalam dan `null`).
+
+## D-173 — Peristiwa `param.changed` disaring per cabang pelanggan (31 Okt 2026)
+
+**Konteks.** O-070: `topicsAllowedFor` memakai izin tingkat institusi, sehingga pengguna yang
+izinnya khusus cabang tidak menerima peristiwa sama sekali; membuka topiknya tanpa penyaringan
+justru mengirim peristiwa semua cabang ke semua pelanggan.
+
+**Keputusan** (pilihan A, interview 31 Okt 2026).
+
+1. Gerbang topik memakai `authorizedAnyBranch` (izin dipegang di minimal satu cabang). Yang
+   menentukan apa yang sampai adalah penyaringan peristiwa, bukan gerbang itu.
+2. `EventScope` (`institutionWide`, `branchIds`) dihitung dari grant + pasangan SoD yang sama dengan
+   otorisasi baca, sekali per pesan `subscribe`, lalu disimpan di langganan hub.
+3. `scopeAllows` hanya menyaring `param.changed` dengan `scope_type = BRANCH`: cabang yang tidak
+   dipegang pelanggan tidak menerima. Peristiwa `GLOBAL`/`INSTITUTION`/lainnya tidak spesifik
+   cabang dan tetap dikirim. Default cakupan kosong = tidak ada cabang (gagal-tertutup).
+4. Replay (`resumeFrom`) memakai saringan yang sama, jadi reconnect tidak membocorkan peristiwa
+   cabang lain.
+
+**Konsekuensi.** `TopicPolicy.eventScope` wajib (gagal keras saat start bila kosong), pola yang sama
+dengan `sessionValid` (O-036). Grant yang berubah berlaku pada pesan `subscribe` berikutnya; sesi
+yang dicabut tetap ditutup jalur `sessionValid`. Bukti: `trealtime` (30 OK, termasuk default
+gagal-tertutup), `itrealtime`, `itapi_ws` (22 OK: dua klien beda cabang hanya menerima peristiwanya
+sendiri, peristiwa GLOBAL ke keduanya), `itapi_auth` (48 OK).
+
+## D-174 — Penutupan otomatis rekening dormant: hanya saldo nol, 24 bulan (31 Okt 2026)
+
+**Konteks.** O-114 mencatat bahwa T-138e hanya menandai `DORMANT` dan mereaktivasi; rekening dormant
+menumpuk tanpa jalur penutupan. Spec §11.6 menyebut "tutup otomatis", tetapi syarat saldo,
+pemberitahuan, dan hak anggota belum diputuskan.
+
+**Keputusan** (pilihan A, interview 31 Okt 2026). Task `deposit.dormant_close` (EOD, non-kritis,
+`dependsOn` task dormant, per-bussines-date) menutup rekening yang **masih `DORMANT`**, **saldonya
+nol**, dan aktivitas terakhirnya lebih lama dari `deposit.dormant_close.after_months` (default 24).
+Tidak ada uang yang berpindah. Rekening bersaldo bukan nol tidak pernah ditutup otomatis; ia
+ditinggalkan untuk jalur operasional. Ambang 24 bulan dihitung dari aktivitas terakhir (sumber
+subledger yang sama dengan D-170), jadi penutupan selalu setelah penandaan 12 bulan.
+
+**Konsekuensi.** Populasi paginasi = `DORMANT` + `CLOSED` supaya status yang berpindah tetap di
+dalam himpunan dan offset tidak bergeser. Audit per chunk (`deposit.dormant_close.chunk`, daftar
+rekening tertutup), ditulis di transaksi yang sama. Angka 24 dan dasar pemberitahuan ke anggota
+bertanda `NEEDS-COMPLIANCE-REVIEW`. Bukti: `itdaycloser_deposit` 46 OK (6 test baru: saldo nol vs
+bersaldo, batas ambang, hanya DORMANT, audit + idempoten, param hilang = DAY-361, paginasi chunk 2).
+
+## D-175 — Retensi `response_body` idempotensi dibatasi TTL + sweep, 30 hari sebagai batas atas (31 Okt 2026)
+
+**Konteks.** O-093: `platform.idempotency_key.response_body` menyimpan respons sukses apa adanya
+(bisa memuat PII). Sudah ada parameter `platform.idempotency.ttl_hours` (default 24) dan task
+`platform.idempotency_sweep` yang menghapus baris kedaluwarsa.
+
+**Keputusan** (pilihan A, interview 31 Okt 2026). Retensi = umur baris idempotensi, yaitu
+`ttl_hours`; sweep day-close menghapusnya setelah kedaluwarsa. Angka 30 hari dicatat sebagai **batas
+atas** yang tidak boleh dilewati; nilai default 24 jam jauh di bawahnya dan tidak diubah, karena
+memperpanjang TTL hanya menambah jendela replay — bukan kebutuhan pilot.
+
+**Konsekuensi.** Tidak ada masking/field allowlist baru; risiko PII pada `response_body` diterima
+dengan batas waktu ini (D-118 tetap berlaku sampai produksi berisi data anggota nyata). Ketergantungan
+pada sweep dicatat di `ACCEPTED-LIMITS`: bila task sweep dimatikan, retensi tidak lagi terjaga.
+
+## D-176 — Item yang ditunda beserta pemicunya (31 Okt 2026)
+
+**Konteks.** Interview pemilik 31 Okt 2026 menyisakan item yang **tidak** dikerjakan sekarang.
+Menunda tanpa pemicu membuat item menggantung; karena itu setiap penundaan dicatat dengan syarat
+kapan ia harus diangkat kembali.
+
+| Item | Keputusan | Pemicu untuk mengangkat kembali |
+| --- | --- | --- |
+| O-026 | Tunda `schemathesis` | Ada endpoint/klien baru yang validator internal (subset 12 kata kunci) tidak lagi mewakili kontrak, atau ada bug bentuk respons yang lolos ke klien |
+| O-028 | Ukur dulu kuota antrean realtime | Ada keluhan klien lambat/lag nyata, atau jumlah pelanggan realtime bertambah sampai antrean Mux jadi risiko memori |
+| O-053 | Tunda terjemahan `name_key`/`description_key` role & izin | Layar admin role/permission mulai dipakai non-teknis, atau ada permintaan bahasa Inggris dari pengguna |
+| O-064 | Tunda penanda "nilai berhenti sengaja" | Ada kebutuhan bisnis menghentikan nilai tanpa pengganti (mis. kebijakan dicabut) |
+| O-075 | Tunda akun kontra | Ada kebutuhan laporan yang tidak bisa dijawab invarian `normal_side` (Fase 3) |
+| O-071 | Tunda aktivasi MFA | Ada kebijakan keamanan yang mewajibkan MFA, atau ada data anggota nyata di produksi |
+| O-024 | Tunda komponen headless kompleks | Layar bisnis pertama yang benar-benar butuh dialog/combobox/tabel virtualized |
+| O-041 | Tunda mesin invariant lintas-parameter | Muncul aturan lintas-key kedua yang tidak bisa dinyatakan sebagai pemeriksaan eksplisit kecil |
+
+**O-100** tetap: ekuitas provisoris `301.1`/`301.2` dipertahankan dengan tag
+`NEEDS-COMPLIANCE-REVIEW` sampai register regulasi §4 diverifikasi.
+**O-008** dibatalkan: itemnya server-wide dan ditangani di host, bukan di repo kran.
