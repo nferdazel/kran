@@ -20,6 +20,7 @@
   import { page } from "$app/state";
 
   import * as m from "#lib/paraglide/messages.js";
+  import { APP_VERSION } from "#lib/version.js";
   import { api } from "#lib/app/api.js";
   import { formatDate } from "#lib/app/format.js";
   import {
@@ -204,7 +205,13 @@
 
   <footer class="kran-footer">
     <div class="kran-footer__inner">
-      <p class="kran-muted">{m.common_app_title()}</p>
+      <p class="kran-muted">
+        {m.common_app_title()}
+        <!-- Versi dibaca dari VERSION lewat berkas generated (tools/gen-version.sh). Ini data,
+             bukan teks yang perlu diterjemahkan; tanpa versi, laporan bug tidak bisa dipetakan
+             ke kode yang benar-benar berjalan. -->
+        <span class="kran-footer__version">v{APP_VERSION}</span>
+      </p>
 
       <!-- Pengaturan tampilan: di luar alur Tab konten, terlihat dengan sendirinya (bukan modal,
            bukan popup) supaya tetap bisa dipakai keyboard-only tanpa membuka apa pun lebih dulu. -->

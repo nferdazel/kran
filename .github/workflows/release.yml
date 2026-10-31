@@ -1,0 +1,75 @@
+name: Release
+
+# Rilis adalah penanda, bukan pemicu deploy (D-013, D-178): deploy tetap dari push ke `main`
+# lewat webhook -> ops/scripts/deploy-vps.sh, yang menunggu CI hijau di commit itu.
+# Workflow ini hanya memastikan tag yang di-push benar-benar menyebut versi di repo, lalu
+# membuat GitHub Release. Tag yang melenceng dari VERSION tidak boleh menghasilkan rilis.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: "GitHub Release"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag matches VERSION
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          [ -f VERSION ] || { echo "VERSION tidak ada" >&2; exit 1; }
+          version="$(tr -d ' \n\r' < VERSION)"
+          if [ "$TAG" != "v$version" ]; then
+            echo "tag $TAG tidak cocok dengan VERSION ($version)" >&2
+            exit 1
+          fi
+
+          # Manifests dan berkas generated ikut dikomit; kalau salah satunya tertinggal, artefak
+          # yang dibangun dari tag ini akan melaporkan versi yang berbeda dari namanya.
+          nimble="$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' kran.nimble | head -1)"
+          [ "$nimble" = "$version" ] || { echo "kran.nimble ($nimble) != VERSION ($version)" >&2; exit 1; }
+          pkg="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' package.json | head -1)"
+          [ "$pkg" = "$version" ] || { echo "package.json ($pkg) != VERSION ($version)" >&2; exit 1; }
+          gen="$(sed -n 's/^const AppVersion\* = "\(.*\)"/\1/p' apps/api/src/version_gen.nim | head -1)"
+          [ "$gen" = "$version" ] || { echo "version_gen.nim ($gen) != VERSION ($version)" >&2; exit 1; }
+          web="$(sed -n 's/^export const APP_VERSION = "\(.*\)";/\1/p' apps/web/src/lib/version.ts | head -1)"
+          [ "$web" = "$version" ] || { echo "version.ts ($web) != VERSION ($version)" >&2; exit 1; }
+          echo "tag $TAG cocok dengan VERSION $version"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          # Idempoten: `./task release` sudah membuat rilis lewat `gh`, dan workflow ini bisa
+          # terpicu ulang kalau tag dipindah. Rilis yang sudah ada tidak ditimpa.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG sudah ada."
+            exit 0
+          fi
+          # Hanya tag terbaru yang mendapat badge "Latest": push beberapa tag sekaligus
+          # menjalankan job ini sekali per tag, dan GitHub memberi badge ke rilis yang dibuat
+          # terakhir — bukan yang paling baru versinya.
+          newest="$(git tag --sort=-v:refname --list 'v*' | head -n 1)"
+          if [ "$TAG" = "$newest" ]; then
+            gh release create "$TAG" --title "$TAG" --generate-notes --latest
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes --latest=false
+          fi

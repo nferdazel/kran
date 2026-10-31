@@ -362,6 +362,15 @@
   gap: var(--space-4);
 }
 
+/* Versi build: data yang dibaca saat melaporkan bug, bukan label yang perlu diterjemahkan. */
+.kran-footer__version {
+  margin-inline-start: var(--space-2);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
 /* Halaman sederhana (mis. galat): satu kolom, jarak antarblok, lebar baca terbatas. */
 .kran-page {
   display: grid;

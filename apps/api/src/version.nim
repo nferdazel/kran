@@ -1,13 +1,16 @@
-## Versi aplikasi (spec §21.4: dipakai `/healthz` dan log startup).
+## Versi aplikasi (spec §21.4: `/healthz` dan log startup).
 ##
-## Sumber: env `KRAN_VERSION` (diisi saat deploy/systemd) bila ada; kalau tidak, konstanta
-## `FallbackVersion`. Catatan: pengisian otomatis dari `git describe` saat build belum ada —
-## sampai itu, naikkan `FallbackVersion` bersamaan dengan `version` di `kran.nimble`.
+## Sumber: `VERSION` di root repo. `tools/gen-version.sh` menstempelnya ke `version_gen.nim`
+## saat `./task build`, dan `./task check-fast` gagal bila berkas generated tidak lagi sama.
+## `KRAN_VERSION` (env/systemd) tetap menang bila diisi — deploy mengisinya dengan tag rilis,
+## sehingga proses yang berjalan tidak bergantung pada kapan binary dibangun.
 
 import std/os
 
-const FallbackVersion* = "0.1.0"
+import ./version_gen
+
+export version_gen
 
 proc appVersion*(): string =
   let fromEnv = getEnv("KRAN_VERSION")
-  if fromEnv.len > 0: fromEnv else: FallbackVersion
+  if fromEnv.len > 0: fromEnv else: AppVersion
