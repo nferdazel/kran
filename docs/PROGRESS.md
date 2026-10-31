@@ -3678,3 +3678,21 @@ kini tabular, dan `.kran-input[aria-invalid="true"]` punya penanda visual (DESIG
 **Sisa**: O-117 tertutup. Berikutnya T-144 (verifikasi cetak) dan task kenaikan ambang axe ke
 `moderate` (D-166) — sekarang tidak lagi terhalang migrasi layar kas. Buka kas masih bergantung pada
 rekening yang dimuat; pemisahan itu pekerjaan Fase 3, bukan migrasi ini.
+
+## 2026-10-31 — PB pencairan dini + layar kas sebagai stasiun kerja (T-148, T-141)
+
+**T-148 / O-108 (D-168)**: PB keluar kini mencairkan deposito berjangka penuh sebelum jatuh tempo.
+`deposit.transfer.amount` tetap pokok; bunga dan penalti menjadi baris subledger bertanda di rekening
+tujuan (`INTEREST_PAID_EARLY` +, `PENALTY_CHARGE −`) dengan tiga jurnal `*ViaTransfer` (202/201,
+204/201, 201/403), sehingga penalti > bunga tetap benar di rekonsiliasi. Statement memakai `kind`
+`EARLY_WITHDRAWAL` (dipetakan di domain). Pencairan penuh kini mengabaikan `min_balance` produk
+(`decreaseBalanceToZero`) di kedua jalur — sebelumnya produk dengan saldo minimum > 0 menolak
+pencairan penuh dengan `insufficient_funds`. Bukti: `itapi_teller` 56 OK termasuk mutation check
+peta tanda, regresi `ittransfer`/`itapi_deposit`/`itdaycloser_*`/`itapi_dayclose` hijau.
+
+**T-141 / D-169**: panel sesi kas punya pemilih cabang; kas bisa dibuka tanpa memuat rekening, dan
+memuat rekening mengisi cabang sesi (form ditutup bila berbeda). Peran `teller` mendapat
+`platform.branch.read` (migrasi `platform/0075`), fixture dev mengikuti. Bukti: Playwright **62 lulus,
+0 skip** di DB segar, termasuk test baru "buka kas tanpa memuat rekening anggota".
+
+**Sisa**: T-149 (ambang axe ke `moderate`), T-144 (zoom 200% + cetak), T-143 (copy operator).

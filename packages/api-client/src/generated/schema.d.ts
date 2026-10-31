@@ -2684,13 +2684,14 @@ export interface components {
         };
         /**
          * @description Satu baris statement. `kind` membedakan sumber; `CASH` = transaksi tunai teller, `MATURITY` =
-         *     perpindahan jatuh tempo deposito (pokok/bunga, tanpa kas), `TRANSFER` = pemindahbukuan.
+         *     perpindahan jatuh tempo deposito (pokok/bunga, tanpa kas), `TRANSFER` = pemindahbukuan,
+         *     `EARLY_WITHDRAWAL` = bunga atau penalti pencairan dini deposito lewat PB (T-148).
          *     Tepat satu dari `transactionId` (`CASH`/`MATURITY`) atau `transferId` (`TRANSFER`) terisi,
          *     yang lain `null`. `direction` relatif ke rekening yang diminta: `IN` = masuk, `OUT` = keluar.
          */
         StatementRow: {
             /** @enum {string} */
-            kind: "CASH" | "TRANSFER" | "MATURITY";
+            kind: "CASH" | "TRANSFER" | "MATURITY" | "EARLY_WITHDRAWAL";
             /** @enum {string} */
             direction: "IN" | "OUT";
             /** @description Nominal desimal string 2 desimal (tanpa float). */
@@ -2753,6 +2754,28 @@ export interface components {
              * @description Tanggal buku PB (`YYYY-MM-DD`).
              */
             businessDate: string;
+            /**
+             * @description Hanya ada bila PB ini **mencairkan deposito berjangka sebelum jatuh tempo** (T-148,
+             *     D-164). `amount` tetap pokok yang keluar dari deposito; rekening tujuan menerima
+             *     `creditedAmount` karena bunga dibayar dan penalti dipotong.
+             */
+            earlyWithdrawal?: components["schemas"]["EarlyWithdrawalTransfer"];
+        };
+        /**
+         * @description Rincian pencairan dini deposito berjangka lewat pemindahbukuan (T-148).
+         *     `creditedAmount = principal + interest − penalty` adalah dana yang benar-benar masuk ke
+         *     rekening tujuan. Bunga adalah akrual yang sudah dijurnal tetapi belum dibayar; penalti
+         *     adalah persen dari pokok sesuai atribut produk `product.savings.early_withdrawal_penalty`.
+         */
+        EarlyWithdrawalTransfer: {
+            /** @description Pokok yang keluar dari deposito (desimal 2 desimal). */
+            principal: string;
+            /** @description Bunga terakru yang ikut dibayarkan (desimal 2 desimal). */
+            interest: string;
+            /** @description Penalti pencairan dini (desimal 2 desimal). */
+            penalty: string;
+            /** @description Dana yang dikreditkan ke rekening tujuan (desimal 2 desimal). */
+            creditedAmount: string;
         };
         TellerSessionOpenRequest: {
             /**

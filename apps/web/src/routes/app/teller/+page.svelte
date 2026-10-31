@@ -11,9 +11,10 @@
    * pemilik pada brief §8/Q3; menyimpang dari DESIGN §7 yang melarang konfirmasi untuk aksi rutin).
    *
    * Panel sesi kas (T-108) memakai pola tinjauan yang sama: buka/tutup sesi dikonfirmasi satu
-   * lapisan sebelum dikirim, karena keduanya memindahkan uang fisik. Cabang sesi = cabang rekening
-   * yang sedang dimuat (tidak ada pemilih cabang dan `SessionInfo` tidak membawa cabang), jadi panel
-   * menunggu rekening termuat dan form transaksi ditutup selama sesi belum pasti (fail-closed).
+   * lapisan sebelum dikirim, karena keduanya memindahkan uang fisik. Cabang sesi dipilih langsung di
+   * panel (T-141): membuka kas tidak menunggu rekening anggota. Memuat rekening mengisi pilihan itu
+   * dengan cabang rekening, dan form transaksi ditutup bila cabang sesi berbeda dari cabang rekening
+   * (fail-closed).
    *
    * Pencarian rekening lewat nomor sudah tersedia (T-105, D-126): input di layar ini dikirim ke
    * endpoint `?accountNo=`, jadi tidak ada lagi pengisian UUID manual.
@@ -36,6 +37,7 @@
 
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
+  import { loadBranches, type Branch } from "#lib/app/branches.js";
   import { formatClock, formatDate, formatDateTime, formatMoney } from "#lib/app/format.js";
   import {
     SESSION_NOTE_MAX_LENGTH,
@@ -185,6 +187,10 @@
   let sessionErrorUnknown = $state(false);
   let sessionKey = $state("");
   let sessionKeyIdentity = $state("");
+  /** Cabang sesi kas: dipilih langsung, atau mengikuti rekening yang dimuat (T-141). */
+  let branches = $state<Branch[]>([]);
+  let branchesFailed = $state(false);
+  let sessionBranchId = $state("");
   let sessionTx = $state<SessionTxState>({ kind: "idle" });
   /** Nomor permintaan terakhir: jawaban lama yang datang belakangan tidak boleh menimpa yang baru. */
   let sessionTxRequest = 0;
@@ -220,8 +226,14 @@
     account === null ? "" : formatMoney(account.balance, { decimals: 2 }),
   );
 
-  // Cabang sesi = cabang rekening yang sedang dimuat, sama dengan cabang transaksi tunai.
-  const branchId = $derived(account?.branchId ?? "");
+  // Cabang sesi dipilih di panel sesi (T-141: buka kas tidak menunggu rekening). Memuat rekening
+  // mengisi pilihan itu dengan cabang rekening, karena transaksi tunai wajib memakai sesi di cabang
+  // rekening tersebut.
+  const branchId = $derived(sessionBranchId);
+  const accountBranch = $derived(account?.branchId ?? "");
+  const branchMismatch = $derived(
+    accountBranch !== "" && branchId !== "" && branchId !== accountBranch,
+  );
   const session = $derived(sessionState.kind === "open" ? sessionState.session : null);
 
   /**
@@ -232,6 +244,7 @@
   const sessionGate = $derived(
     sessionPostingGate({
       branchKnown: branchId !== "",
+      branchMismatch,
       loading: sessionState.kind === "loading",
       failed: sessionState.kind === "failed",
       missing: sessionState.kind === "missing",
@@ -389,6 +402,9 @@
       account = found;
       loadedAtMs = Date.now();
       resetOutcome();
+      // Transaksi tunai wajib memakai sesi di cabang rekening, jadi memuat rekening mengisi pilihan
+      // cabang sesi (dan tetap bisa diganti lewat pemilih untuk melihat cabang lain).
+      sessionBranchId = found.branchId;
       resetSession();
       await loadSession();
     } catch {
@@ -415,6 +431,29 @@
     sessionKey = "";
     sessionKeyIdentity = "";
     sessionTx = { kind: "idle" };
+  }
+
+  /** Master cabang untuk pemilih cabang sesi (T-141). Gagal = panel sesi tetap butuh rekening. */
+  async function loadBranchList(): Promise<void> {
+    try {
+      const outcome = await loadBranches();
+      if (outcome.response.ok && outcome.data) {
+        branches = outcome.data.items;
+        return;
+      }
+      branchesFailed = true;
+    } catch {
+      branchesFailed = true;
+    }
+  }
+
+  /** Ganti cabang sesi: sesi lama dibuang, sesi cabang baru dimuat (belum tentu ada). */
+  function chooseSessionBranch(value: string): void {
+    sessionBranchId = value;
+    resetSession();
+    sessionTxRequest += 1;
+    sessionTx = { kind: "idle" };
+    if (value !== "") void loadSession();
   }
 
   /**
@@ -828,9 +867,14 @@
       } else {
         const transfer = outcome.data as Transfer;
         result = { kind: "transfer", transfer };
-        announcement = m.teller_success_status({
-          balance: formatMoney(transfer.sourceBalanceAfter, { decimals: 2 }),
-        });
+        const balance = formatMoney(transfer.sourceBalanceAfter, { decimals: 2 });
+        // Pencairan dini: yang penting bagi operator adalah dana yang masuk ke tujuan.
+        announcement =
+          transfer.earlyWithdrawal === undefined
+            ? m.teller_success_status({ balance })
+            : `${m.teller_success_status({ balance })} ${m.teller_early_transfer_announcement({
+                amount: formatMoney(transfer.earlyWithdrawal.creditedAmount, { decimals: 2 }),
+              })}`;
       }
       idempotencyKey = "";
       idempotencyIdentity = "";
@@ -917,6 +961,7 @@
   onMount(() => {
     if (!canPost) return;
     void loadShortcuts();
+    void loadBranchList();
     // Deep link `?accountNo=` (brief §2.4): layar bisa dibuka dari tautan rekening.
     const deepLinkNo = page.url.searchParams.get("accountNo");
     if (deepLinkNo !== null && deepLinkNo.trim() !== "") {
@@ -1037,8 +1082,29 @@
           {m.teller_session_heading()}
         </h2>
 
+        {#if branchesFailed}
+          <p class="kran-alert" role="alert">{m.teller_session_branches_failed()}</p>
+        {:else if branches.length > 0}
+          <div class="kran-field">
+            <label class="kran-label" for="teller-session-branch">
+              {m.teller_session_branch_label()}
+            </label>
+            <select
+              class="kran-select"
+              id="teller-session-branch"
+              value={sessionBranchId}
+              onchange={(event) => chooseSessionBranch(event.currentTarget.value)}
+            >
+              <option value="">{m.teller_session_branch_placeholder()}</option>
+              {#each branches as branch (branch.branchId)}
+                <option value={branch.branchId}>{branch.code} · {branch.name}</option>
+              {/each}
+            </select>
+          </div>
+        {/if}
+
         {#if branchId === ""}
-          <p class="kran-muted">{m.teller_session_need_account()}</p>
+          <p class="kran-muted">{m.teller_session_need_branch()}</p>
         {:else if closeResult !== null && sessionPhase === "idle"}
           {@const closed = closeResult}
           <!-- Fokus dipindah ke judul hasil tutup sesi (pola brief §2.1). -->
@@ -1545,6 +1611,27 @@
               </p>
             {:else}
               {@const transfer = done.transfer}
+              {#if transfer.earlyWithdrawal}
+                <h4 class="kran-section__title">{m.teller_early_transfer_heading()}</h4>
+                <dl class="kran-facts">
+                  <dt>{m.teller_early_principal()}</dt>
+                  <dd class="kran-num">
+                    {formatMoney(transfer.earlyWithdrawal.principal, { decimals: 2 })}
+                  </dd>
+                  <dt>{m.teller_early_interest()}</dt>
+                  <dd class="kran-num">
+                    {formatMoney(transfer.earlyWithdrawal.interest, { decimals: 2 })}
+                  </dd>
+                  <dt>{m.teller_early_penalty()}</dt>
+                  <dd class="kran-num">
+                    {formatMoney(transfer.earlyWithdrawal.penalty, { decimals: 2 })}
+                  </dd>
+                  <dt>{m.teller_early_credited()}</dt>
+                  <dd class="kran-num">
+                    {formatMoney(transfer.earlyWithdrawal.creditedAmount, { decimals: 2 })}
+                  </dd>
+                </dl>
+              {/if}
               <dl class="kran-facts">
                 <dt>{m.teller_direction_label()}</dt>
                 <dd>{modeLabel("TRANSFER")}</dd>

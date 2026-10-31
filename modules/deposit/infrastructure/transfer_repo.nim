@@ -127,3 +127,28 @@ proc transfersForStatement*(db: DbConn, accountId: Id, fromDate, toDate: string,
        ORDER BY business_date, created_at
        LIMIT ?::int"""), $accountId, $accountId, fromDate, toDate, $limit):
     result.add transferOf(row)
+
+proc applyEarlyWithdrawalTransferBalances*(db: DbConn, sourceId, destinationId: Id,
+    principal, interest, penalty: Money): Option[TransferBalances] =
+  ## Saldo untuk PB pencairan dini (T-148): sumber **ditutup** (`principal` harus sama dengan
+  ## saldonya, hasil nol) dan tujuan menerima `principal + interest − penalty` dalam satu update.
+  ##
+  ## `deposit.transfer.amount` tetap pokok, sedangkan bunga dan penalti dicatat sebagai baris
+  ## subledger tersendiri; karena itu saldo tujuan harus sama dengan jumlah ketiganya, bukan pokok
+  ## saja. Kunci diambil dengan urutan yang sama seperti `applyTransferBalances` (O-112/D-161).
+  if $sourceId == $destinationId:
+    raise newException(ValueError, "rekening sumber dan tujuan harus berbeda")
+  let net = principal + interest - penalty
+  if not net.isPositive:
+    raise newException(ValueError, "dana yang dikreditkan harus lebih besar dari nol")
+
+  lockBalancesAscending(db, sourceId, destinationId)
+
+  let sourceAfter = decreaseBalanceToZero(db, sourceId, principal)
+  if sourceAfter.isNone:
+    return none(TransferBalances)
+  let destinationAfter = increaseBalance(db, destinationId, net)
+  if destinationAfter.isNone:
+    raise newException(ValueError, "baris saldo rekening tujuan tidak ditemukan")
+  some(TransferBalances(sourceBalanceAfter: sourceAfter.get(),
+    destinationBalanceAfter: destinationAfter.get()))

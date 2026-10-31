@@ -139,6 +139,8 @@ export type SessionGate =
 
 export interface SessionGateInput {
   branchKnown: boolean;
+  /** Cabang sesi yang dipilih berbeda dari cabang rekening yang dimuat. */
+  branchMismatch: boolean;
   loading: boolean;
   failed: boolean;
   missing: boolean;
@@ -148,6 +150,9 @@ export interface SessionGateInput {
 export function sessionPostingGate(input: SessionGateInput): SessionGate {
   if (!input.branchKnown) {
     return { blocked: true, tone: "muted", message: m.teller_transaction_need_account() };
+  }
+  if (input.branchMismatch) {
+    return { blocked: true, tone: "alert", message: m.teller_session_branch_mismatch() };
   }
   if (input.loading) {
     return { blocked: true, tone: "muted", message: m.teller_session_blocked_loading() };

@@ -101,6 +101,7 @@ const STATEMENT_KIND_LABELS: Record<StatementRow["kind"], () => string> = {
   CASH: () => m.statement_kind_cash(),
   TRANSFER: () => m.statement_kind_transfer(),
   MATURITY: () => m.statement_kind_maturity(),
+  EARLY_WITHDRAWAL: () => m.statement_kind_early_withdrawal(),
 };
 
 /** Label sumber baris statement. Nilai di luar kontrak ditampilkan apa adanya, bukan ditebak. */

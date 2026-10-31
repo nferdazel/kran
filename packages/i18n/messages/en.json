@@ -660,7 +660,6 @@
   "teller_session_expected_cash": "Expected cash (IDR)",
   "teller_session_heading": "Cash session",
   "teller_session_loading": "Loading cash session…",
-  "teller_session_need_account": "Load an account first. The cash session is loaded for that account's branch.",
   "teller_session_none": "No cash session is open for this branch.",
   "teller_session_note": "Note (optional)",
   "teller_session_open": "Open session",
@@ -818,5 +817,14 @@
   "teller_session_tx_in": "In",
   "teller_session_tx_out": "Out",
   "teller_session_tx_empty": "No cash transactions in this session yet.",
-  "teller_session_tx_count": "Showing {shown} of {total} session transactions."
+  "teller_session_tx_count": "Showing {shown} of {total} session transactions.",
+  "statement_kind_early_withdrawal": "Early withdrawal",
+  "teller_early_transfer_heading": "Early withdrawal (transfer)",
+  "teller_early_credited": "Credited to destination",
+  "teller_early_transfer_announcement": "Early withdrawal: {amount} credited to the destination account.",
+  "teller_session_branch_label": "Cash branch",
+  "teller_session_branch_placeholder": "Choose a branch",
+  "teller_session_need_branch": "Choose a branch to open cash, or load a member account.",
+  "teller_session_branch_mismatch": "The selected cash session is in another branch. Choose this account's branch or close that session.",
+  "teller_session_branches_failed": "The branch list could not be loaded."
 }

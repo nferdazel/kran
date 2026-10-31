@@ -660,7 +660,6 @@
   "teller_session_expected_cash": "Kas seharusnya (IDR)",
   "teller_session_heading": "Sesi kas",
   "teller_session_loading": "Memuat sesi kas…",
-  "teller_session_need_account": "Muat rekening dulu. Sesi kas dimuat untuk cabang rekening itu.",
   "teller_session_none": "Belum ada sesi kas terbuka untuk cabang ini.",
   "teller_session_note": "Catatan (opsional)",
   "teller_session_open": "Buka sesi",
@@ -818,5 +817,14 @@
   "teller_session_tx_in": "Masuk",
   "teller_session_tx_out": "Keluar",
   "teller_session_tx_empty": "Belum ada transaksi tunai di sesi ini.",
-  "teller_session_tx_count": "Menampilkan {shown} dari {total} transaksi sesi."
+  "teller_session_tx_count": "Menampilkan {shown} dari {total} transaksi sesi.",
+  "statement_kind_early_withdrawal": "Pencairan dini",
+  "teller_early_transfer_heading": "Pencairan dini (pemindahbukuan)",
+  "teller_early_credited": "Dana masuk ke tujuan",
+  "teller_early_transfer_announcement": "Pencairan dini: {amount} dikreditkan ke rekening tujuan.",
+  "teller_session_branch_label": "Cabang kas",
+  "teller_session_branch_placeholder": "Pilih cabang",
+  "teller_session_need_branch": "Pilih cabang untuk membuka kas, atau muat rekening anggota.",
+  "teller_session_branch_mismatch": "Sesi kas yang dipilih ada di cabang lain. Pilih cabang rekening ini atau tutup sesi di cabang itu.",
+  "teller_session_branches_failed": "Daftar cabang gagal dimuat."
 }

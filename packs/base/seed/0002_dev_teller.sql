@@ -25,7 +25,8 @@ DELETE FROM platform.role_permission rp
          'deposit.account.manage', 'deposit.account.read',
          'teller.transaction.post',
          'teller.session.open', 'teller.session.close', 'teller.session.read',
-         'teller.vault.topup', 'teller.vault.read'
+         'teller.vault.topup', 'teller.vault.read',
+         'platform.branch.read'
        ))
    );
 
@@ -38,7 +39,8 @@ SELECT r.role_id, p.permission_id
      'product.catalog.read', 'product.catalog.manage',
      'deposit.account.manage', 'deposit.account.read',
      'teller.transaction.post',
-     'teller.session.open', 'teller.session.close', 'teller.session.read'
+     'teller.session.open', 'teller.session.close', 'teller.session.read',
+     'platform.branch.read'
    )
 ON CONFLICT DO NOTHING;
 
