@@ -128,6 +128,10 @@ proc definitionError(db: DbConn, bindings: seq[ParamBinding]): string =
     of pvtJson:
       if ($b.value).len > maxJsonBindingBytes:
         return b.paramKey & " melebihi batas ukuran JSON"
+      # Bentuknya juga dibatasi di satu tempat (`jsonFormProblem`): kedalaman + tanpa `null`.
+      let formProblem = jsonFormProblem(b.value)
+      if formProblem.len > 0:
+        return b.paramKey & " tidak sah: " & formProblem
     of pvtString:
       if b.value.kind != JString:
         return b.paramKey & " harus teks"

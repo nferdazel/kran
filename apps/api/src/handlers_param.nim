@@ -237,7 +237,7 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
             # Aturan lintas-parameter diperiksa lebih dulu: nilai yang sah sendiri bisa tetap ditolak
             # bila digabung nilai lain yang sudah aktif (lihat `sessionPolicyCandidateProblem`).
             let combinationProblem = sessionPolicyCandidateProblem(db, key, node["value"],
-              effectiveFrom, effectiveTo, businessDateIso(app.clock))
+              effectiveFrom, effectiveTo, scopeType, scopeId, businessDateIso(app.clock))
             if combinationProblem.len > 0:
               problemCode = "invalid_combination"
               raise newException(ValueError, combinationProblem)
@@ -348,6 +348,7 @@ proc handleApproveParamChange*(app: AppContext, req: Request) {.gcsafe.} =
               if pending.isSome:
                 sessionPolicyCandidateProblem(db, pending.get().key, pending.get().value,
                   pending.get().effectiveFrom, pending.get().effectiveTo,
+                  pending.get().scopeType, pending.get().scopeId,
                   businessDateIso(app.clock))
               else:
                 ""

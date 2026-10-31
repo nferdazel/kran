@@ -444,18 +444,21 @@ suite "kebijakan sesi: aturan lintas-parameter":
     let kebijakan = settings()
     check kebijakan.sessionAbsoluteMinutes > 0
     let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey,
-      %*(kebijakan.sessionAbsoluteMinutes + 1), asOf, "", asOf)
+      %*(kebijakan.sessionAbsoluteMinutes + 1), asOf, "", "INSTITUTION", "", asOf)
     check melanggar.contains("tidak boleh melebihi")
 
     # Tepat pada batas (idle = absolut) masih sah.
     check sessionPolicyCandidateProblem(db, sessionIdleKey,
-      %*kebijakan.sessionAbsoluteMinutes, asOf, "", asOf) == ""
+      %*kebijakan.sessionAbsoluteMinutes, asOf, "", "INSTITUTION", "", asOf) == ""
 
     # Key yang bukan bagian kebijakan sesi tidak diperiksa di sini.
-    check sessionPolicyCandidateProblem(db, iterationsKey, %*1, asOf, "", asOf) == ""
+    check sessionPolicyCandidateProblem(db, iterationsKey, %*1, asOf, "", "INSTITUTION", "",
+        asOf) == ""
 
     # Nilai yang bukan integer bukan urusan pemeriksaan ini (bentuk nilai dijaga `submitValue`).
-    check sessionPolicyCandidateProblem(db, sessionIdleKey, %*"bukan-angka", asOf, "", asOf) == ""
+    check sessionPolicyCandidateProblem(db, sessionIdleKey, %*"bukan-angka", asOf, "",
+      "INSTITUTION", "",
+      asOf) == ""
 
   test "perubahan ber-tanggal depan dinilai pada tanggal efektifnya, bukan hanya hari ini":
     # Nilai absolut disetujui untuk tanggal depan: mulai 2026-12-01 kebijakan yang berlaku adalah
@@ -467,18 +470,21 @@ suite "kebijakan sesi: aturan lintas-parameter":
     discard approveChange(db, newAuditContext(parseId($newId(sysClock)).value(), sysClock),
       sysClock, ubahAbsolut.paramValueId)
 
-    let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey, %*150, upcoming, "", asOf)
+    let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey, %*150, upcoming, "",
+        "INSTITUTION", "", asOf)
     check melanggar.contains(upcoming)
     check melanggar.contains("tidak boleh melebihi")
 
     # idle 50 pada tanggal itu tetap sah.
-    check sessionPolicyCandidateProblem(db, sessionIdleKey, %*50, upcoming, "", asOf) == ""
+    check sessionPolicyCandidateProblem(db, sessionIdleKey, %*50, upcoming, "", "INSTITUTION", "",
+        asOf) == ""
 
   test "tanggal mulai efektif sisi lain ikut dinilai walau perubahan kita mulai hari ini":
     # Kandidat idle mulai HARI INI: sah hari ini (150 ≤ 480) tetapi tidak sah mulai 2026-12-01
     # (150 > 100). Tanggal 2026-12-01 hanya masuk himpunan lewat tanggal mulai sisi lain yang sudah
     # disetujui — bukan lewat tanggal efektif kandidat (hari ini).
-    let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey, %*150, asOf, "", asOf)
+    let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey, %*150, asOf, "",
+        "INSTITUTION", "", asOf)
     check melanggar.contains("2026-12-01")
     check melanggar.contains("tidak boleh melebihi")
 
@@ -491,7 +497,8 @@ suite "kebijakan sesi: aturan lintas-parameter":
     discard approveChange(db, newAuditContext(parseId($newId(sysClock)).value(), sysClock),
       sysClock, lebihAkhir.paramValueId)
 
-    let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey, %*400, asOf, "", asOf)
+    let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey, %*400, asOf, "",
+        "INSTITUTION", "", asOf)
     check melanggar.contains("2026-12-01")
 
   test "tanggal efektif kandidat tidak terlewat hanya karena sisi calon tak terbaca":
@@ -505,6 +512,7 @@ suite "kebijakan sesi: aturan lintas-parameter":
       sysClock, berperiode.paramValueId)
 
     let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey, %*500, "2026-12-01", "",
+      "INSTITUTION", "",
       asOf)
     check melanggar.contains("2026-12-01")
     check melanggar.contains("tidak boleh melebihi")
@@ -521,7 +529,18 @@ suite "kebijakan sesi: aturan lintas-parameter":
       %absolutMin, asOf, "", "uji: batas absolut scope institusi")
     discard approveChange(db, newAuditContext(parseId($newId(sysClock)).value(), sysClock),
       sysClock, ubahScope.paramValueId)
-    check sessionPolicyCandidateProblem(db, sessionIdleKey, %*30, asOf, "", asOf) == ""
+    check sessionPolicyCandidateProblem(db, sessionIdleKey, %*30, asOf, "", "INSTITUTION", "",
+        asOf) == ""
+
+  test "kandidat di scope yang tidak dibaca login tidak dinilai (O-044)":
+    # Login membaca `INSTITUTION:""` + GLOBAL. Kandidat BRANCH karena itu tidak akan pernah
+    # memengaruhi kebijakan sesi, walau angkanya "melanggar" bila digabung nilai institusi.
+    let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey, %*600, asOf, "", "BRANCH",
+      "cabang-1", asOf)
+    check melanggar == ""
+    # INSTITUTION ber-id konkret juga tidak dibaca (hanya id kosong yang terjangkau).
+    check sessionPolicyCandidateProblem(db, sessionIdleKey, %*600, asOf, "", "INSTITUTION",
+      "inst-1", asOf) == ""
 
   test "periode calon dipatuhi: nilai kandidat tidak dipakai setelah effectiveTo":
     # Baris absolut & idle untuk tanggal jauh dibuat sendiri oleh test ini, tetapi **tetap**
@@ -538,7 +557,7 @@ suite "kebijakan sesi: aturan lintas-parameter":
         sysClock, ubah.paramValueId)
 
     let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey, %*30, asOf, "2026-11-01",
-      asOf)
+      "INSTITUTION", "", asOf)
     check melanggar.contains(dari)
     check melanggar.contains("tidak boleh melebihi")
 
