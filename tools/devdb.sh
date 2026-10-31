@@ -12,6 +12,7 @@
 # kredensial dan TIDAK menjalankan apa pun di server.
 set -eu
 
+# shellcheck disable=SC1007  # `CDPATH= cd` memang sengaja: mengosongkan CDPATH untuk cd ini.
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
@@ -28,6 +29,7 @@ die() { printf '!! %s\n' "$*" >&2; exit 1; }
 load_env() {
   [ -f "$ENVFILE" ] || die "belum ada $ENVFILE (lihat docs/runbooks/dev-db.md)"
   set -a
+  # shellcheck disable=SC1090  # jalur berkas env ditentukan saat runtime.
   . "$ENVFILE"
   set +a
   [ -n "$SSH_HOST" ] || die "KRAN_DEVDB_SSH belum diisi (lihat docs/runbooks/dev-db.md)"
