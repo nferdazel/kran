@@ -1,0 +1,109 @@
+name: Visual baseline (Linux)
+
+# Menghasilkan baseline visual regression di **Linux** (O-022/D-176). Baseline yang dibuat di
+# macOS tidak bisa dipakai runner, jadi satu-satunya cara sah adalah menjalankannya di sini lalu
+# meng-commit artefaknya. Gate-nya sendiri ada di `ci.yml` job `web-e2e` (menjalankan
+# `./task e2e`, yang ikut menjalankan `visual.spec.ts`).
+#
+# Alur: jalankan workflow ini -> unduh artefak `visual-baseline-linux` -> commit ke
+# `apps/web/tests/e2e/visual.spec.ts-snapshots/`. Jangan menyalin baseline antar-OS.
+
+on:
+  workflow_dispatch:
+    inputs:
+      update:
+        description: 'Tulis ulang baseline dari hasil run ini (default: bandingkan saja)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  visual-baseline:
+    name: Visual baseline (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: kran
+          POSTGRES_PASSWORD: kran
+          POSTGRES_DB: kran_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kran -d kran_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      KRAN_DATABASE_URL: postgres://kran:kran@127.0.0.1:5432/kran_test
+      # Input dispatch dibaca lewat env, bukan diinterpolasi ke skrip (kontrak CI).
+      UPDATE_BASELINE: ${{ github.event.inputs.update }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache browser Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install browser Playwright
+        run: pnpm --filter @kran/web exec playwright install chromium
+
+      - name: Setup Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: '2.4.0'
+
+      - name: Cache nimble
+        uses: actions/cache@v4
+        with:
+          path: ~/.nimble
+          key: nimble-${{ runner.os }}-2.4.0-${{ hashFiles('kran.nimble') }}
+
+      - name: Install Nim dependencies
+        run: nimble install -d -y
+
+      - name: Runtime libs (libpcre3)
+        run: sudo apt-get update -qq && sudo apt-get install -y libpcre3
+
+      - name: Build API + prepare dev database
+        run: |
+          ./task build
+          ./task dbtools migrate
+          ./task dbtools seed --dev
+
+      - name: Compare or update visual baselines
+        # Tanpa input `update`, langkah ini membandingkan hasil render dengan baseline yang sudah
+        # di-commit — bukti bahwa runner yang sama menghasilkan piksel yang sama.
+        run: |
+          if [ "$UPDATE_BASELINE" = "true" ]; then
+            pnpm --filter @kran/web exec playwright test visual.spec.ts --update-snapshots
+          else
+            pnpm --filter @kran/web exec playwright test visual.spec.ts
+          fi
+
+      - name: Upload baselines
+        if: env.UPDATE_BASELINE == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-baseline-linux
+          path: apps/web/tests/e2e/visual.spec.ts-snapshots
+          if-no-files-found: error
