@@ -34,11 +34,14 @@ proc countDormantCandidates*(db: DbConn): int64 =
     SELECT count(*)::text FROM deposit.account
      WHERE status IN ('ACTIVE', 'DORMANT')""")))
 
-proc dormantCandidatesPage*(db: DbConn; businessDate: string; afterMonths, offset, limit: int):
-    seq[DormantCandidate] =
-  ## Halaman populasi stabil, urut `account_id`, dengan `stale` = aktivitas terakhir lebih lama
-  ## dari `afterMonths` bulan sebelum `businessDate`. `make_interval` membuat pengurangan bulan
-  ## mengikuti kalender Postgres (31 Mar − 1 bulan = 28/29 Feb), bukan rata-rata 30 hari.
+proc activityCandidatesPage(db: DbConn; statuses, businessDate: string;
+                           afterMonths, offset, limit: int): seq[DormantCandidate] =
+  ## Halaman populasi stabil berdasarkan status. `statuses` adalah daftar literal milik pemanggil
+  ## (bukan input pengguna); satu kueri dipakai penandaan dormant dan penutupan otomatis supaya
+  ## ekspresi "aktivitas terakhir" tidak bercabang dua.
+  ##
+  ## `make_interval` membuat pengurangan bulan mengikuti kalender Postgres (31 Mar − 1 bulan =
+  ## 28/29 Feb), bukan rata-rata 30 hari.
   let query = """
     WITH activity AS (
       SELECT a.account_id, a.status,
@@ -57,7 +60,7 @@ proc dormantCandidatesPage*(db: DbConn; businessDate: string; afterMonths, offse
            WHERE tr.source_account_id = a.account_id
               OR tr.destination_account_id = a.account_id
         ) pb ON true
-       WHERE a.status IN ('ACTIVE', 'DORMANT')
+       WHERE a.status IN (""" & statuses & """)
     )
     SELECT account_id::text, status, to_char(last_at, 'YYYY-MM-DD'),
            last_at < ?::date - make_interval(months => ?::int)
@@ -70,6 +73,12 @@ proc dormantCandidatesPage*(db: DbConn; businessDate: string; afterMonths, offse
       status: parseAccountStatus(row[1]),
       lastActivity: row[2],
       stale: row[3] == "t")
+
+proc dormantCandidatesPage*(db: DbConn; businessDate: string; afterMonths, offset, limit: int):
+    seq[DormantCandidate] =
+  ## Populasi penandaan: `ACTIVE` + `DORMANT` supaya perpindahan status di antara keduanya tidak
+  ## menggeser offset.
+  activityCandidatesPage(db, "'ACTIVE', 'DORMANT'", businessDate, afterMonths, offset, limit)
 
 const
   ## Ekspresi aktivitas terakhir yang sama dengan kueri halaman. Dipakai ulang di `UPDATE` supaya
@@ -107,6 +116,40 @@ proc reactivateIfActive*(db: DbConn; accountId: Id; businessDate: string; afterM
        WHERE a.account_id = ? AND a.status = 'DORMANT'
          AND """ & lastActivityExpr &
       """ >= ?::date - make_interval(months => ?::int)
+      RETURNING a.account_id::text"""), $actor, $accountId, businessDate, $afterMonths):
+    return true
+  false
+
+proc dormantClosePopulation*(db: DbConn): int64 =
+  ## Populasi stabil untuk penutupan otomatis: `DORMANT` + `CLOSED`. Status hanya berpindah dari
+  ## `DORMANT` ke `CLOSED`, keduanya anggota populasi, sehingga offset halaman tidak bergeser saat
+  ## ada rekening yang ditutup di tengah run.
+  int64(parseInt(db.getValue(sql"""
+    SELECT count(*)::text FROM deposit.account
+     WHERE status IN ('DORMANT', 'CLOSED')""")))
+
+proc dormantCloseCandidatesPage*(db: DbConn; businessDate: string; afterMonths, offset,
+                                 limit: int): seq[DormantCandidate] =
+  ## Halaman populasi penutupan otomatis (O-114). Hanya `DORMANT` yang benar-benar dinilai;
+  ## `CLOSED` ikut dipaginasi semata-mata supaya himpunannya stabil.
+  activityCandidatesPage(db, "'DORMANT', 'CLOSED'", businessDate, afterMonths, offset, limit)
+
+proc closeIfDormantAndEmpty*(db: DbConn; accountId: Id; businessDate: string; afterMonths: int;
+                             actor: Id): bool =
+  ## Menutup rekening **hanya bila** masih `DORMANT`, saldonya nol, dan aktivitas terakhirnya lebih
+  ## lama dari ambang (O-114: hanya saldo nol, 24 bulan). `true` = baris berubah.
+  ##
+  ## Predikat dinilai di dalam `UPDATE` (pola `markDormantIfStale`): setoran yang commit di antara
+  ## baca halaman dan tulis membatalkan penutupan, bukan meninggalkan rekening bersaldo `CLOSED`.
+  ## Saldo dibaca dari `deposit.account_balance` (cache yang dipelihara jalur teller/PB/jatuh tempo).
+  for _ in db.getAllRows(sql("""
+      UPDATE deposit.account a
+         SET status = 'CLOSED', updated_by = ?, updated_at = now()
+       WHERE a.account_id = ? AND a.status = 'DORMANT'
+         AND EXISTS (SELECT 1 FROM deposit.account_balance b
+                      WHERE b.account_id = a.account_id AND b.balance = 0)
+         AND """ & lastActivityExpr &
+      """ < ?::date - make_interval(months => ?::int)
       RETURNING a.account_id::text"""), $actor, $accountId, businessDate, $afterMonths):
     return true
   false
