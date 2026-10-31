@@ -3597,3 +3597,41 @@ dengan pendaratan login, dan axe halaman galat dua tema).
 **Temuan review yang diperbaiki**: beranda `/` masih mengarahkan ke buku besar secara hardcode
 (mengabaikan izin), indikator tanggal menampilkan "belum tersedia" untuk peran yang memang tidak
 boleh membacanya, `landingHref` tanpa test, dan `landingHref` belum dipakai layar kata sandi.
+
+## 2026-10-31 — Desain v2 fase 4 + tutup O-112/O-115/O-116, adopsi `resolve()`
+
+**Yang berubah**
+
+- **10 layar** pindah ke komponen/kelas `packages/ui` (products, users, vault, login, password,
+  params, ledger, ledger/admin, dayclose, accounts/open). CSS lokal di `apps/web/src/routes`
+  1.344 → **225 baris**; sisanya hanya `teller` 197 (belum dimigrasi, T-141), `ledger` 18 dan
+  `ledger/admin` 10 (tata letak khas layar: lebar kolom, sticky kolom kode, ring fokus sel aktif,
+  target checkbox 24 px). Strip kartu metrik di params **dan** ledger dihapus; ledger memakai
+  daftar fakta `.kran-facts`. Enam key i18n yatim (`app_metric_*`, `ledger_metric_*_sub`) dihapus.
+- **Lapisan bersama**: `.kran-page-header`, `.kran-section`, `.kran-stack`, `.kran-actions`,
+  `.kran-list-plain`, `.kran-list-scroll`, `.kran-stat`, `.kran-facts`, `.kran-dialog`;
+  `DataTable` mendapat `captionHidden`, `ariaLabel`, dan `rowHeader` (kolom kunci jadi
+  `<th scope="row">`). CSS mati v1 dihapus (`.kran-card`, `.kran-metric-*`, `.kran-balance-bar*`,
+  `.kran-workstation`, `.kran-status-list`). `th[colspan]` tidak lagi menambahkan garis vertikal
+  dan tidak lagi menengahkan header grup (DESIGN §6).
+- **T-125**: 14 `goto` + 9 `href` memakai `resolve()`; `svelte/no-navigation-without-resolve`
+  diaktifkan dengan lint type-aware; `nav.ts` memanggil `resolve()` sungguhan dan unit test node
+  memakai stub `$app/paths` di `vitest.config.ts`.
+- **O-112/D-161**: task jatuh tempo dan jalur tunai teller mengunci baris `deposit.account` yang
+  sama; **PB** kini mengunci kedua baris rekening (`lockTransferAccounts`, urut `account_id`) sebelum
+  baris saldo, sehingga tidak ada lagi jalur yang mengambil kunci saldo lebih dulu.
+- **O-116/D-162**: `SessionInfo.businessDate` dikirim ke semua sesi dengan tiga keadaan (objek /
+  `null` / field dihilangkan), jadi shell tidak lagi memanggil `/dayclose/status` dan tidak
+  merender "belum tersedia" untuk kegagalan baca.
+- **O-115/D-163**: `kran-alert.sh` memberi alarm untuk task non-kritis `FAILED` pada run institusi
+  `COMPLETED` terakhir; probe yang gagal menghasilkan `?`/`bad`, bukan OK diam-diam.
+- **T-044**: `use.actionTimeout`/`navigationTimeout` 60 detik (sebelumnya tak terhingga).
+
+**Bukti**: `./task check-fast`, `./task openapi`, `./task lint-web` hijau; `svelte-check` 0 error /
+0 warning; `packages/ui` vitest 173, unit `apps/web` 151; `itapi_auth` 46 OK, `ittransfer` 7 OK,
+`itdaycloser_deposit` 36 OK, `itapi_teller` 49 OK, `itapi_deposit` 17 OK, `tcontract` OK; Playwright
+**61 lulus, 0 skip** di database segar (axe 2 tema × 2 locale, keyboard, zoom 125%, cetak).
+
+**Catatan**: test urutan kunci `ittransfer` di-mutation-check (kunci rekening dihapus → test gagal).
+`itapi_auth` menyimpan dan memulihkan baris `platform.business_date` alih-alih menghapusnya. Sisa
+migrasi: layar kas setelah T-141; verifikasi cetak/zoom 200% ada di T-144.

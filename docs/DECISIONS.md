@@ -4249,3 +4249,85 @@ jsdom/testing-library. Sebagai gantinya paket itu mendapat `tsconfig.json` dan `
 sendiri, dijalankan `./task lint-web` (dan karena itu ikut job CI `web-e2e`) — tanpa gerbang ini
 komponen bersama tidak punya pemeriksaan tipe/a11y statis sama sekali, karena `svelte-check`
 `apps/web` hanya memindai paketnya sendiri dan eslint mematikan `svelte/a11y-*` (D-139).
+
+## D-161 — Serialisasi jalur teller dan jatuh tempo deposito lewat kunci baris `deposit.account` (31 Okt 2026)
+
+**Konteks.** Halaman kandidat `deposit.maturity_aro` dibaca di luar transaksi chunk. Setoran tunai
+yang sudah lolos cek status bisa commit setelah task menutup rekening: rekening berakhir `CLOSED`
+dengan saldo positif dan tanpa akrual lanjutan. Race ini hanya terbuka saat
+`daycloser.txn_policy_during_close = ALLOW`; dampaknya tidak terlihat di rekonsiliasi (baris setoran
+ada dan saldo cocok). Sisi dormant sudah ditutup dengan mengulang predikat di dalam `UPDATE`
+(D-157 amendemen 2); sisi jatuh tempo belum (O-112).
+
+**Keputusan.** Kedua jalur mengunci **baris `deposit.account` yang sama** `FOR UPDATE` sebelum
+memutuskan, lalu membaca ulang keadaan sesudah kunci didapat:
+- task jatuh tempo: `lockMaturityAccount` mengunci lalu membaca ulang status, `maturity_date`,
+  instruksi ARO, saldo, dan akrual terakhir; kandidat yang sudah tidak berhak dilewati (`skipped`),
+  bukan diproses dengan data halaman yang basi;
+- jalur tunai teller: `lockAccountForUpdate` diambil sebelum cek status;
+- jalur pemindahbukuan: `lockTransferAccounts` mengunci **kedua** baris rekening (urut `account_id`
+  naik) sebelum baris saldo dikunci. Tanpa ini PB memegang saldo lalu meminta `KEY SHARE` rekening
+  lewat FK `deposit_transfer`, sementara setoran tunai memegang rekening dan menunggu saldo —
+  siklus `40P01` yang membuat salah satu transaksi dibatalkan.
+
+Urutan kunci seragam **rekening → baris saldo → (teller) sesi kas**, dan tidak ada penulis saldo
+yang mengambil kunci saldo lebih dulu, sehingga tidak ada siklus tunggu.
+
+**Konsekuensi.** Task dan teller kini terserialisasi pada satu baris; setoran yang kalah balapan
+melihat status `CLOSED` dan ditolak `409 account_not_active` seperti sebelumnya. Metrik task
+mendapat kunci `skipped` (aditif). Jalur yang membaca rekening tanpa memutasi uang (PB yang menyentuh
+`TIME_DEPOSIT` sudah ditolak, dormant, rekonsiliasi) tidak perlu kunci. Area kritis: perubahan ini
+wajib ditandai `HUMAN-REVIEW-REQUIRED` di PR dan diuji dengan dua koneksi nyata.
+
+**Status.** Diimplementasikan 31 Okt 2026. `itdaycloser_deposit` membuktikan kandidat basi dilewati
+dan kedua jalur memakai baris kunci yang sama. Di `ittransfer`, dua pekerja menguji dua hal yang
+berbeda: pekerja yang hanya memutasi saldo membuktikan `lockBalancesAscending` tetap deterministik
+(bila urutannya bergantung arah, dua PB berlawanan arah deadlock), sedangkan pekerja yang meniru
+handler (kunci rekening lalu saldo lalu baris transfer) membuktikan PB menunggu kunci rekening
+sebelum menyentuh saldo — dengan satu koneksi memegang rekening, jalur tunai tetap bisa mengambil
+saldo; tanpa urutan itu permintaan tersebut menunggu dan `lock_timeout`.
+
+## D-162 — Tanggal buku institusi ikut `GET /auth/session`, bukan hanya `/dayclose/status` (31 Okt 2026)
+
+**Konteks.** Shell hanya merender indikator tanggal bisnis bila sesi memegang `dayclose.run.read`.
+Teller tidak memegang izin itu, padahal justru sesi kasnya ditolak `session_business_date_mismatch`
+bila tanggalnya berbeda dari tanggal buku (O-116). Alternatifnya endpoint baru dengan izin yang
+dipegang semua peran.
+
+**Keputusan.** `SessionInfo.businessDate` (bentuk sama dengan `GET /dayclose/status`) dikirim untuk
+**semua** sesi sah, dengan **tiga** keadaan yang dibedakan: objek = baris tanggal buku ada, `null` =
+institusi belum punya baris, field **dihilangkan** = pembacaan gagal. Field karena itu opsional di
+kontrak (bukan wajib-nullable): tanpa pembedaan ini kegagalan DB tampil sebagai "belum tersedia",
+nilai yang tidak diketahui berpura-pura diketahui. Serializer JSON-nya satu
+(`business_date_view.nim`) supaya bentuk kontrak tidak bercabang antar rute. UI tidak lagi memanggil
+`/dayclose/status` khusus untuk shell.
+
+**Konsekuensi.** Satu permintaan lebih sedikit per halaman, dan informasinya tersedia bagi peran
+yang bekerja terhadap tanggal itu. Pembacaan bersifat best-effort: kegagalan DB pada permintaan
+sesi tidak menggagalkan sesi, dan shell tidak merender apa pun untuk nilai yang tidak diketahui
+(field absen), berbeda dari "belum tersedia" yang memang keadaannya. Menambah field di `SessionInfo`
+adalah perubahan kontrak: klien yang memvalidasi `additionalProperties: false` tetap harus
+memperbarui skemanya (properti baru ditolak validator ketat, opsional atau tidak), sedangkan klien
+bertipe hasil generator kompatibel karena field-nya opsional — tetapi kode yang menganggapnya
+selalu ada harus memeriksa `undefined`.
+
+**Status.** Diimplementasikan 31 Okt 2026; test `itapi_auth` membuktikan peran tanpa
+`dayclose.run.read` menerima tanggal nyata dan `null` saat baris tanggal buku tidak ada (baris lama
+disimpan dan dipulihkan, bukan dihapus permanen).
+
+## D-163 — Kegagalan task day-close non-kritis memberi alarm lewat probe `daycloser.task` (31 Okt 2026)
+
+**Konteks.** Task non-kritis yang `FAILED` tidak menggagalkan run: run tetap `COMPLETED` dan
+`/readyz` tetap sehat, sehingga deteksi dormant bisa berhenti berhari-hari tanpa sinyal (O-115).
+
+**Keputusan.** `ops/scripts/kran-alert.sh` menambah satu probe SQL: jumlah task `critical = false`
+berstatus `FAILED` pada **run institusi `COMPLETED` terakhir** (`business_date` terbesar). Angka itu
+ikut menentukan status alert dan pesannya menyebut task, kode galat, dan jumlah chunk. Probe yang
+gagal (psql/podman tidak tersedia) menghasilkan `?` dan status `bad` — tidak pernah OK diam-diam.
+
+**Konsekuensi.** Alert membersihkan diri saat hari berikutnya ditutup bersih, tanpa operator perlu
+menandai apa pun; run yang masih berjalan tidak dihitung. `/readyz` dan gate deploy **tidak**
+berubah: kegagalan non-kritis bukan alasan menahan deploy atau menggagalkan liveness. Biaya
+tambahan satu `podman exec psql` per siklus timer, sama dengan probe outbox yang sudah ada.
+
+**Status.** Diimplementasikan 31 Okt 2026.
