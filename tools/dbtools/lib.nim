@@ -489,6 +489,12 @@ proc resetTestSchemas*(db: DbConn, root: string) =
   # `migrationsOf` mengembalikan kosong bila `root/modules` tidak ada (mis. cwd salah). Tanpa
   # pemeriksaan ini test bisa berjalan di atas schema basi tanpa peringatan.
   doAssert schemaSeen.len > 0, "resetTestSchemas: tidak ada migrasi ditemukan (root/cwd salah?)"
+  # Ekstensi hidup di `public`, bukan di schema modul, jadi `DROP SCHEMA ... CASCADE` tidak
+  # menyentuhnya. Tanpa ini `CREATE EXTENSION IF NOT EXISTS` selalu no-op dan jalur migrasi DB
+  # kosong (O-088) tidak pernah benar-benar diuji lokal. Daftar ini mengikuti `CREATE EXTENSION` di
+  # migrasi `platform`/`product`; menambah ekstensi baru berarti menambahkannya di sini juga.
+  for extension in ["btree_gist", "pgcrypto"]:
+    db.exec(sql("DROP EXTENSION IF EXISTS " & extension & " CASCADE"))
 
 proc applyMigrations*(db: DbConn, root: string, dryRun = false,
                       contract = false): MigrateReport =

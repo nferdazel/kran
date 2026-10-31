@@ -37,6 +37,7 @@ const
   SessionPath = "/api/v1/auth/session"
   LogoutPath = "/api/v1/auth/logout"
   PasswordPath = "/api/v1/auth/password"
+  PasswordPolicyPath = "/api/v1/auth/password-policy"
   ParamsPath = "/api/v1/params"
   AuditPath = "/api/v1/audit"
   ParamKey = "platform.security.max_failed_logins"
@@ -812,6 +813,23 @@ suite "ganti kata sandi lewat HTTP":
     let reply = postJson(PasswordPath, %*{"oldPassword": DevPassword}, tokenOf(sesi))
     check reply.code == 400
     checkProblem(PasswordPath, "POST", "400", reply.body)
+
+  test "kebijakan kata sandi terbaca untuk sesi sah, tanpa rahasia keamanan":
+    let sesi = login(MakerUser)
+    let reply = getJson(PasswordPolicyPath, tokenOf(sesi))
+    check reply.code == 200
+    check reply.body["minLength"].getInt() > 0
+    check reply.body["minClasses"].getInt() > 0
+    check reply.body["historyCount"].getInt() >= 0
+    # Angka yang membuka jalan penyerang tidak ikut: iterasi KDF, ambang lockout, umur sesi.
+    check not reply.body.hasKey("pbkdf2Iterations")
+    check not reply.body.hasKey("maxFailedLogins")
+    check not reply.body.hasKey("sessionIdleMinutes")
+
+  test "kebijakan kata sandi tanpa sesi → 401":
+    let reply = getJson(PasswordPolicyPath, "")
+    check reply.code == 401
+    checkProblem(PasswordPolicyPath, "GET", "401", reply.body)
 
   test "kata sandi lama salah → 403 `old_password_mismatch` dan sesi tidak dicabut":
     let sesi = login(MakerUser)

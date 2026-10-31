@@ -828,5 +828,6 @@
   "teller_session_branch_mismatch": "The selected cash session is in another branch. Choose this account's branch or close that session.",
   "teller_session_branches_failed": "The branch list could not be loaded.",
   "teller_review_time_deposit_notice": "For a time deposit this figure is the principal. The amount paid to the member = principal + interest − penalty, computed by the server on confirmation.",
-  "teller_session_branches_empty": "No branch is available to choose. Ask an admin to add a branch."
+  "teller_session_branches_empty": "No branch is available to choose. Ask an admin to add a branch.",
+  "password_hint_policy": "Current policy: at least {minLength} characters, at least {minClasses} character types (uppercase, lowercase, digits, symbols), and not one of your last {historyCount} passwords."
 }

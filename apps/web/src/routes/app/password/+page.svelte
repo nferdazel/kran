@@ -12,12 +12,19 @@
    * Tata letak mengikuti DESIGN §11: satu bidang kerja sempit (`.kran-page`), tajuk layar bersama,
    * dan form bersama. Tidak ada CSS lokal di berkas ini; aturan visual tinggal di `packages/ui`.
    */
+  import { onMount } from "svelte";
+
   import Alert from "@kran/ui/components/Alert.svelte";
   import Button from "@kran/ui/components/Button.svelte";
 
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
   import { passwordProblemMessage } from "#lib/app/errors.js";
+  import {
+    loadPasswordPolicy,
+    policyHint,
+    type PasswordPolicy,
+  } from "#lib/app/password.js";
   import {
     appNavLinks,
     landingHref,
@@ -39,11 +46,26 @@
     landingHref(visibleNavLinks(appNavLinks, sessionPermissions(session))),
   );
 
+  /** `null` = belum termuat atau gagal; petunjuk statis dipakai sebagai gantinya. */
+  let policy = $state<PasswordPolicy | null>(null);
+  const passwordHint = $derived(policy === null ? m.password_hint() : policyHint(policy));
+
   let oldPassword = $state("");
   let newPassword = $state("");
   let errorMessage = $state("");
   let berhasil = $state(false);
   let submitting = $state(false);
+
+  onMount(() => {
+    void (async () => {
+      try {
+        const { data, response } = await loadPasswordPolicy();
+        if (response.ok && data) policy = data;
+      } catch {
+        // Kebijakan hanya petunjuk: gagal memuat tidak boleh menghalangi pengguna mengganti sandi.
+      }
+    })();
+  });
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
@@ -125,7 +147,7 @@
           bind:value={newPassword}
           required
         />
-        <p class="kran-muted" id="kata-sandi-baru-hint">{m.password_hint()}</p>
+        <p class="kran-muted" id="kata-sandi-baru-hint">{passwordHint}</p>
       </div>
 
       {#if errorMessage}

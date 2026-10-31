@@ -87,6 +87,8 @@ proc authRoutes*(): seq[RouteSpec] =
               handler: handleLogout),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/auth/password", operationId: "changePassword",
               handler: handleChangePassword),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/auth/password-policy",
+              operationId: "getPasswordPolicy", handler: handlePasswordPolicy),
   ]
 
 proc mfaRoutes*(): seq[RouteSpec] =

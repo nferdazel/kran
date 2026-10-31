@@ -180,6 +180,42 @@ proc handleLogout*(app: AppContext, req: Request) {.gcsafe.} =
   headers["Set-Cookie"] = SessionCookieName & "=; " & clearedCookieAttributes()
   req.respondRaw(204, headers, "")
 
+proc handlePasswordPolicy*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `GET /api/v1/auth/password-policy` — aturan bentuk kata sandi yang berlaku (O-051).
+  ##
+  ## Hanya angka yang memang membentuk aturan (panjang, jenis karakter, riwayat). Kebijakan yang
+  ## **tidak** dibagikan sengaja: jumlah percobaan gagal, menit lockout, umur sesi, dan iterasi
+  ## PBKDF2 — semuanya informasi untuk penyerang, bukan untuk pengguna yang sedang mengganti sandi.
+  ##
+  ## Butuh sesi sah: layar ganti sandi selalu berada di dalam `/app`, termasuk alur wajib ganti
+  ## sesudah login pertama.
+  let principal = requirePrincipal(app, req)
+  if principal.isNone:
+    return
+
+  var payload = newJObject()
+  try:
+    withDbConn(app.pool, proc(db: DbConn) {.gcsafe.} =
+      dbCalls:
+        let settings = settingsOf(db, institutionScope(), utcDateOf(app.clock))
+        payload = %*{
+          "minLength": settings.minPasswordLength,
+          "minClasses": settings.minPasswordClasses,
+          "historyCount": settings.passwordHistoryCount,
+        })
+  except DbError:
+    req.respondProblem(pkInternal, "Internal Server Error",
+      "kebijakan kata sandi gagal dibaca")
+    return
+  except ValueError as e:
+    # Sama seperti ganti sandi: detail kebijakan hanya ke log server, bukan ke klien.
+    discard newLogger(lvlError).error("kebijakan keamanan tidak sah", [("detail", e.msg)])
+    req.respondProblem(pkInternal, "Internal Server Error",
+      "kebijakan keamanan server tidak sah")
+    return
+
+  req.respondJson(200, payload)
+
 proc handleChangePassword*(app: AppContext, req: Request) {.gcsafe.} =
   ## `POST /api/v1/auth/password` — ganti kata sandi sendiri (T-027).
   ##

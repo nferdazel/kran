@@ -180,6 +180,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/password-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kebijakan bentuk kata sandi yang berlaku
+         * @description Angka yang membentuk aturan kata sandi pada parameter institusi (O-051): panjang minimum,
+         *     jumlah jenis karakter minimum, dan berapa kata sandi terakhir yang tidak boleh dipakai
+         *     ulang. Dipakai layar ganti sandi supaya pengguna tahu aturannya sebelum ditolak.
+         *
+         *     Kebijakan yang **tidak** dibagikan: jumlah percobaan gagal sebelum akun terkunci, menit
+         *     lockout, umur sesi, dan iterasi PBKDF2 — itu informasi untuk penyerang, bukan untuk pengguna.
+         */
+        get: operations["getPasswordPolicy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/mfa": {
         parameters: {
             query?: never;
@@ -1762,6 +1787,20 @@ export interface components {
             oldPassword: string;
             newPassword: string;
         };
+        PasswordPolicy: {
+            /** @description Panjang minimum kata sandi (parameter `platform.security.password_min_length`). */
+            minLength: number;
+            /**
+             * @description Jumlah minimum jenis karakter yang harus muncul (huruf besar, huruf kecil, angka,
+             *     simbol) — parameter `platform.security.password_min_classes`.
+             */
+            minClasses: number;
+            /**
+             * @description Berapa kata sandi terakhir yang tidak boleh dipakai ulang — parameter
+             *     `platform.security.password_history_count`.
+             */
+            historyCount: number;
+        };
         MfaStatusResponse: {
             /** @description Nilai parameter `platform.security.mfa.enabled` (default `false`) — bukan status akun. */
             featureEnabled: boolean;
@@ -3288,6 +3327,38 @@ export interface operations {
             415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    getPasswordPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Kebijakan kata sandi */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordPolicy"];
+                };
+            };
+            /** @description Tidak ada sesi sah */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
             503: components["responses"]["Problem"];
         };
     };

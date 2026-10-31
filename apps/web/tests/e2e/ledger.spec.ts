@@ -103,6 +103,10 @@ async function expectNoSeriousViolations(page: Page): Promise<void> {
 for (const locale of LOCALES) {
   for (const theme of THEMES) {
     test(`axe /app/ledger — locale ${locale}, tema ${theme}`, async ({ page }) => {
+      // Pemindaian axe atas tabel saldo adalah pekerjaan CPU, bukan interaksi: 30 dtk bawaan
+      // memotongnya saat suite berjalan sesudah fase berat (O-107). Batas ini hanya untuk test
+      // pemindaian, bukan untuk test alur.
+      test.setTimeout(60_000);
       await prepare(page, locale, theme);
       await login(page, T[locale]);
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);

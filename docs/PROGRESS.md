@@ -3772,3 +3772,15 @@ Bukti: `itdaycloser_deposit` **40 OK** (payload audit penandaan + reaktivasi, ru
 audit); regresi `itapi_teller` 58, `ittransfer` 7, `itapi_deposit` 17, `itdaycloser_sim` 5,
 `itapi_dayclose` 10; `check-fast`/`build` hijau; Playwright 63 lulus 0 skip di DB segar.
 **HUMAN-REVIEW-REQUIRED** (DROP COLUMN + jejak audit status rekening).
+
+## 2026-10-31 — Kebijakan kata sandi terbaca + dua celah gate (T-151, T-152)
+
+**T-151 / O-051**: `GET /api/v1/auth/password-policy` (butuh sesi) mengembalikan `minLength`,
+`minClasses`, dan `historyCount` dari parameter institusi; layar ganti sandi menyusun petunjuk dari
+angka itu dan kembali ke petunjuk statis bila pembacaan gagal. Angka lockout, iterasi KDF, dan umur
+sesi tidak dibagikan. Bukti: `itapi_auth` 48 OK, `vitest` 154, e2e 63 lulus.
+
+**T-152 / O-107 + O-088**: pemindaian axe `/app/ledger` diberi 60 dtk (pekerjaan CPU, bukan
+interaksi); `resetTestSchemas` kini melepas `btree_gist`/`pgcrypto` sehingga jalur migrasi DB kosong
+benar-benar dijalankan di lokal — sebelumnya `CREATE EXTENSION IF NOT EXISTS` selalu no-op dan drift
+urutan/checksum hanya terlihat di CI.

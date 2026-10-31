@@ -398,6 +398,40 @@ paths:
         "501":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/auth/password-policy:
+    get:
+      operationId: getPasswordPolicy
+      tags: [auth]
+      summary: Kebijakan bentuk kata sandi yang berlaku
+      description: |
+        Angka yang membentuk aturan kata sandi pada parameter institusi (O-051): panjang minimum,
+        jumlah jenis karakter minimum, dan berapa kata sandi terakhir yang tidak boleh dipakai
+        ulang. Dipakai layar ganti sandi supaya pengguna tahu aturannya sebelum ditolak.
+
+        Kebijakan yang **tidak** dibagikan: jumlah percobaan gagal sebelum akun terkunci, menit
+        lockout, umur sesi, dan iterasi PBKDF2 — itu informasi untuk penyerang, bukan untuk pengguna.
+      security:
+        - sessionCookie: []
+      responses:
+        "503":
+          $ref: "#/components/responses/Problem"
+        "200":
+          description: Kebijakan kata sandi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordPolicy"
+        "401":
+          description: Tidak ada sesi sah
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
   /api/v1/auth/mfa:
     get:
       operationId: getMfaStatus
@@ -3833,6 +3867,28 @@ components:
           type: string
           minLength: 1
           writeOnly: true
+
+    PasswordPolicy:
+      type: object
+      additionalProperties: false
+      required: [minLength, minClasses, historyCount]
+      properties:
+        minLength:
+          type: integer
+          minimum: 1
+          description: Panjang minimum kata sandi (parameter `platform.security.password_min_length`).
+        minClasses:
+          type: integer
+          minimum: 1
+          description: |
+            Jumlah minimum jenis karakter yang harus muncul (huruf besar, huruf kecil, angka,
+            simbol) — parameter `platform.security.password_min_classes`.
+        historyCount:
+          type: integer
+          minimum: 0
+          description: |
+            Berapa kata sandi terakhir yang tidak boleh dipakai ulang — parameter
+            `platform.security.password_history_count`.
 
     MfaStatusResponse:
       type: object
