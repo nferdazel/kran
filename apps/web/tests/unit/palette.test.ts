@@ -82,10 +82,10 @@ describe("sumber aksi = nav yang sudah ada", () => {
 });
 
 describe("isActiveHref", () => {
-  it("`/app` hanya aktif di halaman itu sendiri, bukan di rute turunannya", () => {
-    expect(isActiveHref("/app", "/app")).toBeTruthy();
-    expect(isActiveHref("/app/ledger", "/app")).toBeFalsy();
-    expect(isActiveHref("/app/teller", "/app")).toBeFalsy();
+  it("pencocokan per segmen rute, bukan awalan teks mentah", () => {
+    expect(isActiveHref("/app/params", "/app/params")).toBeTruthy();
+    expect(isActiveHref("/app/params/extra", "/app/params")).toBeTruthy();
+    expect(isActiveHref("/app/params-extra", "/app/params")).toBeFalsy();
   });
 
   it("rute lain aktif sebagai awalan", () => {

@@ -55,17 +55,21 @@ proc journalOf(row: Row): Journal =
     recordedAt: row[7],
   )
 
-proc insertJournal*(db: DbConn, j: Journal, createdBy: Id): string =
+proc insertJournal*(db: DbConn, j: Journal, createdBy: Id, daycloserRunId = ""): string =
   ## Menyisipkan header jurnal; `recorded_at` dikembalikan sebagai ISO-8601 UTC. Pelanggaran
   ## idempotensi/trigger = `DbError` yang diterjemahkan pemanggil.
+  ##
+  ## `daycloserRunId` hanya diisi task penutupan buku: gate `ledger.no_late_postings` memakainya
+  ## untuk membedakan tulisan bisnis yang terlambat dari jurnal yang memang dibuat penutupan
+  ## (T-140, `ledger/0072`).
   db.getValue(sql"""
     INSERT INTO ledger.journal
       (journal_id, business_date, value_date, source_event, source_ref, idempotency_key,
-       reversal_of, created_by)
-    VALUES (?, ?::date, ?::date, ?, ?, ?, NULLIF(?, '')::uuid, ?)
+       reversal_of, created_by, daycloser_run_id)
+    VALUES (?, ?::date, ?::date, ?, ?, ?, NULLIF(?, '')::uuid, ?, NULLIF(?, '')::uuid)
     RETURNING to_char(recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')""",
     $j.journalId, j.businessDate, j.valueDate, j.sourceEvent, $j.sourceRef,
-    j.idempotencyKey, j.reversalOf, $createdBy)
+    j.idempotencyKey, j.reversalOf, $createdBy, daycloserRunId)
 
 proc insertJournalLine*(db: DbConn, journalId: Id, line: JournalLine) =
   db.exec(sql"""

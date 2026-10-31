@@ -1,9 +1,11 @@
 import AxeBuilder from "@axe-core/playwright";
+
+import { blockingViolations } from "./axe.js";
 import { expect, test, type Page } from "@playwright/test";
 
 /**
  * Gate a11y (spec §17.2): axe-core pada rute utama × 2 tema × 2 locale, gagal untuk pelanggaran
- * ber-dampak serious/critical.
+ * ber-dampak `moderate` ke atas (D-166/T-149).
  *
  * Locale diset eksplisit lewat `localStorage` (strategi Paraglide memakainya) supaya hasil test
  * tidak bergantung pada bahasa browser: tanpa itu locale jatuh ke `preferredLanguage` (en-US di
@@ -68,13 +70,11 @@ for (const locale of LOCALES) {
       await expect(page.locator("html")).toHaveAttribute("lang", locale);
 
       const results = await new AxeBuilder({ page }).analyze();
-      const serious = results.violations.filter(
-        (v) => v.impact === "serious" || v.impact === "critical",
-      );
+      const blocking = blockingViolations(results.violations);
 
       // Pesan eksplisit supaya kegagalan bisa ditindaklanjuti tanpa membuka trace.
       expect(
-        serious.map((v) => ({
+        blocking.map((v) => ({
           id: v.id,
           impact: v.impact,
           description: v.description,
@@ -97,8 +97,9 @@ test("struktur shell: landmark, judul halaman, dan indikator business date", asy
   // Judul halaman unik per rute (spec §17.1).
   await expect(page).toHaveTitle(titlePattern(TEXT.id.appTitle));
 
-  // Indikator business date selalu tampak (spec §14.3).
-  await expect(page.getByText("Tanggal bisnis")).toBeVisible();
+  // Halaman publik tidak punya sesi, jadi tidak ada tanggal bisnis yang diketahui: indikator
+  // tidak dirender sama sekali lebih baik daripada menampilkan tanggal karangan.
+  await expect(page.getByText("Tanggal bisnis")).toHaveCount(0);
 });
 
 test("ganti tema mengubah atribut dan mengumumkannya lewat live region", async ({ page }) => {
@@ -129,4 +130,25 @@ test("tidak ada string hardcode: label form ikut berganti bahasa", async ({ page
 
   await page.getByRole("radio", { name: "Inggris" }).check();
   await expect(page.getByLabel("Username")).toBeVisible();
+});
+
+test("halaman galat: copy Indonesia, satu h1, axe bersih di dua tema", async ({ page }) => {
+  for (const theme of THEMES) {
+    await gotoApp(page, "id", theme);
+    await page.goto("/rute-yang-tidak-ada");
+
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Halaman tidak bisa dibuka" }),
+    ).toBeVisible();
+    // 404 bukan alasan menawarkan "muat ulang": alamatnya memang tidak ada.
+    await expect(page.getByRole("link", { name: "Muat ulang" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Kembali ke area kerja" })).toBeVisible();
+
+    const results = await new AxeBuilder({ page }).analyze();
+    const blocking = blockingViolations(results.violations);
+    expect(
+      blocking.map((violation) => violation.id),
+      `galat ${theme}: ${blocking.map((violation) => violation.id).join(", ")}`,
+    ).toEqual([]);
+  }
 });

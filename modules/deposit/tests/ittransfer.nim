@@ -221,6 +221,9 @@ type TransferArgs = object
   amount: string
 
 proc transferWorker(args: TransferArgs) {.thread.} =
+  ## Sengaja **hanya** memutasi saldo (tanpa kunci rekening): pekerja ini menguji urutan
+  ## `lockBalancesAscending` itu sendiri. Kunci rekening sekarang diambil pemanggil (handler,
+  ## `transferWithRowWorker`), jadi tanpa pekerja ini urutan baris saldo tidak diuji siapa pun.
   {.cast(gcsafe).}:
     let ok =
       try:
@@ -260,9 +263,11 @@ suite "deposit: PB berlawanan arah bersamaan tidak deadlock":
     credit(b.accountId, money(100_0000))
 
     # Sesi uji memegang lock baris saldo **terkecil**. Dengan urutan `account_id` menaik, kedua PB
-    # (dua arah) menunggu di baris yang sama → terserialisasi. Bila urutan kunci dihapus,
-    # masing-masing memegang baris sumbernya lalu menunggu baris yang lain → deadlock dan salah satu
-    # pekerja gagal (`workerFailed`), sehingga test ini gagal.
+    # (dua arah) menunggu di baris yang sama → terserialisasi. Bila urutan bergantung arah (mis.
+    # "sumber dulu"), masing-masing memegang baris sumbernya lalu menunggu baris yang lain →
+    # deadlock dan salah satu pekerja gagal (`workerFailed`), sehingga test ini gagal (dibuktikan
+    # dengan mutasi: urutan diganti `[source, destination]` → test merah). Pekerja di sini sengaja
+    # tidak mengunci rekening, supaya yang diuji benar-benar urutan baris saldo.
     let (minId, maxId) =
       if a.accountId < b.accountId: (a.accountId, b.accountId)
       else: (b.accountId, a.accountId)
@@ -300,3 +305,91 @@ suite "deposit: PB berlawanan arah bersamaan tidak deadlock":
     check balanceOfAccount(a.accountId) == money(100_0000)
     check balanceOfAccount(b.accountId) == money(100_0000)
     check transfersByAccount(db, a.accountId).len == 0 # belum ada baris transfer (mutasi saja)
+
+type
+  TransferWithRowArgs = object
+    pool: DbPool
+    sourceId: string
+    destinationId: string
+    amount: string
+    journalId: string
+    transferId: string
+    businessDate: string
+    actor: string
+
+var transferRowFailed: Atomic[bool]
+
+proc transferWithRowWorker(args: TransferWithRowArgs) {.thread.} =
+  ## Meniru jalur HTTP: kunci rekening, mutasi saldo, lalu tulis baris transfer (FK meminta
+  ## `KEY SHARE` pada baris rekening). Urutan inilah yang harus seragam dengan jalur tunai.
+  {.cast(gcsafe).}:
+    let ok =
+      try:
+        args.pool.withTx(proc(d: DbConn): bool {.closure.} =
+          exec(d, sql"SET LOCAL lock_timeout = '30000'")
+          lockTransferAccounts(d, Id(args.sourceId), Id(args.destinationId))
+          if applyTransferBalances(d, Id(args.sourceId), Id(args.destinationId),
+              moneyFromString(args.amount).value(), zero()).isNone:
+            return false
+          insertTransfer(d, Transfer(
+            transferId: Id(args.transferId),
+            sourceAccountId: Id(args.sourceId),
+            destinationAccountId: Id(args.destinationId),
+            amount: moneyFromString(args.amount).value(),
+            businessDate: args.businessDate,
+            narration: "uji urutan kunci",
+            journalId: Id(args.journalId)), Id(args.actor))
+          true)
+      except DbError:
+        false
+    if not ok:
+      transferRowFailed.store(true)
+
+suite "deposit: setoran tunai dan PB tidak membentuk siklus kunci":
+  test "PB menunggu kunci rekening sebelum menyentuh baris saldo":
+    let a = accountRow()
+    let b = accountRow()
+    save(a)
+    save(b)
+    credit(a.accountId, money(100_0000))
+    credit(b.accountId, money(100_0000))
+    let jid = saveTransferJournal(money(10_0000))
+    let trId = newId(testClock)
+
+    # Jalur tunai memegang baris rekening A (`lockAccountForUpdate`) sebelum cek status — persis
+    # seperti `handlers_teller.nim`.
+    let side = dbPool.acquire()
+    defer: dbPool.release(side)
+    exec(side, sql"BEGIN")
+    lockAccountForUpdate(side, a.accountId)
+    let holderPid = side.getValue(sql"SELECT pg_backend_pid()")
+
+    transferRowFailed.store(false)
+    var w: Thread[TransferWithRowArgs]
+    createThread(w, transferWithRowWorker, TransferWithRowArgs(pool: dbPool,
+      sourceId: $a.accountId, destinationId: $b.accountId,
+      amount: money(10_0000).toDecimalString, journalId: $jid, transferId: $trId,
+      businessDate: businessDate, actor: $actor))
+
+    # Sinkronisasi deterministik: tunggu pekerja benar-benar menunggu kunci rekening.
+    let deadline = epochTime() + 5.0
+    var blocked = 0
+    while epochTime() < deadline and blocked == 0:
+      blocked = blockedByHolder(holderPid)
+      if blocked == 0:
+        sleep(20)
+    check blocked == 1
+
+    # Selama PB menunggu rekening, baris saldo A **masih bebas**: jalur tunai boleh mengambilnya
+    # sesudah rekening. Bila PB mengunci saldo lebih dulu, permintaan ini menunggu PB dan
+    # `lock_timeout` di bawah melempar DbError → test gagal.
+    exec(side, sql"SET LOCAL lock_timeout = '2000'")
+    discard side.getValue(sql"""
+      SELECT 1 FROM deposit.account_balance WHERE account_id = ? FOR UPDATE""", $a.accountId)
+
+    exec(side, sql"COMMIT")
+    joinThread(w)
+
+    check not transferRowFailed.load()
+    check balanceOfAccount(a.accountId) == money(90_0000)
+    check balanceOfAccount(b.accountId) == money(110_0000)

@@ -31,17 +31,32 @@ suite "deposit: nomor rekening (kode cabang + nomor urut)":
       discard formatAccountNo("001", 10_000_000'i64) # 8 digit: tak muat selebar 7
 
 suite "deposit: tipe & status":
-  test "tipe hanya SAVINGS":
+  test "tipe SAVINGS/TIME_DEPOSIT dikenal, tipe lain ditolak":
     check parseAccountType("savings") == atSavings
     check parseAccountType(" SAVINGS ") == atSavings
+    check parseAccountType("time_deposit") == atTimeDeposit
+    check parseAccountType("Time_Deposit") == atTimeDeposit
     expect ValueError:
-      discard parseAccountType("TIME_DEPOSIT")
+      discard parseAccountType("GIRO")
+    expect ValueError:
+      discard parseAccountType("")
 
   test "status dikenal dan dinormalisasi":
     check parseAccountStatus("active") == asActive
     check parseAccountStatus("Closed") == asClosed
+    # DORMANT baru sah setelah T-138e/0071 punya aturan deteksi + reaktivasi (D-157).
+    check parseAccountStatus(" dormant ") == asDormant
     expect ValueError:
-      discard parseAccountStatus("DORMANT")
+      discard parseAccountStatus("FROZEN")
+
+  test "instruksi ARO dikenal, nilai asing ditolak (D-155)":
+    check parseAroInstruction("none") == aiNone
+    check parseAroInstruction(" PRINCIPAL ") == aiPrincipal
+    check parseAroInstruction("principal_and_interest") == aiPrincipalAndInterest
+    expect ValueError:
+      discard parseAroInstruction("")
+    expect ValueError:
+      discard parseAroInstruction("ROLLOVER")
 
 suite "deposit: bentuk rekening":
   proc sample(seqNo = 1'i64): Account =

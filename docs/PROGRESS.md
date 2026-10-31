@@ -2968,3 +2968,776 @@ deprecation baru; `std/re` masih ada sehingga `libpcre3` di runner dan image tet
 **Sisa**: integrasi Postgres tidak dijalankan di 2.4.0 (tunnel dev tidak hidup saat pemeriksaan),
 jadi gate penuhnya `./task ci` pada push ini. Build image belum diuji lokal (tidak ada podman/docker
 di mesin ini); deploy VPS yang memastikannya, dengan rollback `:prev` bila gagal.
+
+---
+
+## 2026-10-28 — Fase 3 dibuka: kerangka `daycloser` (T-134) SELESAI
+
+**Konteks**: Fase 0–2 + batch audit A–D selesai. Fase 3 dimulai di branch lokal
+`feat/fase3-dayclose` (tidak di-push; `main` tetap `021a988` = revisi produksi).
+
+**Yang dikirim**
+
+- `modules/daycloser`: domain (kontrak task, state machine run/task/chunk, registry DAG, rencana
+  chunk, checkpoint), application (`planRun`/`executeRun`/`resumeRun` di atas port `Store`),
+  infrastructure (Postgres + advisory lock), migrasi `0051` (schema `daycloser`).
+- `shared/kernel/dayclose.nim`: `CloseLevel` pindah dari `platform/domain/calendar` (D-148).
+- `apps/api/src/daycloser_ctl.nim`: `ctl daycloser-status|run|resume|pause|cancel` + task pertama
+  `platform.idempotency_sweep` (menutup T-089; O-094 selesai sebagian).
+- `ops/scripts/deploy-vps.sh`: freeze gate memakai **kode keluar** `daycloser-status`
+  (0 = idle; selain 0 = tahan; fail-closed), bukan grep teks.
+- Dokumentasi: `docs/tasks/T-134.md`, `MODULE.md` modul, D-148, `ACCEPTED-LIMITS` §3 (chunk
+  sekuensial, tanpa timeout/dry-run, belum ada penjadwal), `OPEN_ITEMS` O-013 (selesai) &
+  O-094 (sebagian), runbook `ops-cli.md`, backlog Fase 3 (T-134…T-140).
+
+**Bukti**
+
+- `./task ci` **hijau**: `check` (240 berkas, batas modul, tanpa magic number, paramgen sinkron,
+  i18n, 8 skrip shell), `openapi`, seluruh unit/properti/integrasi, Playwright **54 test**.
+- `./task test tdaycloser` 19 `[OK]`; `./task test itdaycloser` 17 `[OK]`;
+  `./task test tcalendar` dan `./task test itapi_roles` hijau (kontrak gate 0/1 teruji).
+- `ctl` di DB dev: run 2026-10-26 (EOD) & 2026-10-30 (EOD,EOM) `COMPLETED` + segel + audit
+  `daycloser.run.start/.finish`; 31 Okt/25 Okt (akhir pekan) ditolak kode 3; status idle → 0.
+- Review independen: 1 BLOCKER + 3 MAJOR + 8 MINOR; semua diperbaiki dan diuji (resume+CANCEL,
+  skip task kritis, registry drift, audit atomik, segel chunk, gate test, lock eksplisit,
+  tanggal masa depan, `PoolError`).
+
+**Batas/berikutnya**: T-135 (freeze/rollover business date, kebijakan transaksi saat closing).
+
+---
+
+## 2026-10-28 — T-135 siklus business date (freeze → tutup → rollover) SELESAI
+
+**Konteks**: T-134 menyelesaikan run tanpa memindahkan `platform.business_date`. Satu run
+`COMPLETED` masih meninggalkan institusi pada tanggal yang sama, dan tidak ada jalan keluar untuk
+percobaan penutupan yang dibatalkan. Dikerjakan di `feat/fase3-dayclose` (belum di-push).
+
+**Yang berubah**
+
+- `modules/platform/domain/calendar.nim`: `canAbortClose` — satu-satunya jalur `CLOSING → OPEN`
+  (abort percobaan, bukan reopen EOD; `CLOSED` tetap terminal).
+- `modules/platform/infrastructure/calendar_repo.nim`: `abortClose` (`WHERE state = 'CLOSING'`),
+  `updated_by` boleh NULL untuk aksi `ctl`.
+- `modules/daycloser/application/orchestrator.nim`: port `freezeDate`/`sealRun`/`reopenDate`;
+  freeze terjadi **setelah** seluruh task `PRECHECK` dan **sebelum** state `RUNNING`; cancel
+  membatalkan sisa task lalu membuka kembali tanggal.
+- `apps/api/src/daycloser_ctl.nim`: `freezeBusinessDate`, `sealAndRollover` (satu transaksi:
+  `COMPLETED` + audit `run.finish` + `CLOSED` + rollover `nextWorkingDay` + outbox
+  `BusinessDateOpened`), `reopenBusinessDate`, `cancelRunNow`; `--bootstrap`; lock diambil
+  sebelum pemeriksaan keadaan; `daycloser-cancel` langsung berlaku bila tidak ada proses hidup.
+- `apps/api/src/close_guard.nim` + `server.nim`: selama `CLOSING`, semua `POST/PUT/PATCH/DELETE`
+  ditolak `409` (`reason: business_date_closing`) di pembungkus permintaan, kecuali
+  `/api/v1/auth/`; kebijakan `daycloser.txn_policy_during_close` (`REJECT` default, `ALLOW` opt-in);
+  parameter hilang/rusak fail-closed, DB tak terbaca fail-open.
+- Kontrak: `409` dideklarasikan pada **semua** operasi tulis non-auth; `tools/openapi` menegakkannya
+  (endpoint tulis baru tanpa 409 gagal di gate). Klien TS di-regenerasi.
+- i18n `error_business_date_closing` (id/en) + pemetaan `params.reason` di
+  `apps/web/src/lib/app/errors.ts`.
+- Dokumentasi: `docs/tasks/T-135.md`, D-149, `modules/daycloser/MODULE.md`, `ACCEPTED-LIMITS` §3
+  (QUEUE, scope cabang, biaya query gerbang, fail-open), `OPEN_ITEMS` O-094, runbook baru
+  `docs/runbooks/dayclose.md`, `ops-cli.md`.
+
+**Bukti**
+
+- `./task check-fast` hijau (fmt, lint, batas modul, tanpa magic number, paramgen sinkron, i18n,
+  8 skrip shell).
+- `./task test tdaycloser` 21 `[OK]` — 5 test urutan fase dengan `Store` palsu: freeze setelah
+  precheck & sebelum `RUNNING`, seal terakhir, tidak ada freeze/seal saat precheck gagal, seal
+  gagal tidak meninggalkan `COMPLETED`, cancel membatalkan sisa task + reopen, pause tidak
+  menyegel/membuka.
+- `./task test itdaycloser_lifecycle` 5 `[OK]` — lewat perintah `ctl` sungguhan: bootstrap
+  menutup Senin 26 Okt → tanggal buku Selasa 27 `OPEN` + event `BusinessDateOpened` + 3 audit;
+  tanggal lain/bootstrap kedua/akhir pekan ditolak (3) tanpa mengubah tanggal; penutupan 27 Okt
+  maju ke 28; `CLOSING` menahan `daycloser-run` (3) dan `daycloser-status` (1); cancel → run
+  `CANCELED` + tanggal `OPEN` + status kembali 0.
+- `./task test itapi_closeguard` 5 `[OK]` — HTTP sungguhan: 409 + `reason` saat `CLOSING`, `GET`
+  dan `/api/v1/auth/login` tidak diblokir, `ALLOW` meloloskan (lalu `REJECT` menahan lagi), `OPEN`
+  netral, tanpa baris `business_date` semua lolos ke handler (401).
+- `./task test tcloseguard` 2 `[OK]`; `./task test itcalendar` (abort OPEN/CLOSING/CLOSED),
+  `itdaycloser` 17 `[OK]`, `itapi_roles`, `itapi_deposit`, `tcontract` hijau.
+- `./task ci` **hijau penuh** (`.build/ci-t135b.log`, exit 0): `check` (244 berkas, batas modul,
+  tanpa magic number, paramgen sinkron, i18n, 8 skrip shell), `openapi`, `eslint`, seluruh
+  unit/properti (1240 `[OK]`), integrasi Postgres, vitest web 125 + token kontras 117,
+  svelte-check 0 error/0 warning, dan Playwright **54 passed** (axe 2 tema × 2 locale + keyboard +
+  alur login/maker-checker). Catatan: percobaan pertama gagal karena flake `itapi.nim` (request
+  dikirim sebelum thread server `bind`); diperbaiki dengan retry berbatas, bukan dengan melunakkan
+  assertion 503.
+
+- Review independen: **1 BLOCKER + 2 MAJOR + 5 MINOR + 3 NIT**. BLOCKER (tanggal yang run-nya
+  dibatalkan menjadi jalan buntu) dan kedua MAJOR (cancel+reopen tidak atomik; TOCTOU gerbang)
+  diperbaiki: run baru diizinkan setelah `CANCELED`, port `Store.cancelRun` menulis task+run+tanggal
+  dalam satu transaksi, `daycloser-cancel` pada run `CANCELED` menjadi jalur pemulihan, TOCTOU
+  dicatat + menjadi gate deteksi T-136. MINOR/NIT ikut dibereskan (awalan exempt kontrak, bootstrap
+  hanya di `runCmd`, test fail-closed, runbook `ALLOW`, MODULE.md).
+
+**Batas/berikutnya**: `QUEUE` (antrean transaksi) belum ada dan tidak dideklarasikan sah;
+penutupan per cabang belum diekspos; gerbang menambah satu query per permintaan tulis (diukur di
+T-140); gerbang adalah cek-lalu-jalan (TOCTOU tercatat); replay idempotensi saat `CLOSING` dijawab
+409; pemicu harian masih operator → T-139. Berikutnya: T-136 (gate pra/pasca-tutup).
+
+---
+
+## 2026-10-28 — T-136 gate pra/pasca-tutup SELESAI
+
+**Konteks**: setelah T-135, run bisa "selesai" walau kas teller belum beres, ada pengajuan
+menggantung, saldo selisih bukan nol, atau subledger tidak sama dengan GL. Spec §11.5 menempatkan
+pemeriksaan itu sebagai langkah tersendiri; kerangka belum punya satu pun gate.
+
+**Yang berubah**
+
+- `apps/api/src/daycloser_gates.nim` (baru): enam gate kritis.
+  PRECHECK — `teller.sessions_closed` (`DAY-301/302`), `teller.pending_approvals` (`DAY-303`),
+  `ledger.suspense_zero` (`DAY-304`, akun tak dikenal `DAY-311`, daftar kosong `DAY-312`).
+  POSTCHECK — `ledger.trial_balance` (`DAY-305`), `ledger.subledger_vs_gl` (`DAY-306/307/308`),
+  `ledger.no_late_postings` (`DAY-309/310`).
+- `BLOCKED` untuk gate, `FAILED` untuk task proses: kegagalan task kritis `PRECHECK`/`POSTCHECK`
+  → run `BLOCKED`. State `BLOCKED` sebelumnya hanya ada di state machine, tidak pernah dipakai.
+- Bukti: `TaskError` membawa `metrics`, jadi angka penyebab penolakan tersimpan di
+  `daycloser.task.metrics` walaupun gate gagal (sebelumnya `null`).
+- Primitif baca di modul: `sessionGate`, `pendingTopUpCount`, `subledgerTotal`, `latePostings`,
+  `businessDateFrozenAt` (timestamp presisi mikrodetik untuk pembanding jurnal).
+- Akun dari parameter JSON baru: `daycloser.precheck.suspense_accounts` (awal `101.9`) dan
+  `daycloser.postcheck.subledger_gl_accounts` (awal `201`,`202`); saldo dinilai menurut
+  `account_type` COA, bukan tebakan kode akun.
+- Registrasi task dipisah ke `apps/api/src/daycloser_tasks.nim` (ctl sudah 490 baris).
+- Dokumentasi: `docs/tasks/T-136.md`, D-150, `modules/daycloser/MODULE.md`, runbook `dayclose.md`
+  (tabel kode + catatan resume), `ACCEPTED-LIMITS` (gate institusi-wide, biaya kumulatif, pemetaan
+  subledger per produk, jurnal terlambat hanya yang dimulai setelah freeze).
+
+**Bukti**
+
+- `./task test itdaycloser_gates` 12 `[OK]`: sesi OPEN → `BLOCKED` `DAY-301` (`openSessions=1`),
+  tanggal tetap `OPEN`, run ulang ditolak 3, gate lulus **diperiksa ulang** saat resume (jurnal
+  selisih masuk selama `BLOCKED` → `DAY-304`), cancel → perbaiki → run ulang `COMPLETED`; pengajuan
+  top-up `DAY-303`; akun selisih `DAY-304`; kegagalan **pasca**-tutup lewat `ctl` (`DAY-308`,
+  tanggal tetap `CLOSING`, status 1, cancel memulihkan); `DAY-302/309/311/312`; gate lulus tetap
+  menyimpan bukti.
+- `./task test tdaycloser` 24 `[OK]` (BLOCKED precheck/postcheck, FAILED proses,
+  `canTransition(rsPostcheck, rsBlocked)`), `itdaycloser`/`itdaycloser_lifecycle`/`itapi_closeguard`
+  hijau, `./task check-fast` hijau.
+- `./task ci` **hijau penuh** (`.build/ci-t136b.log`, exit 0): `check` 247 berkas, openapi, eslint,
+  1254 `[OK]` unit/properti/integrasi, vitest web 125 + kontras 117, svelte-check 0/0,
+  Playwright 54.
+
+**Review independen**: 1 BLOCKER + 1 MAJOR + 5 MINOR + 3 NIT; semua BLOCKER/MAJOR dan MINOR yang
+murah diperbaiki. BLOCKER: gate `SUCCEEDED` tidak diulang saat resume, sehingga sertifikat pra-tutup
+bisa basi — `resetInFlight` kini mengulang task **dan chunk** gate (reset task saja membuat
+`runTask` melewati chunk `SUCCEEDED` dan menandai sukses tanpa menjalankan gate). MAJOR: akun
+parameter salah ketik mematikan gate tanpa galat — kini `DAY-311`.
+
+**Batas/berikutnya**: gate dihitung institusi-wide (satu run cabang belum didukung); saldo dibaca
+kumulatif (biaya diukur T-140); pemetaan subledger per jenis produk belum ada; jurnal terlambat
+dideteksi bukan dicegah; `DAY-305`/`DAY-307` belum punya test (trigger DB / rantai FK). Berikutnya:
+T-137 (snapshot saldo + TB harian, tutup periode GL bulanan).
+
+---
+
+## 2026-10-28 — T-137 task ledger: snapshot harian + tutup periode GL SELESAI
+
+**Konteks**: setelah T-136, penutupan sudah memeriksa gate tetapi belum menulis bukti saldo harian
+dan belum menutup periode GL bulanan. Spec §11.5 langkah 6 menempatkan snapshot/TB di dalam seal;
+§11.6 mencantumkan tutup periode sebagai pekerjaan EOM.
+
+**Yang berubah**
+
+- `apps/api/src/daycloser_ledger.nim` (baru): `ledger.daily_snapshot` (EOD) menulis ulang
+  `ledger.balance_snapshot` lalu membuktikannya terhadap jurnal **dalam satu transaksi** — bila
+  tidak cocok, transaksi di-rollback (`SnapshotAbort`) dan `accountDiff` (maks 20 akun) masuk
+  metrics. `ledger.period_close` (EOM, `tkPostCheck`) menutup periode yang memuat tanggal buku dan
+  berakhir di bulan yang sama, setelah snapshot + tiga gate ledger.
+- `modules/ledger/infrastructure/ledger_repo.nim`: `periodContaining`, `earlierOpenPeriod`,
+  `closePeriodBy` (satu jalur UPDATE untuk pengguna maupun sistem; `closed_by` NULL = proses).
+- `modules/ledger/domain/report.nim`: `snapshotDiff` (bukti akun yang berbeda).
+- `modules/ledger/migrations/0060_ledger_period_system_close.sql` (baru, **contract**):
+  `updated_by` boleh NULL + CHECK periode tidak mewajibkan pelaku saat penutupan sistem; masuk
+  `ops/migrations/contract-auto.txt`.
+- `apps/api/src/daycloser_common.nim` (baru): `earliestDate` + `ctlAuditContext` bersama
+  gate/ledger/ctl (menghapus dua duplikasi).
+- Parameter tidak bertambah; akun COA tidak bertambah (bukan bagian T-137).
+- Dokumentasi: `docs/tasks/T-137.md`, D-151 (+amendemen), `modules/ledger/MODULE.md`, runbook
+  `dayclose.md` (kode `DAY-320/321/323/325/326/327/328`), `ACCEPTED-LIMITS`.
+
+**Bukti**
+
+- `./task test itdaycloser_ledger` 7 `[OK]`: snapshot tertulis + `snapshotHash`; periode `CLOSED`
+  dengan `closed_by` NULL, 1 audit + 1 event; run ulang idempoten (`alreadyClosed`, event tetap 1);
+  urutan DAG `period_close` setelah snapshot + 3 gate dan jenisnya `POSTCHECK`; `DAY-324` tanpa
+  periode (metrics menyebut tanggal); periode tahunan → `NOT_DUE` dan tetap OPEN; `DAY-328` saat
+  periode sebelumnya OPEN; `DAY-326` saat sesi kas OPEN.
+- `./task test treport` +4 `[OK]` untuk `snapshotDiff`.
+- `itdaycloser_gates` 12 `[OK]`, `tdaycloser` 24 `[OK]`, `itdaycloser`, `itdaycloser_lifecycle`,
+  `itapi_teller_sessions` hijau.
+- **Jalur deploy migrasi** (binary API, bukan harness): `--up` exit 0 (sebelumnya exit 3 karena
+  `destructivePending`), `--check` melaporkan `contract_pending=3` dengan id yang seluruhnya ada di
+  allowlist, `--contract` menerapkan 3, `--check` **86/86 tanpa drift**, CHECK `period_closed_chk`
+  berubah ke definisi baru.
+- `./task ci` **hijau penuh** (`.build/ci-t137c.log`, exit 0): 250 berkas `check`, openapi, eslint,
+  1265 `[OK]` unit/properti/integrasi, vitest web 125 + kontras 117, svelte-check 0/0,
+  Playwright 54.
+- Review independen: **2 BLOCKER + 1 MAJOR + 5 MINOR + 5 NIT**. BLOCKER migrasi (contract +
+  allowlist) dan pemilihan periode (memuat tanggal buku + bulan yang sama) diperbaiki dan
+  dibuktikan; MAJOR tutup periode dipindah ke fase pasca-tutup; MINOR rollback snapshot, metrics
+  `accountDiff`, runbook, `DAY-328`, dedup helper, dan test yang tidak bergantung urutan.
+
+**Batas/berikutnya**: `rebuildSnapshot` DELETE+INSERT per tanggal (benchmark T-140); periode GL
+masih dibuat manual (`DAY-324`); penutupan periode tidak bisa dibatalkan (karena itu dijalankan
+paling akhir); periode yang berakhir di tengah bulan tidak ditutup oleh EOM. Berikutnya: T-139
+(API + UI monitor/aksi + penjadwal) — T-138 menunggu keputusan pemilik yang kini sudah ada (D-152).
+
+---
+
+## 2026-10-28 — T-138a helper day-count (bagian dari T-138) SELESAI
+
+**Konteks**: keputusan pemilik (D-152) menetapkan akrual bunga harian dengan default `ACT_365`,
+tetapi repo belum punya hitungan hari sama sekali (tidak ada ACT/365, ACT/360, 30/360).
+
+**Yang berubah**
+
+- `modules/deposit/domain/daycount.nim` (baru, domain murni): `DayCountBasis`
+  (`dcAct365`/`dcAct360`/`dcThirty360`, nilai string sama persis dengan parameter
+  `product.savings.day_count_basis`), `parseDayCountBasis` (tanpa fallback; nilai tak dikenal
+  `ValueError`), `basisDays`, `accrualDays(basis, startsOn, endsOn)`.
+- 30/360 memakai konvensi **US (NASD)** dengan aturan tertulis di docstring; konsekuensinya
+  (rentang pendek di akhir bulan bisa 0 hari) dicatat, begitu pula alasan `ACT_365` menjadi default.
+- `modules/deposit/tests/tdaycount.nim` (baru): 20 test; `modules/deposit/MODULE.md` bagian baru.
+- Tidak ada uang di berkas ini: nominal bunga sengaja belum dihitung (menunggu potongan b/c dan
+  review manusia, AGENTS.md §8).
+
+**Bukti**
+
+- `./task test tdaycount` **20 `[OK]`** — termasuk ACT/365 vs ACT/360 memakai hari kalender yang
+  sama, kabisat (2024 = 366), golden 30/360 (`31 Jan → 28 Feb 2026 = 28`, `31 Jan → 31 Mar = 60`,
+  `31 Jan 2026 → 31 Jan 2027 = 360`, `30 Jan → 31 Jan = 0`, aturan "keduanya akhir Februari"),
+  urutan terbalik & tanggal tidak sah ditolak.
+- `./task nomagic` hijau (konstanta 365/360/30/31 diberi alasan konvensi), `./task archcheck` hijau,
+  `./task fmt` stabil.
+
+**Batas/berikutnya**: konvensi 30/360 perlu konfirmasi compliance (alternatif 30E/360); potongan
+(b) migrasi model + rule GL, (c) task akrual dengan checkpoint, (d) jatuh tempo/ARO, (e) dormant
+belum dikerjakan.
+
+---
+
+## 2026-10-28 — T-139a aksi day-close: tombol operator memakai jalur `ctl` yang sama
+
+**Konteks**: T-139a baca sudah ada, tetapi menutup buku masih hanya bisa dari server. Aksi
+resume/cancel juga terhalang gerbang `CLOSING` (dicatat `ACCEPTED-LIMITS`).
+
+**Yang berubah**
+
+- `apps/api/src/daycloser_service.nim` (baru): seluruh **keputusan** penutupan pindah dari
+  `daycloser_ctl.nim` — `startRunAction`, `resumeRunAction`, `controlRunAction` mengembalikan
+  `ActionResult` (status + kode mesin + snapshot), plus primitif yang dulu tinggal di `ctl`
+  (`freezeBusinessDate`, `sealAndRollover`, `cancelAndReopen`, `reopenBusinessDate`,
+  `cancelRunNow`, `makeStore`, `readConfig`, `auditRun`). `ctl` kini hanya mencetak dan memetakan
+  kode keluar; arti lama dipertahankan (run `BLOCKED`/`FAILED` tetap kode keluar 1).
+- `POST /api/v1/dayclose/run`, `/runs/{runId}/resume|pause|cancel` + izin `dayclose.run.manage`
+  (`modules/platform/migrations/0063_platform_rbac_dayclose_manage.sql`, untuk `platform_admin`
+  dan `ledger_admin`, wajib grant tanpa batas cabang).
+- `closeGuardExemptPrefixes` (runtime) = `exemptWritePrefixes` (gate kontrak) = auth + dayclose;
+  `topenapi` mengunci keduanya, termasuk memastikan `/api/v1/daycloser/…` tidak ikut terbuka.
+- `latestRun`/`activeRunFor`/`recentRuns`: `run_id DESC` sebagai pemutus seri `started_at`, supaya
+  "run terakhir" tidak bergantung urutan fisik baris saat dua run mulai pada detik yang sama.
+  `itdaycloser_gates` memakai pemutus yang sama supaya tidak goyah.
+
+**Keputusan**: D-153 (eksekusi sinkron di permintaan; tanpa `Idempotency-Key` karena jalur
+idempotensi repo mengklaim kunci di dalam satu transaksi, sedangkan penutupan lintas transaksi;
+izin baca vs kelola dipisah; pengecualian gerbang sempit).
+
+**Bukti**: `itapi_dayclose` 10 `[OK]`, `itdaycloser_lifecycle` 7, `itdaycloser_gates` 12,
+`itdaycloser_ledger` 7, `itdaycloser` 16, `tdaycloser` 27, `itapi_closeguard` 6, `topenapi` 30,
+`tcontract` 6; `check-fast` + `openapi` hijau. Gate penuh dijalankan setelah commit ini.
+
+**Batas/berikutnya**: penjadwal `daycloser-auto` (2b) dan halaman `/app/dayclose` (2c) belum ada;
+`daycloser.run.started_by` masih kosong untuk aksi HTTP (audit mencatat pelakunya) — dicatat di
+`ACCEPTED-LIMITS`.
+
+---
+
+## 2026-10-28 — T-139b penjadwal penutupan harian
+
+**Konteks**: O-094 mencatat belum ada pemicu harian; penutupan hanya berjalan bila operator
+menjalankan `ctl`. Monitoring sudah ada (T-139a), tetapi tanpa penjadwal buku tetap tidak maju
+sendiri.
+
+**Yang berubah**
+
+- `modules/daycloser/domain/schedule.nim` (baru, murni): `ClockTime`/`parseClockTime` (`HH:MM`,
+  bentuk lain ditolak), `localMinutesOfDay` (menit UTC + selisih zona, dibungkus 0..1439),
+  `dueNow`. Tidak ada tabel zona waktu: repo belum punya, jadi jam lokal + `utc_offset_minutes`
+  dinyatakan eksplisit (spec §22: simpan UTC, tampil lokal).
+- Parameter baru (`modules/daycloser/seeds/params.yaml` + artefak paramgen):
+  `daycloser.auto.enabled` (bool, default **false**), `daycloser.auto.run_at` (`HH:MM`,
+  default `23:30`), `daycloser.auto.utc_offset_minutes` (integer ±840, default 0).
+- `apps/api/src/daycloser_auto.nim` (baru): `ctl daycloser-auto`. Tidak melakukan apa pun (kode 0)
+  bila nonaktif, belum waktunya, tanggal buku tidak `OPEN`, atau sudah ada run untuk tanggal itu;
+  kode 3 bila belum ada `business_date` atau ditolak orkestrasi (mis. bukan hari kerja); kode 1 bila
+  penutupan berjalan tetapi tidak selesai. Parameter bertipe salah = kode 2, bukan "mati diam-diam".
+- `ops/systemd/kran-dayclose.{service,timer}`: cermin unit (biner host `--role=ctl`, tiap 5 menit).
+  **Tidak** dipasang oleh deploy; runbook mencatat langkahnya.
+
+**Bukti**: `tschedule` 7 `[OK]`; `itdaycloser_auto` 7 `[OK]` — nonaktif tidak menjalankan apa pun,
+jam lokal (offset 420) memicu sedangkan UTC belum, run yang sudah ada tidak diulang, tanggal buku
+belum ada → 3, `CLOSING` tidak disentuh, hari bukan kerja → 3 dari orkestrasi (bukan dari
+penjadwal).
+
+**Batas**: unit systemd belum dipasang di server (butuh akses operator); DST tidak didukung; jam
+dibaca per institusi, bukan per cabang.
+
+---
+
+## 2026-10-28 — T-139c layar monitor penutupan buku: T-139 SELESAI
+
+**Konteks**: API dan penjadwal sudah ada; tanpa layar, operator tetap harus masuk ke server untuk
+tahu apakah penutupan berjalan, gagal, atau macet.
+
+**Yang berubah**
+
+- `apps/web/src/lib/app/dayclose.ts` (baru, murni + teruji vitest): tipe dari klien generated,
+  label/ikon/tone per state, aturan visibilitas aksi per state + izin, pemetaan `params.reason` ke
+  katalog, klien endpoint, dan jadwal polling.
+- `apps/web/src/routes/app/dayclose/+page.svelte` (baru): tanggal buku + state + `frozenAt`, kartu
+  run aktif dengan progres task/chunk, riwayat 20/50/100, detail task (`errorCode`, `reason`,
+  attempt), tombol Jalankan/Resume/Pause/Cancel dengan dialog konfirmasi native (Escape menutup,
+  fokus dikembalikan), polling 2,5 dtk yang berhenti sendiri.
+- `packages/i18n/messages/{id,en}.json`: 133 kunci baru per locale; menu `/app/dayclose` di
+  `nav.ts` bergerbang `dayclose.run.read`.
+- `apps/web/tests/unit/dayclose.test.ts` (17 test) + `apps/web/tests/e2e/dayclose.spec.ts`.
+
+**Bukti**
+
+- `svelte-check` 0 error / 0 warning; vitest 142 test (13 berkas); `./task lint-web` bersih;
+  `./task i18n` 770 kunci/locale tanpa temuan.
+- **e2e 59 lulus**, termasuk axe `/app/dayclose` di 2 tema × 2 locale (tanpa pelanggaran
+  serious/critical) dan jalur keyboard: Tab dari tombol muat ulang mencapai kontrol riwayat, Enter
+  memicu muat ulang, tidak ada `alert`.
+- Dua kegagalan awal e2e berasal dari spec yang saya tulis setelah subagent (bukan dari halaman):
+  fokus dikirim saat tombol masih disabled selama pemuatan, dan panah di `<select>` native tidak
+  mengubah nilai di Chromium headless. Spec diperbaiki agar mengukur aplikasi (tunggu enabled,
+  uji ketercapaian Tab + reaksi aplikasi), bukan perilaku browser — bukan assertion yang dilonggarkan.
+
+**Batas**: realtime `daycloser.*` belum ada (polling 2,5 dtk), bootstrap tanggal buku tetap lewat
+`ctl`, simulasi/dry-run dan penutupan per cabang belum.
+
+---
+
+## 2026-10-28 — T-138c akrual bunga harian: subledger + jurnal dalam satu transaksi
+
+**Konteks**: (a) helper hari dan (b) model/akun sudah ada, tetapi belum ada yang menghitung bunga
+setiap malam. Tanpa task ini `204 BUNGA AKRUAL` tetap nol dan beban bunga tidak pernah muncul.
+
+**Keputusan pemilik (D-154)**: yang diakrualkan ACTIVE + DORMANT (`CLOSED` tidak); kegagalan
+akrual **kritis** (menahan penutupan); pembulatan **sekali per rentang** (kumulatif sejak
+`opened_on`, bagian harian = selisih terhadap baris terakhir).
+
+**Yang berubah**
+
+- `modules/deposit/domain/interest.nim` (T-138c commit pertama): `interestForRange` — `pokok × rate
+  × hari / basis` dengan dekomposisi agar tidak overflow, satu pembulatan HALF_EVEN. Golden test
+  memakai oracle `decimal` Python, bukan menyalin hasil implementasi.
+- `modules/deposit/migrations/0066_deposit_interest_accrual.sql`: tabel `deposit.interest_accrual`
+  (PK `(account_id, business_date)`, `amount` + `cumulative`).
+- `modules/deposit/infrastructure/interest_repo.nim`: satu kueri per chunk untuk rekening + binding
+  produk + akrual terakhir; `insertAccrual` idempoten.
+- `apps/api/src/daycloser_deposit.nim`: task `deposit.interest_accrual` (EOD, proses, kritis,
+  `psByChunkCount`). Satu `withTx` per chunk menulis baris akrual, jurnal `InterestAccrued`
+  (D 501 / K 204) **sinkron**, dan event outbox non-akuntansi (tanpa header `accounting`, supaya
+  konsumen tidak memposting jurnal kedua).
+- Didaftarkan **sebelum** task ledger supaya snapshot harian melihat akrual hari itu.
+- Runbook + i18n: `DAY-330`…`DAY-337` (id+en) supaya layar monitor menjelaskan sebab kegagalan.
+
+**Bukti**
+
+- `itdaycloser_deposit` 10 `[OK]`: 28 hari = 19.178,08; catch-up 5 + 23 hari = 19.178,08 (bukan 28
+  pembulatan harian); run ulang tidak menambah baris/jurnal; ACT/360 = 19.444,44; skala 1 =
+  19.178,1; pokok nol = baris tanpa jurnal; `CLOSED` & rekening masa depan dilewati; binding hilang
+  = `DAY-331` dengan seluruh chunk di-rollback; paginasi chunk tanpa duplikat.
+- Regresi day-close: `itdaycloser` 16, `lifecycle` 7, `gates` 12, `ledger` 7, `auto` 7,
+  `itapi_dayclose` 10, `itapi_roles` 29 — hijau. Gate penuh dijalankan setelah commit.
+
+**Batas**: bunga belum diposting ke rekening (T-138d), deposito belum punya jatuh tempo/ARO, dan
+`deposit.maturity_aro`/`dormant` belum ada. **HUMAN-REVIEW-REQUIRED**: rumus & pembulatan bunga.
+
+---
+
+## 2026-10-28 — T-138d jatuh tempo deposito berjangka: ARO NONE/PRINCIPAL/PRINCIPAL_AND_INTEREST
+
+**Konteks**: akrual harian (T-138c) sudah mencatat bunga dan batas `maturity_date − 1`, rule pokok
+`202` sudah ada, tetapi belum ada yang **memindahkan** pokok/bunga saat jatuh tempo. Deposito yang
+jatuh tempo hanya berhenti berbunga dan tetap terbuka selamanya.
+
+**Keputusan pemilik (D-155)**: `NONE` = pokok+bunga ke `201`; `PRINCIPAL` = bunga ke `201`, pokok
+diperpanjang; `PRINCIPAL_AND_INTEREST` = bunga dikapitalisasi (`InterestCapitalized` D 204/K 202);
+tenor perpanjangan = tenor semula; keterlambatan proses tidak menambah bunga.
+
+**Yang berubah**
+
+- `modules/deposit/migrations/0068_deposit_transaction_maturity.sql` (**contract** + `destructive`,
+  allowlist deploy): `tx_type` menerima `MATURITY_OUT`/`MATURITY_IN`/`INTEREST_CREDIT`, dan UNIQUE
+  `journal_id` menjadi `(journal_id, account_id)` supaya satu jurnal perpindahan pokok bisa
+  mencerminkan dua rekening. Alasan lengkap di header migrasi + O-110.
+- `modules/ledger/migrations/0069_ledger_posting_rules_maturity.sql`: `DepositMatured` D 202/K 201,
+  `InterestCapitalized` D 204/K 202 (`NEEDS-COMPLIANCE-REVIEW`, idempoten). `InterestPosted` dipakai
+  ulang dari `0065`.
+- Domain: `TransactionType` + tiga jenis baru, `cashDirectionOf` melempar `ValueError` untuk jenis
+  non-tunai, `statementDirectionOf` untuk rekening koran; `parseAroInstruction` (tanpa fallback).
+- `modules/deposit/infrastructure/maturity_repo.nim`: halaman rekening jatuh tempo (jendela
+  `row_number()` di atas seluruh rekening berjangka — offset pada himpunan yang menyusut melewati
+  rekening), rekening simpanan tujuan, tutup rekening, majukan `maturity_date`, sesuaikan saldo.
+- `apps/api/src/daycloser_deposit.nim`: task `deposit.maturity_aro` (EOD, proses, kritis,
+  `psByChunkCount`, `imPerBusinessDate`, `dependsOn: deposit.interest_accrual`). Satu `withTx` per
+  chunk: jurnal sinkron + baris `deposit.transaction` + mutasi saldo + perubahan status/jatuh tempo.
+- `reconcile_repo`: tanda per jenis baris (IN positif, OUT negatif); jenis tak dikenal membuat
+  `expected` NULL sehingga rekeningnya dilaporkan, bukan dihitung sebagai keluar.
+- Runbook + i18n: `DAY-340`…`DAY-347` (id+en) + `dayclose.ts`.
+
+**Bukti**
+
+- `itdaycloser_deposit` **19 `[OK]`** (11 akrual + 8 baru): `NONE` → D 202/K 201 10.000.000 dan
+  D 204/K 201 13.013,70, deposito `CLOSED` saldo 0, simpanan 10.013.013,70, tiga baris subledger
+  (pokok keluar/masuk satu jurnal), rekonsiliasi bersih untuk kedua rekening; tanpa rekening tujuan =
+  `DAY-343` tanpa perubahan; `PRINCIPAL` → jatuh tempo 2026-11-08, bunga ke simpanan;
+  `PRINCIPAL_AND_INTEREST` → `InterestCapitalized`, saldo 10.013.013,70, tanpa rekening simpanan;
+  run ulang tidak menggandakan; proses terlambat tetap 13.013,70; paginasi chunk 2 tidak melewati
+  rekening; `aro_instruction` kosong = `DAY-341`.
+- Regresi: `ittransaction` 8, `ittransfer` 6, `itreconcile` 3, `itapi_teller` 46, `itapi_deposit` 17,
+  `itdaycloser_ledger` 7, `itdaycloser_gates` 12, `itdaycloser_auto` 7, `itdaycloser_lifecycle` 7,
+  `itapi_dayclose` 10 — hijau. `./task fmt`, `archcheck`, `nomagic`, `dbtools validate`, `i18n` hijau.
+- Catatan lingkungan: worktree ini dipakai bersama sesi lain (D-156, guard `time_deposit_locked`).
+  Satu run `itapi_teller` sempat gagal saat berkas sesi itu sedang setengah jadi; run berikutnya
+  hijau 46/46 dengan berkas yang sama sekali lagi. Tidak ada kegagalan yang berasal dari perubahan
+  T-138d.
+
+**Batas**: siklus ARO kedua (O-109), penalti/pencairan dini (O-108/D-156), belum ada endpoint buka
+deposito berjangka. **HUMAN-REVIEW-REQUIRED**: pergerakan uang jatuh tempo.
+
+## 2026-10-28 — T-138e dormant: status, ambang parameter, reaktivasi otomatis
+
+**Konteks**: D-152 butir 4 menetapkan ambang 12 bulan dan status `DORMANT`, tetapi tidak menjawab
+dari mana aktivitas dibaca, apakah batasnya inklusif, siapa yang mengembalikan status, dan apa yang
+boleh dilakukan rekening dormant (D-157).
+
+**Yang berubah**
+
+- `modules/deposit/migrations/0071_deposit_account_dormant_status.sql` (**contract** +
+  `destructive`, allowlist): CHECK `status` menerima `DORMANT`.
+- `modules/deposit/seeds/params.yaml` + artefak `paramgen`: `deposit.dormant.after_months`
+  (default pack `base` = 12, `NEEDS-COMPLIANCE-REVIEW`).
+- `modules/deposit/infrastructure/dormant_repo.nim`: halaman populasi stabil (`ACTIVE`+`DORMANT`),
+  aktivitas = `max(business_date)` dari `deposit.transaction` + `deposit.transfer` dengan
+  `opened_on` sebagai batas bawah; `stale` dihitung DB (`< tanggal buku − N bulan`).
+- `apps/api/src/daycloser_deposit.nim`: task `deposit.dormant` (EOD, proses, **tidak kritis**,
+  `dependsOn: interest_accrual + maturity_aro`), kode `DAY-350`…`DAY-353`.
+- Handler teller: rekening `DORMANT` tetap menerima **setoran**, penarikan ditolak
+  `409 account_not_active` (tanpa ini reaktivasi tidak mungkin terjadi).
+- Kontrak: `DepositAccount.status` + `accountType` (enum `TIME_DEPOSIT` sebelumnya tertinggal),
+  catatan setoran dormant di endpoint tunai; klien TS di-regenerate.
+- i18n id+en, `dayclose.ts`, runbook, `MODULE.md`, D-157, O-111.
+
+**Bukti**: `./task ci` hijau (termasuk e2e 59). `itdaycloser_deposit` **26 `[OK]`** (7 dormant baru:
+penandaan, batas `<` cutoff, reaktivasi, `CLOSED` tak disentuh, idempoten, `DAY-351` tanpa
+perubahan, paginasi chunk 2). `itapi_teller` **47 `[OK]`** (setoran ke `DORMANT` 201; penarikan 409
+tanpa mutasi). `taccount` 8 `[OK]`.
+
+**Batas**: aturan penolakan transaksi dormant (KYC/reaktivasi manual) belum diputuskan; kolom
+`last_activity` tidak dipakai (O-111).
+
+## 2026-10-28 — T-138d review putaran 2: tujuan jatuh tempo, cache saldo, slip, statement
+
+**Konteks**: review independen atas `f10ebba..HEAD` (jatuh tempo/ARO + guard D-156) menemukan satu
+BLOCKER, dua MAJOR, dan beberapa MINOR. Semua diperbaiki sebelum T-138 ditandai selesai.
+
+**Yang berubah**
+
+- `modules/deposit/infrastructure/maturity_repo.nim`: rekening tujuan menyaring simpanan
+  POKOK/WAJIB (GL `301.x` tidak boleh menerima kredit `201`), dan halaman jatuh tempo menandai
+  `hasBalance` (baris saldo hilang ≠ saldo nol).
+- `apps/api/src/daycloser_deposit.nim`: `DAY-348` (cache saldo hilang, sebelum mutasi) dan `DAY-349`
+  (jatuh tempo baru sudah lewat → siklus ARO kedua, O-109). Klaim “periode tertutup” pada `DAY-344`
+  dihapus — galat periode memang `DAY-345`.
+- `apps/api/src/handlers_teller.nim`: slip untuk baris `MATURITY_*`/`INTEREST_CREDIT` → 404, bukan
+  500 (`isCashTransaction` akhirnya dipakai).
+- `apps/api/src/handlers_deposit.nim` + kontrak + klien + web: statement memakai `kind = MATURITY`
+  untuk baris jatuh tempo; `StatementResponse.status` menerima `DORMANT`.
+- Test: rollback chunk jatuh tempo (rekening sehat diproses lebih dulu, lalu dibatalkan), rekening
+  POKOK bukan target, `DAY-348`, `DAY-349`, slip 404, statement `MATURITY`, dan assert saldo/jurnal
+  pada guard PB.
+- D-155 amendemen (aturan pemilihan rekening tujuan), O-112 (race setoran saat penutupan).
+
+**Bukti**: `itdaycloser_deposit` **30 `[OK]`**, `itapi_teller` **48 `[OK]`**, `itapi_deposit` 17,
+`itreconcile` 3. `./task ci` hijau: seluruh suite Nim, kontrak OpenAPI, vitest 142, Playwright 59.
+
+## 2026-10-28 — T-138e review putaran 3: dormant sebagai tujuan jatuh tempo + label UI
+
+**Konteks**: review independen atas `88af816..HEAD` (T-138e dormant + perbaikan T-138d) menemukan
+satu MAJOR (interaksi dormant↔maturity) dan beberapa MINOR. Tidak ada BLOCKER.
+
+**Yang berubah**
+
+- `maturity_repo.activeSavingsAccount`: rekening tujuan menerima `ACTIVE` **atau `DORMANT`** (kredit
+  jatuh tempo = aktivitas; reaktivasi terjadi di task dormant pada penutupan yang sama).
+- `dormant_repo.markDormantIfStale`/`reactivateIfActive`: predikat status + cutoff diulang di dalam
+  `UPDATE` (bukan memakai hasil baca halaman), `updated_at = now()` ikut ditulis.
+- Web: `statementStatusLabel` dan badge passbook teller punya cabang `DORMANT` eksplisit; kunci i18n
+  `statement_status_dormant`/`teller_account_status_dormant` (id+en).
+- `deposit/0072` (contract, `COMMENT` saja): komentar `last_activity` menjadi jujur — kolom itu
+  tidak dipakai deteksi dormant (O-111).
+- Test: tujuan `DORMANT`, PB sebagai aktivitas, akrual pada rekening `DORMANT`, PB dari/ke `DORMANT`
+  di `itapi_teller`, dan `DAY-349` dengan bunga yang benar-benar sudah diakrualkan.
+- D-157 amendemen (1–4), O-112 diperluas, O-113 (audit transisi status) dan O-114 (tutup otomatis
+  spec §11.6) dicatat.
+
+**Bukti**: `itdaycloser_deposit` **33 `[OK]`**, `itapi_teller` **49 `[OK]`**, `itdaycloser_gates`
+13 `[OK]`. `./task ci` dijalankan setelah perubahan ini (lihat entri berikutnya untuk hasil penuh).
+
+## 2026-10-28 — T-140 simulasi 12 bulan, benchmark EOD, dry-run SIMULATION: T-140 SELESAI
+
+**Konteks**: Fase 3 hanya bisa dinyatakan selesai bila penutupan terbukti berjalan setahun penuh,
+target performa §23 punya angka, dan dry-run §11.7 punya jalur. Ketiganya belum ada.
+
+**Yang berubah**
+
+- `apps/api/tests/itdaycloser_sim.nim` — simulasi 12 bulan: setiap hari kerja 2026 ditutup lewat
+  `startRunAction` dengan enam deposito (ARO `NONE`/`PRINCIPAL`/`PRINCIPAL_AND_INTEREST`) dan dua
+  tabungan; invarian akhir tahun (cache = subledger, akrual = beban GL, bunga dibayar = akrual
+  terakhir, dormant, debit = kredit, 12 periode tertutup). 5 `[OK]`, ±12 detik.
+- `tools/bench-eod` + `./task bench-eod --accounts N` — seed massal + satu penutupan penuh; menolak
+  database non-uji kecuali `--force`.
+- Gate `ledger.no_late_postings` memblokir setiap penutupan yang punya rekening berjangka karena
+  jurnal akrual/jatuh tempo milik run itu sendiri direkam setelah freeze → kolom
+  `ledger.journal.daycloser_run_id` (`ledger/0072`, expand) + plumbing `ctx.runId` (D-158).
+- Dry-run `SIMULATION`: `planTasks` dipisahkan dari `planRun`, `startSimulationAction` mencetak
+  rencana (task/chunk, `"writes": false`) tanpa menulis apa pun; `ctl daycloser-run --mode=`
+  (D-159). 3 `[OK]` di `itdaycloser_lifecycle`.
+- `docs/milestones/M3-report.md`, `docs/tasks/T-140.md`, `ACCEPTED-LIMITS` (target performa,
+  SIMULATION, chunk sekuensial), runbook §3a.
+
+**Bukti**
+
+- Benchmark (MacBook lokal, PostgreSQL 18, `kran_test`): 100 rekening 0,13 s; 1.000 0,62 s; 10.000
+  6,57 s; **100.000 133,45 s** (±1,33 ms/rekening), semuanya `COMPLETED`. Target §23 sisi simpanan
+  = ±7% dari 30 menit; 50k pinjaman belum ada (Fase 4).
+- `./task ci` hijau: seluruh suite Nim, kontrak OpenAPI, vitest **142**, Playwright **59**.
+- Suite terkait: `itdaycloser_sim` 5, `itdaycloser_deposit` 33, `itdaycloser_lifecycle` 10,
+  `itdaycloser_gates` 13, `itapi_teller` 49.
+
+**Batas**: dry-run tingkat rencana (D-159), chunk sekuensial, benchmark hardware lokal, 50k pinjaman
+belum ada, O-108…O-114 terbuka. **Milestone berhenti di sini menunggu tinjauan manusia**
+(AGENTS.md §7).
+
+## 2026-10-28 — T-140 review putaran 4: allowlist contract, kode dry-run, cakupan benchmark
+
+**Konteks**: review independen atas `88af816..HEAD` (T-140 + perbaikan putaran 3) menemukan satu
+MAJOR dan enam MINOR; tidak ada BLOCKER.
+
+**Yang berubah**
+
+- `ops/migrations/contract-auto.txt`: `deposit/0072` (COMMENT `last_activity`) didaftarkan — tanpa
+  itu `deploy-vps.sh` menolak deploy karena ada contract tertunda yang tidak di-allowlist.
+- Dry-run `SIMULATION`: kode penolakan `CLOSING` disamakan dengan run nyata
+  (`business_date_closing`); test memakai hari kerja tanpa run untuk kasus `business_date_mismatch`
+  dan menambah kasus `CLOSING`; `--mode` (termasuk `REAL`) hanya sah untuk `ctl daycloser-run` dan
+  muncul di `--help`.
+- D-157 butir 6 dikoreksi: `DAY-351` pada task non-kritis **tidak** menahan penutupan (run tetap
+  `COMPLETED`, task `FAILED`); runbook menyebut cara melihatnya, O-115 mencatat tidak adanya alert
+  otomatis.
+- Cakupan benchmark dinyatakan eksplisit di `tools/bench-eod`, `docs/tasks/T-140.md`, dan
+  `docs/milestones/M3-report.md`: seed tanpa `maturity_date` (task jatuh tempo hanya memindai) dan
+  tanggal uji bukan akhir bulan (tutup periode tidak berjalan) — angka 100k mengukur akrual +
+  dormant + snapshot + gate.
+- `docs/tasks/T-138.md`: catatan bukti tidak lagi menyebut `setAccountStatus` yang sudah dihapus.
+
+**Bukti**: `itdaycloser_lifecycle` 11 `[OK]` (termasuk dua kasus penolakan dry-run yang baru);
+`./task ci` hijau (suite Nim, kontrak OpenAPI, vitest 142, Playwright 59).
+
+**Tindak lanjut review putaran 5 (APPROVE, tanpa BLOCKER/MAJOR)**: runbook `DAY-351` tidak lagi
+menyuruh `daycloser-resume` (run `COMPLETED` tidak bisa di-resume — parameter diperbaiki, pemindaian
+ikut pada penutupan berikutnya); cakupan benchmark menambahkan bahwa task dormant hanya **memindai**
+(transisi nol karena rekening seed beraktivitas pada tanggal buku).
+
+## 2026-10-31 — Desain v2 fase 0–1: arah baru, token, dan layer komponen
+
+**Konteks**: pemilik memutuskan redesign UI total. Audit UI/UX menemukan masalah struktural
+(`packages/ui` tanpa satu komponen, 1.344 baris CSS ditulis ulang per halaman, layar kas 1.834
+baris dalam satu berkas) sementara pelanggaran arah lama hanya 8 deklarasi. Keputusan: **D-160**
+menggantikan D-075/D-115; `DESIGN.md` ditulis ulang ke arah netral-dingin + satu aksen plum + satu
+keluarga huruf (Plex Sans, mono dihapus).
+
+**Yang berubah**
+
+- `DESIGN.md` v2: token dua tema dengan bukti kontras terhitung, satu keluarga huruf, komitmen
+  struktur (satu titik fokus, navigasi bergrup, pengaturan keluar dari alur Tab, kas sebagai
+  stasiun kerja, aturan visual di komponen bukan per halaman), tabel fase 0–6 dan gerbangnya.
+- `packages/ui/tokens/tokens.css`: token v2, `--color-surface-disabled`, `--font-mono` dihapus,
+  `--brand-ink` dihapus (tak dipakai), motion 150/200 ms.
+- `packages/ui/src/components.css`: mono → sans + tabular, uppercase/letter-spacing dihapus,
+  shadow kartu dihapus (overlay tetap), state `:disabled` baru, modifier `--row`/`--destructive`,
+  alert per tone, empty state. Tidak ada kelas yang di-rename.
+- `packages/ui/src/components/`: `Button`, `Field`, `StatusBadge`, `Alert`, `EmptyState`,
+  `DataTable`, `Money` (Svelte 5, presentasional, memakai kelas `.kran-*` yang sudah ada).
+- `packages/ui`: `tsconfig.json` + `svelte-check` yang dijalankan `./task lint-web`.
+- `apps/web`: 10 deklarasi `var(--font-mono)` diganti (token itu tidak ada lagi).
+
+**Bukti**: `packages/ui` vitest 173 lulus (kontras 2 tema termasuk pasangan baru + 35 test
+komponen), `./task lint-web` (eslint + svelte-check paket) bersih, `./task check-fast` hijau,
+`./task openapi` hijau, `apps/web` build + `svelte-check` 0 error, Playwright **59 lulus tanpa
+skip** di database segar (axe 2 tema × 2 locale di semua layar, keyboard, zoom 125%, cetak, mobile).
+
+**Temuan review yang diperbaiki**: locale uang tidak diteruskan (id/en), `muted` pada angka uang
+(dilarang DESIGN §3), `Button` menelan handler klik, dan tidak ada gerbang `svelte-check` untuk
+`packages/ui`. Satu bug nyata ditemukan gate axe: transisi `background-color` pada tombol membuat
+state `disabled → aktif` sempat membaca teks putih di atas permukaan abu (1,15:1) — transisi
+tombol dihapus, karena pergantian keadaan bukan gerakan.
+
+## 2026-10-31 — Desain v2 fase 2: shell dan arsitektur informasi
+
+**Yang berubah**
+
+- Navigasi bergrup (Kas, Anggota & simpanan, Buku besar, Pengaturan); kelompok kosong menghilang;
+  id kelompok diturunkan dari `navGroups` sehingga tautan yang lupa diberi kelompok ketahuan test.
+- Tema & bahasa pindah dari header ke footer: sebelumnya 5 tab-stop sebelum konten di setiap layar
+  (DESIGN §10).
+- `/app` tidak lagi merender layar parameter untuk semua orang: ia mengalihkan ke tujuan pendaratan,
+  dan parameter punya rute sendiri `/app/params`. Pendaratan (`/`, `/login`, `/app`, `/app/password`)
+  memakai satu fungsi `landingHref` yang mendahulukan buku besar; akun tanpa tautan mendarat di
+  layar parameter yang menjelaskan keadaannya, bukan di layar buntu.
+- Indikator tanggal bisnis di header memakai `GET /dayclose/status` bila sesi boleh membacanya,
+  membedakan "tidak tahu" (tidak dirender) dari "belum ada baris tanggal buku" (teks jujur), dan
+  tidak lagi berupa placeholder tetap.
+- `+error.svelte` ditambahkan (halaman bawaan berbahasa Inggris), dan lencana logo "K" karangan
+  dihapus (DESIGN v2 §9).
+
+**Bukti**: `./task check-fast`, `./task lint-web` (eslint + svelte-check), `./task openapi` hijau;
+vitest `packages/ui` 173 dan unit `apps/web` 151 lulus; build + svelte-check `apps/web` 0 error;
+Playwright **61 lulus tanpa skip** di database segar (termasuk dua test baru: pendaratan `/app` sama
+dengan pendaratan login, dan axe halaman galat dua tema).
+
+**Temuan review yang diperbaiki**: beranda `/` masih mengarahkan ke buku besar secara hardcode
+(mengabaikan izin), indikator tanggal menampilkan "belum tersedia" untuk peran yang memang tidak
+boleh membacanya, `landingHref` tanpa test, dan `landingHref` belum dipakai layar kata sandi.
+
+## 2026-10-31 — Desain v2 fase 4 + tutup O-112/O-115/O-116, adopsi `resolve()`
+
+**Yang berubah**
+
+- **10 layar** pindah ke komponen/kelas `packages/ui` (products, users, vault, login, password,
+  params, ledger, ledger/admin, dayclose, accounts/open). CSS lokal di `apps/web/src/routes`
+  1.344 → **225 baris**; sisanya hanya `teller` 197 (belum dimigrasi, T-141), `ledger` 18 dan
+  `ledger/admin` 10 (tata letak khas layar: lebar kolom, sticky kolom kode, ring fokus sel aktif,
+  target checkbox 24 px). Strip kartu metrik di params **dan** ledger dihapus; ledger memakai
+  daftar fakta `.kran-facts`. Enam key i18n yatim (`app_metric_*`, `ledger_metric_*_sub`) dihapus.
+- **Lapisan bersama**: `.kran-page-header`, `.kran-section`, `.kran-stack`, `.kran-actions`,
+  `.kran-list-plain`, `.kran-list-scroll`, `.kran-stat`, `.kran-facts`, `.kran-dialog`;
+  `DataTable` mendapat `captionHidden`, `ariaLabel`, dan `rowHeader` (kolom kunci jadi
+  `<th scope="row">`). CSS mati v1 dihapus (`.kran-card`, `.kran-metric-*`, `.kran-balance-bar*`,
+  `.kran-workstation`, `.kran-status-list`). `th[colspan]` tidak lagi menambahkan garis vertikal
+  dan tidak lagi menengahkan header grup (DESIGN §6).
+- **T-125**: 14 `goto` + 9 `href` memakai `resolve()`; `svelte/no-navigation-without-resolve`
+  diaktifkan dengan lint type-aware; `nav.ts` memanggil `resolve()` sungguhan dan unit test node
+  memakai stub `$app/paths` di `vitest.config.ts`.
+- **O-112/D-161**: task jatuh tempo dan jalur tunai teller mengunci baris `deposit.account` yang
+  sama; **PB** kini mengunci kedua baris rekening (`lockTransferAccounts`, urut `account_id`) sebelum
+  baris saldo, sehingga tidak ada lagi jalur yang mengambil kunci saldo lebih dulu.
+- **O-116/D-162**: `SessionInfo.businessDate` dikirim ke semua sesi dengan tiga keadaan (objek /
+  `null` / field dihilangkan), jadi shell tidak lagi memanggil `/dayclose/status` dan tidak
+  merender "belum tersedia" untuk kegagalan baca.
+- **O-115/D-163**: `kran-alert.sh` memberi alarm untuk task non-kritis `FAILED` pada run institusi
+  `COMPLETED` terakhir; probe yang gagal menghasilkan `?`/`bad`, bukan OK diam-diam.
+- **T-044**: `use.actionTimeout`/`navigationTimeout` 60 detik (sebelumnya tak terhingga).
+
+**Bukti**: `./task check-fast`, `./task openapi`, `./task lint-web` hijau; `svelte-check` 0 error /
+0 warning; `packages/ui` vitest 173, unit `apps/web` 151; `itapi_auth` 46 OK, `ittransfer` 7 OK,
+`itdaycloser_deposit` 36 OK, `itapi_teller` 49 OK, `itapi_deposit` 17 OK, `tcontract` OK; Playwright
+**61 lulus, 0 skip** di database segar (axe 2 tema × 2 locale, keyboard, zoom 125%, cetak).
+
+**Catatan**: test urutan kunci `ittransfer` di-mutation-check (kunci rekening dihapus → test gagal).
+`itapi_auth` menyimpan dan memulihkan baris `platform.business_date` alih-alih menghapusnya. Sisa
+migrasi: layar kas setelah T-141; verifikasi cetak/zoom 200% ada di T-144.
+
+## 2026-10-31 — Siklus ARO kedua + pencairan dini deposito (tarik tunai)
+
+**O-109 / T-145 (D-165)**: `deposit.account.interest_paid_cumulative` menjadi baseline bunga per
+siklus (migrasi `0073`, expand-only). Task membayar `cumulative − paid` lalu menaikkan baseline di
+transaksi chunk; tenor perpanjangan dari atribut `product.savings.rollover_tenor_days` dan task
+menahan chunk dengan `DAY-354` bila binding tidak ada. Bukti: `itdaycloser_deposit` 39 OK (3 test
+baru), mutation check membuktikan test siklus kedua tidak vacuous, `itdaycloser_sim` 5 OK.
+
+**O-108 / T-146 (D-164), tarik tunai**: pencairan dini penuh sebelum jatuh tempo membayar pokok +
+bunga terakru − penalti. Penalti = persen dari pokok dari atribut
+`product.savings.early_withdrawal_penalty`; tanpa binding ditolak, bukan nol. Tiga jurnal
+(`DepositWithdrawn` 202/101.2, `InterestPaidEarly` 204/101.2, `EarlyWithdrawalPenalty` 101.2/403),
+akun GL `403` baru, kas laci = kas yang benar-benar diserahkan, rekening `CLOSED`. Bukti:
+`itapi_teller` 52 OK (3 test baru: sebagian ditolak, binding hilang ditolak, pencairan penuh dengan
+tiga jurnal), `itapi_deposit` 17, `itdaycloser_deposit` 39, `ittransfer` 7, `itapi_dayclose` 10.
+
+**Sisa**: PB keluar untuk pencairan dini (T-148) — membutuhkan jenis baris subledger untuk debit
+penalti di rekening tujuan; PB `TIME_DEPOSIT` tetap ditolak `409 time_deposit_locked` sampai itu
+selesai. Kedua perubahan adalah **HUMAN-REVIEW-REQUIRED** (rumus bunga + perpindahan uang).
+
+## 2026-10-31 — Riwayat transaksi sesi kas + layar kas pindah ke lapisan bersama (T-147)
+
+**Endpoint**: `GET /api/v1/teller/sessions/{sessionId}/transactions` (izin `teller.session.read`
+@cabang sesi, terbaru dulu, `limit` 1..100 + `offset`, `total` penuh, 404 `session_not_found`).
+Sumbernya `teller.cash_movement`, jadi `amount` = kas yang benar-benar bergerak — pencairan dini
+deposito menyerahkan `pokok + bunga − penalti` (D-164), berbeda dari nominal rekening di statement.
+Sesi `CLOSED` tetap bisa dibaca.
+
+**Layar kas**: daftar arus kas sesi tampil di panel sesi (`DataTable`), dimuat saat sesi terbuka dan
+dimuat ulang setelah transaksi tersimpan — isi sesi terlihat tanpa berpindah halaman (DESIGN §11).
+Panel pindah dari kartu berbingkai ke `.kran-section`, fakta ke `.kran-facts`, aksi ke `.kran-actions`.
+CSS lokal layar kas 197 → **73 baris**; total CSS lokal `apps/web/src/routes` 225 → **101 baris**
+(teller 73 + ledger 18 + ledger/admin 10). Dua celah lapisan bersama ditutup: `.kran-facts .kran-num`
+kini tabular, dan `.kran-input[aria-invalid="true"]` punya penanda visual (DESIGN §7).
+
+**Bukti**: `itapi_teller` 53 OK (1 test baru: urutan, arah, nominal, paginasi, 404/400, sesi CLOSED);
+`check-fast`, `openapi`, `lint-web`, `svelte-check` hijau; `./task e2e` di database segar **61 lulus,
+0 skip** (assertion baris sesi setelah simpan, axe 2 tema × 2 locale, keyboard, zoom 125%).
+
+**Sisa**: O-117 tertutup. Berikutnya T-144 (verifikasi cetak) dan task kenaikan ambang axe ke
+`moderate` (D-166) — sekarang tidak lagi terhalang migrasi layar kas. Buka kas masih bergantung pada
+rekening yang dimuat; pemisahan itu pekerjaan Fase 3, bukan migrasi ini.
+
+## 2026-10-31 — PB pencairan dini + layar kas sebagai stasiun kerja (T-148, T-141)
+
+**T-148 / O-108 (D-168)**: PB keluar kini mencairkan deposito berjangka penuh sebelum jatuh tempo.
+`deposit.transfer.amount` tetap pokok; bunga dan penalti menjadi baris subledger bertanda di rekening
+tujuan (`INTEREST_PAID_EARLY` +, `PENALTY_CHARGE −`) dengan tiga jurnal `*ViaTransfer` (202/201,
+204/201, 201/403), sehingga penalti > bunga tetap benar di rekonsiliasi. Statement memakai `kind`
+`EARLY_WITHDRAWAL` (dipetakan di domain). Pencairan penuh kini mengabaikan `min_balance` produk
+(`decreaseBalanceToZero`) di kedua jalur — sebelumnya produk dengan saldo minimum > 0 menolak
+pencairan penuh dengan `insufficient_funds`. Bukti: `itapi_teller` 58 OK termasuk mutation check
+peta tanda, regresi `ittransfer`/`itapi_deposit`/`itdaycloser_*`/`itapi_dayclose` hijau.
+
+**T-141 / D-169**: panel sesi kas punya pemilih cabang; kas bisa dibuka tanpa memuat rekening, dan
+memuat rekening mengisi cabang sesi (form ditutup bila berbeda). Peran `teller` mendapat
+`platform.branch.read` (migrasi `platform/0075`), fixture dev mengikuti. Bukti: Playwright **63 lulus,
+0 skip** di DB segar, termasuk test baru "buka kas tanpa memuat rekening anggota".
+
+**Sisa**: T-149 (ambang axe ke `moderate`), T-144 (zoom 200% + cetak), T-143 (copy operator).
+
+## 2026-10-31 — Ambang axe `moderate`, zoom 200%, copy operator (T-149, T-144, T-143)
+
+**T-149 / O-118 (D-166)**: ambang gate axe dinaikkan ke `moderate`+`serious`+`critical` lewat satu
+helper `apps/web/tests/e2e/axe.ts` yang dipakai 10 spec (bukan filter per layar). Tidak ada temuan
+`moderate` setelah ambang dinaikkan.
+
+**T-144**: test e2e `1366×768 @200%` (viewport 683×384) membuktikan shell satu kolom, tanpa gulir
+mendatar, tabel buku besar tetap tabel dengan gulir di region berlabel, dan keyboard tetap sampai sel
+pertama. Cetak sudah diverifikasi `print.spec.ts`. Baseline visual tetap O-022 (tidak ada tooling diff).
+
+**T-143**: istilah internal di katalog operator (`ledger.period`, "runbook", "UUID") diganti bahasa
+kerja; layar admin buku besar sengaja tetap menyebut UUID karena tugasnya menempel ID jurnal.
+
+**Tinjauan independen (31 Okt 2026)** menemukan satu BLOCKER dan satu MAJOR sebelum merge:
+
+- `ops/migrations/contract-auto.txt` belum memuat `deposit/0074_...`: gate deploy fail-closed akan
+  menghentikan deploy walau migrasi itu syarat fitur. Sudah ditambahkan; `migrate --check` melaporkan
+  `contract_pending=0`.
+- Layar tinjau PB hanya menampilkan pokok. Kini ada catatan eksplisit bahwa untuk deposito berjangka
+  dana yang dibayarkan = pokok + bunga − penalti (dihitung server), berlaku untuk tunai dan PB.
+
+Temuan MINOR yang ikut ditutup: audit PB mencatat ketiga jurnal + pokok; kunci jurnal pencairan dini
+diturunkan dari `Idempotency-Key` (`tellerJournalSubKey`), bukan `transferId`; `loadSession` punya
+penjaga respons basi; daftar cabang kosong punya pesan; test baru untuk penalti 0% (tanpa jurnal
+penalti), PB ke rekening berjangka (tetap 409), dan Δ subledger vs GL (`201`+`202`) yang tidak
+berubah karena PB — bukti klaim gate `ledger.subledger_vs_gl`. `itapi_teller` kini **58 OK**.

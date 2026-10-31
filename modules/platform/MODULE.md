@@ -184,8 +184,9 @@ Invarian tambahan:
 11. **`current_business_date`, bukan `current_date`** — D-011; keunikan scope lewat
     `UNIQUE INDEX (scope_type, COALESCE(scope_id,''))`, karena Postgres menolak ekspresi di PK.
 
-Catatan penempatan: `CloseLevel` masih di `domain/calendar.nim`. Saat modul `daycloser` lahir
-(Fase 3), tipe itu pindah ke sana dan modul ini hanya menyediakan `closeLevelsFor`.
+Catatan penempatan: `CloseLevel` hidup di `shared/kernel/dayclose.nim` (D-148). Kalender
+menentukan level (`closeLevelsFor`), `daycloser` melaksanakannya; tipe bersama di kernel mencegah
+dua modul menembus internal satu sama lain.
 
 ## Identitas, akses & sesi (T-006)
 

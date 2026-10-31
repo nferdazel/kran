@@ -1,4 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
+
+import { blockingViolations } from "./axe.js";
 import { requireDatabase } from "./db.js";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
@@ -88,11 +90,9 @@ async function ledgerGrid(page: Page): Promise<Locator> {
 
 async function expectNoSeriousViolations(page: Page): Promise<void> {
   const results = await new AxeBuilder({ page }).analyze();
-  const serious = results.violations.filter(
-    (violation) => violation.impact === "serious" || violation.impact === "critical",
-  );
+  const blocking = blockingViolations(results.violations);
   expect(
-    serious.map((violation) => ({
+    blocking.map((violation) => ({
       id: violation.id,
       impact: violation.impact,
       nodes: violation.nodes.map((node) => node.target.join(" ")),

@@ -57,6 +57,63 @@ components:
           enum: [api, worker, ctl, migrate]
 """
 
+
+## Kontrak minimum untuk menguji aturan gerbang penutupan buku (T-135): setiap operasi tulis
+## non-auth wajib mendeklarasikan 409, dan pengecualiannya persis awalan `/api/v1/auth/`.
+const kontrak409 = """
+openapi: 3.1.0
+info:
+  title: Contoh
+  version: 0.0.0
+paths:
+  /api/v1/auth/login:
+    post:
+      operationId: login
+      responses:
+        "200":
+          description: ok
+        "405":
+          $ref: "#/components/responses/Problem"
+  /api/v1/authentication/roles:
+    post:
+      operationId: createRole
+      responses:
+        "200":
+          description: ok
+        "405":
+          $ref: "#/components/responses/Problem"
+  /api/v1/things:
+    post:
+      operationId: createThing
+      responses:
+        "200":
+          description: ok
+        "405":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+  /api/v1/dayclose/run:
+    post:
+      operationId: startDayClose
+      responses:
+        "200":
+          description: ok
+        "405":
+          $ref: "#/components/responses/Problem"
+  /api/v1/daycloser/run:
+    post:
+      operationId: startDayCloser
+      responses:
+        "200":
+          description: ok
+        "405":
+          $ref: "#/components/responses/Problem"
+components:
+  responses:
+    Problem:
+      description: problem
+"""
+
 proc writeTemp(content: string, name: string): string =
   let dir = getTempDir() / "openapi-test"
   createDir(dir)
@@ -195,6 +252,46 @@ suite "findings (parity rute vs kontrak)":
     let c = loadContract(denganBadan, "contoh")
     check findings(@[route("GET", "/healthz", "getHealth"),
                       route("GET", "/api/v1/sesi", "getSession")], c).len == 0
+
+  test "operasi tulis tanpa 409 = temuan; rute auth dikecualikan persis":
+    # Awalan pengecualian harus sama dengan runtime (`/api/v1/auth/`): `/api/v1/authentication/…`
+    # bukan rute auth, jadi operasinya tetap wajib menyebut 409.
+    let c = loadContract(kontrak409, "contoh")
+    let f = findings(@[route("POST", "/api/v1/auth/login", "login"),
+                       route("POST", "/api/v1/authentication/roles", "createRole"),
+                       route("POST", "/api/v1/things", "createThing")], c)
+    var missing409 = 0
+    for item in f:
+      check "createThing" notin item
+      if "409" in item and "createRole" in item:
+        inc missing409
+    check missing409 == 1
+
+  test "rute dayclose dikecualikan dari 409, awalan yang mirip tidak":
+    # Aksi day-close justru harus bisa dipakai saat `CLOSING`, jadi kontraknya tidak diwajibkan
+    # menyebut 409. `/api/v1/daycloser/...` bukan awalan yang sama dan tetap wajib.
+    let c = loadContract(kontrak409, "contoh")
+    let f = findings(@[route("POST", "/api/v1/dayclose/run", "startDayClose"),
+                       route("POST", "/api/v1/daycloser/run", "startDayCloser")], c)
+    var exempted = 0
+    var lookalike = 0
+    for item in f:
+      if "409" in item and "POST /api/v1/dayclose/run" in item:
+        inc exempted
+      if "409" in item and "POST /api/v1/daycloser/run" in item:
+        inc lookalike
+    check exempted == 0
+    check lookalike == 1
+
+  test "operasi tulis dengan 409 = tanpa temuan 409":
+    let c = loadContract(kontrak409, "contoh")
+    let f = findings(@[route("POST", "/api/v1/auth/login", "login"),
+                       route("POST", "/api/v1/things", "createThing")], c)
+    # `createRole` tidak diimplementasikan; itu satu-satunya temuan yang boleh tersisa, dan
+    # `createThing` (punya 409) tidak boleh muncul sama sekali.
+    for item in f:
+      check "createThing" notin item
+      check "login" notin item
 
   test "rute duplikat di tabel implementasi = temuan":
     let c = loadContract(contohKontrak, "contoh")

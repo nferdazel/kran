@@ -26,6 +26,13 @@ const PROBLEM_MESSAGES: Record<string, () => string> = {
 };
 
 export function problemMessage(problem: Problem): string {
+  // Kebijakan penutupan buku (spec §11.5): semua perubahan HTTP ditolak 409 dengan `reason`
+  // ini. Peta alasan global karena gerbangnya ada di pembungkus HTTP, bukan di satu modul —
+  // layar mana pun bisa menerimanya, dan pesan "konflik" generik tidak memberi tahu operator
+  // bahwa yang perlu ditunggu adalah penutupan.
+  if (problem.params?.reason === "business_date_closing") {
+    return m.error_business_date_closing();
+  }
   const template = PROBLEM_MESSAGES[problem.i18nKey];
   return template ? template() : m.error_generic();
 }

@@ -11,10 +11,11 @@ import mummy
 import db_connector/db_postgres
 
 import platform/domain/[authz, scope]
-import platform/infrastructure/auth_service
+import platform/infrastructure/[auth_service, calendar_repo]
 import kernel/[auditcontext, clock, ids, result]
 
 import ./access
+import ./business_date_view
 import ./context
 import ./db_bridge
 import ./http_util
@@ -125,24 +126,41 @@ proc handleSession*(app: AppContext, req: Request) {.gcsafe.} =
   # Perpanjangan batas idle (spec §18.2) dikaitkan ke permintaan ini, bukan ke setiap permintaan:
   # satu tempat, dan UI memang memanggilnya saat memuat halaman. Kegagalan memperpanjang tidak
   # membatalkan permintaan — batas absolut tetap berlaku.
+  #
+  # Tanggal buku institusi dibaca di blok yang sama (O-116). Dulu hanya pembaca
+  # `dayclose.run.read` yang bisa mengambilnya, sehingga teller — justru peran yang sesi kasnya
+  # ditolak `session_business_date_mismatch` bila tanggalnya berbeda — tidak melihat tanggal yang
+  # menjadi patokannya. Membacanya di sini membuat setiap peran back-office menerima nilai yang
+  # sama tanpa permintaan tambahan per halaman.
+  #
+  # Tiga keadaan dibedakan, bukan dua: `some(objek)` = baris tanggal buku ada, `some(null)` =
+  # institusi memang belum punya baris (sama seperti `GET /dayclose/status`), `none` = pembacaan
+  # gagal sehingga field **dihilangkan**. Tanpa pembedaan itu, kegagalan DB akan dirender sebagai
+  # "belum tersedia" — nilai yang tidak diketahui berpura-pura diketahui.
+  var businessDate = none(JsonNode)
   try:
     withDbConn(app.pool, proc(db: DbConn) {.gcsafe.} =
       dbCalls:
         let settings = settingsOf(db, institutionScope(), utcDateOf(app.clock))
-        discard touch(db, app.clock, settings, p.session))
+        discard touch(db, app.clock, settings, p.session)
+        let row = businessDateOf(db, institutionScope())
+        businessDate = some(if row.isSome: businessDateJson(row.get()) else: newJNull()))
   except DbError, ValueError:
     # Perpanjangan bersifat best-effort: batas absolut tetap berlaku, dan kegagalan membaca
     # kebijakan (parameter hilang atau kombinasi tidak sah) tidak boleh menggagalkan permintaan.
-    discard
+    businessDate = none(JsonNode)
 
-  req.respondJson(200, %*{
+  var payload = %*{
     "userId": p.user.userId,
     "username": p.user.username,
     "fullName": p.user.fullName,
     "mustChangePassword": p.user.mustChangePassword,
     "roles": p.roles,
     "permissions": p.permissions,
-    "expiresAt": p.session.expiresAt})
+    "expiresAt": p.session.expiresAt}
+  if businessDate.isSome:
+    payload["businessDate"] = businessDate.get()
+  req.respondJson(200, payload)
 
 proc handleLogout*(app: AppContext, req: Request) {.gcsafe.} =
   ## `POST /api/v1/auth/logout` — cabut sesi + hapus cookie.

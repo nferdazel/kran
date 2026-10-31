@@ -4,7 +4,7 @@
 ## Persetujuan menulis saldo vault + jurnal GL di transaksi yang sama dengan pemanggil, jadi repo ini
 ## hanya menyimpan baris pengajuan dan keputusannya.
 
-import std/options
+import std/[options, strutils]
 
 import db_connector/db_postgres
 
@@ -99,3 +99,11 @@ proc topUpRequests*(db: DbConn, branchId: Id, status: string, limit: int): seq[V
      LIMIT ?::int"""), $branchId, status, status, $limit)
   for row in rows:
     result.add requestOf(row)
+
+proc pendingTopUpCount*(db: DbConn): int64 =
+  ## Pengajuan top-up vault yang belum diputuskan (spec §11.5 #2 "tidak ada transaksi pending
+  ## approval"). Tanpa tanggal: pengajuan menggantung dari hari mana pun tetap menggantung, dan
+  ## memindahkan kas di tengah penutupan justru yang ingin dicegah.
+  let raw = db.getValue(sql"""
+    SELECT count(*)::text FROM teller.vault_topup_request WHERE status = 'PENDING'""")
+  if raw.len == 0: 0'i64 else: parseBiggestInt(raw).int64

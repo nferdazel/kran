@@ -1,4 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
+
+import { blockingViolations } from "./axe.js";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { requireDatabase } from "./db.js";
 
@@ -38,6 +40,8 @@ type Text = {
   closed: string;
   even: string;
   openStatus: string;
+  sessionTransactions: string;
+  branchLabel: string;
 };
 
 const T: Record<"id" | "en", Text> = {
@@ -56,6 +60,8 @@ const T: Record<"id" | "en", Text> = {
     closed: "Sesi kas ditutup",
     even: "Tidak ada selisih",
     openStatus: "Terbuka",
+    sessionTransactions: "Transaksi sesi",
+    branchLabel: "Cabang kas",
   },
   en: {
     loginTitle: "Sign in",
@@ -72,6 +78,8 @@ const T: Record<"id" | "en", Text> = {
     closed: "Cash session closed",
     even: "No variance",
     openStatus: "Open",
+    sessionTransactions: "Session transactions",
+    branchLabel: "Cash branch",
   },
 };
 
@@ -201,6 +209,34 @@ async function focusAndEnter(page: Page, name: string): Promise<void> {
 }
 
 test.describe.serial("teller: sesi kas, setor, tutup", () => {
+  test("buka kas tanpa memuat rekening anggota (T-141)", async ({ page, request }) => {
+    test.setTimeout(180_000);
+    const maker = await apiLogin(request, MAKER);
+    await closeLeftoverSession(request, maker);
+    const text = T.id;
+
+    await prepare(page, "id", "light");
+    await login(page, text);
+    await page.goto("/app/teller");
+    const panel = page.getByRole("region", { name: "Sesi kas" });
+    // Rekening belum dimuat: panel tetap bisa membuka kas untuk cabang yang dipilih.
+    await page.getByLabel(text.branchLabel, { exact: true }).selectOption(BRANCH);
+    await expect(panel.getByRole("button", { name: text.sessionOpen })).toBeVisible();
+    await panel.getByRole("button", { name: text.sessionOpen }).click();
+    await page.getByLabel(text.floatLabel, { exact: true }).fill("1000");
+    await panel.getByRole("button", { name: text.review }).click();
+    await panel.getByRole("button", { name: text.sessionOpen }).click();
+    await expect(panel.getByText(text.openStatus)).toBeVisible();
+    // Rekening memang belum dimuat: tombol muat rekening masih ada.
+    await expect(page.getByRole("button", { name: text.load })).toBeVisible();
+
+    await panel.getByRole("button", { name: text.sessionClose }).click();
+    await page.getByLabel(text.countedLabel, { exact: true }).fill("1000");
+    await panel.getByRole("button", { name: text.review }).click();
+    await panel.getByRole("button", { name: text.sessionClose }).click();
+    await expect(page.getByRole("heading", { name: text.closed })).toBeVisible();
+  });
+
   test("alur keyboard-only: buka sesi → setor → tutup tanpa selisih", async ({
     page,
     request,
@@ -243,6 +279,13 @@ test.describe.serial("teller: sesi kas, setor, tutup", () => {
     await focusAndEnter(page, text.review);
     await focusAndEnter(page, text.save);
     await expect(page.getByRole("heading", { name: text.success })).toBeVisible();
+
+    // Arus kas sesi (T-147) dimuat ulang setelah simpan: baris rekening yang baru disetor terlihat
+    // tanpa berpindah halaman. Caption tabel tersembunyi secara visual, jadi dicari lewat nama
+    // tabelnya (`<caption>`), bukan teks di layar.
+    const sessionTable = page.getByRole("table", { name: text.sessionTransactions });
+    await expect(sessionTable).toBeVisible();
+    await expect(sessionTable.getByRole("row").filter({ hasText: fixture.accountNo })).toBeVisible();
 
     // Tutup: kas fisik = float 1000 + setoran 10 → selisih nol.
     await page.getByRole("button", { name: text.sessionClose }).first().focus();
@@ -294,10 +337,8 @@ test.describe.serial("teller: sesi kas, setor, tutup", () => {
             .first(),
         ).toBeVisible();
         const results = await new AxeBuilder({ page }).analyze();
-        const serious = results.violations.filter(
-          (violation) => violation.impact === "serious" || violation.impact === "critical",
-        );
-        expect(serious, `${locale}/${theme} sesi terbuka: ${serious.map((v) => v.id).join(", ")}`)
+        const blocking = blockingViolations(results.violations);
+        expect(blocking, `${locale}/${theme} sesi terbuka: ${blocking.map((v) => v.id).join(", ")}`)
           .toEqual([]);
       }
     }
@@ -322,10 +363,8 @@ test.describe.serial("teller: sesi kas, setor, tutup", () => {
         await loadAccount(page, text, fixture.accountNo);
         await expect(page.getByText(text.sessionOpen, { exact: false }).first()).toBeVisible();
         const results = await new AxeBuilder({ page }).analyze();
-        const serious = results.violations.filter(
-          (violation) => violation.impact === "serious" || violation.impact === "critical",
-        );
-        expect(serious, `${locale}/${theme} tanpa sesi: ${serious.map((v) => v.id).join(", ")}`)
+        const blocking = blockingViolations(results.violations);
+        expect(blocking, `${locale}/${theme} tanpa sesi: ${blocking.map((v) => v.id).join(", ")}`)
           .toEqual([]);
       }
     }

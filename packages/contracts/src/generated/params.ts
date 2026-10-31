@@ -17,6 +17,184 @@ export interface ParamDefinition {
 
 export const paramDefinitions: readonly ParamDefinition[] = [
   {
+    "key": "daycloser.auto.enabled",
+    "module": "daycloser",
+    "valueType": "bool",
+    "tsType": "boolean",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.auto.enabled",
+    "jsonSchema": null
+  },
+  {
+    "key": "daycloser.auto.run_at",
+    "module": "daycloser",
+    "valueType": "string",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.auto.run_at",
+    "jsonSchema": {
+      "minLength": 5,
+      "maxLength": 5
+    }
+  },
+  {
+    "key": "daycloser.auto.utc_offset_minutes",
+    "module": "daycloser",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.auto.utc_offset_minutes",
+    "jsonSchema": {
+      "minimum": -840,
+      "maximum": 840
+    }
+  },
+  {
+    "key": "daycloser.chunk_size",
+    "module": "daycloser",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.chunk_size",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 100000
+    }
+  },
+  {
+    "key": "daycloser.max_attempts",
+    "module": "daycloser",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.max_attempts",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 10
+    }
+  },
+  {
+    "key": "daycloser.postcheck.subledger_gl_accounts",
+    "module": "daycloser",
+    "valueType": "json",
+    "tsType": "unknown",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.postcheck.subledger_gl_accounts",
+    "jsonSchema": {
+      "type": "array"
+    }
+  },
+  {
+    "key": "daycloser.precheck.suspense_accounts",
+    "module": "daycloser",
+    "valueType": "json",
+    "tsType": "unknown",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.precheck.suspense_accounts",
+    "jsonSchema": {
+      "type": "array"
+    }
+  },
+  {
+    "key": "daycloser.retry_backoff_seconds",
+    "module": "daycloser",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.retry_backoff_seconds",
+    "jsonSchema": {
+      "minimum": 0,
+      "maximum": 300
+    }
+  },
+  {
+    "key": "daycloser.txn_policy_during_close",
+    "module": "daycloser",
+    "valueType": "enum",
+    "tsType": "\"REJECT\" | \"ALLOW\"",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.daycloser.txn_policy_during_close",
+    "jsonSchema": {
+      "enum": [
+        "REJECT",
+        "ALLOW"
+      ],
+      "description": "REJECT = semua perubahan HTTP ditolak 409 saat CLOSING; ALLOW = layanan tetap jalan (risiko race ditanggung institusi)"
+    }
+  },
+  {
+    "key": "deposit.dormant.after_months",
+    "module": "deposit",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.deposit.dormant.after_months",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 120
+    }
+  },
+  {
     "key": "ledger.coa.code_pattern",
     "module": "ledger",
     "valueType": "string",
@@ -670,6 +848,24 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "product.savings.early_withdrawal_penalty",
+    "module": "product",
+    "valueType": "rate",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.product.savings.early_withdrawal_penalty",
+    "jsonSchema": {
+      "maxLength": 32,
+      "description": "persen dari pokok; presisi maksimum 4 desimal (batas kernel rateFromPercentString)"
+    }
+  },
+  {
     "key": "product.savings.interest_posting",
     "module": "product",
     "valueType": "string",
@@ -720,6 +916,24 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     "descriptionKey": "param.product.savings.min_balance",
     "jsonSchema": {
       "minimum": 0
+    }
+  },
+  {
+    "key": "product.savings.rollover_tenor_days",
+    "module": "product",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.product.savings.rollover_tenor_days",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 3650
     }
   },
   {

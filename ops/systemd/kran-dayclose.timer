@@ -1,0 +1,20 @@
+# Timer penjadwal penutupan harian (T-139b).
+#
+# Interval 5 menit: jadwalnya sendiri (jam berapa) ditentukan parameter
+# `daycloser.auto.run_at`, jadi timer hanya perlu cukup rapat agar penutupan tidak terlambat lama.
+# Penjaga "sudah ada run untuk tanggal buku ini" membuat pengulangan tiap 5 menit aman — tidak ada
+# penutupan ganda walaupun jam terlewati berkali-kali.
+#
+# Timer ini **tidak** mengaktifkan apa pun bila `daycloser.auto.enabled = false` (default): penjadwal
+# tetap jalan, tetapi tidak melakukan apa pun dan keluar dengan kode 0.
+[Unit]
+Description=Jalankan penjadwal day-close tiap 5 menit (T-139b, O-094)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=kran-dayclose.service
+
+[Install]
+WantedBy=timers.target

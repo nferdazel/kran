@@ -30,10 +30,23 @@ type
     cdDeposit = "DEPOSIT"
     cdWithdrawal = "WITHDRAWAL"
 
-  ## Tipe baris `deposit.transaction` (cermin CHECK kolom DB).
+  ## Tipe baris `deposit.transaction` (cermin CHECK kolom DB, migrasi `deposit/0068` + `0074`).
+  ##
+  ## `MATURITY_*`/`INTEREST_CREDIT` (T-138d) bukan transaksi tunai: jatuh tempo deposito
+  ## memindahkan saldo antar-rekening dan membayar bunga akrual tanpa kas yang bergerak. Memakai
+  ## `CASH_*` untuk keduanya akan berbohong di rekening koran anggota dan di rekonsiliasi.
+  ##
+  ## `INTEREST_PAID_EARLY`/`PENALTY_CHARGE` (T-148) adalah dua sisi PB pencairan dini di **rekening
+  ## tujuan**: bunga menambah saldo, penalti memotongnya. Sumber tidak punya baris sendiri karena
+  ## pengurangan pokoknya sudah diwakili `deposit.transfer` (D-164).
   TransactionType* = enum
     ttCashDeposit = "CASH_DEPOSIT"
     ttCashWithdrawal = "CASH_WITHDRAWAL"
+    ttMaturityOut = "MATURITY_OUT"
+    ttMaturityIn = "MATURITY_IN"
+    ttInterestCredit = "INTEREST_CREDIT"
+    ttInterestPaidEarly = "INTEREST_PAID_EARLY"
+    ttPenaltyCharge = "PENALTY_CHARGE"
 
   Transaction* = object
     transactionId*: Id
@@ -67,9 +80,36 @@ proc txTypeOf*(d: CashDirection): TransactionType =
 proc cashDirectionOf*(t: TransactionType): CashDirection =
   ## Kebalikan `txTypeOf`: baris transaksi tunai → arah API. Dipakai endpoint baca slip
   ## (T-094a) yang membaca baris tersimpan, bukan permintaan masuk.
+  ##
+  ## Jenis non-tunai **melempar** `ValueError`: slip kas hanya untuk baris yang benar-benar
+  ## memindahkan uang tunai. Mengarang `DEPOSIT`/`WITHDRAWAL` untuk jatuh tempo akan menampilkan
+  ## slip setoran palsu; arah rekening koran memakai `statementDirectionOf`.
   case t
   of ttCashDeposit: cdDeposit
   of ttCashWithdrawal: cdWithdrawal
+  of ttMaturityOut, ttMaturityIn, ttInterestCredit, ttInterestPaidEarly, ttPenaltyCharge:
+    raise newException(ValueError,
+      "jenis transaksi " & $t & " bukan transaksi tunai (tidak punya arah kas)")
+
+proc isCashTransaction*(t: TransactionType): bool =
+  ## `true` hanya untuk baris yang lahir dari transaksi tunai teller (T-088b).
+  t in {ttCashDeposit, ttCashWithdrawal}
+
+proc statementDirectionOf*(t: TransactionType): string =
+  ## Arah baris subledger untuk rekening koran (T-094b): `IN` menambah saldo rekening, `OUT`
+  ## mengurangi. Semua jenis baris punya arah saldo, termasuk yang tidak memindahkan kas —
+  ## karena itu arah statement tidak boleh diturunkan dari `cashDirectionOf`.
+  case t
+  of ttCashDeposit, ttMaturityIn, ttInterestCredit, ttInterestPaidEarly: "IN"
+  of ttCashWithdrawal, ttMaturityOut, ttPenaltyCharge: "OUT"
+
+proc statementKindOf*(t: TransactionType): string =
+  ## `kind` baris rekening koran: `CASH` hanya untuk transaksi tunai teller, `EARLY_WITHDRAWAL`
+  ## untuk bunga/penalti pencairan dini, sisanya `MATURITY` (perpindahan jatuh tempo). Dipusatkan di
+  ## domain supaya composition root tidak menebak dari biner "tunai atau bukan" (T-148).
+  if isCashTransaction(t): "CASH"
+  elif t in {ttInterestPaidEarly, ttPenaltyCharge}: "EARLY_WITHDRAWAL"
+  else: "MATURITY"
 
 proc sourceEventOf*(d: CashDirection): string =
   ## Event ledger yang dipakai posting rule: setor = `DepositPosted` (D 101/K 201),
@@ -90,6 +130,17 @@ proc validateNarration*(raw: string): string =
   if s.len > maxNarrationLength:
     raise newException(ValueError, "narration melebihi " & $maxNarrationLength & " karakter")
   s
+
+proc tellerJournalSubKey*(journalKey, part: string): string =
+  ## Kunci jurnal tambahan untuk satu permintaan yang memposting beberapa jurnal (pencairan dini
+  ## PB, T-148). Diturunkan dari `journalKey` supaya replay `Idempotency-Key` yang sama tetap
+  ## tertahan `ledger.journal.idempotency_key`, bukan bergantung pada status rekening.
+  let combined = journalKey & ":" & part
+  if combined.len > maxJournalIdempotencyKeyLength:
+    raise newException(ValueError,
+      "Idempotency-Key terlalu panjang untuk kunci jurnal (maks " &
+      $maxJournalIdempotencyKeyLength & " karakter gabungan)")
+  combined
 
 proc tellerJournalKey*(principalId, key: string): string =
   ## `teller:<principalId>:<Idempotency-Key>` — kunci idempotensi jurnal (T-088 §3). Ditolak bila

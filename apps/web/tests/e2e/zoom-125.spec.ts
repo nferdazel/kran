@@ -94,3 +94,49 @@ test("1366×768 @125%: tanpa gulir mendatar halaman dan tabel tetap terpakai", a
   await page.keyboard.press("ArrowRight");
   await expect(grid).toHaveAttribute("aria-activedescendant", "ledger-cell-0-1");
 });
+
+/**
+ * Zoom 200% (T-144): 1366/2 = 683 CSS px. Pada lebar itu shell harus jatuh ke **satu kolom** (sidebar
+ * di atas, bukan di samping) dan tabel buku besar tetap tabel sungguhan yang menggulir di dalam
+ * region-nya — bukan berubah menjadi kartu atau memperlebar halaman.
+ */
+test.describe("zoom 200%", () => {
+  test.use({ viewport: { width: 683, height: 384 } });
+
+  test("1366×768 @200%: shell satu kolom, tabel tetap tabel dengan gulir di region", async ({
+    page,
+  }) => {
+    await prepare(page);
+    await login(page);
+
+    const grid = page.getByRole("grid");
+    await expect(grid).toBeVisible();
+    await expect(grid.locator("tbody tr").first()).toBeVisible();
+
+    // 1. Shell satu kolom: grid-template-columns hanya satu track (sidebar tidak di samping isi).
+    const tracks = await page.locator(".kran-shell").evaluate((el) =>
+      getComputedStyle(el).gridTemplateColumns.trim().split(/\s+/),
+    );
+    expect(tracks, "shell 200% harus satu kolom").toHaveLength(1);
+
+    // 2. Halaman tidak melebar mendatar.
+    const pageOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(pageOverflow).toBeLessThanOrEqual(1);
+
+    // 3. Tabel tetap tabel di dalam region bergulir berlabel (bukan kartu per baris).
+    const region = page.locator(".ledger-region");
+    await expect(region).toBeVisible();
+    expect(await region.evaluate((el) => getComputedStyle(el).overflowX)).toBe("auto");
+    expect(await page.locator(".ledger-table").evaluate((el) => getComputedStyle(el).display))
+      .toBe("table");
+
+    // 4. Tabel masih bisa difokus dan dinavigasi keyboard pada ukuran ini.
+    await page.locator(".kran-filter-bar .kran-filter-button").last().focus();
+    await page.keyboard.press("Tab");
+    await expect(grid).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(grid).toHaveAttribute("aria-activedescendant", "ledger-cell-0-1");
+  });
+});

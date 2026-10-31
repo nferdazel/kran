@@ -424,10 +424,15 @@ proc handleGetAccountStatement*(app: AppContext, req: Request) {.gcsafe.} =
         let probeLimit = maxStatementRows + 1
         var items: seq[StatementItem]
         for tx in transactionsForStatement(db, account.accountId, fromDate, toDate, probeLimit):
-          let direction = if tx.txType == ttCashDeposit: "IN" else: "OUT"
+          # Arah saldo, bukan arah kas: baris jatuh tempo/pencairan dini bukan transaksi tunai
+          # tetapi tetap menambah/mengurangi saldo rekening di rekening koran (T-138d/T-148).
+          let direction = statementDirectionOf(tx.txType)
+          # `kind` mengikuti jenis barisnya, dipetakan di domain supaya biner "tunai atau bukan"
+          # tidak lagi menyamakan pencairan dini dengan jatuh tempo.
+          let kind = statementKindOf(tx.txType)
           items.add StatementItem(
             sortKey: tx.businessDate & "/" & tx.createdAt & "/0",
-            row: statementRowJson("CASH", direction, tx.amount.toDecimalString,
+            row: statementRowJson(kind, direction, tx.amount.toDecimalString,
               tx.businessDate, $tx.journalId, tx.narration, $tx.transactionId, ""))
         for tr in transfersForStatement(db, account.accountId, fromDate, toDate, probeLimit):
           let direction = if $tr.sourceAccountId == $account.accountId: "OUT" else: "IN"

@@ -456,3 +456,108 @@ proc handleGetCurrentTellerSession*(app: AppContext, req: Request) {.gcsafe.} =
   of 404: req.respondProblem(newProblem(pkNotFound, "Not Found", problem,
       traceId = traceIdFrom(req), params = @[("reason", "session_not_open")]))
   else: req.respondProblem(pkInternal, "Internal Server Error", problem)
+
+const
+  defaultSessionTransactionsLimit = 50 # nomagic:ok batas teknis paginasi, bukan nilai bisnis
+  maxSessionTransactionsLimit = 100    # nomagic:ok batas teknis paginasi, bukan nilai bisnis
+
+proc sessionTransactionJson(tx: SessionTransaction): JsonNode =
+  ## `direction` relatif laci: `IN` = uang masuk (CASH_IN), `OUT` = uang keluar (CASH_OUT).
+  %*{
+    "transactionId": $tx.transactionId,
+    "journalId": $tx.journalId,
+    "accountId": $tx.accountId,
+    "accountNo": tx.accountNo,
+    "direction": (if tx.direction == cmCashIn: "IN" else: "OUT"),
+    "amount": tx.amount.toDecimalString,
+    "occurredAt": tx.occurredAt,
+    "narration": tx.narration,
+  }
+
+proc handleListSessionTransactions*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `GET /api/v1/teller/sessions/{sessionId}/transactions` — arus kas satu sesi (T-147).
+  ##
+  ## Layar kas butuh daftar transaksi sesi tanpa berpindah halaman (DESIGN §11), dan tidak ada
+  ## jalur lain yang bisa membacanya: statement per rekening tidak tahu sesi mana yang menulis baris
+  ## itu. Sumbernya `teller.cash_movement` karena nominal di sana adalah **kas yang diserahkan**,
+  ## bukan nominal rekening (pencairan dini membayar pokok + bunga − penalti, D-164).
+  ##
+  ## Izin `teller.session.read` di cabang sesi — sama dengan `GET current`, supaya layar tidak butuh
+  ## izin tambahan hanya untuk menampilkan isi sesinya sendiri.
+  let principalOpt = requirePrincipal(app, req)
+  if principalOpt.isNone:
+    return
+  let principal = principalOpt.get()
+  if not requirePermission(app, req, principal, permissionTellerSessionRead):
+    return
+
+  let sessionId = parseId(pathParam(req, "sessionId"))
+  if sessionId.isErr:
+    req.respondProblem(pkBadRequest, "Bad Request", "sessionId harus UUID yang sah")
+    return
+
+  var limit = defaultSessionTransactionsLimit
+  let limitRaw = queryValue(req, "limit").strip
+  if limitRaw.len > 0:
+    try:
+      limit = parseInt(limitRaw)
+    except ValueError:
+      req.respondProblem(pkBadRequest, "Bad Request", "limit harus angka")
+      return
+    if limit < 1 or limit > maxSessionTransactionsLimit:
+      req.respondProblem(pkBadRequest, "Bad Request", "limit harus antara 1 dan 100")
+      return
+
+  var offset = 0
+  let offsetRaw = queryValue(req, "offset").strip
+  if offsetRaw.len > 0:
+    try:
+      offset = parseInt(offsetRaw)
+    except ValueError:
+      req.respondProblem(pkBadRequest, "Bad Request", "offset harus angka")
+      return
+    if offset < 0:
+      req.respondProblem(pkBadRequest, "Bad Request", "offset tidak boleh negatif")
+      return
+
+  var status = 0
+  var reason = ""
+  var problem = ""
+  var payload = newJObject()
+  try:
+    withDbConn(app.pool, proc(db: DbConn) {.gcsafe.} =
+      dbCalls:
+        let sessionOpt = sessionById(db, sessionId.value())
+        if sessionOpt.isNone:
+          status = 404
+          reason = "session_not_found"
+          problem = "sesi kas tidak dikenal"
+          return
+        let session = sessionOpt.get()
+        if not authorizedAtBranch(db, principal, $session.branchId, permissionTellerSessionRead):
+          status = 403
+          problem = "izin " & permissionTellerSessionRead & " tidak dipegang di cabang sesi ini"
+          return
+        let items = sessionTransactions(db, session.sessionId, limit, offset)
+        status = 200
+        payload = %*{
+          "sessionId": $session.sessionId,
+          "businessDate": session.businessDate,
+          "total": sessionTransactionCount(db, session.sessionId),
+          "items": (block:
+          var arr = newJArray()
+          for item in items:
+            arr.add sessionTransactionJson(item)
+          arr),
+        })
+  except DbError:
+    status = 500
+    problem = "arus kas sesi gagal dibaca"
+
+  case status
+  of 200: req.respondJson(200, payload)
+  of 403: req.respondProblem(newProblem(pkForbidden, "Forbidden", problem,
+      traceId = traceIdFrom(req), params = @[("reason", "branch_not_allowed")]))
+  of 404: req.respondProblem(newProblem(pkNotFound, "Not Found", problem,
+      traceId = traceIdFrom(req), params = @[("reason", reason)]))
+  else: req.respondProblem(pkInternal, "Internal Server Error", problem)

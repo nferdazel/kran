@@ -143,10 +143,25 @@ describe("currentSessionOutcome", () => {
 });
 
 describe("sessionPostingGate", () => {
-  const closed = { branchKnown: true, loading: false, failed: false, missing: false, stale: false };
+  const closed = {
+    branchKnown: true,
+    branchMismatch: false,
+    loading: false,
+    failed: false,
+    missing: false,
+    stale: false,
+  };
 
   it("membuka form hanya saat sesi OPEN dan statusnya pasti", () => {
     expect(sessionPostingGate(closed)).toEqual({ blocked: false });
+  });
+
+  it("menutup form saat cabang sesi berbeda dari cabang rekening", () => {
+    expect(sessionPostingGate({ ...closed, branchMismatch: true })).toEqual({
+      blocked: true,
+      tone: "alert",
+      message: m.teller_session_branch_mismatch(),
+    });
   });
 
   it("menutup form tanpa cabang, saat memuat, atau saat galat (fail-closed)", () => {

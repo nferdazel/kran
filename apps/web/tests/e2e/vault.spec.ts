@@ -1,4 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
+
+import { blockingViolations } from "./axe.js";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { requireDatabase } from "./db.js";
 
@@ -306,10 +308,8 @@ test.describe.serial("vault: pengajuan dan keputusan top-up", () => {
         await prepare(page, locale, theme);
         await openVault(page, text);
         const results = await new AxeBuilder({ page }).analyze();
-        const serious = results.violations.filter(
-          (violation) => violation.impact === "serious" || violation.impact === "critical",
-        );
-        expect(serious, `${locale}/${theme} vault: ${serious.map((v) => v.id).join(", ")}`).toEqual(
+        const blocking = blockingViolations(results.violations);
+        expect(blocking, `${locale}/${theme} vault: ${blocking.map((v) => v.id).join(", ")}`).toEqual(
           [],
         );
       }

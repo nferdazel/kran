@@ -1,0 +1,29 @@
+# Penjadwal penutupan harian (T-139b, O-094) — cermin konfigurasi server.
+#
+# Pasang (operator, bukan agent):
+#   scp ops/systemd/kran-dayclose.{service,timer} ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now kran-dayclose.timer
+#   systemctl --user list-timers kran-dayclose.timer
+#
+# Yang dijalankan adalah **biner host** (`--role=ctl`), bukan `podman exec`: perintah ini hanya
+# butuh koneksi DB dan sudah dipakai gate deploy dengan jalur yang sama. Karena itu
+# `KRAN_DATABASE_URL` harus URL yang terjangkau dari host — sama dengan `GATE_DB_URL` di
+# `ops/scripts/deploy-vps.sh` — bukan nama service podman.
+#
+# `Type=oneshot` + kode keluar `ctl`: 0 = tidak ada yang perlu dikerjakan atau penutupan selesai,
+# 1 = penutupan berjalan tetapi tidak selesai (unit ditandai failed → terlihat di
+# `systemctl --user status`), 2 = konfigurasi salah, 3 = ditolak keadaan sekarang. Jangan menambah
+# `|| true` di ExecStart: kegagalan harus terlihat, bukan ditelan.
+[Unit]
+Description=KRAN day-close scheduler (ctl daycloser-auto)
+Documentation=file:/srv/qouver/apps/kran/monorepo/docs/runbooks/dayclose.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/srv/qouver/apps/kran/env/kran-prod.env
+Environment=LD_LIBRARY_PATH=/srv/qouver/apps/kran/lib
+ExecStart=/srv/qouver/apps/kran/bin/kran-api --role=ctl daycloser-auto
+StandardOutput=append:/srv/qouver/apps/kran/logs/dayclose-auto.log
+StandardError=append:/srv/qouver/apps/kran/logs/dayclose-auto.log

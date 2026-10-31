@@ -116,6 +116,19 @@ proc businessDateOf*(db: DbConn, scope: ScopeRef): Option[BusinessDateRow] =
     state: parseState(row[3]),
     updatedAt: row[4])
 
+proc businessDateFrozenAt*(db: DbConn, scope: ScopeRef): Option[string] =
+  ## Waktu `updated_at` dengan **presisi mikrodetik**. `businessDateOf` memakai format detik untuk
+  ## tampilan; gate jurnal-terlambat membandingkan waktu rekam jurnal, dan pembulatan ke detik akan
+  ## menuduh jurnal yang sebenarnya direkam sebelum pembekuan.
+  let raw = db.getValue(sql"""
+    SELECT to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS.USOF')
+      FROM platform.business_date
+     WHERE scope_type = ? AND coalesce(scope_id, '') = ?""",
+    $scope.scopeType, scope.scopeId)
+  if raw.len == 0:
+    return none(string)
+  some(raw)
+
 proc ensureBusinessDate*(db: DbConn, scope: ScopeRef, date: string,
                          actor: Id): bool =
   ## Membuat baris tanggal buku bila belum ada (bootstrap institusi baru).
@@ -123,7 +136,7 @@ proc ensureBusinessDate*(db: DbConn, scope: ScopeRef, date: string,
   db.execAffectedRows(sql"""
     INSERT INTO platform.business_date
       (scope_type, scope_id, current_business_date, state, updated_by)
-    VALUES (?, NULLIF(?, ''), ?::date, 'OPEN', ?::uuid)
+    VALUES (?, NULLIF(?, ''), ?::date, 'OPEN', NULLIF(?, '')::uuid)
     ON CONFLICT (scope_type, COALESCE(scope_id, '')) DO NOTHING""",
     $scope.scopeType, scope.scopeId, date, $actor) == 1
 
@@ -137,9 +150,19 @@ proc transitionBusinessDate*(db: DbConn, scope: ScopeRef, expected, next: Busine
       "transisi business date ilegal: " & $expected & " → " & $next)
   db.execAffectedRows(sql"""
     UPDATE platform.business_date
-       SET state = ?, updated_at = now(), updated_by = ?::uuid
+       SET state = ?, updated_at = now(), updated_by = NULLIF(?, '')::uuid
      WHERE scope_type = ? AND coalesce(scope_id, '') = ? AND state = ?""",
     $next, $actor, $scope.scopeType, scope.scopeId, $expected) == 1
+
+proc abortClose*(db: DbConn, scope: ScopeRef, actor: Id): bool =
+  ## `CLOSING → OPEN` untuk percobaan penutupan yang dibatalkan (belum tersegel).
+  ## `WHERE state = 'CLOSING'` menolak membuka tanggal yang sudah `CLOSED` — reopen EOD tetap
+  ## dilarang (spec §11.7) dan butuh kebijakan tersendiri.
+  db.execAffectedRows(sql"""
+    UPDATE platform.business_date
+       SET state = 'OPEN', updated_at = now(), updated_by = NULLIF(?, '')::uuid
+     WHERE scope_type = ? AND coalesce(scope_id, '') = ? AND state = 'CLOSING'""",
+    $actor, $scope.scopeType, scope.scopeId) == 1
 
 proc rollOverBusinessDate*(db: DbConn, scope: ScopeRef, nextDate: string,
                            actor: Id): bool =
@@ -150,6 +173,6 @@ proc rollOverBusinessDate*(db: DbConn, scope: ScopeRef, nextDate: string,
   db.execAffectedRows(sql"""
     UPDATE platform.business_date
        SET current_business_date = ?::date, state = 'OPEN', updated_at = now(),
-           updated_by = ?::uuid
+           updated_by = NULLIF(?, '')::uuid
      WHERE scope_type = ? AND coalesce(scope_id, '') = ? AND state = 'CLOSED'""",
     nextDate, $actor, $scope.scopeType, scope.scopeId) == 1

@@ -12,6 +12,11 @@
    */
   import { onMount } from "svelte";
 
+  import Alert from "@kran/ui/components/Alert.svelte";
+  import Button from "@kran/ui/components/Button.svelte";
+  import EmptyState from "@kran/ui/components/EmptyState.svelte";
+  import StatusBadge from "@kran/ui/components/StatusBadge.svelte";
+
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
   import { formatDateTime, formatMoney } from "#lib/app/format.js";
@@ -73,6 +78,13 @@
   let busy = $state("");
 
   const selectedBranch = $derived(branches.find((branch) => branch.branchId === branchId));
+
+  /** Warna hanya penguat; makna status tetap dari teksnya (DESIGN §1, §8). */
+  function statusTone(status: TopUpStatus): "positive" | "warning" | "negative" {
+    if (status === "APPROVED") return "positive";
+    if (status === "REJECTED") return "negative";
+    return "warning";
+  }
 
   async function loadBranchList(): Promise<void> {
     loadingBranches = true;
@@ -279,16 +291,16 @@
   <title>{m.common_app_title()} · {m.vault_title()}</title>
 </svelte:head>
 
-<div class="vault-head">
+<div class="kran-page-header">
   <div>
-    <h1 class="vault-title">{m.vault_title()}</h1>
-    <p class="vault-intro">{m.vault_intro()}</p>
+    <h1 class="kran-page-header__title">{m.vault_title()}</h1>
+    <p class="kran-page-header__intro">{m.vault_intro()}</p>
   </div>
   {#if canRead && branches.length > 1}
-    <div class="vault-branch">
+    <div class="kran-field">
       <label class="kran-label" for="vault-branch">{m.vault_branch_label()}</label>
       <select
-        class="kran-input"
+        class="kran-select"
         id="vault-branch"
         bind:value={branchId}
         onchange={() => void onBranchChange()}
@@ -303,50 +315,44 @@
 </div>
 
 {#if !canRead}
-  <p class="kran-alert" role="alert">{m.vault_denied()}</p>
+  <Alert tone="negative" title={m.vault_denied()} />
 {:else if loadingBranches}
   <p role="status">{m.vault_loading()}</p>
 {:else if listError && branches.length === 0}
-  <p class="kran-alert" role="alert">{listError}</p>
-  <p>
-    <button class="kran-button" type="button" onclick={() => void loadBranchList()}>
-      {m.app_retry()}
-    </button>
-  </p>
+  <Alert tone="negative" title={listError}>
+    <Button type="button" onclick={() => void loadBranchList()}>{m.app_retry()}</Button>
+  </Alert>
 {:else if branches.length === 0}
-  <p class="kran-muted">{m.vault_branch_empty()}</p>
+  <EmptyState title={m.vault_branch_empty()} />
 {:else if branchId === ""}
   <p class="kran-muted">{m.vault_branch_choose()}</p>
 {:else}
   {#if listError}
-    <p class="kran-alert" role="alert">{listError}</p>
-    <p>
-      <button class="kran-button" type="button" onclick={() => void loadBranchData()}>
-        {m.app_retry()}
-      </button>
-    </p>
+    <Alert tone="negative" title={listError}>
+      <Button type="button" onclick={() => void loadBranchData()}>{m.app_retry()}</Button>
+    </Alert>
   {/if}
   {#if actionError}
-    <p class="kran-alert" role="alert">{actionError}</p>
+    <Alert tone="negative" title={actionError} />
   {/if}
   {#if decisionError}
-    <p class="kran-alert" role="alert">{decisionError}</p>
+    <Alert tone="negative" title={decisionError} />
   {/if}
   {#if notice}
-    <p role="status">{notice}</p>
+    <Alert tone="positive" title={notice} />
   {/if}
 
-  <section class="vault-balance" aria-labelledby="vault-balance-heading">
-    <h2 class="vault-balance-label" id="vault-balance-heading">{m.vault_balance_label()}</h2>
+  <section class="kran-stat" aria-labelledby="vault-balance-heading">
+    <h2 class="kran-stat__label" id="vault-balance-heading">{m.vault_balance_label()}</h2>
     {#if loadingVault}
       <p role="status">{m.vault_loading()}</p>
     {:else if balance === null}
       <p class="kran-muted">{m.vault_balance_missing()}</p>
     {:else}
-      <p class="vault-balance-amount kran-num">{formatMoney(balance)}</p>
+      <p class="kran-stat__value">{formatMoney(balance)}</p>
     {/if}
     {#if selectedBranch}
-      <p class="vault-balance-branch kran-muted">
+      <p class="kran-muted">
         {m.vault_balance_branch({ code: selectedBranch.code, name: selectedBranch.name })}
       </p>
     {/if}
@@ -357,11 +363,11 @@
   {/if}
 
   {#if canSubmit}
-    <section class="kran-card vault-form-card" aria-labelledby="vault-submit-heading">
-      <h2 id="vault-submit-heading">{m.vault_submit_title()}</h2>
+    <section class="kran-section" aria-labelledby="vault-submit-heading">
+      <h2 class="kran-section__title" id="vault-submit-heading">{m.vault_submit_title()}</h2>
       <p class="kran-muted">{m.vault_submit_intro()}</p>
-      <form class="vault-form" onsubmit={submit}>
-        <div class="vault-field">
+      <form class="kran-form" onsubmit={submit}>
+        <div class="kran-field">
           <label class="kran-label" for="vault-amount">{m.vault_amount_label()}</label>
           <input
             class="kran-input"
@@ -373,7 +379,7 @@
             required
           />
         </div>
-        <div class="vault-field">
+        <div class="kran-field">
           <label class="kran-label" for="vault-source">{m.vault_source_label()}</label>
           <input
             class="kran-input"
@@ -384,12 +390,12 @@
             bind:value={sourceInput}
             required
           />
-          <p class="vault-hint kran-muted" id="vault-source-hint">{m.vault_source_hint()}</p>
+          <p class="kran-muted" id="vault-source-hint">{m.vault_source_hint()}</p>
         </div>
-        <div class="vault-field">
+        <div class="kran-field">
           <label class="kran-label" for="vault-note">{m.vault_note_label()}</label>
           <textarea
-            class="kran-input vault-note"
+            class="kran-input"
             id="vault-note"
             name="note"
             rows="2"
@@ -398,27 +404,29 @@
             bind:value={noteInput}
             required
           ></textarea>
-          <p class="vault-hint kran-muted" id="vault-note-hint">{m.vault_note_hint()}</p>
+          <p class="kran-muted" id="vault-note-hint">{m.vault_note_hint()}</p>
         </div>
         {#if formError}
-          <p class="vault-error" role="alert">{formError}</p>
+          <Alert tone="negative" title={formError} />
         {/if}
-        <div>
-          <button class="kran-button" type="submit" disabled={submitting}>
+        <div class="kran-actions">
+          <Button variant="primary" type="submit" disabled={submitting}>
             {submitting ? m.vault_submitting() : m.vault_submit_action()}
-          </button>
+          </Button>
         </div>
       </form>
     </section>
   {/if}
 
-  <section class="kran-card" aria-labelledby="vault-requests-heading">
-    <div class="vault-requests-head">
-      <h2 id="vault-requests-heading">{m.vault_requests_title()}</h2>
-      <div class="vault-filter">
+  <section class="kran-section" aria-labelledby="vault-requests-heading">
+    <div class="kran-toolbar">
+      <h2 class="kran-section__title" id="vault-requests-heading">
+        {m.vault_requests_title()}
+      </h2>
+      <div class="kran-field">
         <label class="kran-label" for="vault-filter">{m.vault_filter_label()}</label>
         <select
-          class="kran-input"
+          class="kran-select"
           id="vault-filter"
           bind:value={statusFilter}
           onchange={() => void onFilterChange()}
@@ -434,16 +442,21 @@
     {#if loadingRequests}
       <p role="status">{m.vault_requests_loading()}</p>
     {:else if requests.length === 0}
-      <p class="kran-muted">{m.vault_requests_empty()}</p>
+      <EmptyState title={m.vault_requests_empty()} />
     {:else}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div class="kran-table-wrap" role="region" tabindex="0" aria-label={m.vault_requests_title()}>
+      <div
+        class="kran-table-wrap"
+        role="region"
+        tabindex="0"
+        aria-label={m.vault_requests_title()}
+      >
         <table class="kran-table">
           <caption class="kran-visually-hidden">{m.vault_requests_title()}</caption>
           <thead>
             <tr>
               <th scope="col">{m.vault_col_created()}</th>
-              <th scope="col" class="vault-col-money">{m.vault_col_amount()}</th>
+              <th scope="col" class="kran-num">{m.vault_col_amount()}</th>
               <th scope="col">{m.vault_col_source()}</th>
               <th scope="col">{m.vault_col_note()}</th>
               <th scope="col">{m.vault_col_status()}</th>
@@ -457,40 +470,33 @@
             {#each requests as request (request.requestId)}
               <tr>
                 <td>{formatDateTime(request.createdAt)}</td>
-                <td class="kran-num vault-col-money">{formatMoney(request.amount)}</td>
-                <td class="vault-mono">{request.sourceAccount}</td>
-                <td class="vault-note-cell">{request.note}</td>
+                <td class="kran-num">{formatMoney(request.amount)}</td>
+                <td class="kran-num">{request.sourceAccount}</td>
+                <td>{request.note}</td>
                 <td>
-                  <span
-                    class="kran-badge"
-                    class:kran-badge--ok={request.status === "APPROVED"}
-                    class:kran-badge--danger={request.status === "REJECTED"}
-                    class:kran-badge--warning={request.status === "PENDING"}
-                  >
+                  <StatusBadge tone={statusTone(request.status)}>
                     {statusLabel(request.status)}
-                  </span>
+                  </StatusBadge>
                 </td>
                 <td>{decisionText(request)}</td>
                 {#if canDecide}
                   <td>
                     {#if request.status === "PENDING"}
-                      <div class="vault-actions">
-                        <button
-                          class="kran-button"
+                      <div class="kran-actions">
+                        <Button
                           type="button"
                           onclick={() => startDecision(request, "approve")}
                           disabled={busy !== ""}
                         >
                           {m.vault_approve_action()}
-                        </button>
-                        <button
-                          class="kran-button vault-button-quiet"
+                        </Button>
+                        <Button
                           type="button"
                           onclick={() => startDecision(request, "reject")}
                           disabled={busy !== ""}
                         >
                           {m.vault_reject_action()}
-                        </button>
+                        </Button>
                       </div>
                     {:else}
                       <span class="kran-muted">—</span>
@@ -500,59 +506,59 @@
               </tr>
 
               {#if canDecide && deciding?.requestId === request.requestId}
-                <tr class="vault-decision-row">
+                <tr class="kran-table__selected">
                   <td colspan={7}>
-                    {#if deciding.kind === "approve"}
-                      <div class="vault-decision">
-                        <p>
-                          {m.vault_approve_confirm({ amount: formatMoney(request.amount) })}
-                        </p>
-                        <div class="vault-actions">
-                          <button
-                            class="kran-button"
-                            type="button"
-                            onclick={() => void approve()}
-                            disabled={busy !== ""}
-                          >
-                            {m.vault_approve_confirm_action()}
-                          </button>
-                          <button
-                            class="kran-button vault-button-quiet"
-                            type="button"
-                            onclick={() => (deciding = null)}
-                            disabled={busy !== ""}
-                          >
-                            {m.vault_cancel()}
-                          </button>
+                    <div class="kran-stack kran-stack--loose">
+                      {#if deciding.kind === "approve"}
+                        <div class="kran-stack">
+                          <p>
+                            {m.vault_approve_confirm({ amount: formatMoney(request.amount) })}
+                          </p>
+                          <div class="kran-actions">
+                            <Button
+                              variant="primary"
+                              type="button"
+                              onclick={() => void approve()}
+                              disabled={busy !== ""}
+                            >
+                              {m.vault_approve_confirm_action()}
+                            </Button>
+                            <Button
+                              type="button"
+                              onclick={() => (deciding = null)}
+                              disabled={busy !== ""}
+                            >
+                              {m.vault_cancel()}
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    {:else}
-                      <form class="vault-decision" onsubmit={reject}>
-                        <label class="kran-label" for="vault-reject-reason">
-                          {m.vault_reject_prompt()}
-                        </label>
-                        <textarea
-                          class="kran-input vault-note"
-                          id="vault-reject-reason"
-                          rows="2"
-                          bind:value={rejectReason}
-                          required
-                        ></textarea>
-                        <div class="vault-actions">
-                          <button class="kran-button" type="submit" disabled={busy !== ""}>
-                            {m.vault_reject_confirm_action()}
-                          </button>
-                          <button
-                            class="kran-button vault-button-quiet"
-                            type="button"
-                            onclick={() => (deciding = null)}
-                            disabled={busy !== ""}
-                          >
-                            {m.vault_cancel()}
-                          </button>
-                        </div>
-                      </form>
-                    {/if}
+                      {:else}
+                        <form class="kran-form" onsubmit={reject}>
+                          <label class="kran-label" for="vault-reject-reason">
+                            {m.vault_reject_prompt()}
+                          </label>
+                          <textarea
+                            class="kran-input"
+                            id="vault-reject-reason"
+                            rows="2"
+                            bind:value={rejectReason}
+                            required
+                          ></textarea>
+                          <div class="kran-actions">
+                            <Button variant="primary" type="submit" disabled={busy !== ""}>
+                              {m.vault_reject_confirm_action()}
+                            </Button>
+                            <Button
+                              type="button"
+                              onclick={() => (deciding = null)}
+                              disabled={busy !== ""}
+                            >
+                              {m.vault_cancel()}
+                            </Button>
+                          </div>
+                        </form>
+                      {/if}
+                    </div>
                   </td>
                 </tr>
               {/if}
@@ -563,153 +569,3 @@
     {/if}
   </section>
 {/if}
-
-<style>
-  .vault-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: var(--space-3);
-    padding-block: var(--space-4);
-    padding-inline: var(--space-4);
-    border: 1px solid var(--color-hairline);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-raised);
-    margin-block-end: var(--space-4);
-  }
-
-  .vault-title {
-    margin: 0;
-    font-size: var(--text-xl);
-    line-height: var(--line-height-tight);
-    font-weight: 600;
-  }
-
-  .vault-intro {
-    margin: var(--space-1) 0 0;
-    max-inline-size: 60ch;
-    color: var(--color-text-muted);
-    font-size: var(--text-sm);
-  }
-
-  .vault-branch {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    min-inline-size: 14rem;
-  }
-
-  .vault-balance {
-    padding-block: var(--space-4);
-    padding-inline: var(--space-4);
-    border-block-start: 1px solid var(--color-hairline);
-    border-block-end: 1px solid var(--color-hairline);
-    margin-block-end: var(--space-4);
-  }
-
-  .vault-balance-label {
-    margin: 0;
-    font-size: var(--text-sm);
-    font-weight: 500;
-    color: var(--color-text-muted);
-  }
-
-  .vault-balance-amount {
-    margin: var(--space-1) 0 0;
-    font-family: var(--font-mono);
-    font-size: var(--text-xl);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums slashed-zero;
-  }
-
-  .vault-balance-branch {
-    margin: var(--space-1) 0 0;
-    font-size: var(--text-sm);
-  }
-
-  .vault-form-card {
-    margin-block-end: var(--space-4);
-  }
-
-  .vault-form {
-    display: grid;
-    gap: var(--space-3);
-    max-inline-size: 34rem;
-  }
-
-  .vault-field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-
-  .vault-hint {
-    margin: 0;
-    font-size: var(--text-sm);
-  }
-
-  .vault-note {
-    resize: vertical;
-    min-block-size: 3.5rem;
-    font-family: inherit;
-  }
-
-  .vault-error {
-    margin: 0;
-    color: var(--color-danger);
-  }
-
-  .vault-requests-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: var(--space-3);
-  }
-
-  .vault-filter {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    min-inline-size: 10rem;
-  }
-
-  .vault-col-money {
-    text-align: end;
-  }
-
-  .vault-mono {
-    font-family: var(--font-mono);
-  }
-
-  .vault-note-cell {
-    max-inline-size: 28rem;
-    overflow-wrap: anywhere;
-  }
-
-  .vault-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-  }
-
-  .vault-button-quiet {
-    background: transparent;
-    border-color: var(--color-hairline);
-  }
-
-  .vault-decision-row td {
-    background: var(--color-selected);
-  }
-
-  .vault-decision {
-    display: grid;
-    gap: var(--space-2);
-    max-inline-size: 34rem;
-  }
-
-  .vault-decision p {
-    margin: 0;
-  }
-</style>

@@ -10,6 +10,16 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 
 | key | kelas | disemai | penanda | catatan |
 |---|---|---|---|---|
+| `daycloser.auto.enabled` | kebijakan | base | - | Saklar penjadwal harian. Default mati: tidak ada penutupan yang berjalan tanpa keputusan operator. |
+| `daycloser.auto.run_at` | kebijakan | base | - | Jam lokal penutupan otomatis (HH:MM). Bentuk selain HH:MM ditolak saat dibaca, bukan ditebak. |
+| `daycloser.auto.utc_offset_minutes` | teknis | base | - | Selisih zona institusi dari UTC dalam menit (WIB = 420). Batas ±14 jam = batas zona waktu dunia. |
+| `daycloser.chunk_size` | teknis | base | - | Jumlah entitas per chunk. Angka awal 1000; disetel setelah benchmark EOD (T-140). |
+| `daycloser.max_attempts` | teknis | base | - | Percobaan maksimum per chunk/task sebelum dinyatakan FAILED. |
+| `daycloser.postcheck.subledger_gl_accounts` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Akun GL kewajiban untuk total subledger simpanan; pemetaan per jenis produk = open item. |
+| `daycloser.precheck.suspense_accounts` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Daftar akun selisih/suspense yang wajib nol sebelum tutup; nilai awal hanya 101.9 karena akun antar-kantor belum ada. |
+| `daycloser.retry_backoff_seconds` | teknis | base | - | Jeda tetap antar percobaan. Backoff eksponensial menyusul bersama worker pool (T-140). |
+| `daycloser.txn_policy_during_close` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Pilihan kebijakan operasional institusi; nilai ALLOW belum diuji terhadap task penutup nyata (T-140). |
+| `deposit.dormant.after_months` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Ambang dormant pilot 12 bulan (D-152 butir 4); dasar pasal belum diverifikasi. |
 | `ledger.coa.code_pattern` | teknis | base | - | - |
 | `ledger.posting.batch_size` | teknis | base | - | - |
 | `ledger.posting.lease_seconds` | teknis | base | - | - |
@@ -47,9 +57,11 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | `platform.ui.shortcut.withdrawal` | kebijakan | base | - | - |
 | `product.savings.admin_fee` | komersial-konservatif | base | `NEEDS-COMPLIANCE-REVIEW` | tidak menagih; angka final menunggu pemilik |
 | `product.savings.day_count_basis` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
+| `product.savings.early_withdrawal_penalty` | kebijakan | - | `NEEDS-COMPLIANCE-REVIEW` | penalti pencairan dini (D-164); angka final menunggu pemilik/compliance |
 | `product.savings.interest_posting` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
 | `product.savings.interest_rate` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
 | `product.savings.min_balance` | komersial-konservatif | base | `NEEDS-COMPLIANCE-REVIEW` | tidak menagih; angka final menunggu pemilik |
+| `product.savings.rollover_tenor_days` | kebijakan | - | `NEEDS-COMPLIANCE-REVIEW` | tenor perpanjangan per produk (D-165); angka final menunggu pemilik/compliance |
 | `product.savings.rounding_mode` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
 | `product.savings.rounding_scale` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
 | `teller.cash.limit_deposit` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Plafon setor tunai per transaksi; angka pilot pemilik 24 Okt 2026 (K-5). |
@@ -62,8 +74,8 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 
 | kelas | jumlah definisi |
 |---|---|
-| teknis | 15 |
-| kebijakan | 25 |
+| teknis | 19 |
+| kebijakan | 33 |
 | komersial-konservatif | 2 |
 | belum-bermakna | 0 |
 | regulasi-tidak-disemai | 5 |
