@@ -451,15 +451,21 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/web/|packages/)' <<<"$CHANGED_FILES
   if [ -f "$MONO_DIR/apps/web/package.json" ]; then
     log "==> Build web (pnpm)..."
     cd "$MONO_DIR/apps/web" || die "gagal masuk apps/web"
-    export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-    # OPS-3 (T-131): corepack membaca `packageManager` di package.json, jadi versi pnpm sama dengan
-    # CI. Tanpa pin, image bisa dibangun pnpm lain yang mengabaikan `minimumReleaseAge`/`allowBuilds`
+    # OPS-3 (T-131): versi pnpm dipatok `packageManager` di package.json, jadi build web sama dengan
+    # CI. Tanpa pin, build bisa memakai pnpm lain yang mengabaikan `minimumReleaseAge`/`allowBuilds`
     # (cooldown supply chain) — yaitu kebijakan keamanan yang justru dilewati.
+    #
+    # `npm exec`, bukan `corepack`: Node 25+ tidak lagi membawa corepack dan host deploy memakai
+    # Node 26. Saat masih `corepack pnpm`, skrip berhenti tepat di sini dengan
+    # `corepack: command not found` — API sudah ter-build, web **tidak pernah** di-swap, dan
+    # deploy.log tampak "berhenti setelah Build web" karena stderr-nya hanya masuk journal webhook.
     pnpm_version="$(sed -nE 's/.*"packageManager": *"pnpm@([^"]+)".*/\1/p' "$MONO_DIR/package.json" | head -1)"
     [ -n "$pnpm_version" ] || die "package.json tidak memuat \"packageManager\" (pnpm) — deploy dibatalkan"
     log "    pnpm $pnpm_version (dari package.json)"
-    corepack pnpm install --frozen-lockfile
-    corepack pnpm run build
+    npm exec --yes -- "pnpm@$pnpm_version" install --frozen-lockfile ||
+      die "pnpm install (web) gagal — lihat journal webhook"
+    npm exec --yes -- "pnpm@$pnpm_version" run build ||
+      die "build web (pnpm) gagal — lihat journal webhook"
     if [ -d "$MONO_DIR/apps/web/build" ]; then
       rm -rf "$APP_DIR/web.new"
       cp -a "$MONO_DIR/apps/web/build" "$APP_DIR/web.new"
