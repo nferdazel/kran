@@ -3754,3 +3754,21 @@ field, tombol, atau tabel yang didefinisikan ulang. Bukti: `grep -rl "<style>"` 
 Dengan ini **tidak ada lagi task `TODO`/`READY`** di `docs/BACKLOG.md`; sisa pekerjaan hanya butir
 `docs/OPEN_ITEMS.md` yang menunggu keputusan pemilik atau sudah diterima sebagai batas
 (`docs/ACCEPTED-LIMITS.md`).
+
+## 2026-10-31 — Siklus dormant: kolom mati dibuang, perubahan status diaudit (T-150, D-170)
+
+**O-111**: `deposit.account.last_activity` dibuang lewat contract `deposit/0075` (terdaftar di
+`ops/migrations/contract-auto.txt`). Kolom itu selalu kosong sejak `0064` karena D-157 memilih
+subledger sebagai sumber aktivitas; membiarkannya berarti dua sumber kebenaran yang cepat atau lambat
+berbeda pendapat. `migrate --check` melaporkan 105/105 diterapkan, `contract_pending=0`.
+
+**O-113**: task `deposit.dormant` kini menulis **satu** entri audit per chunk
+(`deposit.dormant.chunk`, resource `daycloser_run`) berisi tanggal buku, ambang bulan, nomor chunk, dan
+daftar rekening yang ditandai `DORMANT`/dikembalikan `ACTIVE`. Audit ditulis di transaksi yang sama
+dengan perubahan status (gagal audit = status tidak berubah), dan chunk tanpa perubahan tidak menulis
+apa pun sehingga run ulang tetap idempoten.
+
+Bukti: `itdaycloser_deposit` **40 OK** (payload audit penandaan + reaktivasi, run ulang tidak menambah
+audit); regresi `itapi_teller` 58, `ittransfer` 7, `itapi_deposit` 17, `itdaycloser_sim` 5,
+`itapi_dayclose` 10; `check-fast`/`build` hijau; Playwright 63 lulus 0 skip di DB segar.
+**HUMAN-REVIEW-REQUIRED** (DROP COLUMN + jejak audit status rekening).

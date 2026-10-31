@@ -22,9 +22,11 @@
 ##
 ## **Dormant.** Terakhir, rekening `ACTIVE` yang aktivitas terakhirnya lebih lama dari
 ## `deposit.dormant.after_months` ditandai `DORMANT`, dan `DORMANT` yang kembali beraktivitas
-## dikembalikan `ACTIVE` (D-157). Aktivitas dibaca dari baris `deposit.transaction`/`deposit.transfer`
-## — bukan dari kolom `deposit.account.last_activity`, yang tidak pernah ditulis jalur transaksi
-## mana pun (O-111). Task ini **tidak** kritis: menandai status tidak memindahkan uang.
+## dikembalikan `ACTIVE` (D-157). Aktivitas dibaca dari baris `deposit.transaction`/`deposit.transfer`;
+## kolom `deposit.account.last_activity` yang dulu ditambahkan untuk ini sudah dibuang (D-170), supaya
+## tidak ada sumber kedua yang selalu kosong. Perubahan status dicatat sebagai satu entri audit per
+## chunk berisi daftar rekening yang berubah (D-170). Task ini **tidak** kritis: menandai status tidak
+## memindahkan uang.
 ##
 ## **Pembulatan sekali per rentang** (keputusan pemilik, 28 Okt 2026): yang dibulatkan adalah bunga
 ## kumulatif dari `opened_on` sampai tanggal buku, lalu bagian hari itu = selisihnya terhadap
@@ -83,8 +85,8 @@ import "platform-lib/db/pool"
 import kernel/[businessdate, clock, dayclose, ids, money, paramkey, rate, result]
 import kernel/generated/paramkeys
 
-import platform/domain/[event, scope]
-import platform/infrastructure/[outbox_repo, param_repo]
+import platform/domain/[audit, event, scope]
+import platform/infrastructure/[audit_repo, outbox_repo, param_repo]
 
 import deposit/domain/[account, daycount, interest, transaction]
 import deposit/infrastructure/[
@@ -93,6 +95,7 @@ import product/infrastructure/product_repo
 
 import daycloser/domain/[registry, types]
 
+import ./daycloser_common
 import ./deposit_posting
 import ./posting
 
@@ -646,6 +649,8 @@ proc runDormantChunk(pool: DbPool; ctx: TaskContext; chunk: Chunk): TaskResult =
       "halaman rekening dormant gagal dibaca: " & e.msg, retryable = true))
 
   var dormanted, reactivated = 0
+  var changedDormant, changedActive: seq[string]
+  let clock = systemClock()
   try:
     discard pool.withTx(proc(db: DbConn): int =
       for item in items:
@@ -654,12 +659,27 @@ proc runDormantChunk(pool: DbPool; ctx: TaskContext; chunk: Chunk): TaskResult =
         if item.stale and item.status == asActive:
           if markDormantIfStale(db, item.accountId, ctx.businessDate, months, systemActor):
             inc dormanted
+            changedDormant.add $item.accountId
         elif not item.stale and item.status == asDormant:
           # Reaktivasi otomatis saat ada aktivitas (D-157): menahan rekening tetap dormant setelah
           # setoran hanya akan membuat anggota menunggu tanpa sebab, dan penolakan transaksi
           # dormant sendiri belum diputuskan (D-152 butir 4).
           if reactivateIfActive(db, item.accountId, ctx.businessDate, months, systemActor):
             inc reactivated
+            changedActive.add $item.accountId
+
+      # Audit per chunk, di transaksi yang sama dengan perubahan status: kalau jejaknya tidak bisa
+      # ditulis, statusnya tidak berubah. Satu entri (bukan satu per rekening) karena perubahan ini
+      # selalu lahir dari satu keputusan otomatis yang sama; daftar rekeningnya ikut supaya auditor
+      # tetap bisa menelusuri rekening tertentu (O-113 opsi b, D-170). Run tanpa perubahan tidak
+      # menulis apa pun, sehingga run ulang idempoten juga tidak menumpuk audit.
+      if changedDormant.len > 0 or changedActive.len > 0:
+        let actx = ctlAuditContext(clock, "task " & dormantTaskId)
+        discard appendAudit(db, newAuditEntry(actx, "deposit.dormant.chunk", "daycloser_run",
+          ctx.runId, clock, businessDate = ctx.businessDate,
+          after = %*{"businessDate": ctx.businessDate, "afterMonths": months,
+                     "chunkNo": chunk.chunkNo, "dormant": changedDormant,
+                     "reactivated": changedActive}))
       1)
   except IOError as e:
     return err[TaskOutcome, TaskError](taskError("DAY-353",
