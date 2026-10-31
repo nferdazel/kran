@@ -1770,6 +1770,17 @@ export interface components {
             permissions: string[];
             /** @description Batas idle sesi (ISO-8601 UTC); batas absolut tidak pernah dilampaui. */
             expiresAt: string;
+            /**
+             * @description Tanggal buku institusi saat sesi dibaca, bentuknya sama dengan
+             *     `GET /api/v1/dayclose/status`. `null` bila institusi belum punya baris tanggal buku.
+             *     Dikirim ke **semua** peran back-office: teller bekerja terhadap tanggal ini (sesi kas
+             *     yang tanggalnya berbeda ditolak `session_business_date_mismatch`).
+             *
+             *     Field ini **opsional**: dihilangkan (bukan `null`) bila pembacaan tanggal buku gagal,
+             *     supaya klien tidak menampilkan "belum tersedia" untuk nilai yang sebenarnya tidak
+             *     diketahui.
+             */
+            businessDate?: components["schemas"]["DayCloseBusinessDate"];
         };
         UserRoleGrant: {
             /** @description Kode role (`platform.role.code`). */

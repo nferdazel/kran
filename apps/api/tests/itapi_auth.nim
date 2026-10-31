@@ -295,6 +295,57 @@ suite "login & sesi lewat HTTP":
     check "platform.param.approve" in checkerPermissions
     check "platform.param.submit" notin checkerPermissions
 
+  test "tanggal buku institusi ikut sesi walau peran tidak boleh membaca penutupan (O-116)":
+    # Teller bekerja terhadap tanggal buku (sesi kasnya ditolak bila tanggalnya berbeda), padahal
+    # peran itu tidak memegang `dayclose.run.read`. Nilai karena itu ikut sesi, bukan hanya
+    # `/dayclose/status`.
+    let checker = login(CheckerUser)
+    let token = tokenOf(checker)
+    let info = getJson(SessionPath, token)
+    check info.code == 200
+    var permissions: seq[string]
+    for p in info.body["permissions"]:
+      permissions.add p.getStr()
+    check "dayclose.run.read" notin permissions
+
+    let db = dbPool.acquire()
+    # Baris tanggal buku milik test lain (atau seed) disimpan dulu lalu dipulihkan: test ini tidak
+    # boleh meninggalkan suite tanpa kalender institusi, dan tidak boleh menghapus data yang tidak
+    # ia buat.
+    let saved = db.getAllRows(sql"""
+      SELECT scope_type,
+             coalesce(scope_id, ''),
+             to_char(current_business_date, 'YYYY-MM-DD'),
+             state,
+             updated_at::text,
+             coalesce(updated_by::text, '')
+        FROM platform.business_date""")
+    try:
+      # Tanpa baris tanggal buku: `null`, bukan tanggal UTC karangan.
+      exec(db, sql"DELETE FROM platform.business_date")
+      let kosong = getJson(SessionPath, token)
+      check kosong.code == 200
+      check kosong.body["businessDate"].kind == JNull
+
+      exec(db, sql"""
+        INSERT INTO platform.business_date (scope_type, scope_id, current_business_date, state)
+        VALUES ('INSTITUTION', NULL, DATE '2026-10-30', 'OPEN')""")
+      let terisi = getJson(SessionPath, token)
+      check terisi.code == 200
+      check terisi.body["businessDate"]["date"].getStr() == "2026-10-30"
+      check terisi.body["businessDate"]["state"].getStr() == "OPEN"
+      # Tanggal OPEN belum beku.
+      check terisi.body["businessDate"]["frozenAt"].kind == JNull
+    finally:
+      exec(db, sql"DELETE FROM platform.business_date")
+      for row in saved:
+        exec(db, sql"""
+          INSERT INTO platform.business_date
+            (scope_type, scope_id, current_business_date, state, updated_at, updated_by)
+          VALUES (?, NULLIF(?, ''), ?::date, ?, ?::timestamptz, NULLIF(?, '')::uuid)""",
+          row[0], row[1], row[2], row[3], row[4], row[5])
+      dbPool.release(db)
+
   test "logout mencabut sesi (bukan hanya menghapus cookie di browser)":
     let maker = login(MakerUser)
     let token = tokenOf(maker)
