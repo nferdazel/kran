@@ -105,14 +105,14 @@ proc penaltyRateFor(db: DbConn; versionId: Id): Option[Rate] =
 proc cashPaid(early: EarlyWithdrawal): Money =
   early.principal + early.interest - early.penalty
 
-proc earlyWithdrawalJson(early: EarlyWithdrawal; credited: Money): JsonNode =
-  ## `cashPaid` = uang yang keluar di jalur tunai; `creditedAmount` = dana yang masuk di jalur PB.
-  ## Keduanya rumus yang sama (`pokok + bunga − penalti`), tetapi namanya harus jujur per kanal.
+proc earlyWithdrawalJson(early: EarlyWithdrawal): JsonNode =
+  ## `cashPaid` = uang yang keluar di jalur tunai; jalur PB memakai `creditedAmount` dengan rumus
+  ## yang sama (`pokok + bunga − penalti`) supaya namanya jujur per kanal.
   %*{
     "principal": early.principal.toDecimalString,
     "interest": early.interest.toDecimalString,
     "penalty": early.penalty.toDecimalString,
-    "cashPaid": credited.toDecimalString,
+    "cashPaid": cashPaid(early).toDecimalString,
   }
 
 proc earlyWithdrawalFor(db: DbConn; account: Account; amount: Money; businessDate: string):
@@ -166,7 +166,7 @@ proc cashTransactionJson(tx: Transaction, direction: CashDirection, balanceAfter
     "businessDate": tx.businessDate,
   }
   if early.isSome:
-    result["earlyWithdrawal"] = earlyWithdrawalJson(early.get(), cashPaid(early.get()))
+    result["earlyWithdrawal"] = earlyWithdrawalJson(early.get())
 
 proc cashTransactionSlipJson(tx: Transaction, accountNo: string): JsonNode =
   ## Slip cetak ulang (T-094a). **Tanpa** `balanceAfter`: saldo per transaksi tidak disimpan, dan
@@ -547,7 +547,7 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
                 "amount": amount.toDecimalString,
                 "journalId": $journalId,
                 "earlyWithdrawal": (if early.isSome:
-              earlyWithdrawalJson(early.get(), cashPaid(early.get()))
+              earlyWithdrawalJson(early.get())
             else: newJNull()),
             }))
 
@@ -838,23 +838,25 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
             var interestJournalId, penaltyJournalId: Id
             try:
               if early.isSome:
-                # Tiga jurnal, masing-masing satu D/K (template `ledger/0003`). `source_event`
-                # menyebut kanalnya supaya laporan tidak menyamakan PB dengan penarikan tunai.
+                # Tiga jurnal, satu D/K per template `ledger/0003`. Satu daftar, bukan tiga
+                # pemanggilan serupa: argumen posting tidak bisa berbeda diam-diam antar jurnal.
                 let detail = early.get()
-                journalId = postJournalSync(db, app.clock, "DepositWithdrawnViaTransfer",
-                  detail.principal, source.branchId, transferId, businessDate,
-                  earlyPrincipalKey, actor, source.productCode,
-                  $source.accountType, source.savingsKind)
-                if detail.interest.isPositive:
-                  interestJournalId = postJournalSync(db, app.clock,
-                    "InterestPaidEarlyViaTransfer", detail.interest, source.branchId, transferId,
-                    businessDate, earlyInterestKey, actor,
-                    source.productCode, $source.accountType, source.savingsKind)
-                if detail.penalty.isPositive:
-                  penaltyJournalId = postJournalSync(db, app.clock,
-                    "EarlyWithdrawalPenaltyViaTransfer", detail.penalty, source.branchId,
-                    transferId, businessDate, earlyPenaltyKey, actor,
-                    source.productCode, $source.accountType, source.savingsKind)
+                let postings = [
+                  (eventType: "DepositWithdrawnViaTransfer", amount: detail.principal,
+                   key: earlyPrincipalKey),
+                  (eventType: "InterestPaidEarlyViaTransfer", amount: detail.interest,
+                   key: earlyInterestKey),
+                  (eventType: "EarlyWithdrawalPenaltyViaTransfer", amount: detail.penalty,
+                   key: earlyPenaltyKey)]
+                var journalIds: array[postings.len, Id]
+                for i, posting in postings:
+                  if posting.amount.isPositive:
+                    journalIds[i] = postJournalSync(db, app.clock, posting.eventType,
+                      posting.amount, source.branchId, transferId, businessDate, posting.key,
+                      actor, source.productCode, $source.accountType, source.savingsKind)
+                journalId = journalIds[0]
+                interestJournalId = journalIds[1]
+                penaltyJournalId = journalIds[2]
               else:
                 journalId = postJournalSync(db, app.clock, transferSourceEvent, amount,
                   source.branchId, transferId, businessDate, journalKey, actor,
@@ -893,16 +895,16 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
             # diwakili `deposit.transfer`; sumber tidak mendapat baris sendiri.
             if early.isSome:
               let detail = early.get()
-              if detail.interest.isPositive:
-                insertTransaction(db, Transaction(transactionId: newId(app.clock),
-                  txType: ttInterestPaidEarly, accountId: destination.accountId,
-                  amount: detail.interest, businessDate: businessDate, narration: narration,
-                  journalId: interestJournalId), actor)
-              if detail.penalty.isPositive:
-                insertTransaction(db, Transaction(transactionId: newId(app.clock),
-                  txType: ttPenaltyCharge, accountId: destination.accountId,
-                  amount: detail.penalty, businessDate: businessDate, narration: narration,
-                  journalId: penaltyJournalId), actor)
+              let rows = [(txType: ttInterestPaidEarly, amount: detail.interest,
+                           journalId: interestJournalId),
+                          (txType: ttPenaltyCharge, amount: detail.penalty,
+                           journalId: penaltyJournalId)]
+              for row in rows:
+                if row.amount.isPositive:
+                  insertTransaction(db, Transaction(transactionId: newId(app.clock),
+                    txType: row.txType, accountId: destination.accountId, amount: row.amount,
+                    businessDate: businessDate, narration: narration,
+                    journalId: row.journalId), actor)
               closeAccount(db, source.accountId, actor)
 
             let ctx = auditContextFor(principal, req, app.clock, "pemindahbukuan simpanan",

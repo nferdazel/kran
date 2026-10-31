@@ -18,11 +18,9 @@ import * as m from "#lib/paraglide/messages.js";
 import { parseMoneyInput } from "@kran/ui/money";
 
 import { api } from "#lib/app/api.js";
-import { loadBranches, type Branch } from "#lib/app/branches.js";
 import { problemMessage } from "#lib/app/errors.js";
 
 export type TellerVault = components["schemas"]["TellerVault"];
-export { loadBranches, type Branch };
 export type TopUpRecord = components["schemas"]["TellerVaultTopUpRecord"];
 export type TopUpStatus = NonNullable<TopUpRecord["status"]>;
 
