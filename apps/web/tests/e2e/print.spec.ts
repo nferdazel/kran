@@ -1,4 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
+
+import { blockingViolations } from "./axe.js";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { requireDatabase } from "./db.js";
 
@@ -192,10 +194,8 @@ async function prepare(page: Page, locale: Locale, theme: Theme): Promise<void> 
   );
 }
 
-function serious(results: Awaited<ReturnType<AxeBuilder["analyze"]>>): string[] {
-  return results.violations
-    .filter((violation) => violation.impact === "serious" || violation.impact === "critical")
-    .map((violation) => violation.id);
+function blocking(results: Awaited<ReturnType<AxeBuilder["analyze"]>>): string[] {
+  return blockingViolations(results.violations).map((violation) => violation.id);
 }
 
 test.describe.serial("cetak: slip & statement", () => {
@@ -272,7 +272,7 @@ test.describe.serial("cetak: slip & statement", () => {
           page.getByRole("heading", { level: 1, name: T[locale].slipHeading }),
         ).toBeVisible();
         const slipResults = await new AxeBuilder({ page }).analyze();
-        expect(serious(slipResults), `${locale}/${theme} slip: ${serious(slipResults).join(", ")}`)
+        expect(blocking(slipResults), `${locale}/${theme} slip: ${blocking(slipResults).join(", ")}`)
           .toEqual([]);
 
         await page.goto(
@@ -283,8 +283,8 @@ test.describe.serial("cetak: slip & statement", () => {
         ).toBeVisible();
         const statementResults = await new AxeBuilder({ page }).analyze();
         expect(
-          serious(statementResults),
-          `${locale}/${theme} statement: ${serious(statementResults).join(", ")}`,
+          blocking(statementResults),
+          `${locale}/${theme} statement: ${blocking(statementResults).join(", ")}`,
         ).toEqual([]);
       }
     }

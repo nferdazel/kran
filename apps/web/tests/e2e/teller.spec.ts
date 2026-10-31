@@ -1,4 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
+
+import { blockingViolations } from "./axe.js";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { requireDatabase } from "./db.js";
 
@@ -335,10 +337,8 @@ test.describe.serial("teller: sesi kas, setor, tutup", () => {
             .first(),
         ).toBeVisible();
         const results = await new AxeBuilder({ page }).analyze();
-        const serious = results.violations.filter(
-          (violation) => violation.impact === "serious" || violation.impact === "critical",
-        );
-        expect(serious, `${locale}/${theme} sesi terbuka: ${serious.map((v) => v.id).join(", ")}`)
+        const blocking = blockingViolations(results.violations);
+        expect(blocking, `${locale}/${theme} sesi terbuka: ${blocking.map((v) => v.id).join(", ")}`)
           .toEqual([]);
       }
     }
@@ -363,10 +363,8 @@ test.describe.serial("teller: sesi kas, setor, tutup", () => {
         await loadAccount(page, text, fixture.accountNo);
         await expect(page.getByText(text.sessionOpen, { exact: false }).first()).toBeVisible();
         const results = await new AxeBuilder({ page }).analyze();
-        const serious = results.violations.filter(
-          (violation) => violation.impact === "serious" || violation.impact === "critical",
-        );
-        expect(serious, `${locale}/${theme} tanpa sesi: ${serious.map((v) => v.id).join(", ")}`)
+        const blocking = blockingViolations(results.violations);
+        expect(blocking, `${locale}/${theme} tanpa sesi: ${blocking.map((v) => v.id).join(", ")}`)
           .toEqual([]);
       }
     }

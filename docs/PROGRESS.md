@@ -3696,3 +3696,16 @@ memuat rekening mengisi cabang sesi (form ditutup bila berbeda). Peran `teller` 
 0 skip** di DB segar, termasuk test baru "buka kas tanpa memuat rekening anggota".
 
 **Sisa**: T-149 (ambang axe ke `moderate`), T-144 (zoom 200% + cetak), T-143 (copy operator).
+
+## 2026-10-31 — Ambang axe `moderate`, zoom 200%, copy operator (T-149, T-144, T-143)
+
+**T-149 / O-118 (D-166)**: ambang gate axe dinaikkan ke `moderate`+`serious`+`critical` lewat satu
+helper `apps/web/tests/e2e/axe.ts` yang dipakai 10 spec (bukan filter per layar). Tidak ada temuan
+`moderate` setelah ambang dinaikkan.
+
+**T-144**: test e2e `1366×768 @200%` (viewport 683×384) membuktikan shell satu kolom, tanpa gulir
+mendatar, tabel buku besar tetap tabel dengan gulir di region berlabel, dan keyboard tetap sampai sel
+pertama. Cetak sudah diverifikasi `print.spec.ts`. Baseline visual tetap O-022 (tidak ada tooling diff).
+
+**T-143**: istilah internal di katalog operator (`ledger.period`, "runbook", "UUID") diganti bahasa
+kerja; layar admin buku besar sengaja tetap menyebut UUID karena tugasnya menempel ID jurnal.

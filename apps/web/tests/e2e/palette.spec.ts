@@ -1,4 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
+
+import { blockingViolations } from "./axe.js";
 import { requireDatabase } from "./db.js";
 import { expect, test, type Page } from "@playwright/test";
 
@@ -242,12 +244,10 @@ test.describe.serial("command palette", () => {
         await expect(dialog.getByRole("link", { name: text.teller, exact: true })).toBeVisible();
 
         const results = await new AxeBuilder({ page }).analyze();
-        const serious = results.violations.filter(
-          (violation) => violation.impact === "serious" || violation.impact === "critical",
-        );
+        const blocking = blockingViolations(results.violations);
         expect(
-          serious,
-          `${locale}/${theme} palette: ${serious.map((violation) => violation.id).join(", ")}`,
+          blocking,
+          `${locale}/${theme} palette: ${blocking.map((violation) => violation.id).join(", ")}`,
         ).toEqual([]);
 
         // Tutup tiap putaran: putaran berikutnya mereload halaman, tetapi palette yang tertinggal
