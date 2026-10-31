@@ -8,8 +8,6 @@
     /** Teks judul kolom; simbol mata uang ikut di sini ("Saldo (IDR)") sesuai DESIGN §6. */
     label: string;
     align?: "start" | "end";
-    /** Deklarasi untuk pemakai yang membangun kontrol sortir; lihat catatan di komentar atas. */
-    sortable?: boolean;
     /** Nilai diformat dengan `formatMoney` dan dirender `kran-money`. */
     numerics?: boolean;
   }
@@ -35,9 +33,9 @@
    * sedang terurut, dan pembungkus bergulir `role="region"` + `tabindex="0"` + `aria-label`.
    *
    * Presentasional: tanpa fetch, tanpa state sortir, tanpa aksi baris bawaan. Urutan baris, isi sel,
-   * dan kontrol sortir milik pemanggil — `sortable` hanya deklarasi sehingga kolom yang bisa
-   * disortir tidak pernah tampak punya tombol yang sebenarnya tidak ada. Sortir interaktif
-   * (tombol di `<th>`) menyusul bersama CSS-nya; sekarang komponen hanya menyatakan `aria-sort`.
+   * dan kontrol sortir milik pemanggil. `sort` hanya menyatakan kolom mana yang sedang terurut
+   * (`aria-sort`); komponen tidak merender tombol sortir yang belum punya perilaku. Sortir
+   * interaktif menyusul bersama CSS-nya.
    *
    * Angka: kolom `numerics` selalu lewat `formatMoney` dan memakai kelas `kran-money` (rata kanan,
    * digit tetap). Sel `null`/`undefined` dibiarkan kosong — bukan diisi nol karangan.
@@ -52,10 +50,12 @@
     sort?: DataSort;
     /** Nama field pada baris yang stabil, dipakai sebagai key `{#each}`. */
     rowKey: string;
+    /** Locale angka untuk kolom `numerics` (aplikasi ini dwibahasa id/en). */
+    locale?: string;
     actions?: DataActions;
   }
 
-  let { caption, columns, rows, sort, rowKey, actions }: Props = $props();
+  let { caption, columns, rows, sort, rowKey, locale = "id-ID", actions }: Props = $props();
 
   function headerClass(column: DataColumn): string | undefined {
     return column.align === "end" || column.numerics === true ? "kran-num" : undefined;
@@ -74,7 +74,9 @@
   function cellText(row: DataRow, column: DataColumn): string {
     const value = row[column.key];
     if (value === null || value === undefined) return "";
-    return column.numerics === true ? formatMoney(String(value)) : String(value);
+    const text = String(value);
+    if (column.numerics !== true) return text;
+    return text.trim() === "" ? "" : formatMoney(text, { locale });
   }
 </script>
 

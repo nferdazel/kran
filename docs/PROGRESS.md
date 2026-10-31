@@ -3536,3 +3536,37 @@ MAJOR dan enam MINOR; tidak ada BLOCKER.
 menyuruh `daycloser-resume` (run `COMPLETED` tidak bisa di-resume — parameter diperbaiki, pemindaian
 ikut pada penutupan berikutnya); cakupan benchmark menambahkan bahwa task dormant hanya **memindai**
 (transisi nol karena rekening seed beraktivitas pada tanggal buku).
+
+## 2026-10-31 — Desain v2 fase 0–1: arah baru, token, dan layer komponen
+
+**Konteks**: pemilik memutuskan redesign UI total. Audit UI/UX menemukan masalah struktural
+(`packages/ui` tanpa satu komponen, 1.344 baris CSS ditulis ulang per halaman, layar kas 1.834
+baris dalam satu berkas) sementara pelanggaran arah lama hanya 8 deklarasi. Keputusan: **D-160**
+menggantikan D-075/D-115; `DESIGN.md` ditulis ulang ke arah netral-dingin + satu aksen plum + satu
+keluarga huruf (Plex Sans, mono dihapus).
+
+**Yang berubah**
+
+- `DESIGN.md` v2: token dua tema dengan bukti kontras terhitung, satu keluarga huruf, komitmen
+  struktur (satu titik fokus, navigasi bergrup, pengaturan keluar dari alur Tab, kas sebagai
+  stasiun kerja, aturan visual di komponen bukan per halaman), tabel fase 0–6 dan gerbangnya.
+- `packages/ui/tokens/tokens.css`: token v2, `--color-surface-disabled`, `--font-mono` dihapus,
+  `--brand-ink` dihapus (tak dipakai), motion 150/200 ms.
+- `packages/ui/src/components.css`: mono → sans + tabular, uppercase/letter-spacing dihapus,
+  shadow kartu dihapus (overlay tetap), state `:disabled` baru, modifier `--row`/`--destructive`,
+  alert per tone, empty state. Tidak ada kelas yang di-rename.
+- `packages/ui/src/components/`: `Button`, `Field`, `StatusBadge`, `Alert`, `EmptyState`,
+  `DataTable`, `Money` (Svelte 5, presentasional, memakai kelas `.kran-*` yang sudah ada).
+- `packages/ui`: `tsconfig.json` + `svelte-check` yang dijalankan `./task lint-web`.
+- `apps/web`: 10 deklarasi `var(--font-mono)` diganti (token itu tidak ada lagi).
+
+**Bukti**: `packages/ui` vitest 173 lulus (kontras 2 tema termasuk pasangan baru + 35 test
+komponen), `./task lint-web` (eslint + svelte-check paket) bersih, `./task check-fast` hijau,
+`./task openapi` hijau, `apps/web` build + `svelte-check` 0 error, Playwright **59 lulus tanpa
+skip** di database segar (axe 2 tema × 2 locale di semua layar, keyboard, zoom 125%, cetak, mobile).
+
+**Temuan review yang diperbaiki**: locale uang tidak diteruskan (id/en), `muted` pada angka uang
+(dilarang DESIGN §3), `Button` menelan handler klik, dan tidak ada gerbang `svelte-check` untuk
+`packages/ui`. Satu bug nyata ditemukan gate axe: transisi `background-color` pada tombol membuat
+state `disabled → aktif` sempat membaca teks putih di atas permukaan abu (1,15:1) — transisi
+tombol dihapus, karena pergantian keadaan bukan gerakan.

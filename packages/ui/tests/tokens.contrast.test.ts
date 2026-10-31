@@ -30,6 +30,8 @@ const TEXT_PAIRS: ReadonlyArray<readonly [string, string]> = [
   ["text-2", "surface"],
   ["primary", "bg"],
   ["primary", "surface"],
+  ["primary-hover", "bg"],
+  ["primary-hover", "surface"],
   ["accent", "bg"],
   ["accent", "surface"],
   ["accent", "selected"],
@@ -137,6 +139,15 @@ describe.each(THEMES)("token kontras tema %s", (theme) => {
     expect(ratio, `kontras ${fg}/${bg} = ${ratio.toFixed(2)} (< ${UI_MIN})`).toBeGreaterThanOrEqual(
       UI_MIN,
     );
+  });
+});
+
+describe("kelengkapan token", () => {
+  it("kedua tema mendefinisikan kumpulan token yang sama", () => {
+    const light = [...parseThemeColorTokens(css, "light").keys()].sort();
+    const dark = [...parseThemeColorTokens(css, "dark").keys()].sort();
+    // Token yang hanya ada di satu tema = tema itu akan memakai nilai tema lain (atau kosong).
+    expect(dark).toEqual(light);
   });
 });
 

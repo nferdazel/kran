@@ -85,9 +85,6 @@
 
   /* Layout */
   --layout-max-width: 72rem;
-
-  /* Merek/identitas (header dan penanda lokasi, bukan permukaan angka). */
-  --brand-ink: #5b2a5e;
 }
 
 /* ---- Token warna per tema (DESIGN §3) ---- */

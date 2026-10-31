@@ -3,9 +3,10 @@
    * Kotak pesan dengan judul + jalan pulih (DESIGN §7: "Tidak ada 'Terjadi kesalahan sistem' tanpa
    * langkah berikutnya").
    *
-   * `role="alert"` hanya untuk kegagalan/peringatan; sisanya `role="status"` supaya pengumuman tidak
-   * memotong pembaca layar (DESIGN §8). Judul, isi, dan aksi datang dari pemakai — komponen ini
-   * tidak mengarang copy atau rujukan.
+   * `role="alert"` hanya untuk kegagalan (tone `negative`); sisanya `role="status"` supaya
+   * pengumuman tidak memotong pembaca layar (DESIGN §8: assertive khusus kegagalan transaksi).
+   * Judul sengaja `<p>`, bukan heading: kotak pesan bisa muncul di atas `<h1>` halaman dan urutan
+   * heading yang melompat adalah temuan axe tersendiri.
    */
   import type { Snippet } from "svelte";
 
@@ -22,12 +23,12 @@
 
   let { tone, title, reference = "", children }: Props = $props();
 
-  const urgent = $derived(tone === "negative" || tone === "warning");
+  const urgent = $derived(tone === "negative");
   const alertClass = $derived(`kran-alert kran-alert--${tone}`);
 </script>
 
 <div class={alertClass} role={urgent ? "alert" : "status"}>
-  <h2 class="kran-alert__title">{title}</h2>
+  <p class="kran-alert__title">{title}</p>
 
   {#if children}
     {@render children()}
