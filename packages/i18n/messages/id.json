@@ -256,6 +256,7 @@
   "error_not_implemented": "Fitur ini belum tersedia.",
   "error_page_back": "Kembali ke area kerja",
   "error_page_body": "Halaman ini gagal dimuat. Muat ulang, atau buka layar kerja dari menu.",
+  "error_page_label": "Galat {status}",
   "error_page_reload": "Muat ulang",
   "error_page_title": "Halaman tidak bisa dibuka",
   "error_service_unavailable": "Layanan sedang sibuk. Coba lagi sebentar lagi.",

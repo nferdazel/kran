@@ -131,3 +131,26 @@ test("tidak ada string hardcode: label form ikut berganti bahasa", async ({ page
   await page.getByRole("radio", { name: "Inggris" }).check();
   await expect(page.getByLabel("Username")).toBeVisible();
 });
+
+test("halaman galat: copy Indonesia, satu h1, axe bersih di dua tema", async ({ page }) => {
+  for (const theme of THEMES) {
+    await gotoApp(page, "id", theme);
+    await page.goto("/rute-yang-tidak-ada");
+
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Halaman tidak bisa dibuka" }),
+    ).toBeVisible();
+    // 404 bukan alasan menawarkan "muat ulang": alamatnya memang tidak ada.
+    await expect(page.getByRole("link", { name: "Muat ulang" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Kembali ke area kerja" })).toBeVisible();
+
+    const results = await new AxeBuilder({ page }).analyze();
+    const serious = results.violations.filter(
+      (violation) => violation.impact === "serious" || violation.impact === "critical",
+    );
+    expect(
+      serious.map((violation) => violation.id),
+      `galat ${theme}: ${serious.map((violation) => violation.id).join(", ")}`,
+    ).toEqual([]);
+  }
+});

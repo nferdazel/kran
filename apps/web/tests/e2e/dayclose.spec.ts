@@ -22,7 +22,14 @@ type Locale = (typeof LOCALES)[number];
 
 const T: Record<
   Locale,
-  { title: string; reload: string; limit: string; statusHeading: string; businessDate: string }
+  {
+    title: string;
+    reload: string;
+    limit: string;
+    statusHeading: string;
+    businessDate: string;
+    businessDateUnknown: string;
+  }
 > = {
   id: {
     title: "Monitor penutupan buku",
@@ -30,6 +37,7 @@ const T: Record<
     limit: "Jumlah baris",
     statusHeading: "Status tanggal buku",
     businessDate: "Tanggal bisnis",
+    businessDateUnknown: "belum tersedia",
   },
   en: {
     title: "Day-close monitor",
@@ -37,6 +45,7 @@ const T: Record<
     limit: "Rows",
     statusHeading: "Business date status",
     businessDate: "Business date",
+    businessDateUnknown: "unavailable",
   },
 };
 
@@ -81,6 +90,21 @@ for (const locale of LOCALES) {
       const indicator = page.locator(".kran-business-date");
       await expect(indicator).toBeVisible();
       await expect(indicator).toContainText(T[locale].businessDate);
+      // Indikator harus mencerminkan jawaban API, bukan teks tetap: dev.console memegang izin
+      // baca penutupan buku, jadi bila institusi sudah punya baris tanggal buku nilainya tampil;
+      // bila API menjawab null, shell mengatakannya apa adanya.
+      const statusResponse = await request.get(`${API}/api/v1/dayclose/status`, {
+        headers: { cookie: session },
+      });
+      const statusBody = (await statusResponse.json()) as {
+        businessDate?: { date?: string } | null;
+      };
+      if (statusBody.businessDate?.date) {
+        await expect(indicator).not.toContainText(T[locale].businessDateUnknown);
+        await expect(indicator).toContainText(String(statusBody.businessDate.date.slice(0, 4)));
+      } else {
+        await expect(indicator).toContainText(T[locale].businessDateUnknown);
+      }
       await expect(
         page.getByRole("heading", { level: 2, name: T[locale].statusHeading }),
       ).toBeVisible();

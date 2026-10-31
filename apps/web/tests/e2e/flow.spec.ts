@@ -334,6 +334,22 @@ test("kredensial salah: pesan generik, tidak ada sesi", async ({ page }) => {
   await expect(page).toHaveURL(/\/login$/);
 });
 
+test("/app mengantar ke tujuan yang sama dengan pendaratan setelah masuk", async ({ page }) => {
+  await prepare(page);
+  await page.goto("/login");
+  await field(page, TEXT.username).focus();
+  await page.keyboard.type(MAKER.username);
+  await page.keyboard.press("Tab");
+  await page.keyboard.type(MAKER.password);
+  await page.keyboard.press("Enter");
+
+  await expect(page).not.toHaveURL(/\/login$/);
+  const landing = page.url();
+
+  await page.goto("/app");
+  await expect(page).toHaveURL(landing);
+});
+
 for (const theme of THEMES) {
   test(`axe /login — tema ${theme}`, async ({ page }) => {
     await prepare(page, theme);

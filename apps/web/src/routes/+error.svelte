@@ -19,14 +19,20 @@
   <p class="kran-muted">{m.error_page_body()}</p>
 
   <div class="kran-alert kran-alert--neutral" role="status">
-    <p class="kran-alert__title">{page.status}</p>
+    <p class="kran-alert__title">{m.error_page_label({ status: page.status })}</p>
     {#if page.url.pathname}
       <p class="kran-print-ref">{page.url.pathname}</p>
     {/if}
   </div>
 
   <p>
-    <a class="kran-button kran-button--primary" href={page.url.pathname}>{m.error_page_reload()}</a>
+    <!-- "Muat ulang" hanya untuk galat server: pada 404 alamatnya memang tidak ada, jadi memuat
+         ulang URL yang sama hanya memutar. -->
+    {#if page.status >= 500}
+      <a class="kran-button kran-button--primary" href={page.url.pathname}>
+        {m.error_page_reload()}
+      </a>
+    {/if}
     <a class="kran-button" href="/app">{m.error_page_back()}</a>
   </p>
 </section>

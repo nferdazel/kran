@@ -3570,3 +3570,30 @@ skip** di database segar (axe 2 tema × 2 locale di semua layar, keyboard, zoom 
 `packages/ui`. Satu bug nyata ditemukan gate axe: transisi `background-color` pada tombol membuat
 state `disabled → aktif` sempat membaca teks putih di atas permukaan abu (1,15:1) — transisi
 tombol dihapus, karena pergantian keadaan bukan gerakan.
+
+## 2026-10-31 — Desain v2 fase 2: shell dan arsitektur informasi
+
+**Yang berubah**
+
+- Navigasi bergrup (Kas, Anggota & simpanan, Buku besar, Pengaturan); kelompok kosong menghilang;
+  id kelompok diturunkan dari `navGroups` sehingga tautan yang lupa diberi kelompok ketahuan test.
+- Tema & bahasa pindah dari header ke footer: sebelumnya 5 tab-stop sebelum konten di setiap layar
+  (DESIGN §10).
+- `/app` tidak lagi merender layar parameter untuk semua orang: ia mengalihkan ke tujuan pendaratan,
+  dan parameter punya rute sendiri `/app/params`. Pendaratan (`/`, `/login`, `/app`, `/app/password`)
+  memakai satu fungsi `landingHref` yang mendahulukan buku besar; akun tanpa tautan mendarat di
+  layar parameter yang menjelaskan keadaannya, bukan di layar buntu.
+- Indikator tanggal bisnis di header memakai `GET /dayclose/status` bila sesi boleh membacanya,
+  membedakan "tidak tahu" (tidak dirender) dari "belum ada baris tanggal buku" (teks jujur), dan
+  tidak lagi berupa placeholder tetap.
+- `+error.svelte` ditambahkan (halaman bawaan berbahasa Inggris), dan lencana logo "K" karangan
+  dihapus (DESIGN v2 §9).
+
+**Bukti**: `./task check-fast`, `./task lint-web` (eslint + svelte-check), `./task openapi` hijau;
+vitest `packages/ui` 173 dan unit `apps/web` 151 lulus; build + svelte-check `apps/web` 0 error;
+Playwright **61 lulus tanpa skip** di database segar (termasuk dua test baru: pendaratan `/app` sama
+dengan pendaratan login, dan axe halaman galat dua tema).
+
+**Temuan review yang diperbaiki**: beranda `/` masih mengarahkan ke buku besar secara hardcode
+(mengabaikan izin), indikator tanggal menampilkan "belum tersedia" untuk peran yang memang tidak
+boleh membacanya, `landingHref` tanpa test, dan `landingHref` belum dipakai layar kata sandi.

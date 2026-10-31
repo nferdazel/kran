@@ -256,6 +256,7 @@
   "error_not_implemented": "This feature is not available yet.",
   "error_page_back": "Back to your workspace",
   "error_page_body": "The page failed to load. Reload it, or open a workspace screen from the menu.",
+  "error_page_label": "Error {status}",
   "error_page_reload": "Reload",
   "error_page_title": "This page could not be opened",
   "error_service_unavailable": "The service is busy. Try again in a moment.",
