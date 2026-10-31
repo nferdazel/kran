@@ -114,6 +114,12 @@ export default defineConfig({
     baseURL,
     trace: "off",
     screenshot: "off",
+    // T-044: tanpa batas ini setiap aksi/permintaan punya batas **tak terhingga** (`actionTimeout`
+    // bawaan 0); aksi yang macet baru berhenti di `globalTimeout` 8 menit, dan pesannya tidak
+    // menyebut aksi mana. 60 detik jauh di atas operasi sah di mesin ini (login PBKDF2 + tunnel),
+    // tetapi mengubah macet menjadi kegagalan yang menyebut locator/URL-nya sendiri.
+    actionTimeout: 60_000,
+    navigationTimeout: 60_000,
   },
   projects: [
     {
