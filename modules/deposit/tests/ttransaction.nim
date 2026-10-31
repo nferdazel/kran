@@ -68,6 +68,19 @@ suite "deposit: kunci idempotensi jurnal":
     check key == "teller:11111111-1111-7111-8111-111111111111:abc-123"
     check key.len <= maxJournalIdempotencyKeyLength
 
+  test "sub-kunci mempertahankan kunci permintaan dan batas kolom":
+    let base = tellerJournalKey("11111111-1111-7111-8111-111111111111", "abc-123")
+    check tellerJournalSubKey(base, "principal") == base & ":principal"
+    check tellerJournalSubKey(base, "interest") == base & ":interest"
+    check tellerJournalSubKey(base, "penalty") == base & ":penalty"
+    # Kunci yang masih muat sendiri bisa melewati batas setelah diberi sufiks: harus ditolak
+    # sebelum menyentuh DB, bukan terpotong.
+    let principal = "11111111-1111-7111-8111-111111111111"
+    let headroom = maxJournalIdempotencyKeyLength - journalKeyPrefix.len - principal.len - 1
+    let atLimit = tellerJournalKey(principal, repeat('k', headroom))
+    expect ValueError:
+      discard tellerJournalSubKey(atLimit, "principal")
+
   test "kunci terlalu panjang ditolak (bukan dipotong)":
     let principal = "11111111-1111-7111-8111-111111111111"
     let headroom = maxJournalIdempotencyKeyLength - journalKeyPrefix.len - principal.len - 1

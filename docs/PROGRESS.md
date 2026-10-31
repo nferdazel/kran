@@ -3687,12 +3687,12 @@ tujuan (`INTEREST_PAID_EARLY` +, `PENALTY_CHARGE −`) dengan tiga jurnal `*ViaT
 204/201, 201/403), sehingga penalti > bunga tetap benar di rekonsiliasi. Statement memakai `kind`
 `EARLY_WITHDRAWAL` (dipetakan di domain). Pencairan penuh kini mengabaikan `min_balance` produk
 (`decreaseBalanceToZero`) di kedua jalur — sebelumnya produk dengan saldo minimum > 0 menolak
-pencairan penuh dengan `insufficient_funds`. Bukti: `itapi_teller` 56 OK termasuk mutation check
+pencairan penuh dengan `insufficient_funds`. Bukti: `itapi_teller` 58 OK termasuk mutation check
 peta tanda, regresi `ittransfer`/`itapi_deposit`/`itdaycloser_*`/`itapi_dayclose` hijau.
 
 **T-141 / D-169**: panel sesi kas punya pemilih cabang; kas bisa dibuka tanpa memuat rekening, dan
 memuat rekening mengisi cabang sesi (form ditutup bila berbeda). Peran `teller` mendapat
-`platform.branch.read` (migrasi `platform/0075`), fixture dev mengikuti. Bukti: Playwright **62 lulus,
+`platform.branch.read` (migrasi `platform/0075`), fixture dev mengikuti. Bukti: Playwright **63 lulus,
 0 skip** di DB segar, termasuk test baru "buka kas tanpa memuat rekening anggota".
 
 **Sisa**: T-149 (ambang axe ke `moderate`), T-144 (zoom 200% + cetak), T-143 (copy operator).

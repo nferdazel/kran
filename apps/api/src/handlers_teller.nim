@@ -686,8 +686,14 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
 
   # Kunci jurnal (lapis kedua) dihitung sebelum transaksi supaya kunci terlalu panjang = 400 bersih.
   var journalKey = ""
+  # Kunci tambahan untuk PB pencairan dini (T-148) juga dihitung di sini: batas panjangnya harus
+  # menghasilkan 400 bersih, bukan 500 dari dalam transaksi posting.
+  var earlyPrincipalKey, earlyInterestKey, earlyPenaltyKey = ""
   try:
     journalKey = tellerJournalKey(principal.user.userId, req.headers[idempotencyHeader])
+    earlyPrincipalKey = tellerJournalSubKey(journalKey, "principal")
+    earlyInterestKey = tellerJournalSubKey(journalKey, "interest")
+    earlyPenaltyKey = tellerJournalSubKey(journalKey, "penalty")
   except ValueError as e:
     req.respondProblem(pkBadRequest, "Bad Request", e.msg)
     return
@@ -837,17 +843,17 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
                 let detail = early.get()
                 journalId = postJournalSync(db, app.clock, "DepositWithdrawnViaTransfer",
                   detail.principal, source.branchId, transferId, businessDate,
-                  tellerJournalSubKey(journalKey, "principal"), actor, source.productCode,
+                  earlyPrincipalKey, actor, source.productCode,
                   $source.accountType, source.savingsKind)
                 if detail.interest.isPositive:
                   interestJournalId = postJournalSync(db, app.clock,
                     "InterestPaidEarlyViaTransfer", detail.interest, source.branchId, transferId,
-                    businessDate, tellerJournalSubKey(journalKey, "interest"), actor,
+                    businessDate, earlyInterestKey, actor,
                     source.productCode, $source.accountType, source.savingsKind)
                 if detail.penalty.isPositive:
                   penaltyJournalId = postJournalSync(db, app.clock,
                     "EarlyWithdrawalPenaltyViaTransfer", detail.penalty, source.branchId,
-                    transferId, businessDate, tellerJournalSubKey(journalKey, "penalty"), actor,
+                    transferId, businessDate, earlyPenaltyKey, actor,
                     source.productCode, $source.accountType, source.savingsKind)
               else:
                 journalId = postJournalSync(db, app.clock, transferSourceEvent, amount,
