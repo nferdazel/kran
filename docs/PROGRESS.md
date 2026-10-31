@@ -3784,3 +3784,34 @@ sesi tidak dibagikan. Bukti: `itapi_auth` 48 OK, `vitest` 154, e2e 63 lulus.
 interaksi); `resetTestSchemas` kini melepas `btree_gist`/`pgcrypto` sehingga jalur migrasi DB kosong
 benar-benar dijalankan di lokal — sebelumnya `CREATE EXTENSION IF NOT EXISTS` selalu no-op dan drift
 urutan/checksum hanya terlihat di CI.
+
+## 2026-10-31 — Validasi parameter, realtime per cabang, penutupan dormant (T-153…T-155)
+
+**T-153 / O-067 + O-044 + O-087** (D-171, D-172): penerus `effectiveTo` boleh `GLOBAL` — sama dengan
+resolusi yang dipakai aplikasi; kandidat kebijakan sesi hanya dinilai bila login benar-benar
+membacanya (`GLOBAL` atau `INSTITUTION` dengan id kosong); nilai JSON parameter dibatasi satu fungsi
+(`jsonFormProblem`: kedalaman 8, tanpa `null`, tanpa angka non-terhingga) yang dipanggil pengajuan
+parameter maupun binding produk. Bukti: `itparam` 30 OK, `itauth` 28 OK, `tparam` 25 OK,
+`itapi_auth` 48 OK.
+
+**T-154 / O-070** (D-173): gerbang topik realtime kini memakai izin "di cabang mana pun", dan hub
+menyaring peristiwa: `EventScope` (institusi atau daftar cabang) dibaca sekali per `subscribe` dari
+grant + pasangan SoD yang sama dengan otorisasi HTTP. `param.changed` ber-scope `BRANCH` hanya sampai
+ke pemegang cabang itu; replay `resumeFrom` memakai saringan yang sama. Cakupan kosong menutup
+peristiwa cabang, jadi lupa mengisi menutup, bukan membocorkan. Bukti: `trealtime` 30 OK,
+`itapi_ws` 22 OK (dua klien beda cabang; peristiwa `GLOBAL` ke keduanya), `itrealtime` 5 OK.
+
+**T-155 / O-114** (D-174): task `deposit.dormant_close` menutup rekening **hanya** bila masih
+`DORMANT`, saldo **nol**, dan aktivitas terakhir > `deposit.dormant_close.after_months` (24 bulan,
+parameter institusi). Populasi paginasi `DORMANT`+`CLOSED` menjaga offset stabil; predikat dinilai
+ulang di dalam `UPDATE`; satu audit per chunk di transaksi yang sama. Bukti: `itdaycloser_deposit`
+46 OK. **HUMAN-REVIEW-REQUIRED** (dasar 24 bulan).
+
+Gate: `build`, `check-fast`, `openapi` (+ `openapi-gen` untuk klien TS), `lint-web`, `tcontract`,
+e2e 63 lulus / 4 skip (visual regression hanya Linux) di DB segar.
+
+**T-156 / O-022** (D-177): `visual.spec.ts` memotret halaman masuk dan buku besar × tema terang/gelap,
+hanya di Linux (di macOS test melewati diri sendiri). Baseline dihasilkan `visual-baseline.yml` di
+runner `ubuntu-24.04` dan di-commit; dispatch tanpa `update` hanya membandingkan — run 41219502893
+menghasilkan baseline, run 41220380661 membandingkannya dan hijau. Gate berjalan lewat `./task e2e`
+di job `web-e2e`, tanpa job e2e kedua.

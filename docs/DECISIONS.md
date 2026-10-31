@@ -4605,3 +4605,24 @@ kapan ia harus diangkat kembali.
 **O-100** tetap: ekuitas provisoris `301.1`/`301.2` dipertahankan dengan tag
 `NEEDS-COMPLIANCE-REVIEW` sampai register regulasi §4 diverifikasi.
 **O-008** dibatalkan: itemnya server-wide dan ditangani di host, bukan di repo kran.
+
+## D-177 — Visual regression: baseline Linux, dibandingkan di runner yang sama (31 Okt 2026)
+
+**Konteks.** O-022: spec §15.8 meminta visual regression, tetapi screenshot bergantung pada
+rendering font/antialiasing OS. Baseline dari macOS tidak akan pernah cocok di runner, dan menaruh
+ambang longgar hanya akan membuat gate itu hijau tanpa menangkap perubahan.
+
+**Keputusan** (pilihan A, interview 31 Okt 2026).
+
+1. `visual.spec.ts` hanya berjalan di Linux (`test.skip(process.platform !== "linux")`), memotret
+   empat layar deterministik dari seed dev: halaman masuk dan buku besar, tema terang + gelap.
+   Bagian yang berubah sendiri (tanggal buku) di-mask.
+2. Baseline dihasilkan di runner yang sama oleh `visual-baseline.yml` (dispatch), lalu **di-commit**
+   ke `apps/web/tests/e2e/visual.spec.ts-snapshots/`. Dispatch tanpa input `update` hanya
+   membandingkan, sehingga repo punya bukti bahwa baseline reproducible, bukan sekadar ditulis ulang.
+3. Gate-nya adalah job `web-e2e` lewat `./task e2e`; tidak ada job tambahan yang mengulang e2e.
+
+**Konsekuensi.** Mesin macOS tidak pernah menghasilkan baseline; developer yang mengubah UI harus
+menjalankan workflow dengan input `update` dan meninjau artefak sebelum commit. Ambang
+`maxDiffPixelRatio: 0.01` dipilih supaya perbedaan antialiasing kecil tidak memerahkan gate, tetapi
+perubahan tata letak/warna tetap tertangkap.
