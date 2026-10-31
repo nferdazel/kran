@@ -55,6 +55,7 @@ const paramKeys*: seq[string] = @[
   "platform.ui.shortcut.withdrawal",
   "product.savings.admin_fee",
   "product.savings.day_count_basis",
+  "product.savings.early_withdrawal_penalty",
   "product.savings.interest_posting",
   "product.savings.interest_rate",
   "product.savings.min_balance",
@@ -161,6 +162,8 @@ const P_platform_ui_shortcut_withdrawal* = ParamKey[string]("platform.ui.shortcu
 const P_product_savings_admin_fee* = ParamKey[Money]("product.savings.admin_fee")
 
 const P_product_savings_day_count_basis* = ParamKey[string]("product.savings.day_count_basis")
+
+const P_product_savings_early_withdrawal_penalty* = ParamKey[Rate]("product.savings.early_withdrawal_penalty")
 
 const P_product_savings_interest_posting* = ParamKey[string]("product.savings.interest_posting")
 
@@ -700,6 +703,17 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.product.savings.day_count_basis",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "product.savings.early_withdrawal_penalty",
+    module: "product",
+    valueType: pvtRate,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.product.savings.early_withdrawal_penalty",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(

@@ -275,6 +275,9 @@ const PROBLEM_REASON_MESSAGES: Record<string, () => string> = {
   session_business_date_mismatch: () => m.teller_error_session_business_date_mismatch(),
   savings_kind_locked: () => m.teller_error_savings_kind_locked(),
   time_deposit_locked: () => m.teller_error_time_deposit_locked(),
+  time_deposit_partial_withdrawal: () => m.teller_error_time_deposit_partial_withdrawal(),
+  early_withdrawal_penalty_missing: () => m.teller_error_early_withdrawal_penalty_missing(),
+  early_withdrawal_penalty_too_high: () => m.teller_error_early_withdrawal_penalty_too_high(),
   transfer_kind_mismatch: () => m.teller_error_transfer_kind_mismatch(),
 };
 

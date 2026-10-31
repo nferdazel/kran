@@ -848,6 +848,24 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "product.savings.early_withdrawal_penalty",
+    "module": "product",
+    "valueType": "rate",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.product.savings.early_withdrawal_penalty",
+    "jsonSchema": {
+      "maxLength": 32,
+      "description": "persen dari pokok; presisi maksimum 4 desimal (batas kernel rateFromPercentString)"
+    }
+  },
+  {
     "key": "product.savings.interest_posting",
     "module": "product",
     "valueType": "string",

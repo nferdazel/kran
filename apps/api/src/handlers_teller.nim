@@ -21,7 +21,7 @@ import std/[json, options, strutils]
 import mummy
 import db_connector/db_postgres
 
-import kernel/[clock, ids, money, result]
+import kernel/[clock, ids, money, rate, result]
 import kernel/generated/paramkeys
 import platform/domain/[audit, event, idempotency, scope]
 import platform/infrastructure/[audit_repo, auth_service, outbox_repo]
@@ -57,6 +57,8 @@ const
   operationIdTransfer = "teller.transfer.post"
   ## Binding saldo minimum milik versi produk (spec §10: nilai dari parameter, bukan kode).
   minBalanceParamKey = "product.savings.min_balance"
+  ## Penalti pencairan dini (D-164): persen dari pokok, tanpa nilai seed.
+  earlyWithdrawalPenaltyKey = "product.savings.early_withdrawal_penalty"
 
 proc minBalanceFor(db: DbConn, versionId: Id): Money =
   ## Saldo minimum dari binding versi produk akun. Tidak ada binding → 0 (D-095: pack default 0).
@@ -77,6 +79,40 @@ proc minBalanceFor(db: DbConn, versionId: Id): Money =
     return parsed.value()
   zero()
 
+type
+  EarlyWithdrawal* = object
+    ## Rincian pencairan dini deposito berjangka (D-164). `cashPaid = principal + interest − penalty`.
+    principal*: Money
+    interest*: Money
+    penalty*: Money
+
+proc penaltyRateFor(db: DbConn; versionId: Id): Option[Rate] =
+  ## Rate penalti dari binding versi produk. `none` = produk belum mengikat atribut itu; pencairan
+  ## dini ditolak (`early_withdrawal_penalty_missing`), bukan dianggap tanpa penalti.
+  for binding in bindingsOf(db, versionId):
+    if binding.paramKey != earlyWithdrawalPenaltyKey:
+      continue
+    if binding.value.isNil or binding.value.kind != JString:
+      raise newException(DepositConfigError,
+        "binding " & earlyWithdrawalPenaltyKey & " bukan string persen")
+    let parsed = rateFromPercentString(binding.value.getStr())
+    if parsed.isErr:
+      raise newException(DepositConfigError,
+        "binding " & earlyWithdrawalPenaltyKey & " bukan persen sah")
+    return some(parsed.value())
+  none(Rate)
+
+proc cashPaid(early: EarlyWithdrawal): Money =
+  early.principal + early.interest - early.penalty
+
+proc earlyWithdrawalJson(early: EarlyWithdrawal): JsonNode =
+  %*{
+    "principal": early.principal.toDecimalString,
+    "interest": early.interest.toDecimalString,
+    "penalty": early.penalty.toDecimalString,
+    "cashPaid": cashPaid(early).toDecimalString,
+  }
+
 proc respondConflict(req: Request, reason, detail: string) =
   ## 409 dengan `reason` supaya klien bisa membedakan penyebab tanpa menebak dari `detail`.
   req.respondProblem(newProblem(pkConflict, "Conflict", detail, traceId = traceIdFrom(req),
@@ -87,8 +123,11 @@ proc lockedSavingsKind(kind: string): bool =
   ## anggota belum ada. Nilai diambil dari enum produk (satu sumber), bukan literal kedua.
   kind == $skPokok or kind == $skWajib
 
-proc cashTransactionJson(tx: Transaction, direction: CashDirection, balanceAfter: Money): JsonNode =
-  %*{
+proc cashTransactionJson(tx: Transaction, direction: CashDirection, balanceAfter: Money;
+    early: Option[EarlyWithdrawal] = none(EarlyWithdrawal)): JsonNode =
+  ## `earlyWithdrawal` hanya ada pada pencairan dini deposito (D-164); `amount` tetap pokok yang
+  ## didebit dari rekening, sedangkan kas yang diserahkan bisa berbeda karena bunga dan penalti.
+  result = %*{
     "transactionId": $tx.transactionId,
     "journalId": $tx.journalId,
     "direction": $direction,
@@ -96,6 +135,8 @@ proc cashTransactionJson(tx: Transaction, direction: CashDirection, balanceAfter
     "balanceAfter": balanceAfter.toDecimalString,
     "businessDate": tx.businessDate,
   }
+  if early.isSome:
+    result["earlyWithdrawal"] = earlyWithdrawalJson(early.get())
 
 proc cashTransactionSlipJson(tx: Transaction, accountNo: string): JsonNode =
   ## Slip cetak ulang (T-094a). **Tanpa** `balanceAfter`: saldo per transaksi tidak disimpan, dan
@@ -283,15 +324,46 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
               problem = "rekening tidak aktif untuk transaksi ini"
               raise newException(ValueError, problem)
 
-            # Tarik dari deposito berjangka diblokir sampai ada jalur pencairan dini + koreksi akrual
-            # (O-108): akrual D-154 dihitung kumulatif dari `balance` saat ini, jadi pokok yang
-            # berkurang membuat `DAY-335` menahan penutupan tanpa jalan keluar. Setoran tetap boleh
-            # (pokok naik; efeknya hanya penyesuaian akrual, bukan dead-end).
+            let businessDate = businessDateFor(db, institutionScope(), asOf)
+
+            # Pencairan dini deposito berjangka (D-164): hanya **penuh** dan hanya **sebelum**
+            # jatuh tempo. Sebelum jatuh tempo, sisi jatuh tempo task bisa memindahkan pokok yang
+            # sama; keduanya mengunci baris rekening yang sama (D-161), jadi salah satu menang dan
+            # yang lain melihat status `CLOSED`.
+            #
+            # Sebagian tidak didukung: akrual dihitung dari saldo saat ini, jadi pokok yang
+            # berkurang di tengah tenor membuat `DAY-335` menahan penutupan tanpa jalan keluar.
+            var early: Option[EarlyWithdrawal] = none(EarlyWithdrawal)
             if direction == cdWithdrawal and account.accountType == atTimeDeposit:
-              status = 409
-              reason = "time_deposit_locked"
-              problem = "penarikan dari rekening deposito berjangka belum didukung"
-              raise newException(ValueError, problem)
+              let maturity = maturityDateOf(db, account.accountId)
+              if maturity.len == 0 or businessDate >= maturity:
+                status = 409
+                reason = "time_deposit_locked"
+                problem = "penarikan deposito berjangka hanya untuk pencairan dini sebelum jatuh tempo"
+                raise newException(ValueError, problem)
+              if amount != account.balance:
+                status = 409
+                reason = "time_deposit_partial_withdrawal"
+                problem = "pencairan dini deposito berjangka harus penuh sebesar saldo"
+                raise newException(ValueError, problem)
+              let rateOpt = penaltyRateFor(db, account.productVersionId)
+              if rateOpt.isNone:
+                status = 409
+                reason = "early_withdrawal_penalty_missing"
+                problem = "produk rekening belum mengikat " & earlyWithdrawalPenaltyKey &
+                  "; pencairan dini tidak bisa dihitung"
+                raise newException(ValueError, problem)
+              let detail = EarlyWithdrawal(principal: amount,
+                interest: accruedUnpaidInterest(db, account.accountId),
+                penalty: applyRate(amount, rateOpt.get()))
+              if not cashPaid(detail).isPositive:
+                # Penalti ≥ pokok + bunga: konfigurasi produk tidak masuk akal (rate persen dari
+                # pokok), dan tidak ada kas yang bisa diserahkan.
+                status = 409
+                reason = "early_withdrawal_penalty_too_high"
+                problem = "penalti pencairan dini melebihi pokok + bunga yang dibayarkan"
+                raise newException(ValueError, problem)
+              early = some(detail)
 
             # Tarik dari POKOK/WAJIB diblokir (setor tetap boleh): keluar anggota belum ada (T-111).
             if direction == cdWithdrawal and lockedSavingsKind(account.savingsKind):
@@ -299,8 +371,6 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
               reason = "savings_kind_locked"
               problem = "penarikan dari simpanan pokok/wajib belum didukung"
               raise newException(ValueError, problem)
-
-            let businessDate = businessDateFor(db, institutionScope(), asOf)
 
             # Plafon per transaksi (K-5/O-099) dari parameter; dicek sebelum saldo/jurnal disentuh.
             let valueLimit = cashLimit(db,
@@ -409,12 +479,47 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
               journalId: journalId)
             insertTransaction(db, tx, actor)
 
+            # Pencairan dini: dua jurnal tambahan dan rekening ditutup. Kas yang diserahkan adalah
+            # `pokok + bunga − penalti`; pokok sendiri sudah dijurnal `DepositWithdrawn` di atas.
+            if early.isSome:
+              let detail = early.get()
+              try:
+                if detail.interest.isPositive:
+                  discard postJournalSync(db, app.clock, "InterestPaidEarly", detail.interest,
+                    account.branchId, txId, businessDate, "early.interest:" & $txId, actor,
+                    account.productCode, $account.accountType, account.savingsKind)
+                if detail.penalty.isPositive:
+                  discard postJournalSync(db, app.clock, "EarlyWithdrawalPenalty", detail.penalty,
+                    account.branchId, txId, businessDate, "early.penalty:" & $txId, actor,
+                    account.productCode, $account.accountType, account.savingsKind)
+              except DbError as e:
+                if "periode OPEN" in e.msg:
+                  status = 409
+                  reason = "period_closed"
+                  problem = "periode tanggal bisnis sudah ditutup"
+                elif "journal_idempotency_uq" in e.msg:
+                  status = 409
+                  reason = "idempotency_replay_expired"
+                  problem = "Idempotency-Key ini sudah pernah diproses; respons replay sudah " &
+                    "kedaluwarsa"
+                else:
+                  status = 500
+                  problem = "jurnal pencairan dini gagal disimpan"
+                raise newException(ValueError, problem)
+              except ValueError as e:
+                status = 500
+                problem = "posting rule pencairan dini tidak tersedia: " & e.msg
+                raise newException(ValueError, problem)
+              closeAccount(db, account.accountId, actor)
+
             # Arus kas laci: setor = uang masuk laci (CASH_IN), tarik = keluar (CASH_OUT). Satu
             # baris per transaksi tunai (UNIQUE `transaction_id`), ditulis di transaksi DB yang sama
-            # supaya `expected_cash` saat tutup tidak pernah kehilangan transaksi ini.
+            # supaya `expected_cash` saat tutup tidak pernah kehilangan transaksi ini. Pencairan dini
+            # menyerahkan kas bersih (pokok + bunga − penalti), bukan pokok saja.
             let movementType = if direction == cdDeposit: cmCashIn else: cmCashOut
+            let cashAmount = if early.isSome: cashPaid(early.get()) else: amount
             insertMovement(db, newCashMovement(newId(app.clock), cashSession.sessionId,
-              movementType, amount, txId, businessDate, $actor))
+              movementType, cashAmount, txId, businessDate, $actor))
 
             let ctx = auditContextFor(principal, req, app.clock, "transaksi tunai " & $direction,
               $account.branchId)
@@ -426,7 +531,9 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
                 "direction": $direction,
                 "amount": amount.toDecimalString,
                 "journalId": $journalId,
-              }))
+                "earlyWithdrawal": (if early.isSome: earlyWithdrawalJson(early.get())
+              else: newJNull()),
+            }))
 
             # Event non-akuntansi: TANPA header `accounting` supaya konsumen `ledger` tidak
             # memposting jurnal kedua (jurnal sudah ditulis sinkron di atas).
@@ -442,7 +549,7 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
                  "totalDebit": amount.toDecimalString}))
 
             status = 201
-            payload = cashTransactionJson(tx, direction, balanceAfter.get())
+            payload = cashTransactionJson(tx, direction, balanceAfter.get(), early)
             (status, payload)))
   except IdempotencyConfigError:
     status = 500

@@ -188,13 +188,13 @@ block seed:
       name: "Simpanan Simulasi", productType: ptSavings), Id(Actor))
     insertVersion(d, ProductVersion(versionId: testVersion, productId: testProduct, versionNo: 1,
       effectiveFrom: "2020-01-01"), Id(Actor))
+    # Tenor perpanjangan dari atribut produk (D-165). 365 hari menjaga simulasi tetap satu siklus
+    # per rekening di dalam tahun buku, tanpa bergantung pada selisih tanggal buka.
     for binding in @[
         ParamBinding(paramKey: "product.savings.min_balance", value: %"0.00"),
         ParamBinding(paramKey: "product.savings.interest_rate", value: %Rate),
         ParamBinding(paramKey: "product.savings.day_count_basis", value: %Basis),
         ParamBinding(paramKey: "product.savings.rounding_scale", value: %2),
-        # Tenor perpanjangan dari atribut produk (D-165). 365 hari menjaga simulasi tetap satu
-        # siklus per rekening di dalam tahun buku, tanpa bergantung pada selisih tanggal buka.
         ParamBinding(paramKey: "product.savings.rollover_tenor_days", value: %365)]:
       insertBinding(d, testVersion, binding)
     1)

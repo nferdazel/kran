@@ -179,12 +179,6 @@ proc activeSavingsAccount*(db: DbConn; partyId, branchId: Id): Option[Id] =
     return none(Id)
   some(Id(rows[0][0]))
 
-proc closeAccount*(db: DbConn; accountId: Id; actor: Id) =
-  ## Rekening berjangka selesai `NONE`: status `CLOSED` (saldo sudah dipindahkan pemanggil di
-  ## transaksi yang sama).
-  db.exec(sql"""
-    UPDATE deposit.account SET status = 'CLOSED', updated_by = ?
-     WHERE account_id = ?""", $actor, $accountId)
 
 proc setMaturityDate*(db: DbConn; accountId: Id; maturityDate: string; actor: Id) =
   ## ARO `PRINCIPAL`/`PRINCIPAL_AND_INTEREST`: rekening berlanjut dengan jatuh tempo baru.

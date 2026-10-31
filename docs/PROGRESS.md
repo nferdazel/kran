@@ -3635,3 +3635,23 @@ boleh membacanya, `landingHref` tanpa test, dan `landingHref` belum dipakai laya
 **Catatan**: test urutan kunci `ittransfer` di-mutation-check (kunci rekening dihapus → test gagal).
 `itapi_auth` menyimpan dan memulihkan baris `platform.business_date` alih-alih menghapusnya. Sisa
 migrasi: layar kas setelah T-141; verifikasi cetak/zoom 200% ada di T-144.
+
+## 2026-10-31 — Siklus ARO kedua + pencairan dini deposito (tarik tunai)
+
+**O-109 / T-145 (D-165)**: `deposit.account.interest_paid_cumulative` menjadi baseline bunga per
+siklus (migrasi `0073`, expand-only). Task membayar `cumulative − paid` lalu menaikkan baseline di
+transaksi chunk; tenor perpanjangan dari atribut `product.savings.rollover_tenor_days` dan task
+menahan chunk dengan `DAY-354` bila binding tidak ada. Bukti: `itdaycloser_deposit` 39 OK (3 test
+baru), mutation check membuktikan test siklus kedua tidak vacuous, `itdaycloser_sim` 5 OK.
+
+**O-108 / T-146 (D-164), tarik tunai**: pencairan dini penuh sebelum jatuh tempo membayar pokok +
+bunga terakru − penalti. Penalti = persen dari pokok dari atribut
+`product.savings.early_withdrawal_penalty`; tanpa binding ditolak, bukan nol. Tiga jurnal
+(`DepositWithdrawn` 202/101.2, `InterestPaidEarly` 204/101.2, `EarlyWithdrawalPenalty` 101.2/403),
+akun GL `403` baru, kas laci = kas yang benar-benar diserahkan, rekening `CLOSED`. Bukti:
+`itapi_teller` 52 OK (3 test baru: sebagian ditolak, binding hilang ditolak, pencairan penuh dengan
+tiga jurnal), `itapi_deposit` 17, `itdaycloser_deposit` 39, `ittransfer` 7, `itapi_dayclose` 10.
+
+**Sisa**: PB keluar untuk pencairan dini (T-148) — membutuhkan jenis baris subledger untuk debit
+penalti di rekening tujuan; PB `TIME_DEPOSIT` tetap ditolak `409 time_deposit_locked` sampai itu
+selesai. Kedua perubahan adalah **HUMAN-REVIEW-REQUIRED** (rumus bunga + perpindahan uang).
