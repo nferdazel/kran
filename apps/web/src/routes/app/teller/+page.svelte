@@ -190,6 +190,7 @@
   /** Cabang sesi kas: dipilih langsung, atau mengikuti rekening yang dimuat (T-141). */
   let branches = $state<Branch[]>([]);
   let branchesFailed = $state(false);
+  let branchesPending = $state(true);
   let sessionBranchId = $state("");
   /** Penjaga respons basi saat cabang sesi diganti beruntun (respons cabang lama tidak menimpa). */
   let sessionRequest = 0;
@@ -447,6 +448,8 @@
       branchesFailed = true;
     } catch {
       branchesFailed = true;
+    } finally {
+      branchesPending = false;
     }
   }
 
@@ -1091,6 +1094,8 @@
 
         {#if branchesFailed}
           <p class="kran-alert" role="alert">{m.teller_session_branches_failed()}</p>
+        {:else if branchesPending}
+          <p class="kran-muted">{m.app_loading()}</p>
         {:else if branches.length === 0}
           <p class="kran-muted">{m.teller_session_branches_empty()}</p>
         {:else}
