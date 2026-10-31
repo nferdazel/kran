@@ -17,6 +17,26 @@ proc cand(scopeType: ParamScopeType, scopeId: string, value: JsonNode): ParamCan
   ParamCandidate(paramValueId: "pv-" & $scopeType, scopeType: scopeType, scopeId: scopeId,
     value: value, effectiveFrom: "2026-01-01")
 
+suite "param: bentuk nilai JSON (O-087)":
+  test "objek/array/teks/angka/boolean diterima sampai batas kedalaman":
+    check jsonFormProblem(%*{"a": [1, "x", true, {"b": 2}]}) == ""
+    check jsonFormProblem(%*[]) == ""
+    check jsonFormProblem(%*42) == ""
+
+  test "null ditolak di mana pun di dalam nilai":
+    check jsonFormProblem(%*{"a": nil}).contains("null")
+    check jsonFormProblem(%*[1, nil]).contains("null")
+
+  test "kedalaman melebihi batas ditolak":
+    var deep = newJObject()
+    let root = deep
+    var cursor = deep
+    for _ in 0 .. maxJsonNodeDepth:
+      let child = newJObject()
+      cursor["n"] = child
+      cursor = child
+    check jsonFormProblem(root).contains("kedalaman")
+
 suite "param: urutan resolusi":
   test "paling spesifik lebih dulu, GLOBAL paling akhir":
     check resolutionRank(pstProduct) < resolutionRank(pstBranch)

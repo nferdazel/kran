@@ -116,6 +116,25 @@ suite "param: seed & definisi":
       check e.msg.contains("tidak diizinkan")
     check raised
 
+  test "nilai JSON yang terlalu dalam atau memuat null ditolak saat pengajuan (O-087)":
+    # Bentuk JSON dibatasi di domain (`jsonFormProblem`), bukan hanya di handler produk: pemanggil
+    # lain (ctl, seed) tidak boleh menyimpan struktur yang tidak dipahami konsumen.
+    var deep = newJObject()
+    var cursor = deep
+    for _ in 0 .. maxJsonNodeDepth:
+      let child = newJObject()
+      cursor["n"] = child
+      cursor = child
+    for (value, diharapkan) in [(deep, "kedalaman"), (%*{"a": nil}, "null")]:
+      var raised = false
+      try:
+        discard submitValue(db, $newId(sysClock), "party.identity.doc_lengths", "GLOBAL", "",
+          value, asOf, "", maker, "uji json")
+      except ValueError as e:
+        raised = true
+        check e.msg.contains(diharapkan)
+      check raised
+
   test "nilai yang melanggar schema/bentuk tipe ditolak":
     for (value, diharapkan) in [(%*0, "schema"), (%*"30", "harus integer (angka JSON)")]:
       var raised = false
@@ -523,3 +542,14 @@ suite "param: effectiveTo tanpa penerus (O-043, D-046 butir 8)":
       "2026-03-01",
       "2026-04-01")
     check problem.len > 0
+
+  test "penerus GLOBAL menutup periode BRANCH (O-067)":
+    # Pembaca cabang hanya mencocokkan BRANCH (id yang sama) dan GLOBAL. Nilai BRANCH yang berakhir
+    # karena itu boleh ditutup nilai GLOBAL; sebelum O-067 kasus ini ditolak tanpa alasan.
+    let pvId = $newId(sysClock)
+    execScript(db, "INSERT INTO platform.param_value (param_value_id, key, scope_type, scope_id," &
+      " value, effective_from, effective_to, status, maker, checker, reason) VALUES ('" & pvId &
+      "', '" & keyAkhir & "', 'GLOBAL', NULL, '[6, 7]'::jsonb, DATE '2026-04-01', NULL," &
+      " 'PENDING', '" & $maker & "', NULL, 'uji penerus global')")
+    check effectiveToGapProblem(db, keyAkhir, "BRANCH", "uji-akhir-global", "2026-03-01",
+      "2026-04-01").len == 0

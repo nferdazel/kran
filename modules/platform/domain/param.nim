@@ -83,6 +83,41 @@ proc resolveCandidate*(candidates: openArray[ParamCandidate],
       bestRank = rank
       result = some(c)
 
+const maxJsonNodeDepth* = 8 ## nomagic:ok batas teknis kedalaman nilai JSON parameter
+
+proc jsonFormProblem*(value: JsonNode; depth = 0): string =
+  ## Bentuk JSON yang boleh disimpan sebagai nilai parameter `json` (O-087, keputusan 31 Okt 2026):
+  ## objek/array/string/angka/boolean, **tanpa `null`**, dan kedalaman maksimum `maxJsonNodeDepth`.
+  ##
+  ## Ini batas bentuk, bukan schema bisnis: arti struktur tetap milik konsumennya. `null` ditolak
+  ## karena ambigu (nilai kosong vs parameter tidak ada), dan kedalaman dibatasi supaya konsumen
+  ## tidak perlu memanggil parser rekursif tanpa batas atas data yang mereka terima.
+  if value.isNil:
+    return "nilai JSON kosong"
+  if depth > maxJsonNodeDepth:
+    return "kedalaman JSON melebihi " & $maxJsonNodeDepth
+  case value.kind
+  of JNull:
+    return "null tidak diterima di dalam nilai JSON"
+  of JObject:
+    for _, child in value:
+      let problem = jsonFormProblem(child, depth + 1)
+      if problem.len > 0:
+        return problem
+  of JArray:
+    for child in value:
+      let problem = jsonFormProblem(child, depth + 1)
+      if problem.len > 0:
+        return problem
+  of JInt, JBool, JString: discard
+  of JFloat:
+    # `NaN`/`Inf` tidak bisa lahir dari parser JSON standar, tetapi bisa datang dari pemanggil
+    # library; menolaknya lebih baik daripada menyimpannya sebagai token yang tidak sah di jsonb.
+    let f = value.getFloat()
+    if f != f:
+      return "angka JSON bukan bilangan terhingga"
+  ""
+
 proc jsonTypeMatches*(want: string, value: JsonNode): bool =
   case want
   of "integer": value.kind == JInt

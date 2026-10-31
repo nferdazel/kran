@@ -71,7 +71,8 @@ proc settingsOf*(db: DbConn, scope: ScopeRef, asOf: string): SecuritySettings =
       keyString(P_platform_security_session_absolute_minutes), asOf, lookup))
 
 proc sessionPolicyCandidateProblem*(db: DbConn, key: string, candidate: JsonNode,
-                                    effectiveFrom, effectiveTo, asOf: string): string =
+                                    effectiveFrom, effectiveTo, scopeType, scopeId,
+                                    asOf: string): string =
   ## `""` bila perubahan aman; pesan pelanggaran bila kombinasi kebijakan sesi yang **akan**
   ## berlaku melanggar aturan domain `sessionPolicy` (idle ≤ absolut, spec §18.2).
   ##
@@ -96,6 +97,11 @@ proc sessionPolicyCandidateProblem*(db: DbConn, key: string, candidate: JsonNode
   ## spec §13/§18.2), supaya vonisnya sama dengan perilaku login yang sesungguhnya.
   ##
   ## Hanya pasangan parameter ini yang diperiksa: aturan lintas-parameter lain belum ada di spec.
+  # Login membaca kebijakan di `institutionScope()` dan resolusi hanya mencocokkan tipe scope yang
+  # diminta plus GLOBAL. Kandidat di scope lain (BRANCH, INSTITUTION ber-id, PRODUCT, …) tidak akan
+  # pernah dibaca, jadi menilainya berarti menolak perubahan yang tidak berpengaruh (O-044).
+  if not (scopeType == $pstGlobal or (scopeType == $pstInstitution and scopeId.len == 0)):
+    return ""
   if candidate.kind != JInt:
     return "" # tipe/schema ditangani `submitValue`; di sini bukan urusan bentuk nilai
   let idleKey = keyString(P_platform_security_session_idle_minutes)

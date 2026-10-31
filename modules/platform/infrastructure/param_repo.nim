@@ -216,7 +216,12 @@ proc effectiveToGapProblem*(db: DbConn, key, scopeType, scopeId,
   ## **dan** saat persetujuan — pola yang sama dengan pemeriksaan lintas-parameter
   ## (`sessionPolicyCandidateProblem`), karena kelengkapan periode juga berubah di antara keduanya.
   ##
-  ## Yang dicari: baris lain pada (key, scope) yang **masih berlaku** pada tanggal `effectiveTo`
+  ## Yang dicari: baris lain yang **masih berlaku** pada tanggal `effectiveTo` dan akan dibaca
+  ## pembaca scope itu. Resolusi (`platform/param.resolveCandidate`) hanya mencocokkan tipe scope
+  ## yang diminta pemanggil plus GLOBAL, jadi penerus yang sah adalah (key, scope_type, scope_id)
+  ## yang sama **atau** baris GLOBAL — bukan cabang lain, bukan institusi ber-id lain. Sebelum
+  ## O-067 baris GLOBAL tidak dihitung, sehingga nilai BRANCH ber-`effective_to` selalu ditolak
+  ## walau pembaca cabang sesudahnya memang jatuh ke GLOBAL.
   ## setelah kandidat ini aktif. Tanpa itu, tanggal setelah `effectiveTo` tidak punya nilai berlaku —
   ## aplikasi gagal-cepat (spec §10.6) dan pemeriksaan lintas-parameter melewati tanggal tersebut
   ## (temuan review D-029). Karena `supersedePreviousValues` memangkas baris ACTIVE yang mulai
@@ -238,7 +243,8 @@ proc effectiveToGapProblem*(db: DbConn, key, scopeType, scopeId,
   # lebar positif, jadi `effective_to > effectiveTo` selalu salah untuk dirinya.
   let covering = parseBiggestInt(db.getValue(sql"""
     SELECT count(*) FROM platform.param_value
-     WHERE key = ? AND scope_type = ? AND coalesce(scope_id, '') = ?
+     WHERE key = ?
+       AND ((scope_type = ? AND coalesce(scope_id, '') = ?) OR scope_type = 'GLOBAL')
        AND status IN ('ACTIVE', 'SUPERSEDED', 'PENDING')
        AND effective_from >= ?::date AND effective_from <= ?::date
        AND (effective_to IS NULL OR effective_to > ?::date)""",
@@ -273,6 +279,10 @@ proc submitValue*(db: DbConn, paramValueId, key, scopeType, scopeId: string,
   if not valueMatchesType(def.get().valueType, value):
     raise newException(ValueError, "nilai " & key & " harus " &
       typeShapeMessage(def.get().valueType))
+  if def.get().valueType == pvtJson:
+    let formProblem = jsonFormProblem(value)
+    if formProblem.len > 0:
+      raise newException(ValueError, "nilai " & key & " tidak sah: " & formProblem)
   let schemaProblem = validateAgainstSchema(def.get().schema, value)
   if schemaProblem.len > 0:
     raise newException(ValueError, "nilai " & key & " melanggar schema: " & schemaProblem)
