@@ -64,7 +64,9 @@ Security (gitleaks)
 
 Aturan: hanya `success` yang hijau (`skipped`/`neutral` = check tidak berjalan), satu nama dinilai
 dari run terbaru, check yang hilang atau timeout = **gagal** (fail-closed). Perubahan yang hanya
-menyentuh dokumen melewati gerbang karena CI juga tidak berjalan untuk path itu.
+menyentuh dokumen melewati gerbang karena CI juga tidak berjalan untuk path itu. Permintaan ke API
+bersyarat (`If-None-Match`), jadi poll yang tidak membawa perubahan dijawab `304` dan tidak memakan
+kuota — penting karena tanpa token batasnya 60 permintaan/jam per IP.
 
 | Variabel | Default | Arti |
 | --- | --- | --- |

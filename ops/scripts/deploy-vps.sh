@@ -142,14 +142,42 @@ ci_gate() { # ci_gate <rev>
 
   log "==> GERBANG CI: menunggu ${wait_seconds}s untuk ${rev:0:12} di ${repo}"
   local deadline=$((SECONDS + wait_seconds))
-  local body verdict
+  local body_file head_file code etag verdict
+  body_file="$(mktemp)"
+  head_file="$(mktemp)"
+  # shellcheck disable=SC2064  # path temp sengaja di-resolve sekarang.
+  trap "rm -f '$body_file' '$head_file'" RETURN
+  etag=""
   while :; do
-    if ! body="$(curl -fsS --max-time 20 "${auth[@]}" \
-      -H "Accept: application/vnd.github+json" "$api")"; then
-      die "GERBANG CI: gagal membaca check-run dari GitHub API (${repo}); deploy dibatalkan"
+    # Tanpa token, batas GitHub hanya 60 permintaan/jam per IP — dan 45 poll per deploy akan
+    # menghabiskannya. Permintaan bersyarat (`If-None-Match`) yang dijawab 304 **tidak** dihitung,
+    # jadi poll berikutnya gratis selama tidak ada check-run baru.
+    if [ -n "$etag" ]; then
+      code="$(curl -sS --max-time 20 "${auth[@]}" \
+        -H "Accept: application/vnd.github+json" -H "If-None-Match: $etag" \
+        -D "$head_file" -o "$body_file" -w '%{http_code}' "$api")" ||
+        die "GERBANG CI: gagal membaca check-run dari GitHub API (${repo}); deploy dibatalkan"
+    else
+      code="$(curl -sS --max-time 20 "${auth[@]}" \
+        -H "Accept: application/vnd.github+json" \
+        -D "$head_file" -o "$body_file" -w '%{http_code}' "$api")" ||
+        die "GERBANG CI: gagal membaca check-run dari GitHub API (${repo}); deploy dibatalkan"
     fi
-    verdict="$(printf '%s' "$body" | EXPECTED_CI_CHECKS="$CI_EXPECTED" python3 -c "$CI_GATE_PY")" ||
-      die "GERBANG CI: jawaban GitHub tidak bisa dibaca (fail-closed)"
+
+    case "$code" in
+      200)
+        etag="$(sed -n 's/^[Ee][Tt][Aa][Gg]: *//p' "$head_file" | tr -d '\r' | head -1)"
+        verdict="$(EXPECTED_CI_CHECKS="$CI_EXPECTED" python3 -c "$CI_GATE_PY" <"$body_file")" ||
+          die "GERBANG CI: jawaban GitHub tidak bisa dibaca (fail-closed)"
+        ;;
+      304)
+        # Tidak ada perubahan sejak poll terakhir: keputusan sebelumnya masih berlaku.
+        verdict="${verdict:-PENDING belum ada check-run}"
+        ;;
+      *)
+        die "GERBANG CI: GitHub API menjawab HTTP $code untuk ${repo}; deploy dibatalkan (fail-closed)"
+        ;;
+    esac
 
     case "$verdict" in
       OK)
