@@ -37,13 +37,13 @@ jobs:
         uses: jiro4989/setup-nim-action@v2
         with:
           # Dipin supaya hasil bisa diulang dan berbeda dari toolchain lokal tidak lolos diam-diam.
-          nim-version: '2.2.12'
+          nim-version: '2.4.0'
 
       - name: Cache nimble
         uses: actions/cache@v4
         with:
           path: ~/.nimble
-          key: nimble-${{ runner.os }}-2.2.12-${{ hashFiles('kran.nimble') }}
+          key: nimble-${{ runner.os }}-2.4.0-${{ hashFiles('kran.nimble') }}
 
       - name: Install dependencies
         run: nimble install -d -y
@@ -100,13 +100,13 @@ jobs:
       - name: Setup Nim
         uses: jiro4989/setup-nim-action@v2
         with:
-          nim-version: '2.2.12'
+          nim-version: '2.4.0'
 
       - name: Cache nimble
         uses: actions/cache@v4
         with:
           path: ~/.nimble
-          key: nimble-${{ runner.os }}-2.2.12-${{ hashFiles('kran.nimble') }}
+          key: nimble-${{ runner.os }}-2.4.0-${{ hashFiles('kran.nimble') }}
 
       - name: Install dependencies
         run: nimble install -d -y
@@ -198,13 +198,13 @@ jobs:
         # e2e menjalankan binary hasil `./task build`; job ini sekarang butuh toolchain Nim.
         uses: jiro4989/setup-nim-action@v2
         with:
-          nim-version: '2.2.12'
+          nim-version: '2.4.0'
 
       - name: Cache nimble
         uses: actions/cache@v4
         with:
           path: ~/.nimble
-          key: nimble-${{ runner.os }}-2.2.12-${{ hashFiles('kran.nimble') }}
+          key: nimble-${{ runner.os }}-2.4.0-${{ hashFiles('kran.nimble') }}
 
       - name: Install Nim dependencies
         run: nimble install -d -y
