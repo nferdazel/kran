@@ -11,7 +11,7 @@ jatuh tempo/ARO deposito berjangka). UI teller = T-088d.
 
 | Tabel | Isi |
 |---|---|
-| `deposit.account` | Identitas rekening: `account_no` (unik), `party_id`, `product_id`, `product_version_id`, `branch_id`, `account_type` (`SAVINGS`/`TIME_DEPOSIT`), `status` (`ACTIVE`/`CLOSED`/`DORMANT` — `0071`), `opened_on`, plus `maturity_date`/`aro_instruction`/`last_activity` untuk deposito berjangka (nullable, T-138b). Satu cabang per rekening. |
+| `deposit.account` | Identitas rekening: `account_no` (unik), `party_id`, `product_id`, `product_version_id`, `branch_id`, `account_type` (`SAVINGS`/`TIME_DEPOSIT`), `status` (`ACTIVE`/`CLOSED`/`DORMANT` — `0071`), `opened_on`, plus `maturity_date`/`aro_instruction` untuk deposito berjangka (nullable, T-138b); `last_activity` dibuang `deposit/0075` (D-170). Satu cabang per rekening. |
 | `deposit.account_balance` | Satu baris per rekening: `balance numeric(24,2)` dengan CHECK `balance >= 0`. Cache; sumber kebenaran tetap jurnal ledger (spec §9.1(4)). |
 | `deposit.transaction` | Subledger rekening: `tx_type` (`CASH_DEPOSIT`/`CASH_WITHDRAWAL` dari teller, `MATURITY_OUT`/`MATURITY_IN`/`INTEREST_CREDIT` dari jatuh tempo deposito — `0068`, `INTEREST_PAID_EARLY`/`PENALTY_CHARGE` dari PB pencairan dini — `0074`), `account_id`, `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (FK `ledger.journal`, UNIQUE **`(journal_id, account_id)`**). Satu baris = satu jurnal per rekening; satu jurnal boleh mencatat dua rekening untuk perpindahan jatuh tempo (`NONE`). |
 | `deposit.transfer` | Pemindahbukuan/PB (T-088c): `source_account_id` + `destination_account_id` (FK `deposit.account`, CHECK berbeda), `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (UNIQUE, FK `ledger.journal`). Satu baris = satu perpindahan = satu jurnal. |
@@ -111,7 +111,7 @@ Deposito berjangka adalah **rekening yang sama** dengan `account_type = TIME_DEP
 terpisah. Migrasi `deposit/0064_deposit_time_deposit` (bertanda `-- dbtools:contract` karena
 mengganti CHECK `account_type` bawaan `0003`; `DROP CONSTRAINT` adalah DDL merusak yang dilarang
 jalur expand) menambah `maturity_date`, `aro_instruction`
-(`NONE`/`PRINCIPAL`/`PRINCIPAL_AND_INTEREST`), dan `last_activity` — semuanya **nullable**, tanpa
+(`NONE`/`PRINCIPAL`/`PRINCIPAL_AND_INTEREST`) — semuanya **nullable**, tanpa
 backfill: rekening tabungan tidak punya jatuh tempo. Domain hanya mengenal tipe barunya
 (`AccountType.atTimeDeposit`); perilaku jatuh tempo/ARO ada di T-138d, akrual di T-138c, dan dormant
 di T-138e (lihat bagian masing-masing).
@@ -223,11 +223,15 @@ lebih lama dari parameter `deposit.dormant.after_months` (default 12) sebagai `D
 mengembalikan `DORMANT` ke `ACTIVE` begitu ada aktivitas lagi.
 
 - **Aktivitas** = `max(business_date)` dari `deposit.transaction` dan `deposit.transfer` (kedua
-  sisi), dengan `opened_on` sebagai batas bawah. **Bukan** kolom `deposit.account.last_activity`:
-  kolom itu tidak pernah ditulis jalur transaksi mana pun (O-111).
+  sisi), dengan `opened_on` sebagai batas bawah. **Bukan** kolom tersendiri: kolom
+  `last_activity` sudah dibuang oleh `deposit/0075` (D-170, O-111) supaya tidak ada sumber kedua
+  yang selalu kosong.
 - **Batas** memakai `<` terhadap `tanggal buku − N bulan` (aritmetika kalender PostgreSQL).
 - **Populasi yang dipaginasi** = `ACTIVE` + `DORMANT`, sehingga perpindahan status di antara
   keduanya tidak menggeser offset.
+- **Audit** = satu entri `deposit.dormant.chunk` per chunk yang benar-benar mengubah status, berisi
+  daftar rekening `dormant`/`reactivated` dan ditulis di transaksi yang sama dengan perubahan itu
+  (`resource_type = daycloser_run`, D-170). Chunk tanpa perubahan tidak menulis audit.
 - **Tidak ada uang yang bergerak**: hanya `status`, `updated_by`, dan `updated_at` yang ditulis.
   Keputusan diulang **di dalam** `UPDATE` (`markDormantIfStale`/`reactivateIfActive`), jadi setoran
   yang commit setelah halaman dibaca tidak diabaikan. Audit per transisi belum ada (O-113), dan

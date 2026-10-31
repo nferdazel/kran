@@ -278,6 +278,15 @@ proc stateOf(accountId: Id): tuple[status, maturity: string] =
     return ("", "")
   (row[0][0], row[0][1])
 
+proc auditCount(action: string): int =
+  parseInt(db.getValue(sql"""
+    SELECT count(*)::text FROM platform.audit_log WHERE action = ?""", action))
+
+proc lastAuditPayload(action: string): JsonNode =
+  parseJson(db.getValue(sql"""
+    SELECT coalesce(after_value::text, '{}') FROM platform.audit_log
+     WHERE action = ? ORDER BY seq DESC LIMIT 1""", action))
+
 proc transactionsOf(accountId: Id; txType: TransactionType):
     seq[tuple[amount, businessDate, journalId, narration: string]] =
   for row in db.getAllRows(sql"""
@@ -881,10 +890,47 @@ suite "dormant: penandaan status (T-138e)":
   test "run ulang tidak menandai dua kali (idempoten)":
     let first = runDormantAt(DormantRunDate)
     check first.isOk
+    let auditBefore = auditCount("deposit.dormant.chunk")
     let again = runDormantAt(DormantRunDate)
     check again.isOk
     check again.value().metrics["dormant"].getInt() == 0
     check again.value().metrics["reactivated"].getInt() == 0
+    # Run tanpa perubahan status tidak boleh menumpuk audit (D-170).
+    check auditCount("deposit.dormant.chunk") == auditBefore
+
+  test "perubahan status menulis satu audit per chunk berisi rekening yang berubah":
+    seedDormantMonths(DormantMonths)
+    let staleId = timeDeposit(std.version, std.product.code, "2024-01-01", "1000000.00")
+    let reactivateId = timeDeposit(std.version, std.product.code, "2024-01-01", "1000000.00")
+
+    # Penandaan: satu entri audit untuk chunk, dengan rekening yang berubah di payload.
+    let beforeDormant = auditCount("deposit.dormant.chunk")
+    check runDormantAt(DormantRunDate).isOk
+    check auditCount("deposit.dormant.chunk") == beforeDormant + 1
+    let markPayload = lastAuditPayload("deposit.dormant.chunk")
+    var marked: seq[string]
+    for id in markPayload["dormant"]:
+      marked.add id.getStr()
+    check $staleId in marked
+    check markPayload["afterMonths"].getInt() == DormantMonths
+    check markPayload["businessDate"].getStr() == DormantRunDate
+    check stateOf(staleId).status == "DORMANT"
+    check stateOf(reactivateId).status == "DORMANT"
+
+    # Reaktivasi: aktivitas baru mengembalikan status, dan auditnya menyebut rekening itu.
+    seedPrincipalMovement(std.version, std.product.code, $reactivateId, "1000.00", "2026-10-20")
+    execScript(db, """
+      UPDATE deposit.account_balance SET balance = balance + 1000.00
+       WHERE account_id = '""" & $reactivateId & """'""")
+    let beforeActive = auditCount("deposit.dormant.chunk")
+    check runDormantAt(DormantRunDate).isOk
+    check auditCount("deposit.dormant.chunk") == beforeActive + 1
+    let reactivatePayload = lastAuditPayload("deposit.dormant.chunk")
+    var reactivated: seq[string]
+    for id in reactivatePayload["reactivated"]:
+      reactivated.add id.getStr()
+    check $reactivateId in reactivated
+    check stateOf(reactivateId).status == "ACTIVE"
 
   test "parameter ambang hilang = DAY-351 tanpa mengubah status":
     let accountId = timeDeposit(std.version, std.product.code, "2024-01-01", "1000000.00")

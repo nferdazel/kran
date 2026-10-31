@@ -4458,3 +4458,33 @@ ditutup dengan pesan eksplisit (fail-closed) — cegah teller menyetor ke sesi c
 
 **Konsekuensi.** Peran `teller` diberi izin baca master cabang (migrasi `platform/0075`), sama seperti
 peran operator lain sejak `0037`. Tidak ada perubahan kontrak API.
+
+## D-170 — Kolom `last_activity` dibuang, perubahan dormant diaudit per chunk (31 Okt 2026)
+
+**Konteks.** D-157 memutuskan aktivitas dormant dibaca dari subledger (`deposit.transaction` +
+`deposit.transfer`), sehingga kolom `deposit.account.last_activity` (ditambahkan `0064` untuk maksud
+itu) selalu kosong. O-111 mencatat dua pilihan: hapus kolomnya atau isi di setiap jalur mutasi.
+O-113 mencatat bahwa perubahan status dormant tidak meninggalkan jejak audit.
+
+**Keputusan.**
+
+1. **Kolom dibuang** lewat migrasi kontrak `deposit/0075` (terdaftar di
+   `ops/migrations/contract-auto.txt`). Alasannya: tidak ada konsumen (kode, laporan, query) yang
+   membacanya, isinya selalu NULL, dan memelihara dua sumber kebenaran untuk "aktivitas terakhir"
+   adalah cara paling mudah membuat laporan dan deteksi dormant berbeda pendapat. Opsi (b) — menulis
+   kolom di semua jalur mutasi — ditolak karena menambah jalur tulis yang harus dijaga di setiap
+   fitur baru tanpa menghilangkan agregasi subledger yang sudah dipakai.
+2. **Audit per chunk**, bukan per rekening: satu entri `deposit.dormant.chunk` bertipe resource
+   `daycloser_run` (run id), berisi `businessDate`, `afterMonths`, `chunkNo`, dan daftar `dormant`
+   serta `reactivated`. Daftar rekening ikut supaya auditor tetap bisa menelusuri satu rekening;
+   jumlah barisnya mengikuti jumlah chunk (bukan jumlah rekening), jadi penandaan massal 100 ribu
+   rekening tidak menulis 100 ribu baris audit. Opsi per rekening ditolak karena alasan biaya itu,
+   opsi "terima `updated_at`" ditolak karena tidak menjawab siapa/atas dasar apa.
+3. **Audit ditulis di transaksi yang sama** dengan perubahan status: bila jejaknya gagal, statusnya
+   tidak berubah (task `FAILED`, bisa diulang). Run yang tidak mengubah status tidak menulis audit,
+   sehingga run ulang tetap idempoten.
+
+**Konsekuensi.** Kode yang ingin tahu aktivitas terakhir wajib memakai agregasi subledger
+(`dormant_repo`), bukan kolom. Bila kelak kolom diperlukan, tambahkan kolom + jalur tulis + penjaga,
+bukan menghidupkan kembali jalur lama. Pemetaan audit `daycloser_run` tetap konsisten dengan
+`daycloser.run.finish` yang sudah ada.

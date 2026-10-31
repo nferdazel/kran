@@ -11,3 +11,4 @@ deposit/0068_deposit_transaction_maturity
 deposit/0071_deposit_account_dormant_status
 deposit/0072_deposit_account_last_activity_comment
 deposit/0074_deposit_early_withdrawal_transfer_types
+deposit/0075_deposit_drop_last_activity

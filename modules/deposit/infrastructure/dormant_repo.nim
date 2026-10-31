@@ -1,12 +1,10 @@
 ## Repositori deteksi dormant rekening (T-138e, D-152 butir 4). SQL murni: ambang bulan dan
 ## keputusan status ada di composition root (`apps/api/src/daycloser_deposit.nim`).
 ##
-## **Aktivitas diambil dari subledger, bukan dari kolom `deposit.account.last_activity`.** Kolom itu
-## ada sejak `0064` tetapi tidak pernah ditulis jalur transaksi mana pun; membacanya berarti semua
-## rekening terlihat tidak aktif sejak dibuka. Sumber yang dipakai di sini adalah baris yang memang
-## mencatat mutasi rekening: `deposit.transaction` (tunai + perpindahan jatuh tempo) dan
-## `deposit.transfer` (pemindahbukuan, kedua sisi). Satu sumber, tidak bisa melenceng dari data yang
-## dipakai rekonsiliasi. Lihat D-157 dan O-111.
+## **Aktivitas diambil dari subledger.** Sumbernya baris yang memang mencatat mutasi rekening:
+## `deposit.transaction` (tunai + perpindahan jatuh tempo) dan `deposit.transfer` (pemindahbukuan,
+## kedua sisi). Satu sumber, tidak bisa melenceng dari data yang dipakai rekonsiliasi. Kolom
+## `deposit.account.last_activity` yang dulu ada untuk ini sudah dibuang (D-170). Lihat D-157, O-111.
 ##
 ## **Paginasi memakai himpunan yang stabil.** Himpunan yang dipaginasi adalah rekening `ACTIVE` **dan**
 ## `DORMANT`; task hanya memindahkan status di antara keduanya, jadi keanggotaan himpunan tidak
