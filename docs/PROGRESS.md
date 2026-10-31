@@ -3741,3 +3741,16 @@ diturunkan dari `Idempotency-Key` (`tellerJournalSubKey`), bukan `transferId`; `
 penjaga respons basi; daftar cabang kosong punya pesan; test baru untuk penalti 0% (tanpa jurnal
 penalti), PB ke rekening berjangka (tetap 409), dan Δ subledger vs GL (`201`+`202`) yang tidak
 berubah karena PB — bukti klaim gate `ledger.subledger_vs_gl`. `itapi_teller` kini **58 OK**.
+
+## 2026-10-31 — T-142 ditutup: 13/13 layar memakai komponen bersama
+
+Sisa pekerjaan migrasi desain v2 selesai. CSS lokal di `apps/web/src/routes` turun dari ≈1.344 ke
+**101 baris**, dan hanya tiga layar masih punya blok `<style>`: `teller` 73 (dua kolom kerja, fieldset
+arah, penanda tabular), `ledger` 18 (lebar kolom, kolom kode sticky, cincin fokus sel), `ledger/admin`
+10 (digit tabular, target checkbox 24 px). Semuanya tata letak khas layar; tidak ada judul, toolbar,
+field, tombol, atau tabel yang didefinisikan ulang. Bukti: `grep -rl "<style>"` = 3 berkas, axe
+`moderate` hijau 2 tema × 2 locale, Playwright 63 lulus 0 skip, `svelte-check` 0/0.
+
+Dengan ini **tidak ada lagi task `TODO`/`READY`** di `docs/BACKLOG.md`; sisa pekerjaan hanya butir
+`docs/OPEN_ITEMS.md` yang menunggu keputusan pemilik atau sudah diterima sebagai batas
+(`docs/ACCEPTED-LIMITS.md`).
