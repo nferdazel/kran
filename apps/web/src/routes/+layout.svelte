@@ -16,6 +16,7 @@
 
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
+  import { resolve } from "$app/paths";
   import { page } from "$app/state";
 
   import * as m from "#lib/paraglide/messages.js";
@@ -77,7 +78,7 @@
       // Sesi yang sudah tidak sah tetap harus membawa pengguna keluar dari layar ini: kegagalan
       // jaringan tidak boleh membuat tombol "Keluar" tampak tidak bekerja.
     }
-    await goto("/login");
+    await goto(resolve("/login"));
   }
 
   const themeChoices: readonly ThemeChoice[] = ["system", "light", "dark"];
@@ -187,7 +188,7 @@
         {#if sessionName !== ""}
           <div class="kran-nav__session">
             <p class="kran-nav__who">{m.app_signed_in_as({ name: sessionName })}</p>
-            <a class="kran-button" href="/app/password">{m.app_change_password()}</a>
+            <a class="kran-button" href={resolve("/app/password")}>{m.app_change_password()}</a>
             <button class="kran-button" type="button" onclick={logout}>{m.app_logout()}</button>
           </div>
         {/if}

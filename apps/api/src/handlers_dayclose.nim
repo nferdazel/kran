@@ -10,13 +10,13 @@ import mummy
 import db_connector/db_postgres
 
 import kernel/[dayclose, ids, result]
-import platform/domain/calendar
 import platform/domain/scope
 import platform/infrastructure/calendar_repo
 import daycloser/domain/[run, types]
 import daycloser/infrastructure/run_repo
 
 import ./access
+import ./business_date_view
 import ./context
 import ./db_bridge
 import ./daycloser_service
@@ -108,11 +108,6 @@ proc runDetailJson(snap: RunSnapshot): JsonNode =
   for t in snap.tasks:
     tasks.add taskJson(t)
   result["tasks"] = tasks
-
-proc businessDateJson(row: BusinessDateRow): JsonNode =
-  ## `frozenAt` = waktu state terakhir berubah. Tanggal `OPEN` belum beku, jadi `null`.
-  let frozenAt = if row.state == bdsOpen: newJNull() else: %row.updatedAt
-  %*{"date": row.currentDate, "state": $row.state, "frozenAt": frozenAt}
 
 proc handleDayCloseStatus*(app: AppContext, req: Request) {.gcsafe.} =
   ## `GET /api/v1/dayclose/status` — tanggal buku + run aktif + run terakhir.
