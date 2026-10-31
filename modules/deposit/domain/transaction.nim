@@ -30,17 +30,23 @@ type
     cdDeposit = "DEPOSIT"
     cdWithdrawal = "WITHDRAWAL"
 
-  ## Tipe baris `deposit.transaction` (cermin CHECK kolom DB, migrasi `deposit/0068`).
+  ## Tipe baris `deposit.transaction` (cermin CHECK kolom DB, migrasi `deposit/0068` + `0074`).
   ##
   ## `MATURITY_*`/`INTEREST_CREDIT` (T-138d) bukan transaksi tunai: jatuh tempo deposito
   ## memindahkan saldo antar-rekening dan membayar bunga akrual tanpa kas yang bergerak. Memakai
   ## `CASH_*` untuk keduanya akan berbohong di rekening koran anggota dan di rekonsiliasi.
+  ##
+  ## `INTEREST_PAID_EARLY`/`PENALTY_CHARGE` (T-148) adalah dua sisi PB pencairan dini di **rekening
+  ## tujuan**: bunga menambah saldo, penalti memotongnya. Sumber tidak punya baris sendiri karena
+  ## pengurangan pokoknya sudah diwakili `deposit.transfer` (D-164).
   TransactionType* = enum
     ttCashDeposit = "CASH_DEPOSIT"
     ttCashWithdrawal = "CASH_WITHDRAWAL"
     ttMaturityOut = "MATURITY_OUT"
     ttMaturityIn = "MATURITY_IN"
     ttInterestCredit = "INTEREST_CREDIT"
+    ttInterestPaidEarly = "INTEREST_PAID_EARLY"
+    ttPenaltyCharge = "PENALTY_CHARGE"
 
   Transaction* = object
     transactionId*: Id
@@ -81,7 +87,7 @@ proc cashDirectionOf*(t: TransactionType): CashDirection =
   case t
   of ttCashDeposit: cdDeposit
   of ttCashWithdrawal: cdWithdrawal
-  of ttMaturityOut, ttMaturityIn, ttInterestCredit:
+  of ttMaturityOut, ttMaturityIn, ttInterestCredit, ttInterestPaidEarly, ttPenaltyCharge:
     raise newException(ValueError,
       "jenis transaksi " & $t & " bukan transaksi tunai (tidak punya arah kas)")
 
@@ -94,8 +100,16 @@ proc statementDirectionOf*(t: TransactionType): string =
   ## mengurangi. Semua jenis baris punya arah saldo, termasuk yang tidak memindahkan kas —
   ## karena itu arah statement tidak boleh diturunkan dari `cashDirectionOf`.
   case t
-  of ttCashDeposit, ttMaturityIn, ttInterestCredit: "IN"
-  of ttCashWithdrawal, ttMaturityOut: "OUT"
+  of ttCashDeposit, ttMaturityIn, ttInterestCredit, ttInterestPaidEarly: "IN"
+  of ttCashWithdrawal, ttMaturityOut, ttPenaltyCharge: "OUT"
+
+proc statementKindOf*(t: TransactionType): string =
+  ## `kind` baris rekening koran: `CASH` hanya untuk transaksi tunai teller, `EARLY_WITHDRAWAL`
+  ## untuk bunga/penalti pencairan dini, sisanya `MATURITY` (perpindahan jatuh tempo). Dipusatkan di
+  ## domain supaya composition root tidak menebak dari biner "tunai atau bukan" (T-148).
+  if isCashTransaction(t): "CASH"
+  elif t in {ttInterestPaidEarly, ttPenaltyCharge}: "EARLY_WITHDRAWAL"
+  else: "MATURITY"
 
 proc sourceEventOf*(d: CashDirection): string =
   ## Event ledger yang dipakai posting rule: setor = `DepositPosted` (D 101/K 201),

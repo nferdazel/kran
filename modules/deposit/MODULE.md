@@ -13,7 +13,7 @@ jatuh tempo/ARO deposito berjangka). UI teller = T-088d.
 |---|---|
 | `deposit.account` | Identitas rekening: `account_no` (unik), `party_id`, `product_id`, `product_version_id`, `branch_id`, `account_type` (`SAVINGS`/`TIME_DEPOSIT`), `status` (`ACTIVE`/`CLOSED`/`DORMANT` — `0071`), `opened_on`, plus `maturity_date`/`aro_instruction`/`last_activity` untuk deposito berjangka (nullable, T-138b). Satu cabang per rekening. |
 | `deposit.account_balance` | Satu baris per rekening: `balance numeric(24,2)` dengan CHECK `balance >= 0`. Cache; sumber kebenaran tetap jurnal ledger (spec §9.1(4)). |
-| `deposit.transaction` | Subledger rekening: `tx_type` (`CASH_DEPOSIT`/`CASH_WITHDRAWAL` dari teller, `MATURITY_OUT`/`MATURITY_IN`/`INTEREST_CREDIT` dari jatuh tempo deposito — `0068`), `account_id`, `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (FK `ledger.journal`, UNIQUE **`(journal_id, account_id)`**). Satu baris = satu jurnal per rekening; satu jurnal boleh mencatat dua rekening untuk perpindahan jatuh tempo (`NONE`). |
+| `deposit.transaction` | Subledger rekening: `tx_type` (`CASH_DEPOSIT`/`CASH_WITHDRAWAL` dari teller, `MATURITY_OUT`/`MATURITY_IN`/`INTEREST_CREDIT` dari jatuh tempo deposito — `0068`, `INTEREST_PAID_EARLY`/`PENALTY_CHARGE` dari PB pencairan dini — `0074`), `account_id`, `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (FK `ledger.journal`, UNIQUE **`(journal_id, account_id)`**). Satu baris = satu jurnal per rekening; satu jurnal boleh mencatat dua rekening untuk perpindahan jatuh tempo (`NONE`). |
 | `deposit.transfer` | Pemindahbukuan/PB (T-088c): `source_account_id` + `destination_account_id` (FK `deposit.account`, CHECK berbeda), `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (UNIQUE, FK `ledger.journal`). Satu baris = satu perpindahan = satu jurnal. |
 
 `deposit.account_seq` memberi nomor urut rekening. **Nomor berkas tidak berurutan rapat**: tabel
@@ -195,11 +195,18 @@ Keputusan per `aro_instruction` (D-155):
 - **Proses terlambat lebih dari satu tenor** menahan task dengan `DAY-349`: tanggal jatuh tempo baru
   sudah lewat lagi, dan melanjutkan berarti membayar bunga siklus yang sama dua kali.
 - Kode kegagalan `DAY-340`…`DAY-349` serta `DAY-354` ada di runbook + katalog i18n (id+en).
-- **Pencairan dini (tarik tunai)** ada di `handlers_teller` (D-164): penuh, sebelum jatuh tempo,
-  penalti persen dari pokok dari atribut produk, bunga dibayar sampai tanggal cair, rekening
-  `CLOSED`. PB keluar ditunda ke T-148 karena butuh jenis baris subledger untuk debit penalti.
-- **Batas yang belum tertutup**: PB keluar untuk pencairan dini (T-148), dan belum ada endpoint
-  untuk membuka deposito berjangka.
+- **Pencairan dini** ada di `handlers_teller` (D-164/D-168): penuh, sebelum jatuh tempo, penalti
+  persen dari pokok dari atribut produk, bunga dibayar sampai tanggal cair, rekening `CLOSED`, dan
+  `min_balance` produk tidak berlaku karena rekening berakhir di nol.
+  - **Tarik tunai**: `DepositWithdrawn` 202/101.2, `InterestPaidEarly` 204/101.2,
+    `EarlyWithdrawalPenalty` 101.2/403; kas laci = `pokok + bunga − penalti`.
+  - **PB keluar**: `deposit.transfer.amount` = pokok (jurnal `DepositWithdrawnViaTransfer` 202/201),
+    bunga dan penalti menjadi baris subledger bertanda di rekening tujuan
+    (`INTEREST_PAID_EARLY` +, `PENALTY_CHARGE −`) dengan jurnal `InterestPaidEarlyViaTransfer` (204/201)
+    dan `EarlyWithdrawalPenaltyViaTransfer` (201/403). Rekening koran memakai `kind`
+    `EARLY_WITHDRAWAL` untuk kedua baris itu.
+- **Batas yang belum tertutup**: belum ada endpoint untuk membuka deposito berjangka; setoran tunai
+  di tengah tenor masih membuat akrual menilai ulang hari sebelumnya pada pokok baru.
 - **NEEDS-COMPLIANCE-REVIEW** (kode akun `202`/`204`/`501`) dan **HUMAN-REVIEW-REQUIRED** (pergerakan
   uang jatuh tempo, AGENTS.md §8) tetap berlaku.
 

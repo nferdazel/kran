@@ -39,6 +39,7 @@ type Text = {
   even: string;
   openStatus: string;
   sessionTransactions: string;
+  branchLabel: string;
 };
 
 const T: Record<"id" | "en", Text> = {
@@ -58,6 +59,7 @@ const T: Record<"id" | "en", Text> = {
     even: "Tidak ada selisih",
     openStatus: "Terbuka",
     sessionTransactions: "Transaksi sesi",
+    branchLabel: "Cabang kas",
   },
   en: {
     loginTitle: "Sign in",
@@ -75,6 +77,7 @@ const T: Record<"id" | "en", Text> = {
     even: "No variance",
     openStatus: "Open",
     sessionTransactions: "Session transactions",
+    branchLabel: "Cash branch",
   },
 };
 
@@ -204,6 +207,34 @@ async function focusAndEnter(page: Page, name: string): Promise<void> {
 }
 
 test.describe.serial("teller: sesi kas, setor, tutup", () => {
+  test("buka kas tanpa memuat rekening anggota (T-141)", async ({ page, request }) => {
+    test.setTimeout(180_000);
+    const maker = await apiLogin(request, MAKER);
+    await closeLeftoverSession(request, maker);
+    const text = T.id;
+
+    await prepare(page, "id", "light");
+    await login(page, text);
+    await page.goto("/app/teller");
+    const panel = page.getByRole("region", { name: "Sesi kas" });
+    // Rekening belum dimuat: panel tetap bisa membuka kas untuk cabang yang dipilih.
+    await page.getByLabel(text.branchLabel, { exact: true }).selectOption(BRANCH);
+    await expect(panel.getByRole("button", { name: text.sessionOpen })).toBeVisible();
+    await panel.getByRole("button", { name: text.sessionOpen }).click();
+    await page.getByLabel(text.floatLabel, { exact: true }).fill("1000");
+    await panel.getByRole("button", { name: text.review }).click();
+    await panel.getByRole("button", { name: text.sessionOpen }).click();
+    await expect(panel.getByText(text.openStatus)).toBeVisible();
+    // Rekening memang belum dimuat: tombol muat rekening masih ada.
+    await expect(page.getByRole("button", { name: text.load })).toBeVisible();
+
+    await panel.getByRole("button", { name: text.sessionClose }).click();
+    await page.getByLabel(text.countedLabel, { exact: true }).fill("1000");
+    await panel.getByRole("button", { name: text.review }).click();
+    await panel.getByRole("button", { name: text.sessionClose }).click();
+    await expect(page.getByRole("heading", { name: text.closed })).toBeVisible();
+  });
+
   test("alur keyboard-only: buka sesi → setor → tutup tanpa selisih", async ({
     page,
     request,

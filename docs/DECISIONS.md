@@ -4417,3 +4417,44 @@ bukan mengasumsikan satu baris = satu jurnal.
 
 **Konsekuensi.** O-110 ditutup tanpa perubahan skema. Bila kelak ada laporan yang mengasumsikan
 satu baris per jurnal, laporan itu yang menyesuaikan.
+
+## D-168 — PB pencairan dini: `deposit.transfer` tetap pokok, bunga dan penalti jadi baris subledger bertanda (31 Okt 2026)
+
+**Konteks.** Sisa O-108: PB keluar dari deposito berjangka sebelum jatuh tempo. Tujuan harus menerima
+`pokok + bunga − penalti`, sedangkan `deposit.transfer` hanya punya satu nominal dan
+`deposit.transaction` belum punya jenis untuk **debit** penalti di rekening tujuan. Menumpangkan
+penalti ke `INTEREST_CREDIT` hanya benar bila bunga ≥ penalti.
+
+**Keputusan.**
+- `deposit.transfer.amount` tetap **pokok** — itulah kewajiban yang berpindah `202 → 201` pada jurnal
+  pokok, dan aritmetika rekonsiliasi existing (`incoming`/`outgoing`) tetap sahih.
+- Dua jenis baris baru di `deposit.transaction`, keduanya di **rekening tujuan**:
+  `INTEREST_PAID_EARLY` (menambah saldo) dan `PENALTY_CHARGE` (mengurangi saldo). Sumber tidak
+  mendapat baris sendiri karena pengurangan pokoknya sudah diwakili `deposit.transfer`.
+- Tiga rule baru dengan `event_type` sendiri (bukan kondisi pada rule kas): `DepositWithdrawnViaTransfer`
+  (D 202 / K 201), `InterestPaidEarlyViaTransfer` (D 204 / K 201), `EarlyWithdrawalPenaltyViaTransfer`
+  (D 201 / K 403). Rule `0073` untuk jalur tunai tidak diubah.
+- Rekening koran memakai `kind` baru `EARLY_WITHDRAWAL` untuk kedua baris itu; arah mengikuti tanda
+  saldo. Pemetaan `kind` dipusatkan di domain (`statementKindOf`), bukan biner "tunai atau bukan".
+- **Pencairan penuh tidak tunduk pada `min_balance` produk**: rekening ditutup dan berakhir di nol.
+  Berlaku untuk jalur tunai maupun PB (`decreaseBalanceToZero`), karena sebelumnya produk dengan
+  saldo minimum > 0 menolak pencairan penuh dengan `insufficient_funds`.
+
+**Konsekuensi.** Penalti > bunga kini benar di rekonsiliasi (tanda sendiri), dan gate subledger tetap
+seimbang karena perubahan total `201+202` sama dengan perubahan total saldo. Pemetaan akun masih
+struktur pilot (`NEEDS-COMPLIANCE-REVIEW`). Peran `teller` mendapat `platform.branch.read` supaya
+layar kas bisa membuka sesi cabang tanpa memuat rekening (T-141).
+
+## D-169 — Cabang sesi kas dipilih di panel, bukan diturunkan dari rekening (31 Okt 2026)
+
+**Konteks.** DESIGN §11 menyebut layar kas sebagai stasiun kerja: membuka kas tidak boleh bergantung
+pada memuat rekening anggota. Layar sebelumnya memakai cabang rekening yang dimuat, sehingga tidak ada
+cara membuka kas lebih dulu; peran `teller` juga belum memegang `platform.branch.read`.
+
+**Keputusan.** Panel sesi menampilkan pemilih cabang (`GET /api/v1/branches`) dan memuat sesi untuk
+cabang itu. Memuat rekening **mengisi** pilihan tersebut dengan cabang rekening, karena transaksi tunai
+wajib memakai sesi di cabang rekening. Bila cabang sesi berbeda dari cabang rekening, form transaksi
+ditutup dengan pesan eksplisit (fail-closed) — cegah teller menyetor ke sesi cabang lain.
+
+**Konsekuensi.** Peran `teller` diberi izin baca master cabang (migrasi `platform/0075`), sama seperti
+peran operator lain sejak `0037`. Tidak ada perubahan kontrak API.

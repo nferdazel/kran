@@ -31,6 +31,8 @@ WITH typed AS (
            WHEN 'MATURITY_OUT' THEN -1
            WHEN 'MATURITY_IN' THEN 1
            WHEN 'INTEREST_CREDIT' THEN 1
+           WHEN 'INTEREST_PAID_EARLY' THEN 1
+           WHEN 'PENALTY_CHARGE' THEN -1
          END AS sign
     FROM deposit.transaction t
 ), cash AS (

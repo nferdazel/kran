@@ -97,3 +97,17 @@ proc transactionsForStatement*(db: DbConn, accountId: Id, fromDate, toDate: stri
        ORDER BY business_date, created_at
        LIMIT ?::int"""), $accountId, fromDate, toDate, $limit):
     result.add transactionOf(row)
+
+proc decreaseBalanceToZero*(db: DbConn, accountId: Id, amount: Money): Option[Money] =
+  ## Pencairan penuh (penutupan rekening): saldo **harus** sama dengan nominal, dan hasilnya nol.
+  ## `min_balance` produk **tidak** berlaku di sini — saldo minimum menjaga rekening tetap hidup,
+  ## sedangkan rekening yang ditutup berakhir di nol. Tanpa proc ini, produk berjangka dengan
+  ## `min_balance > 0` menolak pencairan penuh dengan `insufficient_funds` padahal saldo tepat.
+  let rows = db.getAllRows(sql"""
+      UPDATE deposit.account_balance
+         SET balance = 0, updated_at = now()
+       WHERE account_id = ? AND balance = ?::numeric
+       RETURNING balance::text""", $accountId, amount.toDecimalString)
+  if rows.len == 0:
+    return none(Money)
+  some(moneyFromString(rows[0][0]).value())

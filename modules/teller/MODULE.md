@@ -1,6 +1,8 @@
 # Modul `teller` — sesi kas teller + vault
 
-Sesi kas teller, vault per cabang, dan arus kas laci (spec §9.2, §11.6, §13, §23 Fase 2).
+Sesi kas teller, vault per cabang, dan arus kas laci (spec §9.2, §11.6, §13, §23 Fase 2). Layar kas
+adalah stasiun kerja (DESIGN §11): sesi dibuka untuk cabang yang dipilih lebih dulu, tanpa menunggu
+rekening anggota (T-141, D-169); peran `teller` karena itu memegang `platform.branch.read`.
 Menjawab pertanyaan "berapa kas yang seharusnya ada di laci teller X di cabang Y hari ini", dan
 menggerbang transaksi tunai supaya angka itu punya arti.
 

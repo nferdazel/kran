@@ -105,13 +105,43 @@ proc penaltyRateFor(db: DbConn; versionId: Id): Option[Rate] =
 proc cashPaid(early: EarlyWithdrawal): Money =
   early.principal + early.interest - early.penalty
 
-proc earlyWithdrawalJson(early: EarlyWithdrawal): JsonNode =
+proc earlyWithdrawalJson(early: EarlyWithdrawal; credited: Money): JsonNode =
+  ## `cashPaid` = uang yang keluar di jalur tunai; `creditedAmount` = dana yang masuk di jalur PB.
+  ## Keduanya rumus yang sama (`pokok + bunga − penalti`), tetapi namanya harus jujur per kanal.
   %*{
     "principal": early.principal.toDecimalString,
     "interest": early.interest.toDecimalString,
     "penalty": early.penalty.toDecimalString,
-    "cashPaid": cashPaid(early).toDecimalString,
+    "cashPaid": credited.toDecimalString,
   }
+
+proc earlyWithdrawalFor(db: DbConn; account: Account; amount: Money; businessDate: string):
+    tuple[reason, problem: string, detail: EarlyWithdrawal] =
+  ## Rincian pencairan dini (T-146/T-148). `reason == ""` berarti sah; selebihnya pemanggil
+  ## memetakannya ke 409. Aturan yang sama dipakai jalur tunai dan PB: penuh, sebelum jatuh tempo,
+  ## penalti dari binding produk (tanpa binding = ditolak, bukan nol), dan kas bersih harus positif.
+  let maturity = maturityDateOf(db, account.accountId)
+  if maturity.len == 0 or businessDate >= maturity:
+    return ("time_deposit_locked",
+      "penarikan deposito berjangka hanya untuk pencairan dini sebelum jatuh tempo",
+      EarlyWithdrawal())
+  if amount != account.balance:
+    return ("time_deposit_partial_withdrawal",
+      "pencairan dini deposito berjangka harus penuh sebesar saldo", EarlyWithdrawal())
+  let rateOpt = penaltyRateFor(db, account.productVersionId)
+  if rateOpt.isNone:
+    return ("early_withdrawal_penalty_missing",
+      "produk rekening belum mengikat " & earlyWithdrawalPenaltyKey &
+        "; pencairan dini tidak bisa dihitung", EarlyWithdrawal())
+  let detail = EarlyWithdrawal(principal: amount,
+    interest: accruedUnpaidInterest(db, account.accountId),
+    penalty: applyRate(amount, rateOpt.get()))
+  if not cashPaid(detail).isPositive:
+    # Penalti ≥ pokok + bunga: konfigurasi produk tidak masuk akal, dan tidak ada dana yang bisa
+    # diserahkan/dikreditkan.
+    return ("early_withdrawal_penalty_too_high",
+      "penalti pencairan dini melebihi pokok + bunga yang dibayarkan", EarlyWithdrawal())
+  ("", "", detail)
 
 proc respondConflict(req: Request, reason, detail: string) =
   ## 409 dengan `reason` supaya klien bisa membedakan penyebab tanpa menebak dari `detail`.
@@ -136,7 +166,7 @@ proc cashTransactionJson(tx: Transaction, direction: CashDirection, balanceAfter
     "businessDate": tx.businessDate,
   }
   if early.isSome:
-    result["earlyWithdrawal"] = earlyWithdrawalJson(early.get())
+    result["earlyWithdrawal"] = earlyWithdrawalJson(early.get(), cashPaid(early.get()))
 
 proc cashTransactionSlipJson(tx: Transaction, accountNo: string): JsonNode =
   ## Slip cetak ulang (T-094a). **Tanpa** `balanceAfter`: saldo per transaksi tidak disimpan, dan
@@ -335,33 +365,12 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
             # berkurang di tengah tenor membuat `DAY-335` menahan penutupan tanpa jalan keluar.
             var early: Option[EarlyWithdrawal] = none(EarlyWithdrawal)
             if direction == cdWithdrawal and account.accountType == atTimeDeposit:
-              let maturity = maturityDateOf(db, account.accountId)
-              if maturity.len == 0 or businessDate >= maturity:
+              let (denyReason, denyProblem, detail) =
+                earlyWithdrawalFor(db, account, amount, businessDate)
+              if denyReason.len > 0:
                 status = 409
-                reason = "time_deposit_locked"
-                problem = "penarikan deposito berjangka hanya untuk pencairan dini sebelum jatuh tempo"
-                raise newException(ValueError, problem)
-              if amount != account.balance:
-                status = 409
-                reason = "time_deposit_partial_withdrawal"
-                problem = "pencairan dini deposito berjangka harus penuh sebesar saldo"
-                raise newException(ValueError, problem)
-              let rateOpt = penaltyRateFor(db, account.productVersionId)
-              if rateOpt.isNone:
-                status = 409
-                reason = "early_withdrawal_penalty_missing"
-                problem = "produk rekening belum mengikat " & earlyWithdrawalPenaltyKey &
-                  "; pencairan dini tidak bisa dihitung"
-                raise newException(ValueError, problem)
-              let detail = EarlyWithdrawal(principal: amount,
-                interest: accruedUnpaidInterest(db, account.accountId),
-                penalty: applyRate(amount, rateOpt.get()))
-              if not cashPaid(detail).isPositive:
-                # Penalti ≥ pokok + bunga: konfigurasi produk tidak masuk akal (rate persen dari
-                # pokok), dan tidak ada kas yang bisa diserahkan.
-                status = 409
-                reason = "early_withdrawal_penalty_too_high"
-                problem = "penalti pencairan dini melebihi pokok + bunga yang dibayarkan"
+                reason = denyReason
+                problem = denyProblem
                 raise newException(ValueError, problem)
               early = some(detail)
 
@@ -425,7 +434,13 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
               balanceAfter =
                 case direction
                 of cdDeposit: increaseBalance(db, account.accountId, amount)
-                of cdWithdrawal: decreaseBalance(db, account.accountId, amount, minBalance)
+                of cdWithdrawal:
+                  # Pencairan dini menutup rekening: saldo berakhir nol, jadi `min_balance` produk
+                  # tidak berlaku (rekening yang ditutup tidak punya saldo minimum).
+                  if early.isSome:
+                    decreaseBalanceToZero(db, account.accountId, amount)
+                  else:
+                    decreaseBalance(db, account.accountId, amount, minBalance)
             except ValueError:
               status = 500
               problem = "data saldo rekening tidak bisa dibaca"
@@ -531,8 +546,9 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
                 "direction": $direction,
                 "amount": amount.toDecimalString,
                 "journalId": $journalId,
-                "earlyWithdrawal": (if early.isSome: earlyWithdrawalJson(early.get())
-              else: newJNull()),
+                "earlyWithdrawal": (if early.isSome:
+              earlyWithdrawalJson(early.get(), cashPaid(early.get()))
+            else: newJNull()),
             }))
 
             # Event non-akuntansi: TANPA header `accounting` supaya konsumen `ledger` tidak
@@ -590,8 +606,11 @@ proc handleCashTransaction*(app: AppContext, req: Request) {.gcsafe.} =
       req.respondProblem(pkConflict, "Conflict", problem)
   else: req.respondProblem(pkInternal, "Internal Server Error", problem)
 
-proc transferJson(t: Transfer, balances: TransferBalances): JsonNode =
-  %*{
+proc transferJson(t: Transfer, balances: TransferBalances;
+    early: Option[EarlyWithdrawal] = none(EarlyWithdrawal)): JsonNode =
+  ## `earlyWithdrawal` (T-148) menjelaskan mengapa saldo tujuan ≠ `amount`: bunga dibayar dan
+  ## penalti dipotong. `creditedAmount` = `pokok + bunga − penalti`.
+  result = %*{
     "transferId": $t.transferId,
     "journalId": $t.journalId,
     "sourceAccountId": $t.sourceAccountId,
@@ -601,6 +620,14 @@ proc transferJson(t: Transfer, balances: TransferBalances): JsonNode =
     "destinationBalanceAfter": balances.destinationBalanceAfter.toDecimalString,
     "businessDate": t.businessDate,
   }
+  if early.isSome:
+    let detail = early.get()
+    result["earlyWithdrawal"] = %*{
+      "principal": detail.principal.toDecimalString,
+      "interest": detail.interest.toDecimalString,
+      "penalty": detail.penalty.toDecimalString,
+      "creditedAmount": cashPaid(detail).toDecimalString,
+    }
 
 proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
   ## `POST /api/v1/teller/transfers` — pemindahbukuan antar dua rekening simpanan (T-088c).
@@ -720,14 +747,15 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
               problem = "rekening sumber atau tujuan tidak berstatus ACTIVE"
               raise newException(ValueError, problem)
 
-            # PB yang menyentuh deposito berjangka diblokir: aturan `DepositTransferred` (0013)
-            # memakai `201` di kedua kaki, jadi pokok berjangka yang masuk lewat PB tidak pernah
-            # dipisah ke `202` (D-152) dan saat jatuh tempo `D 202` mendebit akun yang tidak pernah
-            # dikredit; pintu itu ditutup sampai pemisahan kedua kaki PB punya keputusan (O-108).
-            if source.accountType == atTimeDeposit or destination.accountType == atTimeDeposit:
+            # Deposito berjangka sebagai **tujuan** tetap diblokir: aturan `DepositTransferred`
+            # (0013) memakai `201` di kedua kaki, jadi pokok berjangka yang masuk lewat PB tidak
+            # pernah dipisah ke `202` (D-152) dan saat jatuh tempo `D 202` mendebit akun yang tidak
+            # pernah dikredit. Sebagai **sumber**, deposito boleh dicairkan dini (T-148/D-164) —
+            # jalurnya memakai rule tersendiri di `ledger/0074`, bukan `DepositTransferred`.
+            if destination.accountType == atTimeDeposit:
               status = 409
               reason = "time_deposit_locked"
-              problem = "pemindahbukuan yang menyentuh rekening deposito berjangka belum didukung"
+              problem = "pemindahbukuan ke rekening deposito berjangka belum didukung"
               raise newException(ValueError, problem)
 
             # PB yang menyentuh POKOK/WAJIB (sumber **atau** tujuan) diblokir: template satu D/K
@@ -753,6 +781,19 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
               problem = "periode tanggal bisnis sudah ditutup"
               raise newException(ValueError, problem)
 
+            # Pencairan dini lewat PB (T-148): aturan sama dengan jalur tunai (penuh, sebelum jatuh
+            # tempo, penalti dari binding produk), tetapi dana masuk ke rekening tujuan, bukan laci.
+            var early: Option[EarlyWithdrawal] = none(EarlyWithdrawal)
+            if source.accountType == atTimeDeposit:
+              let (denyReason, denyProblem, detail) =
+                earlyWithdrawalFor(db, source, amount, businessDate)
+              if denyReason.len > 0:
+                status = 409
+                reason = denyReason
+                problem = denyProblem
+                raise newException(ValueError, problem)
+              early = some(detail)
+
             # Saldo minimum dari versi produk **sumber** (rekening yang didebit).
             var minBalance: Money
             try:
@@ -767,8 +808,14 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
 
             var balances: Option[TransferBalances]
             try:
-              balances = applyTransferBalances(db, source.accountId, destination.accountId,
-                amount, minBalance)
+              if early.isSome:
+                # Rekening sumber ditutup (saldo → 0) dan tujuan menerima pokok + bunga − penalti.
+                let detail = early.get()
+                balances = applyEarlyWithdrawalTransferBalances(db, source.accountId,
+                  destination.accountId, detail.principal, detail.interest, detail.penalty)
+              else:
+                balances = applyTransferBalances(db, source.accountId, destination.accountId,
+                  amount, minBalance)
             except ValueError:
               status = 500
               problem = "data saldo rekening tidak bisa dibaca"
@@ -782,10 +829,30 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
             # Posting jurnal sinkron. Kegagalan periode dari trigger `ledger` (balapan tutup
             # periode, T-080) dipetakan ke 409; rollback membatalkan mutasi kedua saldo.
             var journalId: Id
+            var interestJournalId, penaltyJournalId: Id
             try:
-              journalId = postJournalSync(db, app.clock, transferSourceEvent, amount,
-                source.branchId, transferId, businessDate, journalKey, actor, source.productCode,
-                $source.accountType, source.savingsKind)
+              if early.isSome:
+                # Tiga jurnal, masing-masing satu D/K (template `ledger/0003`). `source_event`
+                # menyebut kanalnya supaya laporan tidak menyamakan PB dengan penarikan tunai.
+                let detail = early.get()
+                journalId = postJournalSync(db, app.clock, "DepositWithdrawnViaTransfer",
+                  detail.principal, source.branchId, transferId, businessDate,
+                  "early.transfer.principal:" & $transferId, actor, source.productCode,
+                  $source.accountType, source.savingsKind)
+                if detail.interest.isPositive:
+                  interestJournalId = postJournalSync(db, app.clock,
+                    "InterestPaidEarlyViaTransfer", detail.interest, source.branchId, transferId,
+                    businessDate, "early.transfer.interest:" & $transferId, actor,
+                    source.productCode, $source.accountType, source.savingsKind)
+                if detail.penalty.isPositive:
+                  penaltyJournalId = postJournalSync(db, app.clock,
+                    "EarlyWithdrawalPenaltyViaTransfer", detail.penalty, source.branchId,
+                    transferId, businessDate, "early.transfer.penalty:" & $transferId, actor,
+                    source.productCode, $source.accountType, source.savingsKind)
+              else:
+                journalId = postJournalSync(db, app.clock, transferSourceEvent, amount,
+                  source.branchId, transferId, businessDate, journalKey, actor,
+                  source.productCode, $source.accountType, source.savingsKind)
             except DbError as e:
               if "periode OPEN" in e.msg:
                 status = 409
@@ -816,6 +883,22 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
               journalId: journalId)
             insertTransfer(db, transfer, actor)
 
+            # Baris subledger sisi tujuan (T-148): bunga menambah, penalti mengurangi. Pokok sudah
+            # diwakili `deposit.transfer`; sumber tidak mendapat baris sendiri.
+            if early.isSome:
+              let detail = early.get()
+              if detail.interest.isPositive:
+                insertTransaction(db, Transaction(transactionId: newId(app.clock),
+                  txType: ttInterestPaidEarly, accountId: destination.accountId,
+                  amount: detail.interest, businessDate: businessDate, narration: narration,
+                  journalId: interestJournalId), actor)
+              if detail.penalty.isPositive:
+                insertTransaction(db, Transaction(transactionId: newId(app.clock),
+                  txType: ttPenaltyCharge, accountId: destination.accountId,
+                  amount: detail.penalty, businessDate: businessDate, narration: narration,
+                  journalId: penaltyJournalId), actor)
+              closeAccount(db, source.accountId, actor)
+
             let ctx = auditContextFor(principal, req, app.clock, "pemindahbukuan simpanan",
               $source.branchId)
             discard appendAudit(db, newAuditEntry(ctx, "deposit.transfer.post",
@@ -826,6 +909,11 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
                 "destinationAccountId": $destination.accountId,
                 "amount": amount.toDecimalString,
                 "journalId": $journalId,
+                "earlyWithdrawal": (if early.isSome:
+              %*{"interest": early.get().interest.toDecimalString,
+                 "penalty": early.get().penalty.toDecimalString,
+                 "creditedAmount": cashPaid(early.get()).toDecimalString}
+            else: newJNull()),
               }))
 
             # Event non-akuntansi: TANPA header `accounting` supaya konsumen `ledger` tidak
@@ -843,7 +931,7 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
                  "totalDebit": amount.toDecimalString}))
 
             status = 201
-            payload = transferJson(transfer, balances.get())
+            payload = transferJson(transfer, balances.get(), early)
             (status, payload)))
   except IdempotencyConfigError:
     status = 500
