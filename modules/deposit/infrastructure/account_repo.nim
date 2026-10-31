@@ -119,3 +119,37 @@ proc markInterestPaid*(db: DbConn; accountId: Id; cumulative: Money) =
   db.exec(sql"""
     UPDATE deposit.account SET interest_paid_cumulative = GREATEST(interest_paid_cumulative, ?)
      WHERE account_id = ?""", cumulative.toDecimalString, $accountId)
+
+proc closeAccount*(db: DbConn; accountId: Id; actor: Id) =
+  ## Menutup rekening. Pemanggil sudah memindahkan saldo di transaksi yang sama; proc ini hanya
+  ## mengubah status (`NONE` pada jatuh tempo, pencairan dini penuh pada D-164).
+  db.exec(sql"""
+    UPDATE deposit.account SET status = 'CLOSED', updated_by = ?
+     WHERE account_id = ?""", $actor, $accountId)
+
+proc maturityDateOf*(db: DbConn; accountId: Id): string =
+  ## `maturity_date` rekening dalam ISO `yyyy-MM-dd`, `""` bila NULL (rekening tabungan). Dipakai
+  ## jalur pencairan dini untuk membedakan sebelum/sesudah jatuh tempo (D-164).
+  db.getValue(sql"""
+    SELECT coalesce(to_char(maturity_date, 'YYYY-MM-DD'), '')
+      FROM deposit.account WHERE account_id = ?""", $accountId)
+
+proc accruedUnpaidInterest*(db: DbConn; accountId: Id): Money =
+  ## Bunga yang sudah dijurnal `InterestAccrued` tetapi belum dibayar (D-164/D-165):
+  ## `cumulative` akrual terakhir dikurangi `interest_paid_cumulative`. Tidak pernah negatif;
+  ## baseline yang lebih besar dari akrual berarti data rusak, dan pemanggil yang memutuskan.
+  let rows = db.getAllRows(sql"""
+    SELECT coalesce((SELECT cumulative FROM deposit.interest_accrual
+                      WHERE account_id = ? ORDER BY business_date DESC LIMIT 1), 0)::text,
+           interest_paid_cumulative::text
+      FROM deposit.account WHERE account_id = ?""", $accountId, $accountId)
+  if rows.len == 0:
+    return zero()
+  let cum = moneyFromString(rows[0][0])
+  let paid = moneyFromString(rows[0][1])
+  if cum.isErr or paid.isErr:
+    raise newException(ValueError, "bunga akrual rekening bukan desimal sah")
+  let unpaid = cum.value() - paid.value()
+  if unpaid.isNegative:
+    return zero()
+  unpaid

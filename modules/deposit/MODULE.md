@@ -195,8 +195,11 @@ Keputusan per `aro_instruction` (D-155):
 - **Proses terlambat lebih dari satu tenor** menahan task dengan `DAY-349`: tanggal jatuh tempo baru
   sudah lewat lagi, dan melanjutkan berarti membayar bunga siklus yang sama dua kali.
 - Kode kegagalan `DAY-340`…`DAY-349` serta `DAY-354` ada di runbook + katalog i18n (id+en).
-- **Batas yang belum tertutup**: penarikan sebelum jatuh tempo tanpa penalti (O-108, T-146), dan belum
-  ada endpoint untuk membuka deposito berjangka.
+- **Pencairan dini (tarik tunai)** ada di `handlers_teller` (D-164): penuh, sebelum jatuh tempo,
+  penalti persen dari pokok dari atribut produk, bunga dibayar sampai tanggal cair, rekening
+  `CLOSED`. PB keluar ditunda ke T-148 karena butuh jenis baris subledger untuk debit penalti.
+- **Batas yang belum tertutup**: PB keluar untuk pencairan dini (T-148), dan belum ada endpoint
+  untuk membuka deposito berjangka.
 - **NEEDS-COMPLIANCE-REVIEW** (kode akun `202`/`204`/`501`) dan **HUMAN-REVIEW-REQUIRED** (pergerakan
   uang jatuh tempo, AGENTS.md §8) tetap berlaku.
 

@@ -4359,7 +4359,11 @@ penempatannya adalah **struktur pilot** (`NEEDS-COMPLIANCE-REVIEW`), sama sepert
 Pencairan dini tetap **area kritis**: wajib `HUMAN-REVIEW-REQUIRED` dan test yang membuktikan
 saldo, tiga jurnal, dan penolakan saat parameter tidak ter-bind.
 
-**Status.** Diputuskan 31 Okt 2026; implementasi T-146.
+**Status.** Diputuskan 31 Okt 2026. **Tarik tunai** diimplementasikan di T-146; **PB keluar**
+dipisah ke T-148 karena membutuhkan jenis baris subledger baru: tujuan menerima
+`pokok + bunga − penalti`, sementara `deposit.transaction` belum punya jenis untuk sisi debit
+penalti, dan menumpangkannya ke `INTEREST_CREDIT` akan membuat rekonsiliasi salah saat penalti
+melebihi bunga. PB tetap ditolak `409 time_deposit_locked` sampai T-148 selesai.
 
 ## D-165 — Baseline akrual per siklus ARO dan tenor perpanjangan dari parameter produk (31 Okt 2026)
 

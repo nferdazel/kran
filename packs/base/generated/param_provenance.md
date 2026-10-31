@@ -57,6 +57,7 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | `platform.ui.shortcut.withdrawal` | kebijakan | base | - | - |
 | `product.savings.admin_fee` | komersial-konservatif | base | `NEEDS-COMPLIANCE-REVIEW` | tidak menagih; angka final menunggu pemilik |
 | `product.savings.day_count_basis` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
+| `product.savings.early_withdrawal_penalty` | kebijakan | - | `NEEDS-COMPLIANCE-REVIEW` | penalti pencairan dini (D-164); angka final menunggu pemilik/compliance |
 | `product.savings.interest_posting` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
 | `product.savings.interest_rate` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
 | `product.savings.min_balance` | komersial-konservatif | base | `NEEDS-COMPLIANCE-REVIEW` | tidak menagih; angka final menunggu pemilik |
@@ -74,7 +75,7 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | kelas | jumlah definisi |
 |---|---|
 | teknis | 19 |
-| kebijakan | 32 |
+| kebijakan | 33 |
 | komersial-konservatif | 2 |
 | belum-bermakna | 0 |
 | regulasi-tidak-disemai | 5 |

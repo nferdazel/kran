@@ -608,7 +608,7 @@
   "teller_error_period_closed": "The accounting period is closed. The transaction was not saved. Ask an admin about the current period.",
   "teller_error_savings_kind_locked": "Principal/mandatory savings cannot be withdrawn or transferred. The transaction was not saved.",
   "teller_error_session_business_date_mismatch": "A cash session from another business date is still open. Close it first, then open today's session.",
-  "teller_error_time_deposit_locked": "Time deposit accounts cannot be withdrawn or transferred before maturity. The transaction was not saved.",
+  "teller_error_time_deposit_locked": "A time deposit can only be withdrawn as an early, full withdrawal before maturity. The transaction was not saved.",
   "teller_error_transfer_kind_mismatch": "Source and destination accounts have different savings types. The transaction was not saved.",
   "teller_error_unknown_state": "The transaction status is unknown. Do not retry with a different amount. Keep the reference, then check the account statement.",
   "teller_error_with_trace": "Reference {trace}.",
@@ -799,5 +799,14 @@
   "vault_submit_title": "Request a top-up",
   "vault_submitting": "Submitting…",
   "vault_title": "Cash vault",
-  "dayclose_code_354": "The account's product does not bind a rollover tenor (product.savings.rollover_tenor_days). Bind it on the product version in use, then resume."
+  "dayclose_code_354": "The account's product does not bind a rollover tenor (product.savings.rollover_tenor_days). Bind it on the product version in use, then resume.",
+  "teller_error_time_deposit_partial_withdrawal": "An early time-deposit withdrawal must be the full account balance. The transaction was not saved.",
+  "teller_error_early_withdrawal_penalty_missing": "The account product has no early-withdrawal penalty bound. Ask an admin to bind the penalty attribute on the product version, then retry.",
+  "teller_error_early_withdrawal_penalty_too_high": "The early-withdrawal penalty exceeds the principal plus interest paid out. Check the product penalty attribute.",
+  "teller_early_heading": "Early withdrawal breakdown",
+  "teller_early_principal": "Principal withdrawn",
+  "teller_early_interest": "Interest paid",
+  "teller_early_penalty": "Penalty",
+  "teller_early_cash_paid": "Cash handed over",
+  "teller_early_announcement": "Early withdrawal: cash handed over {amount}."
 }

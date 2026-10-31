@@ -75,6 +75,8 @@ var
   SessionBranchAccountId: string
   ProductRuleAccountId: string
   TimeDepositAccountId: string
+  EarlyTdAccountId: string
+  NoPenaltyTdAccountId: string
   PokokAccountId: string
   PokokTransferAccountId: string
   WajibAccountId: string
@@ -236,6 +238,54 @@ block:
     insertAccount(d, td, fixtureActor)
     1)
   TimeDepositAccountId = $td.accountId
+
+  # Pencairan dini (D-164): produk dengan penalti 1% dari pokok dan rekening berjangka yang jatuh
+  # temponya sesudah tanggal buku fixture; satu produk lagi tanpa binding penalti.
+  proc seedTdProduct(code, penalty: string): tuple[productId, versionId: Id] =
+    let p = Product(productId: newId(fixtureClock), code: code, name: "Deposito " & code,
+      productType: ptSavings)
+    let v = ProductVersion(versionId: newId(fixtureClock), productId: p.productId, versionNo: 1,
+      effectiveFrom: "2020-01-01")
+    discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+      insertProduct(d, p, fixtureActor)
+      insertVersion(d, v, fixtureActor)
+      insertBinding(d, v.versionId, ParamBinding(paramKey: "product.savings.min_balance",
+        value: %"0.00"))
+      if penalty.len > 0:
+        insertBinding(d, v.versionId, ParamBinding(
+          paramKey: "product.savings.early_withdrawal_penalty", value: %penalty))
+      1)
+    doAssert approveVersion(db, v.versionId, approver), "versi produk dini gagal di-approve"
+    (p.productId, v.versionId)
+
+  proc seedTimeDeposit(productId, versionId: Id; code, balance, maturity: string): Id =
+    var a = newAccount(newId(fixtureClock), party.partyId, productId, versionId, code,
+      Id(BranchId), "001", "2026-10-01", nextAccountSeq(db))
+    a.accountType = atTimeDeposit
+    discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+      insertAccount(d, a, fixtureActor)
+      d.exec(sql"""UPDATE deposit.account SET maturity_date = ?::date WHERE account_id = ?""",
+        maturity, $a.accountId)
+      d.exec(sql"""UPDATE deposit.account_balance SET balance = ?::numeric
+                WHERE account_id = ?""", balance, $a.accountId)
+      1)
+    a.accountId
+
+  let (earlyProduct, earlyVersion) = seedTdProduct("SAV-TDEARLY", "1.0")
+  EarlyTdAccountId = $seedTimeDeposit(earlyProduct, earlyVersion, "SAV-TDEARLY", "1000.00",
+    "2026-12-31")
+  # Akrual yang belum dibayar: bunga 13,70 menunggu dibayar saat pencairan (`amount` 0 = tidak ada
+  # jurnal `InterestAccrued`, tetapi `cumulative` tetap bunga yang sudah dijanjikan).
+  execScript(db, """
+    INSERT INTO deposit.interest_accrual
+      (account_id, business_date, principal, days, rate_percent, basis_days, amount, cumulative)
+    VALUES ('""" & EarlyTdAccountId & """', '""" & BusinessDate & """'::date, 1000.00, 1,
+            2.5000, 365, 0.00, 13.70)
+  """)
+
+  let (noPenaltyProduct, noPenaltyVersion) = seedTdProduct("SAV-TDNOPEN", "")
+  NoPenaltyTdAccountId = $seedTimeDeposit(noPenaltyProduct, noPenaltyVersion, "SAV-TDNOPEN",
+    "1000.00", "2026-12-31")
 
   # GL 102/202 (bukan 101.2/201 rule generik) supaya pemilihan rule produk bisa dibedakan di test.
   discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
@@ -442,6 +492,18 @@ proc journalLines(journalId: string): seq[tuple[gl, debit, credit: string]] =
     for row in conn.getAllRows(sql"""
       SELECT gl_account, debit::text, credit::text FROM ledger.journal_line
        WHERE journal_id = ? ORDER BY line_no""", journalId):
+      result.add((row[0], row[1], row[2]))
+  finally:
+    dbPool.release(conn)
+
+proc journalLinesByKey(key: string): seq[tuple[gl, debit, credit: string]] =
+  ## Baris jurnal berdasarkan kunci idempotensi (mis. `early.penalty:<txId>`).
+  let conn = dbPool.acquire()
+  try:
+    for row in conn.getAllRows(sql"""
+      SELECT l.gl_account, l.debit::text, l.credit::text
+        FROM ledger.journal_line l JOIN ledger.journal j USING (journal_id)
+       WHERE j.idempotency_key = ? ORDER BY l.line_no""", key):
       result.add((row[0], row[1], row[2]))
   finally:
     dbPool.release(conn)
@@ -693,9 +755,8 @@ suite "teller: setor & tarik":
     let depositLines = journalLines(deposit.body["journalId"].getStr())
     check depositLines == @[("101.2", "500.00", "0.00"), ("202", "0.00", "500.00")]
 
-    # Pokok berjangka hanya boleh naik lewat teller. Penarikan ditahan karena akrual D-154
-    # dihitung dari `balance` saat ini: pokok yang turun membuat `DAY-335` menahan penutupan
-    # tanpa jalur koreksi (O-108).
+    # Pokok berjangka hanya boleh naik lewat teller. Rekening ini tidak punya `maturity_date`,
+    # jadi jalur pencairan dini (D-164) tidak berlaku dan penarikan tetap ditolak.
     let journalsBefore = journalCount("DepositWithdrawn")
     let withdraw = postJson(CashPath, cashBody(TimeDepositAccountId, "WITHDRAWAL", "200.00"),
       token)
@@ -704,6 +765,48 @@ suite "teller: setor & tarik":
     check withdraw.body["params"]["reason"].getStr() == "time_deposit_locked"
     check balanceOf(TimeDepositAccountId) == "500.00"
     check journalCount("DepositWithdrawn") == journalsBefore
+
+  test "pencairan dini: nominal sebagian ditolak, rekening tidak berubah":
+    let token = tokenOf(login(MakerUser))
+    let res = postJson(CashPath, cashBody(EarlyTdAccountId, "WITHDRAWAL", "100.00"), token)
+    check res.code == 409
+    checkProblem(CashPath, "POST", "409", res.body)
+    check res.body["params"]["reason"].getStr() == "time_deposit_partial_withdrawal"
+    check balanceOf(EarlyTdAccountId) == "1000.00"
+    check dbText(sql"SELECT status FROM deposit.account WHERE account_id = ?",
+      EarlyTdAccountId) == "ACTIVE"
+
+  test "pencairan dini tanpa atribut penalti → 409, bukan penalti nol":
+    let token = tokenOf(login(MakerUser))
+    let res = postJson(CashPath, cashBody(NoPenaltyTdAccountId, "WITHDRAWAL", "1000.00"), token)
+    check res.code == 409
+    checkProblem(CashPath, "POST", "409", res.body)
+    check res.body["params"]["reason"].getStr() == "early_withdrawal_penalty_missing"
+    check balanceOf(NoPenaltyTdAccountId) == "1000.00"
+
+  test "pencairan dini: pokok + bunga − penalti, tiga jurnal, rekening ditutup":
+    let token = tokenOf(login(MakerUser))
+    let res = postJson(CashPath, cashBody(EarlyTdAccountId, "WITHDRAWAL", "1000.00"), token)
+    check res.code == 201
+    checkJson(CashPath, "POST", "201", res.body)
+    check res.body["earlyWithdrawal"]["principal"].getStr() == "1000.00"
+    check res.body["earlyWithdrawal"]["interest"].getStr() == "13.70"
+    check res.body["earlyWithdrawal"]["penalty"].getStr() == "10.00"
+    check res.body["earlyWithdrawal"]["cashPaid"].getStr() == "1003.70"
+    check res.body["balanceAfter"].getStr() == "0.00"
+    check balanceOf(EarlyTdAccountId) == "0.00"
+    check dbText(sql"SELECT status FROM deposit.account WHERE account_id = ?",
+      EarlyTdAccountId) == "CLOSED"
+    let txId = res.body["transactionId"].getStr()
+    check journalLines(res.body["journalId"].getStr()) ==
+      @[("202", "1000.00", "0.00"), ("101.2", "0.00", "1000.00")]
+    check journalLinesByKey("early.interest:" & txId) ==
+      @[("204", "13.70", "0.00"), ("101.2", "0.00", "13.70")]
+    check journalLinesByKey("early.penalty:" & txId) ==
+      @[("101.2", "10.00", "0.00"), ("403", "0.00", "10.00")]
+    # Kas laci yang keluar = kas yang benar-benar diserahkan, bukan pokok saja.
+    check dbText(sql"SELECT amount::text FROM teller.cash_movement WHERE transaction_id = ?",
+      txId) == "1003.70"
 
   test "PB yang menyentuh deposito berjangka → 409 time_deposit_locked":
     # `DepositTransferred` (0013) memakai `201` di kedua kaki, jadi pokok berjangka yang masuk

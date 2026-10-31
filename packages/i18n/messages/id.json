@@ -608,7 +608,7 @@
   "teller_error_period_closed": "Periode akuntansi sudah ditutup. Transaksi tidak disimpan. Hubungi admin untuk periode berjalan.",
   "teller_error_savings_kind_locked": "Simpanan pokok/wajib tidak bisa ditarik atau dipindahbukukan. Transaksi tidak disimpan.",
   "teller_error_session_business_date_mismatch": "Masih ada sesi kas terbuka dari tanggal bisnis lain. Tutup sesi itu dulu, lalu buka sesi hari ini.",
-  "teller_error_time_deposit_locked": "Deposito berjangka tidak bisa ditarik atau dipindahbukukan sebelum jatuh tempo. Transaksi tidak disimpan.",
+  "teller_error_time_deposit_locked": "Penarikan deposito berjangka hanya untuk pencairan dini (penuh, sebelum jatuh tempo). Transaksi tidak disimpan.",
   "teller_error_transfer_kind_mismatch": "Jenis simpanan rekening sumber dan tujuan berbeda. Transaksi tidak disimpan.",
   "teller_error_unknown_state": "Status transaksi belum pasti. Jangan ulangi dengan nominal berbeda. Simpan nomor referensi, lalu periksa mutasi rekening.",
   "teller_error_with_trace": "Rujukan {trace}.",
@@ -799,5 +799,14 @@
   "vault_submit_title": "Ajukan top-up",
   "vault_submitting": "Mengajukan…",
   "vault_title": "Vault kas",
-  "dayclose_code_354": "Produk rekening belum mengikat tenor perpanjangan (product.savings.rollover_tenor_days). Ikat nilainya pada versi produk yang dipakai, lalu resume."
+  "dayclose_code_354": "Produk rekening belum mengikat tenor perpanjangan (product.savings.rollover_tenor_days). Ikat nilainya pada versi produk yang dipakai, lalu resume.",
+  "teller_error_time_deposit_partial_withdrawal": "Pencairan dini deposito berjangka harus penuh sebesar saldo rekening. Transaksi tidak disimpan.",
+  "teller_error_early_withdrawal_penalty_missing": "Produk rekening belum mengikat penalti pencairan dini. Minta admin mengikat atribut penalti pada versi produk, lalu ulangi.",
+  "teller_error_early_withdrawal_penalty_too_high": "Penalti pencairan dini melebihi pokok dan bunga yang dibayarkan. Periksa atribut penalti produk.",
+  "teller_early_heading": "Rincian pencairan dini",
+  "teller_early_principal": "Pokok dicairkan",
+  "teller_early_interest": "Bunga dibayar",
+  "teller_early_penalty": "Penalti",
+  "teller_early_cash_paid": "Kas diserahkan",
+  "teller_early_announcement": "Pencairan dini: kas diserahkan {amount}."
 }

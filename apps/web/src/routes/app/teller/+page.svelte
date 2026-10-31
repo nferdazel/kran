@@ -731,9 +731,15 @@
       if (reviewed.kind === "cash") {
         const transaction = outcome.data as CashTransaction;
         result = { kind: "cash", transaction };
-        announcement = m.teller_success_status({
-          balance: formatMoney(transaction.balanceAfter, { decimals: 2 }),
-        });
+        const balance = formatMoney(transaction.balanceAfter, { decimals: 2 });
+        // Pencairan dini menyerahkan kas bersih (pokok + bunga − penalti); pengumuman menyebut
+        // jumlah yang benar-benar diserahkan, bukan hanya saldo rekening.
+        announcement =
+          transaction.earlyWithdrawal === undefined
+            ? m.teller_success_status({ balance })
+            : `${m.teller_success_status({ balance })} ${m.teller_early_announcement({
+                amount: formatMoney(transaction.earlyWithdrawal.cashPaid, { decimals: 2 }),
+              })}`;
       } else {
         const transfer = outcome.data as Transfer;
         result = { kind: "transfer", transfer };
@@ -1349,6 +1355,19 @@
 
             {#if done.kind === "cash"}
               {@const transaction = done.transaction}
+              {#if transaction.earlyWithdrawal}
+                <h4 class="teller-subheading">{m.teller_early_heading()}</h4>
+                <dl class="teller-facts">
+                  <dt>{m.teller_early_principal()}</dt>
+                  <dd>{formatMoney(transaction.earlyWithdrawal.principal, { decimals: 2 })}</dd>
+                  <dt>{m.teller_early_interest()}</dt>
+                  <dd>{formatMoney(transaction.earlyWithdrawal.interest, { decimals: 2 })}</dd>
+                  <dt>{m.teller_early_penalty()}</dt>
+                  <dd>{formatMoney(transaction.earlyWithdrawal.penalty, { decimals: 2 })}</dd>
+                  <dt>{m.teller_early_cash_paid()}</dt>
+                  <dd>{formatMoney(transaction.earlyWithdrawal.cashPaid, { decimals: 2 })}</dd>
+                </dl>
+              {/if}
               <dl class="teller-facts">
                 <dt>{m.teller_direction_label()}</dt>
                 <dd>{modeLabel(transaction.direction)}</dd>

@@ -2578,6 +2578,27 @@ export interface components {
              * @description Tanggal buku transaksi (`YYYY-MM-DD`).
              */
             businessDate: string;
+            /**
+             * @description Hanya ada pada **pencairan dini deposito berjangka** (D-164). `amount` tetap pokok yang
+             *     didebit dari rekening; kas yang diserahkan adalah `cashPaid` karena bunga dibayar dan
+             *     penalti dipotong.
+             */
+            earlyWithdrawal?: components["schemas"]["EarlyWithdrawal"];
+        };
+        /**
+         * @description Rincian pencairan dini deposito berjangka (D-164). `cashPaid = principal + interest −
+         *     penalty`. Bunga adalah akrual yang sudah dijurnal tetapi belum dibayar; penalti adalah
+         *     persen dari pokok sesuai atribut produk `product.savings.early_withdrawal_penalty`.
+         */
+        EarlyWithdrawal: {
+            /** @description Pokok yang dicairkan (desimal 2 desimal). */
+            principal: string;
+            /** @description Bunga terakru yang dibayarkan bersamaan (desimal 2 desimal). */
+            interest: string;
+            /** @description Penalti pencairan dini (desimal 2 desimal). */
+            penalty: string;
+            /** @description Kas yang benar-benar diserahkan ke anggota (desimal 2 desimal). */
+            cashPaid: string;
         };
         /**
          * @description Transaksi tunai untuk cetak ulang slip (T-094a). **Tanpa** `balanceAfter`: saldo per transaksi
