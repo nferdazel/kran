@@ -22,19 +22,21 @@ type Locale = (typeof LOCALES)[number];
 
 const T: Record<
   Locale,
-  { title: string; reload: string; limit: string; statusHeading: string }
+  { title: string; reload: string; limit: string; statusHeading: string; businessDate: string }
 > = {
   id: {
     title: "Monitor penutupan buku",
     reload: "Muat ulang",
     limit: "Jumlah baris",
     statusHeading: "Status tanggal buku",
+    businessDate: "Tanggal bisnis",
   },
   en: {
     title: "Day-close monitor",
     reload: "Reload",
     limit: "Rows",
     statusHeading: "Business date status",
+    businessDate: "Business date",
   },
 };
 
@@ -74,6 +76,11 @@ for (const locale of LOCALES) {
 
       await page.goto("/app/dayclose");
       await expect(page.getByRole("heading", { level: 1, name: T[locale].title })).toBeVisible();
+      // Indikator shell memakai nilai dari API, bukan placeholder (spec §14.3). Locator dibatasi
+      // ke header: teks "Business date" juga muncul di badan layar.
+      const indicator = page.locator(".kran-business-date");
+      await expect(indicator).toBeVisible();
+      await expect(indicator).toContainText(T[locale].businessDate);
       await expect(
         page.getByRole("heading", { level: 2, name: T[locale].statusHeading }),
       ).toBeVisible();

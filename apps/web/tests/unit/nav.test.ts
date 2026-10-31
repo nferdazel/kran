@@ -5,7 +5,15 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { appNavLinks, sessionPermissions, visibleNavLinks, type NavLink } from "#lib/app/nav.js";
+import {
+  appNavLinks,
+  groupVisibleLinks,
+  groupVisibleLinks as groupLinks,
+  isActiveHref,
+  sessionPermissions,
+  visibleNavLinks,
+  type NavLink,
+} from "#lib/app/nav.js";
 
 function hrefs(links: readonly NavLink[]): string[] {
   return links.map((link) => link.href);
@@ -15,21 +23,31 @@ const ALL_PERMISSIONS = appNavLinks.flatMap((link) => link.permissions);
 
 describe("visibleNavLinks", () => {
   it("tautan tanpa izin selalu tampil, meski izin sesi kosong", () => {
-    const open: NavLink = { href: "/app/open", label: () => "open", permissions: [] };
+    const open: NavLink = { href: "/app/open", group: "cash", label: () => "open", permissions: [] };
     expect(hrefs(visibleNavLinks([open], []))).toEqual(["/app/open"]);
   });
 
   it("menyembunyikan tautan yang izinnya tidak dipegang", () => {
     const links: NavLink[] = [
-      { href: "/app/ledger", label: () => "ledger", permissions: ["ledger.journal.read"] },
-      { href: "/app/teller", label: () => "teller", permissions: ["teller.transaction.post"] },
+      {
+        href: "/app/ledger",
+        group: "ledger",
+        label: () => "ledger",
+        permissions: ["ledger.journal.read"],
+      },
+      {
+        href: "/app/teller",
+        group: "cash",
+        label: () => "teller",
+        permissions: ["teller.transaction.post"],
+      },
     ];
     expect(hrefs(visibleNavLinks(links, ["teller.transaction.post"]))).toEqual(["/app/teller"]);
     expect(hrefs(visibleNavLinks(links, []))).toEqual([]);
   });
 
   it("lebih dari satu izin = semuanya harus dipegang", () => {
-    const link: NavLink = { href: "/app/x", label: () => "x", permissions: ["a", "b"] };
+    const link: NavLink = { href: "/app/x", group: "admin", label: () => "x", permissions: ["a", "b"] };
     expect(visibleNavLinks([link], ["a"])).toEqual([]);
     expect(visibleNavLinks([link], ["a", "b"])).toHaveLength(1);
   });
@@ -59,7 +77,7 @@ describe("visibleNavLinks", () => {
       "/app/vault",
       "/app/dayclose",
       "/app/accounts/open",
-      "/app",
+      "/app/params",
       "/app/products",
       "/app/users",
     ]);
@@ -79,6 +97,39 @@ describe("visibleNavLinks", () => {
   it("layar pengguna hanya tampil dengan platform.user.manage", () => {
     expect(hrefs(visibleNavLinks(appNavLinks, ["platform.user.manage"]))).toEqual(["/app/users"]);
     expect(hrefs(visibleNavLinks(appNavLinks, []))).toEqual([]);
+  });
+});
+
+describe("groupVisibleLinks", () => {
+  it("membagi tautan menurut kelompok dengan urutan kelompok tetap", () => {
+    const groups = groupLinks(visibleNavLinks(appNavLinks, ALL_PERMISSIONS));
+
+    expect(groups.map((group) => group.id)).toEqual(["cash", "members", "ledger", "admin"]);
+    expect(groups.find((group) => group.id === "admin")?.links.map((link) => link.href)).toEqual([
+      "/app/params",
+      "/app/products",
+      "/app/users",
+    ]);
+  });
+
+  it("membuang kelompok yang tidak punya tautan terlihat", () => {
+    const groups = groupLinks(visibleNavLinks(appNavLinks, ["platform.user.manage"]));
+
+    expect(groups.map((group) => group.id)).toEqual(["admin"]);
+    expect(groups[0]?.links.map((link) => link.href)).toEqual(["/app/users"]);
+  });
+
+  it("tanpa izin: tidak ada kelompok sama sekali", () => {
+    expect(groupLinks(visibleNavLinks(appNavLinks, []))).toEqual([]);
+  });
+});
+
+describe("isActiveHref", () => {
+  it("menandai rute yang sama dan turunannya, bukan rute sekerabat", () => {
+    expect(isActiveHref("/app/params", "/app/params")).toBe(true);
+    expect(isActiveHref("/app/params/extra", "/app/params")).toBe(true);
+    expect(isActiveHref("/app/params-extra", "/app/params")).toBe(false);
+    expect(isActiveHref("/app/ledger", "/app/params")).toBe(false);
   });
 });
 

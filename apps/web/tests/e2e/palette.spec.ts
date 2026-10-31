@@ -147,7 +147,7 @@ test.describe.serial("command palette", () => {
     const dialog = await openPalette(page, T.id);
     await dialog.getByRole("link", { name: T.id.params, exact: true }).click();
 
-    await expect(page).toHaveURL(/\/app$/);
+    await expect(page).toHaveURL(/\/app\/params$/);
     await expect(dialog).toBeHidden();
   });
 
@@ -218,7 +218,7 @@ test.describe.serial("command palette", () => {
     await login(page, T.id);
 
     // Halaman Parameter punya field teks nyata; di sana Ctrl+K milik field (bukan palette).
-    await page.goto("/app");
+    await page.goto("/app/params");
     await expect(page.getByRole("heading", { level: 1, name: T.id.paramsTitle })).toBeVisible();
     await page.getByLabel(T.id.newValue, { exact: true }).focus();
     await page.keyboard.press("Control+k");

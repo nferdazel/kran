@@ -228,9 +228,24 @@
 
 .kran-nav__inner {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
+}
+
+/* Navigasi bergrup (DESIGN §11): judul kelompok kecil di atas tautannya. */
+.kran-nav__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.kran-nav__group-title {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 500;
 }
 
 .kran-nav__shortcut {
@@ -337,6 +352,21 @@
   gap: var(--space-3);
   max-inline-size: var(--layout-max-width);
   margin-inline: auto;
+}
+
+/* Pengaturan tampilan di footer (DESIGN §10): di luar alur Tab konten, tetap terlihat. */
+.kran-footer__settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* Halaman sederhana (mis. galat): satu kolom, jarak antarblok, lebar baca terbatas. */
+.kran-page {
+  display: grid;
+  gap: var(--space-4);
+  max-inline-size: 42rem;
 }
 
 

@@ -87,7 +87,7 @@ async function login(page: Page, user: { username: string; password: string }): 
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
   // Alur Fase 0 (parameter) tetap diuji di layarnya sendiri; pindah lewat rute nyata.
-  await page.goto("/app");
+  await page.goto("/app/params");
   await expect(page.getByRole("heading", { level: 1, name: TEXT.appTitle })).toBeVisible();
 }
 
