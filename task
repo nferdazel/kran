@@ -500,6 +500,9 @@ cmd_release() {
 
   # Hanya tag versi yang dihitung; tag `archive/*` adalah penanda arsip, bukan rilis.
   last_tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)
+  if [ -n "$last_tag" ] && [ "$(git rev-list --count "$last_tag..HEAD")" -eq 0 ]; then
+    die "tidak ada commit sejak $last_tag — tidak ada yang dirilis"
+  fi
   if [ -z "$bump" ]; then
     range="HEAD"
     [ -n "$last_tag" ] && range="$last_tag..HEAD"

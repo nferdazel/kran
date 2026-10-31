@@ -25,6 +25,7 @@ trap 'rm -rf "$tmpd"' EXIT
 : >"$tmpd/changed"
 : >"$tmpd/fixed"
 : >"$tmpd/ops"
+: >"$tmpd/other"
 
 git log "$range" --format='%s' | while IFS= read -r line; do
   [ -n "$line" ] || continue
@@ -37,13 +38,15 @@ git log "$range" --format='%s' | while IFS= read -r line; do
     fix*) group=fixed ;;
     perf* | refactor*) group=changed ;;
     ops* | ci* | deploy*) group=ops ;;
-    *) continue ;;
+    *) group=other ;;
   esac
   # Hanya prefix Conventional Commit yang sah (`feat(scope): ` / `fix: `), bukan kata biasa.
   prefix=${line%%:*}
   case "$prefix" in
     feat | feat\(*\) | fix | fix\(*\) | perf | perf\(*\) | refactor | refactor\(*\) | \
-      ops | ops\(*\) | ci | ci\(*\) | deploy | deploy\(*\)) ;;
+      ops | ops\(*\) | ci | ci\(*\) | deploy | deploy\(*\) | docs | docs\(*\) | \
+      test | test\(*\) | build | build\(*\) | style | style\(*\) | chore | chore\(*\) | \
+      revert | revert\(*\)) ;;
     *) continue ;;
   esac
 
@@ -67,8 +70,17 @@ git log "$range" --format='%s' | while IFS= read -r line; do
 done
 
 block="$tmpd/block"
+# Rilis yang hanya berisi docs/chore/test tidak punya baris di empat kategori di atas. Entri
+# kosong lebih buruk daripada entri jujur: perubahan itu tetap dikirim ke produksi, jadi
+# ditampilkan sebagai `Changed` alih-alih dihilangkan.
+if [ ! -s "$tmpd/added" ] && [ ! -s "$tmpd/changed" ] && \
+  [ ! -s "$tmpd/fixed" ] && [ ! -s "$tmpd/ops" ]; then
+  cp "$tmpd/other" "$tmpd/changed"
+fi
+
 {
-  printf '## [%s] - %s\n\n' "$version" "$(date -u +%Y-%m-%d)"
+  # Tanggal lokal: changelog dibaca manusia, dan docs repo ini memakai tanggal lokal.
+  printf '## [%s] - %s\n\n' "$version" "$(date +%Y-%m-%d)"
   for pair in "Added:$tmpd/added" "Changed:$tmpd/changed" "Fixed:$tmpd/fixed" \
     "Operations:$tmpd/ops"; do
     name=${pair%%:*}
