@@ -28,6 +28,11 @@
 ## chunk berisi daftar rekening yang berubah (D-170). Task ini **tidak** kritis: menandai status tidak
 ## memindahkan uang.
 ##
+## **Penutupan dormant.** Setelah penandaan, rekening `DORMANT` yang saldonya **nol** dan aktivitas
+## terakhirnya lebih lama dari `deposit.dormant_close.after_months` (24 bulan, O-114) ditutup
+## (`CLOSED`). Tidak ada uang yang berpindah, jadi task ini juga tidak kritis; saldo bukan nol
+## ditinggalkan untuk jalur operasional, bukan ditutup diam-diam.
+##
 ## **Pembulatan sekali per rentang** (keputusan pemilik, 28 Okt 2026): yang dibulatkan adalah bunga
 ## kumulatif dari `opened_on` sampai tanggal buku, lalu bagian hari itu = selisihnya terhadap
 ## kumulatif baris terakhir. Membulatkan tiap hari lalu menjumlahkan akan menyimpang beberapa sen
@@ -75,6 +80,12 @@
 ##   DAY-351 parameter `deposit.dormant.after_months` tidak terbaca / bukan bulan >= 1
 ##   DAY-352 data rekening rusak (status tidak dikenal)
 ##   DAY-353 status dormant gagal disimpan (bisa diulang)
+##
+## Kode kegagalan penutupan dormant (O-114):
+##   DAY-360 daftar rekening penutupan gagal dibaca (bisa diulang)
+##   DAY-361 parameter `deposit.dormant_close.after_months` tidak terbaca / bukan bulan >= 1
+##   DAY-362 data rekening rusak (status tidak dikenal)
+##   DAY-363 status `CLOSED` gagal disimpan (bisa diulang)
 
 import std/[json, options, strutils]
 
@@ -103,9 +114,13 @@ const
   interestAccrualTaskId* = "deposit.interest_accrual"
   maturityAroTaskId* = "deposit.maturity_aro"
   dormantTaskId* = "deposit.dormant"
+  dormantCloseTaskId* = "deposit.dormant_close"
 
   ## Ambang dormant (D-152 butir 4): parameter institusi, bukan angka di kode.
   dormantMonthsParamKey = "deposit.dormant.after_months"
+  ## Ambang penutupan otomatis (O-114, keputusan pemilik 31 Okt 2026): 24 bulan sejak aktivitas
+  ## terakhir, dan hanya rekening bersaldo nol.
+  dormantCloseMonthsParamKey = "deposit.dormant_close.after_months"
 
   ## Kunci binding versi produk yang dibaca. Nama atribut ditetapkan kode
   ## (`modules/product/seeds/params.yaml`); nilainya tetap milik produk (spec §10.5, D-137).
@@ -600,20 +615,27 @@ proc runMaturityChunk(pool: DbPool; clock: Clock; ctx: TaskContext; chunk: Chunk
 # Dormant (T-138e, D-152 butir 4 / D-157)
 # ---------------------------------------------------------------------------------------------
 
-proc dormantMonths(db: DbConn; ctx: TaskContext): int =
-  ## Ambang dormant aktif pada tanggal buku. Hilang atau bukan bilangan positif = kesalahan
-  ## konfigurasi institusi (`DAY-351`), bukan "lewati saja": menebak ambang berarti menandai
+proc monthsParam(db: DbConn; ctx: TaskContext; paramKey, key, code: string): int =
+  ## Ambang bulan aktif pada tanggal buku. Hilang atau bukan bilangan positif = kesalahan
+  ## konfigurasi institusi (`code`), bukan "lewati saja": menebak ambang berarti mengubah status
   ## rekening tanpa dasar kebijakan yang berlaku pada tanggal itu.
   var value: JsonNode
   try:
-    value = activeValueJson(db, keyString(P_deposit_dormant_after_months), ctx.businessDate,
-      lookupFor(institutionScope()))
+    value = activeValueJson(db, key, ctx.businessDate, lookupFor(institutionScope()))
   except ValueError as e:
-    raise abort("DAY-351", "parameter " & dormantMonthsParamKey & " tidak terbaca: " & e.msg)
+    raise abort(code, "parameter " & paramKey & " tidak terbaca: " & e.msg)
   if value.kind != JInt or value.getInt < 1:
-    raise abort("DAY-351", "parameter " & dormantMonthsParamKey &
+    raise abort(code, "parameter " & paramKey &
       " harus bilangan bulan >= 1, bukan " & $value)
   int(value.getInt)
+
+proc dormantMonths(db: DbConn; ctx: TaskContext): int =
+  monthsParam(db, ctx, dormantMonthsParamKey, keyString(P_deposit_dormant_after_months),
+    "DAY-351")
+
+proc dormantCloseMonths(db: DbConn; ctx: TaskContext): int =
+  monthsParam(db, ctx, dormantCloseMonthsParamKey,
+    keyString(P_deposit_dormant_close_after_months), "DAY-361")
 
 proc countDormantChunks(pool: DbPool; chunkSize: int): Result[int, TaskError] =
   ## Halaman dihitung dari populasi stabil (`ACTIVE` + `DORMANT`), bukan dari jumlah yang akan
@@ -689,6 +711,68 @@ proc runDormantChunk(pool: DbPool; ctx: TaskContext; chunk: Chunk): TaskResult =
     "accounts": items.len, "dormant": dormanted, "reactivated": reactivated,
     "afterMonths": months, "businessDate": ctx.businessDate}))
 
+proc countDormantCloseChunks(pool: DbPool; chunkSize: int): Result[int, TaskError] =
+  ## Halaman dari populasi stabil (`DORMANT` + `CLOSED`). Rekening yang ditutup tetap anggota
+  ## populasi, jadi offset halaman berikutnya tidak bergeser.
+  try:
+    let total = pool.withConn(proc(db: DbConn): int64 = dormantClosePopulation(db))
+    if chunkSize < 1:
+      raise newException(ValueError, "chunk size harus >= 1")
+    ok[int, TaskError](int((total + int64(chunkSize) - 1) div int64(chunkSize)))
+  except IOError as e:
+    err[int, TaskError](taskError("DAY-360", "jumlah rekening penutupan gagal dibaca: " & e.msg,
+      retryable = true))
+
+proc runDormantCloseChunk(pool: DbPool; ctx: TaskContext; chunk: Chunk): TaskResult =
+  var items: seq[DormantCandidate]
+  var months = 0
+  try:
+    let loaded = pool.withConn(proc(db: DbConn): tuple[items: seq[DormantCandidate]; months: int] =
+      let m = dormantCloseMonths(db, ctx)
+      (dormantCloseCandidatesPage(db, ctx.businessDate, m, chunk.chunkNo * ctx.chunkSize,
+        ctx.chunkSize), m))
+    items = loaded.items
+    months = loaded.months
+  except DepositAbort as e:
+    return err[TaskOutcome, TaskError](taskError(e.code, e.msg, metrics = e.metrics))
+  except ValueError as e:
+    return err[TaskOutcome, TaskError](taskError("DAY-362",
+      "data rekening penutupan tidak bisa dibaca: " & e.msg))
+  except IOError as e:
+    return err[TaskOutcome, TaskError](taskError("DAY-360",
+      "halaman rekening penutupan gagal dibaca: " & e.msg, retryable = true))
+
+  var closed = 0
+  var changed: seq[string]
+  let clock = systemClock()
+  try:
+    discard pool.withTx(proc(db: DbConn): int =
+      for item in items:
+        # Rekening `CLOSED` hanya peserta paginasi; yang dinilai ulang di dalam `UPDATE` adalah
+        # status, saldo, dan aktivitas terakhir (predikat yang sama dengan halaman).
+        if item.status != asDormant:
+          continue
+        if closeIfDormantAndEmpty(db, item.accountId, ctx.businessDate, months, systemActor):
+          inc closed
+          changed.add $item.accountId
+
+      # Satu entri audit per chunk, di transaksi yang sama dengan perubahan status (pola D-170):
+      # tanpa jejak, statusnya tidak berubah. Run tanpa perubahan tidak menulis apa pun.
+      if changed.len > 0:
+        let actx = ctlAuditContext(clock, "task " & dormantCloseTaskId)
+        discard appendAudit(db, newAuditEntry(actx, "deposit.dormant_close.chunk",
+          "daycloser_run", ctx.runId, clock, businessDate = ctx.businessDate,
+          after = %*{"businessDate": ctx.businessDate, "afterMonths": months,
+                     "chunkNo": chunk.chunkNo, "closed": changed}))
+      1)
+  except IOError as e:
+    return err[TaskOutcome, TaskError](taskError("DAY-363",
+      "status penutupan gagal disimpan: " & e.msg, retryable = true))
+
+  ok[TaskOutcome, TaskError](okOutcome(%*{
+    "accounts": items.len, "closed": closed, "afterMonths": months,
+    "businessDate": ctx.businessDate}))
+
 proc registerDepositTasks*(reg: Registry; pool: DbPool) =
   let clock = systemClock()
 
@@ -743,3 +827,21 @@ proc registerDepositTasks*(reg: Registry; pool: DbPool) =
     countDormantChunks(pool, chunkSize),
     run: proc(ctx: TaskContext; chunk: Chunk): TaskResult =
     runDormantChunk(pool, ctx, chunk))
+
+  # Penutupan otomatis **sesudah** penandaan: hanya rekening yang sudah `DORMANT` yang dinilai, dan
+  # `dependsOn` menjadikan itu bagian dari kontrak registry (O-114). Tidak kritis: menutup rekening
+  # bersaldo nol tidak memindahkan uang.
+  reg.register DayCloseTask(
+    id: dormantCloseTaskId,
+    module: "deposit",
+    levels: {clEOD},
+    kind: tkProcess,
+    dependsOn: @[dormantTaskId],
+    critical: false,
+    idempotency: imPerBusinessDate,
+    partition: psByChunkCount,
+    requiredParams: @[dormantCloseMonthsParamKey],
+    countChunks: proc(ctx: TaskContext; chunkSize: int): Result[int, TaskError] =
+    countDormantCloseChunks(pool, chunkSize),
+    run: proc(ctx: TaskContext; chunk: Chunk): TaskResult =
+    runDormantCloseChunk(pool, ctx, chunk))

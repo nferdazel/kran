@@ -20,6 +20,7 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | `daycloser.retry_backoff_seconds` | teknis | base | - | Jeda tetap antar percobaan. Backoff eksponensial menyusul bersama worker pool (T-140). |
 | `daycloser.txn_policy_during_close` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Pilihan kebijakan operasional institusi; nilai ALLOW belum diuji terhadap task penutup nyata (T-140). |
 | `deposit.dormant.after_months` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Ambang dormant pilot 12 bulan (D-152 butir 4); dasar pasal belum diverifikasi. |
+| `deposit.dormant_close.after_months` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Penutupan otomatis hanya saldo nol, 24 bulan sejak aktivitas terakhir (O-114). |
 | `ledger.coa.code_pattern` | teknis | base | - | - |
 | `ledger.posting.batch_size` | teknis | base | - | - |
 | `ledger.posting.lease_seconds` | teknis | base | - | - |
@@ -75,7 +76,7 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | kelas | jumlah definisi |
 |---|---|
 | teknis | 19 |
-| kebijakan | 33 |
+| kebijakan | 34 |
 | komersial-konservatif | 2 |
 | belum-bermakna | 0 |
 | regulasi-tidak-disemai | 5 |

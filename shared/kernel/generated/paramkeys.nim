@@ -18,6 +18,7 @@ const paramKeys*: seq[string] = @[
   "daycloser.retry_backoff_seconds",
   "daycloser.txn_policy_during_close",
   "deposit.dormant.after_months",
+  "deposit.dormant_close.after_months",
   "ledger.coa.code_pattern",
   "ledger.posting.batch_size",
   "ledger.posting.lease_seconds",
@@ -88,6 +89,8 @@ const P_daycloser_retry_backoff_seconds* = ParamKey[int64]("daycloser.retry_back
 const P_daycloser_txn_policy_during_close* = ParamKey[string]("daycloser.txn_policy_during_close")
 
 const P_deposit_dormant_after_months* = ParamKey[int64]("deposit.dormant.after_months")
+
+const P_deposit_dormant_close_after_months* = ParamKey[int64]("deposit.dormant_close.after_months")
 
 const P_ledger_coa_code_pattern* = ParamKey[string]("ledger.coa.code_pattern")
 
@@ -296,6 +299,17 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.deposit.dormant.after_months",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "deposit.dormant_close.after_months",
+    module: "deposit",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.deposit.dormant_close.after_months",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(

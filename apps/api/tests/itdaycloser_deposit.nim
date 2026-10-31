@@ -832,6 +832,34 @@ proc dormantPopulation(): int =
     SELECT count(*)::text FROM deposit.account
      WHERE status IN ('ACTIVE', 'DORMANT')"""))
 
+const
+  DormantCloseMonths = 24
+
+proc seedDormantCloseMonths(months: int) =
+  execScript(db, """
+    INSERT INTO platform.param_value
+      (param_value_id, key, scope_type, scope_id, value, effective_from, status, maker, checker,
+       reason)
+    VALUES (md5('deposit.dormant_close.after_months|test')::uuid,
+            'deposit.dormant_close.after_months', 'GLOBAL', NULL, '""" & $months & """'::jsonb,
+            DATE '1970-01-01', 'ACTIVE', '00000000-0000-4000-8000-0000000000c9',
+            '00000000-0000-4000-8000-0000000000ca', 'seed test penutupan dormant')
+    ON CONFLICT (param_value_id) DO UPDATE SET value = EXCLUDED.value
+  """)
+
+proc dormantCloseTask(): DayCloseTask =
+  let reg = newRegistry()
+  registerDepositTasks(reg, dbPool)
+  taskOf(reg, dormantCloseTaskId)
+
+proc runDormantCloseAt(businessDate: string; chunkNo = 0; chunkSize = 1000): TaskResult =
+  dormantCloseTask().run(ctxOn(businessDate, chunkSize), Chunk(chunkNo: chunkNo))
+
+proc dormantClosePopulation(): int =
+  parseInt(db.getValue(sql"""
+    SELECT count(*)::text FROM deposit.account
+     WHERE status IN ('DORMANT', 'CLOSED')"""))
+
 suite "dormant: penandaan status (T-138e)":
 
   test "tanpa aktivitas > ambang jadi DORMANT; yang beraktivitas tetap ACTIVE":
@@ -962,6 +990,97 @@ suite "dormant: penandaan status (T-138e)":
       check accounts <= 2
       processed += accounts
     check processed == total
+
+suite "dormant: penutupan otomatis saldo nol (O-114)":
+
+  test "DORMANT bersaldo nol dan lama tidak aktif ditutup; bersaldo tetap DORMANT":
+    seedDormantCloseMonths(DormantCloseMonths)
+    let emptyId = timeDeposit(std.version, std.product.code, "2024-01-01", "0.00",
+      status = "DORMANT")
+    let fundedId = timeDeposit(std.version, std.product.code, "2024-01-01", "1000000.00",
+      status = "DORMANT")
+
+    let res = runDormantCloseAt(DormantRunDate)
+    check res.isOk
+    check stateOf(emptyId).status == "CLOSED"
+    check stateOf(fundedId).status == "DORMANT"
+    # Penutupan tidak memindahkan uang: saldo nol tetap nol, tidak ada jurnal/transaksi baru.
+    check balanceOf(emptyId) == "0.00"
+    check transactionsOf(emptyId, ttCashDeposit).len == 0
+
+  test "rekening yang masih aktif dalam ambang 24 bulan tidak ditutup":
+    seedDormantCloseMonths(DormantCloseMonths)
+    # cutoff = 2026-10-28 − 24 bulan = 2024-10-28; `<` bukan `<=`, jadi tanggal cutoff tertahan.
+    let boundaryId = timeDeposit(std.version, std.product.code, "2024-10-28", "0.00",
+      status = "DORMANT")
+    let olderId = timeDeposit(std.version, std.product.code, "2024-10-27", "0.00",
+      status = "DORMANT")
+
+    check runDormantCloseAt(DormantRunDate).isOk
+    check stateOf(boundaryId).status == "DORMANT"
+    check stateOf(olderId).status == "CLOSED"
+
+  test "hanya DORMANT yang ditutup: ACTIVE bersaldo nol tidak disentuh":
+    seedDormantCloseMonths(DormantCloseMonths)
+    let activeId = timeDeposit(std.version, std.product.code, "2024-01-01", "0.00",
+      status = "ACTIVE")
+    check runDormantCloseAt(DormantRunDate).isOk
+    check stateOf(activeId).status == "ACTIVE"
+
+  test "penutupan menulis satu audit per chunk dan run ulang tidak menumpuk":
+    seedDormantCloseMonths(DormantCloseMonths)
+    let accountId = timeDeposit(std.version, std.product.code, "2024-01-01", "0.00",
+      status = "DORMANT")
+
+    let auditBefore = auditCount("deposit.dormant_close.chunk")
+    check runDormantCloseAt(DormantRunDate).isOk
+    check auditCount("deposit.dormant_close.chunk") == auditBefore + 1
+    let payload = lastAuditPayload("deposit.dormant_close.chunk")
+    var closed: seq[string]
+    for id in payload["closed"]:
+      closed.add id.getStr()
+    check $accountId in closed
+    check payload["afterMonths"].getInt() == DormantCloseMonths
+    check payload["businessDate"].getStr() == DormantRunDate
+    check stateOf(accountId).status == "CLOSED"
+
+    # Run kedua tidak mengubah apa pun (status sudah `CLOSED`, hanya peserta paginasi).
+    let again = runDormantCloseAt(DormantRunDate)
+    check again.isOk
+    check again.value().metrics["closed"].getInt() == 0
+    check auditCount("deposit.dormant_close.chunk") == auditBefore + 1
+
+  test "parameter ambang penutupan hilang = DAY-361 tanpa mengubah status":
+    let accountId = timeDeposit(std.version, std.product.code, "2024-01-01", "0.00",
+      status = "DORMANT")
+    execScript(db, """
+      DELETE FROM platform.param_value
+       WHERE param_value_id = md5('deposit.dormant_close.after_months|test')::uuid
+    """)
+    let res = runDormantCloseAt(DormantRunDate)
+    check not res.isOk
+    check res.error.code == "DAY-361"
+    check stateOf(accountId).status == "DORMANT"
+    seedDormantCloseMonths(DormantCloseMonths)
+
+  test "paginasi chunk 2 memeriksa setiap rekening dalam populasi stabil":
+    seedDormantCloseMonths(DormantCloseMonths)
+    let total = dormantClosePopulation()
+    check total > 2
+    let t = dormantCloseTask()
+    let counted = t.countChunks(ctxOn(DormantRunDate, chunkSize = 2), 2)
+    check counted.isOk
+    check counted.value() == (total + 1) div 2
+
+    var processed = 0
+    for i in 0 ..< counted.value():
+      let res = runDormantCloseAt(DormantRunDate, chunkNo = i, chunkSize = 2)
+      check res.isOk
+      let accounts = res.value().metrics["accounts"].getInt()
+      check accounts <= 2
+      processed += accounts
+    check processed == total
+
 
 # ---------------------------------------------------------------------------------------------
 # Jatuh tempo: guard dan rollback (review T-138d)

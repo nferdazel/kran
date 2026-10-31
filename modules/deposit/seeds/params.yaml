@@ -20,3 +20,19 @@
     compliance: NEEDS-COMPLIANCE-REVIEW
     note: "Ambang dormant pilot 12 bulan (D-152 butir 4); dasar pasal belum diverifikasi."
   default_pack: { base: 12 }
+
+# Penutupan otomatis rekening dormant (O-114, keputusan pemilik 31 Okt 2026): rekening `DORMANT`
+# yang saldonya **nol** dan aktivitas terakhirnya lebih lama dari N bulan ditutup (`CLOSED`).
+# 24 bulan dihitung dari aktivitas terakhir, jadi lebih lama daripada ambang dormant — penutupan
+# selalu setelah penandaan. Angka 24 provisional (`NEEDS-COMPLIANCE-REVIEW`): dasar pemberitahuan
+# ke anggota dan hak atas saldo belum diverifikasi. Saldo bukan nol tidak pernah ditutup otomatis.
+- key: deposit.dormant_close.after_months
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 1, maximum: 120 }
+  sensitivity: NORMAL
+  provenance:
+    class: kebijakan
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: "Penutupan otomatis hanya saldo nol, 24 bulan sejak aktivitas terakhir (O-114)."
+  default_pack: { base: 24 }
