@@ -23,6 +23,30 @@ suite "topicFor & matches":
     check not matches(@["param.changed"], "audit.appended")
     check not matches(@[], "param.changed")
 
+suite "hub: penyaringan per cabang (O-070)":
+  test "peristiwa param.changed ber-scope BRANCH hanya untuk cabang itu":
+    let event = ev("e1", "param.changed",
+      """{"key":"a.b","scope_type":"BRANCH","scope_id":"br-1"}""")
+    check EventScope(institutionWide: true).scopeAllows(event)
+    check EventScope(branchIds: @["br-1"]).scopeAllows(event)
+    check not EventScope(branchIds: @["br-2"]).scopeAllows(event)
+    # Default kosong = gagal-tertutup, bukan mengirim ke semua.
+    check not EventScope().scopeAllows(event)
+
+  test "peristiwa tanpa dimensi cabang tetap sampai ke semua pelanggan":
+    check EventScope().scopeAllows(ev("e1", "param.changed",
+      """{"key":"a.b","scope_type":"GLOBAL","scope_id":""}"""))
+    check EventScope().scopeAllows(ev("e2", "audit.appended", """{"scope_type":"BRANCH"}"""))
+
+  test "fanout tidak mengirim peristiwa cabang lain ke langganan":
+    var hub = newHub()
+    hub.subscribe("a", @["param.changed"], EventScope(branchIds: @["br-1"]))
+    hub.subscribe("b", @["param.changed"], EventScope(branchIds: @["br-2"]))
+    hub.subscribe("c", @["param.changed"], EventScope(institutionWide: true))
+    let deliveries = hub.fanout(@[ev("e1", "param.changed",
+      """{"scope_type":"BRANCH","scope_id":"br-1"}""")])
+    check deliveries.mapIt(it.subscriberId) == @["a", "c"]
+
 suite "hub: langganan & fanout":
   test "hanya langganan yang cocok yang menerima":
     var hub = newHub()

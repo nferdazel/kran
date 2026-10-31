@@ -67,6 +67,10 @@ proc allowSession(identity: string): bool {.gcsafe.} =
   discard identity
   true
 
+proc allowScope(identity: string): EventScope {.gcsafe.} =
+  discard identity
+  EventScope(institutionWide: true)
+
 proc requireOk(cond: bool; msg: string) =
   ## `check` di dalam proc pembantu tidak menggagalkan uji (hanya mencetak), jadi jalur gagal di sini
   ## melempar pengecualian biasa supaya unittest melaporkannya sebagai kegagalan — pola yang sama
@@ -108,7 +112,8 @@ proc runTeardownCycle(): int =
     dbPool.release(db)
 
   let svc = newEventService(TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics,
-                                        sessionValid: allowSession), dbPool)
+                                        sessionValid: allowSession,
+                                        eventScope: allowScope), dbPool)
   startPump(svc)
   let app = AppContext(version: "itapi-teardown-0.0.0", role: "api", startedAt: epochTime(),
                        events: svc, pool: dbPool, readiness: migrationProbe(dbPool, "."))
