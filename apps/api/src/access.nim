@@ -163,14 +163,40 @@ proc topicsAllowedFor*(db: DbConn, clock: Clock, identity: string,
   {.cast(gcsafe).}:
     ## Topik yang benar-benar diizinkan untuk identitas ini. `*` diperluas ke topik yang **izinnya
     ## dimiliki**, bukan ke seluruh topik yang ada (spec §18.2: perluasan tetap gagal-tertutup).
+    ##
+    ## Gerbangnya **tanpa dimensi cabang** (O-070): mana peristiwa yang boleh sampai disaring per
+    ## baris oleh `EventScope` di `hub` (`scopeAllows`). Tanpa ini, pengguna yang izinnya khusus
+    ## cabang tidak menerima peristiwa sama sekali, dan membuka topiknya tanpa penyaringan akan
+    ## mengirim peristiwa semua cabang ke semua pelanggan.
     let principal = resolvePrincipal(db, clock, identity)
     if principal.isNone:
       return @[]
     let wanted = if "*" in requested: knownTopics() else: requested
     for topic in wanted:
       let permission = permissionForTopic(topic)
-      if permission.len > 0 and authorized(db, principal.get(), permission):
+      if permission.len > 0 and authorizedAnyBranch(db, principal.get(), permission):
         result.add topic
+
+proc eventScopeFor*(db: DbConn, clock: Clock, identity: string): EventScope =
+  ## Cakupan cabang untuk penyaringan peristiwa realtime (O-070). Tidak menambah aturan izin:
+  ## memakai grant + pasangan SoD yang sama dengan `authorized`/`authorizedAtBranch`.
+  ##
+  ## `institutionWide` = izin dipegang tanpa batas cabang; `branchIds` = cabang tempat izin baca
+  ## parameter dipegang. Peristiwa `param.changed` ber-scope cabang lain tidak dikirim.
+  {.cast(gcsafe).}:
+    let principal = resolvePrincipal(db, clock, identity)
+    if principal.isNone:
+      return EventScope()
+    let grants = grantsOf(db, principal.get().user.userId)
+    let conflicts = conflictPairs(db)
+    if authorize(grants, "", permissionParamRead, conflicts).allowed:
+      return EventScope(institutionWide: true)
+    for grant in grants:
+      if grant.permission != permissionParamRead or grant.branchId.len == 0:
+        continue
+      if authorize(grants, grant.branchId, permissionParamRead, conflicts).allowed and
+          grant.branchId notin result.branchIds:
+        result.branchIds.add grant.branchId
 
 proc requirePrincipal*(ctx: AppContext, req: Request): Option[Principal] =
   ## Penjaga rute: membalas 501 (DB tidak dikonfigurasi) atau 401 (tanpa sesi sah) sendiri dan
@@ -234,6 +260,13 @@ proc realtimePolicy*(ctx: AppContext): TopicPolicy =
       return @[]
     withDbConn(ctx.pool, proc(db: DbConn): seq[string] {.gcsafe.} =
       topicsAllowedFor(db, ctx.clock, identity, requested)),
+    eventScope: proc(identity: string): EventScope {.gcsafe.} =
+    # Penyaringan per cabang untuk peristiwa `param.changed` (O-070). Dibaca saat klien
+    # berlangganan, jadi perubahan grant berlaku pada langganan berikutnya.
+    if ctx.pool.isNil:
+      return EventScope()
+    withDbConn(ctx.pool, proc(db: DbConn): EventScope {.gcsafe.} =
+      eventScopeFor(db, ctx.clock, identity)),
     sessionValid: proc(identity: string): bool {.gcsafe.} =
     # Dipakai pump untuk memeriksa ulang langganan yang sudah terbuka (O-036): sesi bisa
     # dicabut/kedaluwarsa setelah handshake. Definisi yang sama dengan `canOpen` supaya

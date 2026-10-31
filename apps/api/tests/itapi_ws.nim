@@ -103,6 +103,18 @@ proc allowSession(identity: string): bool {.gcsafe.} =
   discard identity
   true
 
+proc allowScope(identity: string): EventScope {.gcsafe.} =
+  ## Uji transport yang tidak menguji penyaringan cabang: semua peristiwa boleh.
+  discard identity
+  EventScope(institutionWide: true)
+
+proc branchScope(identity: string): EventScope {.gcsafe.} =
+  ## Dua identitas uji dengan izin baca parameter di cabang berbeda (O-070).
+  if identity == "uji-b":
+    EventScope(branchIds: @["branch-b"])
+  else:
+    EventScope(branchIds: @["branch-a"])
+
 ## Sesi yang bisa "dicabut" dari test (O-036): pump memeriksa lewat closure ini. Ditulis thread test
 ## dan dibaca thread pump, jadi memakai `Atomic` (bukan `bool` global polos).
 var sessionMasihSah: Atomic[bool]
@@ -133,7 +145,7 @@ discard applyAllMigrations(db, ".")
 let sysClock = systemClock()
 
 let mainService = newEventService(TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics,
-                            sessionValid: allowSession), dbPool)
+                            sessionValid: allowSession, eventScope: allowScope), dbPool)
 startPump(mainService)
 # Uji di bawah hanya menguji **pengiriman langsung**; peristiwa yang masuk sebelum pump menetapkan
 # titik mulai dianggap riwayat (by design), jadi tunggu sinyal kesiapan lebih dulu.
@@ -149,25 +161,28 @@ waitUntilServing(mainPort)
 
 # Penolakan akses: kebijakan "semua ditolak" dan kebijakan yang hanya mengizinkan satu topik.
 let denyService = newEventService(TopicPolicy(canOpen: denyOpen, allowedTopics: denyTopics,
-                            sessionValid: allowSession), nil)
+                            sessionValid: allowSession, eventScope: allowScope), nil)
 let denyPort = startServer(denyService)
 waitUntilServing(denyPort)
 
 let paramService = newEventService(
-  TopicPolicy(canOpen: allowOpen, allowedTopics: paramTopicsOnly, sessionValid: allowSession), nil)
+  TopicPolicy(canOpen: allowOpen, allowedTopics: paramTopicsOnly, sessionValid: allowSession,
+              eventScope: allowScope), nil)
 let paramPort = startServer(paramService)
 waitUntilServing(paramPort)
 
 # Batas replay kecil: untuk menguji jalur `resync` tanpa menyiapkan ratusan peristiwa.
 let tinyReplayService = newEventService(TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics,
-                                                    sessionValid: allowSession),
+                                                    sessionValid: allowSession,
+                                                    eventScope: allowScope),
                                         dbPool, resumeLimit = 1, maxResumeBatches = 1)
 let tinyReplayPort = startServer(tinyReplayService)
 waitUntilServing(tinyReplayPort)
 
 # Sesi berakhir di tengah umur koneksi (O-036): interval 0 supaya setiap putaran pump memeriksa.
 let gatedService = newEventService(
-  TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics, sessionValid: gatedSession),
+  TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics, sessionValid: gatedSession,
+              eventScope: allowScope),
   dbPool, sessionRecheckSeconds = 0)
 startPump(gatedService)
 waitForPump(gatedService)
@@ -177,12 +192,24 @@ waitUntilServing(gatedPort)
 # Izin dicabut di tengah umur koneksi (O-046): sesi sengaja tetap sah supaya yang diuji benar-benar
 # jalur izin, bukan jalur sesi.
 let izinService = newEventService(
-  TopicPolicy(canOpen: allowOpen, allowedTopics: gatedTopics, sessionValid: allowSession),
+  TopicPolicy(canOpen: allowOpen, allowedTopics: gatedTopics, sessionValid: allowSession,
+              eventScope: allowScope),
   dbPool, sessionRecheckSeconds = 0)
 startPump(izinService)
 waitForPump(izinService)
 let izinPort = startServer(izinService)
 waitUntilServing(izinPort)
+
+# Penyaringan per cabang (O-070): dua identitas dengan izin baca parameter di cabang berbeda,
+# satu service dan satu topik.
+let branchService = newEventService(
+  TopicPolicy(canOpen: allowOpen, allowedTopics: paramTopicsOnly, sessionValid: allowSession,
+              eventScope: branchScope),
+  dbPool)
+startPump(branchService)
+waitForPump(branchService)
+let branchPort = startServer(branchService)
+waitUntilServing(branchPort)
 
 ## Uji pemutusan serentak (O-049) memerlukan beberapa klien sekaligus pada satu service.
 const stressClients = 8
@@ -446,6 +473,36 @@ suite "realtime: peristiwa sampai ke klien":
       discard # koneksi ditutup: juga berarti tidak ada peristiwa
     check not sawEvent
 
+suite "realtime: peristiwa parameter disaring per cabang (O-070)":
+
+  test "klien cabang hanya menerima peristiwa cabangnya; peristiwa GLOBAL ke semua":
+    var clientA = connect("127.0.0.1", branchPort, EventsPath, @[("Cookie", "kran_session=uji-a")])
+    defer: clientA.close()
+    var clientB = connect("127.0.0.1", branchPort, EventsPath, @[("Cookie", "kran_session=uji-b")])
+    defer: clientB.close()
+    clientA.sendText("""{"type":"subscribe","topics":["param.changed"]}""")
+    check clientA.nextOfType("subscribed", 5000)["topics"][0].getStr() == "param.changed"
+    clientB.sendText("""{"type":"subscribe","topics":["param.changed"]}""")
+    check clientB.nextOfType("subscribed", 5000)["topics"][0].getStr() == "param.changed"
+
+    # Peristiwa cabang B: sampai ke B, tidak ke A.
+    discard appendTestEvent("param.changed",
+      %*{"key": "x", "scope_type": "BRANCH", "scope_id": "branch-b", "status": "ACTIVE"})
+    let frameB = clientB.nextOfType("event", 10000)
+    check frameB["payload"]["scope_id"].getStr() == "branch-b"
+    var sawEvent = false
+    try:
+      sawEvent = clientA.nextFrame(1500){"type"}.getStr("") == "event"
+    except TimeoutError:
+      discard # tidak ada frame dalam batas waktu: itu yang diharapkan
+    check not sawEvent
+
+    # Peristiwa GLOBAL tidak spesifik cabang: sampai ke keduanya.
+    discard appendTestEvent("param.changed",
+      %*{"key": "y", "scope_type": "GLOBAL", "scope_id": "", "status": "ACTIVE"})
+    check clientA.nextOfType("event", 10000)["payload"]["key"].getStr() == "y"
+    check clientB.nextOfType("event", 10000)["payload"]["key"].getStr() == "y"
+
 suite "realtime: resume tidak kehilangan peristiwa":
   test "reconnect dengan resumeFrom menerima peristiwa yang terlewat, berurutan":
     let topic = uniqueTopic()
@@ -610,7 +667,8 @@ suite "readyz: migrasi & lag outbox (O-019)":
                   VALUES (?, 'test.lag.base', 'test', 'x', '{}'::jsonb, ?)""",
             $baseId, "itapi-lag-base-" & $baseId)
     let svc = newEventService(TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics,
-                                          sessionValid: allowSession), dbPool)
+                                          sessionValid: allowSession, eventScope: allowScope),
+                              dbPool)
     startPump(svc)
     waitForPump(svc)
     check svc.pumpCursor().len > 0

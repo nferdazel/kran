@@ -7,8 +7,10 @@
 ##      Topik difilter otorisasi per langganan (`splitAllowed`) — permintaan `*` tidak otomatis
 ##      diizinkan; yang ditolak dilaporkan di balasan `subscribed.denied`.
 ##   3. Pump (satu thread `LISTEN` + baca outbox) menyebarkan peristiwa baru ke langganan yang
-##      cocok. Reconnect tidak kehilangan peristiwa: klien mengirim `resumeFrom` = id terakhir yang
-##      ia terima, dan server memutar ulang dari outbox.
+##      cocok. Peristiwa `param.changed` ber-scope `BRANCH` hanya dikirim ke pelanggan yang
+##      memegang izin cabang itu (cakupan dari `TopicPolicy.eventScope`, O-070); replay memakai
+##      saringan yang sama. Reconnect tidak kehilangan peristiwa: klien mengirim `resumeFrom` = id
+##      terakhir yang ia terima, dan server memutar ulang dari outbox.
 ##
 ## Identitas koneksi: Mummy tidak mengekspos `clientId`-nya, jadi layanan ini memberi id sendiri
 ## (`nextId`) dan memakai `WebSocket` sebagai kunci tabel — pola yang sama dipakai Mummy untuk
@@ -64,6 +66,9 @@ type
     ## mengirim pesan `subscribe`.
     canOpen*: proc(identity: string): bool {.gcsafe.}
     allowedTopics*: proc(identity: string, requested: seq[string]): seq[string] {.gcsafe.}
+    eventScope*: proc(identity: string): EventScope {.gcsafe.}
+      ## Cakupan cabang untuk penyaringan peristiwa (O-070). Wajib ada: tanpa ini peristiwa
+      ## `param.changed` ber-scope cabang akan lolos ke semua pelanggan yang topiknya cocok.
     sessionValid*: proc(identity: string): bool {.gcsafe.}
       ## Diperiksa **berkala** oleh pump, bukan sekali saat handshake: sesi bisa dicabut atau
       ## kedaluwarsa di tengah umur koneksi (O-036). Wajib ada (bukan opsional) supaya tidak ada
@@ -73,6 +78,7 @@ type
     id*: uint64
     identity*: string
     topics*: seq[string]
+    scope*: EventScope          ## cakupan cabang yang dipakai `hub` menyaring peristiwa (O-070)
     lastSessionCheck*: MonoTime ## kapan sesi terakhir diperiksa (pump, berkala)
 
   EventService* = ref object
@@ -114,13 +120,18 @@ proc denySession(identity: string): bool {.gcsafe.} =
   discard identity
   false
 
+proc denyScope(identity: string): EventScope {.gcsafe.} =
+  discard identity
+  EventScope()
+
 proc allowSession(identity: string): bool {.gcsafe.} =
   discard identity
   true
 
 proc denyPolicy*(): TopicPolicy =
   ## Belum ada sesi nyata (T-012) → tidak ada identitas yang boleh membuka stream.
-  TopicPolicy(canOpen: denyOpen, allowedTopics: denyTopics, sessionValid: denySession)
+  TopicPolicy(canOpen: denyOpen, allowedTopics: denyTopics, sessionValid: denySession,
+    eventScope: denyScope)
 
 proc allowAllPolicy*(): TopicPolicy =
   ## Semua identitas non-anonim boleh membuka stream dan berlangganan topik apa pun.
@@ -132,7 +143,13 @@ proc allowAllPolicy*(): TopicPolicy =
     discard identity
     requested
 
-  TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics, sessionValid: allowSession)
+  proc allowScope(identity: string): EventScope {.gcsafe.} =
+    ## Uji transport tidak punya grant: semua peristiwa boleh, termasuk yang ber-cabang.
+    discard identity
+    EventScope(institutionWide: true)
+
+  TopicPolicy(canOpen: allowOpen, allowedTopics: allowTopics, sessionValid: allowSession,
+    eventScope: allowScope)
 
 # ---------------------------------------------------------------------------------------------
 # Identitas & header
@@ -158,6 +175,10 @@ proc newEventService*(policy: TopicPolicy, pool: DbPool, resumeLimit = 200,
     # Gagal keras di sini, bukan crash senyap saat pump memeriksa sesi: tipe tidak bisa memaksa
     # closure terisi, dan lupa mengisinya = lubang O-036 kembali terbuka tanpa jejak.
     raise newException(ValueError, "TopicPolicy.sessionValid wajib diisi (lihat O-036)")
+  if policy.eventScope.isNil:
+    # Alasan yang sama untuk penyaringan cabang (O-070): tanpa cakupan, peristiwa `param.changed`
+    # ber-scope cabang akan terkirim ke semua pelanggan yang topiknya cocok.
+    raise newException(ValueError, "TopicPolicy.eventScope wajib diisi (lihat O-070)")
   new(result)
   result.hub = newHub()
   initLock(result.lock)
@@ -220,7 +241,7 @@ proc fetchBatch(svc: EventService, token: string): seq[RealtimeEvent] =
     eventsAfter(db, token, svc.resumeLimit))
 
 proc replayTo(svc: EventService, clientId: uint64, resumeFrom: string,
-              topics: seq[string]): tuple[resumed: int, resync: bool] =
+              topics: seq[string]; scope: EventScope): tuple[resumed: int, resync: bool] =
   ## Putar ulang peristiwa yang terlewat setelah `resumeFrom`. Dibatasi `maxResumeBatches` putaran;
   ## kalau masih ada sisa, klien diminta mulai dari awal (`resync`) daripada menahan koneksi terlalu
   ## lama sambil membanjiri soket.
@@ -230,7 +251,7 @@ proc replayTo(svc: EventService, clientId: uint64, resumeFrom: string,
     if batch.len == 0:
       return
     for event in batch:
-      if matches(topics, event.topic):
+      if matches(topics, event.topic) and scope.scopeAllows(event):
         svc.sendMessage(clientId, encodeEvent(event.outbound()))
         inc result.resumed
       token = event.eventId
@@ -260,15 +281,19 @@ proc handleSubscription(svc: EventService, socket: WebSocket, identity: string,
 
   let allowed = svc.policy.allowedTopics(identity, subscription.topics)
   let split = splitAllowed(subscription.topics, allowed)
+  # Cakupan cabang dihitung sekali per pesan langganan, dari grant saat itu: perubahan grant
+  # langsung berlaku pada langganan berikutnya, dan pump tidak perlu menyentuh DB per peristiwa.
+  let scope = svc.policy.eventScope(identity)
   withLock svc.lock:
     if svc.streams.hasKey(socket):
       svc.streams[socket].topics = split.granted
+      svc.streams[socket].scope = scope
     # Hub adalah yang menyaring saat pump menyebar; kalau langganan di hub tidak ikut
     # diperbarui, topik yang "disetujui" tidak menghasilkan peristiwa apa pun.
-    svc.hub.subscribe($clientId, split.granted)
+    svc.hub.subscribe($clientId, split.granted, scope)
   var resumed = 0
   if subscription.resumeFrom.len > 0 and split.granted.len > 0:
-    let replay = svc.replayTo(clientId, subscription.resumeFrom, split.granted)
+    let replay = svc.replayTo(clientId, subscription.resumeFrom, split.granted, scope)
     resumed = replay.resumed
     if replay.resync:
       # Kehilangan terlalu banyak: klien harus menyegarkan keadaan lewat HTTP lalu mulai lagi.

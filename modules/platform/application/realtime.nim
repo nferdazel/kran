@@ -13,6 +13,7 @@
 
 import std/[json, sets]
 
+import kernel/paramkey
 import kernel/result
 
 const
@@ -39,10 +40,21 @@ type
     subscriberId*: string
     message*: OutboundMessage
 
+  EventScope* = object
+    ## Cakupan peristiwa yang boleh diterima satu langganan (O-070, keputusan pemilik 31 Okt 2026).
+    ##
+    ## Hanya peristiwa yang **memang milik satu cabang** yang disaring: `param.changed` dengan
+    ## `scope_type = BRANCH`. Peristiwa lain tidak punya dimensi cabang, jadi tetap disaring topiknya
+    ## saja. Default kosong = tidak ada cabang yang boleh, jadi lupa mengisi cakupan menutup
+    ## peristiwa ber-cabang (gagal-tertutup), bukan membocorkannya.
+    institutionWide*: bool
+    branchIds*: seq[string]
+
   Subscriber* = object
     id*: string
     topics*: seq[string]
     lastSentId*: string
+    scope*: EventScope
 
   Hub* = object
     subscribers*: seq[Subscriber]
@@ -94,10 +106,12 @@ proc findSubscriber(hub: Hub, id: string): int =
       return i
   -1
 
-proc subscribe*(hub: var Hub, id: string, topics: seq[string]) =
+proc subscribe*(hub: var Hub, id: string, topics: seq[string];
+                scope = EventScope()) =
   ## Idempoten: langganan yang sama di-*update* (klien reconnect memakai id yang sama).
+  ## `scope` = hasil `TopicPolicy.eventScope`; default kosong menutup peristiwa ber-cabang.
   let index = hub.findSubscriber(id)
-  var entry = Subscriber(id: id, topics: topics)
+  var entry = Subscriber(id: id, topics: topics, scope: scope)
   if index >= 0:
     entry.lastSentId = hub.subscribers[index].lastSentId
     hub.subscribers[index] = entry
@@ -125,12 +139,28 @@ proc outbound*(event: RealtimeEvent): OutboundMessage =
     payload: event.payload,
   )
 
+proc scopeAllows*(scope: EventScope; event: RealtimeEvent): bool =
+  ## Apakah peristiwa ini boleh sampai ke langganan dengan cakupan `scope` (O-070). Aturannya
+  ## searah dengan otorisasi baca: peristiwa ber-scope `BRANCH` hanya untuk pemegang izin cabang
+  ## itu (atau pemegang izin tanpa batas cabang); peristiwa lain lolos karena tidak spesifik.
+  if event.topic != "param.changed" or event.payload.isNil or
+      event.payload.kind != JObject:
+    return true
+  if event.payload{"scope_type"}.getStr("") != $pstBranch:
+    return true
+  if scope.institutionWide:
+    return true
+  let branchId = event.payload{"scope_id"}.getStr("")
+  branchId.len > 0 and branchId in scope.branchIds
+
 proc fanout*(hub: var Hub, events: seq[RealtimeEvent]): seq[Delivery] =
   ## Sebar peristiwa ke langganan yang topiknya cocok (urutan peristiwa dipertahankan).
   ## Hasilnya adalah *rencana kirim*: transport yang mengeksekusi, supaya hub tetap murni.
   for event in events:
     for i in 0 ..< hub.subscribers.len:
       if not matches(hub.subscribers[i].topics, event.topic):
+        continue
+      if not hub.subscribers[i].scope.scopeAllows(event):
         continue
       result.add Delivery(
         subscriberId: hub.subscribers[i].id,
