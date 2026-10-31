@@ -7,9 +7,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   appNavLinks,
-  groupVisibleLinks,
   groupVisibleLinks as groupLinks,
   isActiveHref,
+  landingHref,
   sessionPermissions,
   visibleNavLinks,
   type NavLink,
@@ -121,6 +121,45 @@ describe("groupVisibleLinks", () => {
 
   it("tanpa izin: tidak ada kelompok sama sekali", () => {
     expect(groupLinks(visibleNavLinks(appNavLinks, []))).toEqual([]);
+  });
+});
+
+describe("kelengkapan pengelompokan", () => {
+  it("setiap tautan muncul di salah satu kelompok (kelompok salah ketik tidak menghilangkannya)", () => {
+    const grouped = groupLinks(visibleNavLinks(appNavLinks, ALL_PERMISSIONS)).flatMap(
+      (group) => group.links,
+    );
+
+    // Urutan berbeda (kelompok menata ulang), isinya harus sama persis.
+    expect(grouped.map((link) => link.href).sort()).toEqual(
+      appNavLinks.map((link) => link.href).sort(),
+    );
+  });
+});
+
+describe("landingHref", () => {
+  const link = (href: string): NavLink => ({
+    href,
+    group: "cash",
+    label: () => href,
+    permissions: [],
+  });
+
+  it("memilih buku besar bila ada, meski urutan menu dimulai dari kas", () => {
+    expect(landingHref([link("/app/teller"), link("/app/ledger")])).toBe("/app/ledger");
+  });
+
+  it("tanpa izin buku besar: tautan pertama yang boleh dibuka", () => {
+    expect(landingHref([link("/app/teller"), link("/app/vault")])).toBe("/app/teller");
+  });
+
+  it("tanpa tautan sama sekali: layar parameter (yang menjelaskan keadaannya)", () => {
+    expect(landingHref([])).toBe("/app/params");
+  });
+
+  it("hasilnya selalu tujuan yang ada di daftar, bukan rute karangan", () => {
+    const links = visibleNavLinks(appNavLinks, ["teller.transaction.post"]);
+    expect(links.map((l) => l.href)).toContain(landingHref(links));
   });
 });
 

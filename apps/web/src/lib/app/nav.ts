@@ -16,24 +16,26 @@
 import * as m from "#lib/paraglide/messages.js";
 import type { AppLocale } from "#lib/app/i18n.js";
 
-/** Kelompok menu; urutannya tetap dan ditentukan di `navGroups`, bukan di urutan data. */
-export type NavGroupId = "cash" | "members" | "ledger" | "admin";
-
 export type NavGroup = {
-  readonly id: NavGroupId;
+  readonly id: string;
   readonly label: (locale?: AppLocale) => string;
 };
 
 /**
  * Kelompok kerja (DESIGN §11: navigasi dikelompokkan menurut pekerjaan, bukan daftar datar).
  * Urutan di sini = urutan tampil; kelompok yang tidak punya tautan terlihat tidak dirender.
+ * Id diambil dari daftar ini, bukan ditulis ulang sebagai union: menambah kelompok cukup di sini,
+ * dan tautan yang lupa diberi kelompok ketahuan lewat test cakupan.
  */
-export const navGroups: readonly NavGroup[] = [
+export const navGroups = [
   { id: "cash", label: (locale) => m.common_nav_group_cash({}, { locale }) },
   { id: "members", label: (locale) => m.common_nav_group_members({}, { locale }) },
   { id: "ledger", label: (locale) => m.common_nav_group_ledger({}, { locale }) },
   { id: "admin", label: (locale) => m.common_nav_group_admin({}, { locale }) },
-];
+] as const satisfies readonly NavGroup[];
+
+/** Kelompok menu; diturunkan dari `navGroups` supaya tidak bisa menyimpang. */
+export type NavGroupId = (typeof navGroups)[number]["id"];
 
 export type NavLink = {
   /** Href internal (selalu di bawah `/app`). */
@@ -149,13 +151,14 @@ export function groupVisibleLinks(links: readonly NavLink[]): Array<NavGroup & {
 }
 
 /**
- * Tujuan pendaratan setelah masuk (login dan `/app`). Buku besar didahulukan bila boleh dibaca —
- * urutan menu adalah urutan kerja (kas lebih dulu), bukan urutan pendaratan. Pemakai tanpa izin
- * buku besar mendarat di tautan pertamanya, dan pemakai tanpa tautan sama sekali ke halaman kata
- * sandi (satu-satunya layar `/app` yang tidak butuh izin fitur).
+ * Tujuan pendaratan setelah masuk, dipakai tiga jalur masuk (`/`, `/login`, `/app`) supaya
+ * ketiganya tidak pernah menyimpang. Buku besar didahulukan karena ia rumah kerja pembukuan,
+ * terlepas dari urutan tampil menu (yang dimulai dari kas). Pemakai tanpa izin buku besar
+ * mendarat di tautan pertamanya; pemakai tanpa tautan sama sekali mendarat di layar parameter,
+ * yang memang menampilkan penjelasan "tidak berizin" alih-alih memantulkan redirect.
  */
 export function landingHref(links: readonly NavLink[]): string {
-  return links.find((link) => link.href === "/app/ledger")?.href ?? links[0]?.href ?? "/app/password";
+  return links.find((link) => link.href === "/app/ledger")?.href ?? links[0]?.href ?? "/app/params";
 }
 
 /**

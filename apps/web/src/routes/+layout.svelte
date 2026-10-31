@@ -54,15 +54,12 @@
   const navGroups = $derived(groupVisibleLinks(navLinks));
 
   /**
-   * Tanggal bisnis institusi (spec §14.3). `routes/app/+layout.ts` hanya mengambilnya bila sesi
-   * memegang izin baca penutupan buku, jadi shell tidak menampilkan tanggal karangan: indikator
-   * hilang sampai nilainya benar-benar diketahui.
+   * Tanggal bisnis institusi (spec §14.3). `routes/app/+layout.ts` mengirim `undefined` bila
+   * nilainya tidak diketahui (izin tidak ada atau permintaan gagal) dan `null` bila institusi
+   * memang belum punya baris tanggal buku. Indikator hanya dirender pada dua kasus yang jujur itu:
+   * tanggal nyata, atau "belum tersedia" yang memang keadaannya — tidak pernah tanggal karangan.
    */
-  const businessDate = $derived(
-    typeof page.data.businessDate === "string" && page.data.businessDate !== ""
-      ? page.data.businessDate
-      : "",
-  );
+  const businessDate = $derived(page.data.businessDate as string | null | undefined);
 
   /**
    * Identitas pemegang sesi untuk shell (T-132/UI-3). Sebelumnya logout hanya ada di `/app` dan
@@ -133,16 +130,16 @@
       </p>
     </div>
 
-    {#if page.data.session}
+    {#if businessDate !== undefined}
       <div class="kran-header__meta">
-        <!-- Indikator business date (spec §14.3): nilainya dari API, bukan placeholder. Selama
-             institusi belum punya baris tanggal buku, API menjawab `null` dan shell mengatakannya
-             apa adanya alih-alih menampilkan tanggal karangan. -->
+        <!-- Indikator business date (spec §14.3): nilainya dari API, bukan placeholder. -->
         <p class="kran-business-date">
           <span class="kran-status-dot" aria-hidden="true"></span>
           <span class="kran-muted">{m.common_business_date_label()}:</span>
           <span class="kran-num"
-            >{businessDate !== "" ? formatDate(businessDate) : m.common_business_date_unknown()}</span
+            >{businessDate === null
+              ? m.common_business_date_unknown()
+              : formatDate(businessDate)}</span
           >
         </p>
       </div>
@@ -163,7 +160,9 @@
 
         {#each navGroups as group (group.id)}
           <div class="kran-nav__group">
-            <h2 class="kran-nav__group-title" id="nav-group-{group.id}">{group.label()}</h2>
+            <!-- Label kelompok, bukan heading: nav muncul sebelum `<h1>` halaman dan heading
+                 tingkat 2 di depannya membuat urutan heading dimulai dari level 2. -->
+            <p class="kran-nav__group-title" id="nav-group-{group.id}">{group.label()}</p>
             <ul aria-labelledby="nav-group-{group.id}">
               {#each group.links as link (link.href)}
                 <li>

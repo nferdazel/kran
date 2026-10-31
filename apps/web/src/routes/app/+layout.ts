@@ -25,12 +25,15 @@ export const load = async ({ url }) => {
     redirect(303, PASSWORD_PATH);
   }
 
-  let businessDate: string | null = null;
+  // `null` = nilai diketahui kosong (institusi belum punya baris tanggal buku); `undefined` =
+  // tidak tahu (izin tidak ada atau permintaan gagal). Shell hanya menampilkan indikator pada
+  // kasus kedua-duanya yang jujur: tanggal nyata, atau "belum tersedia" yang memang keadaan.
+  let businessDate: string | null | undefined;
   if ((data.permissions ?? []).includes(DAYCLOSE_READ)) {
     const status = await api.GET("/api/v1/dayclose/status");
-    // `businessDate` bukan string: objek `{ date, state, frozenAt }` (lihat kontrak).
-    if (status.response.ok && status.data?.businessDate?.date) {
-      businessDate = status.data.businessDate.date;
+    if (status.response.ok) {
+      // `businessDate` bukan string: objek `{ date, state, frozenAt }` (lihat kontrak).
+      businessDate = status.data?.businessDate?.date ?? null;
     }
   }
 
