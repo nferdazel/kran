@@ -38,6 +38,7 @@ type Text = {
   closed: string;
   even: string;
   openStatus: string;
+  sessionTransactions: string;
 };
 
 const T: Record<"id" | "en", Text> = {
@@ -56,6 +57,7 @@ const T: Record<"id" | "en", Text> = {
     closed: "Sesi kas ditutup",
     even: "Tidak ada selisih",
     openStatus: "Terbuka",
+    sessionTransactions: "Transaksi sesi",
   },
   en: {
     loginTitle: "Sign in",
@@ -72,6 +74,7 @@ const T: Record<"id" | "en", Text> = {
     closed: "Cash session closed",
     even: "No variance",
     openStatus: "Open",
+    sessionTransactions: "Session transactions",
   },
 };
 
@@ -243,6 +246,13 @@ test.describe.serial("teller: sesi kas, setor, tutup", () => {
     await focusAndEnter(page, text.review);
     await focusAndEnter(page, text.save);
     await expect(page.getByRole("heading", { name: text.success })).toBeVisible();
+
+    // Arus kas sesi (T-147) dimuat ulang setelah simpan: baris rekening yang baru disetor terlihat
+    // tanpa berpindah halaman. Caption tabel tersembunyi secara visual, jadi dicari lewat nama
+    // tabelnya (`<caption>`), bukan teks di layar.
+    const sessionTable = page.getByRole("table", { name: text.sessionTransactions });
+    await expect(sessionTable).toBeVisible();
+    await expect(sessionTable.getByRole("row").filter({ hasText: fixture.accountNo })).toBeVisible();
 
     // Tutup: kas fisik = float 1000 + setoran 10 → selisih nol.
     await page.getByRole("button", { name: text.sessionClose }).first().focus();

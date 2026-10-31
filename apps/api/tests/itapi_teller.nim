@@ -42,6 +42,7 @@ const
   ReversalPath = "/api/v1/ledger/journals/{journalId}/reversal"
   SessionsPath = "/api/v1/teller/sessions"
   SessionClosePath = "/api/v1/teller/sessions/{sessionId}/close"
+  SessionTransactionsPath = "/api/v1/teller/sessions/{sessionId}/transactions"
   LoginPath = "/api/v1/auth/login"
   MakerUser = "dev.maker"
   CheckerUser = "dev.checker"
@@ -1346,6 +1347,62 @@ suite "teller: sesi kas menggerbang transaksi tunai (T-093b)":
       %*{"countedCash": "130.00"}, token)
     check closeAgain.code == 409
     check closeAgain.body["params"]["reason"].getStr() == "session_not_open"
+
+  test "T-147: arus kas sesi terbaru dulu, total penuh, paginasi, 404/400":
+    let token = tokenOf(login(SessionTellerUser))
+    let openResp = postJson(SessionsPath,
+      %*{"branchId": SessionBranchId, "openingFloat": "100.00"}, token)
+    check openResp.code == 201
+    let sessionId = openResp.body["sessionId"].getStr()
+
+    let deposit = postJson(CashPath, cashBody(SessionBranchAccountId, "DEPOSIT", "50.00"), token)
+    check deposit.code == 201
+    let withdraw = postJson(CashPath,
+      cashBody(SessionBranchAccountId, "WITHDRAWAL", "20.00"), token)
+    check withdraw.code == 201
+
+    let listPath = SessionsPath & "/" & sessionId & "/transactions"
+    let listed = call("GET", listPath, "", token)
+    check listed.code == 200
+    checkJson(SessionTransactionsPath, "GET", "200", listed.body)
+    check listed.body["sessionId"].getStr() == sessionId
+    check listed.body["businessDate"].getStr() == BusinessDate
+    check listed.body["total"].getInt() == 2
+    # Terbaru dulu: penarikan sesudah setoran.
+    check listed.body["items"][0]["direction"].getStr() == "OUT"
+    check listed.body["items"][0]["amount"].getStr() == "20.00"
+    check listed.body["items"][0]["transactionId"].getStr() ==
+      withdraw.body["transactionId"].getStr()
+    check listed.body["items"][0]["journalId"].getStr() == withdraw.body["journalId"].getStr()
+    check listed.body["items"][0]["accountNo"].getStr() ==
+      dbText(sql"SELECT account_no FROM deposit.account WHERE account_id = ?",
+        SessionBranchAccountId)
+    check listed.body["items"][1]["direction"].getStr() == "IN"
+    check listed.body["items"][1]["amount"].getStr() == "50.00"
+
+    # Paginasi: halaman kedua hanya berisi baris setoran, `total` tetap jumlah sesi.
+    let page2 = call("GET", listPath & "?limit=1&offset=1", "", token)
+    check page2.code == 200
+    check page2.body["total"].getInt() == 2
+    check page2.body["items"].len == 1
+    check page2.body["items"][0]["direction"].getStr() == "IN"
+
+    let unknown = call("GET", SessionsPath & "/99999999-9999-7999-8999-999999999999" &
+      "/transactions", "", token)
+    check unknown.code == 404
+    check unknown.body["params"]["reason"].getStr() == "session_not_found"
+    let badLimit = call("GET", listPath & "?limit=0", "", token)
+    check badLimit.code == 400
+    let badOffset = call("GET", listPath & "?offset=-1", "", token)
+    check badOffset.code == 400
+
+    let closeResp = postJson(SessionsPath & "/" & sessionId & "/close",
+      %*{"countedCash": "130.00"}, token)
+    check closeResp.code == 200
+    # Sesi `CLOSED` tetap bisa dibaca: operator masih perlu melihat isi sesi yang baru ditutup.
+    let afterClose = call("GET", listPath, "", token)
+    check afterClose.code == 200
+    check afterClose.body["total"].getInt() == 2
 
   test "T-118: buka/tutup sesi + selisih kas berjurnal (vault, laci, selisih)":
     let token = tokenOf(login(SessionTellerUser))

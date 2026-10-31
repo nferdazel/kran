@@ -239,6 +239,9 @@ proc tellerSessionRoutes*(): seq[RouteSpec] =
               operationId: "getCurrentTellerSession", handler: handleGetCurrentTellerSession),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/teller/sessions/{sessionId}/close",
               operationId: "closeTellerSession", handler: handleCloseTellerSession),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/teller/sessions/{sessionId}/transactions",
+              operationId: "listTellerSessionTransactions",
+              handler: handleListSessionTransactions),
   ]
 
 proc tellerVaultRoutes*(): seq[RouteSpec] =
