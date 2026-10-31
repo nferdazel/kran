@@ -13,6 +13,18 @@ import yaml/tojson
 
 const HttpMethods* = ["GET", "POST", "PUT", "PATCH", "DELETE"]
 
+const
+  ## Rute tulis yang boleh **tidak** mendeklarasikan 409 karena gerbang penutupan buku
+  ## melewatinya. Harus identik dengan `closeGuardExemptPrefixes` di
+  ## `apps/api/src/close_guard.nim`.
+  exemptWritePrefixes* = ["/api/v1/auth/", "/api/v1/dayclose/"]
+
+proc exemptWrite*(path: string): bool =
+  for prefix in exemptWritePrefixes:
+    if path.startsWith(prefix):
+      return true
+  false
+
 type
   Operation* = object
     path*: string
@@ -132,6 +144,21 @@ proc findings*(declared: seq[DeclaredRoute], contract: Contract): seq[string] =
     if op.hasRequestBody and "415" notin op.declaredStatuses:
       result.add "operasi berbadan tidak mendeklarasikan 415 (tipe media ditolak): " & k &
         " (operationId: " & op.operationId & ")"
+
+  # Gerbang penutupan buku (T-135, spec §11.5 #3). Selama business date `CLOSING`, pembungkus HTTP
+  # menolak **semua** perubahan dengan 409 `business_date_closing` kecuali rute autentikasi
+  # (operator tetap harus bisa masuk). Kontrak harus menyebutnya di setiap operasi yang bisa
+  # kena; menambah endpoint tulis baru tanpa 409 akan gagal di sini, bukan di produksi.
+  #
+  # Awalan pengecualian **persis sama** dengan runtime (`closeGuardExemptPrefixes` di
+  # `apps/api/src/close_guard.nim`), termasuk garis miring penutup: awalan yang lebih longgar di
+  # sini akan membuat rute seperti `/api/v1/authentication/...` lolos dari aturan kontrak padahal
+  # diblokir runtime. Test `topenapi` mengunci kesamaan ini dari dua arah.
+  for k, op in byKey:
+    if op.httpMethod notin ["GET", "HEAD", "OPTIONS"] and
+        not exemptWrite(op.path) and "409" notin op.declaredStatuses:
+      result.add "operasi tulis tidak mendeklarasikan 409 (penutupan buku menolak perubahan): " &
+        k & " (operationId: " & op.operationId & ")"
 
 proc resolveRef*(contract: Contract, node: JsonNode): JsonNode =
   ## Ikuti `$ref` lokal (`#/components/...`); `$ref` eksternal dianggap error pemakaian.

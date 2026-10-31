@@ -1,4 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
+
+import { blockingViolations } from "./axe.js";
 import { requireDatabase } from "./db.js";
 import { expect, test, type Page } from "@playwright/test";
 
@@ -147,7 +149,7 @@ test.describe.serial("command palette", () => {
     const dialog = await openPalette(page, T.id);
     await dialog.getByRole("link", { name: T.id.params, exact: true }).click();
 
-    await expect(page).toHaveURL(/\/app$/);
+    await expect(page).toHaveURL(/\/app\/params$/);
     await expect(dialog).toBeHidden();
   });
 
@@ -218,7 +220,7 @@ test.describe.serial("command palette", () => {
     await login(page, T.id);
 
     // Halaman Parameter punya field teks nyata; di sana Ctrl+K milik field (bukan palette).
-    await page.goto("/app");
+    await page.goto("/app/params");
     await expect(page.getByRole("heading", { level: 1, name: T.id.paramsTitle })).toBeVisible();
     await page.getByLabel(T.id.newValue, { exact: true }).focus();
     await page.keyboard.press("Control+k");
@@ -242,12 +244,10 @@ test.describe.serial("command palette", () => {
         await expect(dialog.getByRole("link", { name: text.teller, exact: true })).toBeVisible();
 
         const results = await new AxeBuilder({ page }).analyze();
-        const serious = results.violations.filter(
-          (violation) => violation.impact === "serious" || violation.impact === "critical",
-        );
+        const blocking = blockingViolations(results.violations);
         expect(
-          serious,
-          `${locale}/${theme} palette: ${serious.map((violation) => violation.id).join(", ")}`,
+          blocking,
+          `${locale}/${theme} palette: ${blocking.map((violation) => violation.id).join(", ")}`,
         ).toEqual([]);
 
         // Tutup tiap putaran: putaran berikutnya mereload halaman, tetapi palette yang tertinggal

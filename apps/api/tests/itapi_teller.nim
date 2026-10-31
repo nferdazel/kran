@@ -20,8 +20,8 @@ import openapi/lib
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
 
-import deposit/domain/account
-import deposit/infrastructure/account_repo
+import deposit/domain/[account, transaction]
+import deposit/infrastructure/[account_repo, reconcile_repo, transaction_repo]
 import ledger/domain/[coa, period, posting]
 import ledger/infrastructure/[ledger_repo, posting_repo]
 import party/domain/party
@@ -42,6 +42,7 @@ const
   ReversalPath = "/api/v1/ledger/journals/{journalId}/reversal"
   SessionsPath = "/api/v1/teller/sessions"
   SessionClosePath = "/api/v1/teller/sessions/{sessionId}/close"
+  SessionTransactionsPath = "/api/v1/teller/sessions/{sessionId}/transactions"
   LoginPath = "/api/v1/auth/login"
   MakerUser = "dev.maker"
   CheckerUser = "dev.checker"
@@ -74,6 +75,15 @@ var
   HighMinAccountId: string
   SessionBranchAccountId: string
   ProductRuleAccountId: string
+  TimeDepositAccountId: string
+  EarlyTdAccountId: string
+  NoPenaltyTdAccountId: string
+  EarlyTransferTdId: string
+  EarlyTransferDestId: string
+  ZeroPenaltyTdId: string
+  PartialTdId: string
+  MaturedTdId: string
+  MinBalanceTdId: string
   PokokAccountId: string
   PokokTransferAccountId: string
   WajibAccountId: string
@@ -226,6 +236,99 @@ block:
   doAssert approveVersion(db, verRule.versionId, approver), "versi rule produk gagal di-approve"
   ProductRuleAccountId = $seedAccount(party.partyId, prodRule.productId, verRule.versionId,
     Id(BranchId), "SAV-PROD")
+  # Rekening **deposito berjangka** (T-138d): pokok masuk `202`, bukan `201` (D-152). Tipenya
+  # diubah sebelum disimpan karena `newAccount` selalu melahirkan tabungan.
+  var td = newAccount(newId(fixtureClock), party.partyId, prod.productId, ver.versionId,
+    ProductCode, Id(BranchId), "001", "2026-10-01", nextAccountSeq(db))
+  td.accountType = atTimeDeposit
+  discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+    insertAccount(d, td, fixtureActor)
+    1)
+  TimeDepositAccountId = $td.accountId
+
+  # Pencairan dini (D-164): produk dengan penalti 1% dari pokok dan rekening berjangka yang jatuh
+  # temponya sesudah tanggal buku fixture; satu produk lagi tanpa binding penalti.
+  proc seedTdProduct(code, penalty: string; minBalance = "0.00"):
+      tuple[productId, versionId: Id] =
+    let p = Product(productId: newId(fixtureClock), code: code, name: "Deposito " & code,
+      productType: ptSavings)
+    let v = ProductVersion(versionId: newId(fixtureClock), productId: p.productId, versionNo: 1,
+      effectiveFrom: "2020-01-01")
+    discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+      insertProduct(d, p, fixtureActor)
+      insertVersion(d, v, fixtureActor)
+      insertBinding(d, v.versionId, ParamBinding(paramKey: "product.savings.min_balance",
+        value: %minBalance))
+      if penalty.len > 0:
+        insertBinding(d, v.versionId, ParamBinding(
+          paramKey: "product.savings.early_withdrawal_penalty", value: %penalty))
+      1)
+    doAssert approveVersion(db, v.versionId, approver), "versi produk dini gagal di-approve"
+    (p.productId, v.versionId)
+
+  proc seedTimeDeposit(productId, versionId: Id; code, balance, maturity: string): Id =
+    var a = newAccount(newId(fixtureClock), party.partyId, productId, versionId, code,
+      Id(BranchId), "001", "2026-10-01", nextAccountSeq(db))
+    a.accountType = atTimeDeposit
+    discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
+      insertAccount(d, a, fixtureActor)
+      d.exec(sql"""UPDATE deposit.account SET maturity_date = ?::date WHERE account_id = ?""",
+        maturity, $a.accountId)
+      d.exec(sql"""UPDATE deposit.account_balance SET balance = ?::numeric
+                WHERE account_id = ?""", balance, $a.accountId)
+      1)
+    a.accountId
+
+  let (earlyProduct, earlyVersion) = seedTdProduct("SAV-TDEARLY", "1.0")
+  EarlyTdAccountId = $seedTimeDeposit(earlyProduct, earlyVersion, "SAV-TDEARLY", "1000.00",
+    "2026-12-31")
+  # Akrual yang belum dibayar: bunga 13,70 menunggu dibayar saat pencairan (`amount` 0 = tidak ada
+  # jurnal `InterestAccrued`, tetapi `cumulative` tetap bunga yang sudah dijanjikan).
+  execScript(db, """
+    INSERT INTO deposit.interest_accrual
+      (account_id, business_date, principal, days, rate_percent, basis_days, amount, cumulative)
+    VALUES ('""" & EarlyTdAccountId & """', '""" & BusinessDate & """'::date, 1000.00, 1,
+            2.5000, 365, 0.00, 13.70)
+  """)
+
+  let (noPenaltyProduct, noPenaltyVersion) = seedTdProduct("SAV-TDNOPEN", "")
+  NoPenaltyTdAccountId = $seedTimeDeposit(noPenaltyProduct, noPenaltyVersion, "SAV-TDNOPEN",
+    "1000.00", "2026-12-31")
+
+  # T-148: PB pencairan dini. Tujuan adalah rekening simpanan tersendiri supaya saldonya bisa
+  # diperiksa tanpa bercampur rekening fixture lain.
+  # Penalti 2% sengaja **lebih besar** dari bunga (13,70) supaya peta tanda `PENALTY_CHARGE`
+  # benar-benar diuji: kalau tanda penalti salah, rekonsiliasi tujuan langsung melaporkan selisih.
+  let (transferProduct, transferVersion) = seedTdProduct("SAV-TDPB", "2.0")
+  EarlyTransferTdId = $seedTimeDeposit(transferProduct, transferVersion, "SAV-TDPB", "1000.00",
+    "2026-12-31")
+  execScript(db, """
+    INSERT INTO deposit.interest_accrual
+      (account_id, business_date, principal, days, rate_percent, basis_days, amount, cumulative)
+    VALUES ('""" & EarlyTransferTdId & """', '""" & BusinessDate & """'::date, 1000.00, 1,
+            2.5000, 365, 0.00, 13.70)
+  """)
+  EarlyTransferDestId = $seedAccount(party.partyId, prod.productId, ver.versionId, Id(BranchId))
+  PartialTdId = $seedTimeDeposit(transferProduct, transferVersion, "SAV-TDPB", "1000.00",
+    "2026-12-31")
+  # Jatuh tempo sebelum tanggal buku: pencairan dini sudah tidak berlaku.
+  MaturedTdId = $seedTimeDeposit(transferProduct, transferVersion, "SAV-TDPB", "1000.00",
+    "2026-10-01")
+  # Produk dengan saldo minimum > 0: pencairan penuh tetap harus bisa menutup rekening.
+  let (minProduct, minVersion) = seedTdProduct("SAV-TDMIN", "1.0", "50.00")
+  MinBalanceTdId = $seedTimeDeposit(minProduct, minVersion, "SAV-TDMIN", "1000.00",
+    "2026-12-31")
+  # Penalti 0% (binding ada, tarif nol): jurnal penalti dilewati, dana masuk tetap pokok + bunga.
+  let (zeroProduct, zeroVersion) = seedTdProduct("SAV-TDZERO", "0.0")
+  ZeroPenaltyTdId = $seedTimeDeposit(zeroProduct, zeroVersion, "SAV-TDZERO", "1000.00",
+    "2026-12-31")
+  execScript(db, """
+    INSERT INTO deposit.interest_accrual
+      (account_id, business_date, principal, days, rate_percent, basis_days, amount, cumulative)
+    VALUES ('""" & ZeroPenaltyTdId & """', '""" & BusinessDate & """'::date, 1000.00, 1,
+            2.5000, 365, 0.00, 5.00)
+  """)
+
   # GL 102/202 (bukan 101.2/201 rule generik) supaya pemilihan rule produk bisa dibedakan di test.
   discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
     insertRule(d, PostingRule(ruleId: newId(fixtureClock), eventType: "DepositPosted",
@@ -425,12 +528,44 @@ proc dbText(query: SqlQuery, args: varargs[string, `$`]): string =
 proc balanceOf(accountId: string): string =
   dbText(sql"SELECT balance::text FROM deposit.account_balance WHERE account_id = ?", accountId)
 
+proc glLiabilityTotal(): string =
+  ## Saldo akun kewajiban simpanan (`201`+`202`, kredit normal) dari baris jurnal.
+  dbText(sql"""
+    SELECT coalesce(sum(credit - debit), 0)::numeric(24, 2)::text
+      FROM ledger.journal_line WHERE gl_account IN ('201', '202')""")
+
 proc journalLines(journalId: string): seq[tuple[gl, debit, credit: string]] =
   let conn = dbPool.acquire()
   try:
     for row in conn.getAllRows(sql"""
       SELECT gl_account, debit::text, credit::text FROM ledger.journal_line
        WHERE journal_id = ? ORDER BY line_no""", journalId):
+      result.add((row[0], row[1], row[2]))
+  finally:
+    dbPool.release(conn)
+
+proc journalLinesByKey(key: string): seq[tuple[gl, debit, credit: string]] =
+  ## Baris jurnal berdasarkan kunci idempotensi (mis. `early.penalty:<txId>`).
+  let conn = dbPool.acquire()
+  try:
+    for row in conn.getAllRows(sql"""
+      SELECT l.gl_account, l.debit::text, l.credit::text
+        FROM ledger.journal_line l JOIN ledger.journal j USING (journal_id)
+       WHERE j.idempotency_key = ? ORDER BY l.line_no""", key):
+      result.add((row[0], row[1], row[2]))
+  finally:
+    dbPool.release(conn)
+
+proc journalLinesByEvent(eventType, sourceRef: string): seq[tuple[gl, debit, credit: string]] =
+  ## Baris jurnal berdasarkan `source_event` + `source_ref` (PB pencairan dini memposting beberapa
+  ## jurnal untuk satu referensi, jadi kunci idempotensi tidak bisa dipakai sebagai pencari).
+  let conn = dbPool.acquire()
+  try:
+    for row in conn.getAllRows(sql"""
+      SELECT l.gl_account, l.debit::text, l.credit::text
+        FROM ledger.journal_line l JOIN ledger.journal j USING (journal_id)
+       WHERE j.source_event = ? AND j.source_ref = ?::uuid ORDER BY l.line_no""",
+        eventType, sourceRef):
       result.add((row[0], row[1], row[2]))
   finally:
     dbPool.release(conn)
@@ -670,6 +805,276 @@ suite "teller: setor & tarik":
     check balanceOf(accountId) == "40.00"
     check txCount(accountId) == rowsBefore
     check journalCount("DepositWithdrawn") == journalsBefore
+
+  test "deposito berjangka: pokok masuk 202 (T-138d); tarik sebelum jatuh tempo 409":
+    # D-152 (amendemen): kewajiban deposito dipisahkan dari tabungan supaya laporan bisa
+    # membedakannya. Rule generik `DepositPosted` tetap untuk tabungan; rule berkondisi
+    # `accountType` yang dipilih untuk rekening berjangka.
+    let token = tokenOf(login(MakerUser))
+    let deposit = postJson(CashPath, cashBody(TimeDepositAccountId, "DEPOSIT", "500.00"), token)
+    check deposit.code == 201
+    check deposit.body["balanceAfter"].getStr() == "500.00"
+    let depositLines = journalLines(deposit.body["journalId"].getStr())
+    check depositLines == @[("101.2", "500.00", "0.00"), ("202", "0.00", "500.00")]
+
+    # Pokok berjangka hanya boleh naik lewat teller. Rekening ini tidak punya `maturity_date`,
+    # jadi jalur pencairan dini (D-164) tidak berlaku dan penarikan tetap ditolak.
+    let journalsBefore = journalCount("DepositWithdrawn")
+    let withdraw = postJson(CashPath, cashBody(TimeDepositAccountId, "WITHDRAWAL", "200.00"),
+      token)
+    check withdraw.code == 409
+    checkProblem(CashPath, "POST", "409", withdraw.body)
+    check withdraw.body["params"]["reason"].getStr() == "time_deposit_locked"
+    check balanceOf(TimeDepositAccountId) == "500.00"
+    check journalCount("DepositWithdrawn") == journalsBefore
+
+  test "pencairan dini: nominal sebagian ditolak, rekening tidak berubah":
+    let token = tokenOf(login(MakerUser))
+    let res = postJson(CashPath, cashBody(EarlyTdAccountId, "WITHDRAWAL", "100.00"), token)
+    check res.code == 409
+    checkProblem(CashPath, "POST", "409", res.body)
+    check res.body["params"]["reason"].getStr() == "time_deposit_partial_withdrawal"
+    check balanceOf(EarlyTdAccountId) == "1000.00"
+    check dbText(sql"SELECT status FROM deposit.account WHERE account_id = ?",
+      EarlyTdAccountId) == "ACTIVE"
+
+  test "pencairan dini tanpa atribut penalti → 409, bukan penalti nol":
+    let token = tokenOf(login(MakerUser))
+    let res = postJson(CashPath, cashBody(NoPenaltyTdAccountId, "WITHDRAWAL", "1000.00"), token)
+    check res.code == 409
+    checkProblem(CashPath, "POST", "409", res.body)
+    check res.body["params"]["reason"].getStr() == "early_withdrawal_penalty_missing"
+    check balanceOf(NoPenaltyTdAccountId) == "1000.00"
+
+  test "pencairan dini: pokok + bunga − penalti, tiga jurnal, rekening ditutup":
+    let token = tokenOf(login(MakerUser))
+    let res = postJson(CashPath, cashBody(EarlyTdAccountId, "WITHDRAWAL", "1000.00"), token)
+    check res.code == 201
+    checkJson(CashPath, "POST", "201", res.body)
+    check res.body["earlyWithdrawal"]["principal"].getStr() == "1000.00"
+    check res.body["earlyWithdrawal"]["interest"].getStr() == "13.70"
+    check res.body["earlyWithdrawal"]["penalty"].getStr() == "10.00"
+    check res.body["earlyWithdrawal"]["cashPaid"].getStr() == "1003.70"
+    check res.body["balanceAfter"].getStr() == "0.00"
+    check balanceOf(EarlyTdAccountId) == "0.00"
+    check dbText(sql"SELECT status FROM deposit.account WHERE account_id = ?",
+      EarlyTdAccountId) == "CLOSED"
+    let txId = res.body["transactionId"].getStr()
+    check journalLines(res.body["journalId"].getStr()) ==
+      @[("202", "1000.00", "0.00"), ("101.2", "0.00", "1000.00")]
+    check journalLinesByKey("early.interest:" & txId) ==
+      @[("204", "13.70", "0.00"), ("101.2", "0.00", "13.70")]
+    check journalLinesByKey("early.penalty:" & txId) ==
+      @[("101.2", "10.00", "0.00"), ("403", "0.00", "10.00")]
+    # Kas laci yang keluar = kas yang benar-benar diserahkan, bukan pokok saja.
+    check dbText(sql"SELECT amount::text FROM teller.cash_movement WHERE transaction_id = ?",
+      txId) == "1003.70"
+
+  test "pencairan dini PB: tujuan menerima pokok + bunga − penalti, tiga jurnal":
+    let token = tokenOf(login(MakerUser))
+    let subBefore = dbPool.withConn(proc(d: DbConn): string {.closure.} = subledgerTotal(d).total)
+    let glBefore = glLiabilityTotal()
+    let res = postJson(TransferPath,
+      transferBody(EarlyTransferTdId, EarlyTransferDestId, "1000.00"), token)
+    check res.code == 201
+    checkJson(TransferPath, "POST", "201", res.body)
+    check res.body["earlyWithdrawal"]["principal"].getStr() == "1000.00"
+    check res.body["earlyWithdrawal"]["interest"].getStr() == "13.70"
+    check res.body["earlyWithdrawal"]["penalty"].getStr() == "20.00"
+    check res.body["earlyWithdrawal"]["creditedAmount"].getStr() == "993.70"
+    check res.body["sourceBalanceAfter"].getStr() == "0.00"
+    check res.body["destinationBalanceAfter"].getStr() == "993.70"
+
+    # Sumber ditutup dan tidak punya baris subledger sendiri (pokok diwakili `deposit.transfer`).
+    check balanceOf(EarlyTransferTdId) == "0.00"
+    check dbText(sql"SELECT status FROM deposit.account WHERE account_id = ?",
+      EarlyTransferTdId) == "CLOSED"
+    check dbCount(sql"SELECT count(*)::text FROM deposit.transaction WHERE account_id = ?",
+      EarlyTransferTdId) == 0
+    check balanceOf(EarlyTransferDestId) == "993.70"
+
+    let transferId = res.body["transferId"].getStr()
+    check journalLines(res.body["journalId"].getStr()) ==
+      @[("202", "1000.00", "0.00"), ("201", "0.00", "1000.00")]
+    check journalLinesByEvent("InterestPaidEarlyViaTransfer", transferId) ==
+      @[("204", "13.70", "0.00"), ("201", "0.00", "13.70")]
+    check journalLinesByEvent("EarlyWithdrawalPenaltyViaTransfer", transferId) ==
+      @[("201", "20.00", "0.00"), ("403", "0.00", "20.00")]
+
+    # Baris subledger tujuan: bunga masuk, penalti keluar.
+    check dbText(sql"""
+      SELECT string_agg(tx_type || ':' || amount::text, ',' ORDER BY tx_type)
+        FROM deposit.transaction WHERE account_id = ?""", EarlyTransferDestId) ==
+      "INTEREST_PAID_EARLY:13.70,PENALTY_CHARGE:20.00"
+
+    # Rekonsiliasi subledger bersih untuk kedua rekening (peta tanda harus mengenal dua jenis baru).
+    # Disaring per nomor rekening: fixture suite ini menyetel saldo langsung tanpa baris subledger,
+    # jadi rekonsiliasi global memang tidak bersih sejak awal.
+    let mismatches = dbPool.withConn(proc(d: DbConn): seq[BalanceMismatch] {.closure.} =
+      accountBalanceMismatches(d))
+    let destNo = dbText(sql"SELECT account_no FROM deposit.account WHERE account_id = ?",
+      EarlyTransferDestId)
+    # Hanya rekening **tujuan** yang diperiksa: saldo pokok rekening sumber di suite ini disemai
+    # langsung tanpa baris `CASH_DEPOSIT`, jadi rekonsiliasinya memang tidak bisa bersih. Tujuan
+    # mulai dari nol dan seluruh kreditnya berasal dari PB ini — di situlah tanda
+    # `INTEREST_PAID_EARLY` (+1) dan `PENALTY_CHARGE` (−1) menentukan.
+    var involved: seq[BalanceMismatch]
+    for item in mismatches:
+      if item.accountNo == destNo:
+        involved.add item
+    check involved.len == 0
+
+    # Gate `ledger.subledger_vs_gl` hanya membandingkan **total**. Suite ini menyemai saldo tanpa
+    # baris subledger, jadi selisihnya tidak nol sejak awal — yang harus dijaga adalah selisih itu
+    # tidak **berubah** karena PB: Δ(201+202) harus sama dengan Δ total saldo subledger.
+    let subAfter = dbPool.withConn(proc(d: DbConn): string {.closure.} = subledgerTotal(d).total)
+    let glAfter = glLiabilityTotal()
+    check moneyFromString(glAfter).value() - moneyFromString(glBefore).value() ==
+      moneyFromString(subAfter).value() - moneyFromString(subBefore).value()
+
+    # Rekening koran: sumber hanya pokok (TRANSFER OUT); tujuan tiga baris, satu di antaranya
+    # berlabel EARLY_WITHDRAWAL — bukan MATURITY.
+    let sourceStatement = call("GET", statementUrl(EarlyTransferTdId, BusinessDate, BusinessDate),
+      "", token)
+    check sourceStatement.code == 200
+    check sourceStatement.body["rows"].len == 1
+    check sourceStatement.body["rows"][0]["kind"].getStr() == "TRANSFER"
+    check sourceStatement.body["rows"][0]["direction"].getStr() == "OUT"
+    let destStatement = call("GET",
+      statementUrl(EarlyTransferDestId, BusinessDate, BusinessDate), "", token)
+    check destStatement.code == 200
+    check destStatement.body["rows"].len == 3
+    var kinds: seq[string]
+    for row in destStatement.body["rows"]:
+      kinds.add row["kind"].getStr() & "/" & row["direction"].getStr() & "/" & row["amount"].getStr()
+    check "TRANSFER/IN/1000.00" in kinds
+    check "EARLY_WITHDRAWAL/IN/13.70" in kinds
+    check "EARLY_WITHDRAWAL/OUT/20.00" in kinds
+
+  test "pencairan dini PB: sebagian, tanpa binding penalti, dan sesudah jatuh tempo ditolak":
+    let token = tokenOf(login(MakerUser))
+
+    let partial = postJson(TransferPath,
+      transferBody(PartialTdId, EarlyTransferDestId, "100.00"), token)
+    check partial.code == 409
+    check partial.body["params"]["reason"].getStr() == "time_deposit_partial_withdrawal"
+    check balanceOf(PartialTdId) == "1000.00"
+
+    let noPenalty = postJson(TransferPath,
+      transferBody(NoPenaltyTdAccountId, EarlyTransferDestId, "1000.00"), token)
+    check noPenalty.code == 409
+    check noPenalty.body["params"]["reason"].getStr() == "early_withdrawal_penalty_missing"
+    check balanceOf(NoPenaltyTdAccountId) == "1000.00"
+
+    let matured = postJson(TransferPath,
+      transferBody(MaturedTdId, EarlyTransferDestId, "1000.00"), token)
+    check matured.code == 409
+    check matured.body["params"]["reason"].getStr() == "time_deposit_locked"
+    check balanceOf(MaturedTdId) == "1000.00"
+
+    # Tidak ada mutasi yang tertinggal dari tiga penolakan di atas.
+    check dbCount(sql"""
+      SELECT count(*)::text FROM deposit.transfer
+       WHERE source_account_id IN (?::uuid, ?::uuid, ?::uuid)""",
+      PartialTdId, NoPenaltyTdAccountId, MaturedTdId) == 0
+
+  test "pencairan dini PB dengan penalti nol: tanpa jurnal penalti, dana masuk pokok + bunga":
+    let token = tokenOf(login(MakerUser))
+    let res = postJson(TransferPath,
+      transferBody(ZeroPenaltyTdId, EarlyTransferDestId, "1000.00"), token)
+    check res.code == 201
+    check res.body["earlyWithdrawal"]["penalty"].getStr() == "0.00"
+    check res.body["earlyWithdrawal"]["creditedAmount"].getStr() == "1005.00"
+    check res.body["destinationBalanceAfter"].getStr() == "1998.70"
+    check balanceOf(ZeroPenaltyTdId) == "0.00"
+    # Hanya dua jurnal: pokok dan bunga; tarif 0 tidak boleh memposting jurnal nol.
+    check dbCount(sql"""
+      SELECT count(*)::text FROM ledger.journal
+       WHERE source_ref = ?::uuid""", res.body["transferId"].getStr()) == 2
+    check dbText(sql"""
+      SELECT string_agg(tx_type, ',' ORDER BY tx_type)
+        FROM deposit.transaction WHERE journal_id IN (
+          SELECT journal_id FROM ledger.journal WHERE source_ref = ?::uuid)""",
+      res.body["transferId"].getStr()) == "INTEREST_PAID_EARLY"
+
+  test "PB ke rekening deposito berjangka tetap ditolak":
+    let token = tokenOf(login(MakerUser))
+    let before = balanceOf(PokokAccountId)
+    let destinationBefore = balanceOf(TimeDepositAccountId)
+    let res = postJson(TransferPath,
+      transferBody(PokokAccountId, TimeDepositAccountId, "10.00"), token)
+    check res.code == 409
+    check res.body["params"]["reason"].getStr() == "time_deposit_locked"
+    check balanceOf(PokokAccountId) == before
+    check balanceOf(TimeDepositAccountId) == destinationBefore
+
+  test "pencairan dini tunai: min_balance produk tidak menghalangi penutupan rekening":
+    let token = tokenOf(login(MakerUser))
+    let res = postJson(CashPath, cashBody(MinBalanceTdId, "WITHDRAWAL", "1000.00"), token)
+    check res.code == 201
+    check res.body["earlyWithdrawal"]["cashPaid"].getStr() == "990.00"
+    check res.body["balanceAfter"].getStr() == "0.00"
+    check balanceOf(MinBalanceTdId) == "0.00"
+    check dbText(sql"SELECT status FROM deposit.account WHERE account_id = ?",
+      MinBalanceTdId) == "CLOSED"
+
+  test "PB yang menyentuh deposito berjangka → 409 time_deposit_locked":
+    # `DepositTransferred` (0013) memakai `201` di kedua kaki, jadi pokok berjangka yang masuk
+    # lewat PB tidak pernah dipisah ke `202` (D-152), dan jurnal jatuh tempo akan mendebit akun
+    # yang tidak pernah dikredit. Ditutup sampai pemisahan kedua kaki PB diputuskan (O-108).
+    let token = tokenOf(login(MakerUser))
+    let savings = freshAccount()
+    let fromTd = postJson(TransferPath,
+      transferBody(TimeDepositAccountId, savings, "10.00"), token)
+    check fromTd.code == 409
+    checkProblem(TransferPath, "POST", "409", fromTd.body)
+    check fromTd.body["params"]["reason"].getStr() == "time_deposit_locked"
+    let toTd = postJson(TransferPath,
+      transferBody(savings, TimeDepositAccountId, "10.00"), token)
+    check toTd.code == 409
+    checkProblem(TransferPath, "POST", "409", toTd.body)
+    check toTd.body["params"]["reason"].getStr() == "time_deposit_locked"
+    check transferCount(TimeDepositAccountId) == 0
+    # Penolakan terjadi sebelum mutasi: saldo kedua sisi dan jurnal tidak berubah.
+    check balanceOf(TimeDepositAccountId) == "500.00"
+    check balanceOf(savings) == "0.00"
+    check transferCount(savings) == 0
+
+  test "baris jatuh tempo: slip 404 (bukan 500) dan statement kind MATURITY":
+    let token = tokenOf(login(MakerUser))
+    # Baris perpindahan jatuh tempo (pokok keluar dari deposito, tanpa kas) ditulis lewat repo yang
+    # sama dengan task day-close, jadi bentuknya identik dengan produksi.
+    let maturityTxId = dbPool.withTx(proc(d: DbConn): string {.closure.} =
+      let journalId = postJournalSync(d, app.clock, "DepositMatured",
+        moneyFromString("100.00").value(), parseId(BranchId).value(),
+        parseId(TimeDepositAccountId).value(), BusinessDate,
+        "test.maturity:" & TimeDepositAccountId & ":" & BusinessDate, fixtureActor, ProductCode,
+        "TIME_DEPOSIT", "")
+      let txId = newId(app.clock)
+      insertTransaction(d, Transaction(transactionId: txId, txType: ttMaturityOut,
+        accountId: parseId(TimeDepositAccountId).value(), amount: moneyFromString("100.00").value(),
+        businessDate: BusinessDate, narration: "Pindah jatuh tempo", journalId: journalId),
+        fixtureActor)
+      $txId)
+
+    # Slip kas hanya untuk transaksi tunai: baris jatuh tempo = 404, bukan 500 "data rusak".
+    let slip = call("GET", CashPath & "/" & maturityTxId, "", token)
+    check slip.code == 404
+    checkProblem(SlipPath, "GET", "404", slip.body)
+
+    # Statement rekening tetap menampilkannya, dengan arah saldo dan kind sendiri.
+    let statement = call("GET", StatementPath.replace("{accountId}", TimeDepositAccountId) &
+      "?from=" & BusinessDate & "&to=" & BusinessDate, "", token)
+    check statement.code == 200
+    checkJson(StatementPath, "GET", "200", statement.body)
+    var found = false
+    for row in statement.body["rows"]:
+      if row["transactionId"].kind != JNull and row["transactionId"].getStr() == maturityTxId:
+        found = true
+        check row["kind"].getStr() == "MATURITY"
+        check row["direction"].getStr() == "OUT"
+        check row["amount"].getStr() == "100.00"
+    check found
 
 suite "teller: jurnal subledger tidak bisa dibalik (T-123)":
   test "jurnal transaksi tunai & PB ditolak 409 journal_owned_by_subledger":
@@ -983,6 +1388,51 @@ suite "teller: otorisasi cabang & keadaan rekening":
     check balanceOf(accountId) == "0.00"
     check txCount(accountId) == 0
 
+  test "rekening DORMANT: setoran diterima, penarikan 409 account_not_active":
+    # D-152 butir 4: dormant membatasi layanan, bukan setoran. Reaktivasi otomatis task
+    # `deposit.dormant` hanya bisa terjadi kalau setoran benar-benar diterima.
+    let token = tokenOf(login(MakerUser))
+    let accountId = freshAccount()
+    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+      exec(d, sql"UPDATE deposit.account SET status = 'DORMANT' WHERE account_id = ?", accountId)
+      1)
+
+    let deposit = postJson(CashPath, cashBody(accountId, "DEPOSIT", "20.00"), token)
+    check deposit.code == 201
+    check balanceOf(accountId) == "20.00"
+
+    let withdraw = postJson(CashPath, cashBody(accountId, "WITHDRAWAL", "5.00"), token)
+    check withdraw.code == 409
+    checkProblem(CashPath, "POST", "409", withdraw.body)
+    check withdraw.body["params"]["reason"].getStr() == "account_not_active"
+    check balanceOf(accountId) == "20.00"
+
+  test "PB dari atau ke rekening DORMANT → 409 account_not_active tanpa mutasi":
+    # D-157 butir 4: dormant membatasi layanan keluar. PB **dari** dormant jelas keluar; PB **ke**
+    # dormant juga ditolak karena guard status di handler berlaku untuk kedua sisi.
+    let token = tokenOf(login(MakerUser))
+    let dormantId = freshAccount()
+    let normalId = freshAccount()
+    discard dbPool.withConn(proc(d: DbConn): int {.closure.} =
+      exec(d, sql"UPDATE deposit.account SET status = 'DORMANT' WHERE account_id = ?", dormantId)
+      1)
+    discard postJson(CashPath, cashBody(normalId, "DEPOSIT", "100.00"), token)
+
+    let fromDormant = postJson(TransferPath, transferBody(dormantId, normalId, "10.00"), token)
+    check fromDormant.code == 409
+    checkProblem(TransferPath, "POST", "409", fromDormant.body)
+    check fromDormant.body["params"]["reason"].getStr() == "account_not_active"
+
+    let toDormant = postJson(TransferPath, transferBody(normalId, dormantId, "10.00"), token)
+    check toDormant.code == 409
+    checkProblem(TransferPath, "POST", "409", toDormant.body)
+    check toDormant.body["params"]["reason"].getStr() == "account_not_active"
+
+    check balanceOf(normalId) == "100.00"
+    check balanceOf(dormantId) == "0.00"
+    check transferCount(dormantId) == 0
+    check transferCount(normalId) == 0
+
   test "event tanpa posting rule → ValueError, tanpa jurnal":
     var raised = false
     try:
@@ -1106,6 +1556,62 @@ suite "teller: sesi kas menggerbang transaksi tunai (T-093b)":
       %*{"countedCash": "130.00"}, token)
     check closeAgain.code == 409
     check closeAgain.body["params"]["reason"].getStr() == "session_not_open"
+
+  test "T-147: arus kas sesi terbaru dulu, total penuh, paginasi, 404/400":
+    let token = tokenOf(login(SessionTellerUser))
+    let openResp = postJson(SessionsPath,
+      %*{"branchId": SessionBranchId, "openingFloat": "100.00"}, token)
+    check openResp.code == 201
+    let sessionId = openResp.body["sessionId"].getStr()
+
+    let deposit = postJson(CashPath, cashBody(SessionBranchAccountId, "DEPOSIT", "50.00"), token)
+    check deposit.code == 201
+    let withdraw = postJson(CashPath,
+      cashBody(SessionBranchAccountId, "WITHDRAWAL", "20.00"), token)
+    check withdraw.code == 201
+
+    let listPath = SessionsPath & "/" & sessionId & "/transactions"
+    let listed = call("GET", listPath, "", token)
+    check listed.code == 200
+    checkJson(SessionTransactionsPath, "GET", "200", listed.body)
+    check listed.body["sessionId"].getStr() == sessionId
+    check listed.body["businessDate"].getStr() == BusinessDate
+    check listed.body["total"].getInt() == 2
+    # Terbaru dulu: penarikan sesudah setoran.
+    check listed.body["items"][0]["direction"].getStr() == "OUT"
+    check listed.body["items"][0]["amount"].getStr() == "20.00"
+    check listed.body["items"][0]["transactionId"].getStr() ==
+      withdraw.body["transactionId"].getStr()
+    check listed.body["items"][0]["journalId"].getStr() == withdraw.body["journalId"].getStr()
+    check listed.body["items"][0]["accountNo"].getStr() ==
+      dbText(sql"SELECT account_no FROM deposit.account WHERE account_id = ?",
+        SessionBranchAccountId)
+    check listed.body["items"][1]["direction"].getStr() == "IN"
+    check listed.body["items"][1]["amount"].getStr() == "50.00"
+
+    # Paginasi: halaman kedua hanya berisi baris setoran, `total` tetap jumlah sesi.
+    let page2 = call("GET", listPath & "?limit=1&offset=1", "", token)
+    check page2.code == 200
+    check page2.body["total"].getInt() == 2
+    check page2.body["items"].len == 1
+    check page2.body["items"][0]["direction"].getStr() == "IN"
+
+    let unknown = call("GET", SessionsPath & "/99999999-9999-7999-8999-999999999999" &
+      "/transactions", "", token)
+    check unknown.code == 404
+    check unknown.body["params"]["reason"].getStr() == "session_not_found"
+    let badLimit = call("GET", listPath & "?limit=0", "", token)
+    check badLimit.code == 400
+    let badOffset = call("GET", listPath & "?offset=-1", "", token)
+    check badOffset.code == 400
+
+    let closeResp = postJson(SessionsPath & "/" & sessionId & "/close",
+      %*{"countedCash": "130.00"}, token)
+    check closeResp.code == 200
+    # Sesi `CLOSED` tetap bisa dibaca: operator masih perlu melihat isi sesi yang baru ditutup.
+    let afterClose = call("GET", listPath, "", token)
+    check afterClose.code == 200
+    check afterClose.body["total"].getInt() == 2
 
   test "T-118: buka/tutup sesi + selisih kas berjurnal (vault, laci, selisih)":
     let token = tokenOf(login(SessionTellerUser))

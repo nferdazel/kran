@@ -78,6 +78,11 @@ tags:
     description: |
       Data master platform: cabang (kode 3 digit + nama). Baca saja; pembuatan dan perubahan
       tetap lewat `ctl create-branch` (D-130).
+  - name: dayclose
+    description: |
+      Monitor penutupan buku (spec §11.7, T-139a): tanggal buku, riwayat run, dan detail
+      task/chunk. Baca saja — aksi run/resume/pause/cancel menyusul dan memakai jalur `ctl` yang
+      sama, bukan logika penutupan baru di HTTP.
 
 paths:
   /healthz:
@@ -1192,6 +1197,8 @@ paths:
             schema:
               $ref: "#/components/schemas/UnmaskRequest"
       responses:
+        "409":
+          $ref: "#/components/responses/Problem"
         "503":
           $ref: "#/components/responses/Problem"
         "415":
@@ -1240,6 +1247,8 @@ paths:
             schema:
               $ref: "#/components/schemas/PartyDetailUpdate"
       responses:
+        "409":
+          $ref: "#/components/responses/Problem"
         "503":
           $ref: "#/components/responses/Problem"
         "415":
@@ -1321,6 +1330,8 @@ paths:
             schema:
               $ref: "#/components/schemas/UnmaskRequest"
       responses:
+        "409":
+          $ref: "#/components/responses/Problem"
         "503":
           $ref: "#/components/responses/Problem"
         "415":
@@ -2483,6 +2494,73 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/teller/sessions/{sessionId}/transactions:
+    get:
+      operationId: listTellerSessionTransactions
+      tags: [teller]
+      summary: Arus kas satu sesi kas teller
+      description: |
+        Baris `teller.cash_movement` sesi, **terbaru dulu**, untuk daftar transaksi di layar kas
+        (DESIGN §11: stasiun kerja, isi sesi terlihat tanpa berpindah halaman). `amount` adalah kas
+        yang bergerak di laci, bukan nominal rekening: pencairan dini deposito menyerahkan
+        `pokok + bunga − penalti` (D-164), sehingga kolom rekening di statement bisa berbeda.
+
+        `direction` relatif laci: `IN` = uang masuk (`CASH_IN`), `OUT` = uang keluar (`CASH_OUT`).
+        Pemindahbukuan antar rekening **tidak** muncul di sini karena tidak menyentuh laci.
+
+        Izin `teller.session.read` harus dipegang di cabang sesi. Sesi tidak dikenal → 404
+        (`params.reason=session_not_found`); cabang lain → 403. Paginasi `limit` 1..100 (default 50)
+        dan `offset` ≥ 0; `total` adalah jumlah seluruh baris sesi, bukan jumlah di halaman ini.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Jumlah baris per halaman.
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Jumlah baris yang dilewati.
+      responses:
+        "503":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "200":
+          description: Arus kas sesi pada halaman yang diminta.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TellerSessionTransactionList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
   /api/v1/teller/vault:
     get:
       operationId: getTellerVault
@@ -2783,10 +2861,13 @@ paths:
         `params.reason`: `no_open_session` (tidak ada sesi kas `OPEN` untuk teller di cabang rekening),
         `session_business_date_mismatch` (sesi `OPEN` ada tetapi untuk tanggal bisnis lain; tutup
         sesi itu dulu), `cash_limit_exceeded` (nominal melebihi parameter
-        `teller.cash.limit_deposit`/`teller.cash.limit_withdrawal`), `account_not_active`,
-        `insufficient_funds`, `period_closed`,
+        `teller.cash.limit_deposit`/`teller.cash.limit_withdrawal`), `account_not_active`
+        (rekening `CLOSED`, atau penarikan dari rekening `DORMANT` — setoran ke rekening
+        `DORMANT` tetap diterima, D-157), `insufficient_funds`, `period_closed`,
         `savings_kind_locked` (penarikan dari rekening bersimpanan pokok/wajib belum didukung;
-        saldo & jurnal tidak berubah).
+        saldo & jurnal tidak berubah), `time_deposit_locked` (penarikan dari deposito berjangka
+        sebelum jatuh tempo belum didukung: pokok yang berkurang membuat akrual `DAY-335` tidak
+        punya jalur koreksi; `HUMAN-REVIEW-REQUIRED`).
 
         Rekening bersimpanan pokok/wajib (`savingsKind` POKOK/WAJIB) memakai akun ekuitas terpisah
         (`301.1`/`301.2`, **provisional**, `NEEDS-COMPLIANCE-REVIEW`) untuk setoran; rekening lain
@@ -2909,7 +2990,10 @@ paths:
         (`params.reason=branch_not_allowed` bila hanya di cabang lain). Konflik domain 409 memakai
         `params.reason`: `account_not_active`, `insufficient_funds`, `period_closed`,
         `savings_kind_locked` (PB yang menyentuh rekening bersimpanan pokok/wajib, di sisi mana pun, belum didukung),
-        `transfer_kind_mismatch` (jenis simpanan sumber dan tujuan berbeda). Saat 409 saldo & jurnal
+        `transfer_kind_mismatch` (jenis simpanan sumber dan tujuan berbeda),
+        `time_deposit_locked` (PB yang menyentuh rekening deposito berjangka di sisi mana pun belum
+        didukung: rule `DepositTransferred` belum memisahkan pokok berjangka ke akun `202`;
+        `HUMAN-REVIEW-REQUIRED`). Saat 409 saldo & jurnal
         tidak berubah.
 
         **HUMAN-REVIEW-REQUIRED** (jalur finansial, AGENTS.md §8).
@@ -3278,6 +3362,311 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/dayclose/status:
+    get:
+      operationId: getDayCloseStatus
+      tags: [dayclose]
+      summary: Status day-close
+      description: |
+        Tanggal buku institusi (tanggal, state, waktu beku), run yang sedang berjalan bila ada,
+        dan ringkasan run terakhir. `businessDate` bernilai `null` sebelum baris tanggal buku
+        dibuat (`ctl` bootstrap). Baca saja — tidak ada aksi penutupan di sini.
+      security:
+        - sessionCookie: []
+      responses:
+        "503":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "200":
+          description: Status tanggal buku dan run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DayCloseStatus"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/dayclose/runs:
+    get:
+      operationId: listDayCloseRuns
+      tags: [dayclose]
+      summary: Riwayat run day-close
+      description: |
+        Ringkasan run urut tanggal bisnis (lalu waktu mulai) terbaru lebih dulu. `limit` default
+        **20**, maksimum **100**; nilai di luar rentang itu atau bukan angka dijawab `400`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "503":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "200":
+          description: Daftar run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DayCloseRunList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/dayclose/runs/{runId}:
+    get:
+      operationId: getDayCloseRun
+      tags: [dayclose]
+      summary: Detail satu run day-close
+      description: |
+        Ringkasan run beserta state task dan chunk-nya. `runId` yang tidak ada maupun yang bukan
+        uuid dijawab `404` — keduanya berarti "run tidak ditemukan".
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "503":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "200":
+          description: Detail run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DayCloseRunDetail"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/dayclose/run:
+    post:
+      operationId: startDayClose
+      tags: [dayclose]
+      summary: Jalankan penutupan tanggal buku
+      description: |
+        Menjalankan penutupan untuk tanggal buku yang sedang berjalan (`businessDate` opsional,
+        hanya boleh sama dengan tanggal buku berjalan). Permintaan **menunggu** penutupan selesai
+        lalu mengembalikan ringkasan run terakhir — periksa `state` (`COMPLETED` berarti segel
+        berhasil, `FAILED`/`BLOCKED`/`PAUSED` berarti tidak). Klien harus memperlakukan batas
+        waktu sebagai "tidak tahu" dan membaca `GET /dayclose/status`, bukan mengulang aksi.
+
+        Klik ganda aman tanpa `Idempotency-Key`: scope dikunci advisory lock dan index unik
+        `run_one_per_date_uq` menolak run kedua untuk tanggal yang sama (`409 run_exists`).
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: businessDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Run yang dijalankan (periksa `state`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DayCloseRunSummary"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "409":
+          description: |
+            Ditolak keadaan sekarang (`params.reason`): `run_exists`, `not_working_day`,
+            `business_date_mismatch`, `bootstrap_required`, `bootstrap_not_allowed`,
+            `business_date_closing`, `business_date_closed`, `scope_locked`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/dayclose/runs/{runId}/resume:
+    post:
+      operationId: resumeDayClose
+      tags: [dayclose]
+      summary: Lanjutkan run day-close
+      description: |
+        Melanjutkan run `PAUSED`/`FAILED`/`BLOCKED` dan menunggu sampai berhenti lagi. Run yang
+        sudah `COMPLETED`/`CANCELED` dijawab `409 already_finished`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Run setelah dilanjutkan (periksa `state`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DayCloseRunSummary"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "409":
+          description: |
+            Ditolak keadaan sekarang (`params.reason`): `already_finished`, `scope_locked`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/dayclose/runs/{runId}/pause:
+    post:
+      operationId: pauseDayClose
+      tags: [dayclose]
+      summary: Hentikan run day-close di batas chunk
+      description: |
+        Bila ada proses yang menjalankan run, niat `PAUSE` dicatat dan dibaca orkestrator di batas
+        chunk (`params.reason = control_requested`). Bila tidak ada proses, run langsung
+        `PAUSED`. Run yang tidak sedang berjalan dijawab `409 not_running`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Run setelah permintaan pause
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DayCloseRunSummary"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "409":
+          description: |
+            Ditolak keadaan sekarang (`params.reason`): `not_running`, `already_finished`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/dayclose/runs/{runId}/cancel:
+    post:
+      operationId: cancelDayClose
+      tags: [dayclose]
+      summary: Batalkan run day-close dan buka kembali tanggal buku
+      description: |
+        Pembatalan **atomik**: sisa task `CANCELED`, run `CANCELED`, dan tanggal buku yang dibekukan
+        run itu dibuka kembali (`CLOSING → OPEN`). Run yang sudah berakhir dijawab
+        `409 already_finished`; pembatalan yang tanggalnya masih tertinggal `CLOSING` dipulihkan
+        dan dijawab `200` dengan `params.reason = already_canceled`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Run setelah pembatalan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DayCloseRunSummary"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "409":
+          description: |
+            Ditolak keadaan sekarang (`params.reason`): `already_finished`, `scope_locked`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -3531,6 +3920,17 @@ components:
         expiresAt:
           type: string
           description: Batas idle sesi (ISO-8601 UTC); batas absolut tidak pernah dilampaui.
+        businessDate:
+          $ref: "#/components/schemas/DayCloseBusinessDate"
+          description: |
+            Tanggal buku institusi saat sesi dibaca, bentuknya sama dengan
+            `GET /api/v1/dayclose/status`. `null` bila institusi belum punya baris tanggal buku.
+            Dikirim ke **semua** peran back-office: teller bekerja terhadap tanggal ini (sesi kas
+            yang tanggalnya berbeda ditolak `session_business_date_mismatch`).
+
+            Field ini **opsional**: dihilangkan (bukan `null`) bila pembacaan tanggal buku gagal,
+            supaya klien tidak menampilkan "belum tersedia" untuk nilai yang sebenarnya tidak
+            diketahui.
 
     UserRoleGrant:
       type: object
@@ -4371,6 +4771,191 @@ components:
           maxLength: 500
           description: Alasan penutupan; masuk jejak audit.
 
+    DayCloseBusinessDate:
+      type: ["object", "null"]
+      additionalProperties: false
+      required: [date, state, frozenAt]
+      description: |
+        Tanggal buku institusi. `null` bila barisnya belum dibuat (bootstrap `ctl`).
+      properties:
+        date:
+          type: string
+          format: date
+        state:
+          type: string
+          enum: [OPEN, CLOSING, CLOSED]
+        frozenAt:
+          type: ["string", "null"]
+          description: ISO-8601 UTC saat state terakhir berubah; `null` selama `OPEN`.
+
+    DayCloseTaskCounts:
+      type: object
+      additionalProperties: false
+      required: [ok, failed, skipped, total]
+      properties:
+        ok:
+          type: integer
+          minimum: 0
+        failed:
+          type: integer
+          minimum: 0
+        skipped:
+          type: integer
+          minimum: 0
+        total:
+          type: integer
+          minimum: 0
+
+    DayCloseChunkState:
+      type: object
+      additionalProperties: false
+      required: [chunkNo, state, attempt, errorCode]
+      properties:
+        chunkNo:
+          type: integer
+          minimum: 0
+        state:
+          type: string
+          enum: [PENDING, RUNNING, SUCCEEDED, FAILED]
+        attempt:
+          type: integer
+          minimum: 0
+        errorCode:
+          type: ["string", "null"]
+          description: Kode stabil diagnostik, mis. `DAY-301`; `null` bila tidak ada galat.
+
+    DayCloseTaskState:
+      type: object
+      additionalProperties: false
+      required: [taskId, kind, critical, state, attempt, errorCode, reason, chunks]
+      properties:
+        taskId:
+          type: string
+        kind:
+          type: string
+          enum: [PRECHECK, PROCESS, POSTCHECK, REPORT]
+        critical:
+          type: boolean
+        state:
+          type: string
+          enum: [PENDING, READY, RUNNING, SUCCEEDED, FAILED, SKIPPED, CANCELED]
+        attempt:
+          type: integer
+          minimum: 0
+        errorCode:
+          type: ["string", "null"]
+        reason:
+          type: ["string", "null"]
+          description: |
+            Alasan task di-`SKIPPED` (dari `skipOutcome`). `null` untuk state lain dan untuk run
+            sebelum kolom ini ada (migrasi `0062`).
+        chunks:
+          type: array
+          items:
+            $ref: "#/components/schemas/DayCloseChunkState"
+
+    DayCloseRunSummary:
+      type: object
+      additionalProperties: false
+      required: [runId, businessDate, scopeType, levels, state, startedAt, finishedAt,
+                 summaryHash, taskCounts]
+      properties:
+        runId:
+          type: string
+          format: uuid
+        businessDate:
+          type: string
+          format: date
+        scopeType:
+          type: string
+          enum: [INSTITUTION, BRANCH]
+        levels:
+          type: array
+          items:
+            type: string
+            enum: [EOD, EOW, EOM, EOQ, EOY]
+        state:
+          type: string
+          enum: [PLANNED, PRECHECK, RUNNING, POSTCHECK, COMPLETED, FAILED, BLOCKED, PAUSED,
+                 CANCELED]
+        startedAt:
+          type: string
+          description: ISO-8601 UTC.
+        finishedAt:
+          type: ["string", "null"]
+          description: ISO-8601 UTC; `null` selama run belum selesai.
+        summaryHash:
+          type: ["string", "null"]
+          description: Segel bukti hasil run; `null` sampai run `COMPLETED`.
+        taskCounts:
+          $ref: "#/components/schemas/DayCloseTaskCounts"
+
+    DayCloseRunDetail:
+      type: object
+      additionalProperties: false
+      required: [runId, businessDate, scopeType, levels, state, startedAt, finishedAt,
+                 summaryHash, taskCounts, tasks]
+      description: |
+        Ringkasan run + daftar task beserta chunk. `taskCounts` sama artinya dengan pada
+        `DayCloseRunSummary`; `tasks` berisi state per task.
+      properties:
+        runId:
+          type: string
+          format: uuid
+        businessDate:
+          type: string
+          format: date
+        scopeType:
+          type: string
+          enum: [INSTITUTION, BRANCH]
+        levels:
+          type: array
+          items:
+            type: string
+            enum: [EOD, EOW, EOM, EOQ, EOY]
+        state:
+          type: string
+          enum: [PLANNED, PRECHECK, RUNNING, POSTCHECK, COMPLETED, FAILED, BLOCKED, PAUSED,
+                 CANCELED]
+        startedAt:
+          type: string
+        finishedAt:
+          type: ["string", "null"]
+        summaryHash:
+          type: ["string", "null"]
+        taskCounts:
+          $ref: "#/components/schemas/DayCloseTaskCounts"
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/DayCloseTaskState"
+
+    DayCloseRunList:
+      type: object
+      additionalProperties: false
+      required: [runs]
+      properties:
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/DayCloseRunSummary"
+
+    DayCloseStatus:
+      type: object
+      additionalProperties: false
+      required: [businessDate, activeRun, latestRun]
+      properties:
+        businessDate:
+          $ref: "#/components/schemas/DayCloseBusinessDate"
+        activeRun:
+          oneOf:
+            - $ref: "#/components/schemas/DayCloseRunSummary"
+            - type: "null"
+        latestRun:
+          oneOf:
+            - $ref: "#/components/schemas/DayCloseRunSummary"
+            - type: "null"
+
     JournalLine:
       type: object
       additionalProperties: false
@@ -4791,12 +5376,16 @@ components:
           format: uuid
         accountType:
           type: string
-          enum: [SAVINGS]
+          enum: [SAVINGS, TIME_DEPOSIT]
         savingsKind:
           $ref: "#/components/schemas/SavingsKind"
         status:
           type: string
-          enum: [ACTIVE, CLOSED]
+          enum: [ACTIVE, CLOSED, DORMANT]
+          description: |
+            `DORMANT` = tanpa aktivitas lebih lama dari `deposit.dormant.after_months` (task
+            `deposit.dormant`). Rekening dormant tetap menerima **setoran** tunai, tetap diakrualkan,
+            dan kembali `ACTIVE` pada penutupan berikutnya setelah ada aktivitas (D-157).
         balance:
           type: string
           description: Saldo desimal string 2 desimal (tanpa float), mis. `"0.00"`.
@@ -4863,6 +5452,34 @@ components:
           type: string
           format: date
           description: Tanggal buku transaksi (`YYYY-MM-DD`).
+        earlyWithdrawal:
+          $ref: "#/components/schemas/EarlyWithdrawal"
+          description: |
+            Hanya ada pada **pencairan dini deposito berjangka** (D-164). `amount` tetap pokok yang
+            didebit dari rekening; kas yang diserahkan adalah `cashPaid` karena bunga dibayar dan
+            penalti dipotong.
+
+    EarlyWithdrawal:
+      type: object
+      additionalProperties: false
+      description: |
+        Rincian pencairan dini deposito berjangka (D-164). `cashPaid = principal + interest −
+        penalty`. Bunga adalah akrual yang sudah dijurnal tetapi belum dibayar; penalti adalah
+        persen dari pokok sesuai atribut produk `product.savings.early_withdrawal_penalty`.
+      required: [principal, interest, penalty, cashPaid]
+      properties:
+        principal:
+          type: string
+          description: Pokok yang dicairkan (desimal 2 desimal).
+        interest:
+          type: string
+          description: Bunga terakru yang dibayarkan bersamaan (desimal 2 desimal).
+        penalty:
+          type: string
+          description: Penalti pencairan dini (desimal 2 desimal).
+        cashPaid:
+          type: string
+          description: Kas yang benar-benar diserahkan ke anggota (desimal 2 desimal).
 
     CashTransactionSlip:
       type: object
@@ -4911,7 +5528,7 @@ components:
           description: Nomor rekening **provisoris** (10 digit).
         status:
           type: string
-          enum: [ACTIVE, CLOSED]
+          enum: [ACTIVE, CLOSED, DORMANT]
         branchId:
           type: string
           format: uuid
@@ -4932,15 +5549,17 @@ components:
       type: object
       additionalProperties: false
       description: |
-        Satu baris statement. `kind` membedakan sumber; tepat satu dari `transactionId` (CASH) atau
-        `transferId` (TRANSFER) terisi, yang lain `null`. `direction` relatif ke rekening yang
-        diminta: `IN` = masuk, `OUT` = keluar.
+        Satu baris statement. `kind` membedakan sumber; `CASH` = transaksi tunai teller, `MATURITY` =
+        perpindahan jatuh tempo deposito (pokok/bunga, tanpa kas), `TRANSFER` = pemindahbukuan,
+        `EARLY_WITHDRAWAL` = bunga atau penalti pencairan dini deposito lewat PB (T-148).
+        Tepat satu dari `transactionId` (`CASH`/`MATURITY`) atau `transferId` (`TRANSFER`) terisi,
+        yang lain `null`. `direction` relatif ke rekening yang diminta: `IN` = masuk, `OUT` = keluar.
       required: [kind, direction, amount, businessDate, journalId, narration, transactionId,
                  transferId]
       properties:
         kind:
           type: string
-          enum: [CASH, TRANSFER]
+          enum: [CASH, TRANSFER, MATURITY, EARLY_WITHDRAWAL]
         direction:
           type: string
           enum: [IN, OUT]
@@ -4959,7 +5578,10 @@ components:
         transactionId:
           type: [ "string", "null" ]
           format: uuid
-          description: Id transaksi tunai (kind `CASH`); `null` untuk baris PB.
+          description: |
+            Id baris `deposit.transaction` (kind `CASH` atau `MATURITY`); `null` untuk baris PB.
+            Slip cetak ulang hanya tersedia untuk kind `CASH` (`GET /teller/cash-transactions/{id}`
+            menjawab 404 untuk baris jatuh tempo).
         transferId:
           type: [ "string", "null" ]
           format: uuid
@@ -5025,6 +5647,35 @@ components:
           type: string
           format: date
           description: Tanggal buku PB (`YYYY-MM-DD`).
+        earlyWithdrawal:
+          $ref: "#/components/schemas/EarlyWithdrawalTransfer"
+          description: |
+            Hanya ada bila PB ini **mencairkan deposito berjangka sebelum jatuh tempo** (T-148,
+            D-164). `amount` tetap pokok yang keluar dari deposito; rekening tujuan menerima
+            `creditedAmount` karena bunga dibayar dan penalti dipotong.
+
+    EarlyWithdrawalTransfer:
+      type: object
+      additionalProperties: false
+      description: |
+        Rincian pencairan dini deposito berjangka lewat pemindahbukuan (T-148).
+        `creditedAmount = principal + interest − penalty` adalah dana yang benar-benar masuk ke
+        rekening tujuan. Bunga adalah akrual yang sudah dijurnal tetapi belum dibayar; penalti
+        adalah persen dari pokok sesuai atribut produk `product.savings.early_withdrawal_penalty`.
+      required: [principal, interest, penalty, creditedAmount]
+      properties:
+        principal:
+          type: string
+          description: Pokok yang keluar dari deposito (desimal 2 desimal).
+        interest:
+          type: string
+          description: Bunga terakru yang ikut dibayarkan (desimal 2 desimal).
+        penalty:
+          type: string
+          description: Penalti pencairan dini (desimal 2 desimal).
+        creditedAmount:
+          type: string
+          description: Dana yang dikreditkan ke rekening tujuan (desimal 2 desimal).
 
     TellerSessionOpenRequest:
       type: object
@@ -5202,6 +5853,60 @@ components:
         createdAt:
           type: string
           description: ISO-8601 UTC.
+
+    TellerSessionTransactionList:
+      type: object
+      additionalProperties: false
+      required: [sessionId, businessDate, total, items]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        businessDate:
+          type: string
+          format: date
+          description: Tanggal bisnis sesi.
+        total:
+          type: integer
+          description: Jumlah seluruh baris arus kas sesi (bukan jumlah di halaman ini).
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TellerSessionTransaction"
+
+    TellerSessionTransaction:
+      type: object
+      additionalProperties: false
+      description: |
+        Satu baris arus kas laci sesi. `amount` = kas yang bergerak (bukan selalu nominal rekening;
+        pencairan dini membayar `pokok + bunga − penalti`, D-164).
+      required: [transactionId, journalId, accountId, accountNo, direction, amount, occurredAt,
+                 narration]
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        journalId:
+          type: string
+          format: uuid
+        accountId:
+          type: string
+          format: uuid
+        accountNo:
+          type: string
+        direction:
+          type: string
+          enum: [IN, OUT]
+          description: Relatif laci kas. `IN` = uang masuk, `OUT` = uang keluar.
+        amount:
+          type: string
+          description: Kas yang bergerak, desimal string 2 desimal.
+        occurredAt:
+          type: string
+          format: date-time
+        narration:
+          type: string
+          description: Keterangan transaksi; `""` bila tidak diisi.
 
     TellerVaultTopUpRequestList:
       type: object

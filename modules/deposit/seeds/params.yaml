@@ -1,0 +1,22 @@
+# Definisi parameter modul `deposit` (spec §10.3).
+#
+# Nilai di `default_pack` adalah nilai awal pack, BUKAN fallback kode: aplikasi tetap gagal-cepat
+# bila nilai aktif tidak ada (spec §10.6).
+#
+# `regulatory_refs` sengaja kosong sampai register regulasi §4 diverifikasi compliance
+# (docs/OPEN_ITEMS.md O-001) — jangan menebak nomor pasal.
+
+# Ambang dormant (D-152 butir 4, T-138e): rekening tanpa aktivitas selama N bulan ditandai
+# `DORMANT`. Angka 12 adalah keputusan pemilik 28 Okt 2026 (provisional, `NEEDS-COMPLIANCE-REVIEW`),
+# bukan kutipan regulasi. Parameter, bukan konstanta, supaya institusi bisa meninjau ambangnya
+# tanpa deploy; `SENSITIVITY: NORMAL` karena menandai status tidak mengubah angka uang.
+- key: deposit.dormant.after_months
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 1, maximum: 120 }
+  sensitivity: NORMAL
+  provenance:
+    class: kebijakan
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: "Ambang dormant pilot 12 bulan (D-152 butir 4); dasar pasal belum diverifikasi."
+  default_pack: { base: 12 }

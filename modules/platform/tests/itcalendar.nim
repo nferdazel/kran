@@ -140,6 +140,19 @@ suite "business date: state & rollover":
     check not rollOverBusinessDate(db, instScope, "2026-11-04", actor) # sudah OPEN
     check businessDateOf(db, instScope).get().currentDate == "2026-11-03"
 
+  test "abortClose hanya membuka percobaan yang belum tersegel":
+    check canAbortClose(bdsClosing)
+    check not canAbortClose(bdsOpen)
+    check not canAbortClose(bdsClosed)
+    check transitionBusinessDate(db, instScope, bdsOpen, bdsClosing, actor)
+    check abortClose(db, instScope, actor)
+    check state() == "OPEN"
+    check not abortClose(db, instScope, actor) # tidak ada yang sedang CLOSING
+    check transitionBusinessDate(db, instScope, bdsOpen, bdsClosing, actor)
+    check transitionBusinessDate(db, instScope, bdsClosing, bdsClosed, actor)
+    check not abortClose(db, instScope, actor) # CLOSED tidak pernah dibuka kembali
+    check state() == "CLOSED"
+
 suite "kalender dari parameter (mutation test §10.4)":
   test "ubah akhir pekan lewat framework parameter (maker-checker)":
     let ctxMaker = newAuditContext(maker, sysClock)

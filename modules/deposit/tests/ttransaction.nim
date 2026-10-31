@@ -25,8 +25,28 @@ suite "deposit: arah & tipe transaksi":
     check sourceEventOf(cdWithdrawal) == "DepositWithdrawn"
     check parseTransactionType("cash_deposit") == ttCashDeposit
     check parseTransactionType("CASH_WITHDRAWAL") == ttCashWithdrawal
+    check parseTransactionType("maturity_out") == ttMaturityOut
+    check parseTransactionType("MATURITY_IN") == ttMaturityIn
+    check parseTransactionType("INTEREST_CREDIT") == ttInterestCredit
     expect ValueError:
       discard parseTransactionType("TRANSFER")
+
+  test "arah kas hanya untuk transaksi tunai; jatuh tempo bukan slip setoran":
+    check cashDirectionOf(ttCashDeposit) == cdDeposit
+    check cashDirectionOf(ttCashWithdrawal) == cdWithdrawal
+    for t in [ttMaturityOut, ttMaturityIn, ttInterestCredit]:
+      check not isCashTransaction(t)
+      expect ValueError:
+        discard cashDirectionOf(t)
+    check isCashTransaction(ttCashDeposit)
+    check isCashTransaction(ttCashWithdrawal)
+
+  test "arah rekening koran mengikuti efek saldo, bukan arah kas":
+    check statementDirectionOf(ttCashDeposit) == "IN"
+    check statementDirectionOf(ttCashWithdrawal) == "OUT"
+    check statementDirectionOf(ttMaturityIn) == "IN"
+    check statementDirectionOf(ttInterestCredit) == "IN"
+    check statementDirectionOf(ttMaturityOut) == "OUT"
 
 suite "deposit: nominal & narration":
   test "nominal harus positif":
@@ -47,6 +67,19 @@ suite "deposit: kunci idempotensi jurnal":
     let key = tellerJournalKey("11111111-1111-7111-8111-111111111111", "abc-123")
     check key == "teller:11111111-1111-7111-8111-111111111111:abc-123"
     check key.len <= maxJournalIdempotencyKeyLength
+
+  test "sub-kunci mempertahankan kunci permintaan dan batas kolom":
+    let base = tellerJournalKey("11111111-1111-7111-8111-111111111111", "abc-123")
+    check tellerJournalSubKey(base, "principal") == base & ":principal"
+    check tellerJournalSubKey(base, "interest") == base & ":interest"
+    check tellerJournalSubKey(base, "penalty") == base & ":penalty"
+    # Kunci yang masih muat sendiri bisa melewati batas setelah diberi sufiks: harus ditolak
+    # sebelum menyentuh DB, bukan terpotong.
+    let principal = "11111111-1111-7111-8111-111111111111"
+    let headroom = maxJournalIdempotencyKeyLength - journalKeyPrefix.len - principal.len - 1
+    let atLimit = tellerJournalKey(principal, repeat('k', headroom))
+    expect ValueError:
+      discard tellerJournalSubKey(atLimit, "principal")
 
   test "kunci terlalu panjang ditolak (bukan dipotong)":
     let principal = "11111111-1111-7111-8111-111111111111"

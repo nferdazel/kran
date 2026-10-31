@@ -3566,3 +3566,895 @@ adalah sumber bug, dan matcher-nya memang tidak bisa bekerja).
 **Konsekuensi.** Klien menerima 502 untuk kiriman kebesaran ber-`Content-Length`; itu tercatat di
 `docs/ACCEPTED-LIMITS.md` §3 sebagai batas dengan cara mendeteksi. `ops/caddy/Caddyfile.kran.example`
 memuat catatan perilaku ini supaya contoh dan kenyataan tidak menyimpang lagi.
+
+## D-148 — Kerangka `daycloser`: bentuk data, batas eksekusi, dan kontrak gate deploy (28 Okt 2026)
+
+**Konteks.** Fase 3 dibuka dengan T-134 (kerangka orkestrasi penutupan, spec §11). Ringkasan DDL
+spec §11.8 adalah sketsa; beberapa kolomnya tidak bisa dipakai apa adanya, dan beberapa sifat
+spec (paralelisme chunk, dry-run, timeout task) belum bisa ditegakkan tanpa worker pool dan desain
+task nyata. Keputusan di bawah mencatat penyimpangan yang disengaja supaya tidak terbaca sebagai
+kelalaian.
+
+**Keputusan.**
+
+1. **`CloseLevel` pindah ke `shared/kernel/dayclose.nim`.** Kalender (`platform`) menentukan level;
+   `daycloser` melaksanakannya. Menaruhnya di salah satu modul memaksa modul lain menembus
+   internalnya (dilarang `archcheck`), sedangkan tipe ini kosakata orkestrasi, bukan nilai bisnis.
+   `platform/domain/calendar` tetap menyediakan `closeLevelsFor` dan me-re-export tipe tersebut.
+2. **Snapshot parameter inline.** `daycloser.run.param_snapshot jsonb` + `param_snapshot_hash`
+   menggantikan `param_snapshot_id uuid` (spec §11.8). Tabel snapshot parameter institusi belum
+   ada; FK ke tabel yang tidak ada hanya menunda pekerjaan tanpa menambah jaminan. Isinya
+   konfigurasi efektif `daycloser.*` saat run dibuat dan dipakai ulang pada resume.
+3. **`scope_id` bertipe `text`**, sama dengan `platform.business_date`, karena scope dapat berupa
+   institusi (kosong) atau cabang. Kolom tambahan `control` (`NONE|PAUSE|CANCEL`) dibaca
+   orkestrator di batas chunk (spec §11.7).
+4. **Satu koneksi per operasi.** `pool.withConn/withTx` membawa batas `statement_timeout + margin`;
+   meminjam satu koneksi sepanjang run berjam-jam akan membuat pool memutus soket di tengah
+   pekerjaan yang sehat. Setiap operasi repositori memakai blok pendek; advisory lock dipegang
+   koneksi terpisah yang memang hidup selama perintah berjalan.
+5. **Chunk dijalankan sekuensial** dan **belum ada timeout per task.** Menegakkan keduanya butuh
+   worker pool (proses/thread dengan koneksi masing-masing) dan mekanisme pembunuh yang tidak bisa
+   dipalsukan dengan `sleep`. Ditunda ke T-140 bersama benchmark; dicatat di
+   `docs/ACCEPTED-LIMITS.md` §3.
+6. **`SIMULATION` belum diimplementasi.** Kolom `mode` sudah ada, tetapi `ctl` hanya menerima
+   `REAL` dan menolak mode lain. Menjalankan task nyata lalu rollback tidak cukup: task menulis
+   lewat pool (transaksi sendiri), jadi desain dry-run harus eksplisit — bersama T-140.
+7. **Freeze gate deploy memakai kode keluar** `ctl daycloser-status` (0 = idle, selain 0 = tahan;
+   `2` = tidak bisa ditentukan → tahan). Mengganti grep teks menghilangkan kelas bug "teks status
+   berubah, gate diam-diam lolos". Biner Fase 0 yang masih terpasang **mengenali** perintah ini
+   dan selalu keluar 3, jadi gate tetap menahan; keluaran tetap memuat `RUNNING`/`CLOSING` supaya
+   skrip lama (yang masih memakai grep) juga benar. Konsekuensi rollback: bila health gate
+   mengembalikan biner lama sementara skrip baru sudah terpasang, setiap deploy berikutnya
+   ditolak di gate (exit 0 dari webhook) sampai biner diganti manual — fail-closed, bukan diam.
+8. **Audit penutupan ditulis dalam transaksi yang sama dengan transisi akhir.** `Store.completeRun`
+   (diisi composition root) melakukan `UPDATE run SET COMPLETED` + `appendAudit(run.finish)` dalam
+   satu `withTx`, sehingga run tersegel tidak bisa ada tanpa bukti audit karena proses mati di
+   antara dua perintah. `run.start` tetap ditulis setelah baris run ada (`planRun` terpisah).
+9. **Registry divalidasi terhadap snapshot run sebelum eksekusi/resume.** Rencana chunk dibekukan,
+   tetapi daftar task dihitung dari registry hidup; task yang ditambah/dihapus atau berubah
+   kind/critical ditolak (`DAY-*`) sebelum state run disentuh, bukan dijalankan setengah.
+10. **Resume tidak membersihkan CANCEL.** Resume menghapus permintaan `PAUSE` (agar bisa lanjut)
+    tetapi mempertahankan `CANCEL`, sehingga run yang dipause bisa dibatalkan lewat jalur yang
+    benar-benar membaca control (tidak ada proses hidup saat pause). Segel `summary_hash` memuat
+    hash snapshot parameter + state/attempt tiap chunk, bukan hanya task.
+
+**Ditolak.** Menaruh `CloseLevel` di `daycloser/domain` lalu membuat `platform` mengimpor
+`daycloser/api` (arah dependensi terbalik: penentu level bergantung pada pelaksananya). Memakai
+`run_id` sebagai advisory lock key (dua run berbeda tanggal tetap bisa berjalan bersamaan; yang
+harus dikunci adalah **scope**). Menyimpan chunk sebagai JSON di satu kolom (kehilangan resume per
+chunk dan query status).
+
+**Konsekuensi.** EOD besar belum bisa memanfaatkan inti paralel; target performa §23 diukur di
+T-140 untuk 100k rekening simpanan. `daycloser-status` menjadi perintah yang wajib tetap murah
+(read-only) karena dipanggil setiap deploy.
+
+## D-149 — Siklus business date: pemilik, abort, gerbang transaksi, dan bootstrap (28 Okt 2026)
+
+**Konteks.** T-134 menghasilkan kerangka yang bisa menyelesaikan run, tetapi belum memindahkan
+tanggal buku. Spec §11.5 menempatkan freeze/rollover sebagai langkah orkestrator, dan §11.3
+menggambarkan kegagalan sebagai "CLOSING (blocked)" — tanpa jalan keluar untuk run yang dibatalkan.
+Beberapa keputusan bentuk perlu dicatat supaya tidak terbaca sebagai kelalaian.
+
+**Keputusan.**
+
+1. **Tanggal buku dimiliki run, bukan operator terpisah.** `daycloser-run` membekukan tanggalnya
+   sendiri setelah seluruh task `PRECHECK` lulus. Perintah `freeze` terpisah akan menambah langkah
+   yang bisa lupa dipanggil, dan tujuannya (tidak ada task yang berjalan sementara transaksi masih
+   diterima) hanya tercapai bila keduanya satu alur.
+2. **Seal = satu transaksi.** `run → COMPLETED`, audit `run.finish`, `CLOSING → CLOSED`, rollover
+   ke `nextWorkingDay`, dan outbox `BusinessDateOpened` ditulis bersama. Run tersegel tanpa tanggal
+   maju (atau event tanpa fakta) adalah keadaan yang tidak bisa dijelaskan ke audit.
+3. **`CLOSING → OPEN` adalah abort, bukan reopen.** Bila run dibatalkan/gagal permanen, tanggal yang
+   dibekukan run itu dibuka kembali — belum ada segel, laporan, atau hari yang dinyatakan tutup.
+   `CLOSED → OPEN` tetap dilarang (spec §11.7) dan `abortClose` menolaknya lewat `WHERE state =
+   'CLOSING'`. Tanpa abort, satu pembatalan membekukan institusi selamanya karena tidak ada perintah
+   lain yang bisa memindahkan state.
+4. **Gerbang transaksi di pembungkus HTTP.** Selama `CLOSING`, **semua** `POST/PUT/PATCH/DELETE`
+   ditolak `409` (`params.reason = business_date_closing`) kecuali rute `/api/v1/auth/`. Penjagaan
+   per handler akan bolong setiap kali endpoint baru ditambahkan; larangan menyeluruh juga
+   menghindari perubahan parameter/produk yang bisa mengubah perilaku penutupan yang sedang berjalan.
+   Operator yang perlu memperbaiki sesuatu membatalkan run lebih dulu (jalur `ctl`), lalu mengulang.
+5. **Fail-open hanya untuk gangguan DB.** Bila query gerbang gagal (pool/soket), permintaan
+   diloloskan dan akan gagal sendiri saat menyentuh DB; menyamarkannya sebagai "buku ditutup" akan
+   menyesatkan. Sebaliknya, parameter kebijakan yang hilang/rusak **fail-closed**: penutupan yang
+   berjalan tidak boleh dilonggarkan oleh konfigurasi yang belum tersemai.
+6. **Bootstrap eksplisit.** Baris `platform.business_date` pertama hanya dibuat dengan
+   `--bootstrap`. Tanpa flag itu `ctl` menolak, sehingga salah ketik tanggal tidak menetapkan
+   tanggal buku yang salah secara permanen (dan tidak ada nilai "hari ini" yang ditanam di kode).
+7. **Cancel diterapkan bila tidak ada proses.** `daycloser-cancel` memeriksa advisory lock scope:
+   bila tidak ada proses hidup, cancel langsung menandai sisa task `CANCELED`, run `CANCELED`, dan
+   membuka kembali tanggal. Bila ada proses, ia menulis `control = CANCEL` seperti sebelumnya.
+8. **Kontrak menyebut 409 di semua operasi tulis non-auth**, dan `tools/openapi` menegakkannya.
+   Klien generik tidak boleh menyimpulkan bahwa 409 "tidak mungkin" pada endpoint tulis.
+
+**Ditolak.** Memakai `--force` untuk menutup tanggal yang sudah punya run (mengeksekusi ulang chunk
+task yang boleh `NONE` idempotensinya). Menambahkan nilai `QUEUE` pada kebijakan tanpa antrean yang
+benar-benar mengeksekusi (nilai yang tidak bisa ditegakkan = janji palsu). Menaruh gerbang di
+masing-masing handler. Membuka `CLOSED` untuk "koreksi cepat".
+
+**Konsekuensi.** Setiap permintaan tulis membayar satu query `business_date` (indeks
+`business_date_state_idx`) selama aplikasi hidup — diukur bersama EOD di T-140. Penutupan per cabang
+belum ada; `ctl` menolak scope selain institusi secara eksplisit.
+
+**Amendemen setelah review independen (28 Okt 2026).** Tiga koreksi yang mengubah keputusan, bukan
+sekadar perbaikan kode:
+
+9. **Tanggal yang run-nya `CANCELED` boleh ditutup lagi.** Versi pertama menolak run baru untuk
+   tanggal apa pun yang sudah punya baris run — termasuk yang dibatalkan — sehingga satu pembatalan
+   membekukan buku selamanya (tidak ada perintah lain yang bisa memajukan tanggal). Index unik DB
+   memang mengecualikan state terminal, jadi penghalangnya hanya logika `ctl`. Run ulang bergantung
+   pada idempotensi task (`imPerBusinessDate`); karena itu task dengan idempotensi `NONE` tidak
+   boleh didaftarkan ke penutupan.
+10. **Cancel + reopen satu transaksi.** Versi pertama menulis `CANCELED` lalu membuka tanggal di
+    transaksi kedua. Crash di antaranya meninggalkan `CANCELED` + `CLOSING`: semua tulisan ditolak
+    409 dan tidak ada perintah yang bisa memperbaikinya. Port `Store.cancelRun` kini melakukan
+    ketiganya (task, run, tanggal) dalam satu transaksi, dan `daycloser-cancel` pada run `CANCELED`
+    menjadi jalur pemulihan idempoten untuk keadaan yang sudah terlanjur.
+11. **Bootstrap hanya di `runCmd`.** Port `freezeBusinessDate` tidak lagi membuat baris
+    `business_date` diam-diam; tanpa baris ia menolak. Jalur lain (mis. `resume`) jadi tidak bisa
+    "membootstrap" tanggal tanpa pernyataan operator.
+
+## D-150 — Gate pra/pasca-tutup: BLOCKED, bukti, dan deteksi jurnal terlambat (28 Okt 2026)
+
+**Konteks.** Spec §11.5 menempatkan pemeriksaan sebelum freeze dan sesudah eksekusi sebagai langkah
+tersendiri, dan §11.6 menyebut gate sebagai jenis task. Kerangka T-134/T-135 belum punya satu pun
+gate: run bisa "selesai" walau kas teller belum beres, ada pengajuan menggantung, atau saldo
+subledger tidak sama dengan GL. Kegagalan gate juga tidak bisa dibedakan dari task yang crash.
+
+**Keputusan.**
+
+1. **`BLOCKED` untuk gate, `FAILED` untuk proses.** Kegagalan task kritis berjenis `PRECHECK` atau
+   `POSTCHECK` menghasilkan run `BLOCKED`; `PROCESS`/`REPORT` tetap `FAILED`. Keduanya bisa
+   di-`resume`; bedanya pesan dan tindakan: `BLOCKED` = keadaan buku belum layak, `FAILED` =
+   eksekusi sakit. State `BLOCKED` sebelumnya hanya ada di state machine, tidak pernah dipakai.
+2. **Gate hanya membaca.** Tidak ada koreksi otomatis: selisih kas, suspense, atau subledger adalah
+   temuan yang harus diselidiki, dan "merapikan" angka di dalam penutupan justru menghapus bukti.
+3. **Gate PRECHECK berjalan sebelum freeze.** Konsekuensinya disengaja: kegagalan gate pra-tutup
+   **tidak** membekukan tanggal — institusi masih boleh melayani, dan yang menahan penutupan
+   adalah run `BLOCKED` (index unik menolak run kedua, `daycloser-run` mengarahkan ke resume).
+   Gate pasca-tutup berjalan saat tanggal sudah `CLOSING`, jadi kegagalannya meninggalkan tanggal
+   terbekukan sampai run di-resume atau dibatalkan.
+4. **Bukti tersimpan walau gagal.** `TaskError` membawa `metrics` supaya angka penyebab penolakan
+   (jumlah sesi terbuka, selisih subledger, id jurnal terlambat) masuk `daycloser.task.metrics`.
+   Tanpa itu, bukti hanya ada di log yang hilang.
+5. **Akun dari parameter.** `daycloser.precheck.suspense_accounts` (awal `101.9`) dan
+   `daycloser.postcheck.subledger_gl_accounts` (awal `201`,`202`) berkelas kebijakan dengan
+   `NEEDS-COMPLIANCE-REVIEW`; tidak ada kode akun di kode program.
+6. **Saldo dinilai menurut `account_type` COA.** Aset naik di debit, kewajiban/ekuitas/pendapatan
+   di kredit, beban di debit. Menebak dari kode akun akan salah begitu ada akun suspense berkewajiban.
+7. **Jurnal terlambat dideteksi di postcheck.** Gerbang HTTP adalah cek-lalu-jalan (TOCTOU yang
+   dicatat pada T-135): permintaan yang lolos sesaat sebelum freeze bisa commit sesudahnya. Gate
+   membandingkan `journal.recorded_at` dengan `business_date.updated_at` **berpresisi mikrodetik**
+   (`businessDateFrozenAt`); format detik untuk tampilan membuat jurnal yang direkam pada detik yang
+   sama salah dituduh.
+8. **Registry gate dibuat lewat proc per spesifikasi.** Closure yang dibuat di badan loop menangkap
+   satu variabel bersama di Nim, sehingga keenam gate menjalankan pemeriksaan yang terakhir ditulis.
+   Ini tertangkap test integrasi (semua gate melaporkan `DAY-309`); bentuk yang benar adalah
+   `gateTask(spec, pool)`.
+
+9. **Gate diulang saat resume, termasuk chunk-nya.** `resetInFlight` mengembalikan task **dan**
+   chunk gate yang `SUCCEEDED` ke `PENDING`. Alasannya: gate pra-tutup berjalan saat tanggal masih
+   `OPEN`, jadi sertifikatnya bisa basi selama run `BLOCKED`/`PAUSED` (sesi teller baru, selisih
+   kas). Reset task tanpa chunk tidak cukup — `runTask` melewati chunk `SUCCEEDED` dan menandai gate
+   sukses tanpa menjalankannya (metrics-nya `null`, itu yang membongkar bug ini).
+10. **Akun parameter divalidasi.** Akun yang tidak ada atau non-`ACTIVE` membuat gate **gagal**
+    (`DAY-311`), bukan lolos: akun fiktif tidak pernah muncul di laporan saldo, sehingga gate yang
+    "lulus" karena tidak memeriksa apa pun adalah kontrol yang mati diam-diam. Daftar kosong juga
+    gagal (`DAY-312`).
+11. **Cakupan jurnal terlambat dibatasi pada transaksi yang dimulai setelah freeze.**
+    `journal.recorded_at` memakai `now()` (= waktu mulai transaksi), jadi transaksi yang mulai
+    sebelum freeze dan commit sesudahnya tidak tertangkap gate. Batas ini dicatat di
+    `docs/ACCEPTED-LIMITS.md`; penutupan penuh butuh drain permintaan tulis (Fase 9).
+
+**Ditolak.** Menjalankan gate sebagai bagian dari satu task besar (kegagalan tidak bisa ditunjuk,
+dan bukti per gate hilang). Menyimpan bukti sebagai teks di `error`. Menaruh daftar akun di kode
+dengan alasan "toh cuma dua". Membuat gate menulis jurnal koreksi. Menganggap trigger keseimbangan
+jurnal cukup sehingga gate trial balance tidak perlu (trigger menjaga per jurnal, bukan agregat).
+
+**Konsekuensi.** Setiap penutupan menjalankan enam query agregat kumulatif (biaya diukur T-140).
+Gate institusi-wide membuat run cabang (saat T-139 mendukungnya) memeriksa lebih ketat daripada
+kebutuhannya. Pemetaan subledger per jenis produk masih belum ada, sehingga selisih antar produk
+yang saling menutupi tidak terlihat — dicatat di batas.
+
+## D-151 — Task ledger day-close: snapshot dibuktikan, periode ditutup sebagai sistem (28 Okt 2026)
+
+**Konteks.** Spec §11.5 langkah 6 menempatkan snapshot saldo & trial balance harian di dalam seal,
+dan §11.6 mencantumkan "tutup periode GL" sebagai pekerjaan bulanan. Keduanya belum ada di
+kerangka. `daycloser` berjalan dari `ctl` tanpa sesi pengguna, sedangkan `ledger.period` mewajibkan
+`closed_by`/`updated_by` NOT NULL saat periode ditutup.
+
+**Keputusan.**
+
+1. **Snapshot ditulis lalu dibuktikan.** Task `ledger.daily_snapshot` memanggil
+   `rebuildSnapshot(asOf)` lalu membandingkan cache dengan jurnal lewat `snapshotMatches` — aturan
+   yang sama dengan laporan yang membaca cache. Snapshot yang tidak cocok membuat run gagal
+   (`DAY-321`/`DAY-322`), karena cache yang salah lebih buruk daripada tidak ada cache.
+2. **Bukti berupa sidik jari.** Metrics menyimpan `snapshotHash` (SHA-256 atas `akun|debit|kredit`
+   terurut). Dua run yang menghasilkan angka berbeda pasti berbeda hash-nya, tanpa menyimpan seluruh
+   tabel di `task.metrics`.
+3. **Tutup periode bergantung pada snapshot.** `ledger.period_close` mendeklarasikan
+   `dependsOn: @["ledger.daily_snapshot"]`: menutup periode tidak bisa dibatalkan, jadi bukti saldo
+   harus sudah ada sebelum pintu itu tertutup.
+4. **Penutupan oleh sistem memakai `closed_by` NULL.** `ctl` tidak punya pengguna; mengisi id
+   pengguna palsu akan mengarang pelaku. Migrasi `0060` melonggarkan CHECK (bukan menghapus data)
+   dan kolom itu didokumentasikan sebagai "NULL = proses sistem"; pelaku sebenarnya ada di audit
+   (`device = kran-api ctl`). Preseden yang sama dipakai `business_date.updated_by` (D-149).
+5. **Akhir bulan tanpa periode = gagal.** Kalender menyatakan hari itu akhir bulan, jadi tidak
+   adanya periode GL adalah konfigurasi yang hilang (`DAY-324`), bukan "tidak berlaku". Menutup bulan
+   tanpa buku besar yang ditutup akan membuat laporan bulanan tidak punya dasar.
+6. **Idempoten per business date.** Snapshot dibangun ulang (DELETE+INSERT untuk `as_of` itu);
+   periode yang sudah `CLOSED` dilaporkan `alreadyClosed: true` dan tidak menerbitkan event kedua
+   (dedup key `period.closed:<periodId>` sama dengan jalur HTTP).
+7. **Sesi kas OPEN di rentang periode menahan penutupan** (`DAY-326`), mencerminkan handler HTTP:
+   jurnal tutup sesi memakai `business_date` sesi, dan setelah periode CLOSED trigger menolaknya —
+   sesi itu tidak akan pernah bisa ditutup.
+
+**Ditolak.** Menutup periode tanpa memeriksa snapshot. Menyimpan id pengguna pertama sebagai
+"pelaku" penutupan sistem. Membuat periode otomatis di dalam penutupan (kebijakan periode = urusan
+administrasi, bukan efek samping EOD). Menjadikan kegagalan snapshot non-kritis (segel tanpa bukti
+saldo tidak berarti apa pun).
+
+**Konsekuensi.** Satu transaksi DELETE+INSERT per tanggal buku pada `ledger.balance_snapshot`
+(diukur T-140). Periode tetap dibuat manual; institusi yang lupa membuat periode bulan baru akan
+mendapat `DAY-324` di akhir bulan, bukan laporan tanpa dasar.
+
+**Amendemen setelah review independen (28 Okt 2026).**
+
+8. **Migrasi `0060` adalah contract, bukan hanya destructive.** DDL-nya `DROP CONSTRAINT`, dan
+   jalur deploy (`kran-api --role=migrate --up`) menolak seluruh migrasi destruktif. Berkas ditandai
+   `-- dbtools:contract` **dan** didaftarkan di `ops/migrations/contract-auto.txt`, sehingga deploy
+   menjalankannya lewat `--contract` setelah expand bersih. Diverifikasi dengan binary: `--up` 0,
+   `--check` menyebut `contract_pending` + id, `--contract` menerapkan, `--check` bersih. Aman
+   sebelum biner baru menerima trafik: biner lama tetap menulis `closed_by`/`updated_by` berisi
+   pengguna, yang memenuhi kedua cabang CHECK.
+9. **Periode yang ditutup = yang memuat tanggal buku dan berakhir di bulan yang sama.** EOM berjalan
+   pada hari **kerja** terakhir bulan (kalender), jadi `ends_on = tanggal buku` tidak pernah cocok
+   untuk periode bulan kalender (mis. 1–31 Okt, EOM 30 Okt). Periode yang memuat tanggal buku tetapi
+   berakhir di bulan lain (periode tahunan) dilaporkan `NOT_DUE` — bukan gagal: periode bulanan baru
+   akan bertabrakan dengan periode tahunan yang masih OPEN, sehingga kegagalan itu jalan buntu.
+   Tidak ada periode sama sekali tetap `DAY-324`.
+10. **Tutup periode adalah fase pasca-tutup.** Task-nya `tkPostCheck` dengan `dependsOn` snapshot +
+    `ledger.no_late_postings`, `ledger.subledger_vs_gl`, `ledger.trial_balance`. Menutup di fase
+    proses akan menolak jurnal akrual/pajak yang berjalan sesudahnya (trigger periode) dan membuat
+    kegagalan gate pasca-tutup tidak bisa diperbaiki (tidak ada reopen periode).
+11. **Snapshot yang tidak cocok di-rollback.** Rebuild, pembacaan, dan pembandingan berada dalam
+    satu transaksi; kegagalan melempar `SnapshotAbort` sehingga cache yang salah tidak pernah
+    ter-commit, dengan `accountDiff` (maks 20) sebagai bukti.
+12. **Penutupan berurutan.** Periode OPEN yang berakhir sebelum periode yang akan ditutup menahan
+    penutupan (`DAY-328`) — aturan yang sebelumnya hanya diserahkan ke day-close di dokumentasi.
+
+## D-152 — Model akrual bunga, deposito berjangka, dan dormant (28 Okt 2026)
+
+**Konteks.** T-138 (spec §11.6: akrual bunga harian, jatuh tempo/ARO, deteksi dormant) tidak bisa
+dikerjakan tanpa tiga keputusan yang tidak bisa disimpulkan dari spec: model data deposito
+berjangka, akuntansi bunga harian, dan nilai parameter akrual (O-084). Modul deposit saat itu hanya
+punya `account_type = SAVINGS`, status `ACTIVE|CLOSED`, tanpa kolom jatuh tempo/ARO/aktivitas, tanpa
+rule GL bunga, dan tanpa nilai parameter akrual.
+
+**Keputusan (pemilik, 28 Okt 2026).**
+
+1. **Deposito berjangka = `account_type` baru + kolom akun.** Tambah `TIME_DEPOSIT` pada
+   `deposit.account.account_type`, plus `maturity_date`, `aro_instruction` (`NONE|PRINCIPAL|
+   PRINCIPAL_AND_INTEREST`), dan `last_activity` (tanggal transaksi terakhir). Produk tetap satu
+   katalog (`product`), dibedakan lewat `product_type`/`savings_kind` seperti sekarang.
+2. **Akrual bunga dijurnal di GL setiap hari.** Setiap EOD: **D 501 BEBAN BUNGA / K 204 BUNGA
+   AKRUAL** (akun COA baru `204`, LIABILITY, postable, `NEEDS-COMPLIANCE-REVIEW` — lihat amendemen
+   di bawah: nomor aslinya di keputusan ini `203`, sudah dipakai akun lain). Saat posting ke
+   rekening: **D 204 / K 201 SIMPANAN ANGGOTA**. Dengan begitu beban berjalan terlihat harian dan
+   kewajiban bunga yang belum dibayar tidak bercampur dengan saldo simpanan.
+3. **Nilai parameter akrual default** (provisional, `NEEDS-COMPLIANCE-REVIEW`, wajib dikonfirmasi
+   compliance sebelum data anggota nyata): `interest_rate` **2,5% p.a.**, `day_count_basis`
+   **ACT_365**, `rounding_mode` `HALF_EVEN` (tetap, kernel), `rounding_scale` **2**,
+   `interest_posting` **`MATURITY`**. Nilai ini menjadi `default_pack` supaya akrual berjalan di
+   pilot; produk yang binding-nya diubah tetap memakai nilai produk.
+4. **Dormant = 12 bulan tanpa aktivitas.** Parameter `deposit.dormant.after_months` (default **12**,
+   `NEEDS-COMPLIANCE-REVIEW`). Rekening tanpa transaksi selama ambang itu ditandai status
+   **`DORMANT`**; **tidak** ada penutupan otomatis, dan rekening dormant tetap dapat menerima
+   setoran (aturan penolakan transaksi dormant adalah keputusan lanjutan).
+
+**Konsekuensi.**
+
+- Ketiga pekerjaan itu tetap `HUMAN-REVIEW-REQUIRED` saat implementasi: rumus bunga/akrual masuk
+  area kritis AGENTS.md §8, jadi hasilnya harus ditinjau manusia sebelum dinyatakan selesai.
+- `204 BUNGA AKRUAL` adalah akun baru di COA dasar (migrasi expand + seed rule), bukan angka di kode.
+
+**Amendemen (28 Okt 2026, keputusan pemilik setelah pemeriksaan COA).** Dua koreksi atas butir 2:
+
+1. **Nomor akun akrual adalah `204`, bukan `203`.** `203 TITIPAN PENGURUS` sudah ada sejak migrasi
+   `0036` (LIABILITY, saldo awal vault). Karena `coa_account` punya `UNIQUE (code)` dan seed memakai
+   `ON CONFLICT (code) DO NOTHING`, memakai `203` akan **diam-diam** memakai akun yang salah. Akun
+   baru memakai kode bebas berikutnya supaya tidak ada jurnal/saldo lama yang perlu dimigrasikan.
+2. **Pokok deposito berjangka masuk `202 SIMPANAN BERJANGKA`, bukan `201`.** Saat jatuh tempo,
+   pokok + bunga pindah ke rekening simpanan anggota (`201`). `201` tetap milik tabungan; `202`
+   memisahkan kewajiban deposito di laporan. Konsekuensi: rule posting per jenis rekening
+   (T-138c/d), bukan satu rule generik untuk semua simpanan.
+- Nilai default di atas **bukan** anjuran regulasi; ia hanya membuat sistem bisa berjalan. Bila
+  compliance menetapkan angka lain, perubahan terjadi lewat parameter/versi produk, bukan kode.
+
+**Amendemen kedua (28 Okt 2026, saat implementasi T-138c).** Butir 3 di atas **tidak** dijalankan
+sebagai seed: `packs/base` tidak memuat nilai `interest_rate`/`day_count_basis`/`rounding_scale`, dan
+task akrual membaca `product.product_param_binding` milik versi produk yang di-pin rekening
+(pola `min_balance` di teller), bukan resolusi parameter berlapis. Karena itu:
+
+- Versi produk yang dipakai rekening `TIME_DEPOSIT` **wajib** mengikat ketiga atribut itu. Bila salah
+  satu tidak ada, task berhenti `DAY-331` dan penutupan ditahan — fail-closed, karena menebak rate
+  berarti mengarang angka bunga anggota.
+- Menambah baris seed **tanpa** mengubah cara task membaca parameter tidak akan berpengaruh. Bila
+  `default_pack` memang diinginkan, pekerjaannya adalah resolusi parameter di task, bukan seed.
+
+- T-138 dipecah: (a) helper day-count + bunga murni (tanpa parameter), (b) migrasi model akun +
+  rule GL, (c) task akrual dengan checkpoint `PER_ENTITY`, (d) task jatuh tempo/ARO, (e) task
+  dormant.
+
+## D-153 — Aksi day-close lewat HTTP: dieksekusi di permintaan, tanpa `Idempotency-Key` (28 Okt 2026)
+
+**Konteks.** T-139 meminta tombol Jalankan/Resume/Pause/Cancel di layar monitor, bukan hanya
+perintah `ctl` di server. Tiga hal harus diputuskan sebelum menulis handler: di mana orkestrasi
+berjalan, bagaimana klik ganda dicegah, dan bagaimana aksi tetap bisa dipakai justru saat buku
+sedang ditutup.
+
+**Keputusan.**
+
+1. **Eksekusi sinkron di dalam permintaan HTTP**, memakai layanan yang sama dengan `ctl`
+   (`apps/api/src/daycloser_service.nim`). Handler tidak memuat aturan penutupan sama sekali; ia
+   hanya mengotorisasi, memetakan hasil ke status HTTP, dan membaca query/path.
+   *Alternatif yang ditolak*: menjalankan orkestrasi di thread terpisah lalu menjawab `202`.
+   Itu menambah mesin keadaan baru (siapa pemilik run bila proses API mati di tengah?) tanpa
+   menyelesaikan masalah yang belum terbukti: durasi penutupan pilot masih detik, bukan menit.
+   Batasnya dicatat: permintaan menahan satu worker HTTP, dan klien harus memperlakukan batas
+   waktu sebagai "tidak tahu" lalu membaca `GET /dayclose/status` — bukan mengulang aksi.
+2. **Tanpa `Idempotency-Key`**, berbeda dari rencana awal T-139. Jalur idempotensi repo mengklaim
+   kunci *di dalam satu transaksi* dengan operasinya; penutupan berjalan lintas transaksi dan
+   memakai koneksi bergantian, jadi klaim itu tidak bisa dibungkus. Pengaman klik ganda tetap ada
+   dan lebih tepat: advisory lock per scope, index unik `run_one_per_date_uq`, dan pause/cancel
+   yang hanya menulis niat (idempoten). Klik kedua menerima `409` dengan kode mesin yang jelas.
+3. **Izin dipisah**: `dayclose.run.read` (0061) untuk memantau, `dayclose.run.manage` (0063)
+   untuk menjalankan/menghentikan. `ops_admin` hanya memegang yang baca; `platform_admin` dan
+   `ledger_admin` memegang keduanya. Keduanya tetap menuntut grant tanpa batas cabang (D-062).
+4. **Pengecualian gerbang `CLOSING`**: `/api/v1/dayclose/` masuk daftar pengecualian yang sudah
+   ada (`/api/v1/auth/`). Tanpa itu, satu-satunya jalan keluar dari penutupan macet ada di server.
+   Daftar pengecualian punya **satu definisi** yang dipakai runtime (`close_guard.nim`) dan gate
+   kontrak (`tools/openapi/lib.nim`), dan `topenapi` mengunci keduanya (termasuk memastikan
+   `/api/v1/daycloser/…` tidak ikut terbuka).
+
+**Konsekuensi.** Menjalankan penutupan dari UI tidak lagi memerlukan akses server, tetapi tetap
+tidak bisa menggantikan `ctl` untuk bootstrap tanggal buku pertama (`409 bootstrap_required`) —
+membuat tanggal buku adalah tindakan sekali seumur institusi, bukan tombol harian.
+
+## D-154 — Akrual bunga harian: rekening mana, kapan ditahan, dan di mana dibulatkan (28 Okt 2026)
+
+**Konteks.** T-138c menjalankan akrual bunga deposito berjangka setiap EOD. Tiga hal tidak
+ditentukan D-152 dan harus diputuskan sebelum kode ditulis: rekening mana yang tetap berbunga,
+apa yang terjadi bila perhitungan gagal, dan pada titik mana pembulatan dilakukan (selisih beberapa
+sen per tenor adalah temuan audit, bukan pembulatan gaya).
+
+**Keputusan (pemilik, 28 Okt 2026).**
+
+1. **Rekening yang diakrualkan: ACTIVE + DORMANT**, bukan hanya ACTIVE. Status dormant membatasi
+   transaksi keluar/masuk, bukan perjanjian bunga yang sudah disepakati; menghentikan akrual karena
+   rekening tidak aktif akan mengurangi bunga yang dijanjikan di akhir tenor. `CLOSED` dikecualikan
+   (rekening sudah tidak ada). Predikatnya ditulis `status <> 'CLOSED'`, bukan daftar nilai, supaya
+   `DORMANT` (T-138e) otomatis ikut tanpa mengubah task.
+2. **Akrual gagal = kritis; penutupan ditahan.** Task berjalan `critical = true`, sehingga run
+   berhenti `FAILED` dan operator memperbaiki penyebabnya. Alternatif "lanjut dengan catatan"
+   ditolak: bunga yang kurang tanpa ada yang menahan hanya terlihat berbulan-bulan kemudian, saat
+   angkanya sudah dipakai laporan.
+3. **Pembulatan sekali per rentang, bukan per hari.** Yang dibulatkan adalah bunga **kumulatif**
+   sejak `opened_on` sampai tanggal buku; bagian yang dijurnal hari itu adalah selisihnya terhadap
+   kumulatif baris terakhir (`deposit.interest_accrual.amount` vs `.cumulative`). Membulatkan tiap
+   hari lalu menjumlahkan menyimpang beberapa sen dari bunga yang dijanjikan di akhir tenor, dan
+   selisih itu tidak bisa dikoreksi setelah jurnalnya immutable.
+4. **Jurnal ditulis sinkron di transaksi chunk**, bukan lewat konsumen outbox. Penutupan buku harus
+   selesai saat run selesai; jurnal yang masih menunggu worker berarti `ledger.period_close` (EOM)
+   bisa menutup periode sebelum akrual hari itu masuk. Event `InterestAccrued` yang diterbitkan
+   karena itu **tanpa** header `accounting`, supaya konsumen tidak memposting jurnal kedua.
+
+**Konsekuensi.**
+
+- Satu `withTx` per chunk: kegagalan satu rekening membatalkan seluruh chunk, jadi tidak ada akrual
+  setengah jadi yang membuat hari itu terlihat selesai. Pesan galat menyebut nomor rekening.
+- Pembulatan mengikuti `product.savings.rounding_scale` (0–2) dan diterapkan ke kumulatif **sebelum**
+  selisih dihitung, sehingga bagian harian tidak "mengembalikan" digit yang dibuang.
+- Basis 30/360 bisa memberi 0 hari untuk rentang pendek di akhir bulan; hari itu tidak mencatat
+  baris dan ketinggalannya ikut hari berikutnya, karena kumulatif dihitung dari `opened_on` (bukan
+  dari baris terakhir). Ini artefak konvensi yang sudah dicatat D-152.
+- **HUMAN-REVIEW-REQUIRED**: rumus bunga dan jurnalnya adalah area kritis (AGENTS.md §8).
+
+## D-155 — Jatuh tempo deposito berjangka: kapan berhenti berbunga, ke mana bunga pergi, tenor perpanjangan (28 Okt 2026)
+
+**Konteks.** T-138d memproses deposito yang jatuh tempo. Empat hal tidak ditentukan D-152 dan
+menentukan angka yang dijurnal, jadi diputuskan pemilik sebelum kode ditulis.
+
+**Keputusan (pemilik, 28 Okt 2026).**
+
+1. **Jatuh tempo = EOD `maturity_date`.** Hari terakhir berbunga adalah **sehari sebelum**
+   `maturity_date`, sehingga tenor 365 hari dari 1 Okt 2026 berakhir 30 Sep 2027 dengan
+   `maturity_date = 1 Okt 2027`. Akibatnya task akrual membatasi hari kumulatifnya di
+   `maturity_date − 1`; tanpa batas itu deposito yang prosesnya terlambat berbunga melewati
+   perjanjian.
+2. **ARO `NONE`**: pokok dan bunga pindah ke rekening simpanan anggota (`201`) — `DepositMatured`
+   D 202 / K 201 (pokok) dan `InterestPosted` D 204 / K 201 (bunga).
+3. **ARO `PRINCIPAL`**: pokok diperpanjang, bunga ke rekening simpanan anggota
+   (`InterestPosted` D 204 / K 201).
+4. **ARO `PRINCIPAL_AND_INTEREST`**: keduanya diperpanjang; bunga **dikapitalisasi** menjadi pokok
+   lewat rule baru `InterestCapitalized` D 204 / K 202, lalu `principal` rekening naik. Alternatif
+   "biarkan bunga di 204" ditolak karena saldo rekening tidak lagi mencerminkan bunga yang
+   dijanjikan.
+5. **Tenor perpanjangan = tenor semula** (`maturity_date − opened_on`), dihitung dari tanggal jatuh
+   tempo lama. Tidak ada parameter tenor per produk; bila nanti dibutuhkan, ia parameter baru,
+   bukan perubahan rumus.
+6. **Keterlambatan proses tidak menambah bunga**: bila penutupan tanggal jatuh tempo macet dan
+   proses baru berjalan beberapa hari kemudian, akrual tetap berhenti di `maturity_date − 1` dan
+   perpindahan pokok/bunga diposting pada tanggal buku saat proses berjalan.
+
+**Konsekuensi.**
+
+- Task `deposit.maturity_aro` membutuhkan rekening simpanan tujuan untuk membayar pokok (`NONE`)
+  atau bunga (`NONE`/`PRINCIPAL`). Tidak ada rekening simpanan aktif di cabang yang sama =
+  prasyarat operasional yang hilang, bukan "tidak berlaku": task berhenti dengan kode yang
+  menyebut rekeningnya, dan operator membuka rekening tujuan sebelum `resume`. Ini pola yang sama
+  dengan gate sesi teller `DAY-301`.
+- Pergerakan pokok/bunga wajib tercermin di `deposit.transaction` **dan** jurnal, karena
+  `reconcile-deposits` merekonstruksi saldo dari baris subledger. Tipe transaksi baru (bukan
+  `CASH_*`, karena tidak ada kas yang bergerak) ditambahkan lewat migrasi kontrak dan dipetakan di
+  query rekonsiliasi.
+- **HUMAN-REVIEW-REQUIRED**: pergerakan uang jatuh tempo (AGENTS.md §8).
+
+## D-156 — Pokok deposito berjangka tidak boleh berubah di tengah tenor (28 Okt 2026)
+
+**Konteks.** Task akrual (D-154) menghitung bunga **kumulatif** dari `opened_on` dengan `principal`
+= saldo rekening **saat ini**, lalu menjurnal selisihnya terhadap baris akrual terakhir. Model itu
+benar hanya bila pokok tetap selama tenor. Review T-138c/T-138d menemukan dua jalur yang memecahkan
+asumsi itu, keduanya dibuka oleh handler teller yang sama dengan tabungan:
+
+1. **Penarikan tunai** mengurangi pokok → kumulatif baru lebih kecil dari yang sudah dijurnal →
+   `amount` negatif → `DAY-335` menahan penutupan **tanpa jalur keluar**: baris akrual tidak bisa
+   dikoreksi (jurnalnya immutable, menghapus baris meninggalkan jurnal di GL sehingga subledger dan
+   GL berbeda pendapat).
+2. **Pemindahbukuan** memakai rule generik `DepositTransferred` (`ledger/0013`, D 201 / K 201), jadi
+   pokok berjangka yang masuk lewat PB tidak pernah dipisah ke `202`; saat jatuh tempo
+   `DepositMatured` (D 202 / K 201) akan mendebit akun yang tidak pernah dikredit. Gate
+   `ledger.subledger_vs_gl` menjumlahkan `201`+`202`, sehingga kesalahan pemisahan ini **tidak**
+   terdeteksi.
+
+**Keputusan (sementara, sampai jalur pencairan dini + pemisahan PB diputuskan).**
+
+1. **Penarikan tunai dari rekening `TIME_DEPOSIT` ditolak** `409` dengan
+   `params.reason = time_deposit_locked`, tanpa mengubah saldo/jurnal.
+2. **PB yang menyentuh rekening `TIME_DEPOSIT` (sumber atau tujuan) ditolak** dengan reason yang
+   sama. Alasannya bukan kepraktisan: kedua kaki PB masih `201`, jadi menerimanya berarti mencatat
+   kewajiban berjangka di akun tabungan.
+3. **Setoran tunai tetap boleh.** Pokok yang naik tidak membuat jalur gagal: kumulatif membesar dan
+   selisihnya dijurnal sebagai penyesuaian. Konsekuensinya bunga hari-hari sebelumnya ikut dinilai
+   pada pokok baru (model kumulatif D-154), dicatat di `OPEN_ITEMS` O-108.
+4. **Rule `DepositWithdrawn` berkondisi `TIME_DEPOSIT` (`ledger/0067`) dibiarkan ada** meski belum
+   bisa dicapai: rule itu adalah akuntansi yang benar untuk pencairan dini, dan menghapusnya berarti
+   membuat migrasi kontrak kedua hanya untuk mengembalikannya nanti.
+
+**Konsekuensi.**
+
+- Rekening berjangka sekarang hanya bisa didanai lewat setoran tunai teller; pembukaan rekening
+  berjangka lewat API belum ada, jadi jalur ini baru dipakai fixture/test.
+- Bila kelak pencairan dini dibuka, yang dibutuhkan bukan sekadar menghapus guard: butuh mekanisme
+  koreksi akrual (baris pembalik, bukan hapus baris) plus keputusan penalti (O-108).
+- **HUMAN-REVIEW-REQUIRED**: keputusan ini membatasi transaksi pada jalur uang (AGENTS.md §8) dan
+  diambil tanpa keputusan produk eksplisit; guard-nya sengaja fail-closed.
+
+
+## D-157 — Deteksi dormant: sumber aktivitas, batas, dan reaktivasi (28 Okt 2026)
+
+**Konteks.** D-152 butir 4 menetapkan ambang `deposit.dormant.after_months` = 12 dan status
+`DORMANT`, tetapi tidak menjawab empat hal yang menentukan kode T-138e: dari mana "aktivitas
+terakhir" dibaca, apakah batasnya inklusif, siapa yang mengembalikan rekening ke `ACTIVE`, dan apa
+yang boleh dilakukan rekening dormant.
+
+**Keputusan.**
+
+1. **Aktivitas dibaca dari subledger, bukan kolom `deposit.account.last_activity`.** Sumbernya baris
+   `deposit.transaction` (tunai + perpindahan jatuh tempo) dan `deposit.transfer` (PB di kedua
+   sisi); `opened_on` menjadi batas bawah. Kolom `last_activity` (ditambahkan `0064`) tidak pernah
+   ditulis jalur transaksi mana pun, sehingga membacanya akan membuat **semua** rekening terlihat
+   tidak aktif sejak dibuka. Satu sumber data yang sama dengan rekonsiliasi juga tidak bisa
+   melenceng. Kolom itu dibiarkan kosong dan dicatat di O-111.
+2. **Batas memakai `<` (lebih lama dari ambang).** Dengan tanggal buku 2026-10-28 dan ambang 12
+   bulan, cutoff = 2025-10-28: aktivitas **tepat** di cutoff belum dormant, sehari sebelumnya sudah.
+   Aritmetika bulan dilakukan PostgreSQL (`make_interval(months => N)`), jadi 31 Mar − 1 bulan
+   mengikuti kalender (28/29 Feb), bukan rata-rata 30 hari.
+3. **Reaktivasi otomatis pada penutupan berikutnya**, tanpa aksi operator: rekening `DORMANT` yang
+   punya aktivitas ≥ cutoff kembali `ACTIVE`. Penolakan transaksi dormant belum diputuskan D-152, dan
+   menahan rekening tetap dormant setelah setoran hanya membuat anggota menunggu tanpa sebab.
+4. **Dormant membatasi layanan, bukan setoran.** Setoran tunai ke rekening `DORMANT` diterima
+   (handler teller), penarikan dan PB masih ditolak `409 account_not_active` sampai aturan
+   penolakan transaksi dormant diputuskan. Tanpa setoran yang diterima, butir 3 tidak akan pernah
+   terjadi — guard lama (`status != ACTIVE`) membuat reaktivasi mustahil.
+5. **Task `deposit.dormant` tidak kritis.** Menandai status tidak memindahkan uang dan tidak
+   menyentuh jurnal; kegagalannya dicatat `FAILED` dan bisa diulang, tetapi tidak menahan
+   penutupan. Ini berbeda dari akrual (D-154) dan jatuh tempo (D-155) yang menyentuh angka.
+6. **Ambang wajib ada sebagai parameter aktif.** Parameter hilang/bukan bulan ≥ 1 = `DAY-351`,
+   bukan "lewati saja": task tidak menebak ambang dan tidak memproses halaman itu.
+   **Koreksi (review putaran 4):** karena task ini non-kritis (butir 5), `DAY-351` **tidak**
+   menahan penutupan — run tetap `COMPLETED` dengan task berstatus `FAILED`. Akibatnya deteksi dan
+   reaktivasi dormant berhenti sampai parameternya diperbaiki, dan itu hanya terlihat bila operator
+   memeriksa status task (`daycloser-status`, halaman `/app/dayclose`). Tidak ada alert otomatis
+   untuk task non-kritis yang `FAILED`; dicatat sebagai O-115. Kalimat sebelumnya ("lebih buruk
+   daripada run gagal") tidak sesuai perilaku kode dan sudah dikoreksi, bukan dibiarkan.
+
+**Konsekuensi.**
+
+- Himpunan yang dipaginasi adalah `ACTIVE` **dan** `DORMANT`; perpindahan status di antara keduanya
+  tidak mengubah keanggotaan himpunan, jadi `LIMIT/OFFSET` aman (berbeda dari task jatuh tempo yang
+  memakai jendela `row_number()`).
+- Akrual bunga tetap berjalan untuk rekening dormant: predikat D-154 `status <> 'CLOSED'` sudah
+  mencakupnya, dan status ini bukan pelanggaran perjanjian bunga.
+- Sampai ada aturan penolakan transaksi dormant (KYC/reaktivasi manual), rekening dormant masih bisa
+  menerima setoran dari siapa pun yang tahu nomor rekeningnya — risiko yang sudah ada untuk rekening
+  aktif dan dicatat sebagai pekerjaan lanjutan, bukan perilaku baru.
+
+**Amendemen D-157 (28 Okt 2026, review putaran 3).**
+
+1. **Rekening tabungan `DORMANT` sah menjadi tujuan pembayaran jatuh tempo.** D-155 amendemen 1
+   menyebut "rekening `SAVINGS` `ACTIVE` pertama", ditulis sebelum `DORMANT` ada. Setelah T-138e,
+   tabungan yang lama tidak dipakai bisa `DORMANT`, dan menolaknya membuat deposito anggota berakhir
+   `DAY-343` pada task **kritis** — sementara satu-satunya task yang bisa mereaktivasi
+   (`deposit.dormant`) berjalan sesudahnya, jadi reaktivasi tidak akan pernah terjadi. Kredit jatuh
+   tempo adalah aktivitas rekening, dan D-157 butir 3 memang mengembalikan rekening ke `ACTIVE` pada
+   penutupan berikutnya. Urutan `maturity_aro` → `dormant` tetap dipertahankan.
+2. **Keputusan status dormant dihitung di dalam `UPDATE`, bukan dari halaman yang sudah dibaca.**
+   Halaman dibaca di koneksi lain; bila `daycloser.txn_policy_during_close = ALLOW`, setoran yang
+   commit di antara baca dan tulis akan diabaikan dan rekening bertanda dormant padahal baru
+   beraktivitas. `markDormantIfStale`/`reactivateIfActive` mengulang predikat yang sama
+   (`last_at` vs cutoff) di dalam pernyataan tulis, jadi hasilnya konsisten dengan data saat commit
+   (sisa race versi sebaliknya tetap dicatat di O-112).
+3. **`updated_at = now()` ikut ditulis** saat status berubah, supaya ada jejak waktu. Audit event per
+   rekening **belum** ada: untuk 100k rekening itu 100k baris audit per penutupan dan keputusannya
+   milik pemilik (O-113).
+4. **Tutup otomatis tidak termasuk.** Spec §11.6 menyebut "deteksi rekening dormant/tutup otomatis";
+   T-138e hanya menandai `DORMANT` dan mereaktivasi otomatis. Penutupan otomatis rekening dormant
+   butuh keputusan produk/regulasi (sisa saldo, pemberitahuan anggota, hak anggota) dan tidak
+   dikarang di sini — dicatat O-114.
+
+**Amendemen D-155 (28 Okt 2026, review T-138d).** Dua hal yang tidak diputuskan D-155 tetapi harus
+dijawab kode:
+
+1. **Rekening tujuan pembayaran** = rekening `SAVINGS` `ACTIVE` pertama (`account_no` terkecil)
+   milik party yang sama di cabang yang sama, **kecuali** simpanan POKOK/WAJIB. Alasannya bukan
+   preferensi: setoran POKOK/WAJIB dijurnal ke ekuitas `301.1`/`301.2` (`ledger/0014`), sedangkan
+   `DepositMatured`/`InterestPosted` mengkredit `201`, jadi uang yang mendarat di sana salah
+   klasifikasi — dan penarikan POKOK/WAJIB diblokir (T-111), sehingga dana anggota terkunci.
+   Rekening POKOK biasanya yang pertama dibuka, jadi tanpa penyaring ini ia justru jadi target
+   default. Tidak ada rekening yang memenuhi → `DAY-343`.
+2. **Dua kondisi berhenti yang baru**: cache saldo rekening hilang (`DAY-348`, jangan tutup deposito
+   tanpa memindahkan pokok) dan proses terlambat lebih dari satu tenor (`DAY-349`, karena tanggal
+   jatuh tempo baru sudah lewat lagi → bunga siklus yang sama akan dibayar dua kali, O-109).
+
+## D-158 — Provenance jurnal penutupan: gate `no_late_postings` tidak boleh memblokir run oleh jurnalnya sendiri (28 Okt 2026)
+
+**Konteks.** Gate pasca-tutup `ledger.no_late_postings` (`DAY-310`, T-134) menandai jurnal
+**bertanggal buku** yang direkam setelah tanggal dibekukan; maksudnya menangkap tulisan HTTP yang
+lolos sebelum freeze lalu commit sesudahnya (TOCTOU). Benchmark EOD T-140 menemukan konsekuensi yang
+tidak terpikirkan saat gate ditulis: task penutupan **sendiri** juga menulis jurnal setelah freeze —
+akrual bunga (`InterestAccrued`) dan perpindahan jatuh tempo (`DepositMatured`/`InterestPosted`/
+`InterestCapitalized`) — sehingga setiap penutupan yang punya rekening berjangka berakhir `BLOCKED`
+oleh gate-nya sendiri. Ini bukan teori: `./task bench-eod --accounts 100` langsung `BLOCKED`
+`DAY-310` sebelum perbaikan ini.
+
+**Keputusan.** Tambah provenance eksplisit, bukan pengecualian berdasarkan nama event:
+
+1. `ledger.journal.daycloser_run_id` (nullable, `ledger/0072`, expand-only, tanpa FK lintas modul).
+2. `insertJournal`/`postRuleJournalSync`/`postJournalSync` menerima `daycloserRunId` (default kosong);
+   task `deposit.*` mengisi `ctx.runId`.
+3. `latePostings` mengabaikan jurnal ber-`daycloser_run_id`.
+
+**Konsekuensi.**
+
+- Jurnal dari jalur bisnis (teller, PB, penyesuaian manual) tetap tanpa penanda → tetap dinilai
+  gate seperti sebelumnya; tidak ada pelonggaran untuk tulisan yang seharusnya ditangkap.
+- Task penutupan baru yang menulis jurnal **wajib** meneruskan `ctx.runId`; parameter opsional
+  membuat kelalaian itu tidak gagal-kompilasi, jadi aturannya dicatat di `ledger/MODULE.md` dan
+  diuji lewat `itdaycloser_gates` ("jurnal milik run penutupan sendiri tidak dihitung terlambat").
+- Kolom ini juga menjawab pertanyaan audit "jurnal ini lahir dari run mana" tanpa membongkar
+  `idempotency_key`.
+
+## D-159 — `SIMULATION` = dry-run tingkat rencana, bukan eksekusi di transaksi ter-rollback (28 Okt 2026)
+
+**Konteks.** Spec §11.7 meminta dry-run/simulasi: "jalankan di transaksi yang di-*rollback* (atau di
+salinan skema) untuk pratinjau dampak (jurnal, saldo) tanpa commit". T-140 harus memilih bentuknya
+dengan waktu yang tersedia. Kolom `daycloser.run.mode` sudah menerima `SIMULATION`, tetapi `ctl`
+selalu menulis `REAL`.
+
+**Keputusan.** `ctl daycloser-run --mode=SIMULATION` menjalankan **perencanaan** yang sama dengan run
+nyata (`planTasks`: resolve task sesuai level tanggal, hitung chunk lewat `countChunks`), mencetak
+rencana itu sebagai JSON (`"writes": false`), lalu berhenti. Tidak ada baris run, jurnal, saldo,
+event, atau perubahan tanggal buku.
+
+Alasan tidak memilih "eksekusi di transaksi ter-rollback" sekarang:
+
+1. **Task menulis lewat pool sendiri-sendiri.** Setiap chunk membuka `withTx`/`withConn` dari
+   `DbPool`, jadi "satu transaksi besar yang di-rollback" berarti mengubah semua task menerima
+   koneksi/transaksi dari luar — perubahan arsitektur pada kode yang sudah diuji, bukan flag.
+2. **Rollback tidak membuktikan yang dijanjikan.** Efek samping di luar DB (event outbox yang
+   dikirim worker, berkas, audit anchor) tidak ikut batal; pratinjau yang mengklaim "dampak penuh"
+   justru menyesatkan.
+3. **Yang paling sering ditanyakan operator** ("apakah tanggal ini bisa ditutup, task apa yang
+   jalan, berapa chunk") sudah terjawab tanpa menulis apa pun.
+
+**Konsekuensi.**
+
+- Dry-run **tidak** membuktikan task akan berhasil: `DAY-331` (binding produk kurang), `DAY-343`
+  (tanpa rekening tujuan), atau `DAY-344` (rule ambigu) baru terlihat pada run nyata. Batas ini
+  ditulis di `docs/ACCEPTED-LIMITS.md`, bukan disembunyikan.
+- Penolakan yang bersifat keadaan (bukan hari kerja, tanggal buku berbeda, run ganda) **ikut**
+  diperiksa, supaya pratinjau tidak menjanjikan run yang toh ditolak.
+- `run.mode` tetap hanya berisi `REAL` karena dry-run tidak membuat run; kolom itu disiapkan untuk
+  mode yang benar-benar mengeksekusi (pekerjaan lanjutan bila dibutuhkan).
+- `planTasks` dipisahkan dari `planRun` (yang menyimpan baris run) supaya kedua jalur memakai
+  perencanaan yang sama — dua perencana berbeda cepat atau lambat menyimpang.
+
+## D-160 — Arah desain v2: netral dingin, satu aksen, satu keluarga huruf (31 Okt 2026)
+
+**Konteks.** Pemilik memutuskan redesign UI total setelah Fase 3. Audit UI/UX (laporan SME 31 Okt
+2026, `docs/proposals/design-v2-direction.md`) menemukan masalahnya bukan di arah warna melainkan
+di struktur: `packages/ui` tidak punya satu komponen pun (hanya CSS, 0 komponen Svelte), 1.344 baris
+CSS ditulis ulang per halaman, layar kas 1.834 baris dalam satu berkas tanpa `<table>`, buka kas
+terkunci di balik memuat rekening anggota, pengaturan tema/bahasa menjadi 5 tab-stop sebelum konten,
+dan 37 tombol `:disabled` tanpa style sama sekali. Pelanggaran `DESIGN.md` v1 sendiri hanya 8
+deklarasi di 3 berkas.
+
+**Keputusan.** Arah v2 menggantikan D-075/D-115:
+
+1. Basis netral dingin dan **satu aksen plum** (`#5B2A5E` terang, `#D9A0D4` gelap), bukan kertas
+   hangat + hijau tua. Plum dipilih karena tidak bertabrakan dengan empat warna status yang harus
+   tetap terbaca sebagai status. Penggantian aksen di kemudian hari = ganti token, bukan ganti
+   keputusan.
+2. **Satu keluarga huruf: IBM Plex Sans.** `IBM Plex Mono` dihapus dari antarmuka, termasuk kolom
+   uang dan struk; angka uang memakai `tabular-nums slashed-zero`. Plex Sans dipertahankan karena
+   angka tabularnya sudah dipakai sistem ini, sehingga tidak perlu font baru untuk fitur yang sudah
+   terbukti.
+3. Dial **ENERGY 2 / RHYTHM 2 / MOTION 2**, dengan angka tetap 0 ms.
+4. Komitmen struktural (§11 `DESIGN.md`): satu titik fokus per layar, navigasi bergrup, pengaturan
+   keluar dari alur Tab konten, layar kas sebagai stasiun kerja, dan aturan visual tinggal di token
+   + komponen bersama, bukan per halaman.
+
+**Alasan.** Pemilik memilih karakter "hangat & manusiawi" dengan palet netral dingin dan tipografi
+sans ber-angka-tabular. Mempertahankan arah v1 berarti mempertahankan metafora "buku besar berkulit
+hangat" yang tidak lagi diinginkan pemilik, sementara mengganti huruf tanpa alasan fungsional akan
+menambah risiko tanpa manfaat terukur.
+
+**Konsekuensi.**
+
+- `DESIGN.md` diganti pada hari yang sama. Implementasi bertahap (fase 0–6, `DESIGN.md` §12);
+  sampai sebuah fase selesai, penyimpangan yang sudah ada sebelum D-160 dicatat sebagai utang
+  migrasi di PR, bukan temuan review. Penyimpangan baru tetap gagal review.
+- Matriks kontras `packages/ui/tests/tokens.contrast.test.ts` harus diperluas ke pasangan v2
+  **sebelum** token dipakai; token tanpa uji = gagal review.
+- Spesifikasi e2e yang mengunci struktur/teks (urutan Tab, teks layar) ikut berubah bila layarnya
+  ikut dimigrasi; perubahan itu bagian dari fase yang bersangkutan, bukan pelonggaran gate.
+- Layar kas pada fase 3 membutuhkan endpoint `GET /teller/sessions/{id}/transactions` yang belum
+  ada di kontrak; itu perubahan API lewat jalur OpenAPI + contract test, bukan tambalan UI.
+- `docs/proposals/design-v2-direction.md` menjadi catatan asal-usul arah dan tidak lagi mengikat.
+
+**Alternatif yang ditolak.** (a) Tetap pada arah v1 dan hanya membangun component layer
+("Opsi B"): ditolak pemilik karena arah visualnya memang ingin diganti. (b) Bedah terarah 12–15
+hari tanpa component layer ("Opsi C"): ditolak karena menyisakan 1.344 baris CSS duplikat.
+(c) Mengganti keluarga huruf sekaligus: ditolak sampai ada kandidat yang dukungan angka
+tabularnya diverifikasi, bukan diasumsikan.
+
+**Status.** Disetujui pemilik 31 Okt 2026.
+
+**Catatan dependensi dan gerbang (31 Okt 2026, setelah review).** `packages/ui` kini memakai
+`svelte` dan `@sveltejs/vite-plugin-svelte` sebagai devDependency **dengan versi persis yang sudah
+dipakai `apps/web`** (5.57.2 / 7.3.1, resolusi lockfile yang sama). Tidak ada dependensi runtime
+baru dan tidak ada pustaka uji baru: test komponen memakai `render` dari `svelte/server`, bukan
+jsdom/testing-library. Sebagai gantinya paket itu mendapat `tsconfig.json` dan `svelte-check`
+sendiri, dijalankan `./task lint-web` (dan karena itu ikut job CI `web-e2e`) — tanpa gerbang ini
+komponen bersama tidak punya pemeriksaan tipe/a11y statis sama sekali, karena `svelte-check`
+`apps/web` hanya memindai paketnya sendiri dan eslint mematikan `svelte/a11y-*` (D-139).
+
+## D-161 — Serialisasi jalur teller dan jatuh tempo deposito lewat kunci baris `deposit.account` (31 Okt 2026)
+
+**Konteks.** Halaman kandidat `deposit.maturity_aro` dibaca di luar transaksi chunk. Setoran tunai
+yang sudah lolos cek status bisa commit setelah task menutup rekening: rekening berakhir `CLOSED`
+dengan saldo positif dan tanpa akrual lanjutan. Race ini hanya terbuka saat
+`daycloser.txn_policy_during_close = ALLOW`; dampaknya tidak terlihat di rekonsiliasi (baris setoran
+ada dan saldo cocok). Sisi dormant sudah ditutup dengan mengulang predikat di dalam `UPDATE`
+(D-157 amendemen 2); sisi jatuh tempo belum (O-112).
+
+**Keputusan.** Kedua jalur mengunci **baris `deposit.account` yang sama** `FOR UPDATE` sebelum
+memutuskan, lalu membaca ulang keadaan sesudah kunci didapat:
+- task jatuh tempo: `lockMaturityAccount` mengunci lalu membaca ulang status, `maturity_date`,
+  instruksi ARO, saldo, dan akrual terakhir; kandidat yang sudah tidak berhak dilewati (`skipped`),
+  bukan diproses dengan data halaman yang basi;
+- jalur tunai teller: `lockAccountForUpdate` diambil sebelum cek status;
+- jalur pemindahbukuan: `lockTransferAccounts` mengunci **kedua** baris rekening (urut `account_id`
+  naik) sebelum baris saldo dikunci. Tanpa ini PB memegang saldo lalu meminta `KEY SHARE` rekening
+  lewat FK `deposit_transfer`, sementara setoran tunai memegang rekening dan menunggu saldo —
+  siklus `40P01` yang membuat salah satu transaksi dibatalkan.
+
+Urutan kunci seragam **rekening → baris saldo → (teller) sesi kas**, dan tidak ada penulis saldo
+yang mengambil kunci saldo lebih dulu, sehingga tidak ada siklus tunggu.
+
+**Konsekuensi.** Task dan teller kini terserialisasi pada satu baris; setoran yang kalah balapan
+melihat status `CLOSED` dan ditolak `409 account_not_active` seperti sebelumnya. Metrik task
+mendapat kunci `skipped` (aditif). Jalur yang membaca rekening tanpa memutasi uang (PB yang menyentuh
+`TIME_DEPOSIT` sudah ditolak, dormant, rekonsiliasi) tidak perlu kunci. Area kritis: perubahan ini
+wajib ditandai `HUMAN-REVIEW-REQUIRED` di PR dan diuji dengan dua koneksi nyata.
+
+**Status.** Diimplementasikan 31 Okt 2026. `itdaycloser_deposit` membuktikan kandidat basi dilewati
+dan kedua jalur memakai baris kunci yang sama. Di `ittransfer`, dua pekerja menguji dua hal yang
+berbeda: pekerja yang hanya memutasi saldo membuktikan `lockBalancesAscending` tetap deterministik
+(bila urutannya bergantung arah, dua PB berlawanan arah deadlock), sedangkan pekerja yang meniru
+handler (kunci rekening lalu saldo lalu baris transfer) membuktikan PB menunggu kunci rekening
+sebelum menyentuh saldo — dengan satu koneksi memegang rekening, jalur tunai tetap bisa mengambil
+saldo; tanpa urutan itu permintaan tersebut menunggu dan `lock_timeout`.
+
+## D-162 — Tanggal buku institusi ikut `GET /auth/session`, bukan hanya `/dayclose/status` (31 Okt 2026)
+
+**Konteks.** Shell hanya merender indikator tanggal bisnis bila sesi memegang `dayclose.run.read`.
+Teller tidak memegang izin itu, padahal justru sesi kasnya ditolak `session_business_date_mismatch`
+bila tanggalnya berbeda dari tanggal buku (O-116). Alternatifnya endpoint baru dengan izin yang
+dipegang semua peran.
+
+**Keputusan.** `SessionInfo.businessDate` (bentuk sama dengan `GET /dayclose/status`) dikirim untuk
+**semua** sesi sah, dengan **tiga** keadaan yang dibedakan: objek = baris tanggal buku ada, `null` =
+institusi belum punya baris, field **dihilangkan** = pembacaan gagal. Field karena itu opsional di
+kontrak (bukan wajib-nullable): tanpa pembedaan ini kegagalan DB tampil sebagai "belum tersedia",
+nilai yang tidak diketahui berpura-pura diketahui. Serializer JSON-nya satu
+(`business_date_view.nim`) supaya bentuk kontrak tidak bercabang antar rute. UI tidak lagi memanggil
+`/dayclose/status` khusus untuk shell.
+
+**Konsekuensi.** Satu permintaan lebih sedikit per halaman, dan informasinya tersedia bagi peran
+yang bekerja terhadap tanggal itu. Pembacaan bersifat best-effort: kegagalan DB pada permintaan
+sesi tidak menggagalkan sesi, dan shell tidak merender apa pun untuk nilai yang tidak diketahui
+(field absen), berbeda dari "belum tersedia" yang memang keadaannya. Menambah field di `SessionInfo`
+adalah perubahan kontrak: klien yang memvalidasi `additionalProperties: false` tetap harus
+memperbarui skemanya (properti baru ditolak validator ketat, opsional atau tidak), sedangkan klien
+bertipe hasil generator kompatibel karena field-nya opsional — tetapi kode yang menganggapnya
+selalu ada harus memeriksa `undefined`.
+
+**Status.** Diimplementasikan 31 Okt 2026; test `itapi_auth` membuktikan peran tanpa
+`dayclose.run.read` menerima tanggal nyata dan `null` saat baris tanggal buku tidak ada (baris lama
+disimpan dan dipulihkan, bukan dihapus permanen).
+
+## D-163 — Kegagalan task day-close non-kritis memberi alarm lewat probe `daycloser.task` (31 Okt 2026)
+
+**Konteks.** Task non-kritis yang `FAILED` tidak menggagalkan run: run tetap `COMPLETED` dan
+`/readyz` tetap sehat, sehingga deteksi dormant bisa berhenti berhari-hari tanpa sinyal (O-115).
+
+**Keputusan.** `ops/scripts/kran-alert.sh` menambah satu probe SQL: jumlah task `critical = false`
+berstatus `FAILED` pada **run institusi `COMPLETED` terakhir** (`business_date` terbesar). Angka itu
+ikut menentukan status alert dan pesannya menyebut task, kode galat, dan jumlah chunk. Probe yang
+gagal (psql/podman tidak tersedia) menghasilkan `?` dan status `bad` — tidak pernah OK diam-diam.
+
+**Konsekuensi.** Alert membersihkan diri saat hari berikutnya ditutup bersih, tanpa operator perlu
+menandai apa pun; run yang masih berjalan tidak dihitung. `/readyz` dan gate deploy **tidak**
+berubah: kegagalan non-kritis bukan alasan menahan deploy atau menggagalkan liveness. Biaya
+tambahan satu `podman exec psql` per siklus timer, sama dengan probe outbox yang sudah ada.
+
+**Status.** Diimplementasikan 31 Okt 2026.
+
+## D-164 — Pencairan dini deposito berjangka: penalti dari parameter, bunga dibayar sampai tanggal cair (31 Okt 2026)
+
+**Konteks.** Pencairan dini belum ada: penarikan tunai dan PB yang menyentuh `TIME_DEPOSIT`
+ditolak `409 time_deposit_locked` sejak D-156, sehingga `DepositWithdrawn` berkondisi
+`TIME_DEPOSIT` (`ledger/0067`) tidak pernah tercapai (O-108). Tanpa angka penalti, membuka jalur
+ini berarti mengarang aturan bisnis.
+
+**Keputusan (pemilik, 31 Okt 2026).**
+- Pencairan sebelum jatuh tempo **dibuka** untuk **tarik tunai maupun PB keluar** (uang yang
+  keluar dari deposito memakai aturan yang sama; kalau hanya tunai yang dibuka, anggota bisa
+  memindahkan seluruh pokok ke rekening lain tanpa penalti).
+- Penalti = **persen dari pokok**, disimpan sebagai atribut produk
+  `product.savings.early_withdrawal_penalty` (tipe `rate`, tanpa nilai seed; binding per versi
+  produk). Tanpa binding, pencairan dini **ditolak** — bukan dianggap nol.
+- Bunga **dibayar sampai tanggal pencairan** memakai akrual yang sudah tercatat; akrual tidak
+  dibalik dan tidak dihitung ulang dengan rate lain.
+- Penalti diakui sebagai pendapatan: akun GL baru `403 PENDAPATAN DENDA` dan dua rule posting baru
+  (`InterestPaidEarly`: D 204 BUNGA AKRUAL / K 101.2 KAS; `EarlyWithdrawalPenalty`: D 101.2 /
+  K 403).
+
+**Konsekuensi.** Tiga jurnal per pencairan dini (`DepositWithdrawn` pokok, `InterestPaidEarly`
+bunga, `EarlyWithdrawalPenalty` penalti) dengan kas bersih `−(pokok + bunga) + penalti`. Akrual
+yang sudah tercatat tetap menjadi riwayat rekening setelah `CLOSED`. Nomor akun `403` dan
+penempatannya adalah **struktur pilot** (`NEEDS-COMPLIANCE-REVIEW`), sama seperti `202`/`204`.
+Pencairan dini tetap **area kritis**: wajib `HUMAN-REVIEW-REQUIRED` dan test yang membuktikan
+saldo, tiga jurnal, dan penolakan saat parameter tidak ter-bind.
+
+**Status.** Diputuskan 31 Okt 2026. **Tarik tunai** diimplementasikan di T-146; **PB keluar**
+dipisah ke T-148 karena membutuhkan jenis baris subledger baru: tujuan menerima
+`pokok + bunga − penalti`, sementara `deposit.transaction` belum punya jenis untuk sisi debit
+penalti, dan menumpangkannya ke `INTEREST_CREDIT` akan membuat rekonsiliasi salah saat penalti
+melebihi bunga. PB tetap ditolak `409 time_deposit_locked` sampai T-148 selesai.
+
+## D-165 — Baseline akrual per siklus ARO dan tenor perpanjangan dari parameter produk (31 Okt 2026)
+
+**Konteks.** Task `deposit.maturity_aro` membayar bunga sebesar `cumulative` akrual terakhir, yang
+dihitung dari `opened_on`. Pada siklus kedua seluruh bunga siklus pertama ikut dibayar lagi; dan
+karena `nextMaturity` memakai `maturity_date − opened_on`, tenor perpanjangan menjadi dua kali
+tenor semula (`O-109`). Keduanya belum terlihat karena deposito berjangka belum dibuka untuk
+anggota nyata.
+
+**Keputusan (pemilik, 31 Okt 2026).**
+- Rekening menyimpan **akrual kumulatif yang sudah dibayar** (`deposit.account.interest_paid_cumulative`).
+  Task membayar `cumulative − interest_paid_cumulative`, lalu menaikkan kolom itu ke `cumulative`
+  dalam transaksi chunk yang sama — baik saat bunga dibayar maupun dikapitalisasi. Baris
+  `deposit.interest_accrual` tidak diubah atau dihapus (ledger tetap immutable); baseline adalah
+  kolom, bukan penanda di baris akrual.
+- Tenor perpanjangan berasal dari **atribut produk** `product.savings.rollover_tenor_days`
+  (integer, hari), bukan dari `maturity_date − opened_on`. Tanpa binding, task **gagal keras**
+  (kode task baru) alih-alih memakai tenor yang salah.
+
+**Konsekuensi.** Siklus pertama tidak berubah (kolom mulai `0`). Rekening lama mendapat nilai
+default `0` lewat migrasi expand-only. Perubahan tenor hanya berlaku untuk versi produk yang
+mengikat parameter itu; produk tanpa binding tidak bisa di-rollover sampai operator mengikatnya.
+`opened_on` tidak pernah diubah (D-155 butir 5 tetap: tanggal buka adalah fakta historis).
+
+**Status.** Diputuskan 31 Okt 2026; implementasi T-145.
+
+## D-166 — Ambang gate axe tetap `serious|critical` sampai migrasi layar selesai (31 Okt 2026)
+
+**Konteks.** Setiap spec e2e memfilter `impact === "serious" || impact === "critical"`, sehingga
+pelanggaran `moderate` (`heading-order`, `landmark-*`) lolos CI (O-118). Menaikkan ambang sekarang
+memunculkan temuan lama di layar yang belum dimigrasi — terutama layar kas (1.835 baris, T-141).
+
+**Keputusan (pemilik, 31 Okt 2026).** Ambang **tidak** dinaikkan sekarang. Gate tetap
+`serious|critical` sampai T-142 selesai (layar kas ikut dimigrasi), lalu ambang dinaikkan ke
+`moderate` dan semua temuan yang muncul diperbaiki dalam satu task tersendiri.
+
+**Konsekuensi.** O-118 tetap terbuka dengan keputusan urutan kerja yang eksplisit, bukan
+tambalan. Tidak ada perubahan kode.
+
+## D-167 — Satu jurnal boleh mencatat dua baris subledger (31 Okt 2026)
+
+**Konteks.** `deposit.transaction` memakai UNIQUE `(journal_id, account_id)`, bukan
+`journal_id`, supaya perpindahan pokok ARO `NONE` punya baris keluar (deposito) **dan** masuk
+(rekening simpanan) yang menunjuk satu jurnal GL. Dua jurnal akan menggandakan perpindahan; satu
+baris membuat `reconcile-deposits` melaporkan selisih palsu (O-110).
+
+**Keputusan (pemilik, 31 Okt 2026).** Model ini **diterima**: satu jurnal GL boleh memiliki lebih
+dari satu baris subledger asalkan rekeningnya berbeda; satu rekening tetap tidak boleh tercatat dua
+kali untuk jurnal yang sama. Laporan yang menjumlahkan per jurnal harus membaca kolom rekening,
+bukan mengasumsikan satu baris = satu jurnal.
+
+**Konsekuensi.** O-110 ditutup tanpa perubahan skema. Bila kelak ada laporan yang mengasumsikan
+satu baris per jurnal, laporan itu yang menyesuaikan.
+
+## D-168 — PB pencairan dini: `deposit.transfer` tetap pokok, bunga dan penalti jadi baris subledger bertanda (31 Okt 2026)
+
+**Konteks.** Sisa O-108: PB keluar dari deposito berjangka sebelum jatuh tempo. Tujuan harus menerima
+`pokok + bunga − penalti`, sedangkan `deposit.transfer` hanya punya satu nominal dan
+`deposit.transaction` belum punya jenis untuk **debit** penalti di rekening tujuan. Menumpangkan
+penalti ke `INTEREST_CREDIT` hanya benar bila bunga ≥ penalti.
+
+**Keputusan.**
+- `deposit.transfer.amount` tetap **pokok** — itulah kewajiban yang berpindah `202 → 201` pada jurnal
+  pokok, dan aritmetika rekonsiliasi existing (`incoming`/`outgoing`) tetap sahih.
+- Dua jenis baris baru di `deposit.transaction`, keduanya di **rekening tujuan**:
+  `INTEREST_PAID_EARLY` (menambah saldo) dan `PENALTY_CHARGE` (mengurangi saldo). Sumber tidak
+  mendapat baris sendiri karena pengurangan pokoknya sudah diwakili `deposit.transfer`.
+- Tiga rule baru dengan `event_type` sendiri (bukan kondisi pada rule kas): `DepositWithdrawnViaTransfer`
+  (D 202 / K 201), `InterestPaidEarlyViaTransfer` (D 204 / K 201), `EarlyWithdrawalPenaltyViaTransfer`
+  (D 201 / K 403). Rule `0073` untuk jalur tunai tidak diubah.
+- Rekening koran memakai `kind` baru `EARLY_WITHDRAWAL` untuk kedua baris itu; arah mengikuti tanda
+  saldo. Pemetaan `kind` dipusatkan di domain (`statementKindOf`), bukan biner "tunai atau bukan".
+- **Pencairan penuh tidak tunduk pada `min_balance` produk**: rekening ditutup dan berakhir di nol.
+  Berlaku untuk jalur tunai maupun PB (`decreaseBalanceToZero`), karena sebelumnya produk dengan
+  saldo minimum > 0 menolak pencairan penuh dengan `insufficient_funds`.
+
+**Konsekuensi.** Penalti > bunga kini benar di rekonsiliasi (tanda sendiri), dan gate subledger tetap
+seimbang karena perubahan total `201+202` sama dengan perubahan total saldo. Pemetaan akun masih
+struktur pilot (`NEEDS-COMPLIANCE-REVIEW`). Peran `teller` mendapat `platform.branch.read` supaya
+layar kas bisa membuka sesi cabang tanpa memuat rekening (T-141).
+
+## D-169 — Cabang sesi kas dipilih di panel, bukan diturunkan dari rekening (31 Okt 2026)
+
+**Konteks.** DESIGN §11 menyebut layar kas sebagai stasiun kerja: membuka kas tidak boleh bergantung
+pada memuat rekening anggota. Layar sebelumnya memakai cabang rekening yang dimuat, sehingga tidak ada
+cara membuka kas lebih dulu; peran `teller` juga belum memegang `platform.branch.read`.
+
+**Keputusan.** Panel sesi menampilkan pemilih cabang (`GET /api/v1/branches`) dan memuat sesi untuk
+cabang itu. Memuat rekening **mengisi** pilihan tersebut dengan cabang rekening, karena transaksi tunai
+wajib memakai sesi di cabang rekening. Bila cabang sesi berbeda dari cabang rekening, form transaksi
+ditutup dengan pesan eksplisit (fail-closed) — cegah teller menyetor ke sesi cabang lain.
+
+**Konsekuensi.** Peran `teller` diberi izin baca master cabang (migrasi `platform/0075`), sama seperti
+peran operator lain sejak `0037`. Tidak ada perubahan kontrak API.

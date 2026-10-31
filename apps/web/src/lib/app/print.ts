@@ -97,12 +97,29 @@ export function statementDirectionLabel(direction: StatementDirection): string {
   return direction === "IN" ? m.statement_direction_in() : m.statement_direction_out();
 }
 
+const STATEMENT_KIND_LABELS: Record<StatementRow["kind"], () => string> = {
+  CASH: () => m.statement_kind_cash(),
+  TRANSFER: () => m.statement_kind_transfer(),
+  MATURITY: () => m.statement_kind_maturity(),
+  EARLY_WITHDRAWAL: () => m.statement_kind_early_withdrawal(),
+};
+
+/** Label sumber baris statement. Nilai di luar kontrak ditampilkan apa adanya, bukan ditebak. */
 export function statementKindLabel(kind: StatementRow["kind"]): string {
-  return kind === "CASH" ? m.statement_kind_cash() : m.statement_kind_transfer();
+  const template = STATEMENT_KIND_LABELS[kind];
+  return template === undefined ? kind : template();
 }
 
+const STATEMENT_STATUS_LABELS: Record<AccountStatement["status"], () => string> = {
+  ACTIVE: () => m.statement_status_active(),
+  CLOSED: () => m.statement_status_closed(),
+  DORMANT: () => m.statement_status_dormant(),
+};
+
+/** Label status rekening di rekening koran. Dormant bukan "ditutup" — rekeningnya masih hidup. */
 export function statementStatusLabel(status: AccountStatement["status"]): string {
-  return status === "ACTIVE" ? m.statement_status_active() : m.statement_status_closed();
+  const template = STATEMENT_STATUS_LABELS[status];
+  return template === undefined ? status : template();
 }
 
 /** Tanda arah ditulis sebagai tanda + kata, bukan warna saja (spec §15.4). */

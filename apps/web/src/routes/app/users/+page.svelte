@@ -10,8 +10,17 @@
    *  - Konfirmasi = satu lapisan **inline** (DESIGN §7), bukan `window.confirm` dan bukan modal.
    *  - Role ber-scope `BRANCH` memunculkan input cabang; role institusi menyembunyikannya. Aturan
    *    bentuknya sama dengan server (`assignRoleError`, cerminan `roleAssignmentProblem`).
+   *
+   * Tabel sengaja tetap ditulis di sini, bukan lewat `DataTable`: panel kelola adalah baris kedua di
+   * dalam tabel yang sama, dan komponen bersama belum punya bentuk itu. Aturan visualnya tetap milik
+   * `packages/ui` (`.kran-table`, `.kran-badge`, …); tidak ada CSS lokal di berkas ini.
    */
   import { onMount } from "svelte";
+
+  import Alert from "@kran/ui/components/Alert.svelte";
+  import Button from "@kran/ui/components/Button.svelte";
+  import EmptyState from "@kran/ui/components/EmptyState.svelte";
+  import StatusBadge from "@kran/ui/components/StatusBadge.svelte";
 
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
@@ -54,6 +63,14 @@
   let formError = $state("");
 
   const selectedRole = $derived(roles.find((role) => role.code === selectedRoleCode));
+
+  /** Warna hanya penguat: makna status tetap dari teksnya (DESIGN §1, §8). */
+  function statusTone(status: string): "positive" | "warning" | "negative" | "neutral" {
+    if (status === "ACTIVE") return "positive";
+    if (status === "LOCKED") return "warning";
+    if (status === "SUSPENDED") return "negative";
+    return "neutral";
+  }
 
   async function load(showLoading = true): Promise<void> {
     if (!allowed) {
@@ -216,36 +233,42 @@
   <title>{m.common_app_title()} — {m.users_title()}</title>
 </svelte:head>
 
-<div class="users-head">
-  <h1 class="users-title">{m.users_title()}</h1>
-  <p class="users-intro">{m.users_intro()}</p>
+<div class="kran-page-header">
+  <div>
+    <h1 class="kran-page-header__title">{m.users_title()}</h1>
+    <p class="kran-page-header__intro">{m.users_intro()}</p>
+  </div>
 </div>
 
 {#if !allowed}
-  <p class="kran-alert" role="alert">{m.users_denied()}</p>
+  <Alert tone="negative" title={m.users_denied()} />
 {:else if loading}
   <p role="status">{m.users_loading()}</p>
 {:else}
   {#if errorMessage}
-    <p class="kran-alert" role="alert">{errorMessage}</p>
-    <p>
-      <button class="kran-button" type="button" onclick={() => void load()}>{m.app_retry()}</button>
-    </p>
+    <Alert tone="negative" title={errorMessage}>
+      <Button type="button" onclick={() => void load()}>{m.app_retry()}</Button>
+    </Alert>
   {/if}
   {#if actionError}
-    <p class="kran-alert" role="alert">{actionError}</p>
+    <Alert tone="negative" title={actionError} />
   {/if}
   {#if notice}
-    <p role="status">{notice}</p>
+    <Alert tone="positive" title={notice} />
   {/if}
 
-  <section class="kran-card" aria-labelledby="users-heading">
-    <h2 id="users-heading">{m.users_title()}</h2>
+  <section class="kran-section" aria-labelledby="users-heading">
+    <h2 class="kran-section__title" id="users-heading">{m.users_title()}</h2>
     {#if users.length === 0}
-      <p class="kran-muted">{m.users_empty()}</p>
+      <EmptyState title={m.users_empty()} />
     {:else}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div class="kran-table-wrap" role="region" tabindex="0" aria-label={m.common_table_region({ name: m.users_title() })}>
+      <div
+        class="kran-table-wrap"
+        role="region"
+        tabindex="0"
+        aria-label={m.common_table_region({ name: m.users_title() })}
+      >
         <table class="kran-table">
           <caption class="kran-visually-hidden">{m.users_title()}</caption>
           <thead>
@@ -263,18 +286,18 @@
                 <th scope="row">{user.username}</th>
                 <td>{user.fullName}</td>
                 <td>
-                  <span class="kran-badge">{statusLabel(user.status)}</span>
+                  <StatusBadge tone={statusTone(user.status)}>{statusLabel(user.status)}</StatusBadge>
                 </td>
                 <td>
                   {#if user.roles.length === 0}
                     <span class="kran-muted">{m.users_roles_empty()}</span>
                   {:else}
-                    <ul class="users-roles">
+                    <ul class="kran-list-plain">
                       {#each user.roles as grant (`${grant.role}|${grant.branchId ?? ""}`)}
-                        <li>
-                          <span class="kran-badge kran-badge--info">{roleLabel(grant.role)}</span>
+                        <li class="kran-actions">
+                          <StatusBadge tone="info">{roleLabel(grant.role)}</StatusBadge>
                           {#if grant.branchId !== null}
-                            <span class="kran-muted users-branch">
+                            <span class="kran-muted">
                               {m.users_role_branch({ branch: grant.branchId })}
                             </span>
                           {/if}
@@ -284,33 +307,34 @@
                   {/if}
                 </td>
                 <td>
-                  <button
-                    class="kran-button"
+                  <Button
                     type="button"
                     aria-expanded={expandedId === user.userId}
                     onclick={() => toggle(user)}
                   >
                     {expandedId === user.userId ? m.users_close() : m.users_manage()}
-                  </button>
+                  </Button>
                 </td>
               </tr>
 
               {#if expandedId === user.userId}
-                <tr class="users-panel-row">
+                <tr>
                   <td colspan="5">
-                    <div class="users-panel">
-                      <section aria-labelledby={`users-roles-${user.userId}`}>
-                        <h3 id={`users-roles-${user.userId}`}>{m.users_roles_heading()}</h3>
+                    <div class="kran-stack kran-stack--loose">
+                      <section class="kran-section" aria-labelledby={`users-roles-${user.userId}`}>
+                        <h3 class="kran-section__title" id={`users-roles-${user.userId}`}>
+                          {m.users_roles_heading()}
+                        </h3>
                         {#if user.roles.length === 0}
                           <p class="kran-muted">{m.users_roles_empty()}</p>
                         {:else}
-                          <ul class="users-grant-list">
+                          <ul class="kran-list-plain">
                             {#each user.roles as grant (`${grant.role}|${grant.branchId ?? ""}`)}
-                              <li class="users-grant">
-                                <span>
-                                  <span class="kran-badge kran-badge--info">{roleLabel(grant.role)}</span>
+                              <li class="kran-toolbar">
+                                <span class="kran-actions">
+                                  <StatusBadge tone="info">{roleLabel(grant.role)}</StatusBadge>
                                   {#if grant.branchId !== null}
-                                    <span class="kran-muted users-branch">
+                                    <span class="kran-muted">
                                       {m.users_role_branch({ branch: grant.branchId })}
                                     </span>
                                   {/if}
@@ -319,23 +343,24 @@
                                 confirm.userId === user.userId &&
                                 confirm.role === grant.role &&
                                 confirm.branchId === grant.branchId}
-                                  <span class="users-buttons">
+                                  <span class="kran-actions">
                                     <span class="kran-muted">{m.users_revoke_confirm()}</span>
-                                    <button
-                                      class="kran-button kran-button--primary"
+                                    <Button
+                                      variant="primary"
                                       type="button"
                                       disabled={busy === user.userId}
                                       onclick={() => void revoke(grant, user)}
                                     >
-                                      {busy === user.userId ? m.users_revoking() : m.users_revoke({ role: roleLabel(grant.role) })}
-                                    </button>
-                                    <button class="kran-button" type="button" onclick={clearOutcome}>
+                                      {busy === user.userId
+                                        ? m.users_revoking()
+                                        : m.users_revoke({ role: roleLabel(grant.role) })}
+                                    </Button>
+                                    <Button type="button" onclick={clearOutcome}>
                                       {m.users_cancel()}
-                                    </button>
+                                    </Button>
                                   </span>
                                 {:else}
-                                  <button
-                                    class="kran-button"
+                                  <Button
                                     type="button"
                                     onclick={() => {
                                       clearOutcome();
@@ -348,7 +373,7 @@
                                     }}
                                   >
                                     {m.users_revoke({ role: roleLabel(grant.role) })}
-                                  </button>
+                                  </Button>
                                 {/if}
                               </li>
                             {/each}
@@ -356,9 +381,15 @@
                         {/if}
                       </section>
 
-                      <section aria-labelledby={`users-assign-${user.userId}`}>
-                        <h3 id={`users-assign-${user.userId}`}>{m.users_assign_heading()}</h3>
-                        <form class="users-assign" onsubmit={(event) => void assign(event, user)} novalidate>
+                      <section class="kran-section" aria-labelledby={`users-assign-${user.userId}`}>
+                        <h3 class="kran-section__title" id={`users-assign-${user.userId}`}>
+                          {m.users_assign_heading()}
+                        </h3>
+                        <form
+                          class="kran-form"
+                          onsubmit={(event) => void assign(event, user)}
+                          novalidate
+                        >
                           <div class="kran-field">
                             <label class="kran-label" for={`users-role-${user.userId}`}>
                               {m.users_assign_role_label()}
@@ -395,40 +426,47 @@
                             </div>
                           {/if}
                           {#if formError !== ""}
-                            <p class="users-form-error" role="alert">{formError}</p>
+                            <Alert tone="negative" title={formError} />
                           {/if}
-                          <button
-                            class="kran-button kran-button--primary"
-                            type="submit"
-                            disabled={busy === user.userId || selectedRoleCode === ""}
-                          >
-                            {busy === user.userId ? m.users_assigning() : m.users_assign_submit()}
-                          </button>
+                          <div class="kran-actions">
+                            <Button
+                              variant="primary"
+                              type="submit"
+                              disabled={busy === user.userId || selectedRoleCode === ""}
+                            >
+                              {busy === user.userId ? m.users_assigning() : m.users_assign_submit()}
+                            </Button>
+                          </div>
                         </form>
                       </section>
 
-                      <section aria-labelledby={`users-status-${user.userId}`}>
-                        <h3 id={`users-status-${user.userId}`}>{m.users_status_heading()}</h3>
-                        <div class="users-buttons">
+                      <section class="kran-section" aria-labelledby={`users-status-${user.userId}`}>
+                        <h3 class="kran-section__title" id={`users-status-${user.userId}`}>
+                          {m.users_status_heading()}
+                        </h3>
+                        <div class="kran-actions">
                           {#each availableStatusActions(user.status) as action (action)}
-                            {#if confirm?.kind === "status" && confirm.userId === user.userId && confirm.action === action}
-                              <span class="users-buttons">
+                            {#if confirm?.kind === "status" &&
+                            confirm.userId === user.userId &&
+                            confirm.action === action}
+                              <span class="kran-actions">
                                 <span class="kran-muted">{statusConfirmOf(action)}</span>
-                                <button
-                                  class="kran-button kran-button--primary"
+                                <Button
+                                  variant="primary"
                                   type="button"
                                   disabled={busy === user.userId}
                                   onclick={() => void changeStatus(user, action)}
                                 >
-                                  {busy === user.userId ? m.users_working() : statusLabelOf(action)}
-                                </button>
-                                <button class="kran-button" type="button" onclick={clearOutcome}>
+                                  {busy === user.userId
+                                    ? m.users_working()
+                                    : statusLabelOf(action)}
+                                </Button>
+                                <Button type="button" onclick={clearOutcome}>
                                   {m.users_cancel()}
-                                </button>
+                                </Button>
                               </span>
                             {:else}
-                              <button
-                                class="kran-button"
+                              <Button
                                 type="button"
                                 onclick={() => {
                                   clearOutcome();
@@ -436,7 +474,7 @@
                                 }}
                               >
                                 {statusLabelOf(action)}
-                              </button>
+                              </Button>
                             {/if}
                           {/each}
                         </div>
@@ -452,76 +490,3 @@
     {/if}
   </section>
 {/if}
-
-<style>
-  .users-head {
-    padding-block: var(--space-4);
-    padding-inline: var(--space-4);
-    border: 1px solid var(--color-hairline);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-raised);
-    margin-block-end: var(--space-4);
-  }
-
-  .users-title {
-    margin: 0;
-    font-size: var(--text-xl);
-    line-height: var(--line-height-tight);
-    font-weight: 600;
-  }
-
-  .users-intro {
-    margin: var(--space-1) 0 0;
-    max-inline-size: 60ch;
-    color: var(--color-text-muted);
-    font-size: var(--text-sm);
-  }
-
-  .users-roles,
-  .users-grant-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-
-  .users-grant {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-    justify-content: space-between;
-  }
-
-  .users-branch {
-    font-size: var(--text-sm);
-    overflow-wrap: anywhere;
-  }
-
-  .users-panel {
-    display: grid;
-    gap: var(--space-4);
-    padding-block: var(--space-2);
-  }
-
-  .users-assign {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    max-inline-size: 30rem;
-  }
-
-  .users-buttons {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .users-form-error {
-    color: var(--color-text-danger, var(--color-text));
-    margin: 0;
-  }
-</style>

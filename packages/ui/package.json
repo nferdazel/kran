@@ -8,12 +8,17 @@
     "./tokens.css": "./tokens/tokens.css",
     "./components.css": "./src/components.css",
     "./contrast": "./src/contrast.ts",
-    "./money": "./src/money.ts"
+    "./money": "./src/money.ts",
+    "./components/*": "./src/components/*"
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "svelte": "5.57.2",
+    "svelte-check": "4.7.6",
     "vitest": "5.0.4"
   }
 }

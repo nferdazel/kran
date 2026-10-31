@@ -1,4 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
+
+import { blockingViolations } from "./axe.js";
 import { requireDatabase } from "./db.js";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
@@ -87,7 +89,7 @@ async function login(page: Page, user: { username: string; password: string }): 
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
   // Alur Fase 0 (parameter) tetap diuji di layarnya sendiri; pindah lewat rute nyata.
-  await page.goto("/app");
+  await page.goto("/app/params");
   await expect(page.getByRole("heading", { level: 1, name: TEXT.appTitle })).toBeVisible();
 }
 
@@ -205,11 +207,9 @@ async function nextEffectiveFrom(page: Page, key: string): Promise<string> {
 
 async function expectNoSeriousViolations(page: Page): Promise<void> {
   const results = await new AxeBuilder({ page }).analyze();
-  const serious = results.violations.filter(
-    (violation) => violation.impact === "serious" || violation.impact === "critical",
-  );
+  const blocking = blockingViolations(results.violations);
   expect(
-    serious.map((violation) => ({
+    blocking.map((violation) => ({
       id: violation.id,
       impact: violation.impact,
       nodes: violation.nodes.map((node) => node.target.join(" ")),
@@ -332,6 +332,22 @@ test("kredensial salah: pesan generik, tidak ada sesi", async ({ page }) => {
 
   await page.goto("/app");
   await expect(page).toHaveURL(/\/login$/);
+});
+
+test("/app mengantar ke tujuan yang sama dengan pendaratan setelah masuk", async ({ page }) => {
+  await prepare(page);
+  await page.goto("/login");
+  await field(page, TEXT.username).focus();
+  await page.keyboard.type(MAKER.username);
+  await page.keyboard.press("Tab");
+  await page.keyboard.type(MAKER.password);
+  await page.keyboard.press("Enter");
+
+  await expect(page).not.toHaveURL(/\/login$/);
+  const landing = page.url();
+
+  await page.goto("/app");
+  await expect(page).toHaveURL(landing);
 });
 
 for (const theme of THEMES) {

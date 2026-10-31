@@ -13,6 +13,7 @@ import ./events
 import ./handlers_audit
 import ./handlers_auth
 import ./handlers_branches
+import ./handlers_dayclose
 import ./handlers_deposit
 import ./handlers_detail
 import ./handlers_journals
@@ -238,6 +239,9 @@ proc tellerSessionRoutes*(): seq[RouteSpec] =
               operationId: "getCurrentTellerSession", handler: handleGetCurrentTellerSession),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/teller/sessions/{sessionId}/close",
               operationId: "closeTellerSession", handler: handleCloseTellerSession),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/teller/sessions/{sessionId}/transactions",
+              operationId: "listTellerSessionTransactions",
+              handler: handleListSessionTransactions),
   ]
 
 proc tellerVaultRoutes*(): seq[RouteSpec] =
@@ -255,6 +259,30 @@ proc tellerVaultRoutes*(): seq[RouteSpec] =
               operationId: "approveTellerVaultTopUp", handler: handleApproveTellerVaultTopUp),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/teller/vault/topups/{requestId}/reject",
               operationId: "rejectTellerVaultTopUp", handler: handleRejectTellerVaultTopUp),
+  ]
+
+proc dayCloseRoutes*(): seq[RouteSpec] =
+  ## `daycloser` (T-139a): monitor baca + aksi operasional. Izin `dayclose.run.read` untuk
+  ## membaca, `dayclose.run.manage` untuk menjalankan/menghentikan; keduanya wajib grant tanpa
+  ## batas cabang karena penutupan adalah urusan institusi.
+  ##
+  ## Aksi harus tetap bisa dipakai saat business date `CLOSING` — itu justru saat operator
+  ## membutuhkannya; pengecualiannya di `close_guard.nim`, bukan di handler.
+  @[
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/dayclose/status",
+              operationId: "getDayCloseStatus", handler: handleDayCloseStatus),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/dayclose/runs",
+              operationId: "listDayCloseRuns", handler: handleListDayCloseRuns),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/dayclose/runs/{runId}",
+              operationId: "getDayCloseRun", handler: handleGetDayCloseRun),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/dayclose/run",
+              operationId: "startDayClose", handler: handleStartDayClose),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/dayclose/runs/{runId}/resume",
+              operationId: "resumeDayClose", handler: handleResumeDayClose),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/dayclose/runs/{runId}/pause",
+              operationId: "pauseDayClose", handler: handlePauseDayClose),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/dayclose/runs/{runId}/cancel",
+              operationId: "cancelDayClose", handler: handleCancelDayClose),
   ]
 
 proc branchRoutes*(): seq[RouteSpec] =
@@ -290,4 +318,4 @@ proc allRoutes*(): seq[RouteSpec] =
     partyRoutes() & kycRoutes() & detailRoutes() & ledgerRoutes() & journalRoutes() &
     productRoutes() &
     depositRoutes() & tellerRoutes() & tellerSessionRoutes() & tellerVaultRoutes() &
-    branchRoutes() & userRoutes() & eventRoutes()
+    branchRoutes() & userRoutes() & dayCloseRoutes() & eventRoutes()

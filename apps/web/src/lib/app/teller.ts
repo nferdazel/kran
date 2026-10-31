@@ -8,8 +8,8 @@
  *  - Konflik domain 409 selalu datang sebagai `i18nKey: "error_conflict"`; sebabnya ada di
  *    `params.reason` (`insufficient_funds`, `period_closed`, `account_not_active`,
  *    `branch_not_allowed`, `no_open_session`, `session_business_date_mismatch`,
- *    `savings_kind_locked`, `transfer_kind_mismatch`). Karena itu pemetaannya per `reason`, bukan
- *    lewat `i18nKey` (pola `paramProblemMessage` di `errors.ts`).
+ *    `savings_kind_locked`, `transfer_kind_mismatch`, `time_deposit_locked`). Karena itu pemetaannya
+ *    per `reason`, bukan lewat `i18nKey` (pola `paramProblemMessage` di `errors.ts`).
  *  - Endpoint sesi kas (T-093) tersedia, tetapi panel buka/tutup belum ada di layar ini (T-108).
  *  - Rekening dimuat lewat nomor (`GET /deposit/accounts?accountNo=`, T-105); `accountId` hanya
  *    dipakai setelah rekening ditemukan (untuk transaksi) dan untuk rekening tujuan PB.
@@ -91,6 +91,21 @@ export const ACCOUNT_NO_MAX_LENGTH = 32;
 /** UUID hanya untuk `accountId` yang sudah dimuat dan rekening tujuan PB. */
 export function isAccountId(value: string): boolean {
   return UUID_PATTERN.test(value.trim());
+}
+
+const ACCOUNT_STATUS_LABELS: Record<DepositAccount["status"], () => string> = {
+  ACTIVE: () => m.teller_account_status_active(),
+  CLOSED: () => m.teller_account_status_closed(),
+  DORMANT: () => m.teller_account_status_dormant(),
+};
+
+/**
+ * Label status rekening di passbook teller. `DORMANT` bukan `CLOSED`: rekening masih bisa menerima
+ * setoran dan kembali aktif pada penutupan berikutnya (D-157), jadi keduanya tidak boleh disamakan.
+ */
+export function accountStatusLabel(status: DepositAccount["status"]): string {
+  const template = ACCOUNT_STATUS_LABELS[status];
+  return template === undefined ? status : template();
 }
 
 function amountErrorMessage(error: "empty" | "invalid_format" | "not_positive" | "too_precise"): string {
@@ -259,6 +274,10 @@ const PROBLEM_REASON_MESSAGES: Record<string, () => string> = {
   no_open_session: () => m.teller_error_no_open_session(),
   session_business_date_mismatch: () => m.teller_error_session_business_date_mismatch(),
   savings_kind_locked: () => m.teller_error_savings_kind_locked(),
+  time_deposit_locked: () => m.teller_error_time_deposit_locked(),
+  time_deposit_partial_withdrawal: () => m.teller_error_time_deposit_partial_withdrawal(),
+  early_withdrawal_penalty_missing: () => m.teller_error_early_withdrawal_penalty_missing(),
+  early_withdrawal_penalty_too_high: () => m.teller_error_early_withdrawal_penalty_too_high(),
   transfer_kind_mismatch: () => m.teller_error_transfer_kind_mismatch(),
 };
 

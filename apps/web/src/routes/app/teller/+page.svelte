@@ -11,27 +11,40 @@
    * pemilik pada brief §8/Q3; menyimpang dari DESIGN §7 yang melarang konfirmasi untuk aksi rutin).
    *
    * Panel sesi kas (T-108) memakai pola tinjauan yang sama: buka/tutup sesi dikonfirmasi satu
-   * lapisan sebelum dikirim, karena keduanya memindahkan uang fisik. Cabang sesi = cabang rekening
-   * yang sedang dimuat (tidak ada pemilih cabang dan `SessionInfo` tidak membawa cabang), jadi panel
-   * menunggu rekening termuat dan form transaksi ditutup selama sesi belum pasti (fail-closed).
+   * lapisan sebelum dikirim, karena keduanya memindahkan uang fisik. Cabang sesi dipilih langsung di
+   * panel (T-141): membuka kas tidak menunggu rekening anggota. Memuat rekening mengisi pilihan itu
+   * dengan cabang rekening, dan form transaksi ditutup bila cabang sesi berbeda dari cabang rekening
+   * (fail-closed).
    *
    * Pencarian rekening lewat nomor sudah tersedia (T-105, D-126): input di layar ini dikirim ke
    * endpoint `?accountNo=`, jadi tidak ada lagi pengisian UUID manual.
+   *
+   * Daftar arus kas sesi (T-147) dibaca dari `GET /teller/sessions/{id}/transactions`, bukan dari
+   * statement rekening: nominalnya kas yang bergerak (pencairan dini membayar pokok + bunga −
+   * penalti), dan isi sesi harus terlihat tanpa berpindah halaman (DESIGN §11).
    */
   import { goto } from "$app/navigation";
+  import { resolve } from "$app/paths";
   import { page } from "$app/state";
   import { onMount, tick } from "svelte";
 
   import type { Problem } from "@kran/api-client";
 
+  import DataTable, {
+    type DataColumn,
+    type DataRow,
+  } from "@kran/ui/components/DataTable.svelte";
+
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
+  import { loadBranches, type Branch } from "#lib/app/branches.js";
   import { formatClock, formatDate, formatDateTime, formatMoney } from "#lib/app/format.js";
   import {
     SESSION_NOTE_MAX_LENGTH,
     closeTellerSession,
     currentSessionOutcome,
     loadCurrentTellerSession,
+    loadSessionTransactions,
     openTellerSession,
     sessionCloseIdentity,
     sessionNoteError,
@@ -44,12 +57,14 @@
     type TellerSession,
     type TellerSessionClose,
     type TellerSessionFormError,
+    type TellerSessionTransaction,
   } from "#lib/app/teller-session.js";
   import {
     NARRATION_MAX_LENGTH,
     SHORTCUT_PARAM_KEYS,
     cashIdentity,
     ACCOUNT_NO_MAX_LENGTH,
+    accountStatusLabel,
     loadDepositAccountByNo,
     newIdempotencyKey,
     postCashTransaction,
@@ -107,6 +122,16 @@
 
   type SessionPhase = "idle" | "open" | "open_review" | "close" | "close_review";
 
+  /**
+   * Arus kas sesi (T-147). `loaded` membawa `total` supaya layar bisa menyebut berapa dari berapa
+   * yang tampil — tabelnya sendiri terpaginasi, bukan memuat seluruh sesi.
+   */
+  type SessionTxState =
+    | { kind: "idle" }
+    | { kind: "loading" }
+    | { kind: "failed"; message: string }
+    | { kind: "loaded"; items: TellerSessionTransaction[]; total: number };
+
   let { data }: PageProps = $props();
 
   const canPost = $derived(data.session.permissions.includes("teller.transaction.post"));
@@ -162,6 +187,16 @@
   let sessionErrorUnknown = $state(false);
   let sessionKey = $state("");
   let sessionKeyIdentity = $state("");
+  /** Cabang sesi kas: dipilih langsung, atau mengikuti rekening yang dimuat (T-141). */
+  let branches = $state<Branch[]>([]);
+  let branchesFailed = $state(false);
+  let branchesPending = $state(true);
+  let sessionBranchId = $state("");
+  /** Penjaga respons basi saat cabang sesi diganti beruntun (respons cabang lama tidak menimpa). */
+  let sessionRequest = 0;
+  let sessionTx = $state<SessionTxState>({ kind: "idle" });
+  /** Nomor permintaan terakhir: jawaban lama yang datang belakangan tidak boleh menimpa yang baru. */
+  let sessionTxRequest = 0;
 
   let accountInputEl = $state<HTMLInputElement | undefined>(undefined);
   let destinationEl = $state<HTMLInputElement | undefined>(undefined);
@@ -194,8 +229,14 @@
     account === null ? "" : formatMoney(account.balance, { decimals: 2 }),
   );
 
-  // Cabang sesi = cabang rekening yang sedang dimuat, sama dengan cabang transaksi tunai.
-  const branchId = $derived(account?.branchId ?? "");
+  // Cabang sesi dipilih di panel sesi (T-141: buka kas tidak menunggu rekening). Memuat rekening
+  // mengisi pilihan itu dengan cabang rekening, karena transaksi tunai wajib memakai sesi di cabang
+  // rekening tersebut.
+  const branchId = $derived(sessionBranchId);
+  const accountBranch = $derived(account?.branchId ?? "");
+  const branchMismatch = $derived(
+    accountBranch !== "" && branchId !== "" && branchId !== accountBranch,
+  );
   const session = $derived(sessionState.kind === "open" ? sessionState.session : null);
 
   /**
@@ -206,6 +247,7 @@
   const sessionGate = $derived(
     sessionPostingGate({
       branchKnown: branchId !== "",
+      branchMismatch,
       loading: sessionState.kind === "loading",
       failed: sessionState.kind === "failed",
       missing: sessionState.kind === "missing",
@@ -217,6 +259,31 @@
   const postingBlocked = $derived(sessionGate.blocked && mode !== "TRANSFER");
 
   const closeResultText = $derived(closeResult === null ? "" : varianceSummary(closeResult.variance));
+
+  const sessionTxColumns = $derived<DataColumn[]>([
+    { key: "time", label: m.teller_session_tx_time() },
+    { key: "accountNo", label: m.teller_session_tx_account() },
+    { key: "direction", label: m.teller_session_tx_direction() },
+    { key: "amount", label: m.teller_session_tx_amount(), align: "end" },
+    { key: "narration", label: m.teller_session_tx_narration() },
+  ]);
+
+  /**
+   * Baris tabel sudah terformat di sini: `DataTable` hanya merender teks, dan waktu butuh
+   * `formatDateTime` yang sadar locale.
+   */
+  const sessionTxRows = $derived<DataRow[]>(
+    sessionTx.kind === "loaded"
+      ? sessionTx.items.map((tx) => ({
+          transactionId: tx.transactionId,
+          time: formatDateTime(tx.occurredAt),
+          accountNo: tx.accountNo,
+          direction: tx.direction === "IN" ? m.teller_session_tx_in() : m.teller_session_tx_out(),
+          amount: formatMoney(tx.amount, { decimals: 2 }),
+          narration: tx.narration,
+        }))
+      : [],
+  );
 
   function modeLabel(value: TellerMode): string {
     if (value === "DEPOSIT") return m.teller_direction_deposit();
@@ -314,7 +381,7 @@
     try {
       const { data: body, response, error } = await loadDepositAccountByNo(accountNo);
       if (response.status === 401) {
-        await goto("/login");
+        await goto(resolve("/login"));
         return;
       }
       if (!response.ok || !body) {
@@ -338,6 +405,9 @@
       account = found;
       loadedAtMs = Date.now();
       resetOutcome();
+      // Transaksi tunai wajib memakai sesi di cabang rekening, jadi memuat rekening mengisi pilihan
+      // cabang sesi (dan tetap bisa diganti lewat pemilih untuk melihat cabang lain).
+      sessionBranchId = found.branchId;
       resetSession();
       await loadSession();
     } catch {
@@ -352,6 +422,7 @@
 
   /** Buang sesi yang dimuat: dipakai saat rekening gagal dimuat atau dimuat ulang. */
   function resetSession(): void {
+    sessionRequest += 1;
     sessionState = { kind: "idle" };
     sessionPhase = "idle";
     pendingSession = null;
@@ -363,6 +434,62 @@
     sessionErrorUnknown = false;
     sessionKey = "";
     sessionKeyIdentity = "";
+    sessionTx = { kind: "idle" };
+  }
+
+  /** Master cabang untuk pemilih cabang sesi (T-141). Gagal = panel sesi tetap butuh rekening. */
+  async function loadBranchList(): Promise<void> {
+    try {
+      const outcome = await loadBranches();
+      if (outcome.response.ok && outcome.data) {
+        branches = outcome.data.items;
+        return;
+      }
+      branchesFailed = true;
+    } catch {
+      branchesFailed = true;
+    } finally {
+      branchesPending = false;
+    }
+  }
+
+  /** Ganti cabang sesi: sesi lama dibuang, sesi cabang baru dimuat (belum tentu ada). */
+  function chooseSessionBranch(value: string): void {
+    sessionBranchId = value;
+    resetSession();
+    sessionTxRequest += 1;
+    sessionTx = { kind: "idle" };
+    if (value !== "") void loadSession();
+  }
+
+  /**
+   * Muat arus kas sesi (T-147). Gagal memuat tidak menutup form transaksi: daftar ini informasi,
+   * bukan gerbang — gerbangnya status sesi.
+   */
+  async function loadSessionTx(sessionId: string): Promise<void> {
+    const request = ++sessionTxRequest;
+    sessionTx = { kind: "loading" };
+    try {
+      const outcome = await loadSessionTransactions(sessionId);
+      if (request !== sessionTxRequest) return;
+      if (!outcome.response.ok || !outcome.data) {
+        sessionTx = {
+          kind: "failed",
+          message: api.isProblem(outcome.error)
+            ? tellerSessionProblemMessage(outcome.error as Problem)
+            : m.error_generic(),
+        };
+        return;
+      }
+      sessionTx = {
+        kind: "loaded",
+        items: outcome.data.items,
+        total: outcome.data.total,
+      };
+    } catch {
+      if (request !== sessionTxRequest) return;
+      sessionTx = { kind: "failed", message: m.error_generic() };
+    }
   }
 
   /**
@@ -374,18 +501,22 @@
       sessionState = { kind: "idle" };
       return;
     }
+    // Nomor permintaan: respons untuk cabang lama tidak boleh menimpa cabang yang sedang dipilih.
+    const request = ++sessionRequest;
     sessionState = { kind: "loading" };
     closeResult = null;
     try {
       const outcome = await loadCurrentTellerSession(branchId);
+      if (request !== sessionRequest) return;
       if (outcome.response.status === 401) {
-        await goto("/login");
+        await goto(resolve("/login"));
         return;
       }
       const reason = api.isProblem(outcome.error) ? (outcome.error as Problem).params?.reason : undefined;
       if (outcome.response.ok && outcome.data) {
         sessionState = { kind: "open", session: outcome.data };
         closeResult = null;
+        void loadSessionTx(outcome.data.sessionId);
         return;
       }
       if (currentSessionOutcome(outcome.response.status, reason) === "missing") {
@@ -400,6 +531,7 @@
           : m.error_generic(),
       };
     } catch {
+      if (request !== sessionRequest) return;
       sessionState = { kind: "failed", message: m.error_generic() };
     }
   }
@@ -553,7 +685,7 @@
             );
 
       if (outcome.response.status === 401) {
-        await goto("/login");
+        await goto(resolve("/login"));
         return;
       }
 
@@ -585,12 +717,16 @@
         sessionState = { kind: "open", session: opened };
         sessionStale = false;
         closeResult = null;
+        void loadSessionTx(opened.sessionId);
         announcement = m.teller_session_open_announcement({ date: formatDate(opened.businessDate) });
       } else {
         const closed = outcome.data as TellerSessionClose;
         closeResult = closed;
         // Sesi sudah CLOSED: transaksi tunai menunggu sesi baru dibuka.
         sessionState = { kind: "missing" };
+        // Daftar arus kas milik sesi yang baru ditutup; sesi berikutnya memuat daftarnya sendiri.
+        sessionTxRequest += 1;
+        sessionTx = { kind: "idle" };
         sessionStale = false;
         announcement = m.teller_session_closed_announcement({ summary: varianceSummary(closed.variance) });
       }
@@ -695,7 +831,7 @@
             );
 
       if (outcome.response.status === 401) {
-        await goto("/login");
+        await goto(resolve("/login"));
         return;
       }
 
@@ -729,20 +865,34 @@
       if (reviewed.kind === "cash") {
         const transaction = outcome.data as CashTransaction;
         result = { kind: "cash", transaction };
-        announcement = m.teller_success_status({
-          balance: formatMoney(transaction.balanceAfter, { decimals: 2 }),
-        });
+        const balance = formatMoney(transaction.balanceAfter, { decimals: 2 });
+        // Pencairan dini menyerahkan kas bersih (pokok + bunga − penalti); pengumuman menyebut
+        // jumlah yang benar-benar diserahkan, bukan hanya saldo rekening.
+        announcement =
+          transaction.earlyWithdrawal === undefined
+            ? m.teller_success_status({ balance })
+            : `${m.teller_success_status({ balance })} ${m.teller_early_announcement({
+                amount: formatMoney(transaction.earlyWithdrawal.cashPaid, { decimals: 2 }),
+              })}`;
       } else {
         const transfer = outcome.data as Transfer;
         result = { kind: "transfer", transfer };
-        announcement = m.teller_success_status({
-          balance: formatMoney(transfer.sourceBalanceAfter, { decimals: 2 }),
-        });
+        const balance = formatMoney(transfer.sourceBalanceAfter, { decimals: 2 });
+        // Pencairan dini: yang penting bagi operator adalah dana yang masuk ke tujuan.
+        announcement =
+          transfer.earlyWithdrawal === undefined
+            ? m.teller_success_status({ balance })
+            : `${m.teller_success_status({ balance })} ${m.teller_early_transfer_announcement({
+                amount: formatMoney(transfer.earlyWithdrawal.creditedAmount, { decimals: 2 }),
+              })}`;
       }
       idempotencyKey = "";
       idempotencyIdentity = "";
       pending = null;
       phase = "done";
+      // Daftar transaksi sesi ikut berubah: muat ulang supaya baris baru terlihat tanpa pindah
+      // halaman (DESIGN §11).
+      if (session !== null) void loadSessionTx(session.sessionId);
       await tick();
       successHeadingEl?.focus();
     } catch {
@@ -821,6 +971,7 @@
   onMount(() => {
     if (!canPost) return;
     void loadShortcuts();
+    void loadBranchList();
     // Deep link `?accountNo=` (brief §2.4): layar bisa dibuka dari tautan rekening.
     const deepLinkNo = page.url.searchParams.get("accountNo");
     if (deepLinkNo !== null && deepLinkNo.trim() !== "") {
@@ -836,17 +987,19 @@
   <title>{m.common_app_title()} — {m.teller_title()}</title>
 </svelte:head>
 
-<div class="teller-head">
-  <h1 class="teller-title">{m.teller_title()}</h1>
-  <p class="teller-intro">{m.teller_intro()}</p>
+<div class="kran-page-header">
+  <div>
+    <h1 class="kran-page-header__title">{m.teller_title()}</h1>
+    <p class="kran-page-header__intro">{m.teller_intro()}</p>
+  </div>
 </div>
 
 {#if !canPost}
   <p class="kran-alert" role="alert">{m.teller_denied()}</p>
 {:else}
   <div class="teller-work">
-    <section class="teller-panel" aria-labelledby="teller-account-heading">
-      <h2 id="teller-account-heading">{m.teller_account_heading()}</h2>
+    <section class="kran-section" aria-labelledby="teller-account-heading">
+      <h2 id="teller-account-heading" class="kran-section__title">{m.teller_account_heading()}</h2>
 
       <div class="kran-field">
         <label class="kran-label" for="teller-account-no">{m.teller_account_no_input_label()}</label>
@@ -889,7 +1042,7 @@
             </div>
             <span class={loaded.status === "ACTIVE" ? "kran-badge kran-badge--ok" : "kran-badge"}>
               <span aria-hidden="true">{loaded.status === "ACTIVE" ? "✔" : "○"}</span>
-              <span>{loaded.status === "ACTIVE" ? m.teller_account_status_active() : m.teller_account_status_closed()}</span>
+              <span>{accountStatusLabel(loaded.status)}</span>
             </span>
           </div>
 
@@ -900,7 +1053,7 @@
 
           <!-- Account number and status already appear in the passbook header; do not duplicate
                them here (it also made the e2e locator ambiguous). -->
-          <dl class="teller-facts passbook-facts">
+          <dl class="kran-facts">
             <dt>{m.teller_account_kind_label()}</dt>
             <dd><span class="kran-badge kran-badge--info">{savingsKindLabel(loaded.savingsKind)}</span></dd>
           </dl>
@@ -909,8 +1062,11 @@
             <p class="kran-muted passbook-updated">{m.teller_account_balance_at({ time: loadedAtText })}</p>
           {/if}
 
-          <p class="passbook-actions">
-            <a class="kran-button" href={`/app/print/statement/${loaded.accountId}`}>
+          <p class="kran-actions">
+            <a
+              class="kran-button"
+              href={resolve("/app/print/statement/[accountId]", { accountId: loaded.accountId })}
+            >
               {m.teller_print_statement()}
             </a>
           </p>
@@ -926,26 +1082,56 @@
         Sesi kas (T-108) di atas form transaksi: transaksi tunai ditolak server tanpa sesi OPEN
         (`no_open_session`), jadi keadaannya harus terlihat sebelum teller mengetik.
       -->
-      <section class="teller-panel" aria-labelledby="teller-session-heading">
-        <h2 id="teller-session-heading" tabindex="-1" bind:this={sessionHeadingEl}>
+      <section class="kran-section" aria-labelledby="teller-session-heading">
+        <h2
+          id="teller-session-heading"
+          class="kran-section__title"
+          tabindex="-1"
+          bind:this={sessionHeadingEl}
+        >
           {m.teller_session_heading()}
         </h2>
 
+        {#if branchesFailed}
+          <p class="kran-alert" role="alert">{m.teller_session_branches_failed()}</p>
+        {:else if branchesPending}
+          <p class="kran-muted">{m.app_loading()}</p>
+        {:else if branches.length === 0}
+          <p class="kran-muted">{m.teller_session_branches_empty()}</p>
+        {:else}
+          <div class="kran-field">
+            <label class="kran-label" for="teller-session-branch">
+              {m.teller_session_branch_label()}
+            </label>
+            <select
+              class="kran-select"
+              id="teller-session-branch"
+              value={sessionBranchId}
+              onchange={(event) => chooseSessionBranch(event.currentTarget.value)}
+            >
+              <option value="">{m.teller_session_branch_placeholder()}</option>
+              {#each branches as branch (branch.branchId)}
+                <option value={branch.branchId}>{branch.code} · {branch.name}</option>
+              {/each}
+            </select>
+          </div>
+        {/if}
+
         {#if branchId === ""}
-          <p class="kran-muted">{m.teller_session_need_account()}</p>
+          <p class="kran-muted">{m.teller_session_need_branch()}</p>
         {:else if closeResult !== null && sessionPhase === "idle"}
           {@const closed = closeResult}
           <!-- Fokus dipindah ke judul hasil tutup sesi (pola brief §2.1). -->
           <h3
             id="teller-session-closed-heading"
-            class="teller-subheading"
+            class="kran-section__title"
             tabindex="-1"
             bind:this={sessionClosedHeadingEl}
           >
             {m.teller_session_closed_heading()}
           </h3>
 
-          <dl class="teller-facts">
+          <dl class="kran-facts">
             <dt>{m.teller_session_status_label()}</dt>
             <dd>
               <span class="kran-status kran-status--ok">
@@ -956,13 +1142,13 @@
             <dt>{m.teller_business_date()}</dt>
             <dd>{formatDate(closed.businessDate)}</dd>
             <dt>{m.teller_session_opening_float()}</dt>
-            <dd class="kran-money">{formatMoney(closed.openingFloat, { decimals: 2 })}</dd>
+            <dd class="kran-num">{formatMoney(closed.openingFloat, { decimals: 2 })}</dd>
             <dt>{m.teller_session_expected_cash()}</dt>
-            <dd class="kran-money">{formatMoney(closed.expectedCash, { decimals: 2 })}</dd>
+            <dd class="kran-num">{formatMoney(closed.expectedCash, { decimals: 2 })}</dd>
             <dt>{m.teller_session_counted_cash()}</dt>
-            <dd class="kran-money">{formatMoney(closed.countedCash, { decimals: 2 })}</dd>
+            <dd class="kran-num">{formatMoney(closed.countedCash, { decimals: 2 })}</dd>
             <dt>{m.teller_session_variance_label()}</dt>
-            <dd class="kran-money">{closeResultText}</dd>
+            <dd class="kran-num">{closeResultText}</dd>
             <dt>{m.teller_session_closed_at()}</dt>
             <dd>{formatDateTime(closed.closedAt)}</dd>
             {#if closed.note !== ""}
@@ -992,23 +1178,23 @@
           {@const review = pendingSession}
           <h3
             id="teller-session-open-review-heading"
-            class="teller-subheading"
+            class="kran-section__title"
             tabindex="-1"
             bind:this={sessionReviewHeadingEl}
           >
             {m.teller_session_open_review_heading()}
           </h3>
 
-          <dl class="teller-facts">
+          <dl class="kran-facts">
             <dt>{m.teller_session_opening_float()}</dt>
-            <dd class="kran-money">{formatMoney(review.openingFloat, { decimals: 2 })}</dd>
+            <dd class="kran-num">{formatMoney(review.openingFloat, { decimals: 2 })}</dd>
             {#if review.note !== ""}
               <dt>{m.teller_session_note()}</dt>
               <dd>{review.note}</dd>
             {/if}
           </dl>
 
-          <p class="kran-muted teller-reference">
+          <p class="kran-muted kran-actions">
             <span>{m.teller_reference_label()}:</span>
             <span class="teller-id">{sessionKey}</span>
             <button class="kran-button" type="button" onclick={() => void copyText(sessionKey)}>
@@ -1040,7 +1226,7 @@
               </p>
             {/if}
             <form
-              class="teller-actions"
+              class="kran-actions"
               onsubmit={(event) => {
                 event.preventDefault();
                 void submitSession();
@@ -1058,22 +1244,22 @@
           {@const review = pendingSession}
           <h3
             id="teller-session-close-review-heading"
-            class="teller-subheading"
+            class="kran-section__title"
             tabindex="-1"
             bind:this={sessionReviewHeadingEl}
           >
             {m.teller_session_close_review_heading()}
           </h3>
 
-          <dl class="teller-facts">
+          <dl class="kran-facts">
             {#if session !== null}
               <dt>{m.teller_business_date()}</dt>
               <dd>{formatDate(session.businessDate)}</dd>
               <dt>{m.teller_session_opening_float()}</dt>
-              <dd class="kran-money">{formatMoney(session.openingFloat, { decimals: 2 })}</dd>
+              <dd class="kran-num">{formatMoney(session.openingFloat, { decimals: 2 })}</dd>
             {/if}
             <dt>{m.teller_session_counted_cash()}</dt>
-            <dd class="kran-money">{formatMoney(review.countedCash, { decimals: 2 })}</dd>
+            <dd class="kran-num">{formatMoney(review.countedCash, { decimals: 2 })}</dd>
             {#if review.note !== ""}
               <dt>{m.teller_session_note()}</dt>
               <dd>{review.note}</dd>
@@ -1081,7 +1267,7 @@
           </dl>
           <p class="kran-muted">{m.teller_session_close_review_hint()}</p>
 
-          <p class="kran-muted teller-reference">
+          <p class="kran-muted kran-actions">
             <span>{m.teller_reference_label()}:</span>
             <span class="teller-id">{sessionKey}</span>
             <button class="kran-button" type="button" onclick={() => void copyText(sessionKey)}>
@@ -1112,7 +1298,7 @@
               </p>
             {/if}
             <form
-              class="teller-actions"
+              class="kran-actions"
               onsubmit={(event) => {
                 event.preventDefault();
                 void submitSession();
@@ -1129,7 +1315,7 @@
         {:else if sessionPhase === "open"}
           <h3
             id="teller-session-open-heading"
-            class="teller-subheading"
+            class="kran-section__title"
             tabindex="-1"
             bind:this={sessionFormHeadingEl}
           >
@@ -1184,7 +1370,7 @@
                   : undefined}
               />
             </div>
-            <div class="teller-actions">
+            <div class="kran-actions">
               <button class="kran-button kran-button--primary" type="submit">{m.teller_review()}</button>
               <button class="kran-button" type="button" onclick={() => void cancelSessionForm()}>
                 {m.teller_session_cancel()}
@@ -1194,7 +1380,7 @@
         {:else if sessionPhase === "close" && session !== null}
           <h3
             id="teller-session-close-heading"
-            class="teller-subheading"
+            class="kran-section__title"
             tabindex="-1"
             bind:this={sessionFormHeadingEl}
           >
@@ -1249,7 +1435,7 @@
                   : undefined}
               />
             </div>
-            <div class="teller-actions">
+            <div class="kran-actions">
               <button class="kran-button kran-button--primary" type="submit">{m.teller_review()}</button>
               <button class="kran-button" type="button" onclick={() => void cancelSessionForm()}>
                 {m.teller_session_cancel()}
@@ -1274,7 +1460,7 @@
           </p>
         {:else if session !== null}
           {@const active = session}
-          <dl class="teller-facts">
+          <dl class="kran-facts">
             <dt>{m.teller_session_status_label()}</dt>
             <dd>
               <span class="kran-status kran-status--ok">
@@ -1285,7 +1471,7 @@
             <dt>{m.teller_business_date()}</dt>
             <dd>{formatDate(active.businessDate)}</dd>
             <dt>{m.teller_session_opening_float()}</dt>
-            <dd class="kran-money">{formatMoney(active.openingFloat, { decimals: 2 })}</dd>
+            <dd class="kran-num">{formatMoney(active.openingFloat, { decimals: 2 })}</dd>
             {#if active.note !== ""}
               <dt>{m.teller_session_note()}</dt>
               <dd>{active.note}</dd>
@@ -1310,6 +1496,44 @@
               {m.teller_session_close()}
             </button>
           </p>
+
+          <!-- Arus kas sesi (T-147): isi sesi terlihat tanpa berpindah halaman (DESIGN §11). -->
+          <h3 class="kran-section__title">{m.teller_session_transactions_heading()}</h3>
+          {#if sessionTx.kind === "loading"}
+            <p role="status">{m.teller_session_loading()}</p>
+          {:else if sessionTx.kind === "failed"}
+            <p class="kran-alert" role="alert">{sessionTx.message}</p>
+            <p>
+              <button
+                class="kran-button"
+                type="button"
+                onclick={() => void loadSessionTx(active.sessionId)}
+              >
+                {m.teller_session_reload()}
+              </button>
+            </p>
+          {:else if sessionTx.kind === "loaded"}
+            {#if sessionTx.items.length === 0}
+              <p class="kran-muted">{m.teller_session_tx_empty()}</p>
+            {:else}
+              <DataTable
+                caption={m.teller_session_transactions_heading()}
+                ariaLabel={m.common_table_region({
+                  name: m.teller_session_transactions_heading(),
+                })}
+                captionHidden
+                columns={sessionTxColumns}
+                rows={sessionTxRows}
+                rowKey="transactionId"
+              />
+              <p class="kran-muted">
+                {m.teller_session_tx_count({
+                  shown: String(sessionTx.items.length),
+                  total: String(sessionTx.total),
+                })}
+              </p>
+            {/if}
+          {/if}
         {:else}
           <p>{m.teller_session_none()}</p>
           <p>
@@ -1324,8 +1548,8 @@
         {/if}
       </section>
 
-      <section class="teller-panel" aria-labelledby="teller-transaction-heading">
-        <h2 id="teller-transaction-heading">{m.teller_transaction_heading()}</h2>
+      <section class="kran-section" aria-labelledby="teller-transaction-heading">
+        <h2 id="teller-transaction-heading" class="kran-section__title">{m.teller_transaction_heading()}</h2>
 
         {#if account === null}
           <p class="kran-muted">{m.teller_transaction_need_account()}</p>
@@ -1335,7 +1559,7 @@
             <!-- Fokus dipindah ke judul hasil setelah simpan (brief §2.1). -->
             <h3
               id="teller-result-heading"
-              class="teller-subheading"
+              class="kran-section__title"
               tabindex="-1"
               bind:this={successHeadingEl}
             >
@@ -1344,15 +1568,28 @@
 
             {#if done.kind === "cash"}
               {@const transaction = done.transaction}
-              <dl class="teller-facts">
+              {#if transaction.earlyWithdrawal}
+                <h4 class="kran-section__title">{m.teller_early_heading()}</h4>
+                <dl class="kran-facts">
+                  <dt>{m.teller_early_principal()}</dt>
+                  <dd>{formatMoney(transaction.earlyWithdrawal.principal, { decimals: 2 })}</dd>
+                  <dt>{m.teller_early_interest()}</dt>
+                  <dd>{formatMoney(transaction.earlyWithdrawal.interest, { decimals: 2 })}</dd>
+                  <dt>{m.teller_early_penalty()}</dt>
+                  <dd>{formatMoney(transaction.earlyWithdrawal.penalty, { decimals: 2 })}</dd>
+                  <dt>{m.teller_early_cash_paid()}</dt>
+                  <dd>{formatMoney(transaction.earlyWithdrawal.cashPaid, { decimals: 2 })}</dd>
+                </dl>
+              {/if}
+              <dl class="kran-facts">
                 <dt>{m.teller_direction_label()}</dt>
                 <dd>{modeLabel(transaction.direction)}</dd>
                 <dt>{m.teller_amount_label()}</dt>
-                <dd class="kran-money">{amountWithSign(transaction.direction, transaction.amount)}</dd>
+                <dd class="kran-num">{amountWithSign(transaction.direction, transaction.amount)}</dd>
                 <dt>{m.teller_balance_after()}</dt>
-                <dd class="kran-money">{formatMoney(transaction.balanceAfter, { decimals: 2 })}</dd>
+                <dd class="kran-num">{formatMoney(transaction.balanceAfter, { decimals: 2 })}</dd>
                 <dt>{m.teller_transaction_id()}</dt>
-                <dd class="teller-copyable">
+                <dd class="kran-actions">
                   <span class="teller-id">{transaction.transactionId}</span>
                   <button
                     class="kran-button"
@@ -1363,7 +1600,7 @@
                   </button>
                 </dd>
                 <dt>{m.teller_journal_id()}</dt>
-                <dd class="teller-copyable">
+                <dd class="kran-actions">
                   <span class="teller-id">{transaction.journalId}</span>
                   <button
                     class="kran-button"
@@ -1377,25 +1614,51 @@
                 <dd>{formatDate(transaction.businessDate)}</dd>
               </dl>
               <p>
-                <a class="kran-button" href={`/app/print/slip/${transaction.transactionId}`}>
+                <a
+                  class="kran-button"
+                  href={resolve("/app/print/slip/[transactionId]", {
+                    transactionId: transaction.transactionId,
+                  })}
+                >
                   {m.teller_print_slip()}
                 </a>
               </p>
             {:else}
               {@const transfer = done.transfer}
-              <dl class="teller-facts">
+              {#if transfer.earlyWithdrawal}
+                <h4 class="kran-section__title">{m.teller_early_transfer_heading()}</h4>
+                <dl class="kran-facts">
+                  <dt>{m.teller_early_principal()}</dt>
+                  <dd class="kran-num">
+                    {formatMoney(transfer.earlyWithdrawal.principal, { decimals: 2 })}
+                  </dd>
+                  <dt>{m.teller_early_interest()}</dt>
+                  <dd class="kran-num">
+                    {formatMoney(transfer.earlyWithdrawal.interest, { decimals: 2 })}
+                  </dd>
+                  <dt>{m.teller_early_penalty()}</dt>
+                  <dd class="kran-num">
+                    {formatMoney(transfer.earlyWithdrawal.penalty, { decimals: 2 })}
+                  </dd>
+                  <dt>{m.teller_early_credited()}</dt>
+                  <dd class="kran-num">
+                    {formatMoney(transfer.earlyWithdrawal.creditedAmount, { decimals: 2 })}
+                  </dd>
+                </dl>
+              {/if}
+              <dl class="kran-facts">
                 <dt>{m.teller_direction_label()}</dt>
                 <dd>{modeLabel("TRANSFER")}</dd>
                 <dt>{m.teller_amount_label()}</dt>
-                <dd class="kran-money">{formatMoney(transfer.amount, { decimals: 2 })}</dd>
+                <dd class="kran-num">{formatMoney(transfer.amount, { decimals: 2 })}</dd>
                 <dt>{m.teller_balance_after()}</dt>
-                <dd class="kran-money">{formatMoney(transfer.sourceBalanceAfter, { decimals: 2 })}</dd>
+                <dd class="kran-num">{formatMoney(transfer.sourceBalanceAfter, { decimals: 2 })}</dd>
                 <dt>{m.teller_destination_balance_after()}</dt>
-                <dd class="kran-money">
+                <dd class="kran-num">
                   {formatMoney(transfer.destinationBalanceAfter, { decimals: 2 })}
                 </dd>
                 <dt>{m.teller_transaction_id()}</dt>
-                <dd class="teller-copyable">
+                <dd class="kran-actions">
                   <span class="teller-id">{transfer.transferId}</span>
                   <button
                     class="kran-button"
@@ -1406,7 +1669,7 @@
                   </button>
                 </dd>
                 <dt>{m.teller_journal_id()}</dt>
-                <dd class="teller-copyable">
+                <dd class="kran-actions">
                   <span class="teller-id">{transfer.journalId}</span>
                   <button
                     class="kran-button"
@@ -1434,14 +1697,14 @@
             <!-- Fokus dipindah ke judul tinjauan setelah "Tinjau" (brief §2.1). -->
             <h3
               id="teller-review-heading"
-              class="teller-subheading"
+              class="kran-section__title"
               tabindex="-1"
               bind:this={reviewHeadingEl}
             >
               {m.teller_review_heading()}
             </h3>
 
-            <dl class="teller-facts">
+            <dl class="kran-facts">
               <dt>{m.teller_direction_label()}</dt>
               <dd>{review.kind === "cash" ? modeLabel(review.direction) : modeLabel("TRANSFER")}</dd>
               <dt>{m.teller_account_heading()}</dt>
@@ -1451,12 +1714,17 @@
                 <dd class="teller-id">{review.destinationAccountId}</dd>
               {/if}
               <dt>{m.teller_amount_label()}</dt>
-              <dd class="kran-money">{formatMoney(review.amount, { decimals: 2 })}</dd>
+              <dd class="kran-num">{formatMoney(review.amount, { decimals: 2 })}</dd>
               {#if review.narration !== ""}
                 <dt>{m.teller_narration_label()}</dt>
                 <dd>{review.narration}</dd>
               {/if}
             </dl>
+
+            {#if account.accountType === "TIME_DEPOSIT" &&
+              (review.kind === "transfer" || review.direction === "WITHDRAWAL")}
+              <p class="kran-muted">{m.teller_review_time_deposit_notice()}</p>
+            {/if}
 
             {#if loadedAtText !== ""}
               <p class="kran-muted">
@@ -1464,7 +1732,7 @@
               </p>
             {/if}
 
-            <p class="kran-muted teller-reference">
+            <p class="kran-muted kran-actions">
               <span>{m.teller_reference_label()}:</span>
               <span class="teller-id">{idempotencyKey}</span>
               <button class="kran-button" type="button" onclick={() => void copyText(idempotencyKey)}>
@@ -1501,7 +1769,7 @@
                   {#if errorTrace !== ""}<span> {m.teller_error_with_trace({ trace: errorTrace })}</span>{/if}
                 </p>
               {/if}
-              <form class="teller-actions" onsubmit={(event) => void saveFromReview(event)}>
+              <form class="kran-actions" onsubmit={(event) => void saveFromReview(event)}>
                 <button
                   class="kran-button kran-button--primary"
                   type="submit"
@@ -1558,7 +1826,7 @@
                 <div class="kran-field">
                   <label class="kran-label" for="teller-destination">{m.teller_destination_label()}</label>
                   <input
-                    class="kran-input teller-uuid"
+                    class="kran-input teller-id"
                     id="teller-destination"
                     disabled={postingBlocked}
                     name="destinationAccountId"
@@ -1634,28 +1902,9 @@
 <p class="kran-visually-hidden" role="status" aria-live="polite">{announcement}</p>
 
 <style>
-  .teller-head {
-    padding-block: var(--space-4);
-    padding-inline: var(--space-4);
-    border: 1px solid var(--color-hairline);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-raised);
-    margin-block-end: var(--space-4);
-  }
-
-  .teller-title {
-    margin: 0;
-    font-size: var(--text-xl);
-    line-height: var(--line-height-tight);
-    font-weight: 600;
-  }
-
-  .teller-intro {
-    margin: var(--space-1) 0 0;
-    max-inline-size: 56ch;
-    color: var(--color-text-muted);
-    font-size: var(--text-sm);
-  }
+  /* Hanya tata letak khas layar kas. Tipografi, fakta (dt/dd), tombol, tabel, dan jarak bagian
+   * tinggal di `packages/ui` (DESIGN §11); di sini yang tersisa adalah dua kolom kerja dan
+   * penanda angka/ID yang tidak dipakai layar lain. */
 
   /* Kiri = rekening & identitas nasabah, kanan = sesi kas & formulir transaksi (DESIGN §4). */
   .teller-work {
@@ -1663,16 +1912,6 @@
     grid-template-columns: minmax(19rem, 23rem) minmax(0, 1fr);
     gap: var(--space-5);
     align-items: start;
-  }
-
-  .teller-panel {
-    min-inline-size: 0;
-    padding-block: var(--space-4);
-    padding-inline: var(--space-4);
-    border: 1px solid var(--color-hairline);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-raised);
-    box-shadow: var(--shadow-1);
   }
 
   /* Kolom kanan: sesi kas di atas form transaksi, urutan DOM = urutan visual (DESIGN §10). */
@@ -1695,48 +1934,7 @@
     min-inline-size: 0;
   }
 
-  .teller-panel h2 {
-    margin-block-end: var(--space-3);
-    font-size: var(--text-md);
-    font-weight: 600;
-  }
-
-  .teller-subheading {
-    margin: 0 0 var(--space-3);
-    font-size: var(--text-md);
-    font-weight: 600;
-  }
-
-  /* Pasangan kunci/nilai: garis rambut antar baris, tanpa zebra atau kartu (DESIGN §6). */
-  .teller-facts {
-    display: grid;
-    grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
-    gap: var(--space-2) var(--space-3);
-    margin: 0 0 var(--space-4);
-    padding-block-end: var(--space-3);
-    border-block-end: 1px solid var(--color-hairline);
-  }
-
-  .teller-facts dt {
-    color: var(--color-text-muted);
-    font-size: var(--text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-    font-weight: 500;
-  }
-
-  .teller-facts dd {
-    margin: 0;
-    min-inline-size: 0;
-    overflow-wrap: anywhere;
-    font-size: var(--text-sm);
-  }
-
-  .teller-facts dd.kran-money {
-    font-size: var(--text-md);
-    font-weight: 600;
-  }
-
+  /* Legenda arah tetap terlihat, jadi `kran-fieldset` (yang menyembunyikan legend) tidak dipakai. */
   .teller-fieldset {
     margin: 0;
     padding: 0;
@@ -1750,79 +1948,26 @@
     margin-block-end: var(--space-1);
   }
 
-  .teller-uuid {
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
-  }
-
-  /* Penanda tambahan saat field salah; sinyal utamanya tetap pesan teks di ringkasan (DESIGN §7). */
-  .kran-input[aria-invalid="true"] {
-    border-color: var(--color-danger);
-  }
-
-  /* Nomor rekening, ID transaksi/jurnal, dan referensi: mono, tabular, boleh patah. Nilainya
-   * 36 karakter atau lebih, jadi `nowrap` (seperti angka uang) akan membuat overflow mendatar. */
+  /* Nomor rekening, ID transaksi/jurnal, dan referensi: tabular, boleh patah. Nilainya 36 karakter
+   * atau lebih, jadi `nowrap` (seperti angka uang) akan membuat overflow mendatar. */
   .teller-id {
-    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     overflow-wrap: anywhere;
   }
 
-  .teller-copyable .teller-id,
-  .teller-reference .teller-id {
-    min-inline-size: 0;
-  }
-
   .teller-money-input {
-    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums slashed-zero;
   }
 
   .teller-preview {
     margin: 0;
-    color: var(--color-text);
     font-size: var(--text-sm);
     font-variant-numeric: tabular-nums slashed-zero;
-  }
-
-  .teller-copyable {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    align-items: center;
-  }
-
-  .teller-reference {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    align-items: center;
-  }
-
-  .teller-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
   }
 
   .passbook-account {
     font-size: var(--text-base);
     font-weight: 600;
-  }
-
-  .passbook-facts {
-    margin-block-end: 0;
-    padding-block-end: 0;
-    border: 0;
-  }
-
-  .passbook-updated {
-    margin: 0;
-    font-size: var(--text-xs);
-  }
-
-  .passbook-actions {
-    margin: 0;
   }
 
   @media (max-width: 1100px) {

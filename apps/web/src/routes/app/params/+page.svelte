@@ -9,8 +9,19 @@
    *
    * Aksi ditampilkan menurut izin sesi (`platform.param.submit` / `platform.param.approve`),
    * bukan menurut jenis pengguna: izin adalah sumber kebenaran (spec §13).
+   *
+   * Tata letak mengikuti DESIGN §11: titik fokus layar ini adalah tabel parameter, jadi tidak ada
+   * strip kartu metrik di atasnya. Tabel tetap ditulis di sini (bukan `DataTable`) karena tiap
+   * baris memakai `<th scope="row">` untuk kuncinya dan tabel pengajuan punya aksi per baris.
+   * Tidak ada CSS lokal di berkas ini; aturan visual tinggal di `packages/ui`.
    */
+  import Alert from "@kran/ui/components/Alert.svelte";
+  import Button from "@kran/ui/components/Button.svelte";
+  import EmptyState from "@kran/ui/components/EmptyState.svelte";
+  import StatusBadge from "@kran/ui/components/StatusBadge.svelte";
+
   import { goto } from "$app/navigation";
+  import { resolve } from "$app/paths";
   import { onMount } from "svelte";
 
   import type { Problem } from "@kran/api-client";
@@ -88,20 +99,12 @@
     return m.param_status_draft();
   }
 
-  /** Status = teks + ikon + warna, tidak pernah warna saja (spec §15.4). */
-  function statusClass(status: string): string {
-    if (status === "ACTIVE") return "kran-status kran-status--ok";
-    if (status === "PENDING") return "kran-status kran-status--warning";
-    if (status === "REJECTED") return "kran-status kran-status--danger";
-    return "kran-status";
-  }
-
-  function statusIcon(status: string): string {
-    if (status === "ACTIVE") return "✔";
-    if (status === "PENDING") return "▲";
-    if (status === "SUPERSEDED") return "○";
-    if (status === "REJECTED") return "✖";
-    return "✎";
+  /** Status = teks + bentuk + warna, tidak pernah warna saja (spec §15.4). */
+  function statusTone(status: string): "positive" | "warning" | "negative" | "neutral" {
+    if (status === "ACTIVE") return "positive";
+    if (status === "PENDING") return "warning";
+    if (status === "REJECTED") return "negative";
+    return "neutral";
   }
 
   function displayValue(value: unknown): string {
@@ -166,7 +169,7 @@
         void refresh();
       },
       onUnauthorized: () => {
-        void goto("/login");
+        void goto(resolve("/login"));
       },
     });
 
@@ -296,26 +299,18 @@
   <title>{m.common_app_title()} — {m.app_title()}</title>
 </svelte:head>
 
-<div class="kran-toolbar app-toolbar">
+<div class="kran-page-header">
   <div>
-    <h1 class="app-title">{m.app_title()}</h1>
+    <h1 class="kran-page-header__title">{m.app_title()}</h1>
     <!-- Denyut realtime (spec §19.2): status + kapan data terakhir disegarkan, diumumkan halus. -->
-    <p class="app-realtime" role="status" aria-live="polite">
+    <p class="kran-page-header__intro kran-actions" role="status" aria-live="polite">
       <span class="kran-muted">{m.realtime_label()}:</span>
       {#if realtimeState === "connected"}
-        <span class="kran-badge kran-badge--ok">
-          <span class="kran-status-dot" aria-hidden="true"></span>
-          <span>{m.realtime_connected()}</span>
-        </span>
+        <StatusBadge tone="positive">{m.realtime_connected()}</StatusBadge>
       {:else if realtimeState === "reconnecting"}
-        <span class="kran-badge kran-badge--warning">
-          <span aria-hidden="true">▲</span>
-          <span>{m.realtime_reconnecting()}</span>
-        </span>
+        <StatusBadge tone="warning">{m.realtime_reconnecting()}</StatusBadge>
       {:else}
-        <span class="kran-badge">
-          <span>{m.realtime_connecting()}</span>
-        </span>
+        <StatusBadge tone="neutral">{m.realtime_connecting()}</StatusBadge>
       {/if}
       {#if updatedAt}
         <span class="kran-muted">{m.realtime_updated({ time: formatClock(updatedAt) })}</span>
@@ -323,76 +318,42 @@
     </p>
   </div>
 
-  <div class="app-session-actions">
-    <!-- Identitas, tautan ubah sandi, dan tombol keluar tinggal di shell `/app` (T-132/UI-3),
-         supaya tersedia di setiap layar kerja, bukan hanya di sini. Peran tetap ditampilkan di
-         halaman ini karena ia konteks landing, bukan aksi sesi. -->
-    {#if roleLabels.length > 0}
-      <span class="app-roles">
-        <span class="kran-muted">{m.app_roles_label()}:</span>
-        {#each roleLabels as role (role)}
-          <span class="kran-badge">{role}</span>
-        {/each}
-      </span>
-    {/if}
-  </div>
+  <!-- Identitas, tautan ubah sandi, dan tombol keluar tinggal di shell `/app` (T-132/UI-3),
+       supaya tersedia di setiap layar kerja, bukan hanya di sini. Peran tetap ditampilkan di
+       halaman ini karena ia konteks landing, bukan aksi sesi. -->
+  {#if roleLabels.length > 0}
+    <div class="kran-actions">
+      <span class="kran-muted">{m.app_roles_label()}:</span>
+      {#each roleLabels as role (role)}
+        <StatusBadge tone="neutral">{role}</StatusBadge>
+      {/each}
+    </div>
+  {/if}
 </div>
 
 {#if loading}
   <p role="status">{m.app_loading()}</p>
 {:else}
   {#if errorMessage}
-    <p class="kran-alert" role="alert">{errorMessage}</p>
-    <p><button class="kran-button" type="button" onclick={() => void refresh()}>{m.app_retry()}</button></p>
+    <Alert tone="negative" title={errorMessage}>
+      <Button type="button" onclick={() => void refresh()}>{m.app_retry()}</Button>
+    </Alert>
   {/if}
   {#if notice}
-    <p role="status">{notice}</p>
-  {/if}
-
-  <!-- Strip ringkasan parameter & audit; kartu hanya tampil bila izin panelnya dipegang. -->
-  {#if canReadParams || canReadAudit}
-    <div class="kran-metric-strip">
-      {#if canReadParams}
-        <div class="kran-metric-card">
-          <span class="kran-metric-card__label">{m.params_active_heading()}</span>
-          <span class="kran-metric-card__value kran-num">{active.length}</span>
-          <span class="kran-metric-card__sub">{m.app_metric_active_sub()}</span>
-        </div>
-
-        <div class="kran-metric-card">
-          <span class="kran-metric-card__label">{m.params_pending_heading()}</span>
-          <span class="kran-metric-card__value kran-num">{pending.length}</span>
-          <div class="kran-metric-card__sub">
-            {#if pending.length > 0}
-              <span class="kran-badge kran-badge--warning">{m.app_metric_pending_action()}</span>
-            {:else}
-              <span class="kran-badge kran-badge--ok">{m.app_metric_pending_none()}</span>
-            {/if}
-          </div>
-        </div>
-      {/if}
-
-      {#if canReadAudit}
-        <div class="kran-metric-card">
-          <span class="kran-metric-card__label">{m.audit_heading()}</span>
-          <span class="kran-metric-card__value kran-num">{audit.length}</span>
-          <span class="kran-metric-card__sub">{m.app_metric_audit_sub()}</span>
-        </div>
-      {/if}
-    </div>
+    <Alert tone="positive" title={notice} />
   {/if}
 
   {#if !canReadParams && !canReadAudit}
     <!-- Tak ada panel yang boleh dibaca: satu penjelasan jujur, bukan dua daftar kosong. -->
-    <section class="kran-card" aria-labelledby="app-denied-heading">
-      <h2 id="app-denied-heading">{m.app_denied_heading()}</h2>
+    <section class="kran-section" aria-labelledby="app-denied-heading">
+      <h2 class="kran-section__title" id="app-denied-heading">{m.app_denied_heading()}</h2>
       <p class="kran-muted">{m.app_denied_both()}</p>
     </section>
   {:else}
     {#if canReadParams}
       {#if canSubmit}
-        <section class="kran-card" aria-labelledby="submit-heading">
-          <h2 id="submit-heading">{m.params_submit_heading()}</h2>
+        <section class="kran-section" aria-labelledby="submit-heading">
+          <h2 class="kran-section__title" id="submit-heading">{m.params_submit_heading()}</h2>
           <p class="kran-muted">{m.params_submit_effective_from_hint()}</p>
 
           <form class="kran-form" onsubmit={submitChange} novalidate>
@@ -434,23 +395,23 @@
               />
             </div>
 
-            <p>
-              <button
-                class="kran-button kran-button--primary"
+            <div class="kran-actions">
+              <Button
+                variant="primary"
                 type="submit"
                 disabled={sending || formKey === ""}
               >
                 {sending ? m.params_submit_sending() : m.params_submit_submit()}
-              </button>
-            </p>
+              </Button>
+            </div>
           </form>
         </section>
       {/if}
 
-      <section class="kran-card" aria-labelledby="pending-heading">
-        <h2 id="pending-heading">{m.params_pending_heading()}</h2>
+      <section class="kran-section" aria-labelledby="pending-heading">
+        <h2 class="kran-section__title" id="pending-heading">{m.params_pending_heading()}</h2>
         {#if pending.length === 0}
-          <p class="kran-muted">{m.params_pending_empty()}</p>
+          <EmptyState title={m.params_pending_empty()} />
         {:else}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <div
@@ -478,22 +439,18 @@
                     <td>{formatDate(row.effectiveFrom)}</td>
                     <td>{row.maker}</td>
                     <td>
-                      <span class={statusClass(row.status)}>
-                        <span class="kran-status__icon" aria-hidden="true">{statusIcon(row.status)}</span
-                        >
-                        {statusText(row.status)}
-                      </span>
+                      <StatusBadge tone={statusTone(row.status)}>{statusText(row.status)}</StatusBadge>
                     </td>
                     {#if canApprove}
                       <td>
-                        <button
-                          class="kran-button kran-button--primary"
+                        <Button
+                          variant="primary"
                           type="button"
                           disabled={approvingId === row.paramValueId}
                           onclick={() => void approve(row.paramValueId)}
                         >
                           {approvingId === row.paramValueId ? m.params_approving() : m.params_approve()}
-                        </button>
+                        </Button>
                       </td>
                     {/if}
                   </tr>
@@ -504,11 +461,11 @@
         {/if}
       </section>
 
-      <section class="kran-card" aria-labelledby="active-heading">
-        <div class="params-active-head">
-          <h2 id="active-heading">{m.params_active_heading()}</h2>
+      <section class="kran-section" aria-labelledby="active-heading">
+        <div class="kran-toolbar">
+          <h2 class="kran-section__title" id="active-heading">{m.params_active_heading()}</h2>
           <input
-            class="kran-input params-search"
+            class="kran-input"
             type="search"
             placeholder={m.params_search_placeholder()}
             aria-label={m.params_search_label()}
@@ -516,7 +473,7 @@
           />
         </div>
         {#if active.length === 0}
-          <p class="kran-muted">{m.params_active_empty()}</p>
+          <EmptyState title={m.params_active_empty()} />
         {:else}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <div
@@ -537,7 +494,7 @@
               <tbody>
                 {#if filteredActive.length === 0}
                   <tr>
-                    <td colspan="4" class="kran-muted params-empty">{m.params_search_empty()}</td>
+                    <td colspan="4" class="kran-muted">{m.params_search_empty()}</td>
                   </tr>
                 {/if}
                 {#each filteredActive as row (row.paramValueId)}
@@ -546,10 +503,7 @@
                     <td>{displayValue(row.value)}</td>
                     <td>{formatDate(row.effectiveFrom)}</td>
                     <td>
-                      <span class={statusClass(row.status)}>
-                        <span class="kran-status__icon" aria-hidden="true">{statusIcon(row.status)}</span>
-                        {statusText(row.status)}
-                      </span>
+                      <StatusBadge tone={statusTone(row.status)}>{statusText(row.status)}</StatusBadge>
                     </td>
                   </tr>
                 {/each}
@@ -560,17 +514,17 @@
       </section>
     {:else}
       <!-- Izin baca parameter tidak dipegang: panel parameter diganti penjelasan jujur. -->
-      <section class="kran-card" aria-labelledby="app-denied-params-heading">
-        <h2 id="app-denied-params-heading">{m.app_denied_heading()}</h2>
+      <section class="kran-section" aria-labelledby="app-denied-params-heading">
+        <h2 class="kran-section__title" id="app-denied-params-heading">{m.app_denied_heading()}</h2>
         <p class="kran-muted">{m.app_denied_params()}</p>
       </section>
     {/if}
 
     {#if canReadAudit}
-      <section class="kran-card" aria-labelledby="audit-heading">
-        <h2 id="audit-heading">{m.audit_heading()}</h2>
+      <section class="kran-section" aria-labelledby="audit-heading">
+        <h2 class="kran-section__title" id="audit-heading">{m.audit_heading()}</h2>
         {#if audit.length === 0}
-          <p class="kran-muted">{m.audit_empty()}</p>
+          <EmptyState title={m.audit_empty()} />
         {:else}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <div
@@ -604,75 +558,10 @@
       </section>
     {:else}
       <!-- Izin baca audit tidak dipegang: panel audit diganti penjelasan jujur. -->
-      <section class="kran-card" aria-labelledby="app-denied-audit-heading">
-        <h2 id="app-denied-audit-heading">{m.app_denied_heading()}</h2>
+      <section class="kran-section" aria-labelledby="app-denied-audit-heading">
+        <h2 class="kran-section__title" id="app-denied-audit-heading">{m.app_denied_heading()}</h2>
         <p class="kran-muted">{m.app_denied_audit()}</p>
       </section>
     {/if}
   {/if}
 {/if}
-
-<style>
-  .params-active-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    margin-block-end: var(--space-3);
-  }
-
-  .params-active-head h2 {
-    margin: 0;
-  }
-
-  .params-search {
-    min-inline-size: 14rem;
-  }
-
-  .params-empty {
-    text-align: center;
-    padding-block: var(--space-5);
-  }
-
-  .app-toolbar {
-    padding-block: var(--space-4);
-    padding-inline: var(--space-4);
-    border: 1px solid var(--color-hairline);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-raised);
-    margin-block-end: var(--space-4);
-  }
-
-  .app-title {
-    margin: 0;
-    font-size: var(--text-xl);
-    line-height: var(--line-height-tight);
-    font-weight: 600;
-  }
-
-  .app-realtime {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-    margin-block-start: var(--space-1);
-    margin-block-end: 0;
-    font-size: var(--text-xs);
-  }
-
-  .app-session-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .app-roles {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-1);
-    font-size: var(--text-xs);
-  }
-</style>

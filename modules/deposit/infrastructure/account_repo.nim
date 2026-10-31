@@ -14,13 +14,15 @@ const
   ## Kolom akun + kode produk (join) + saldo (kiri, boleh kosong untuk baris lama) + klasifikasi
   ## simpanan produk (T-111; `''` = belum terklasifikasi). Saldo disimpan `numeric(24,2)` (D-136); dibaca
   ## sebagai teks desimal lalu diparse `moneyFromString` (tanpa float).
-  accountColumns = "a.account_id, a.account_no, a.party_id, a.product_id, " &
+  accountColumns* = "a.account_id, a.account_no, a.party_id, a.product_id, " &
     "a.product_version_id, p.code, a.branch_id, a.account_type, a.status, " &
     "to_char(a.opened_on, 'YYYY-MM-DD'), " &
     "to_char(a.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), " &
     "coalesce(b.balance::text, '0.00'), coalesce(p.savings_kind, '')"
 
-proc accountOf(row: Row): Account =
+proc accountOf*(row: Row): Account =
+  ## Dipakai juga `interest_repo` (daftar kolom yang sama) supaya tidak ada dua pembaca akun yang
+  ## bisa menyimpang.
   let parsedBalance = moneyFromString(row[11])
   if parsedBalance.isErr:
     raise newException(ValueError, "saldo rekening bukan desimal yang sah: " & row[11])
@@ -94,3 +96,60 @@ proc accountsByParty*(db: DbConn, partyId: Id, limit = 200): seq[Account] =
        ORDER BY a.account_no
        LIMIT ?::int"""), $partyId, $limit):
     result.add accountOf(row)
+
+proc lockAccountForUpdate*(db: DbConn; accountId: Id) =
+  ## Mengunci baris `deposit.account` sampai transaksi pemanggil selesai. Ini titik serialisasi
+  ## jalur teller (setor/tarik/PB) dan task `deposit.maturity_aro` (O-112/D-161): keduanya harus
+  ## memutuskan dari status dan saldo yang sama, bukan dari bacaan yang dibuat sebelum lawannya
+  ## commit.
+  ##
+  ## Kunci **hanya** baris rekening. Baris `deposit.account_balance` dikunci `UPDATE` jalur
+  ## masing-masing sesudahnya; semua penulis saldo mengambil kunci rekening lebih dulu (teller,
+  ## PB, jatuh tempo), sehingga urutannya seragam rekening → saldo dan tidak ada siklus tunggu.
+  ## `FOR UPDATE` di sini bukan "kunci untuk dibaca": pemanggil tetap harus **membaca ulang**
+  ## rekening sesudahnya.
+  discard db.getAllRows(sql"""
+    SELECT account_id FROM deposit.account WHERE account_id = ? FOR UPDATE""", $accountId)
+
+proc markInterestPaid*(db: DbConn; accountId: Id; cumulative: Money) =
+  ## Menaikkan baseline bunga yang sudah dibayar ke `cumulative` akrual terakhir, di transaksi
+  ## chunk pemanggil (D-165). Idempoten untuk tanggal buku yang sama: nilai yang sama ditulis ulang.
+  ## Penurunan tidak mungkin terjadi karena `cumulative` hanya bertambah; `GREATEST` menjaga replay
+  ## task yang lebih tua tidak menurunkan baseline.
+  db.exec(sql"""
+    UPDATE deposit.account SET interest_paid_cumulative = GREATEST(interest_paid_cumulative, ?)
+     WHERE account_id = ?""", cumulative.toDecimalString, $accountId)
+
+proc closeAccount*(db: DbConn; accountId: Id; actor: Id) =
+  ## Menutup rekening. Pemanggil sudah memindahkan saldo di transaksi yang sama; proc ini hanya
+  ## mengubah status (`NONE` pada jatuh tempo, pencairan dini penuh pada D-164).
+  db.exec(sql"""
+    UPDATE deposit.account SET status = 'CLOSED', updated_by = ?
+     WHERE account_id = ?""", $actor, $accountId)
+
+proc maturityDateOf*(db: DbConn; accountId: Id): string =
+  ## `maturity_date` rekening dalam ISO `yyyy-MM-dd`, `""` bila NULL (rekening tabungan). Dipakai
+  ## jalur pencairan dini untuk membedakan sebelum/sesudah jatuh tempo (D-164).
+  db.getValue(sql"""
+    SELECT coalesce(to_char(maturity_date, 'YYYY-MM-DD'), '')
+      FROM deposit.account WHERE account_id = ?""", $accountId)
+
+proc accruedUnpaidInterest*(db: DbConn; accountId: Id): Money =
+  ## Bunga yang sudah dijurnal `InterestAccrued` tetapi belum dibayar (D-164/D-165):
+  ## `cumulative` akrual terakhir dikurangi `interest_paid_cumulative`. Tidak pernah negatif;
+  ## baseline yang lebih besar dari akrual berarti data rusak, dan pemanggil yang memutuskan.
+  let rows = db.getAllRows(sql"""
+    SELECT coalesce((SELECT cumulative FROM deposit.interest_accrual
+                      WHERE account_id = ? ORDER BY business_date DESC LIMIT 1), 0)::text,
+           interest_paid_cumulative::text
+      FROM deposit.account WHERE account_id = ?""", $accountId, $accountId)
+  if rows.len == 0:
+    return zero()
+  let cum = moneyFromString(rows[0][0])
+  let paid = moneyFromString(rows[0][1])
+  if cum.isErr or paid.isErr:
+    raise newException(ValueError, "bunga akrual rekening bukan desimal sah")
+  let unpaid = cum.value() - paid.value()
+  if unpaid.isNegative:
+    return zero()
+  unpaid

@@ -18,6 +18,7 @@
 #   ./task dbtools migrate|status|validate   SQL migrations (requires KRAN_DATABASE_URL)
 #   ./task scaffold <name> [--dry-run]       scaffold a new module (spec §5.5)
 #   ./task bench-password [--iterations N]   benchmark password hashing cost (T-060)
+#   ./task bench-eod --accounts N             seed N rekening sintetis + ukur satu EOD (T-140)
 #   ./task help
 #
 # Pure POSIX script chosen over Taskfile/just: zero new tooling dependencies,
@@ -453,6 +454,17 @@ cmd_lint_web() {
   (cd "$ROOT" && "$ROOT/node_modules/.bin/eslint" apps/web/src packages/ui/src) \
     || die "eslint found errors"
   ok "eslint clean (apps/web + packages/ui)"
+
+  # Komponen bersama di `packages/ui` tidak diperiksa `apps/web` (svelte-check hanya memindai
+  # paketnya sendiri), jadi paket itu punya tsconfig + svelte-check sendiri.
+  if [ -x "$ROOT/packages/ui/node_modules/.bin/svelte-check" ]; then
+    log "svelte-check (packages/ui)"
+    (cd "$ROOT/packages/ui" && "$ROOT/packages/ui/node_modules/.bin/svelte-check" \
+      --tsconfig ./tsconfig.json) || die "svelte-check packages/ui found errors"
+    ok "packages/ui type-check clean"
+  else
+    skip "svelte-check packages/ui tidak terpasang (run: pnpm install)"
+  fi
 }
 
 cmd_ci() {
@@ -523,6 +535,14 @@ case "${1:-help}" in
     nim c -d:release $NIMFLAGS --out:"$BIN/bench-password" "$ROOT/tools/bench-password/main.nim" >/dev/null \
       || die "failed to build bench-password tool"
     exec "$BIN/bench-password" "$@"
+    ;;
+  bench-eod)
+    # `-d:release` sama seperti biner produksi: yang diukur EOD, bukan biaya build debug.
+    shift
+    mkdir -p "$BIN"
+    nim c -d:release $NIMFLAGS --out:"$BIN/bench-eod" "$ROOT/tools/bench-eod/main.nim" >/dev/null \
+      || die "failed to build bench-eod tool"
+    exec "$BIN/bench-eod" "$@"
     ;;
   help | -h | --help) cmd_help ;;
   *) die "unknown command: $1 (try ./task help)" ;;

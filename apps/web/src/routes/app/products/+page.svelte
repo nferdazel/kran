@@ -11,8 +11,19 @@
    *    berlapis. Aksi hanya tampil bila izin sesi memegang `product.catalog.approve`; server tetap
    *    otoritas terakhir (self-approval ditolak 409 dan dipetakan ke pesan di `products.ts`).
    *  - Tidak ada form buat/ubah produk di layar ini (di luar lingkup).
+   *
+   * Tata letak mengikuti DESIGN §11: judul layar bersama, satu bidang kerja per bagian, tabel dari
+   * komponen bersama. Tidak ada CSS lokal di berkas ini; aturan visual tinggal di `packages/ui`.
    */
   import { onMount } from "svelte";
+
+  import Alert from "@kran/ui/components/Alert.svelte";
+  import Button from "@kran/ui/components/Button.svelte";
+  import DataTable, {
+    type DataColumn,
+    type DataRow,
+  } from "@kran/ui/components/DataTable.svelte";
+  import EmptyState from "@kran/ui/components/EmptyState.svelte";
 
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
@@ -45,6 +56,52 @@
   /** Konfirmasi inline yang sedang terbuka; `null` = tidak ada. */
   let expanded = $state<{ versionId: string; kind: "approve" | "reject" } | null>(null);
   let rejectReason = $state("");
+
+  function draftOf(versionId: string): DraftVersion | undefined {
+    return drafts.find((item) => item.version.versionId === versionId);
+  }
+
+  /** Baris tabel memuat teks yang sudah diformat; objek asli tetap dicari lewat `versionId`. */
+  const draftColumns: DataColumn[] = $derived([
+    // Kode produk menamai baris: pembaca layar membacakannya sebagai header baris (DESIGN §6).
+    { key: "code", label: m.products_col_code(), rowHeader: true },
+    { key: "name", label: m.products_col_name() },
+    { key: "version", label: m.products_col_version() },
+    { key: "effectiveFrom", label: m.products_col_effective_from() },
+  ]);
+
+  const draftRows = $derived(
+    drafts.map((row) => ({
+      versionId: row.version.versionId,
+      code: row.product.code,
+      name: row.product.name,
+      version: m.products_version_label({ version: row.version.versionNo }),
+      effectiveFrom: formatDate(row.version.effectiveFrom),
+    })),
+  );
+
+  const productColumns: DataColumn[] = $derived([
+    { key: "code", label: m.products_col_code(), rowHeader: true },
+    { key: "name", label: m.products_col_name() },
+    { key: "type", label: m.products_col_type() },
+    { key: "kind", label: m.products_col_kind() },
+    { key: "version", label: m.products_col_current_version() },
+    { key: "effectiveFrom", label: m.products_col_effective_from() },
+  ]);
+
+  const productRows = $derived(
+    products.map((item) => ({
+      productId: item.productId,
+      code: item.code,
+      name: item.name,
+      type: productTypeLabel(item.productType),
+      kind: item.savingsKind ? savingsKindLabel(item.savingsKind) : "-",
+      version: item.currentVersion
+        ? m.products_version_label({ version: item.currentVersion.versionNo })
+        : m.products_no_active_version(),
+      effectiveFrom: item.currentVersion ? formatDate(item.currentVersion.effectiveFrom) : "",
+    })),
+  );
 
   async function load(showLoading = true): Promise<void> {
     if (showLoading) loading = true;
@@ -90,15 +147,16 @@
     rejectReason = "";
   }
 
-  async function approve(row: DraftVersion): Promise<void> {
-    if (busyId !== "") return;
-    busyId = row.version.versionId;
+  async function approve(versionId: string): Promise<void> {
+    const row = draftOf(versionId);
+    if (row === undefined || busyId !== "") return;
+    busyId = versionId;
     actionError = "";
     notice = "";
     try {
       const { response, error } = await api.POST(
         "/api/v1/products/{code}/versions/{versionId}/approve",
-        { params: { path: { code: row.product.code, versionId: row.version.versionId } } },
+        { params: { path: { code: row.product.code, versionId } } },
       );
       if (!response.ok) {
         actionError = errorFrom(error);
@@ -114,18 +172,19 @@
     }
   }
 
-  async function reject(event: SubmitEvent, row: DraftVersion): Promise<void> {
+  async function reject(event: SubmitEvent, versionId: string): Promise<void> {
     event.preventDefault();
+    const row = draftOf(versionId);
     const reason = rejectReason.trim();
-    if (busyId !== "" || reason === "") return;
-    busyId = row.version.versionId;
+    if (row === undefined || busyId !== "" || reason === "") return;
+    busyId = versionId;
     actionError = "";
     notice = "";
     try {
       const { response, error } = await api.POST(
         "/api/v1/products/{code}/versions/{versionId}/reject",
         {
-          params: { path: { code: row.product.code, versionId: row.version.versionId } },
+          params: { path: { code: row.product.code, versionId } },
           body: { reason },
         },
       );
@@ -153,10 +212,10 @@
   <title>{m.common_app_title()} — {m.products_title()}</title>
 </svelte:head>
 
-<div class="products-head">
+<div class="kran-page-header">
   <div>
-    <h1 class="products-title">{m.products_title()}</h1>
-    <p class="products-intro">{m.products_intro()}</p>
+    <h1 class="kran-page-header__title">{m.products_title()}</h1>
+    <p class="kran-page-header__intro">{m.products_intro()}</p>
   </div>
 </div>
 
@@ -164,243 +223,115 @@
   <p role="status">{m.products_loading()}</p>
 {:else}
   {#if errorMessage}
-    <p class="kran-alert" role="alert">{errorMessage}</p>
-    <p>
-      <button class="kran-button" type="button" onclick={() => void load()}>{m.app_retry()}</button>
-    </p>
-  {/if}
-  {#if actionError}
-    <p class="kran-alert" role="alert">{actionError}</p>
-  {/if}
-  {#if notice}
-    <p role="status">{notice}</p>
+    <Alert tone="negative" title={errorMessage}>
+      <Button type="button" onclick={() => void load()}>{m.app_retry()}</Button>
+    </Alert>
   {/if}
 
-  {#if canApprove}
-    <section class="kran-card" aria-labelledby="products-drafts-heading">
-      <h2 id="products-drafts-heading">{m.products_drafts_heading()}</h2>
-      {#if drafts.length === 0}
-        <p class="kran-muted">{m.products_drafts_empty()}</p>
-      {:else}
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-        <div
-          class="kran-table-wrap"
-          role="region"
-          tabindex="0"
-          aria-label={m.common_table_region({ name: m.products_drafts_heading() })}
-        >
-          <table class="kran-table">
-            <caption class="kran-visually-hidden">{m.products_drafts_caption()}</caption>
-            <thead>
-              <tr>
-                <th scope="col">{m.products_col_code()}</th>
-                <th scope="col">{m.products_col_name()}</th>
-                <th scope="col">{m.products_col_version()}</th>
-                <th scope="col">{m.products_col_effective_from()}</th>
-                <th scope="col">{m.products_col_action()}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each drafts as row (row.version.versionId)}
-                <tr>
-                  <th scope="row">{row.product.code}</th>
-                  <td>{row.product.name}</td>
-                  <td class="kran-num">
-                    {m.products_version_label({ version: row.version.versionNo })}
-                  </td>
-                  <td>{formatDate(row.version.effectiveFrom)}</td>
-                  <td class="products-actions">
-                    {#if expanded?.versionId === row.version.versionId && expanded.kind === "approve"}
-                      <p
-                        class="products-hint"
-                        id={`approve-hint-${row.version.versionId}`}
-                      >
-                        {m.products_approve_confirm()}
-                      </p>
-                      <div class="products-buttons">
-                        <button
-                          class="kran-button kran-button--primary"
-                          type="button"
-                          disabled={busyId === row.version.versionId}
-                          aria-describedby={`approve-hint-${row.version.versionId}`}
-                          onclick={() => void approve(row)}
-                        >
-                          {busyId === row.version.versionId
-                            ? m.products_approving()
-                            : m.products_approve_yes()}
-                        </button>
-                        <button
-                          class="kran-button"
-                          type="button"
-                          disabled={busyId === row.version.versionId}
-                          onclick={cancelConfirm}
-                        >
-                          {m.products_cancel()}
-                        </button>
-                      </div>
-                    {:else if expanded?.versionId === row.version.versionId && expanded.kind === "reject"}
-                      <form
-                        class="products-reject"
-                        onsubmit={(event) => void reject(event, row)}
-                        novalidate
-                      >
-                        <label
-                          class="kran-label"
-                          for={`reject-reason-${row.version.versionId}`}
-                        >
-                          {m.products_reject_reason_label()}
-                        </label>
-                        <input
-                          class="kran-input"
-                          id={`reject-reason-${row.version.versionId}`}
-                          bind:value={rejectReason}
-                          maxlength={REJECT_REASON_MAX}
-                        />
-                        <div class="products-buttons">
-                          <button
-                            class="kran-button kran-button--primary"
-                            type="submit"
-                            disabled={busyId === row.version.versionId || rejectReason.trim() === ""}
-                          >
-                            {busyId === row.version.versionId
-                              ? m.products_rejecting()
-                              : m.products_reject_submit()}
-                          </button>
-                          <button
-                            class="kran-button"
-                            type="button"
-                            disabled={busyId === row.version.versionId}
-                            onclick={cancelConfirm}
-                          >
-                            {m.products_cancel()}
-                          </button>
-                        </div>
-                      </form>
-                    {:else}
-                      <div class="products-buttons">
-                        <button
-                          class="kran-button kran-button--primary"
-                          type="button"
-                          onclick={() => startConfirm(row.version.versionId, "approve")}
-                        >
-                          {m.products_approve()}
-                        </button>
-                        <button
-                          class="kran-button"
-                          type="button"
-                          onclick={() => startConfirm(row.version.versionId, "reject")}
-                        >
-                          {m.products_reject()}
-                        </button>
-                      </div>
-                    {/if}
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+  {#if actionError}
+    <Alert tone="negative" title={actionError} />
+  {/if}
+
+  {#if notice}
+    <Alert tone="positive" title={notice} />
+  {/if}
+
+  {#snippet draftActions(row: DataRow)}
+    {@const versionId = String(row.versionId)}
+    {#if expanded?.versionId === versionId && expanded.kind === "approve"}
+      <div class="kran-stack">
+        <p class="kran-muted" id={`approve-hint-${versionId}`}>
+          {m.products_approve_confirm()}
+        </p>
+        <div class="kran-actions">
+          <Button
+            variant="primary"
+            type="button"
+            disabled={busyId === versionId}
+            aria-describedby={`approve-hint-${versionId}`}
+            onclick={() => void approve(versionId)}
+          >
+            {busyId === versionId ? m.products_approving() : m.products_approve_yes()}
+          </Button>
+          <Button type="button" disabled={busyId === versionId} onclick={cancelConfirm}>
+            {m.products_cancel()}
+          </Button>
         </div>
+      </div>
+    {:else if expanded?.versionId === versionId && expanded.kind === "reject"}
+      <form class="kran-stack" onsubmit={(event) => void reject(event, versionId)} novalidate>
+        <label class="kran-label" for={`reject-reason-${versionId}`}>
+          {m.products_reject_reason_label()}
+        </label>
+        <input
+          class="kran-input"
+          id={`reject-reason-${versionId}`}
+          bind:value={rejectReason}
+          maxlength={REJECT_REASON_MAX}
+        />
+        <div class="kran-actions">
+          <Button
+            variant="primary"
+            type="submit"
+            disabled={busyId === versionId || rejectReason.trim() === ""}
+          >
+            {busyId === versionId ? m.products_rejecting() : m.products_reject_submit()}
+          </Button>
+          <Button type="button" disabled={busyId === versionId} onclick={cancelConfirm}>
+            {m.products_cancel()}
+          </Button>
+        </div>
+      </form>
+    {:else}
+      <div class="kran-actions">
+        <Button
+          variant="primary"
+          type="button"
+          onclick={() => startConfirm(versionId, "approve")}
+        >
+          {m.products_approve()}
+        </Button>
+        <Button type="button" onclick={() => startConfirm(versionId, "reject")}>
+          {m.products_reject()}
+        </Button>
+      </div>
+    {/if}
+  {/snippet}
+
+  {#if canApprove}
+    <section class="kran-section" aria-labelledby="products-drafts-heading">
+      <h2 class="kran-section__title" id="products-drafts-heading">
+        {m.products_drafts_heading()}
+      </h2>
+      {#if drafts.length === 0}
+        <EmptyState title={m.products_drafts_empty()} />
+      {:else}
+        <DataTable
+          caption={m.products_drafts_caption()}
+          ariaLabel={m.common_table_region({ name: m.products_drafts_heading() })}
+          captionHidden
+          columns={draftColumns}
+          rows={draftRows}
+          rowKey="versionId"
+          actions={{ label: m.products_col_action(), cell: draftActions }}
+        />
       {/if}
     </section>
   {/if}
 
-  <section class="kran-card" aria-labelledby="products-heading">
-    <h2 id="products-heading">{m.products_catalogue_heading()}</h2>
+  <section class="kran-section" aria-labelledby="products-heading">
+    <h2 class="kran-section__title" id="products-heading">{m.products_catalogue_heading()}</h2>
     {#if products.length === 0}
-      <p class="kran-muted">{m.products_empty()}</p>
+      <EmptyState title={m.products_empty()} />
     {:else}
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div class="kran-table-wrap" role="region" tabindex="0" aria-label={m.common_table_region({ name: m.products_catalogue_heading() })}>
-        <table class="kran-table">
-          <caption class="kran-visually-hidden">{m.products_caption()}</caption>
-          <thead>
-            <tr>
-              <th scope="col">{m.products_col_code()}</th>
-              <th scope="col">{m.products_col_name()}</th>
-              <th scope="col">{m.products_col_type()}</th>
-              <th scope="col">{m.products_col_kind()}</th>
-              <th scope="col">{m.products_col_current_version()}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each products as item (item.productId)}
-              <tr>
-                <th scope="row">{item.code}</th>
-                <td>{item.name}</td>
-                <td>{productTypeLabel(item.productType)}</td>
-                <td>
-                  {#if item.savingsKind}
-                    {savingsKindLabel(item.savingsKind)}
-                  {:else}
-                    <span class="kran-muted">-</span>
-                  {/if}
-                </td>
-                <td>
-                  {#if item.currentVersion}
-                    <span class="kran-num">
-                      {m.products_version_label({ version: item.currentVersion.versionNo })}
-                    </span>
-                    <span class="kran-muted">
-                      {formatDate(item.currentVersion.effectiveFrom)}
-                    </span>
-                  {:else}
-                    <span class="kran-muted">{m.products_no_active_version()}</span>
-                  {/if}
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        caption={m.products_caption()}
+        ariaLabel={m.common_table_region({ name: m.products_catalogue_heading() })}
+        captionHidden
+        columns={productColumns}
+        rows={productRows}
+        rowKey="productId"
+      />
     {/if}
   </section>
 {/if}
-
-<style>
-  .products-head {
-    padding-block: var(--space-4);
-    padding-inline: var(--space-4);
-    border: 1px solid var(--color-hairline);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-raised);
-    margin-block-end: var(--space-4);
-  }
-
-  .products-title {
-    margin: 0;
-    font-size: var(--text-xl);
-    line-height: var(--line-height-tight);
-    font-weight: 600;
-  }
-
-  .products-intro {
-    margin: var(--space-1) 0 0;
-    max-inline-size: 52ch;
-    color: var(--color-text-muted);
-    font-size: var(--text-sm);
-  }
-
-  .products-actions {
-    min-inline-size: 16rem;
-  }
-
-  .products-buttons {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .products-hint {
-    margin: 0 0 var(--space-2);
-    color: var(--color-text-muted);
-    font-size: var(--text-sm);
-  }
-
-  .products-reject {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    min-inline-size: 14rem;
-  }
-</style>

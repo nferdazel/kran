@@ -3,7 +3,7 @@
 // `load` ini berjalan di browser dan cookie `HttpOnly` ikut terkirim (same-origin lewat proxy —
 // D-025).
 //
-// Satu tempat untuk dua aturan yang berlaku di semua rute kerja:
+// Dua aturan yang berlaku di semua rute kerja:
 //   1. tanpa sesi sah → `/login`;
 //   2. sesi yang masih wajib ganti kata sandi (admin pertama hasil `ctl bootstrap-admin`, T-027)
 //      → `/app/password`, kecuali memang sudah di sana. Server tetap menolak operasi lain
@@ -21,5 +21,13 @@ export const load = async ({ url }) => {
   if (data.mustChangePassword && url.pathname !== PASSWORD_PATH) {
     redirect(303, PASSWORD_PATH);
   }
-  return { session: data };
+
+  // Tanggal buku datang bersama sesi (O-116): dulu hanya peran dengan `dayclose.run.read` yang
+  // bisa mengambilnya lewat `/dayclose/status`, sehingga teller tidak melihat tanggal yang menjadi
+  // patokan sesi kasnya. Tiga keadaan dipertahankan apa adanya: `string` = tanggal nyata,
+  // `null` = institusi belum punya baris tanggal buku, `undefined` = pembacaan gagal (field
+  // dihilangkan server) sehingga shell tidak merendernya sama sekali.
+  const businessDate =
+    data.businessDate === undefined ? undefined : (data.businessDate?.date ?? null);
+  return { session: data, businessDate };
 };

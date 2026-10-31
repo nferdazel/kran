@@ -233,3 +233,60 @@ keberadaan baris `balance_snapshot` pada `ends_on`.
   vault dijurnal **eksplisit** di handler approval (D `101.1`/K akun sumber, event
   `TellerVaultTopUp`). Jurnal ditulis sinkron di transaksi yang sama dengan mutasi vault; gate EOD
   tetap menunggu `daycloser` (Fase 3).
+
+## Dipakai day-close (T-137)
+
+- `ledger.daily_snapshot` (EOD): menulis ulang `ledger.balance_snapshot` untuk tanggal buku dan
+  membuktikan cache sama dengan jurnal (`snapshotMatches`) **dalam satu transaksi**; bila tidak
+  cocok, rebuild di-rollback dan `accountDiff` (maks 20) masuk `daycloser.task.metrics` bersama
+  `snapshotHash`.
+- `ledger.period_close` (EOM, fase pasca-tutup): menutup periode yang **memuat tanggal buku dan
+  berakhir di bulan yang sama** lewat `closePeriodSystem` (audit `ledger.period.close` + event
+  `period.closed`, `closed_by`/`updated_by` NULL = proses sistem). Bergantung pada snapshot dan
+  ketiga gate pasca-tutup; sesi kas OPEN di rentang periode (`DAY-326`) atau periode sebelumnya
+  yang masih OPEN (`DAY-328`) menahan penutupan. Periode yang lebih panjang dari sebulan (tahunan)
+  dilaporkan `NOT_DUE`; tidak ada periode sama sekali = `DAY-324`.
+
+## Akrual bunga deposito (T-138b, D-152 + amendemen)
+
+Migrasi `0065_ledger_interest_accrual.sql` menambah akun dan dua rule yang dibutuhkan akrual
+bunga deposito berjangka:
+
+| Event | Jurnal | Kapan |
+|---|---|---|
+| `InterestAccrued` | **D 501 BEBAN BUNGA / K 204 BUNGA AKRUAL** | setiap EOD untuk bunga yang berjalan (task T-138c) |
+| `InterestPosted` | **D 204 BUNGA AKRUAL / K 201 SIMPANAN ANGGOTA** | saat bunga benar-benar masuk rekening |
+
+- `204`, **bukan** `203`: `203 TITIPAN PENGURUS` sudah dipakai sejak `0036`, dan `ON CONFLICT (code)
+  DO NOTHING` akan membuat kesalahan itu tidak bersuara.
+- Pokok deposito masuk `202 SIMPANAN BERJANGKA` lewat rule **berkondisi** `accountType =
+  TIME_DEPOSIT` (`0067`): `DepositPosted` → D 101.2 / K 202 dan `DepositWithdrawn` → D 202 / K 101.2.
+  Rule generik `0005`/`0012` tetap untuk tabungan; `specificityOf` memilih yang berkondisi karena
+  kondisi menambah kekhususan, dan `postJournalSync` sudah mengirim `accountType` di payload.
+  Penarikan sebelum jatuh tempo belum punya penalti — keputusan produk terbuka (O-108).
+- Jatuh tempo deposito berjangka (`ledger/0069`, T-138d/D-155) menambah dua rule generik:
+
+  | Event | Jurnal | Kapan |
+  |---|---|---|
+  | `DepositMatured` | **D 202 SIMPANAN BERJANGKA / K 201 SIMPANAN ANGGOTA** | ARO `NONE`: pokok pindah ke rekening simpanan anggota |
+  | `InterestCapitalized` | **D 204 BUNGA AKRUAL / K 202 SIMPANAN BERJANGKA** | ARO `PRINCIPAL_AND_INTEREST`: bunga menjadi pokok |
+
+  Bunga yang dibayar ke rekening simpanan memakai `InterestPosted` yang sudah ada (`0065`) — tidak
+  diduplikasi, karena dua rule untuk event yang sama akan membuat `selectRule` ambigu. Pokok yang
+  diperpanjang (ARO `PRINCIPAL`) dan bunga nol tidak dijurnal: saldo tidak berubah dan ledger menolak
+  jurnal nol.
+- `NEEDS-COMPLIANCE-REVIEW`: penomoran akun (`201`/`202`/`204`) dan penempatan beban di `501` adalah
+  struktur pilot, bukan kutipan SAK/PSAK (REG-011 `V!`).
+- Angka akrual (rate, basis hari, skala pembulatan) tetap **parameter produk** (`product.savings.*`,
+  D-137/O-084), tidak pernah nilai di kode atau di migrasi.
+
+## Provenance jurnal penutupan (T-140, D-158)
+
+`ledger.journal.daycloser_run_id` (nullable, `ledger/0072`) menandai jurnal yang **dibuat task
+penutupan buku**; jurnal jalur bisnis membiarkannya `NULL`. Gate `ledger.no_late_postings`
+(`DAY-310`) mengabaikan jurnal ber-penanda, karena akrual dan perpindahan jatuh tempo memang
+merekam jurnal setelah freeze.
+
+Aturan untuk task penutupan baru: teruskan `ctx.runId` ke `postRuleJournalSync`/
+`postJournalSync`. Parameter itu opsional supaya pemanggil bisnis tidak perlu berubah, jadi
+kelalaian tidak gagal-kompilasi — pastikan lewat test task-nya.

@@ -129,6 +129,34 @@ proc openSessionCount*(db: DbConn, startsOn, endsOn: string): int64 =
      WHERE s.status = 'OPEN'
        AND s.business_date BETWEEN ?::date AND ?::date""", startsOn, endsOn).parseBiggestInt
 
+type
+  SessionGate* = object
+    ## Rekap sesi yang menghalangi penutupan (spec §11.5 #2): masih `OPEN`, atau sudah `CLOSED`
+    ## dengan kas tidak seimbang. `problemIds` dibatasi supaya bukti tidak membengkak.
+    openSessions*: int64
+    unbalanced*: int64
+    problemIds*: seq[string]
+
+proc sessionGate*(db: DbConn, upToDate: string; idLimit = 20): SessionGate =
+  ## `upToDate` inklusif: sesi yang masih terbuka dari hari sebelumnya juga menghalangi penutupan
+  ## hari ini — justru itu keadaan yang paling perlu dilihat.
+  let counts = db.getAllRows(sql"""
+    SELECT count(*) FILTER (WHERE status = 'OPEN')::text,
+           count(*) FILTER (WHERE status = 'CLOSED' AND variance <> 0)::text
+      FROM teller.teller_session
+     WHERE business_date <= ?::date""", upToDate)
+  if counts.len > 0:
+    result.openSessions = parseBiggestInt(counts[0][0]).int64
+    result.unbalanced = parseBiggestInt(counts[0][1]).int64
+  for row in db.getAllRows(sql"""
+      SELECT session_id::text
+        FROM teller.teller_session
+       WHERE business_date <= ?::date
+         AND (status = 'OPEN' OR (status = 'CLOSED' AND variance <> 0))
+       ORDER BY business_date, session_id
+       LIMIT ?""", upToDate, idLimit):
+    result.problemIds.add row[0]
+
 proc sessionById*(db: DbConn, sessionId: Id): Option[TellerSession] =
   let rows = db.getAllRows(
     sql("SELECT " & sessionColumns & " FROM teller.teller_session WHERE session_id = ?"), $sessionId)
@@ -224,3 +252,48 @@ proc movementsOf*(db: DbConn, sessionId: Id): seq[CashMovement] =
       businessDate: row[5],
       occurredAt: row[6],
       createdBy: row[7])
+
+type
+  SessionTransaction* = object
+    ## Satu baris arus kas laci sesi (T-147). Nominalnya **kas yang bergerak**, bukan selalu nominal
+    ## rekening: pencairan dini deposito menyerahkan `pokok + bunga − penalti` (D-164). Karena itu
+    ## yang dibaca `cash_movement.amount`, bukan `deposit.transaction.amount`.
+    transactionId*: Id
+    journalId*: Id
+    accountId*: Id
+    accountNo*: string
+    direction*: CashMovementType ## `cmCashIn` = uang masuk laci
+    amount*: Money
+    occurredAt*: string ## ISO-8601 UTC
+    narration*: string ## "" = tidak diisi
+
+proc sessionTransactionCount*(db: DbConn; sessionId: Id): int64 =
+  ## Jumlah baris arus kas sesi; dipakai untuk `total` di respons terpaginasi.
+  int64(parseBiggestInt(db.getValue(sql"""
+    SELECT count(*)::text FROM teller.cash_movement WHERE session_id = ?""", $sessionId)))
+
+proc sessionTransactions*(db: DbConn; sessionId: Id; limit, offset: int):
+    seq[SessionTransaction] =
+  ## Arus kas sesi, **terbaru dulu**. Join ke `deposit.transaction`/`deposit.account` hanya untuk
+  ## nomor rekening dan keterangan; jumlah uang tetap `cash_movement`. Diizinkan di lapisan
+  ## infrastructure (archcheck), dan modul `teller` memang sudah mem-FK `deposit.transaction`.
+  for row in db.getAllRows(sql"""
+      SELECT m.transaction_id, t.journal_id, t.account_id, a.account_no, m.movement_type,
+             m.amount::text,
+             to_char(m.occurred_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+             coalesce(t.narration, '')
+        FROM teller.cash_movement m
+        JOIN deposit.transaction t ON t.transaction_id = m.transaction_id
+        JOIN deposit.account a ON a.account_id = t.account_id
+       WHERE m.session_id = ?
+       ORDER BY m.occurred_at DESC, m.movement_id DESC
+       LIMIT ?::int OFFSET ?::int""", $sessionId, $limit, $offset):
+    result.add SessionTransaction(
+      transactionId: Id(row[0]),
+      journalId: Id(row[1]),
+      accountId: Id(row[2]),
+      accountNo: row[3],
+      direction: parseCashMovementType(row[4]),
+      amount: moneyRequired(row[5]),
+      occurredAt: row[6],
+      narration: row[7])

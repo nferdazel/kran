@@ -5,9 +5,18 @@
    * Arah visual: tabel adalah bintang layar, bukan kartu. Satu bidang kerja per layar; kontrol
    * periode menempel di kanan judul, bukan panel terpisah. Angka memakai `formatMoney` (tanpa
    * float) dan `tabular-nums`; simbol mata uang hanya di judul kolom (DESIGN §6).
+   *
+   * Di luar dua aturan layar-saja (cincin sel aktif, kolom kode sticky), aturan visual milik
+   * `packages/ui`: berkas ini tidak menulis ulang tipografi judul, tabel, kontrol, atau tombol.
    */
   import { goto } from "$app/navigation";
+  import { resolve } from "$app/paths";
   import { onMount } from "svelte";
+
+  import Alert from "@kran/ui/components/Alert.svelte";
+  import Button from "@kran/ui/components/Button.svelte";
+  import EmptyState from "@kran/ui/components/EmptyState.svelte";
+  import StatusBadge from "@kran/ui/components/StatusBadge.svelte";
 
   import * as m from "#lib/paraglide/messages.js";
   import { addMoney } from "@kran/ui/money";
@@ -96,7 +105,7 @@
       params: { query: { periodId } },
     });
     if (response.status === 401) {
-      await goto("/login");
+      await goto(resolve("/login"));
       return;
     }
     if (!response.ok || !body) {
@@ -112,7 +121,7 @@
   async function loadPeriods(): Promise<void> {
     const { data: body, response } = await api.GET("/api/v1/ledger/periods");
     if (response.status === 401) {
-      await goto("/login");
+      await goto(resolve("/login"));
       return;
     }
     if (!response.ok || !body) {
@@ -226,109 +235,87 @@
   <title>{m.common_app_title()} — {m.ledger_title()}</title>
 </svelte:head>
 
-<div class="ledger-head">
+<div class="kran-page-header">
   <div>
-    <h1 class="ledger-title">{m.ledger_title()}</h1>
-    <p class="ledger-intro">{m.ledger_intro()}</p>
+    <h1 class="kran-page-header__title">{m.ledger_title()}</h1>
+    <p class="kran-page-header__intro">{m.ledger_intro()}</p>
     {#if balances}
-      <p class="ledger-meta">
-        <span>{formatDate(balances.startsOn)} – {formatDate(balances.endsOn)}</span>
+      <!-- Periode, status, dan sumber saldo: satu baris meta di bawah judul, bukan panel sendiri. -->
+      <div class="kran-actions">
+        <span class="kran-muted">{formatDate(balances.startsOn)} – {formatDate(balances.endsOn)}</span>
         {#if selectedPeriod}
-          <span class="ledger-sep" aria-hidden="true">·</span>
-          <span class="kran-status {selectedPeriod.status === "OPEN" ? "kran-status--ok" : ""}">
-            <span class="kran-status__icon" aria-hidden="true"
-              >{selectedPeriod.status === "OPEN" ? "○" : "✔"}</span
-            >
-            {selectedPeriod.status === "OPEN"
-              ? m.ledger_status_open()
-              : m.ledger_status_closed()}
-          </span>
+          <StatusBadge tone={selectedPeriod.status === "OPEN" ? "positive" : "neutral"}>
+            {selectedPeriod.status === "OPEN" ? m.ledger_status_open() : m.ledger_status_closed()}
+          </StatusBadge>
         {/if}
-        <span class="ledger-sep" aria-hidden="true">·</span>
-        <span>
+        <span class="kran-muted">
           {balances.source === "snapshot"
             ? m.ledger_source_snapshot()
             : m.ledger_source_ledger()}
         </span>
-        <span class="ledger-sep" aria-hidden="true">·</span>
-        <span>{m.ledger_computed({ time: formatDateTime(balances.computedAt) })}</span>
-      </p>
+        <span class="kran-muted">{m.ledger_computed({ time: formatDateTime(balances.computedAt) })}</span>
+      </div>
     {/if}
   </div>
 
-  <div class="ledger-controls">
-    <div class="ledger-field">
-      <label class="kran-label" for="ledger-period">{m.ledger_period_label()}</label>
-      <select
-        class="kran-select"
-        id="ledger-period"
-        bind:value={selectedId}
-        onchange={onPeriodChange}
-        disabled={periods.length === 0}
-      >
-        {#each periods as period (period.periodId)}
-          <option value={period.periodId}>
-            {formatDate(period.startsOn)} – {formatDate(period.endsOn)}
-          </option>
-        {/each}
-      </select>
+  <!-- Kontrol periode menempel di judul (DESIGN §11). `.kran-toolbar` juga yang menyembunyikan
+       kontrol ini saat dicetak lewat aturan cetak bersama. -->
+  <div class="kran-toolbar">
+    <div class="kran-actions">
+      <div class="kran-field">
+        <label class="kran-label" for="ledger-period">{m.ledger_period_label()}</label>
+        <select
+          class="kran-select"
+          id="ledger-period"
+          bind:value={selectedId}
+          onchange={onPeriodChange}
+          disabled={periods.length === 0}
+        >
+          {#each periods as period (period.periodId)}
+            <option value={period.periodId}>
+              {formatDate(period.startsOn)} – {formatDate(period.endsOn)}
+            </option>
+          {/each}
+        </select>
+      </div>
+      <Button type="button" onclick={reload} disabled={loading}>{m.ledger_reload()}</Button>
+      <Button type="button" onclick={printPage} disabled={!balances}>{m.ledger_print()}</Button>
     </div>
-    <button class="kran-button" type="button" onclick={reload} disabled={loading}>
-      {m.ledger_reload()}
-    </button>
-    <button class="kran-button" type="button" onclick={printPage} disabled={!balances}>
-      {m.ledger_print()}
-    </button>
   </div>
 </div>
 
 {#if !canRead}
-  <p class="kran-alert" role="alert">{m.ledger_denied()}</p>
+  <Alert tone="negative" title={m.ledger_denied()} />
 {:else if loading}
   <p role="status">{m.ledger_loading()}</p>
 {:else if errorMessage}
-  <p class="kran-alert" role="alert">{errorMessage}</p>
-  <p><button class="kran-button" type="button" onclick={reload}>{m.app_retry()}</button></p>
+  <Alert tone="negative" title={errorMessage}>
+    <Button type="button" onclick={reload}>{m.app_retry()}</Button>
+  </Alert>
 {:else if periods.length === 0}
-  <p>{m.ledger_no_period()}</p>
+  <EmptyState title={m.ledger_no_period()} />
 {:else if balances && balances.lines.length === 0}
-  <div class="ledger-empty">
-    <p>{m.ledger_empty()}</p>
-    <p class="kran-muted">{m.ledger_empty_hint()}</p>
-  </div>
+  <EmptyState title={m.ledger_empty()} description={m.ledger_empty_hint()} />
 {:else if balances}
-  <!-- Ringkasan metrik buku besar: memudahkan auditor & operator melihat total mutasi dan keseimbangan buku besar seketika -->
-  <div class="kran-metric-strip">
-    <div class="kran-metric-card">
-      <span class="kran-metric-card__label">{m.ledger_group_movement()} {m.ledger_debit()} (IDR)</span>
-      <span class="kran-metric-card__value kran-money">{formatMoney(totals.periodDebit)}</span>
-      <span class="kran-metric-card__sub">{m.ledger_metric_debit_sub()}</span>
-    </div>
+  <!-- Ringkasan buku besar: tiga fakta yang dibaca auditor dalam satu pandangan. Daftar fakta,
+       bukan strip kartu metrik (DESIGN §11/§13). -->
+  <dl class="kran-facts">
+    <dt>{m.ledger_group_movement()} {m.ledger_debit()} (IDR)</dt>
+    <dd class="kran-num">{formatMoney(totals.periodDebit)}</dd>
 
-    <div class="kran-metric-card">
-      <span class="kran-metric-card__label">{m.ledger_group_movement()} {m.ledger_credit()} (IDR)</span>
-      <span class="kran-metric-card__value kran-money">{formatMoney(totals.periodCredit)}</span>
-      <span class="kran-metric-card__sub">{m.ledger_metric_credit_sub()}</span>
-    </div>
+    <dt>{m.ledger_group_movement()} {m.ledger_credit()} (IDR)</dt>
+    <dd class="kran-num">{formatMoney(totals.periodCredit)}</dd>
 
-    <div class="kran-metric-card">
-      <span class="kran-metric-card__label">{m.ledger_group_closing()} (IDR)</span>
-      <span class="kran-metric-card__value kran-money">{formatMoney(totals.closingDebit)}</span>
-      <div class="kran-metric-card__sub">
-        {#if totals.periodDebit === totals.periodCredit}
-          <span class="kran-badge kran-badge--ok">
-            <span aria-hidden="true">✔</span>
-            <span>{m.ledger_balanced()}</span>
-          </span>
-        {:else}
-          <span class="kran-badge kran-badge--warning">
-            <span aria-hidden="true">▲</span>
-            <span>{m.ledger_unbalanced()}</span>
-          </span>
-        {/if}
-      </div>
-    </div>
-  </div>
+    <dt>{m.ledger_group_closing()} (IDR)</dt>
+    <dd>
+      <span class="kran-num">{formatMoney(totals.closingDebit)}</span>
+      {#if totals.periodDebit === totals.periodCredit}
+        <StatusBadge tone="positive">{m.ledger_balanced()}</StatusBadge>
+      {:else}
+        <StatusBadge tone="warning">{m.ledger_unbalanced()}</StatusBadge>
+      {/if}
+    </dd>
+  </dl>
 
   <!-- Filter Kategori Akun COA -->
   <div class="kran-filter-bar">
@@ -339,7 +326,7 @@
       onclick={() => (activeCategory = "ALL")}
     >
       <span>{m.ledger_filter_all()}</span>
-      <span class="kran-badge">{balances.lines.length}</span>
+      <StatusBadge tone="neutral">{balances.lines.length}</StatusBadge>
     </button>
     <button
       class="kran-filter-button"
@@ -410,12 +397,12 @@
           <th scope="colgroup" colspan="2">{m.ledger_group_closing()} (IDR)</th>
         </tr>
         <tr>
-          <th scope="col" class="ledger-num">{m.ledger_debit()}</th>
-          <th scope="col" class="ledger-num">{m.ledger_credit()}</th>
-          <th scope="col" class="ledger-num">{m.ledger_debit()}</th>
-          <th scope="col" class="ledger-num">{m.ledger_credit()}</th>
-          <th scope="col" class="ledger-num">{m.ledger_debit()}</th>
-          <th scope="col" class="ledger-num">{m.ledger_credit()}</th>
+          <th scope="col" class="kran-num">{m.ledger_debit()}</th>
+          <th scope="col" class="kran-num">{m.ledger_credit()}</th>
+          <th scope="col" class="kran-num">{m.ledger_debit()}</th>
+          <th scope="col" class="kran-num">{m.ledger_credit()}</th>
+          <th scope="col" class="kran-num">{m.ledger_debit()}</th>
+          <th scope="col" class="kran-num">{m.ledger_credit()}</th>
         </tr>
       </thead>
       <tbody>
@@ -435,37 +422,37 @@
             >
             <td
               id={ledgerCellId(rowIndex, 2)}
-              class="ledger-num kran-money"
+              class="kran-money"
               class:ledger-cell--active={rowActive && activeColumn === 2}
               >{formatMoney(line.openingDebit)}</td
             >
             <td
               id={ledgerCellId(rowIndex, 3)}
-              class="ledger-num kran-money"
+              class="kran-money"
               class:ledger-cell--active={rowActive && activeColumn === 3}
               >{formatMoney(line.openingCredit)}</td
             >
             <td
               id={ledgerCellId(rowIndex, 4)}
-              class="ledger-num kran-money"
+              class="kran-money"
               class:ledger-cell--active={rowActive && activeColumn === 4}
               >{formatMoney(line.periodDebit)}</td
             >
             <td
               id={ledgerCellId(rowIndex, 5)}
-              class="ledger-num kran-money"
+              class="kran-money"
               class:ledger-cell--active={rowActive && activeColumn === 5}
               >{formatMoney(line.periodCredit)}</td
             >
             <td
               id={ledgerCellId(rowIndex, 6)}
-              class="ledger-num kran-money"
+              class="kran-money"
               class:ledger-cell--active={rowActive && activeColumn === 6}
               >{formatMoney(line.closingDebit)}</td
             >
             <td
               id={ledgerCellId(rowIndex, 7)}
-              class="ledger-num kran-money"
+              class="kran-money"
               class:ledger-cell--active={rowActive && activeColumn === 7}
               >{formatMoney(line.closingCredit)}</td
             >
@@ -473,19 +460,19 @@
         {/each}
         {#if filteredLines.length === 0}
           <tr>
-            <td colspan="8" class="kran-muted ledger-empty">{m.ledger_filter_empty()}</td>
+            <td colspan="8" class="kran-muted">{m.ledger_filter_empty()}</td>
           </tr>
         {/if}
       </tbody>
       <tfoot>
         <tr>
           <th scope="row" colspan="2">{m.ledger_total()}</th>
-          <td class="ledger-num kran-money">{formatMoney(totals.openingDebit)}</td>
-          <td class="ledger-num kran-money">{formatMoney(totals.openingCredit)}</td>
-          <td class="ledger-num kran-money">{formatMoney(totals.periodDebit)}</td>
-          <td class="ledger-num kran-money">{formatMoney(totals.periodCredit)}</td>
-          <td class="ledger-num kran-money">{formatMoney(totals.closingDebit)}</td>
-          <td class="ledger-num kran-money">{formatMoney(totals.closingCredit)}</td>
+          <td class="kran-money">{formatMoney(totals.openingDebit)}</td>
+          <td class="kran-money">{formatMoney(totals.openingCredit)}</td>
+          <td class="kran-money">{formatMoney(totals.periodDebit)}</td>
+          <td class="kran-money">{formatMoney(totals.periodCredit)}</td>
+          <td class="kran-money">{formatMoney(totals.closingDebit)}</td>
+          <td class="kran-money">{formatMoney(totals.closingCredit)}</td>
         </tr>
       </tfoot>
     </table>
@@ -493,198 +480,22 @@
 {/if}
 
 <style>
-  .ledger-empty {
-    text-align: center;
-    padding-block: var(--space-5);
+  /* Layar-saja: cincin sel aktif pola `aria-activedescendant` dan kolom kode yang tetap
+   * terlihat saat region digulir mendatar (DESIGN §10); sisanya milik lapisan bersama. */
+  .ledger-account {
+    min-inline-size: 12rem;
   }
 
-  .ledger-head {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--space-4);
-    align-items: center;
-    padding-block: var(--space-4);
-    padding-inline: var(--space-4);
-    border: 1px solid var(--color-hairline);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-raised);
-    margin-block-end: var(--space-4);
-  }
-
-  .ledger-title {
-    margin: 0;
-    font-size: var(--text-xl);
-    line-height: var(--line-height-tight);
-    font-weight: 600;
-  }
-
-  .ledger-intro {
-    margin: var(--space-1) 0 0;
-    max-inline-size: 52ch;
-    color: var(--color-text-muted);
-    font-size: var(--text-sm);
-  }
-
-  .ledger-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    align-items: center;
-    margin: var(--space-2) 0 0;
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-  }
-
-  .ledger-sep {
-    color: var(--color-hairline);
-  }
-
-  .ledger-controls {
-    min-inline-size: 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    align-items: end;
-    justify-content: end;
-    padding: var(--space-2);
-    border: 1px solid var(--color-hairline);
-    border-radius: var(--radius-sm);
-    background: var(--color-bg);
-  }
-
-  .ledger-field {
-    display: grid;
-    gap: var(--space-1);
-    min-inline-size: 0;
-  }
-
-  .ledger-field select {
-    min-inline-size: 16rem;
-    max-inline-size: 100%;
-  }
-
-  .ledger-region {
-    max-inline-size: 100%;
-    border: 1px solid var(--color-hairline);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface);
-  }
-
-  .ledger-table thead tr:first-child th {
-    block-size: var(--row-height);
-    border-block-end: 1px solid var(--color-hairline);
-    color: var(--color-text);
-    font-weight: 500;
-    text-align: start;
-  }
-
-  .ledger-table thead tr:first-child th[colspan] {
-    text-align: start;
-  }
-
-  .ledger-num {
-    text-align: end;
-  }
-
-  .ledger-table .ledger-num {
-    text-align: end;
-  }
-
-  .ledger-table th,
-  .ledger-table td {
-    padding-inline: var(--space-2);
-    font-size: var(--text-sm);
-  }
-
-  .ledger-table th:first-child,
-  .ledger-table td:first-child {
-    padding-inline-start: var(--space-3);
-  }
-
-  .ledger-code {
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
-  /* Sel aktif pola `aria-activedescendant` (DESIGN §10). Hanya ditampilkan saat grid difokus, dan
-   * cincin digambar di dalam sel (`outline-offset: -2px`) supaya tidak terpotong `overflow-x`. */
   .ledger-table:focus .ledger-cell--active {
     outline: 2px solid var(--color-focus-ring);
     outline-offset: -2px;
   }
-
-  /* Kolom kode akun tetap terlihat saat tabel digulir mendatar (DESIGN §10). Latar memakai
-   * warna surface yang sama dengan region supaya angka yang lewat di bawahnya tidak tembus,
-   * dan garis rambut baris tetap utuh, tanpa garis vertikal baru (DESIGN §6).
-   * `position: sticky` tidak berefek saat tabel muat penuh, jadi layar lebar tidak berubah.
-   * Dibatasi `screen`: perilaku cetak tidak disentuh selama ADR-013 belum diputuskan. */
   @media screen {
-    /* Footer sengaja tidak ikut: sel pertamanya `colspan="2"` (label Total), jadi memakunya
-     * selebar kolom kode membuat tepi sticky footer tidak sejajar dengan body. Footer sudah
-     * sticky bawah lewat components.css. */
     .ledger-table thead tr:first-child th:first-child,
     .ledger-table tbody th:first-child {
       position: sticky;
       inset-inline-start: 0;
       background: var(--color-surface);
-    }
-
-    .ledger-table thead tr:first-child th:first-child {
-      z-index: 2;
-    }
-
-    .ledger-table tbody th:first-child {
-      z-index: 1;
-    }
-  }
-
-  .ledger-account {
-    min-inline-size: 12rem;
-    max-inline-size: 18rem;
-  }
-
-  .ledger-table .kran-money {
-    font-size: var(--text-sm);
-    padding-inline-end: var(--space-2);
-  }
-
-  .ledger-empty {
-    padding-block: var(--space-6);
-    border-block: 1px solid var(--color-hairline);
-  }
-
-  .ledger-empty p {
-    margin: 0;
-  }
-
-  .ledger-empty p + p {
-    margin-block-start: var(--space-1);
-  }
-
-  @media (max-width: 1100px) {
-    .ledger-head {
-      grid-template-columns: minmax(0, 1fr);
-    }
-
-    .ledger-controls {
-      justify-content: start;
-    }
-
-    .ledger-field select {
-      min-inline-size: 0;
-    }
-  }
-
-  @media print {
-    .ledger-controls,
-    .ledger-intro {
-      display: none;
-    }
-
-    .ledger-region {
-      border: 0;
     }
   }
 </style>

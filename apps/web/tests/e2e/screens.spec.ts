@@ -1,4 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
+
+import { blockingViolations } from "./axe.js";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { requireDatabase } from "./db.js";
 
@@ -144,12 +146,10 @@ for (const screen of SCREENS) {
         await prepare(page, locale, theme);
         await openScreen(page, screen.path, screen.text(locale).title);
         const results = await new AxeBuilder({ page }).analyze();
-        const serious = results.violations.filter(
-          (violation) => violation.impact === "serious" || violation.impact === "critical",
-        );
+        const blocking = blockingViolations(results.violations);
         expect(
-          serious,
-          `${screen.path} ${locale}/${theme}: ${serious.map((violation) => violation.id).join(", ")}`,
+          blocking,
+          `${screen.path} ${locale}/${theme}: ${blocking.map((violation) => violation.id).join(", ")}`,
         ).toEqual([]);
       }
     }

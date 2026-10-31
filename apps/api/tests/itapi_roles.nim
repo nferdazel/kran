@@ -21,7 +21,7 @@ import platform/domain/scope
 import platform/infrastructure/[audit_repo, auth_repo, auth_service, branch_repo,
   password_hasher, worker_repo]
 
-import ../src/[journal_ownership, main]
+import ../src/[daycloser_ctl, journal_ownership, main]
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
@@ -73,8 +73,34 @@ suite "kran-api: peran CLI (O-013)":
   test "outbox-status → 0":
     check runCtl("outbox-status", ".") == 0
 
-  test "ctl daycloser-status: dikenali, tapi belum ada di Fase 0 → 3":
-    check runCtl("daycloser-status", ".") == 3
+  test "ctl daycloser-status: kontrak gate deploy (0 idle, 1 ditahan)":
+    # Suite lain bisa meninggalkan baris business_date/run; gate hanya boleh menahan bila memang
+    # ada penutupan. Bersihkan keduanya supaya tiap skenario benar-benar menguji keadaannya.
+    const seedRun = """INSERT INTO daycloser.run
+      (run_id, scope_type, business_date, levels, state, param_snapshot,
+       param_snapshot_hash, started_at)
+      VALUES ('01900000-0000-7000-8000-000000000001', 'INSTITUTION', DATE '2026-10-30',
+              '{EOD}', 'PAUSED',
+              '{"chunkSize":1000,"maxAttempts":3,"retryBackoffSeconds":5}'::jsonb,
+              encode(digest('{"chunkSize":1000,"maxAttempts":3,"retryBackoffSeconds":5}',
+                            'sha256'), 'hex'),
+              now())"""
+    execScript(db, "TRUNCATE daycloser.run CASCADE")
+    execScript(db, "DELETE FROM platform.business_date")
+    check runDayCloserCtl(dayCloserStatusCmd, "", "") == 0
+
+    # Run yang belum selesai menahan deploy.
+    execScript(db, seedRun)
+    check runDayCloserCtl(dayCloserStatusCmd, "", "") == 1
+    execScript(db, "TRUNCATE daycloser.run CASCADE")
+
+    # Business date CLOSING tanpa run aktif juga menahan (sisa penutupan yang belum rollover).
+    execScript(db, """INSERT INTO platform.business_date
+      (scope_type, scope_id, current_business_date, state)
+      VALUES ('INSTITUTION', NULL, DATE '2026-10-30', 'CLOSING')""")
+    check runDayCloserCtl(dayCloserStatusCmd, "", "") == 1
+    execScript(db, "DELETE FROM platform.business_date")
+    check runDayCloserCtl(dayCloserStatusCmd, "", "") == 0
 
   test "ctl audit-anchor: kepala rantai ke berkas append (O-009)":
     let path = getTempDir() / ("kran-anchor-" & $newId(systemClock()) & ".txt")

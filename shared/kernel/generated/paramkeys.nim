@@ -8,6 +8,16 @@ import ../rate
 import std/json
 
 const paramKeys*: seq[string] = @[
+  "daycloser.auto.enabled",
+  "daycloser.auto.run_at",
+  "daycloser.auto.utc_offset_minutes",
+  "daycloser.chunk_size",
+  "daycloser.max_attempts",
+  "daycloser.postcheck.subledger_gl_accounts",
+  "daycloser.precheck.suspense_accounts",
+  "daycloser.retry_backoff_seconds",
+  "daycloser.txn_policy_during_close",
+  "deposit.dormant.after_months",
   "ledger.coa.code_pattern",
   "ledger.posting.batch_size",
   "ledger.posting.lease_seconds",
@@ -45,9 +55,11 @@ const paramKeys*: seq[string] = @[
   "platform.ui.shortcut.withdrawal",
   "product.savings.admin_fee",
   "product.savings.day_count_basis",
+  "product.savings.early_withdrawal_penalty",
   "product.savings.interest_posting",
   "product.savings.interest_rate",
   "product.savings.min_balance",
+  "product.savings.rollover_tenor_days",
   "product.savings.rounding_mode",
   "product.savings.rounding_scale",
   "teller.cash.limit_deposit",
@@ -56,6 +68,26 @@ const paramKeys*: seq[string] = @[
   "teller.vault.cash_account",
   "teller.vault.limit_topup_per_request",
 ]
+
+const P_daycloser_auto_enabled* = ParamKey[bool]("daycloser.auto.enabled")
+
+const P_daycloser_auto_run_at* = ParamKey[string]("daycloser.auto.run_at")
+
+const P_daycloser_auto_utc_offset_minutes* = ParamKey[int64]("daycloser.auto.utc_offset_minutes")
+
+const P_daycloser_chunk_size* = ParamKey[int64]("daycloser.chunk_size")
+
+const P_daycloser_max_attempts* = ParamKey[int64]("daycloser.max_attempts")
+
+const P_daycloser_postcheck_subledger_gl_accounts* = ParamKey[JsonNode]("daycloser.postcheck.subledger_gl_accounts")
+
+const P_daycloser_precheck_suspense_accounts* = ParamKey[JsonNode]("daycloser.precheck.suspense_accounts")
+
+const P_daycloser_retry_backoff_seconds* = ParamKey[int64]("daycloser.retry_backoff_seconds")
+
+const P_daycloser_txn_policy_during_close* = ParamKey[string]("daycloser.txn_policy_during_close")
+
+const P_deposit_dormant_after_months* = ParamKey[int64]("deposit.dormant.after_months")
 
 const P_ledger_coa_code_pattern* = ParamKey[string]("ledger.coa.code_pattern")
 
@@ -131,11 +163,15 @@ const P_product_savings_admin_fee* = ParamKey[Money]("product.savings.admin_fee"
 
 const P_product_savings_day_count_basis* = ParamKey[string]("product.savings.day_count_basis")
 
+const P_product_savings_early_withdrawal_penalty* = ParamKey[Rate]("product.savings.early_withdrawal_penalty")
+
 const P_product_savings_interest_posting* = ParamKey[string]("product.savings.interest_posting")
 
 const P_product_savings_interest_rate* = ParamKey[Rate]("product.savings.interest_rate")
 
 const P_product_savings_min_balance* = ParamKey[Money]("product.savings.min_balance")
+
+const P_product_savings_rollover_tenor_days* = ParamKey[int64]("product.savings.rollover_tenor_days")
 
 const P_product_savings_rounding_mode* = ParamKey[string]("product.savings.rounding_mode")
 
@@ -152,6 +188,116 @@ const P_teller_vault_cash_account* = ParamKey[string]("teller.vault.cash_account
 const P_teller_vault_limit_topup_per_request* = ParamKey[Money]("teller.vault.limit_topup_per_request")
 
 const paramDefinitions*: seq[ParamDefinition] = @[
+  ParamDefinition(
+    key: "daycloser.auto.enabled",
+    module: "daycloser",
+    valueType: pvtBool,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.auto.enabled",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "daycloser.auto.run_at",
+    module: "daycloser",
+    valueType: pvtString,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.auto.run_at",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "daycloser.auto.utc_offset_minutes",
+    module: "daycloser",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.auto.utc_offset_minutes",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "daycloser.chunk_size",
+    module: "daycloser",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.chunk_size",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "daycloser.max_attempts",
+    module: "daycloser",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.max_attempts",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "daycloser.postcheck.subledger_gl_accounts",
+    module: "daycloser",
+    valueType: pvtJson,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.postcheck.subledger_gl_accounts",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "daycloser.precheck.suspense_accounts",
+    module: "daycloser",
+    valueType: pvtJson,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.precheck.suspense_accounts",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "daycloser.retry_backoff_seconds",
+    module: "daycloser",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.retry_backoff_seconds",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "daycloser.txn_policy_during_close",
+    module: "daycloser",
+    valueType: pvtEnum,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.daycloser.txn_policy_during_close",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "deposit.dormant.after_months",
+    module: "deposit",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.deposit.dormant.after_months",
+    sinceVersion: "0.1.0",
+  ),
   ParamDefinition(
     key: "ledger.coa.code_pattern",
     module: "ledger",
@@ -560,6 +706,17 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(
+    key: "product.savings.early_withdrawal_penalty",
+    module: "product",
+    valueType: pvtRate,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.product.savings.early_withdrawal_penalty",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
     key: "product.savings.interest_posting",
     module: "product",
     valueType: pvtString,
@@ -590,6 +747,17 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.product.savings.min_balance",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "product.savings.rollover_tenor_days",
+    module: "product",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.product.savings.rollover_tenor_days",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(

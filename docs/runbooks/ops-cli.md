@@ -11,7 +11,11 @@ repo** (atau dengan `--root=<dir>` yang menunjuk ke sana), karena migrasi dibaca
 | `migrate` | `kran-api --role=migrate --check` | **0** bersih, **1** ada migrasi tertunda atau isi migrasi berubah (drift) |
 | `ctl` | `kran-api --role=ctl verify-audit` | **0** rantai audit utuh, **1** ada entri tidak utuh |
 | `ctl` | `kran-api --role=ctl outbox-status` | **0** (hanya mencetak jumlah per status) |
-| `ctl` | `kran-api --role=ctl daycloser-status` | **3** belum ada di Fase 0 (dipakai freeze gate deploy) |
+| `ctl` | `kran-api --role=ctl daycloser-status` | **0** tidak ada penutupan berjalan, **1** ada run aktif atau business date `CLOSING` (gate deploy menahan), **2** DB/konfigurasi tidak terbaca (juga menahan) |
+| `ctl` | `kran-api --role=ctl daycloser-run --business-date=<YYYY-MM-DD> [--bootstrap]` | **0** run `COMPLETED` (tanggal buku maju), **1** run `FAILED`/`BLOCKED`, **3** ditolak (bukan hari kerja, bukan tanggal buku berjalan, run sudah ada, belum ada tanggal buku tanpa `--bootstrap`), **2** argumen/parameter salah |
+| `ctl` | `kran-api --role=ctl daycloser-resume --run=<uuid>` | **0** run selesai `COMPLETED`, **1** masih gagal, **3** run sudah berakhir atau lock dipegang proses lain, **2** argumen kurang |
+| `ctl` | `kran-api --role=ctl daycloser-pause --run=<uuid>` | **0** permintaan dicatat (dibaca di batas chunk), **3** run sudah berakhir, **2** tanpa `--run` |
+| `ctl` | `kran-api --role=ctl daycloser-cancel --run=<uuid>` | **0** run dibatalkan (langsung bila tidak ada proses hidup; tanggal buku yang dibekukan dibuka kembali), **3** run sudah berakhir, **2** tanpa `--run` |
 | `ctl` | `kran-api --role=ctl bootstrap-admin --username=<nama>` | **0** admin dibuat, **3** sudah ada pemegang role admin, **2** tanpa `--username` |
 | `ctl` | `kran-api --role=ctl reset-password --username=<nama>` | **0** kata sandi baru dicetak sekali, **1** gagal menulis/acak, **2** tanpa `--username`, **3** pengguna tidak ada |
 | `ctl` | `kran-api --role=ctl audit-anchor [--out=<berkas>]` | **0** baris anchor dicetak (dan ditambahkan ke berkas), **1** gagal menulis, **2** tanpa DB |
@@ -29,17 +33,18 @@ repo** (atau dengan `--root=<dir>` yang menunjuk ke sana), karena migrasi dibaca
 | — | argumen salah / perintah tidak dikenal | **2** (bantuan ditulis ke stderr) |
 
 Kode `2` = salah pakai atau konfigurasi (`KRAN_DATABASE_URL` kosong), `1` = perintah berjalan tapi
-hasilnya buruk (mis. rantai audit tidak utuh), `3` = dikenali tetapi **sengaja ditolak pada keadaan
-itu** — belum diimplementasikan (`daycloser-status`), atau penjagaan yang menolak (mis.
-`--contract` saat expand masih tertunda, `--down` tanpa berkas pasangan). Skrip ops membedakan
-ketiganya, jadi jangan "merapikan" kode keluar tanpa memperbarui skrip.
+hasilnya buruk (mis. rantai audit tidak utuh, run day-close gagal), `3` = dikenali tetapi **sengaja
+ditolak pada keadaan itu** (mis. bukan hari kerja, run lain masih berjalan, `--contract` saat expand
+masih tertunda, `--down` tanpa berkas pasangan). Skrip ops membedakan ketiganya, jadi jangan
+"merapikan" kode keluar tanpa memperbarui skrip.
 
 ## Yang dipakai skrip ops
 
 - `ops/scripts/deploy-vps.sh`: `--role=migrate --check` (gate expand-only), lalu `--role=migrate --up`;
-  freeze gate memanggil `--role=ctl daycloser-status` dan hanya bereaksi pada `RUNNING|CLOSING`
-  (Fase 0: kode 3, tidak ada day-close → tidak memblokir deploy; jalur memblokir `RUNNING|CLOSING`
-  belum bisa dibuktikan karena framework daycloser belum ada).
+  freeze gate memanggil `--role=ctl daycloser-status` dan bereaksi pada **kode keluar bukan 0**
+  (T-134/D-148). Teks status tidak lagi dipakai untuk keputusan; keluaran tetap memuat `RUNNING`/
+  `CLOSING` supaya skrip lama yang masih terpasang juga benar. Biner yang belum mengenal perintah
+  keluar 3 → menahan deploy (fail-closed).
 - `ops/scripts/migrate.sh`: `--check`/`--up` diteruskan apa adanya; `--contract` dan `--down N` juga
   diteruskan, tetapi wajib `--yes` (dan `--down` wajib N) — penolakan argumen terjadi di skrip (kode 2),
   penolakan keadaan terjadi di biner (kode 3). Prosedurnya: `docs/runbooks/migrasi.md` (D-040).
@@ -51,7 +56,8 @@ ketiganya, jadi jangan "merapikan" kode keluar tanpa memperbarui skrip.
 
 - Peran `ctl` mayoritas **read-only**; perintah yang menulis data: `bootstrap-admin`,
   `reset-password`, `create-user`, `assign-role`, `revoke-role`, `disable-user`, `enable-user`,
-  `unlock-user`, `create-branch`, dan `post-opening-balance` (`audit-anchor` hanya menambah berkas).
+  `unlock-user`, `create-branch`, `post-opening-balance`, dan `daycloser-run|resume|pause|cancel`
+  (`audit-anchor` hanya menambah berkas).
   Semuanya menulis audit; tidak ada yang memakai `--yes` karena bukan rollback skema — pemulihan
   akses/lifecycle harus bisa dijalankan saat insiden. Skrip otomatis memanggil perintah read-only
   di peran ini tanpa pengawasan, jadi jangan menambah perintah tulis di luar daftar itu (re-drive

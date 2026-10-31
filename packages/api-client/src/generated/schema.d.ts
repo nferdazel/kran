@@ -1090,6 +1090,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/teller/sessions/{sessionId}/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Arus kas satu sesi kas teller
+         * @description Baris `teller.cash_movement` sesi, **terbaru dulu**, untuk daftar transaksi di layar kas
+         *     (DESIGN §11: stasiun kerja, isi sesi terlihat tanpa berpindah halaman). `amount` adalah kas
+         *     yang bergerak di laci, bukan nominal rekening: pencairan dini deposito menyerahkan
+         *     `pokok + bunga − penalti` (D-164), sehingga kolom rekening di statement bisa berbeda.
+         *
+         *     `direction` relatif laci: `IN` = uang masuk (`CASH_IN`), `OUT` = uang keluar (`CASH_OUT`).
+         *     Pemindahbukuan antar rekening **tidak** muncul di sini karena tidak menyentuh laci.
+         *
+         *     Izin `teller.session.read` harus dipegang di cabang sesi. Sesi tidak dikenal → 404
+         *     (`params.reason=session_not_found`); cabang lain → 403. Paginasi `limit` 1..100 (default 50)
+         *     dan `offset` ≥ 0; `total` adalah jumlah seluruh baris sesi, bukan jumlah di halaman ini.
+         */
+        get: operations["listTellerSessionTransactions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/teller/vault": {
         parameters: {
             query?: never;
@@ -1237,10 +1267,13 @@ export interface paths {
          *     `params.reason`: `no_open_session` (tidak ada sesi kas `OPEN` untuk teller di cabang rekening),
          *     `session_business_date_mismatch` (sesi `OPEN` ada tetapi untuk tanggal bisnis lain; tutup
          *     sesi itu dulu), `cash_limit_exceeded` (nominal melebihi parameter
-         *     `teller.cash.limit_deposit`/`teller.cash.limit_withdrawal`), `account_not_active`,
-         *     `insufficient_funds`, `period_closed`,
+         *     `teller.cash.limit_deposit`/`teller.cash.limit_withdrawal`), `account_not_active`
+         *     (rekening `CLOSED`, atau penarikan dari rekening `DORMANT` — setoran ke rekening
+         *     `DORMANT` tetap diterima, D-157), `insufficient_funds`, `period_closed`,
          *     `savings_kind_locked` (penarikan dari rekening bersimpanan pokok/wajib belum didukung;
-         *     saldo & jurnal tidak berubah).
+         *     saldo & jurnal tidak berubah), `time_deposit_locked` (penarikan dari deposito berjangka
+         *     sebelum jatuh tempo belum didukung: pokok yang berkurang membuat akrual `DAY-335` tidak
+         *     punya jalur koreksi; `HUMAN-REVIEW-REQUIRED`).
          *
          *     Rekening bersimpanan pokok/wajib (`savingsKind` POKOK/WAJIB) memakai akun ekuitas terpisah
          *     (`301.1`/`301.2`, **provisional**, `NEEDS-COMPLIANCE-REVIEW`) untuk setoran; rekening lain
@@ -1309,7 +1342,10 @@ export interface paths {
          *     (`params.reason=branch_not_allowed` bila hanya di cabang lain). Konflik domain 409 memakai
          *     `params.reason`: `account_not_active`, `insufficient_funds`, `period_closed`,
          *     `savings_kind_locked` (PB yang menyentuh rekening bersimpanan pokok/wajib, di sisi mana pun, belum didukung),
-         *     `transfer_kind_mismatch` (jenis simpanan sumber dan tujuan berbeda). Saat 409 saldo & jurnal
+         *     `transfer_kind_mismatch` (jenis simpanan sumber dan tujuan berbeda),
+         *     `time_deposit_locked` (PB yang menyentuh rekening deposito berjangka di sisi mana pun belum
+         *     didukung: rule `DepositTransferred` belum memisahkan pokok berjangka ke akun `202`;
+         *     `HUMAN-REVIEW-REQUIRED`). Saat 409 saldo & jurnal
          *     tidak berubah.
          *
          *     **HUMAN-REVIEW-REQUIRED** (jalur finansial, AGENTS.md §8).
@@ -1506,6 +1542,163 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/dayclose/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Status day-close
+         * @description Tanggal buku institusi (tanggal, state, waktu beku), run yang sedang berjalan bila ada,
+         *     dan ringkasan run terakhir. `businessDate` bernilai `null` sebelum baris tanggal buku
+         *     dibuat (`ctl` bootstrap). Baca saja — tidak ada aksi penutupan di sini.
+         */
+        get: operations["getDayCloseStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dayclose/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Riwayat run day-close
+         * @description Ringkasan run urut tanggal bisnis (lalu waktu mulai) terbaru lebih dulu. `limit` default
+         *     **20**, maksimum **100**; nilai di luar rentang itu atau bukan angka dijawab `400`.
+         */
+        get: operations["listDayCloseRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dayclose/runs/{runId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detail satu run day-close
+         * @description Ringkasan run beserta state task dan chunk-nya. `runId` yang tidak ada maupun yang bukan
+         *     uuid dijawab `404` — keduanya berarti "run tidak ditemukan".
+         */
+        get: operations["getDayCloseRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dayclose/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Jalankan penutupan tanggal buku
+         * @description Menjalankan penutupan untuk tanggal buku yang sedang berjalan (`businessDate` opsional,
+         *     hanya boleh sama dengan tanggal buku berjalan). Permintaan **menunggu** penutupan selesai
+         *     lalu mengembalikan ringkasan run terakhir — periksa `state` (`COMPLETED` berarti segel
+         *     berhasil, `FAILED`/`BLOCKED`/`PAUSED` berarti tidak). Klien harus memperlakukan batas
+         *     waktu sebagai "tidak tahu" dan membaca `GET /dayclose/status`, bukan mengulang aksi.
+         *
+         *     Klik ganda aman tanpa `Idempotency-Key`: scope dikunci advisory lock dan index unik
+         *     `run_one_per_date_uq` menolak run kedua untuk tanggal yang sama (`409 run_exists`).
+         */
+        post: operations["startDayClose"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dayclose/runs/{runId}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lanjutkan run day-close
+         * @description Melanjutkan run `PAUSED`/`FAILED`/`BLOCKED` dan menunggu sampai berhenti lagi. Run yang
+         *     sudah `COMPLETED`/`CANCELED` dijawab `409 already_finished`.
+         */
+        post: operations["resumeDayClose"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dayclose/runs/{runId}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hentikan run day-close di batas chunk
+         * @description Bila ada proses yang menjalankan run, niat `PAUSE` dicatat dan dibaca orkestrator di batas
+         *     chunk (`params.reason = control_requested`). Bila tidak ada proses, run langsung
+         *     `PAUSED`. Run yang tidak sedang berjalan dijawab `409 not_running`.
+         */
+        post: operations["pauseDayClose"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dayclose/runs/{runId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batalkan run day-close dan buka kembali tanggal buku
+         * @description Pembatalan **atomik**: sisa task `CANCELED`, run `CANCELED`, dan tanggal buku yang dibekukan
+         *     run itu dibuka kembali (`CLOSING → OPEN`). Run yang sudah berakhir dijawab
+         *     `409 already_finished`; pembatalan yang tanggalnya masih tertinggal `CLOSING` dipulihkan
+         *     dan dijawab `200` dengan `params.reason = already_canceled`.
+         */
+        post: operations["cancelDayClose"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1607,6 +1800,17 @@ export interface components {
             permissions: string[];
             /** @description Batas idle sesi (ISO-8601 UTC); batas absolut tidak pernah dilampaui. */
             expiresAt: string;
+            /**
+             * @description Tanggal buku institusi saat sesi dibaca, bentuknya sama dengan
+             *     `GET /api/v1/dayclose/status`. `null` bila institusi belum punya baris tanggal buku.
+             *     Dikirim ke **semua** peran back-office: teller bekerja terhadap tanggal ini (sesi kas
+             *     yang tanggalnya berbeda ditolak `session_business_date_mismatch`).
+             *
+             *     Field ini **opsional**: dihilangkan (bukan `null`) bila pembacaan tanggal buku gagal,
+             *     supaya klien tidak menampilkan "belum tersedia" untuk nilai yang sebenarnya tidak
+             *     diketahui.
+             */
+            businessDate?: components["schemas"]["DayCloseBusinessDate"];
         };
         UserRoleGrant: {
             /** @description Kode role (`platform.role.code`). */
@@ -2043,6 +2247,91 @@ export interface components {
             /** @description Alasan penutupan; masuk jejak audit. */
             reason: string;
         };
+        /** @description Tanggal buku institusi. `null` bila barisnya belum dibuat (bootstrap `ctl`). */
+        DayCloseBusinessDate: {
+            /** Format: date */
+            date: string;
+            /** @enum {string} */
+            state: "OPEN" | "CLOSING" | "CLOSED";
+            /** @description ISO-8601 UTC saat state terakhir berubah; `null` selama `OPEN`. */
+            frozenAt: string | null;
+        } | null;
+        DayCloseTaskCounts: {
+            ok: number;
+            failed: number;
+            skipped: number;
+            total: number;
+        };
+        DayCloseChunkState: {
+            chunkNo: number;
+            /** @enum {string} */
+            state: "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED";
+            attempt: number;
+            /** @description Kode stabil diagnostik, mis. `DAY-301`; `null` bila tidak ada galat. */
+            errorCode: string | null;
+        };
+        DayCloseTaskState: {
+            taskId: string;
+            /** @enum {string} */
+            kind: "PRECHECK" | "PROCESS" | "POSTCHECK" | "REPORT";
+            critical: boolean;
+            /** @enum {string} */
+            state: "PENDING" | "READY" | "RUNNING" | "SUCCEEDED" | "FAILED" | "SKIPPED" | "CANCELED";
+            attempt: number;
+            errorCode: string | null;
+            /**
+             * @description Alasan task di-`SKIPPED` (dari `skipOutcome`). `null` untuk state lain dan untuk run
+             *     sebelum kolom ini ada (migrasi `0062`).
+             */
+            reason: string | null;
+            chunks: components["schemas"]["DayCloseChunkState"][];
+        };
+        DayCloseRunSummary: {
+            /** Format: uuid */
+            runId: string;
+            /** Format: date */
+            businessDate: string;
+            /** @enum {string} */
+            scopeType: "INSTITUTION" | "BRANCH";
+            levels: ("EOD" | "EOW" | "EOM" | "EOQ" | "EOY")[];
+            /** @enum {string} */
+            state: "PLANNED" | "PRECHECK" | "RUNNING" | "POSTCHECK" | "COMPLETED" | "FAILED" | "BLOCKED" | "PAUSED" | "CANCELED";
+            /** @description ISO-8601 UTC. */
+            startedAt: string;
+            /** @description ISO-8601 UTC; `null` selama run belum selesai. */
+            finishedAt: string | null;
+            /** @description Segel bukti hasil run; `null` sampai run `COMPLETED`. */
+            summaryHash: string | null;
+            taskCounts: components["schemas"]["DayCloseTaskCounts"];
+        };
+        /**
+         * @description Ringkasan run + daftar task beserta chunk. `taskCounts` sama artinya dengan pada
+         *     `DayCloseRunSummary`; `tasks` berisi state per task.
+         */
+        DayCloseRunDetail: {
+            /** Format: uuid */
+            runId: string;
+            /** Format: date */
+            businessDate: string;
+            /** @enum {string} */
+            scopeType: "INSTITUTION" | "BRANCH";
+            levels: ("EOD" | "EOW" | "EOM" | "EOQ" | "EOY")[];
+            /** @enum {string} */
+            state: "PLANNED" | "PRECHECK" | "RUNNING" | "POSTCHECK" | "COMPLETED" | "FAILED" | "BLOCKED" | "PAUSED" | "CANCELED";
+            startedAt: string;
+            finishedAt: string | null;
+            summaryHash: string | null;
+            taskCounts: components["schemas"]["DayCloseTaskCounts"];
+            tasks: components["schemas"]["DayCloseTaskState"][];
+        };
+        DayCloseRunList: {
+            runs: components["schemas"]["DayCloseRunSummary"][];
+        };
+        DayCloseStatus: {
+            businessDate: components["schemas"]["DayCloseBusinessDate"];
+            activeRun: components["schemas"]["DayCloseRunSummary"] | null;
+            latestRun: components["schemas"]["DayCloseRunSummary"] | null;
+        };
         JournalLine: {
             lineNo: number;
             glAccount: string;
@@ -2265,10 +2554,15 @@ export interface components {
             /** Format: uuid */
             branchId: string;
             /** @enum {string} */
-            accountType: "SAVINGS";
+            accountType: "SAVINGS" | "TIME_DEPOSIT";
             savingsKind?: components["schemas"]["SavingsKind"];
-            /** @enum {string} */
-            status: "ACTIVE" | "CLOSED";
+            /**
+             * @description `DORMANT` = tanpa aktivitas lebih lama dari `deposit.dormant.after_months` (task
+             *     `deposit.dormant`). Rekening dormant tetap menerima **setoran** tunai, tetap diakrualkan,
+             *     dan kembali `ACTIVE` pada penutupan berikutnya setelah ada aktivitas (D-157).
+             * @enum {string}
+             */
+            status: "ACTIVE" | "CLOSED" | "DORMANT";
             /** @description Saldo desimal string 2 desimal (tanpa float), mis. `"0.00"`. */
             balance: string;
             /** Format: date */
@@ -2314,6 +2608,27 @@ export interface components {
              * @description Tanggal buku transaksi (`YYYY-MM-DD`).
              */
             businessDate: string;
+            /**
+             * @description Hanya ada pada **pencairan dini deposito berjangka** (D-164). `amount` tetap pokok yang
+             *     didebit dari rekening; kas yang diserahkan adalah `cashPaid` karena bunga dibayar dan
+             *     penalti dipotong.
+             */
+            earlyWithdrawal?: components["schemas"]["EarlyWithdrawal"];
+        };
+        /**
+         * @description Rincian pencairan dini deposito berjangka (D-164). `cashPaid = principal + interest −
+         *     penalty`. Bunga adalah akrual yang sudah dijurnal tetapi belum dibayar; penalti adalah
+         *     persen dari pokok sesuai atribut produk `product.savings.early_withdrawal_penalty`.
+         */
+        EarlyWithdrawal: {
+            /** @description Pokok yang dicairkan (desimal 2 desimal). */
+            principal: string;
+            /** @description Bunga terakru yang dibayarkan bersamaan (desimal 2 desimal). */
+            interest: string;
+            /** @description Penalti pencairan dini (desimal 2 desimal). */
+            penalty: string;
+            /** @description Kas yang benar-benar diserahkan ke anggota (desimal 2 desimal). */
+            cashPaid: string;
         };
         /**
          * @description Transaksi tunai untuk cetak ulang slip (T-094a). **Tanpa** `balanceAfter`: saldo per transaksi
@@ -2352,7 +2667,7 @@ export interface components {
             /** @description Nomor rekening **provisoris** (10 digit). */
             accountNo: string;
             /** @enum {string} */
-            status: "ACTIVE" | "CLOSED";
+            status: "ACTIVE" | "CLOSED" | "DORMANT";
             /** Format: uuid */
             branchId: string;
             /**
@@ -2368,13 +2683,15 @@ export interface components {
             rows: components["schemas"]["StatementRow"][];
         };
         /**
-         * @description Satu baris statement. `kind` membedakan sumber; tepat satu dari `transactionId` (CASH) atau
-         *     `transferId` (TRANSFER) terisi, yang lain `null`. `direction` relatif ke rekening yang
-         *     diminta: `IN` = masuk, `OUT` = keluar.
+         * @description Satu baris statement. `kind` membedakan sumber; `CASH` = transaksi tunai teller, `MATURITY` =
+         *     perpindahan jatuh tempo deposito (pokok/bunga, tanpa kas), `TRANSFER` = pemindahbukuan,
+         *     `EARLY_WITHDRAWAL` = bunga atau penalti pencairan dini deposito lewat PB (T-148).
+         *     Tepat satu dari `transactionId` (`CASH`/`MATURITY`) atau `transferId` (`TRANSFER`) terisi,
+         *     yang lain `null`. `direction` relatif ke rekening yang diminta: `IN` = masuk, `OUT` = keluar.
          */
         StatementRow: {
             /** @enum {string} */
-            kind: "CASH" | "TRANSFER";
+            kind: "CASH" | "TRANSFER" | "MATURITY" | "EARLY_WITHDRAWAL";
             /** @enum {string} */
             direction: "IN" | "OUT";
             /** @description Nominal desimal string 2 desimal (tanpa float). */
@@ -2387,7 +2704,9 @@ export interface components {
             narration: string;
             /**
              * Format: uuid
-             * @description Id transaksi tunai (kind `CASH`); `null` untuk baris PB.
+             * @description Id baris `deposit.transaction` (kind `CASH` atau `MATURITY`); `null` untuk baris PB.
+             *     Slip cetak ulang hanya tersedia untuk kind `CASH` (`GET /teller/cash-transactions/{id}`
+             *     menjawab 404 untuk baris jatuh tempo).
              */
             transactionId: string | null;
             /**
@@ -2435,6 +2754,28 @@ export interface components {
              * @description Tanggal buku PB (`YYYY-MM-DD`).
              */
             businessDate: string;
+            /**
+             * @description Hanya ada bila PB ini **mencairkan deposito berjangka sebelum jatuh tempo** (T-148,
+             *     D-164). `amount` tetap pokok yang keluar dari deposito; rekening tujuan menerima
+             *     `creditedAmount` karena bunga dibayar dan penalti dipotong.
+             */
+            earlyWithdrawal?: components["schemas"]["EarlyWithdrawalTransfer"];
+        };
+        /**
+         * @description Rincian pencairan dini deposito berjangka lewat pemindahbukuan (T-148).
+         *     `creditedAmount = principal + interest − penalty` adalah dana yang benar-benar masuk ke
+         *     rekening tujuan. Bunga adalah akrual yang sudah dijurnal tetapi belum dibayar; penalti
+         *     adalah persen dari pokok sesuai atribut produk `product.savings.early_withdrawal_penalty`.
+         */
+        EarlyWithdrawalTransfer: {
+            /** @description Pokok yang keluar dari deposito (desimal 2 desimal). */
+            principal: string;
+            /** @description Bunga terakru yang ikut dibayarkan (desimal 2 desimal). */
+            interest: string;
+            /** @description Penalti pencairan dini (desimal 2 desimal). */
+            penalty: string;
+            /** @description Dana yang dikreditkan ke rekening tujuan (desimal 2 desimal). */
+            creditedAmount: string;
         };
         TellerSessionOpenRequest: {
             /**
@@ -2544,6 +2885,42 @@ export interface components {
             journalId: string;
             /** @description ISO-8601 UTC. */
             createdAt: string;
+        };
+        TellerSessionTransactionList: {
+            /** Format: uuid */
+            sessionId: string;
+            /**
+             * Format: date
+             * @description Tanggal bisnis sesi.
+             */
+            businessDate: string;
+            /** @description Jumlah seluruh baris arus kas sesi (bukan jumlah di halaman ini). */
+            total: number;
+            items: components["schemas"]["TellerSessionTransaction"][];
+        };
+        /**
+         * @description Satu baris arus kas laci sesi. `amount` = kas yang bergerak (bukan selalu nominal rekening;
+         *     pencairan dini membayar `pokok + bunga − penalti`, D-164).
+         */
+        TellerSessionTransaction: {
+            /** Format: uuid */
+            transactionId: string;
+            /** Format: uuid */
+            journalId: string;
+            /** Format: uuid */
+            accountId: string;
+            accountNo: string;
+            /**
+             * @description Relatif laci kas. `IN` = uang masuk, `OUT` = uang keluar.
+             * @enum {string}
+             */
+            direction: "IN" | "OUT";
+            /** @description Kas yang bergerak, desimal string 2 desimal. */
+            amount: string;
+            /** Format: date-time */
+            occurredAt: string;
+            /** @description Keterangan transaksi; `""` bila tidak diisi. */
+            narration: string;
         };
         TellerVaultTopUpRequestList: {
             items: components["schemas"]["TellerVaultTopUpRecord"][];
@@ -3609,6 +3986,7 @@ export interface operations {
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
             405: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
             415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
@@ -3675,6 +4053,7 @@ export interface operations {
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
             405: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
             415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
@@ -3711,6 +4090,7 @@ export interface operations {
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
             405: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
             415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
@@ -4532,6 +4912,41 @@ export interface operations {
             503: components["responses"]["Problem"];
         };
     };
+    listTellerSessionTransactions: {
+        parameters: {
+            query?: {
+                /** @description Jumlah baris per halaman. */
+                limit?: number;
+                /** @description Jumlah baris yang dilewati. */
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Arus kas sesi pada halaman yang diminta. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TellerSessionTransactionList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
     getTellerVault: {
         parameters: {
             query: {
@@ -5101,6 +5516,246 @@ export interface operations {
             404: components["responses"]["Problem"];
             405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    getDayCloseStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Status tanggal buku dan run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayCloseStatus"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    listDayCloseRuns: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayCloseRunList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    getDayCloseRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Detail run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayCloseRunDetail"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    startDayClose: {
+        parameters: {
+            query?: {
+                businessDate?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run yang dijalankan (periksa `state`) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayCloseRunSummary"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            /**
+             * @description Ditolak keadaan sekarang (`params.reason`): `run_exists`, `not_working_day`,
+             *     `business_date_mismatch`, `bootstrap_required`, `bootstrap_not_allowed`,
+             *     `business_date_closing`, `business_date_closed`, `scope_locked`.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    resumeDayClose: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run setelah dilanjutkan (periksa `state`) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayCloseRunSummary"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            /** @description Ditolak keadaan sekarang (`params.reason`): `already_finished`, `scope_locked`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    pauseDayClose: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run setelah permintaan pause */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayCloseRunSummary"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            /** @description Ditolak keadaan sekarang (`params.reason`): `not_running`, `already_finished`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    cancelDayClose: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run setelah pembatalan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayCloseRunSummary"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            /** @description Ditolak keadaan sekarang (`params.reason`): `already_finished`, `scope_locked`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
             503: components["responses"]["Problem"];

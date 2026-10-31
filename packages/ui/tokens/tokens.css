@@ -1,17 +1,19 @@
 /*
- * Design tokens KRAN (spec §15, DESIGN.md D-075).
+ * Design tokens KRAN (spec §15, DESIGN.md v2 / D-160).
  *
  * Aturan:
- *  - Token warna SEMANTIK, bukan nama warna mentah (`--color-text`, bukan `--brown`).
+ *  - Token warna SEMANTIK, bukan nama warna mentah (`--color-text`, bukan `--plum`).
  *  - Tema lewat `<html data-theme="light|dark">`; skrip `static/theme.js` memasangnya sebelum
  *    render untuk mencegah flash (spec §15.3).
  *  - Kontras setiap pasangan diuji otomatis di `packages/ui/tests/tokens.contrast.test.ts`
  *    pada KEDUA tema, termasuk status di atas tint (spec §15.4).
  *  - Status tidak pernah hanya warna: selalu teks + bentuk/ikon (spec §15.4).
- *  - Arah "buku besar, kulit hangat": angka `tabular-nums`, garis rambut, elevasi hanya overlay.
+ *  - Arah "alat kerja yang tenang": netral dingin, satu aksen plum, angka `tabular-nums`,
+ *    garis rambut, elevasi hanya overlay.
+ *  - Satu keluarga huruf (IBM Plex Sans); tidak ada token mono (DESIGN §2).
  */
 
-/* IBM Plex (OFL, self-host — tanpa CDN saat runtime). Berkas: apps/web/static/fonts/. */
+/* IBM Plex Sans (OFL, self-host — tanpa CDN saat runtime). Berkas: apps/web/static/fonts/. */
 @font-face {
   font-family: "IBM Plex Sans";
   font-style: normal;
@@ -33,25 +35,10 @@
   font-display: swap;
   src: url("/fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2");
 }
-@font-face {
-  font-family: "IBM Plex Mono";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("/fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
-}
-@font-face {
-  font-family: "IBM Plex Mono";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("/fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2");
-}
 
 :root {
   /* Tipografi (DESIGN §2): 11 / 12 / 13 / 14 / 16 / 20 / 28 px. */
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --text-2xs: 0.6875rem;
   --text-xs: 0.75rem;
   --text-sm: 0.8125rem;
@@ -78,13 +65,13 @@
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
 
-  /* Elevasi hanya untuk overlay (DESIGN §5). */
-  --shadow-1: 0 2px 4px rgb(28 27 25 / 0.1);
-  --shadow-2: 0 8px 24px rgb(28 27 25 / 0.16);
+  /* Elevasi hanya untuk overlay (DESIGN §5). Kartu flat. */
+  --shadow-1: 0 2px 4px rgb(20 23 26 / 0.1);
+  --shadow-2: 0 8px 24px rgb(20 23 26 / 0.16);
 
-  /* Motion (DESIGN §8): 120 ms hover/focus, 180 ms expand/dialog, 0 ms untuk angka. */
-  --motion-duration-fast: 120ms;
-  --motion-duration-base: 180ms;
+  /* Motion (DESIGN §8): 150 ms hover/focus, 200 ms expand/dialog, 0 ms untuk angka. */
+  --motion-duration-fast: 150ms;
+  --motion-duration-base: 200ms;
   --motion-ease: cubic-bezier(0.2, 0, 0, 1);
 
   /* Ukuran kontrol & tabel (DESIGN §4). */
@@ -98,75 +85,74 @@
 
   /* Layout */
   --layout-max-width: 72rem;
-
-  /* Merek/identitas (dipakai header, bukan permukaan angka). */
-  --brand-ink: #1f4b43;
 }
 
 /* ---- Token warna per tema (DESIGN §3) ---- */
 
 [data-theme="light"] {
   color-scheme: light;
-  --color-bg: #faf8f5;
+  --color-bg: #f6f7f9;
   --color-surface: #ffffff;
   --color-surface-raised: #ffffff;
-  --color-selected: #eef2ef;
-  --color-text: #1c1b19;
-  --color-text-muted: #5c5a55;
-  --color-text-2: #5c5a55;
+  --color-surface-disabled: #edeff2;
+  --color-selected: #edf0f4;
+  --color-text: #14171a;
+  --color-text-muted: #565d66;
+  --color-text-2: #565d66;
   --color-text-on-primary: #ffffff;
-  --color-hairline: #e3ded6;
-  --color-border: #8a857c;
-  --color-primary: #1f4b43;
-  --color-primary-hover: #183b35;
-  --color-accent: #1f4b43;
-  --color-success: #1a6b4a;
-  --color-positive: #1a6b4a;
-  --color-danger: #9b2c2c;
-  --color-negative: #9b2c2c;
+  --color-hairline: #e3e7ec;
+  --color-border: #7c848f;
+  --color-primary: #5b2a5e;
+  --color-primary-hover: #4a214d;
+  --color-accent: #5b2a5e;
+  --color-success: #17603f;
+  --color-positive: #17603f;
+  --color-danger: #a02b31;
+  --color-negative: #a02b31;
   --color-warning: #8a5a00;
-  --color-info: #2a4c8f;
-  --color-focus-ring: #1f4b43;
-  --color-success-tint: #eaf3ee;
-  --color-danger-tint: #f8eceb;
-  --color-warning-tint: #f6f0e3;
+  --color-info: #23557f;
+  --color-focus-ring: #5b2a5e;
+  --color-success-tint: #eaf2ed;
+  --color-danger-tint: #f8ecec;
+  --color-warning-tint: #f7f1e4;
   --color-info-tint: #ebf0f7;
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --color-bg: #171614;
-  --color-surface: #1e1d1b;
-  --color-surface-raised: #24221f;
-  --color-selected: #23302c;
-  --color-text: #edeae4;
-  --color-text-muted: #a8a49c;
-  --color-text-2: #a8a49c;
-  --color-text-on-primary: #171614;
-  --color-hairline: #2a2926;
-  --color-border: #7c7770;
-  --color-primary: #6fbfaa;
-  --color-primary-hover: #85cdb9;
-  --color-accent: #6fbfaa;
-  --color-success: #5fc08a;
-  --color-positive: #5fc08a;
+  --color-bg: #101215;
+  --color-surface: #181b1f;
+  --color-surface-raised: #212529;
+  --color-surface-disabled: #1c2024;
+  --color-selected: #1e2429;
+  --color-text: #e8ecf1;
+  --color-text-muted: #9aa3ae;
+  --color-text-2: #9aa3ae;
+  --color-text-on-primary: #101215;
+  --color-hairline: #272c32;
+  --color-border: #6f7883;
+  --color-primary: #d9a0d4;
+  --color-primary-hover: #e4b4df;
+  --color-accent: #d9a0d4;
+  --color-success: #5fbf8d;
+  --color-positive: #5fbf8d;
   --color-danger: #e88b84;
   --color-negative: #e88b84;
   --color-warning: #d9a84e;
   --color-info: #8fb3e8;
-  --color-focus-ring: #6fbfaa;
+  --color-focus-ring: #d9a0d4;
   --color-success-tint: #1b2a24;
   --color-danger-tint: #2e2020;
   --color-warning-tint: #2a2519;
   --color-info-tint: #1d2430;
 }
 
-/* Angka uang & kolom jurnal: digit tetap, desimal sejajar (DESIGN §6). */
+/* Angka uang & kolom jurnal: satu keluarga huruf, digit tetap, desimal sejajar (DESIGN §2, §6). */
 .kran-num {
   font-variant-numeric: tabular-nums slashed-zero;
 }
 .kran-money {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-variant-numeric: tabular-nums slashed-zero;
   text-align: end;
   white-space: nowrap;
@@ -181,16 +167,16 @@
 /* Spec §15.5: dukung preferensi kontras tinggi. */
 @media (prefers-contrast: more) {
   [data-theme="light"] {
-    --color-text-muted: #3a3833;
-    --color-text-2: #3a3833;
-    --color-border: #3a3833;
-    --color-hairline: #8a857c;
+    --color-text-muted: #333a42;
+    --color-text-2: #333a42;
+    --color-border: #333a42;
+    --color-hairline: #7c848f;
   }
   [data-theme="dark"] {
-    --color-text-muted: #d6d2ca;
-    --color-text-2: #d6d2ca;
-    --color-border: #9a958c;
-    --color-hairline: #6b665f;
+    --color-text-muted: #cfd6df;
+    --color-text-2: #cfd6df;
+    --color-border: #9aa3ae;
+    --color-hairline: #6f7883;
   }
 }
 
@@ -210,7 +196,8 @@
     --color-bg: #ffffff;
     --color-surface: #ffffff;
     --color-surface-raised: #ffffff;
-    --color-selected: #f2f0ec;
+    --color-surface-disabled: #f2f2f2;
+    --color-selected: #f2f2f2;
     --color-text: #000000;
     --color-text-muted: #333333;
     --color-text-2: #333333;
@@ -262,6 +249,16 @@ body {
   font-family: var(--font-sans);
   font-size: var(--text-base);
   line-height: var(--line-height-base);
+}
+
+/* Kode dan identitas teknis memakai keluarga huruf yang sama (DESIGN §2: tanpa mono).
+   Tanpa aturan ini `<code>` kembali ke monospace bawaan peramban di layar yang CSS lokalnya
+   dihapus. */
+code,
+kbd,
+samp {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums slashed-zero;
 }
 
 h1,
