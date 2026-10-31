@@ -1033,7 +1033,8 @@
   }
 
   .dayclose-hash {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums slashed-zero;
     font-size: var(--text-xs);
   }
 
@@ -1074,7 +1075,8 @@
   }
 
   .dayclose-task-id {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums slashed-zero;
     font-size: var(--text-xs);
     white-space: nowrap;
   }
@@ -1090,7 +1092,8 @@
   }
 
   .dayclose-error-code {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums slashed-zero;
     font-size: var(--text-xs);
   }
 

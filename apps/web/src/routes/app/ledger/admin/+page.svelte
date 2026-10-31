@@ -807,7 +807,8 @@
   }
 
   .ledger-admin-id {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums slashed-zero;
     font-size: var(--text-xs);
   }
 

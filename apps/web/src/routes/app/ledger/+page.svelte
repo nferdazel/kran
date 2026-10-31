@@ -602,7 +602,7 @@
   }
 
   .ledger-code {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-variant-numeric: tabular-nums;
     font-weight: 500;
     white-space: nowrap;
