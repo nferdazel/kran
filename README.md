@@ -24,7 +24,7 @@ The product name is **KRAN**; every technical identifier follows it: binary `kra
 systemd unit `kran-*`, contract `kran-api.yaml`, npm scope `@kran/*` (D-039). Only `cbs-core`, the
 legacy system that still runs and is awaiting cutover, keeps its own name.
 
-Stack: PostgreSQL 18 · Nim 2.2 (API; the version range is pinned in [`kran.nimble`](kran.nimble)) ·
+Stack: PostgreSQL 18 · Nim 2.4 (API; the version range is pinned in [`kran.nimble`](kran.nimble)) ·
 SvelteKit + TypeScript (back-office). The UI is built against WCAG 2.2 AA in two themes (dark/light)
 with i18n id/en from the foundation on.
 
@@ -134,8 +134,8 @@ One command entry point: `./task` (POSIX script, no extra tooling dependencies; 
 
 Prerequisites:
 
-- Nim 2.2 (`nimble install -d -y` for dependencies). CI pins 2.2.12; `kran.nimble` requires
-  `>= 2.2.0 & < 2.3.0`.
+- Nim 2.4 (`nimble install -d -y` for dependencies). CI pins 2.4.0; `kran.nimble` requires
+  `>= 2.4.0 & < 2.5.0`.
 - PostgreSQL 18 for integration tests, **not local**: use `./task devdb up` (D-004). Without
   `KRAN_DATABASE_URL`, integration tests (and part of e2e) skip themselves, so the result is not
   evidence.

@@ -12,7 +12,10 @@ license     = "Proprietary"
 # Versi dependensi **dipin persis** (O-059): build yang di-deploy harus memakai versi yang sama dengan
 # yang diuji, bukan "versi terbaru yang cocok". Catatan: ini bukan pengganti penuh berkas lock —
 # revisi git dependensi tidak ikut terpin, hanya nomor versinya.
-requires "nim >= 2.2.0 & < 2.3.0"
+#
+# Toolchain ikut dipin: angka 2.4.0 di bawah dipakai juga oleh `.github/workflows/ci.yml`
+# (setup-nim) dan `apps/api/Dockerfile` (tarball resmi + sha256), supaya yang diuji = yang di-deploy.
+requires "nim >= 2.4.0 & < 2.5.0"
 requires "db_connector == 0.1.0"
 requires "yaml == 2.2.1"
 # PBKDF2-HMAC-SHA256 untuk password (ADR/D-013).

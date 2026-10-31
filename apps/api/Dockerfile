@@ -24,18 +24,18 @@ ARG DEBIAN_DIGEST=sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43
 # ── Build stage ───────────────────────────────────────────────────────────────
 FROM debian:bookworm-slim@${DEBIAN_DIGEST} AS build
 
-ARG NIM_VERSION=2.2.12
+ARG NIM_VERSION=2.4.0
 # SHA-256 tarball Nim resmi (dipublikasikan nim-lang.org sebagai `<berkas>.sha256`). Tanpa
 # pemeriksaan ini, unduhan toolchain adalah titik masuk supply chain: satu tarball yang ditukar
 # menghasilkan biner yang "berhasil build" tetapi bukan kode kita (OPS-9).
-ARG NIM_SHA256=7df1611449a6842af69322aa2c1206942982650a5f6bc0d37bc8ec109932f638
+ARG NIM_SHA256=23c1c83d9031c498a2b3ad0bce153b8905710d04eb5922cf8ebd8f9d12125743
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl xz-utils git build-essential libpq-dev libpcre3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Nim resmi (bukan paket distro yang tertinggal jauh). Versinya disamakan dengan CI:
-# `.github/workflows/ci.yml` memakai 2.2.12.
+# `.github/workflows/ci.yml` memakai 2.4.0.
 RUN curl -fsSL "https://nim-lang.org/download/nim-${NIM_VERSION}-linux_x64.tar.xz" -o /tmp/nim.tar.xz \
     && echo "${NIM_SHA256}  /tmp/nim.tar.xz" | sha256sum -c - \
     && mkdir -p /opt/nim \

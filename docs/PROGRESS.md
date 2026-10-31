@@ -2950,3 +2950,21 @@ Sisanya — 24 butir dari API-7/8/9 sampai UI-7/8 — **tidak** dikerjakan dan s
 klien sinkron), `lint-web`, seluruh unit/properti/integrasi, dan Playwright **54 test** hijau
 (termasuk gate axe 4 layar administrasi dan alur keyboard). `caddy validate` di server:
 `Valid configuration`. Detail: `docs/tasks/T-133.md`, D-145, D-146.
+
+## 31 Okt 2026 — toolchain Nim 2.4.0
+
+**Yang berubah**
+
+- `kran.nimble` meminta `nim >= 2.4.0 & < 2.5.0` (sebelumnya `>= 2.2.0 & < 2.3.0`).
+- `.github/workflows/ci.yml`: `nim-version: '2.4.0'` dan kunci cache nimble diperbarui di tiga job.
+- `apps/api/Dockerfile`: `NIM_VERSION=2.4.0` + `NIM_SHA256=23c1c83d…5743` (unduhan resmi diverifikasi
+  ulang; tarball memuat `bin/nim` dan `bin/nimble`).
+- `README.md` dan `docs/OPEN_ITEMS.md` (O-059): teks pin disamakan.
+
+**Bukti**: di Nim 2.4.0 lokal — `./task lint` 269 berkas, `./task build`, `./task check-fast` (format,
+archcheck, nomagic, paramgen, i18n, shlint), dan suite unit `./task test product` hijau. Tidak ada
+deprecation baru; `std/re` masih ada sehingga `libpcre3` di runner dan image tetap diperlukan.
+
+**Sisa**: integrasi Postgres tidak dijalankan di 2.4.0 (tunnel dev tidak hidup saat pemeriksaan),
+jadi gate penuhnya `./task ci` pada push ini. Build image belum diuji lokal (tidak ada podman/docker
+di mesin ini); deploy VPS yang memastikannya, dengan rollback `:prev` bila gagal.
