@@ -1752,7 +1752,8 @@
   }
 
   .teller-uuid {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums slashed-zero;
     font-size: var(--text-sm);
   }
 
@@ -1764,7 +1765,7 @@
   /* Nomor rekening, ID transaksi/jurnal, dan referensi: mono, tabular, boleh patah. Nilainya
    * 36 karakter atau lebih, jadi `nowrap` (seperti angka uang) akan membuat overflow mendatar. */
   .teller-id {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-variant-numeric: tabular-nums;
     overflow-wrap: anywhere;
   }
@@ -1775,7 +1776,7 @@
   }
 
   .teller-money-input {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-variant-numeric: tabular-nums slashed-zero;
   }
 

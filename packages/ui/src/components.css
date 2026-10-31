@@ -1,6 +1,10 @@
 /*
  * Komponen presentasional dasar KRAN (spec §14.1 `packages/ui`, §17.1).
  *
+ * Arah visual: DESIGN.md v2 / D-160 — "alat kerja yang tenang": netral dingin dengan satu aksen
+ * plum, satu keluarga huruf (IBM Plex Sans, tanpa mono), bidang datar tanpa shadow kecuali
+ * overlay, angka `tabular-nums slashed-zero`, dan state `:disabled` yang terlihat.
+ *
  * Prinsip:
  *  - Hanya memakai design token (`--color-*`, `--space-*`, dst) — tidak ada warna mentah,
  *    sehingga tema light/dark dan `prefers-contrast`/`forced-colors` bekerja otomatis.
@@ -97,7 +101,6 @@
     padding-block: var(--space-2);
     padding-inline: var(--space-3);
     border-radius: var(--radius-sm);
-    box-shadow: none;
     font-size: var(--text-sm);
     font-weight: 500;
   }
@@ -157,9 +160,8 @@
 .kran-sidebar-subtitle {
   display: block;
   font-size: var(--text-2xs);
+  font-weight: 500;
   color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 .kran-header {
@@ -374,6 +376,33 @@
   color: var(--color-text-on-primary);
 }
 
+/* Aksi baris tabel: tidak bersaing dengan aksi utama (DESIGN §1, satu titik fokus). */
+.kran-button--row {
+  padding-inline: var(--space-2);
+  border-color: var(--color-hairline);
+  background: transparent;
+}
+
+.kran-button--row:hover {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+}
+
+/* Aksi merusak (pembatalan, koreksi): warna danger, bukan lencana. */
+.kran-button--destructive {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.kran-button--destructive:hover {
+  background: var(--color-danger-tint);
+}
+
+/* Sedang memproses: tetap tombol nyata, tapi tidak bisa ditekan dua kali. */
+.kran-button[aria-busy="true"] {
+  cursor: progress;
+}
+
 .kran-select {
   min-block-size: var(--control-height);
   padding-block: 0;
@@ -444,7 +473,6 @@
   background: var(--color-surface-raised);
   color: var(--color-text);
   border-color: var(--color-hairline);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
 }
 
 .kran-card {
@@ -542,7 +570,7 @@
   color: var(--color-primary);
 }
 
-/* Keycap shortcut: IBM Plex Mono, digit tetap, gaya hardware terminal perbankan. */
+/* Keycap shortcut: keluarga huruf tunggal, digit tetap (DESIGN §2). */
 .kran-kbd {
   display: inline-flex;
   align-items: center;
@@ -554,11 +582,11 @@
   border-radius: var(--radius-chip);
   background: var(--color-surface-raised);
   color: var(--color-text);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums slashed-zero;
   font-size: var(--text-2xs);
   font-weight: 500;
   line-height: 1;
-  box-shadow: 0 1px 0 var(--color-hairline);
 }
 
 /* Filter tab bar: filter akun/kategori horizontal */
@@ -650,7 +678,6 @@
   border: 1px solid var(--color-hairline);
   border-radius: var(--radius-md);
   background: var(--color-surface-raised);
-  box-shadow: var(--shadow-1);
 }
 
 .kran-passbook__header {
@@ -664,9 +691,7 @@
 
 .kran-passbook__title {
   font-size: var(--text-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-weight: 500;
   color: var(--color-text-muted);
   margin: 0;
 }
@@ -718,8 +743,6 @@
   color: var(--color-text-muted);
   font-size: var(--text-xs);
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
 }
 
 .kran-metric-card__value {
@@ -762,7 +785,13 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .kran-button,
+  /* Tombol sengaja tanpa transisi `background-color`: perubahan state (mis. disabled → aktif)
+   * adalah pergantian keadaan, bukan gerakan, dan transisi 150 ms di antaranya membuat teks
+   * sempat jatuh di bawah ambang kontras saat dibaca (terbukti gagal di gate axe statement).
+   * Gerak halus tetap ada pada tautan navigasi dan baris tabel. */
+  .kran-button {
+    transition: transform var(--motion-duration-fast) var(--motion-ease);
+  }
   .kran-skip-link {
     transition:
       background-color var(--motion-duration-fast) var(--motion-ease),
@@ -841,6 +870,30 @@
   background: var(--color-primary-hover);
 }
 
+/* State `:disabled` (DESIGN §7): kontrol mati harus terlihat mati, tetapi teksnya tetap
+ * terbaca. Sengaja tanpa `opacity` — opacity menurunkan kontras teks terukur. Blok ini
+ * diletakkan setelah `:hover` supaya menang urutan pada spesifisitas yang sama. */
+.kran-button:disabled,
+.kran-filter-button:disabled,
+.kran-input:disabled,
+.kran-select:disabled,
+.kran-field input:disabled,
+.kran-field select:disabled,
+.kran-field textarea:disabled {
+  background: var(--color-surface-disabled);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  cursor: not-allowed;
+}
+
+/* Checkbox/radio: label pembungkus ikut meredup, kontrol aslinya tetap terbaca. */
+.kran-radio:has(input:disabled) {
+  background: var(--color-surface-disabled);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  cursor: not-allowed;
+}
+
 /* Form native berlabel nyata (spec §17.1: elemen semantik dulu, ARIA kemudian). */
 .kran-form {
   display: grid;
@@ -869,13 +922,69 @@
   font: inherit;
 }
 
-/* Pesan galat: teks + warna danger (bukan warna saja) dan `role="alert"` di komponen. */
+/* Pesan galat: teks + warna danger (bukan warna saja) dan `role="alert"` di komponen.
+ * Tanpa modifier = danger, supaya markup lama tetap bermakna. Tone lain memakai modifier. */
 .kran-alert {
   padding-block: var(--space-2);
   padding-inline: var(--space-3);
   border: 1px solid var(--color-danger);
   border-radius: var(--radius-md);
   color: var(--color-danger);
+}
+
+.kran-alert--negative {
+  border-color: var(--color-danger);
+  background: var(--color-danger-tint);
+  color: var(--color-danger);
+}
+
+.kran-alert--warning {
+  border-color: var(--color-warning);
+  background: var(--color-warning-tint);
+  color: var(--color-warning);
+}
+
+.kran-alert--info {
+  border-color: var(--color-info);
+  background: var(--color-info-tint);
+  color: var(--color-info);
+}
+
+.kran-alert--positive {
+  border-color: var(--color-success);
+  background: var(--color-success-tint);
+  color: var(--color-success);
+}
+
+.kran-alert--neutral {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.kran-alert__title {
+  margin-block-end: var(--space-1);
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: var(--line-height-tight);
+}
+
+/* Keadaan kosong: jujur, tanpa data dummy, tanpa ilustrasi (DESIGN §9). */
+.kran-empty-state {
+  padding-block: var(--space-6);
+  padding-inline: var(--space-4);
+  border: 1px dashed var(--color-hairline);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+}
+
+.kran-empty-state__title {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.kran-empty-state__action {
+  margin-block-start: var(--space-3);
 }
 
 /* Tajuk halaman + aksi (mis. Keluar) sebaris, membungkus di layar sempit. */
@@ -940,7 +1049,6 @@
   text-align: center;
   border-inline-end: 1px solid var(--color-hairline);
   font-weight: 600;
-  letter-spacing: 0.02em;
 }
 
 .kran-table tbody tr {
@@ -1066,8 +1174,8 @@
   margin-inline: 0;
 }
 
-/* Dokumen cetak (T-094): kerangka dokumen A4. Di layar tampil seperti kertas; saat dicetak hanya
- * badan dokumen yang tinggal (lihat blok `@media print`). */
+/* Dokumen cetak (T-094): kerangka dokumen A4. Di layar tampil sebagai lembar netral; saat
+ * dicetak hanya badan dokumen yang tinggal (lihat blok `@media print`). */
 .kran-print-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1113,10 +1221,11 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Pengenal (nomor rekening/id) boleh membungkus di kolom sempit, tetap mono + digit tetap. */
+/* Pengenal (nomor rekening/id) boleh membungkus di kolom sempit; satu keluarga huruf,
+ * digit tetap (DESIGN §2). */
 .kran-print-ref {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums slashed-zero;
   overflow-wrap: anywhere;
 }
 

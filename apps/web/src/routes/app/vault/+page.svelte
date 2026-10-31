@@ -458,7 +458,7 @@
               <tr>
                 <td>{formatDateTime(request.createdAt)}</td>
                 <td class="kran-num vault-col-money">{formatMoney(request.amount)}</td>
-                <td class="vault-mono">{request.sourceAccount}</td>
+                <td class="vault-ref">{request.sourceAccount}</td>
                 <td class="vault-note-cell">{request.note}</td>
                 <td>
                   <span
@@ -617,7 +617,7 @@
 
   .vault-balance-amount {
     margin: var(--space-1) 0 0;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: var(--text-xl);
     font-weight: 600;
     font-variant-numeric: tabular-nums slashed-zero;
@@ -679,8 +679,9 @@
     text-align: end;
   }
 
-  .vault-mono {
-    font-family: var(--font-mono);
+  .vault-ref {
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums slashed-zero;
   }
 
   .vault-note-cell {
