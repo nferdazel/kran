@@ -43,8 +43,15 @@ type
     account*: Account
     maturityDate*: string ## ISO `yyyy-MM-dd`; `""` = tanpa jatuh tempo (tidak pernah jatuh tempo)
     aroInstruction*: string ## `NONE`/`PRINCIPAL`/`PRINCIPAL_AND_INTEREST`; `""` = belum diatur
-    accruedInterest*: Money ## `cumulative` akrual terakhir = bunga yang belum dibayar; nol bila none
+    accruedInterest*: Money ## `cumulative` akrual terakhir (dihitung dari `opened_on`); nol bila none
+    interestPaid*: Money ## bunga kumulatif yang sudah dibayar/dikapitalisasi pada siklus sebelumnya
     hasBalance*: bool ## `false` = baris `deposit.account_balance` tidak ada (cache hilang, bukan nol)
+
+proc unpaidInterest*(item: MaturityAccount): Money =
+  ## Bunga yang belum pernah dibayar = `cumulative − interest_paid_cumulative` (D-165). Siklus
+  ## pertama: `paid = 0`, jadi seluruh akrual dibayar seperti sebelumnya. Siklus berikutnya hanya
+  ## selisihnya, sehingga bunga siklus pertama tidak dibayar dua kali.
+  item.accruedInterest - item.interestPaid
 
 proc countMaturityCandidates*(db: DbConn): int64 =
   ## Jumlah rekening yang **ikut dipaginasi**, bukan jumlah yang jatuh tempo: `countChunks` harus
@@ -61,7 +68,8 @@ const
            coalesce(to_char(a.maturity_date, 'YYYY-MM-DD'), ''),
            coalesce(a.aro_instruction, ''),
            coalesce(latest.cumulative::text, '0.00'),
-           b.account_id IS NOT NULL"""
+           b.account_id IS NOT NULL,
+           coalesce(a.interest_paid_cumulative::text, '0.00')"""
 
   ## Sumber + join yang sama untuk kedua pembaca (produk, saldo, akrual terakhir).
   maturityFrom = """
@@ -83,15 +91,19 @@ const
 
 proc maturityAccountOf*(row: Row): MaturityAccount =
   ## Satu baris `maturityColumns` → `MaturityAccount`. Dipakai kedua pembaca; indeks kolom
-  ## (13/14/15/16) mengikuti `accountColumns` yang berakhir di indeks 12.
+  ## (13/14/15/16/17) mengikuti `accountColumns` yang berakhir di indeks 12.
   let interest = moneyFromString(row[15])
   if interest.isErr:
     raise newException(ValueError, "bunga akrual rekening bukan desimal sah: " & row[15])
+  let paid = moneyFromString(row[17])
+  if paid.isErr:
+    raise newException(ValueError, "bunga yang sudah dibayar bukan desimal sah: " & row[17])
   MaturityAccount(
     account: accountOf(row),
     maturityDate: row[13],
     aroInstruction: row[14],
     accruedInterest: interest.value(),
+    interestPaid: paid.value(),
     hasBalance: row[16] == "t")
 
 proc dueMaturitiesPage*(db: DbConn; businessDate: string; offset, limit: int):

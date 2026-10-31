@@ -114,11 +114,21 @@ proc newProductWith(bindings: seq[ParamBinding]): tuple[product: Product, versio
   doAssert approveVersion(db, v.versionId, actor), "versi produk uji gagal di-approve"
   (prod, v)
 
-proc stdBindings(rate = "2.5"; basis = "ACT_365"; scale = "2"): seq[ParamBinding] =
+proc baseBindings(rate = "2.5"; basis = "ACT_365"; scale = "2"): seq[ParamBinding] =
+  ## Atribut akrual minimal. Tanpa `rollover_tenor_days`: produk inilah yang dipakai test
+  ## "binding tenor tidak ada" (DAY-354).
   @[ParamBinding(paramKey: "product.savings.min_balance", value: %"0.00"),
     ParamBinding(paramKey: "product.savings.interest_rate", value: %rate),
     ParamBinding(paramKey: "product.savings.day_count_basis", value: %basis),
     ParamBinding(paramKey: "product.savings.rounding_scale", value: %parseInt(scale))]
+
+proc stdBindings(rate = "2.5"; basis = "ACT_365"; scale = "2"; tenor = 19):
+    seq[ParamBinding] =
+  ## Produk uji dengan tenor rollover (D-165). `tenor` sengaja parameter supaya ada test yang
+  ## membuktikan nilainya benar-benar dibaca dari binding, bukan dari selisih tanggal. 19 hari
+  ## membuat ekspektasi lama (20 Okt → 8 Nov) tetap sah.
+  baseBindings(rate, basis, scale) & @[
+    ParamBinding(paramKey: "product.savings.rollover_tenor_days", value: %tenor)]
 
 proc timeDeposit(version: ProductVersion; productCode, openedOn, principal: string;
                  status = "ACTIVE"; maturityDate = ""; aro = ""; partyId = "";
@@ -934,6 +944,70 @@ proc kindProduct(kind: SavingsKind): tuple[product: Product, version: ProductVer
     1)
   doAssert approveVersion(db, v.versionId, actor), "versi produk POKOK gagal di-approve"
   (prod, v)
+
+suite "jatuh tempo: baseline akrual & tenor per siklus (D-165)":
+  test "siklus kedua hanya membayar bunga di atas baseline, tidak mengulang siklus pertama":
+    closeAllTimeDeposits()
+    let partyId = newPartyRow()
+    let depositId = timeDeposit(std.version, std.product.code, OpenedOn, "10000000.00",
+      maturityDate = MaturityDate, aro = "PRINCIPAL", partyId = $partyId)
+    seedPrincipalMovement(std.version, std.product.code, $depositId, "10000000.00", OpenedOn)
+    let savingsId = savingsAccount(std.version, std.product.code, $partyId, OpenedOn)
+
+    # Siklus 1: seluruh akrual dibayar (baseline masih 0).
+    check runAt(MaturityRunDate).isOk
+    check runMaturityAt(MaturityRunDate).isOk
+    let firstCumulative =
+      moneyFromString(accrualRow(depositId, MaturityRunDate).cumulative).value()
+    check moneyFromString(balanceOf(savingsId)).value() == firstCumulative
+    check stateOf(depositId) == ("ACTIVE", "2026-11-08")
+
+    # Siklus 2: akrual berjalan lagi sampai sehari sebelum jatuh tempo baru.
+    check runAt("2026-11-08").isOk
+    let secondCumulative =
+      moneyFromString(accrualRow(depositId, "2026-11-08").cumulative).value()
+    check secondCumulative > firstCumulative
+    check runMaturityAt("2026-11-08").isOk
+
+    # Yang dibayar = cumulative siklus 2, bukan jumlah kedua siklus. Tanpa baseline ini
+    # `balanceOf` akan menjadi `firstCumulative + secondCumulative` (bug O-109).
+    let paidTwoCycles = moneyFromString(balanceOf(savingsId)).value()
+    check paidTwoCycles == secondCumulative
+    check paidTwoCycles < firstCumulative + secondCumulative
+    check db.getValue(sql"""
+      SELECT interest_paid_cumulative::text FROM deposit.account WHERE account_id = ?""",
+      $depositId) == secondCumulative.toDecimalString
+
+  test "tenor perpanjangan dibaca dari binding produk, bukan selisih opened_on":
+    let long = newProductWith(stdBindings(tenor = 45))
+    closeAllTimeDeposits()
+    let partyId = newPartyRow()
+    let depositId = timeDeposit(long.version, long.product.code, OpenedOn, "10000000.00",
+      maturityDate = MaturityDate, aro = "PRINCIPAL", partyId = $partyId)
+    seedPrincipalMovement(long.version, long.product.code, $depositId, "10000000.00", OpenedOn)
+    discard savingsAccount(long.version, long.product.code, $partyId, OpenedOn)
+
+    check runAt(MaturityRunDate).isOk
+    check runMaturityAt(MaturityRunDate).isOk
+    # 20 Okt + 45 hari = 4 Des, bukan 8 Nov (selisih opened_on..maturity = 19 hari).
+    check stateOf(depositId) == ("ACTIVE", "2026-12-04")
+
+  test "binding tenor tidak ada = DAY-354, rekening tidak berubah":
+    let bare = newProductWith(baseBindings())
+    closeAllTimeDeposits()
+    let partyId = newPartyRow()
+    let depositId = timeDeposit(bare.version, bare.product.code, OpenedOn, "10000000.00",
+      maturityDate = MaturityDate, aro = "PRINCIPAL", partyId = $partyId)
+    seedPrincipalMovement(bare.version, bare.product.code, $depositId, "10000000.00", OpenedOn)
+    let savingsId = savingsAccount(bare.version, bare.product.code, $partyId, OpenedOn)
+
+    check runAt(MaturityRunDate).isOk
+    let res = runMaturityAt(MaturityRunDate)
+    check not res.isOk
+    check res.error.code == "DAY-354"
+    check stateOf(depositId) == ("ACTIVE", MaturityDate)
+    check balanceOf(depositId) == "10000000.00"
+    check balanceOf(savingsId) == "0.00"
 
 suite "jatuh tempo: guard (review T-138d)":
 

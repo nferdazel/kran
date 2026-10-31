@@ -318,6 +318,7 @@ const ERROR_CODE_HINTS: Record<string, () => string> = {
   "DAY-351": () => m.dayclose_code_351(),
   "DAY-352": () => m.dayclose_code_352(),
   "DAY-353": () => m.dayclose_code_353(),
+  "DAY-354": () => m.dayclose_code_354(),
 };
 
 /** Keterangan singkat kode galat, hanya untuk kode yang tercatat di runbook. */

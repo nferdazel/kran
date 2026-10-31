@@ -64,10 +64,9 @@
 ##           **bukan** kode ini — galat periode datang sebagai `DbError` dan menjadi `DAY-345`
 ##   DAY-345 perpindahan gagal disimpan / saldo berubah di tengah proses (bisa diulang)
 ##   DAY-346 `aro_instruction` tidak dikenal (data rusak)
-##   DAY-347 tenor perpanjangan tidak sah (`maturity_date` tidak setelah `opened_on`)
 ##   DAY-348 baris saldo rekening tidak ada (cache hilang; jangan tutup tanpa memindahkan pokok)
-##   DAY-349 jatuh tempo baru tidak setelah tanggal buku (proses terlambat melebihi satu tenor,
-##           O-109: siklus ARO kedua belum didukung)
+##   DAY-349 jatuh tempo baru tidak setelah tanggal buku (proses terlambat melebihi satu tenor)
+##   DAY-354 atribut produk `rollover_tenor_days` tidak ada / tidak sah (D-165)
 ##
 ## Kode kegagalan dormant:
 ##   DAY-350 daftar rekening dormant gagal dibaca (bisa diulang)
@@ -88,7 +87,9 @@ import platform/domain/[event, scope]
 import platform/infrastructure/[outbox_repo, param_repo]
 
 import deposit/domain/[account, daycount, interest, transaction]
-import deposit/infrastructure/[dormant_repo, interest_repo, maturity_repo, transaction_repo]
+import deposit/infrastructure/[
+  account_repo, dormant_repo, interest_repo, maturity_repo, transaction_repo]
+import product/infrastructure/product_repo
 
 import daycloser/domain/[registry, types]
 
@@ -365,17 +366,32 @@ proc parseAroOf(item: MaturityAccount): AroInstruction =
 proc maturityDateOf(item: MaturityAccount): BusinessDate =
   dateOf(item.maturityDate, "maturity_date rekening " & item.account.accountNo, "DAY-342")
 
-proc nextMaturity(item: MaturityAccount): string =
-  ## Tenor perpanjangan = tenor semula (`maturity_date − opened_on`), dihitung dari tanggal jatuh
-  ## tempo lama (D-155 butir 5). Tidak ada parameter tenor per produk.
-  let a = item.account
-  let opened = dateOf(a.openedOn, "opened_on rekening " & a.accountNo, "DAY-342")
-  let maturity = maturityDateOf(item)
-  let tenorDays = daysBetween(opened, maturity)
-  if tenorDays <= 0:
-    raise abort("DAY-347", "rekening " & a.accountNo & ": tenor perpanjangan tidak sah (" &
-      a.openedOn & ".." & item.maturityDate & ")")
-  addDays(maturity, tenorDays).toIso
+const
+  rolloverTenorParamKey = "product.savings.rollover_tenor_days"
+
+proc rolloverTenorDays(db: DbConn; item: MaturityAccount): int =
+  ## Tenor perpanjangan dari atribut produk `product.savings.rollover_tenor_days` (D-165).
+  ## `maturity_date − opened_on` **tidak** dipakai: setelah satu perpanjangan nilainya dua kali
+  ## tenor semula. Tanpa binding, task gagal keras — tenor yang salah lebih buruk daripada rollover
+  ## yang tertunda.
+  for binding in bindingsOf(db, item.account.productVersionId):
+    if binding.paramKey != rolloverTenorParamKey:
+      continue
+    if binding.value.isNil or binding.value.kind != JInt:
+      raise abort("DAY-354", "rekening " & item.account.accountNo & ": binding " &
+        rolloverTenorParamKey & " bukan bilangan bulat")
+    let days = binding.value.getInt()
+    if days <= 0:
+      raise abort("DAY-354", "rekening " & item.account.accountNo & ": binding " &
+        rolloverTenorParamKey & " harus lebih besar dari 0")
+    return days
+  raise abort("DAY-354", "rekening " & item.account.accountNo & ": versi produk tidak mengikat " &
+    rolloverTenorParamKey & "; ikat tenor perpanjangan lebih dulu")
+
+proc nextMaturity(db: DbConn; item: MaturityAccount): string =
+  ## Tanggal jatuh tempo berikutnya = jatuh tempo lama + tenor dari atribut produk (D-165).
+  ## `opened_on` tidak pernah diubah dan tidak dipakai sebagai tenor.
+  addDays(maturityDateOf(item), rolloverTenorDays(db, item)).toIso
 
 proc journalOf(db: DbConn; clock: Clock; ctx: TaskContext; a: Account; eventType: string;
                amount: Money; keyPrefix: string): Id =
@@ -436,6 +452,7 @@ proc settleNone(db: DbConn; clock: Clock; ctx: TaskContext; item: MaturityAccoun
       raise abort("DAY-345", "rekening tujuan " & $target & ": baris saldo tidak ada")
     result.interestPaid = interest
 
+  markInterestPaid(db, a.accountId, item.accruedInterest)
   closeAccount(db, a.accountId, systemActor)
   result.closed = true
 
@@ -453,7 +470,8 @@ proc settlePrincipal(db: DbConn; clock: Clock; ctx: TaskContext; item: MaturityA
       raise abort("DAY-345", "rekening tujuan " & $target & ": baris saldo tidak ada")
     result.interestPaid = interest
 
-  setMaturityDate(db, a.accountId, nextMaturity(item), systemActor)
+  markInterestPaid(db, a.accountId, item.accruedInterest)
+  setMaturityDate(db, a.accountId, nextMaturity(db, item), systemActor)
   result.rolledOver = true
 
 proc settlePrincipalAndInterest(db: DbConn; clock: Clock; ctx: TaskContext;
@@ -469,7 +487,8 @@ proc settlePrincipalAndInterest(db: DbConn; clock: Clock; ctx: TaskContext;
       raise abort("DAY-345", "rekening " & a.accountNo & ": baris saldo tidak ada")
     result.interestCapitalized = interest
 
-  setMaturityDate(db, a.accountId, nextMaturity(item), systemActor)
+  markInterestPaid(db, a.accountId, item.accruedInterest)
+  setMaturityDate(db, a.accountId, nextMaturity(db, item), systemActor)
   result.rolledOver = true
 
 proc settleMaturity(db: DbConn; clock: Clock; ctx: TaskContext; candidate: MaturityAccount):
@@ -494,16 +513,18 @@ proc settleMaturity(db: DbConn; clock: Clock; ctx: TaskContext; candidate: Matur
       ": baris saldo rekening tidak ada; rekonstruksi lewat `reconcile-deposits` sebelum jatuh tempo")
   let aro = parseAroOf(item)
   let principal = item.account.balance
-  let interest = item.accruedInterest
+  # Bunga yang dibayar siklus ini = akrual kumulatif dikurangi baseline yang sudah dibayar
+  # (D-165); siklus kedua karena itu tidak membayar ulang bunga siklus pertama.
+  let interest = unpaidInterest(item)
   # Tanggal divalidasi lebih dulu untuk semua ARO: rekening yang tanggalnya rusak tidak boleh
   # diproses sebagian.
   discard maturityDateOf(item)
   # ARO yang memperpanjang butuh tanggal jatuh tempo baru yang **masih di masa depan**. Bila proses
-  # terlambat lebih dari satu tenor, tenor berikutnya juga sudah lewat, dan run berikutnya akan
-  # membayar bunga siklus yang sama untuk kedua kalinya (O-109). Berhenti, jangan memutar tenor
+  # terlambat lebih dari satu tenor, tenor berikutnya juga sudah lewat sehingga rekening itu akan
+  # diproses lagi pada run berikutnya untuk siklus yang sama. Berhenti, jangan memutar tenor
   # diam-diam.
   if aro != aiNone:
-    let nextDate = nextMaturity(item)
+    let nextDate = nextMaturity(db, item)
     if nextDate <= ctx.businessDate:
       raise abort("DAY-349", "rekening " & item.account.accountNo & ": jatuh tempo baru " &
         nextDate & " tidak setelah tanggal buku " & ctx.businessDate &

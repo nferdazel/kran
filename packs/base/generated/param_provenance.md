@@ -60,6 +60,7 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | `product.savings.interest_posting` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
 | `product.savings.interest_rate` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
 | `product.savings.min_balance` | komersial-konservatif | base | `NEEDS-COMPLIANCE-REVIEW` | tidak menagih; angka final menunggu pemilik |
+| `product.savings.rollover_tenor_days` | kebijakan | - | `NEEDS-COMPLIANCE-REVIEW` | tenor perpanjangan per produk (D-165); angka final menunggu pemilik/compliance |
 | `product.savings.rounding_mode` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
 | `product.savings.rounding_scale` | regulasi-tidak-disemai | - | `NEEDS-COMPLIANCE-REVIEW` | - |
 | `teller.cash.limit_deposit` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Plafon setor tunai per transaksi; angka pilot pemilik 24 Okt 2026 (K-5). |
@@ -73,7 +74,7 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | kelas | jumlah definisi |
 |---|---|
 | teknis | 19 |
-| kebijakan | 31 |
+| kebijakan | 32 |
 | komersial-konservatif | 2 |
 | belum-bermakna | 0 |
 | regulasi-tidak-disemai | 5 |
