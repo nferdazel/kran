@@ -21,9 +21,9 @@
   import { api } from "#lib/app/api.js";
   import { formatDateTime, formatMoney } from "#lib/app/format.js";
   import type { SessionInfo } from "#lib/app/types.js";
+  import { loadBranches, type Branch } from "#lib/app/branches.js";
   import {
     approveTopUp,
-    loadBranches,
     loadTopUps,
     loadVault,
     newIdempotencyKey,
@@ -35,7 +35,6 @@
     topUpIdentity,
     validateTopUp,
     vaultProblemMessage,
-    type Branch,
     type TopUpRecord,
     type TopUpStatus,
   } from "#lib/app/vault.js";
