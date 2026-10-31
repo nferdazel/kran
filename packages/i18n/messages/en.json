@@ -144,7 +144,7 @@
   "dayclose_code_346": "A time deposit has an unknown roll-over instruction (aro_instruction). The data is corrupt; the task does not guess.",
   "dayclose_code_347": "The renewal term is invalid: the maturity date is not after the account opening date. Fix the account dates before resuming.",
   "dayclose_code_348": "The maturing account has no balance row (missing cache). Reconcile/rebuild the balance first; the deposit is not closed so the principal is not lost.",
-  "dayclose_code_349": "Maturity processing is more than one term late: the new maturity date has already passed. A second ARO cycle is not supported yet (O-109); resolve it manually before resuming.",
+  "dayclose_code_349": "Maturity processing is late by more than one tenor: the new maturity date has already passed. Correct the maturity date through the official path, then resume.",
   "dayclose_code_350": "The dormant account list could not be read because of a database error. The task is retried automatically.",
   "dayclose_code_351": "The dormant threshold parameter (deposit.dormant.after_months) is missing or is not a valid number of months. Set the institution parameter, then resume.",
   "dayclose_code_352": "Account data is corrupt: unknown account status. Fix the row before resuming.",
@@ -798,5 +798,6 @@
   "vault_submit_success": "Request submitted and waiting for a decision.",
   "vault_submit_title": "Request a top-up",
   "vault_submitting": "Submitting…",
-  "vault_title": "Cash vault"
+  "vault_title": "Cash vault",
+  "dayclose_code_354": "The account's product does not bind a rollover tenor (product.savings.rollover_tenor_days). Bind it on the product version in use, then resume."
 }

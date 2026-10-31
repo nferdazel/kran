@@ -58,6 +58,7 @@ const paramKeys*: seq[string] = @[
   "product.savings.interest_posting",
   "product.savings.interest_rate",
   "product.savings.min_balance",
+  "product.savings.rollover_tenor_days",
   "product.savings.rounding_mode",
   "product.savings.rounding_scale",
   "teller.cash.limit_deposit",
@@ -166,6 +167,8 @@ const P_product_savings_interest_posting* = ParamKey[string]("product.savings.in
 const P_product_savings_interest_rate* = ParamKey[Rate]("product.savings.interest_rate")
 
 const P_product_savings_min_balance* = ParamKey[Money]("product.savings.min_balance")
+
+const P_product_savings_rollover_tenor_days* = ParamKey[int64]("product.savings.rollover_tenor_days")
 
 const P_product_savings_rounding_mode* = ParamKey[string]("product.savings.rounding_mode")
 
@@ -730,6 +733,17 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.product.savings.min_balance",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "product.savings.rollover_tenor_days",
+    module: "product",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.product.savings.rollover_tenor_days",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(

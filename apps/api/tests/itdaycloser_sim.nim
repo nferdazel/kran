@@ -192,7 +192,10 @@ block seed:
         ParamBinding(paramKey: "product.savings.min_balance", value: %"0.00"),
         ParamBinding(paramKey: "product.savings.interest_rate", value: %Rate),
         ParamBinding(paramKey: "product.savings.day_count_basis", value: %Basis),
-        ParamBinding(paramKey: "product.savings.rounding_scale", value: %2)]:
+        ParamBinding(paramKey: "product.savings.rounding_scale", value: %2),
+        # Tenor perpanjangan dari atribut produk (D-165). 365 hari menjaga simulasi tetap satu
+        # siklus per rekening di dalam tahun buku, tanpa bergantung pada selisih tanggal buka.
+        ParamBinding(paramKey: "product.savings.rollover_tenor_days", value: %365)]:
       insertBinding(d, testVersion, binding)
     1)
   doAssert approveVersion(db, testVersion, Id(Checker)), "versi produk simulasi gagal di-approve"

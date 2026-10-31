@@ -4331,3 +4331,85 @@ berubah: kegagalan non-kritis bukan alasan menahan deploy atau menggagalkan live
 tambahan satu `podman exec psql` per siklus timer, sama dengan probe outbox yang sudah ada.
 
 **Status.** Diimplementasikan 31 Okt 2026.
+
+## D-164 — Pencairan dini deposito berjangka: penalti dari parameter, bunga dibayar sampai tanggal cair (31 Okt 2026)
+
+**Konteks.** Pencairan dini belum ada: penarikan tunai dan PB yang menyentuh `TIME_DEPOSIT`
+ditolak `409 time_deposit_locked` sejak D-156, sehingga `DepositWithdrawn` berkondisi
+`TIME_DEPOSIT` (`ledger/0067`) tidak pernah tercapai (O-108). Tanpa angka penalti, membuka jalur
+ini berarti mengarang aturan bisnis.
+
+**Keputusan (pemilik, 31 Okt 2026).**
+- Pencairan sebelum jatuh tempo **dibuka** untuk **tarik tunai maupun PB keluar** (uang yang
+  keluar dari deposito memakai aturan yang sama; kalau hanya tunai yang dibuka, anggota bisa
+  memindahkan seluruh pokok ke rekening lain tanpa penalti).
+- Penalti = **persen dari pokok**, disimpan sebagai atribut produk
+  `product.savings.early_withdrawal_penalty` (tipe `rate`, tanpa nilai seed; binding per versi
+  produk). Tanpa binding, pencairan dini **ditolak** — bukan dianggap nol.
+- Bunga **dibayar sampai tanggal pencairan** memakai akrual yang sudah tercatat; akrual tidak
+  dibalik dan tidak dihitung ulang dengan rate lain.
+- Penalti diakui sebagai pendapatan: akun GL baru `403 PENDAPATAN DENDA` dan dua rule posting baru
+  (`InterestPaidEarly`: D 204 BUNGA AKRUAL / K 101.2 KAS; `EarlyWithdrawalPenalty`: D 101.2 /
+  K 403).
+
+**Konsekuensi.** Tiga jurnal per pencairan dini (`DepositWithdrawn` pokok, `InterestPaidEarly`
+bunga, `EarlyWithdrawalPenalty` penalti) dengan kas bersih `−(pokok + bunga) + penalti`. Akrual
+yang sudah tercatat tetap menjadi riwayat rekening setelah `CLOSED`. Nomor akun `403` dan
+penempatannya adalah **struktur pilot** (`NEEDS-COMPLIANCE-REVIEW`), sama seperti `202`/`204`.
+Pencairan dini tetap **area kritis**: wajib `HUMAN-REVIEW-REQUIRED` dan test yang membuktikan
+saldo, tiga jurnal, dan penolakan saat parameter tidak ter-bind.
+
+**Status.** Diputuskan 31 Okt 2026; implementasi T-146.
+
+## D-165 — Baseline akrual per siklus ARO dan tenor perpanjangan dari parameter produk (31 Okt 2026)
+
+**Konteks.** Task `deposit.maturity_aro` membayar bunga sebesar `cumulative` akrual terakhir, yang
+dihitung dari `opened_on`. Pada siklus kedua seluruh bunga siklus pertama ikut dibayar lagi; dan
+karena `nextMaturity` memakai `maturity_date − opened_on`, tenor perpanjangan menjadi dua kali
+tenor semula (`O-109`). Keduanya belum terlihat karena deposito berjangka belum dibuka untuk
+anggota nyata.
+
+**Keputusan (pemilik, 31 Okt 2026).**
+- Rekening menyimpan **akrual kumulatif yang sudah dibayar** (`deposit.account.interest_paid_cumulative`).
+  Task membayar `cumulative − interest_paid_cumulative`, lalu menaikkan kolom itu ke `cumulative`
+  dalam transaksi chunk yang sama — baik saat bunga dibayar maupun dikapitalisasi. Baris
+  `deposit.interest_accrual` tidak diubah atau dihapus (ledger tetap immutable); baseline adalah
+  kolom, bukan penanda di baris akrual.
+- Tenor perpanjangan berasal dari **atribut produk** `product.savings.rollover_tenor_days`
+  (integer, hari), bukan dari `maturity_date − opened_on`. Tanpa binding, task **gagal keras**
+  (kode task baru) alih-alih memakai tenor yang salah.
+
+**Konsekuensi.** Siklus pertama tidak berubah (kolom mulai `0`). Rekening lama mendapat nilai
+default `0` lewat migrasi expand-only. Perubahan tenor hanya berlaku untuk versi produk yang
+mengikat parameter itu; produk tanpa binding tidak bisa di-rollover sampai operator mengikatnya.
+`opened_on` tidak pernah diubah (D-155 butir 5 tetap: tanggal buka adalah fakta historis).
+
+**Status.** Diputuskan 31 Okt 2026; implementasi T-145.
+
+## D-166 — Ambang gate axe tetap `serious|critical` sampai migrasi layar selesai (31 Okt 2026)
+
+**Konteks.** Setiap spec e2e memfilter `impact === "serious" || impact === "critical"`, sehingga
+pelanggaran `moderate` (`heading-order`, `landmark-*`) lolos CI (O-118). Menaikkan ambang sekarang
+memunculkan temuan lama di layar yang belum dimigrasi — terutama layar kas (1.835 baris, T-141).
+
+**Keputusan (pemilik, 31 Okt 2026).** Ambang **tidak** dinaikkan sekarang. Gate tetap
+`serious|critical` sampai T-142 selesai (layar kas ikut dimigrasi), lalu ambang dinaikkan ke
+`moderate` dan semua temuan yang muncul diperbaiki dalam satu task tersendiri.
+
+**Konsekuensi.** O-118 tetap terbuka dengan keputusan urutan kerja yang eksplisit, bukan
+tambalan. Tidak ada perubahan kode.
+
+## D-167 — Satu jurnal boleh mencatat dua baris subledger (31 Okt 2026)
+
+**Konteks.** `deposit.transaction` memakai UNIQUE `(journal_id, account_id)`, bukan
+`journal_id`, supaya perpindahan pokok ARO `NONE` punya baris keluar (deposito) **dan** masuk
+(rekening simpanan) yang menunjuk satu jurnal GL. Dua jurnal akan menggandakan perpindahan; satu
+baris membuat `reconcile-deposits` melaporkan selisih palsu (O-110).
+
+**Keputusan (pemilik, 31 Okt 2026).** Model ini **diterima**: satu jurnal GL boleh memiliki lebih
+dari satu baris subledger asalkan rekeningnya berbeda; satu rekening tetap tidak boleh tercatat dua
+kali untuk jurnal yang sama. Laporan yang menjumlahkan per jurnal harus membaca kolom rekening,
+bukan mengasumsikan satu baris = satu jurnal.
+
+**Konsekuensi.** O-110 ditutup tanpa perubahan skema. Bila kelak ada laporan yang mengasumsikan
+satu baris per jurnal, laporan itu yang menyesuaikan.

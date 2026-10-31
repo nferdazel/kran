@@ -164,9 +164,14 @@ Keputusan per `aro_instruction` (D-155):
 | `PRINCIPAL` | tetap, `maturity_date` maju satu tenor | bayar ke rekening simpanan | `INTEREST_CREDIT` (simpanan) | `InterestPosted` D 204/K 201 (bunga 0 → tanpa jurnal) |
 | `PRINCIPAL_AND_INTEREST` | tetap + bunga dikapitalisasi, `maturity_date` maju | jadi pokok | `INTEREST_CREDIT` (deposito) | `InterestCapitalized` D 204/K 202 |
 
-- **Bunga yang dipindahkan** = `cumulative` akrual terakhir rekening itu (bunga yang sudah dijurnal
-  `InterestAccrued` tetapi belum dibayar); rekening tanpa baris akrual = bunga 0.
-- **Tenor perpanjangan** = tenor semula (`maturity_date − opened_on`), dihitung dari jatuh tempo lama.
+- **Bunga yang dipindahkan** = `cumulative` akrual terakhir **dikurangi**
+  `deposit.account.interest_paid_cumulative` (baseline siklus, D-165). Siklus pertama baseline `0`
+  sehingga perilakunya sama dengan sebelumnya; siklus berikutnya hanya membayar selisihnya. Setelah
+  membayar/mengapitalisasi, baseline dinaikkan ke `cumulative` di transaksi chunk yang sama. Baris
+  `deposit.interest_accrual` tidak diubah (ledger tetap immutable).
+- **Tenor perpanjangan** = atribut produk `product.savings.rollover_tenor_days` (hari), dihitung dari
+  jatuh tempo lama (D-165). `maturity_date − opened_on` **tidak** dipakai: setelah satu perpanjangan
+  nilainya dua kali tenor semula. Tanpa binding, task menahan chunk dengan `DAY-354`.
 - **Prasyarat**: rekening simpanan `ACTIVE` **atau `DORMANT`** milik party yang sama di cabang yang
   sama (`activeSavingsAccount`, urut `account_no`), **tanpa** simpanan POKOK/WAJIB — GL-nya ekuitas
   `301.x` sedangkan perpindahan ini mengkredit `201`, dan penarikan POKOK/WAJIB diblokir. Tidak ada
@@ -188,16 +193,15 @@ Keputusan per `aro_instruction` (D-155):
   task dengan `DAY-348` sebelum ada mutasi — menutup deposito tanpa memindahkan pokok tidak boleh
   terjadi diam-diam.
 - **Proses terlambat lebih dari satu tenor** menahan task dengan `DAY-349`: tanggal jatuh tempo baru
-  sudah lewat lagi, dan melanjutkan berarti membayar bunga siklus yang sama dua kali (O-109).
-- Kode kegagalan `DAY-340`…`DAY-349` ada di runbook + katalog i18n (id+en).
-- **Batas yang belum tertutup**: siklus ARO **kedua** belum diputuskan — akrual tidak di-reset setelah
-  pembayaran bunga dan `maturity_date − opened_on` bukan lagi tenor semula pada siklus berikutnya
-  (`docs/OPEN_ITEMS.md` O-109). Juga: penarikan sebelum jatuh tempo tanpa penalti (O-108), dan belum
+  sudah lewat lagi, dan melanjutkan berarti membayar bunga siklus yang sama dua kali.
+- Kode kegagalan `DAY-340`…`DAY-349` serta `DAY-354` ada di runbook + katalog i18n (id+en).
+- **Batas yang belum tertutup**: penarikan sebelum jatuh tempo tanpa penalti (O-108, T-146), dan belum
   ada endpoint untuk membuka deposito berjangka.
 - **NEEDS-COMPLIANCE-REVIEW** (kode akun `202`/`204`/`501`) dan **HUMAN-REVIEW-REQUIRED** (pergerakan
   uang jatuh tempo, AGENTS.md §8) tetap berlaku.
 
-Deposito berjangka kini punya alur jatuh tempo lengkap untuk **satu siklus**, tetapi belum boleh
+Deposito berjangka kini punya alur jatuh tempo lengkap untuk banyak siklus (baseline akrual per
+siklus, tenor dari atribut produk), tetapi belum boleh
 dibuka untuk anggota nyata sebelum O-109 diputuskan, penalti penarikan dini (O-108) dan parameter
 compliance (O-084) dikonfirmasi.
 

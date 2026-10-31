@@ -110,3 +110,12 @@ proc lockAccountForUpdate*(db: DbConn; accountId: Id) =
   ## rekening sesudahnya.
   discard db.getAllRows(sql"""
     SELECT account_id FROM deposit.account WHERE account_id = ? FOR UPDATE""", $accountId)
+
+proc markInterestPaid*(db: DbConn; accountId: Id; cumulative: Money) =
+  ## Menaikkan baseline bunga yang sudah dibayar ke `cumulative` akrual terakhir, di transaksi
+  ## chunk pemanggil (D-165). Idempoten untuk tanggal buku yang sama: nilai yang sama ditulis ulang.
+  ## Penurunan tidak mungkin terjadi karena `cumulative` hanya bertambah; `GREATEST` menjaga replay
+  ## task yang lebih tua tidak menurunkan baseline.
+  db.exec(sql"""
+    UPDATE deposit.account SET interest_paid_cumulative = GREATEST(interest_paid_cumulative, ?)
+     WHERE account_id = ?""", cumulative.toDecimalString, $accountId)

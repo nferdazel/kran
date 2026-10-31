@@ -25,6 +25,20 @@
     note: tidak menagih; angka final menunggu pemilik
   default_pack: { base: "0.00" }
 
+# Tenor perpanjangan ARO deposito berjangka (D-165). **Tanpa `default_pack`**: produk yang dipakai
+# untuk deposito berjangka wajib mengikat nilainya, dan task jatuh tempo gagal keras (`DAY-354`)
+# bila binding tidak ada — tenor yang ditebak lebih berbahaya daripada rollover yang tertunda.
+# Satuannya hari supaya cocok dengan aritmetika tanggal yang sudah dipakai task (`addDays`).
+- key: product.savings.rollover_tenor_days
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 1, maximum: 3650 }
+  sensitivity: NORMAL
+  provenance:
+    class: kebijakan
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: "tenor perpanjangan per produk (D-165); angka final menunggu pemilik/compliance"
+
 - key: product.savings.admin_fee
   type: money
   scopes: [GLOBAL, INSTITUTION]

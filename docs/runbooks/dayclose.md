@@ -164,13 +164,14 @@ SELECT t.task_id, t.state, t.error->>'code' AS code, t.metrics
 | `DAY-344` | jurnal jatuh tempo tidak bisa dibuat | periksa rule `DepositMatured`/`InterestPosted`/`InterestCapitalized` (seed `ledger/0065`, `ledger/0069`). **Periode tertutup bukan kode ini**: galat periode dari trigger `ledger` muncul sebagai `DAY-345` (retryable) |
 | `DAY-345` | perpindahan jatuh tempo gagal disimpan, atau saldo berubah di tengah proses | galat basis data/mutasi bersamaan; task dicoba ulang. Bila berulang, selidiki transaksi yang menyentuh rekening itu pada tanggal yang sama |
 | `DAY-346` | `aro_instruction` tidak dikenal | data rusak (CHECK DB seharusnya menolak); perbaiki nilainya, jangan menganggap `NONE` |
-| `DAY-347` | tenor perpanjangan tidak sah (`maturity_date` ≤ `opened_on`) | perbaiki tanggal rekening; ARO `PRINCIPAL*` tidak bisa menghitung tenor semula |
+| `DAY-347` | *(tidak lagi dipancarkan sejak D-165)* tenor perpanjangan tidak sah | kode lama; tenor kini berasal dari atribut produk (`DAY-354` bila tidak ada) |
 | `DAY-348` | rekening jatuh tempo tanpa baris `deposit.account_balance` | cache saldo hilang: jangan tutup rekening (pokok bisa hilang tanpa jejak). Rekonstruksi saldo lewat `reconcile-deposits`, lalu `daycloser-resume` |
-| `DAY-349` | jatuh tempo baru sudah lewat lagi (proses terlambat > satu tenor) | siklus ARO kedua belum didukung (O-109). Selesaikan perpanjangan/pembayaran secara manual lewat jalur resmi, perbaiki `maturity_date`, lalu resume |
+| `DAY-349` | jatuh tempo baru sudah lewat lagi (proses terlambat > satu tenor) | selesaikan perpanjangan/pembayaran secara manual lewat jalur resmi, perbaiki `maturity_date`, lalu resume |
 | `DAY-350` | daftar rekening dormant gagal dibaca | galat basis data; task dicoba ulang otomatis |
 | `DAY-351` | parameter `deposit.dormant.after_months` tidak terbaca / bukan bulan ≥ 1 | lengkapi nilai parameter institusi (atau perbaiki tipenya) lewat maker-checker. Task **tidak** menebak ambang, dan karena task dormant **non-kritis**, run tetap `COMPLETED` dengan task `FAILED` — **jangan** mengandalkan `daycloser-resume` (run `COMPLETED` tidak bisa di-resume) atau menutup ulang tanggal itu (`run_exists`): pemindaian dormant ikut berjalan pada **penutupan berikutnya** setelah parameternya benar. Periksa status task di `daycloser-status`/`/app/dayclose` |
 | `DAY-352` | status rekening tidak dikenal saat membaca daftar dormant | data rusak; perbaiki `deposit.account.status` (CHECK `0071` seharusnya menolak nilai asing) |
 | `DAY-353` | status dormant gagal disimpan | galat basis data; task dicoba ulang. Tidak ada uang yang berpindah, dan task ini **tidak kritis** — penutupan tetap bisa selesai dengan mencatat kegagalan |
+| `DAY-354` | versi produk rekening tidak mengikat `product.savings.rollover_tenor_days` (atau nilainya bukan bilangan bulat > 0) | lengkapi atribut produk pada versi yang dipakai (D-165), lalu `daycloser-resume`. Task **tidak** menebak tenor dari `maturity_date − opened_on` |
 
 Karena gate **pra**-tutup berjalan sebelum freeze, kegagalannya tidak membekukan tanggal: institusi
 masih bisa melayani, tetapi tanggal itu tidak bisa ditutup dua kali (run `BLOCKED` harus di-resume

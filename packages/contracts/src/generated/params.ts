@@ -901,6 +901,24 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "product.savings.rollover_tenor_days",
+    "module": "product",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.product.savings.rollover_tenor_days",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 3650
+    }
+  },
+  {
     "key": "product.savings.rounding_mode",
     "module": "product",
     "valueType": "enum",
