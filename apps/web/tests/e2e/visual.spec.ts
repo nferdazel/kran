@@ -12,9 +12,9 @@ import { expect, test, type Page } from "@playwright/test";
  * di-commit ke `visual.spec.ts-snapshots/`. Jangan membuat baseline di mesin lain: hasilnya hanya
  * akan menghasilkan diff yang tidak bisa ditindaklanjuti.
  *
- * Yang diambil hanya layar yang **deterministik dari seed dev**: halaman masuk dan buku besar.
- * Nilai yang berubah sendiri (tanggal buku, jam) di-mask; menambah layar baru berarti menambah
- * baseline Linux baru lewat alur yang sama.
+ * Yang diambil hanya layar yang deterministik dari seed dev: halaman masuk dan buku besar. Nilai
+ * yang berubah sendiri (tanggal buku, baris tabel yang bertambah oleh spec lain) di-mask; menambah
+ * layar baru berarti menambah baseline Linux baru lewat alur yang sama.
  */
 
 const MAKER = { username: "dev.maker", password: "rahasia-panjang-123" };
@@ -52,11 +52,13 @@ async function login(page: Page): Promise<void> {
 }
 
 /**
- * Bagian layar yang memang berubah sendiri: tanggal buku mengikuti jam sistem. Tanpa mask,
- * baseline gagal setiap pergantian hari tanpa ada perubahan UI.
+ * Bagian layar yang memang berubah sendiri: tanggal buku mengikuti jam sistem, dan isi tabel buku
+ * besar bertambah setiap spec e2e lain menulis jurnal. Keduanya di-mask; yang dibandingkan adalah
+ * kerangka halaman (shell, header, tipografi, token warna) yang justru paling sering berubah karena
+ * CSS. Baseline tanpa mask hanya akan hijau bila run e2e kebetulan hanya menjalankan berkas ini.
  */
 function dynamicMasks(page: Page) {
-  return [page.locator(".kran-business-date")];
+  return [page.locator(".kran-business-date"), page.locator(".kran-table")];
 }
 
 test.describe("visual regression (baseline Linux)", () => {
