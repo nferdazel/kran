@@ -1,4 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
+
+import { blockingViolations } from "./axe.js";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { requireDatabase } from "./db.js";
 
@@ -110,12 +112,10 @@ for (const locale of LOCALES) {
       ).toBeVisible();
 
       const results = await new AxeBuilder({ page }).analyze();
-      const serious = results.violations.filter(
-        (violation) => violation.impact === "serious" || violation.impact === "critical",
-      );
+      const blocking = blockingViolations(results.violations);
       expect(
-        serious,
-        `/app/dayclose ${locale}/${theme}: ${serious.map((violation) => violation.id).join(", ")}`,
+        blocking,
+        `/app/dayclose ${locale}/${theme}: ${blocking.map((violation) => violation.id).join(", ")}`,
       ).toEqual([]);
     });
   }

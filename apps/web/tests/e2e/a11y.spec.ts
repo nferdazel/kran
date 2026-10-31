@@ -1,9 +1,11 @@
 import AxeBuilder from "@axe-core/playwright";
+
+import { blockingViolations } from "./axe.js";
 import { expect, test, type Page } from "@playwright/test";
 
 /**
  * Gate a11y (spec §17.2): axe-core pada rute utama × 2 tema × 2 locale, gagal untuk pelanggaran
- * ber-dampak serious/critical.
+ * ber-dampak `moderate` ke atas (D-166/T-149).
  *
  * Locale diset eksplisit lewat `localStorage` (strategi Paraglide memakainya) supaya hasil test
  * tidak bergantung pada bahasa browser: tanpa itu locale jatuh ke `preferredLanguage` (en-US di
@@ -68,13 +70,11 @@ for (const locale of LOCALES) {
       await expect(page.locator("html")).toHaveAttribute("lang", locale);
 
       const results = await new AxeBuilder({ page }).analyze();
-      const serious = results.violations.filter(
-        (v) => v.impact === "serious" || v.impact === "critical",
-      );
+      const blocking = blockingViolations(results.violations);
 
       // Pesan eksplisit supaya kegagalan bisa ditindaklanjuti tanpa membuka trace.
       expect(
-        serious.map((v) => ({
+        blocking.map((v) => ({
           id: v.id,
           impact: v.impact,
           description: v.description,
@@ -145,12 +145,10 @@ test("halaman galat: copy Indonesia, satu h1, axe bersih di dua tema", async ({ 
     await expect(page.getByRole("link", { name: "Kembali ke area kerja" })).toBeVisible();
 
     const results = await new AxeBuilder({ page }).analyze();
-    const serious = results.violations.filter(
-      (violation) => violation.impact === "serious" || violation.impact === "critical",
-    );
+    const blocking = blockingViolations(results.violations);
     expect(
-      serious.map((violation) => violation.id),
-      `galat ${theme}: ${serious.map((violation) => violation.id).join(", ")}`,
+      blocking.map((violation) => violation.id),
+      `galat ${theme}: ${blocking.map((violation) => violation.id).join(", ")}`,
     ).toEqual([]);
   }
 });
