@@ -2494,6 +2494,73 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/teller/sessions/{sessionId}/transactions:
+    get:
+      operationId: listTellerSessionTransactions
+      tags: [teller]
+      summary: Arus kas satu sesi kas teller
+      description: |
+        Baris `teller.cash_movement` sesi, **terbaru dulu**, untuk daftar transaksi di layar kas
+        (DESIGN §11: stasiun kerja, isi sesi terlihat tanpa berpindah halaman). `amount` adalah kas
+        yang bergerak di laci, bukan nominal rekening: pencairan dini deposito menyerahkan
+        `pokok + bunga − penalti` (D-164), sehingga kolom rekening di statement bisa berbeda.
+
+        `direction` relatif laci: `IN` = uang masuk (`CASH_IN`), `OUT` = uang keluar (`CASH_OUT`).
+        Pemindahbukuan antar rekening **tidak** muncul di sini karena tidak menyentuh laci.
+
+        Izin `teller.session.read` harus dipegang di cabang sesi. Sesi tidak dikenal → 404
+        (`params.reason=session_not_found`); cabang lain → 403. Paginasi `limit` 1..100 (default 50)
+        dan `offset` ≥ 0; `total` adalah jumlah seluruh baris sesi, bukan jumlah di halaman ini.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Jumlah baris per halaman.
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Jumlah baris yang dilewati.
+      responses:
+        "503":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "200":
+          description: Arus kas sesi pada halaman yang diminta.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TellerSessionTransactionList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+
   /api/v1/teller/vault:
     get:
       operationId: getTellerVault
@@ -5756,6 +5823,60 @@ components:
         createdAt:
           type: string
           description: ISO-8601 UTC.
+
+    TellerSessionTransactionList:
+      type: object
+      additionalProperties: false
+      required: [sessionId, businessDate, total, items]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        businessDate:
+          type: string
+          format: date
+          description: Tanggal bisnis sesi.
+        total:
+          type: integer
+          description: Jumlah seluruh baris arus kas sesi (bukan jumlah di halaman ini).
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TellerSessionTransaction"
+
+    TellerSessionTransaction:
+      type: object
+      additionalProperties: false
+      description: |
+        Satu baris arus kas laci sesi. `amount` = kas yang bergerak (bukan selalu nominal rekening;
+        pencairan dini membayar `pokok + bunga − penalti`, D-164).
+      required: [transactionId, journalId, accountId, accountNo, direction, amount, occurredAt,
+                 narration]
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        journalId:
+          type: string
+          format: uuid
+        accountId:
+          type: string
+          format: uuid
+        accountNo:
+          type: string
+        direction:
+          type: string
+          enum: [IN, OUT]
+          description: Relatif laci kas. `IN` = uang masuk, `OUT` = uang keluar.
+        amount:
+          type: string
+          description: Kas yang bergerak, desimal string 2 desimal.
+        occurredAt:
+          type: string
+          format: date-time
+        narration:
+          type: string
+          description: Keterangan transaksi; `""` bila tidak diisi.
 
     TellerVaultTopUpRequestList:
       type: object

@@ -27,6 +27,8 @@ import { formatMoney } from "#lib/app/format.js";
 
 export type TellerSession = components["schemas"]["TellerSession"];
 export type TellerSessionClose = components["schemas"]["TellerSessionClose"];
+export type TellerSessionTransaction = components["schemas"]["TellerSessionTransaction"];
+export type TellerSessionTransactionList = components["schemas"]["TellerSessionTransactionList"];
 
 /** Batas kolom `note` di kontrak (`TellerSessionOpenRequest`/`TellerSessionCloseRequest`). */
 export const SESSION_NOTE_MAX_LENGTH = 200;
@@ -211,6 +213,16 @@ export function tellerSessionProblemMessage(problem: Problem): string {
   if (problem.status === 404) return m.teller_session_error_not_found();
   if (problem.status === 403) return m.teller_session_denied();
   return problemMessage(problem);
+}
+
+/**
+ * Arus kas satu sesi (T-147). Sumbernya `teller.cash_movement`, jadi `amount` adalah kas yang
+ * bergerak — untuk pencairan dini deposito itu `pokok + bunga − penalti`, bukan nominal rekening.
+ */
+export function loadSessionTransactions(sessionId: string, limit = 50, offset = 0) {
+  return api.GET("/api/v1/teller/sessions/{sessionId}/transactions", {
+    params: { path: { sessionId }, query: { limit, offset } },
+  });
 }
 
 export function loadCurrentTellerSession(branchId: string) {

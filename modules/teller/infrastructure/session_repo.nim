@@ -252,3 +252,48 @@ proc movementsOf*(db: DbConn, sessionId: Id): seq[CashMovement] =
       businessDate: row[5],
       occurredAt: row[6],
       createdBy: row[7])
+
+type
+  SessionTransaction* = object
+    ## Satu baris arus kas laci sesi (T-147). Nominalnya **kas yang bergerak**, bukan selalu nominal
+    ## rekening: pencairan dini deposito menyerahkan `pokok + bunga − penalti` (D-164). Karena itu
+    ## yang dibaca `cash_movement.amount`, bukan `deposit.transaction.amount`.
+    transactionId*: Id
+    journalId*: Id
+    accountId*: Id
+    accountNo*: string
+    direction*: CashMovementType ## `cmCashIn` = uang masuk laci
+    amount*: Money
+    occurredAt*: string ## ISO-8601 UTC
+    narration*: string ## "" = tidak diisi
+
+proc sessionTransactionCount*(db: DbConn; sessionId: Id): int64 =
+  ## Jumlah baris arus kas sesi; dipakai untuk `total` di respons terpaginasi.
+  int64(parseBiggestInt(db.getValue(sql"""
+    SELECT count(*)::text FROM teller.cash_movement WHERE session_id = ?""", $sessionId)))
+
+proc sessionTransactions*(db: DbConn; sessionId: Id; limit, offset: int):
+    seq[SessionTransaction] =
+  ## Arus kas sesi, **terbaru dulu**. Join ke `deposit.transaction`/`deposit.account` hanya untuk
+  ## nomor rekening dan keterangan; jumlah uang tetap `cash_movement`. Diizinkan di lapisan
+  ## infrastructure (archcheck), dan modul `teller` memang sudah mem-FK `deposit.transaction`.
+  for row in db.getAllRows(sql"""
+      SELECT m.transaction_id, t.journal_id, t.account_id, a.account_no, m.movement_type,
+             m.amount::text,
+             to_char(m.occurred_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+             coalesce(t.narration, '')
+        FROM teller.cash_movement m
+        JOIN deposit.transaction t ON t.transaction_id = m.transaction_id
+        JOIN deposit.account a ON a.account_id = t.account_id
+       WHERE m.session_id = ?
+       ORDER BY m.occurred_at DESC, m.movement_id DESC
+       LIMIT ?::int OFFSET ?::int""", $sessionId, $limit, $offset):
+    result.add SessionTransaction(
+      transactionId: Id(row[0]),
+      journalId: Id(row[1]),
+      accountId: Id(row[2]),
+      accountNo: row[3],
+      direction: parseCashMovementType(row[4]),
+      amount: moneyRequired(row[5]),
+      occurredAt: row[6],
+      narration: row[7])

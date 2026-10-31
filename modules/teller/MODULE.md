@@ -56,6 +56,7 @@ runtime (pola `deposit/0006`/`0008`: `ON ALL TABLES` hanya mencakup tabel yang a
 |---|---|---|---|
 | `POST /api/v1/teller/sessions` | `teller.session.open` @cabang | 201 `TellerSession` | 400 body/nominal/note/kunci; 403 (cabang); 409 `session_already_open`/`insufficient_vault`/`vault_not_configured`; 409 idempotensi |
 | `GET /api/v1/teller/sessions/current?branchId=` | `teller.session.read` @cabang | 200 `TellerSession` | 400 `branchId`; 403 (cabang); 404 `session_not_open` |
+| `GET /api/v1/teller/sessions/{sessionId}/transactions?limit=&offset=` | `teller.session.read` @cabang sesi | 200 `TellerSessionTransactionList` (`items` terbaru dulu + `total`) | 400 `limit` (1..100)/`offset` < 0; 403 (cabang); 404 `session_not_found` |
 | `POST /api/v1/teller/sessions/{sessionId}/close` | `teller.session.close` @cabang sesi | 200 `TellerSessionClose` | 400 `countedCash`/note/kunci; 403 (cabang); 404 tak dikenal; 409 `session_not_open`/`session_not_owned`; 409 idempotensi |
 | `POST /api/v1/teller/cash-transactions` | `teller.transaction.post` @cabang rekening | 201 `CashTransaction` | **409 `no_open_session`** bila tidak ada sesi `OPEN` hari itu, atau **409 `session_business_date_mismatch`** bila sesi `OPEN` ada tetapi untuk tanggal bisnis lain (tutup dulu); sisanya seperti T-088b |
 | `GET /api/v1/teller/vault?branchId=` | `teller.vault.read` @cabang | 200 `TellerVault` (`{branchId,balance}`) | 400 `branchId`; 403 (cabang); **404 `vault_not_configured`** bila baris vault belum ada |
@@ -69,6 +70,9 @@ runtime (pola `deposit/0006`/`0008`: `ON ALL TABLES` hanya mencakup tabel yang a
   isi beda = 409.
 - `GET current` memilih **404** (`params.reason=session_not_open`) alih-alih 200 `{session:null}` —
   konsisten dengan konvensi repo (`params.reason` eksplisit).
+- `GET {sessionId}/transactions` membaca `teller.cash_movement` (T-147), jadi `amount` = **kas yang
+  bergerak**: pencairan dini deposito menyerahkan `pokok + bunga − penalti` (D-164). Pemindahbukuan
+  antar rekening tidak muncul karena tidak menyentuh laci. Sesi `CLOSED` tetap bisa dibaca.
 - Audit: `teller.session.open`, `teller.session.close`, `teller.vault.topup.submit`,
   `teller.vault.topup.approve`, `teller.vault.topup.reject`. Event outbox (non-akuntansi, tanpa
   header `accounting`): `TellerSessionOpened`, `TellerSessionClosed` (payload memuat variance),

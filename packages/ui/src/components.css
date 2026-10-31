@@ -471,6 +471,7 @@
 /* Nilai uang di daftar fakta tidak boleh terpotong ke baris berikutnya. */
 .kran-facts .kran-num {
   white-space: nowrap;
+  font-variant-numeric: tabular-nums slashed-zero;
 }
 
 /* Dialog native (mis. konfirmasi penutupan buku): satu lapisan modal, ukuran baca, latar overlay.
@@ -606,6 +607,13 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* Field yang ditandai `aria-invalid` (DESIGN §7): sinyal utamanya tetap pesan teks di ringkasan,
+   garis bidang ini hanya penanda kedua supaya mata menemukan field yang salah. */
+.kran-input[aria-invalid="true"],
+.kran-select[aria-invalid="true"] {
+  border-color: var(--color-danger);
 }
 
 .kran-radio-group {

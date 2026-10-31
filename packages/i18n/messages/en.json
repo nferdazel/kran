@@ -808,5 +808,15 @@
   "teller_early_interest": "Interest paid",
   "teller_early_penalty": "Penalty",
   "teller_early_cash_paid": "Cash handed over",
-  "teller_early_announcement": "Early withdrawal: cash handed over {amount}."
+  "teller_early_announcement": "Early withdrawal: cash handed over {amount}.",
+  "teller_session_transactions_heading": "Session transactions",
+  "teller_session_tx_time": "Time",
+  "teller_session_tx_account": "Account",
+  "teller_session_tx_direction": "Direction",
+  "teller_session_tx_amount": "Cash (IDR)",
+  "teller_session_tx_narration": "Note",
+  "teller_session_tx_in": "In",
+  "teller_session_tx_out": "Out",
+  "teller_session_tx_empty": "No cash transactions in this session yet.",
+  "teller_session_tx_count": "Showing {shown} of {total} session transactions."
 }

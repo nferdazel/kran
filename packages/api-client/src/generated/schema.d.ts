@@ -1090,6 +1090,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/teller/sessions/{sessionId}/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Arus kas satu sesi kas teller
+         * @description Baris `teller.cash_movement` sesi, **terbaru dulu**, untuk daftar transaksi di layar kas
+         *     (DESIGN §11: stasiun kerja, isi sesi terlihat tanpa berpindah halaman). `amount` adalah kas
+         *     yang bergerak di laci, bukan nominal rekening: pencairan dini deposito menyerahkan
+         *     `pokok + bunga − penalti` (D-164), sehingga kolom rekening di statement bisa berbeda.
+         *
+         *     `direction` relatif laci: `IN` = uang masuk (`CASH_IN`), `OUT` = uang keluar (`CASH_OUT`).
+         *     Pemindahbukuan antar rekening **tidak** muncul di sini karena tidak menyentuh laci.
+         *
+         *     Izin `teller.session.read` harus dipegang di cabang sesi. Sesi tidak dikenal → 404
+         *     (`params.reason=session_not_found`); cabang lain → 403. Paginasi `limit` 1..100 (default 50)
+         *     dan `offset` ≥ 0; `total` adalah jumlah seluruh baris sesi, bukan jumlah di halaman ini.
+         */
+        get: operations["listTellerSessionTransactions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/teller/vault": {
         parameters: {
             query?: never;
@@ -2832,6 +2862,42 @@ export interface components {
             journalId: string;
             /** @description ISO-8601 UTC. */
             createdAt: string;
+        };
+        TellerSessionTransactionList: {
+            /** Format: uuid */
+            sessionId: string;
+            /**
+             * Format: date
+             * @description Tanggal bisnis sesi.
+             */
+            businessDate: string;
+            /** @description Jumlah seluruh baris arus kas sesi (bukan jumlah di halaman ini). */
+            total: number;
+            items: components["schemas"]["TellerSessionTransaction"][];
+        };
+        /**
+         * @description Satu baris arus kas laci sesi. `amount` = kas yang bergerak (bukan selalu nominal rekening;
+         *     pencairan dini membayar `pokok + bunga − penalti`, D-164).
+         */
+        TellerSessionTransaction: {
+            /** Format: uuid */
+            transactionId: string;
+            /** Format: uuid */
+            journalId: string;
+            /** Format: uuid */
+            accountId: string;
+            accountNo: string;
+            /**
+             * @description Relatif laci kas. `IN` = uang masuk, `OUT` = uang keluar.
+             * @enum {string}
+             */
+            direction: "IN" | "OUT";
+            /** @description Kas yang bergerak, desimal string 2 desimal. */
+            amount: string;
+            /** Format: date-time */
+            occurredAt: string;
+            /** @description Keterangan transaksi; `""` bila tidak diisi. */
+            narration: string;
         };
         TellerVaultTopUpRequestList: {
             items: components["schemas"]["TellerVaultTopUpRecord"][];
@@ -4818,6 +4884,41 @@ export interface operations {
             405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
             415: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    listTellerSessionTransactions: {
+        parameters: {
+            query?: {
+                /** @description Jumlah baris per halaman. */
+                limit?: number;
+                /** @description Jumlah baris yang dilewati. */
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Arus kas sesi pada halaman yang diminta. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TellerSessionTransactionList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
             503: components["responses"]["Problem"];

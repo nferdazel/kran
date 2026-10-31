@@ -3655,3 +3655,26 @@ tiga jurnal), `itapi_deposit` 17, `itdaycloser_deposit` 39, `ittransfer` 7, `ita
 **Sisa**: PB keluar untuk pencairan dini (T-148) — membutuhkan jenis baris subledger untuk debit
 penalti di rekening tujuan; PB `TIME_DEPOSIT` tetap ditolak `409 time_deposit_locked` sampai itu
 selesai. Kedua perubahan adalah **HUMAN-REVIEW-REQUIRED** (rumus bunga + perpindahan uang).
+
+## 2026-10-31 — Riwayat transaksi sesi kas + layar kas pindah ke lapisan bersama (T-147)
+
+**Endpoint**: `GET /api/v1/teller/sessions/{sessionId}/transactions` (izin `teller.session.read`
+@cabang sesi, terbaru dulu, `limit` 1..100 + `offset`, `total` penuh, 404 `session_not_found`).
+Sumbernya `teller.cash_movement`, jadi `amount` = kas yang benar-benar bergerak — pencairan dini
+deposito menyerahkan `pokok + bunga − penalti` (D-164), berbeda dari nominal rekening di statement.
+Sesi `CLOSED` tetap bisa dibaca.
+
+**Layar kas**: daftar arus kas sesi tampil di panel sesi (`DataTable`), dimuat saat sesi terbuka dan
+dimuat ulang setelah transaksi tersimpan — isi sesi terlihat tanpa berpindah halaman (DESIGN §11).
+Panel pindah dari kartu berbingkai ke `.kran-section`, fakta ke `.kran-facts`, aksi ke `.kran-actions`.
+CSS lokal layar kas 197 → **73 baris**; total CSS lokal `apps/web/src/routes` 225 → **101 baris**
+(teller 73 + ledger 18 + ledger/admin 10). Dua celah lapisan bersama ditutup: `.kran-facts .kran-num`
+kini tabular, dan `.kran-input[aria-invalid="true"]` punya penanda visual (DESIGN §7).
+
+**Bukti**: `itapi_teller` 53 OK (1 test baru: urutan, arah, nominal, paginasi, 404/400, sesi CLOSED);
+`check-fast`, `openapi`, `lint-web`, `svelte-check` hijau; `./task e2e` di database segar **61 lulus,
+0 skip** (assertion baris sesi setelah simpan, axe 2 tema × 2 locale, keyboard, zoom 125%).
+
+**Sisa**: O-117 tertutup. Berikutnya T-144 (verifikasi cetak) dan task kenaikan ambang axe ke
+`moderate` (D-166) — sekarang tidak lagi terhalang migrasi layar kas. Buka kas masih bergantung pada
+rekening yang dimuat; pemisahan itu pekerjaan Fase 3, bukan migrasi ini.

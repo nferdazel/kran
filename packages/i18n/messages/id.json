@@ -808,5 +808,15 @@
   "teller_early_interest": "Bunga dibayar",
   "teller_early_penalty": "Penalti",
   "teller_early_cash_paid": "Kas diserahkan",
-  "teller_early_announcement": "Pencairan dini: kas diserahkan {amount}."
+  "teller_early_announcement": "Pencairan dini: kas diserahkan {amount}.",
+  "teller_session_transactions_heading": "Transaksi sesi",
+  "teller_session_tx_time": "Waktu",
+  "teller_session_tx_account": "Rekening",
+  "teller_session_tx_direction": "Arah",
+  "teller_session_tx_amount": "Kas (IDR)",
+  "teller_session_tx_narration": "Keterangan",
+  "teller_session_tx_in": "Masuk",
+  "teller_session_tx_out": "Keluar",
+  "teller_session_tx_empty": "Belum ada transaksi tunai di sesi ini.",
+  "teller_session_tx_count": "Menampilkan {shown} dari {total} transaksi sesi."
 }
