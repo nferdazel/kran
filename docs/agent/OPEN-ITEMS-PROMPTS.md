@@ -10,7 +10,9 @@ Aturan yang sudah tertanam di setiap blok: jangan mengarang angka/pasal regulasi
 di sesi itu, dan setiap keputusan dicatat di `docs/DECISIONS.md` + `docs/OPEN_ITEMS.md`.
 
 Urutan yang kusarankan (risiko naik): O-067 → O-044 → O-087 → O-093 → O-022 → O-026 → O-028 →
-O-053 → O-064 → O-070 → O-075 → O-100 → O-114 → O-071 → O-024 → O-041 → O-008.
+O-053 → O-064 → O-070 → O-075 → O-100 → O-114 → O-071 → O-024 → O-041.
+
+> O-008 sudah dibatalkan (server-wide, di luar repo kran) — bloknya di bawah hanya catatan.
 
 ---
 
