@@ -12,9 +12,11 @@ import { expect, test, type Page } from "@playwright/test";
  * di-commit ke `visual.spec.ts-snapshots/`. Jangan membuat baseline di mesin lain: hasilnya hanya
  * akan menghasilkan diff yang tidak bisa ditindaklanjuti.
  *
- * Yang diambil hanya layar yang deterministik dari seed dev: halaman masuk dan buku besar. Nilai
- * yang berubah sendiri (tanggal buku, baris tabel yang bertambah oleh spec lain) di-mask; menambah
- * layar baru berarti menambah baseline Linux baru lewat alur yang sama.
+ * Yang diambil hanya layar yang **tidak bergantung pada data yang ditulis spec lain**: halaman masuk
+ * dan layar ganti kata sandi. Buku besar sengaja tidak dipakai — saldonya berubah setiap spec e2e
+ * menulis jurnal, sehingga baseline hanya cocok bila berkas ini kebetulan berjalan sendiri. Tanggal
+ * buku tetap di-mask karena mengikuti jam sistem. Menambah layar berarti menambah baseline Linux
+ * baru lewat alur yang sama.
  */
 
 const MAKER = { username: "dev.maker", password: "rahasia-panjang-123" };
@@ -26,7 +28,7 @@ type Theme = (typeof THEMES)[number];
 const TEXT = {
   loginTitle: "Masuk",
   username: "Nama pengguna",
-  ledgerTitle: "Saldo buku besar",
+  passwordTitle: "Ganti kata sandi",
 } as const;
 
 async function prepare(page: Page, theme: Theme): Promise<void> {
@@ -47,18 +49,19 @@ async function login(page: Page): Promise<void> {
   await page.keyboard.press("Tab");
   await page.keyboard.type(MAKER.password);
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/app\/ledger$/);
-  await expect(page.getByRole("heading", { level: 1, name: TEXT.ledgerTitle })).toBeVisible();
+  // Tunggu login benar-benar selesai (meninggalkan /login) sebelum navigasi berikutnya. Memeriksa
+  // heading level 1 saja tidak cukup: halaman login juga punya heading level 1.
+  await expect(page).not.toHaveURL(/\/login$/);
+  await page.goto("/app/password");
+  await expect(page.getByRole("heading", { level: 1, name: TEXT.passwordTitle })).toBeVisible();
 }
 
 /**
- * Bagian layar yang memang berubah sendiri: tanggal buku mengikuti jam sistem, dan isi tabel buku
- * besar bertambah setiap spec e2e lain menulis jurnal. Keduanya di-mask; yang dibandingkan adalah
- * kerangka halaman (shell, header, tipografi, token warna) yang justru paling sering berubah karena
- * CSS. Baseline tanpa mask hanya akan hijau bila run e2e kebetulan hanya menjalankan berkas ini.
+ * Tanggal buku mengikuti jam sistem, jadi di-mask. Sisanya statis: layar ini tidak menampilkan data
+ * yang ditulis spec lain.
  */
 function dynamicMasks(page: Page) {
-  return [page.locator(".kran-business-date"), page.locator(".kran-table")];
+  return [page.locator(".kran-business-date")];
 }
 
 test.describe("visual regression (baseline Linux)", () => {
@@ -80,12 +83,12 @@ test.describe("visual regression (baseline Linux)", () => {
       });
     });
 
-    test(`buku besar — tema ${theme}`, async ({ page }) => {
+    test(`ganti kata sandi — tema ${theme}`, async ({ page }) => {
       await prepare(page, theme);
       await login(page);
-      await expect(page.getByRole("grid").locator("tbody tr").first()).toBeVisible();
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
 
-      await expect(page).toHaveScreenshot(`ledger-${theme}.png`, {
+      await expect(page).toHaveScreenshot(`password-${theme}.png`, {
         animations: "disabled",
         caret: "hide",
         maxDiffPixelRatio: 0.01,

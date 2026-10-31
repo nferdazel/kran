@@ -3810,7 +3810,7 @@ ulang di dalam `UPDATE`; satu audit per chunk di transaksi yang sama. Bukti: `it
 Gate: `build`, `check-fast`, `openapi` (+ `openapi-gen` untuk klien TS), `lint-web`, `tcontract`,
 e2e 63 lulus / 4 skip (visual regression hanya Linux) di DB segar.
 
-**T-156 / O-022** (D-177): `visual.spec.ts` memotret halaman masuk dan buku besar × tema terang/gelap,
+**T-156 / O-022** (D-177): `visual.spec.ts` memotret halaman masuk dan ganti kata sandi × tema terang/gelap (buku besar sengaja tidak dipakai karena saldonya berubah saat spec lain menulis jurnal),
 hanya di Linux (di macOS test melewati diri sendiri). Baseline dihasilkan `visual-baseline.yml` di
 runner `ubuntu-24.04` dan di-commit; dispatch tanpa `update` hanya membandingkan — run 41219502893
 menghasilkan baseline, run 41220380661 membandingkannya dan hijau. Gate berjalan lewat `./task e2e`
