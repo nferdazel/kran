@@ -191,6 +191,8 @@
   let branches = $state<Branch[]>([]);
   let branchesFailed = $state(false);
   let sessionBranchId = $state("");
+  /** Penjaga respons basi saat cabang sesi diganti beruntun (respons cabang lama tidak menimpa). */
+  let sessionRequest = 0;
   let sessionTx = $state<SessionTxState>({ kind: "idle" });
   /** Nomor permintaan terakhir: jawaban lama yang datang belakangan tidak boleh menimpa yang baru. */
   let sessionTxRequest = 0;
@@ -419,6 +421,7 @@
 
   /** Buang sesi yang dimuat: dipakai saat rekening gagal dimuat atau dimuat ulang. */
   function resetSession(): void {
+    sessionRequest += 1;
     sessionState = { kind: "idle" };
     sessionPhase = "idle";
     pendingSession = null;
@@ -495,10 +498,13 @@
       sessionState = { kind: "idle" };
       return;
     }
+    // Nomor permintaan: respons untuk cabang lama tidak boleh menimpa cabang yang sedang dipilih.
+    const request = ++sessionRequest;
     sessionState = { kind: "loading" };
     closeResult = null;
     try {
       const outcome = await loadCurrentTellerSession(branchId);
+      if (request !== sessionRequest) return;
       if (outcome.response.status === 401) {
         await goto(resolve("/login"));
         return;
@@ -522,6 +528,7 @@
           : m.error_generic(),
       };
     } catch {
+      if (request !== sessionRequest) return;
       sessionState = { kind: "failed", message: m.error_generic() };
     }
   }
@@ -1084,7 +1091,9 @@
 
         {#if branchesFailed}
           <p class="kran-alert" role="alert">{m.teller_session_branches_failed()}</p>
-        {:else if branches.length > 0}
+        {:else if branches.length === 0}
+          <p class="kran-muted">{m.teller_session_branches_empty()}</p>
+        {:else}
           <div class="kran-field">
             <label class="kran-label" for="teller-session-branch">
               {m.teller_session_branch_label()}
@@ -1706,6 +1715,11 @@
                 <dd>{review.narration}</dd>
               {/if}
             </dl>
+
+            {#if account.accountType === "TIME_DEPOSIT" &&
+              (review.kind === "transfer" || review.direction === "WITHDRAWAL")}
+              <p class="kran-muted">{m.teller_review_time_deposit_notice()}</p>
+            {/if}
 
             {#if loadedAtText !== ""}
               <p class="kran-muted">

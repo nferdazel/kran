@@ -837,17 +837,17 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
                 let detail = early.get()
                 journalId = postJournalSync(db, app.clock, "DepositWithdrawnViaTransfer",
                   detail.principal, source.branchId, transferId, businessDate,
-                  "early.transfer.principal:" & $transferId, actor, source.productCode,
+                  tellerJournalSubKey(journalKey, "principal"), actor, source.productCode,
                   $source.accountType, source.savingsKind)
                 if detail.interest.isPositive:
                   interestJournalId = postJournalSync(db, app.clock,
                     "InterestPaidEarlyViaTransfer", detail.interest, source.branchId, transferId,
-                    businessDate, "early.transfer.interest:" & $transferId, actor,
+                    businessDate, tellerJournalSubKey(journalKey, "interest"), actor,
                     source.productCode, $source.accountType, source.savingsKind)
                 if detail.penalty.isPositive:
                   penaltyJournalId = postJournalSync(db, app.clock,
                     "EarlyWithdrawalPenaltyViaTransfer", detail.penalty, source.branchId,
-                    transferId, businessDate, "early.transfer.penalty:" & $transferId, actor,
+                    transferId, businessDate, tellerJournalSubKey(journalKey, "penalty"), actor,
                     source.productCode, $source.accountType, source.savingsKind)
               else:
                 journalId = postJournalSync(db, app.clock, transferSourceEvent, amount,
@@ -910,9 +910,14 @@ proc handleTransfer*(app: AppContext, req: Request) {.gcsafe.} =
                 "amount": amount.toDecimalString,
                 "journalId": $journalId,
                 "earlyWithdrawal": (if early.isSome:
-              %*{"interest": early.get().interest.toDecimalString,
+              %*{"principal": early.get().principal.toDecimalString,
+                 "interest": early.get().interest.toDecimalString,
                  "penalty": early.get().penalty.toDecimalString,
-                 "creditedAmount": cashPaid(early.get()).toDecimalString}
+                 "creditedAmount": cashPaid(early.get()).toDecimalString,
+                 "interestJournalId": (if string(interestJournalId).len == 0: ""
+                else: $interestJournalId),
+                 "penaltyJournalId": (if string(penaltyJournalId).len == 0: ""
+                else: $penaltyJournalId)}
             else: newJNull()),
               }))
 
