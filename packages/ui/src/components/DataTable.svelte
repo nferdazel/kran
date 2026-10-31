@@ -10,6 +10,12 @@
     align?: "start" | "end";
     /** Nilai diformat dengan `formatMoney` dan dirender `kran-money`. */
     numerics?: boolean;
+    /**
+     * Sel kolom ini dirender `<th scope="row">`: kolom kunci yang menamai baris (mis. kode
+     * produk). Pembaca layar mengumumkannya bersama tiap sel lain di baris yang sama
+     * (DESIGN §6). Hanya satu kolom per tabel yang sebaiknya memakainya.
+     */
+    rowHeader?: boolean;
   }
 
   /** Baris tabel: record apa adanya dari pemanggil, tanpa menyalin/mengarang field. */
@@ -45,6 +51,9 @@
   interface Props {
     /** Wajib: `<caption>` adalah satu-satunya nama tabel yang dibacakan pembaca layar. */
     caption: string;
+    /** Nama region bergulir. Bawaan = `caption`; diisi terpisah bila pemanggil sudah punya
+     *  konvensi nama region (mis. "Tabel: <judul bagian>"). */
+    ariaLabel?: string;
     columns: DataColumn[];
     rows: DataRow[];
     sort?: DataSort;
@@ -53,9 +62,24 @@
     /** Locale angka untuk kolom `numerics` (aplikasi ini dwibahasa id/en). */
     locale?: string;
     actions?: DataActions;
+    /**
+     * Sembunyikan `<caption>` secara visual, bukan dari pembaca layar. Dipakai saat tabel sudah
+     * diberi judul oleh `<h2>` bagian: nama tabel tetap dibacakan, teksnya tidak diulang di layar.
+     */
+    captionHidden?: boolean;
   }
 
-  let { caption, columns, rows, sort, rowKey, locale = "id-ID", actions }: Props = $props();
+  let {
+    caption,
+    ariaLabel,
+    columns,
+    rows,
+    sort,
+    rowKey,
+    locale = "id-ID",
+    actions,
+    captionHidden = false,
+  }: Props = $props();
 
   function headerClass(column: DataColumn): string | undefined {
     return column.align === "end" || column.numerics === true ? "kran-num" : undefined;
@@ -84,9 +108,9 @@
      ini: `role="region"` + `tabindex="0"` + `aria-label`. Kompiler Svelte menandai `tabindex` pada
      elemen noninteraktif; di sini fokus itulah tujuannya, bukan efek samping. -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-<div class="kran-table-wrap" role="region" tabindex="0" aria-label={caption}>
+<div class="kran-table-wrap" role="region" tabindex="0" aria-label={ariaLabel ?? caption}>
   <table class="kran-table">
-    <caption>{caption}</caption>
+    <caption class={captionHidden ? "kran-visually-hidden" : undefined}>{caption}</caption>
     <thead>
       <tr>
         {#each columns as column (column.key)}
@@ -103,7 +127,11 @@
       {#each rows as row, index (row[rowKey] ?? index)}
         <tr>
           {#each columns as column (column.key)}
-            <td class={cellClass(column)}>{cellText(row, column)}</td>
+            {#if column.rowHeader === true}
+              <th scope="row" class={cellClass(column)}>{cellText(row, column)}</th>
+            {:else}
+              <td class={cellClass(column)}>{cellText(row, column)}</td>
+            {/if}
           {/each}
           {#if actions}
             <td>{@render actions.cell(row)}</td>

@@ -9,9 +9,18 @@
    *  - Buku besar immutable: layar ini **tidak** menawarkan edit/hapus jurnal, hanya pembalik.
    *  - Konfirmasi tutup periode = **satu lapisan inline** (DESIGN §7), bukan `window.confirm`.
    *  - Galat field difokuskan ke input pertama yang gagal dan pesannya terikat `aria-describedby`.
+   *
+   * Aturan visual milik `packages/ui`: judul layar, seksi, field, tombol, badge status, dan peringatan
+   * memakai kelas/komponen bersama. CSS lokal hanya untuk digit kode dan ukuran target checkbox.
    */
   import { goto } from "$app/navigation";
+  import { resolve } from "$app/paths";
   import { onMount } from "svelte";
+
+  import Alert from "@kran/ui/components/Alert.svelte";
+  import Button from "@kran/ui/components/Button.svelte";
+  import EmptyState from "@kran/ui/components/EmptyState.svelte";
+  import StatusBadge from "@kran/ui/components/StatusBadge.svelte";
 
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
@@ -103,7 +112,7 @@
   async function loadPeriods(): Promise<void> {
     const { data: body, response } = await api.GET("/api/v1/ledger/periods");
     if (response.status === 401) {
-      await goto("/login");
+      await goto(resolve("/login"));
       return;
     }
     if (!response.ok || !body) {
@@ -116,7 +125,7 @@
   async function loadCoa(): Promise<void> {
     const { data: body, response } = await api.GET("/api/v1/ledger/coa");
     if (response.status === 401) {
-      await goto("/login");
+      await goto(resolve("/login"));
       return;
     }
     if (!response.ok || !body) {
@@ -129,7 +138,7 @@
   async function loadJournals(): Promise<void> {
     const { data: body, response } = await api.GET("/api/v1/ledger/journals");
     if (response.status === 401) {
-      await goto("/login");
+      await goto(resolve("/login"));
       return;
     }
     if (!response.ok || !body) {
@@ -342,45 +351,42 @@
   <title>{m.common_app_title()} — {m.ledger_admin_title()}</title>
 </svelte:head>
 
-<div class="ledger-admin-head">
+<div class="kran-page-header">
   <div>
-    <h1 class="ledger-admin-title">{m.ledger_admin_title()}</h1>
-    <p class="ledger-admin-intro">{m.ledger_admin_intro()}</p>
+    <h1 class="kran-page-header__title">{m.ledger_admin_title()}</h1>
+    <p class="kran-page-header__intro">{m.ledger_admin_intro()}</p>
   </div>
-  <button
-    class="kran-button"
-    type="button"
-    onclick={() => void loadAll()}
-    disabled={loading || !anySection}
-  >
+  <Button type="button" onclick={() => void loadAll()} disabled={loading || !anySection}>
     {m.ledger_admin_reload()}
-  </button>
+  </Button>
 </div>
 
 {#if !anySection}
-  <p class="kran-alert" role="alert">{m.ledger_admin_no_sections()}</p>
+  <Alert tone="negative" title={m.ledger_admin_no_sections()} />
 {:else if loading}
   <p role="status">{m.ledger_admin_loading()}</p>
 {:else}
   {#if loadError}
-    <p class="kran-alert" role="alert">{loadError}</p>
+    <Alert tone="negative" title={loadError} />
   {/if}
   {#if actionError}
-    <p class="kran-alert" role="alert">{actionError}</p>
+    <Alert tone="negative" title={actionError} />
   {/if}
   {#if notice}
-    <p class="ledger-admin-notice" role="status">{notice}</p>
+    <Alert tone="positive" title={notice} />
   {/if}
 
-  <p class="ledger-admin-immutable kran-muted">{m.ledger_admin_immutable_hint()}</p>
+  <p class="kran-muted">{m.ledger_admin_immutable_hint()}</p>
 
   {#if canManagePeriod}
-    <section class="kran-card" aria-labelledby="ledger-admin-periods-heading">
-      <h2 id="ledger-admin-periods-heading">{m.ledger_admin_periods_heading()}</h2>
+    <section class="kran-section" aria-labelledby="ledger-admin-periods-heading">
+      <h2 class="kran-section__title" id="ledger-admin-periods-heading">
+        {m.ledger_admin_periods_heading()}
+      </h2>
       <p class="kran-muted">{m.ledger_admin_periods_intro()}</p>
 
       {#if periods.length === 0}
-        <p class="kran-muted">{m.ledger_admin_periods_empty()}</p>
+        <EmptyState title={m.ledger_admin_periods_empty()} />
       {:else}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
@@ -408,16 +414,11 @@
                   <td>{formatDate(period.startsOn)}</td>
                   <td>{formatDate(period.endsOn)}</td>
                   <td>
-                    <span
-                      class="kran-status {period.status === "OPEN" ? "kran-status--ok" : ""}"
-                    >
-                      <span class="kran-status__icon" aria-hidden="true"
-                        >{period.status === "OPEN" ? "○" : "✔"}</span
-                      >
+                    <StatusBadge tone={period.status === "OPEN" ? "positive" : "neutral"}>
                       {period.status === "OPEN"
                         ? m.ledger_status_open()
                         : m.ledger_status_closed()}
-                    </span>
+                    </StatusBadge>
                   </td>
                   <td>
                     {#if period.closedAt}
@@ -426,16 +427,16 @@
                       <span class="kran-muted">—</span>
                     {/if}
                   </td>
-                  <td class="ledger-admin-actions">
+                  <td>
                     {#if !canClosePeriod(period)}
                       <span class="kran-muted">{m.ledger_admin_close_disabled()}</span>
                     {:else if confirmingId === period.periodId}
                       <form
-                        class="ledger-admin-inline"
+                        class="kran-stack"
                         onsubmit={(event) => void submitClose(event, period)}
                         novalidate
                       >
-                        <p class="ledger-admin-hint" id={`close-hint-${period.periodId}`}>
+                        <p class="kran-muted" id={`close-hint-${period.periodId}`}>
                           {m.ledger_admin_close_confirm({
                             range: `${formatDate(period.startsOn)} – ${formatDate(period.endsOn)}`,
                           })}
@@ -454,33 +455,29 @@
                           aria-invalid={closeError !== null ? "true" : undefined}
                         />
                         {#if closeError}
-                          <p
-                            class="ledger-admin-error"
-                            id={`close-error-${period.periodId}`}
-                            role="alert"
-                          >
+                          <p class="kran-alert" id={`close-error-${period.periodId}`} role="alert">
                             {closeError.message}
                           </p>
                         {/if}
-                        <div class="ledger-admin-buttons">
-                          <button
-                            class="kran-button kran-button--primary"
+                        <div class="kran-actions">
+                          <Button
+                            variant="primary"
                             type="submit"
                             disabled={closingId === period.periodId}
                           >
                             {closingId === period.periodId
                               ? m.ledger_admin_closing()
                               : m.ledger_admin_close_submit()}
-                          </button>
-                          <button class="kran-button" type="button" onclick={cancelClose}>
+                          </Button>
+                          <Button type="button" onclick={cancelClose}>
                             {m.ledger_admin_cancel()}
-                          </button>
+                          </Button>
                         </div>
                       </form>
                     {:else}
-                      <button class="kran-button" type="button" onclick={() => startClose(period)}>
+                      <Button type="button" onclick={() => startClose(period)}>
                         {m.ledger_admin_close()}
-                      </button>
+                      </Button>
                     {/if}
                   </td>
                 </tr>
@@ -490,8 +487,8 @@
         </div>
       {/if}
 
-      <form class="kran-form ledger-admin-form" onsubmit={submitOpen} novalidate>
-        <h3 class="ledger-admin-form-title">{m.ledger_admin_open_legend()}</h3>
+      <form class="kran-form" onsubmit={submitOpen} novalidate>
+        <h3 class="kran-section__title">{m.ledger_admin_open_legend()}</h3>
         <div class="kran-field">
           <label class="kran-label" for="ledger-open-starts">
             {m.ledger_admin_open_starts_label()}
@@ -505,7 +502,7 @@
             aria-describedby={openError?.field === "startsOn" ? "ledger-open-starts-error" : undefined}
           />
           {#if openError?.field === "startsOn"}
-            <p class="ledger-admin-error" id="ledger-open-starts-error" role="alert">
+            <p class="kran-alert" id="ledger-open-starts-error" role="alert">
               {openError.message}
             </p>
           {/if}
@@ -523,27 +520,29 @@
             aria-describedby={openError?.field === "endsOn" ? "ledger-open-ends-error" : undefined}
           />
           {#if openError?.field === "endsOn"}
-            <p class="ledger-admin-error" id="ledger-open-ends-error" role="alert">
+            <p class="kran-alert" id="ledger-open-ends-error" role="alert">
               {openError.message}
             </p>
           {/if}
         </div>
-        <div class="ledger-admin-buttons">
-          <button class="kran-button kran-button--primary" type="submit" disabled={opening}>
+        <div class="kran-actions">
+          <Button variant="primary" type="submit" disabled={opening}>
             {opening ? m.ledger_admin_opening() : m.ledger_admin_open_submit()}
-          </button>
+          </Button>
         </div>
       </form>
     </section>
   {/if}
 
   {#if canManageCoa}
-    <section class="kran-card" aria-labelledby="ledger-admin-coa-heading">
-      <h2 id="ledger-admin-coa-heading">{m.ledger_admin_coa_heading()}</h2>
+    <section class="kran-section" aria-labelledby="ledger-admin-coa-heading">
+      <h2 class="kran-section__title" id="ledger-admin-coa-heading">
+        {m.ledger_admin_coa_heading()}
+      </h2>
       <p class="kran-muted">{m.ledger_admin_coa_intro()}</p>
 
       {#if accounts.length === 0}
-        <p class="kran-muted">{m.ledger_admin_coa_empty()}</p>
+        <EmptyState title={m.ledger_admin_coa_empty()} />
       {:else}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
@@ -584,8 +583,8 @@
         </div>
       {/if}
 
-      <form class="kran-form ledger-admin-form" onsubmit={submitCoa} novalidate>
-        <h3 class="ledger-admin-form-title">{m.ledger_admin_coa_create_legend()}</h3>
+      <form class="kran-form" onsubmit={submitCoa} novalidate>
+        <h3 class="kran-section__title">{m.ledger_admin_coa_create_legend()}</h3>
         <div class="kran-field">
           <label class="kran-label" for="ledger-coa-code">{m.ledger_admin_coa_code_label()}</label>
           <input
@@ -601,7 +600,7 @@
           />
           <p class="kran-muted" id="ledger-coa-code-hint">{m.ledger_admin_coa_code_hint()}</p>
           {#if coaError?.field === "code"}
-            <p class="ledger-admin-error" id="ledger-coa-code-error" role="alert">
+            <p class="kran-alert" id="ledger-coa-code-error" role="alert">
               {coaError.message}
             </p>
           {/if}
@@ -618,7 +617,7 @@
             aria-describedby={coaError?.field === "name" ? "ledger-coa-name-error" : undefined}
           />
           {#if coaError?.field === "name"}
-            <p class="ledger-admin-error" id="ledger-coa-name-error" role="alert">
+            <p class="kran-alert" id="ledger-coa-name-error" role="alert">
               {coaError.message}
             </p>
           {/if}
@@ -638,41 +637,45 @@
             {/each}
           </select>
           {#if coaError?.field === "accountType"}
-            <p class="ledger-admin-error" id="ledger-coa-type-error" role="alert">
+            <p class="kran-alert" id="ledger-coa-type-error" role="alert">
               {coaError.message}
             </p>
           {/if}
         </div>
-        <div class="kran-field ledger-admin-checkbox">
-          <input
-            class="kran-checkbox-input"
-            id="ledger-coa-postable"
-            type="checkbox"
-            bind:checked={coaPostable}
-            aria-describedby="ledger-coa-postable-hint"
-          />
-          <label class="kran-label" for="ledger-coa-postable">
-            {m.ledger_admin_coa_postable_label()}
-          </label>
+        <div class="kran-field">
+          <div class="kran-actions">
+            <input
+              class="ledger-admin-checkbox"
+              id="ledger-coa-postable"
+              type="checkbox"
+              bind:checked={coaPostable}
+              aria-describedby="ledger-coa-postable-hint"
+            />
+            <label class="kran-label" for="ledger-coa-postable">
+              {m.ledger_admin_coa_postable_label()}
+            </label>
+          </div>
           <p class="kran-muted" id="ledger-coa-postable-hint">
             {m.ledger_admin_coa_postable_hint()}
           </p>
         </div>
-        <div class="ledger-admin-buttons">
-          <button class="kran-button kran-button--primary" type="submit" disabled={creating}>
+        <div class="kran-actions">
+          <Button variant="primary" type="submit" disabled={creating}>
             {creating ? m.ledger_admin_coa_creating() : m.ledger_admin_coa_submit()}
-          </button>
+          </Button>
         </div>
       </form>
     </section>
   {/if}
 
   {#if canReverse}
-    <section class="kran-card" aria-labelledby="ledger-admin-reverse-heading">
-      <h2 id="ledger-admin-reverse-heading">{m.ledger_admin_reverse_heading()}</h2>
+    <section class="kran-section" aria-labelledby="ledger-admin-reverse-heading">
+      <h2 class="kran-section__title" id="ledger-admin-reverse-heading">
+        {m.ledger_admin_reverse_heading()}
+      </h2>
       <p class="kran-muted">{m.ledger_admin_reverse_intro()}</p>
 
-      <form class="kran-form ledger-admin-form" onsubmit={submitReverse} novalidate>
+      <form class="kran-form" onsubmit={submitReverse} novalidate>
         <div class="kran-field">
           <label class="kran-label" for="ledger-reverse-journal">
             {m.ledger_admin_reverse_journal_label()}
@@ -692,7 +695,7 @@
             {m.ledger_admin_reverse_journal_hint()}
           </p>
           {#if reverseError?.field === "journalId"}
-            <p class="ledger-admin-error" id="ledger-reverse-journal-error" role="alert">
+            <p class="kran-alert" id="ledger-reverse-journal-error" role="alert">
               {reverseError.message}
             </p>
           {/if}
@@ -738,16 +741,16 @@
             aria-describedby={reverseError?.field === "reason" ? "ledger-reverse-reason-error" : undefined}
           />
           {#if reverseError?.field === "reason"}
-            <p class="ledger-admin-error" id="ledger-reverse-reason-error" role="alert">
+            <p class="kran-alert" id="ledger-reverse-reason-error" role="alert">
               {reverseError.message}
             </p>
           {/if}
         </div>
 
-        <div class="ledger-admin-buttons">
-          <button class="kran-button kran-button--primary" type="submit" disabled={reversing}>
+        <div class="kran-actions">
+          <Button variant="primary" type="submit" disabled={reversing}>
             {reversing ? m.ledger_admin_reversing() : m.ledger_admin_reverse_submit()}
-          </button>
+          </Button>
         </div>
       </form>
     </section>
@@ -755,112 +758,14 @@
 {/if}
 
 <style>
-  .ledger-admin-head {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--space-4);
-    align-items: center;
-    padding-block: var(--space-4);
-    padding-inline: var(--space-4);
-    border: 1px solid var(--color-hairline);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-raised);
-    margin-block-end: var(--space-4);
-  }
-
-  .ledger-admin-title {
-    margin: 0;
-    font-size: var(--text-xl);
-    line-height: var(--line-height-tight);
-    font-weight: 600;
-  }
-
-  .ledger-admin-intro {
-    margin: var(--space-1) 0 0;
-    max-inline-size: 52ch;
-    color: var(--color-text-muted);
-    font-size: var(--text-sm);
-  }
-
-  .ledger-admin-immutable {
-    margin-block-end: var(--space-4);
-  }
-
-  .ledger-admin-notice {
-    padding-block: var(--space-2);
-    padding-inline: var(--space-3);
-    border: 1px solid var(--color-primary);
-    border-radius: var(--radius-md);
-    color: var(--color-text);
-  }
-
-  .ledger-admin-form {
-    margin-block-start: var(--space-4);
-    padding-block-start: var(--space-4);
-    border-block-start: 1px solid var(--color-hairline);
-  }
-
-  .ledger-admin-form-title {
-    margin: 0;
-    font-size: var(--text-base);
-    font-weight: 600;
-  }
-
+  /* Layar-saja: kolom kode memakai digit tetap agar kode akun sejajar, dan target checkbox
+   * minimal 24 px (DESIGN §4). Aturan visual lain milik lapisan bersama. */
   .ledger-admin-id {
-    font-family: var(--font-sans);
     font-variant-numeric: tabular-nums slashed-zero;
-    font-size: var(--text-xs);
-  }
-
-  .ledger-admin-actions {
-    min-inline-size: 16rem;
-  }
-
-  .ledger-admin-inline {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    min-inline-size: 14rem;
-  }
-
-  .ledger-admin-hint {
-    margin: 0;
-    color: var(--color-text-muted);
-    font-size: var(--text-sm);
-  }
-
-  .ledger-admin-buttons {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .ledger-admin-error {
-    margin: 0;
-    color: var(--color-danger);
-    font-size: var(--text-sm);
   }
 
   .ledger-admin-checkbox {
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    column-gap: var(--space-2);
-  }
-
-  .ledger-admin-checkbox input {
     inline-size: var(--control-min-size);
     block-size: var(--control-min-size);
-  }
-
-  .ledger-admin-checkbox p {
-    grid-column: 2;
-    margin: 0;
-  }
-
-  @media (max-width: 1100px) {
-    .ledger-admin-head {
-      grid-template-columns: minmax(0, 1fr);
-    }
   }
 </style>

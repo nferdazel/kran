@@ -8,7 +8,13 @@
    * sama), jadi pengguna tidak perlu masuk ulang — cukup lanjut bekerja. Pesan langsungnya
    * ditampilkan di sini, bukan lewat pengalihan otomatis, supaya pengguna melihat sendiri bahwa
    * perubahan berhasil dan sesi lain sudah diputus.
+   *
+   * Tata letak mengikuti DESIGN §11: satu bidang kerja sempit (`.kran-page`), tajuk layar bersama,
+   * dan form bersama. Tidak ada CSS lokal di berkas ini; aturan visual tinggal di `packages/ui`.
    */
+  import Alert from "@kran/ui/components/Alert.svelte";
+  import Button from "@kran/ui/components/Button.svelte";
+
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
   import { passwordProblemMessage } from "#lib/app/errors.js";
@@ -73,27 +79,25 @@
   <title>{m.common_app_title()} — {m.password_title()}</title>
 </svelte:head>
 
-<div class="kran-toolbar password-toolbar">
-  <div>
-    <h1 class="password-title">{m.password_title()}</h1>
-  </div>
+<div class="kran-page">
   <!-- Identitas + tombol keluar ada di shell `/app` (T-132/UI-3): satu tempat untuk semua layar
        kerja, jadi layar ini tidak lagi menyediakan salinan kedua. -->
-</div>
-
-<section class="kran-card password-card" aria-labelledby="ganti-kata-sandi">
-  <h2 id="ganti-kata-sandi">{m.password_title()}</h2>
-  <p class="kran-muted">{m.password_intro()}</p>
+  <div class="kran-page-header">
+    <div>
+      <h1 class="kran-page-header__title">{m.password_title()}</h1>
+      <p class="kran-page-header__intro">{m.password_intro()}</p>
+    </div>
+  </div>
 
   {#if session.mustChangePassword && !berhasil}
-    <p class="kran-alert" role="status">{m.password_required_notice()}</p>
+    <Alert tone="info" title={m.password_required_notice()} />
   {/if}
 
   {#if berhasil}
-    <p class="kran-alert" role="status">{m.password_success()}</p>
-    <p>
+    <Alert tone="positive" title={m.password_success()} />
+    <div class="kran-actions">
       <a class="kran-button kran-button--primary" href={continueHref}>{m.password_continue()}</a>
-    </p>
+    </div>
   {:else}
     <form class="kran-form" onsubmit={submit} novalidate>
       <div class="kran-field">
@@ -125,36 +129,14 @@
       </div>
 
       {#if errorMessage}
-        <p class="kran-alert" role="alert">{errorMessage}</p>
+        <Alert tone="negative" title={errorMessage} />
       {/if}
 
-      <p>
-        <button class="kran-button kran-button--primary" type="submit" disabled={submitting}>
+      <div class="kran-actions">
+        <Button variant="primary" type="submit" disabled={submitting}>
           {submitting ? m.password_submitting() : m.password_submit()}
-        </button>
-      </p>
+        </Button>
+      </div>
     </form>
   {/if}
-</section>
-
-<style>
-  .password-toolbar {
-    padding-block: var(--space-4);
-    padding-inline: var(--space-4);
-    border: 1px solid var(--color-hairline);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-raised);
-    margin-block-end: var(--space-4);
-  }
-
-  .password-title {
-    margin: 0;
-    font-size: var(--text-xl);
-    line-height: var(--line-height-tight);
-    font-weight: 600;
-  }
-
-  .password-card {
-    max-inline-size: 36rem;
-  }
-</style>
+</div>

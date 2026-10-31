@@ -19,6 +19,7 @@
    * endpoint `?accountNo=`, jadi tidak ada lagi pengisian UUID manual.
    */
   import { goto } from "$app/navigation";
+  import { resolve } from "$app/paths";
   import { page } from "$app/state";
   import { onMount, tick } from "svelte";
 
@@ -315,7 +316,7 @@
     try {
       const { data: body, response, error } = await loadDepositAccountByNo(accountNo);
       if (response.status === 401) {
-        await goto("/login");
+        await goto(resolve("/login"));
         return;
       }
       if (!response.ok || !body) {
@@ -380,7 +381,7 @@
     try {
       const outcome = await loadCurrentTellerSession(branchId);
       if (outcome.response.status === 401) {
-        await goto("/login");
+        await goto(resolve("/login"));
         return;
       }
       const reason = api.isProblem(outcome.error) ? (outcome.error as Problem).params?.reason : undefined;
@@ -554,7 +555,7 @@
             );
 
       if (outcome.response.status === 401) {
-        await goto("/login");
+        await goto(resolve("/login"));
         return;
       }
 
@@ -696,7 +697,7 @@
             );
 
       if (outcome.response.status === 401) {
-        await goto("/login");
+        await goto(resolve("/login"));
         return;
       }
 
@@ -911,7 +912,10 @@
           {/if}
 
           <p class="passbook-actions">
-            <a class="kran-button" href={`/app/print/statement/${loaded.accountId}`}>
+            <a
+              class="kran-button"
+              href={resolve("/app/print/statement/[accountId]", { accountId: loaded.accountId })}
+            >
               {m.teller_print_statement()}
             </a>
           </p>
@@ -1378,7 +1382,12 @@
                 <dd>{formatDate(transaction.businessDate)}</dd>
               </dl>
               <p>
-                <a class="kran-button" href={`/app/print/slip/${transaction.transactionId}`}>
+                <a
+                  class="kran-button"
+                  href={resolve("/app/print/slip/[transactionId]", {
+                    transactionId: transaction.transactionId,
+                  })}
+                >
                   {m.teller_print_slip()}
                 </a>
               </p>
