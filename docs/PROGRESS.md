@@ -3859,3 +3859,12 @@ dipush bersama `main`. Deploy di host menunggu CI: `GERBANG CI: menunggu 900s un
 → **14m04s** kemudian `semua check hijau` (Nim/Web/Security selesai lebih dulu, DB yang menentukan).
 Karena itu `KRAN_CI_WAIT_SECONDS` dinaikkan ke 1800. Hasil deploy: biner `d38ed733…` (bukan lagi
 `c0230813…`), `/healthz` = `0.1.1`, web ter-swap.
+
+**Rilis v0.1.1 dan deploy ber-gerbang pertama (lanjutan).** `./task release` memotong `v0.1.1` dan
+`gh release` membuat Release. Deploy di host menunggu CI dan lulus setelah **14m04s** (Nim/Web/
+Security lebih dulu; DB yang menentukan) — terlalu mepet untuk anggaran 15 menit, jadi
+`KRAN_CI_WAIT_SECONDS` dinaikkan ke 1800. Deploy berikutnya (`9f955b2`) **gagal di gerbang** dengan
+`HTTP 403`: kuota API IP host habis (0/60). Setelah reset, deploy manual menjalankan gerbang yang
+sama dan lulus dalam 1 detik (`semua check hijau`), lalu memasang skrip baru (1800) — jadi jalur
+gagal-closed terbukti, bukan dilewati. Catatan lanjutan: O-120 (token read-only).
+Produksi sekarang: `rev=9f955b2`, `/healthz` = `0.1.1`, biner `d38ed733…`.
