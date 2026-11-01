@@ -72,7 +72,7 @@ kuota — penting karena tanpa token batasnya 60 permintaan/jam per IP.
 | --- | --- | --- |
 | `KRAN_GITHUB_REPO` | `nferdazel/kran` | repo yang check-run-nya dibaca |
 | `KRAN_GITHUB_TOKEN` | — (opsional) | repo publik; token hanya menaikkan batas API |
-| `KRAN_CI_WAIT_SECONDS` | `900` | batas menunggu CI |
+| `KRAN_CI_WAIT_SECONDS` | `1800` | batas menunggu CI (deploy pertama yang memakai gerbang ini menunggu 14m04s) |
 | `KRAN_SKIP_CI_GATE` | `0` | **darurat saja**; tercatat `WARN` di `deploy.log` |
 | `KRAN_DEPLOY_LOCK_WAIT` | `900` | batas menunggu deploy lain selesai (bukan langsung gagal) |
 

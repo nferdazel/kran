@@ -3852,3 +3852,10 @@ COPY) — API tidak berubah karena binernya byte-identik dengan build sebelumnya
 dilewati. Web ter-swap (`kran-footer__version` ada di CSS yang disajikan) dan bundle memuat `0.1.0`.
 Gerbang CI dijalankan langsung di host: saat CI masih berjalan → menunggu lalu `ERROR ... timeout`;
 setelah CI hijau → `semua check hijau`.
+
+**Rilis v0.1.1 dan deploy ber-gerbang pertama.** `./task release` memotong `v0.1.1`
+(`chore: release v0.1.1`, changelog: dua `fix(tools|ops)`), `gh release` membuat Release, dan tag
+dipush bersama `main`. Deploy di host menunggu CI: `GERBANG CI: menunggu 900s untuk 4c0bb4c13c47`
+→ **14m04s** kemudian `semua check hijau` (Nim/Web/Security selesai lebih dulu, DB yang menentukan).
+Karena itu `KRAN_CI_WAIT_SECONDS` dinaikkan ke 1800. Hasil deploy: biner `d38ed733…` (bukan lagi
+`c0230813…`), `/healthz` = `0.1.1`, web ter-swap.

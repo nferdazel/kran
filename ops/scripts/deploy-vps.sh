@@ -128,7 +128,10 @@ ci_gate() { # ci_gate <rev>
   fi
 
   local repo="${KRAN_GITHUB_REPO:-nferdazel/kran}"
-  local wait_seconds="${KRAN_CI_WAIT_SECONDS:-900}"
+  # 1800, bukan 900: deploy pertama yang memakai gerbang ini menunggu 14 menit 04 detik (Nim, Web,
+  # Security selesai lebih dulu; DB yang menentukan). Batas 15 menit membuat deploy kedua yang
+  # kebetulan sedikit lebih lambat gagal hanya karena waktu, bukan karena CI merah.
+  local wait_seconds="${KRAN_CI_WAIT_SECONDS:-1800}"
   local api="https://api.github.com/repos/${repo}/commits/${rev}/check-runs?per_page=100"
   local auth=()
   # Repo ini publik, jadi token opsional (batas 60 permintaan/jam tanpa token). Kalau ada,
