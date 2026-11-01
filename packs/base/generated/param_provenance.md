@@ -29,6 +29,7 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | `ledger.posting.retry_backoff_seconds` | teknis | base | - | - |
 | `lending.allocation_order` | kebijakan | base | - | Urutan alokasi pembayaran (INTEREST,PRINCIPAL,PENALTY). Divalidasi domain; bukan angka regulasi. |
 | `lending.collectibility.dpd_bounds` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Batas atas DPD golongan 2–4 pola bank (90/120/180), D-180 butir 2; pasal belum diverifikasi. |
+| `lending.loan.max_principal` | komersial-konservatif | base | `NEEDS-COMPLIANCE-REVIEW` | Plafon pengajuan pilot Rp100.000.000,00; angka bisnis yang bisa diubah lewat maker-checker. |
 | `lending.ppap.rates` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Golongan 1–5 = 0/0,5/10/50/100 (persen, string). Pemetaan pun sementara; D-180 butir 3. |
 | `party.cif.format` | kebijakan | base | - | - |
 | `party.identity.doc_lengths` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | - |
@@ -80,6 +81,6 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 |---|---|
 | teknis | 19 |
 | kebijakan | 37 |
-| komersial-konservatif | 2 |
+| komersial-konservatif | 3 |
 | belum-bermakna | 0 |
 | regulasi-tidak-disemai | 5 |

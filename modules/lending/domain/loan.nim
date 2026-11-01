@@ -138,3 +138,16 @@ proc isSettled*(inst: Installment): bool {.inline.} =
   ## dari alokasi yang salah (mis. denda terbayar, pokok kurang).
   inst.paidPrincipal == inst.principalDue and inst.paidInterest == inst.interestDue and
     inst.paidPenalty == inst.penaltyDue
+
+proc canApprove*(status: LoanStatus): bool =
+  ## Hanya pengajuan yang menunggu keputusan yang bisa disetujui. `APPROVED` yang disetujui ulang
+  ## akan menimpa penyetuju pertama — jejak siapa yang menyetujui apa jadi hilang.
+  status == lsApplied
+
+proc assertDistinctActors*(maker, checker: Id) =
+  ## Empat mata (spec §7, D-099): penyetuju pinjaman tidak boleh orang yang mengajukan.
+  ## `ValueError` (bukan `AppResult`) karena ini keadaan yang tidak boleh lolos dari jalur HTTP —
+  ## handler memetakannya ke `409 self_approval`, sama seperti versi produk.
+  if maker == checker:
+    raise newException(ValueError,
+      "penyetuju harus berbeda dari pembuat (persetujuan sendiri ditolak)")

@@ -49,3 +49,18 @@
     compliance: NEEDS-COMPLIANCE-REVIEW
     note: "Golongan 1–5 = 0/0,5/10/50/100 (persen, string). Pemetaan pun sementara; D-180 butir 3."
   default_pack: { base: ["0", "0.5", "10", "50", "100"] }
+
+# Plafon pengajuan pinjaman (T-163). Angka ini **kebijakan pilot**, bukan ketentuan regulasi:
+# batas pengajuan yang lebih tinggi butuh persetujuan pemilik, dan angka final untuk pilot nyata
+# menunggu keputusan (O-001). Ditolak saat pengajuan, bukan saat pencairan, supaya pengaju tidak
+# menunggu persetujuan untuk pinjaman yang sejak awal di luar plafon.
+- key: lending.loan.max_principal
+  type: money
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: "0.01" }
+  sensitivity: NORMAL
+  provenance:
+    class: komersial-konservatif
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: "Plafon pengajuan pilot Rp100.000.000,00; angka bisnis yang bisa diubah lewat maker-checker."
+  default_pack: { base: "100000000.00" }

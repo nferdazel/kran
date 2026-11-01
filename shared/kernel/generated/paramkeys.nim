@@ -27,6 +27,7 @@ const paramKeys*: seq[string] = @[
   "ledger.posting.retry_backoff_seconds",
   "lending.allocation_order",
   "lending.collectibility.dpd_bounds",
+  "lending.loan.max_principal",
   "lending.ppap.rates",
   "party.cif.format",
   "party.identity.doc_lengths",
@@ -110,6 +111,8 @@ const P_ledger_posting_retry_backoff_seconds* = ParamKey[int64]("ledger.posting.
 const P_lending_allocation_order* = ParamKey[string]("lending.allocation_order")
 
 const P_lending_collectibility_dpd_bounds* = ParamKey[JsonNode]("lending.collectibility.dpd_bounds")
+
+const P_lending_loan_max_principal* = ParamKey[Money]("lending.loan.max_principal")
 
 const P_lending_ppap_rates* = ParamKey[JsonNode]("lending.ppap.rates")
 
@@ -407,6 +410,17 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.lending.collectibility.dpd_bounds",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "lending.loan.max_principal",
+    module: "lending",
+    valueType: pvtMoney,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.lending.loan.max_principal",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(

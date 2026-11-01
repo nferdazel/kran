@@ -3914,3 +3914,27 @@ i18n, 11 skrip shell), `build`, `openapi`, `./task test` penuh hijau (0 `[FAILED
 
 **Sisa Fase 4**: T-163 (pengajuan/persetujuan) sedang jadi task `READY` berikutnya; T-166/T-167
 menunggu angka compliance final untuk pilot data nyata.
+
+## 2026-11-01 — T-163: pengajuan & persetujuan pinjaman (maker-checker)
+
+**Rute**: `POST /api/v1/lending/loans` (201 `APPLIED`) dan
+`POST /api/v1/lending/loans/{loanId}/approve` (200 `APPROVED`). Izin `lending.loan.submit` /
+`lending.loan.approve`; peran sempit `lending_maker`/`lending_checker` + baris `role_conflict`
+(migrasi `platform/0081`), `platform_admin` memegang ketiganya.
+
+- **Cabang** pinjaman diambil dari data anggota, bukan badan permintaan — parameter `BRANCH` dari
+  klien bisa dipakai menaruh pinjaman di cabang lain. Izin diperiksa `authorizedAtBranch`.
+- **Empat mata** ditegakkan tiga lapis: domain (`assertDistinctActors`), handler (`409
+  self_approval`), dan CHECK DB `approved_by <> applied_by`. Balapan dua penyetuju diselesaikan
+  `SELECT … FOR UPDATE` + `UPDATE … WHERE status='APPLIED'` (yang kalah `409 not_applied`).
+- **Plafon** `lending.loan.max_principal` (Rp100 juta, `komersial-konservatif` +
+  `NEEDS-COMPLIANCE-REVIEW`): tepat di plafon diterima, di atasnya `409 limit_exceeded`. Parameter
+  yang hilang/rusak = 500, bukan plafon tak terbatas.
+- **Audit + event** `lending.loan.submit`/`LoanSubmitted` dan `lending.loan.approve`/`LoanApproved`
+  dalam transaksi yang sama dengan penulisan pinjaman.
+
+**Bukti**: `itapi_lending` 12, `itlending` 17, `tloan` 15; `check-fast`, `build`, `openapi`,
+`./task test` penuh, dan `./task e2e` 63 lulus / 4 skip — semua hijau.
+
+**Sisa**: penolakan pengajuan (`REJECTED`), penomoran pinjaman bisnis, daftar/baca pinjaman (T-169),
+dan `Idempotency-Key` di pencairan (T-164) — sengaja tidak dikerjakan setengah.

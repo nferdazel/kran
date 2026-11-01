@@ -14,9 +14,11 @@ import db_connector/db_postgres
 import "platform-lib/db/config"
 import "platform-lib/db/pool"
 import dbtools/lib
-import kernel/[clock, ids]
+import kernel/[clock, ids, money, rate]
 import party/domain/party
 import party/infrastructure/party_repo
+import ../domain/loan
+import ../infrastructure/loan_repo
 
 let envT = envTableFromProcess()
 if not databaseUrlSet(envT):
@@ -216,3 +218,66 @@ suite "lending: jadwal angsuran":
     db.exec(sql"UPDATE lending.installment SET interest_due = 51000.00 WHERE loan_id = ? AND no = 1", $l)
     check db.getValue(sql"SELECT interest_due::text FROM lending.installment WHERE loan_id = ? AND no = 1",
       $l) == "51000.00"
+
+suite "lending: repositori pinjaman (T-163)":
+  proc versionActive(): Id = newProductVersion(some(approver))
+
+  proc newLoan(versionId: Id; party: Id = partyRow.partyId): Loan =
+    Loan(
+      loanId: loanId(),
+      partyId: party,
+      productVersionId: versionId,
+      branchId: branch,
+      principal: money(500000000),
+      status: lsApplied,
+      appliedBy: maker,
+    )
+
+  test "pengajuan tersimpan lalu terbaca apa adanya":
+    let
+      v = versionActive()
+      loan = newLoan(v)
+    insertLoan(db, loan)
+    let back = loanById(db, loan.loanId)
+    check back.isSome
+    check back.get().partyId == loan.partyId
+    check back.get().productVersionId == v
+    check back.get().branchId == branch
+    check toDecimalString(back.get().principal) == "5000000.00"
+    check back.get().status == lsApplied
+    check back.get().appliedBy == maker
+    check back.get().approvedBy == Id("") # belum ada penyetuju
+    check back.get().disbursedOn == "" # belum cair
+
+  test "pinjaman yang tidak ada = none, bukan baris kosong":
+    check loanById(db, newId(testClock)).isNone
+
+  test "approve hanya berhasil sekali":
+    let
+      v = versionActive()
+      loan = newLoan(v)
+    insertLoan(db, loan)
+    check approveLoan(db, loan.loanId, approver)
+    check not approveLoan(db, loan.loanId, approver)
+    let back = loanById(db, loan.loanId)
+    check back.get().status == lsApproved
+    check back.get().approvedBy == approver
+
+  test "approve oleh pengaju sendiri ditolak CHECK DB":
+    let
+      v = versionActive()
+      loan = newLoan(v)
+    insertLoan(db, loan)
+    expectDbError(proc() = discard approveLoan(db, loan.loanId, maker))
+    check loanById(db, loan.loanId).get().status == lsApplied
+
+  test "atribut versi produk dibaca lengkap dengan status":
+    let v = versionActive()
+    let found = productVersionById(db, v)
+    check found.isSome
+    check found.get().status == pvsActive
+    check found.get().scheduleMethod == smAnnuity
+    check found.get().tenorMonths == 12
+    check microUnits(found.get().annualRate) == 150000
+    check found.get().allocationOrder == @[acInterest, acPrincipal, acPenalty]
+    check productVersionById(db, newId(testClock)).isNone

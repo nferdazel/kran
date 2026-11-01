@@ -356,6 +356,23 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "lending.loan.max_principal",
+    "module": "lending",
+    "valueType": "money",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.lending.loan.max_principal",
+    "jsonSchema": {
+      "minimum": "0.01"
+    }
+  },
+  {
     "key": "lending.ppap.rates",
     "module": "lending",
     "valueType": "json",

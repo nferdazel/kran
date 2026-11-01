@@ -5,7 +5,7 @@
 
 import std/[strutils, unittest]
 
-import kernel/[money, rate, result]
+import kernel/[ids, money, rate, result]
 
 import ../domain/loan
 
@@ -83,3 +83,22 @@ suite "lending domain: produk versi":
     )
     check v.scheduleMethod == smAnnuity
     check microUnits(v.annualRate) == 150_000
+
+suite "lending domain: keputusan pinjaman (T-163)":
+  test "hanya APPLIED yang bisa disetujui":
+    check canApprove(lsApplied)
+    for status in [lsApproved, lsActive, lsClosed, lsWrittenOff]:
+      check not canApprove(status)
+
+  test "penyetuju sendiri ditolak domain":
+    let
+      maker = Id("88888888-8888-7888-8888-888888888888")
+      other = Id("99999999-9999-7999-8999-999999999999")
+    var raised = false
+    try:
+      assertDistinctActors(maker, maker)
+    except ValueError:
+      raised = true
+    check raised
+    # Dua aktor berbeda lolos tanpa exception.
+    assertDistinctActors(maker, other)

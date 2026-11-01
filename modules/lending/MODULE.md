@@ -1,7 +1,8 @@
 # Modul `lending` — pinjaman anggota
 
 Pinjaman (spec §9.2, §23 Fase 4): produk pinjaman berversi, akad/fasilitas, jadwal angsuran, lalu
-kolektibilitas/PPAP di fase yang sama. Status: **T-161** (model + skema) + **T-162** (mesin jadwal flat/efektif/anuitas).
+kolektibilitas/PPAP di fase yang sama. Status: **T-161** (model + skema) + **T-162** (mesin jadwal) + **T-163** (pengajuan &
+persetujuan). Pencairan T-164, angsuran T-165.
 pengajuan/pencairan T-163/T-164; task day-close T-166/T-167; API/UI T-169/T-170.
 
 Keputusan angka & aturan: **D-180**. Rencana fase: `docs/proposals/fase4-lending.md`.
@@ -59,22 +60,55 @@ pencairan berarti mengubah angka yang sudah disepakati anggota, jadi itu bukan o
 | `lending.allocation_order` | urutan alokasi pembayaran (daftar terurut) | diputuskan pemilik: **parameter**, bukan kode (D-180 butir 4) |
 | `lending.collectibility.dpd_bounds` | batas DPD per golongan 1–5 | `NEEDS-COMPLIANCE-REVIEW` (REG-204 `V!`; D-180 butir 2) |
 | `lending.ppap.rates` | persentase penyisihan per golongan | `NEEDS-COMPLIANCE-REVIEW` (D-180 butir 3, angka sementara) |
+| `lending.loan.max_principal` | plafon pengajuan pinjaman | `komersial-konservatif` + `NEEDS-COMPLIANCE-REVIEW` (Rp100 juta, T-163) |
 
 Nilai di atas **bukan** angka final untuk pilot data nyata; lihat O-001.
 
-## Event (direncanakan, belum ada)
+## Pengajuan & persetujuan (T-163)
 
-`LoanSubmitted`, `LoanApproved`, `LoanDisbursed`, `InstallmentDue`, `CollectibilityChanged`
-(spec §8). Tidak satu pun dipublikasikan pada T-161 — jangan menganggapnya sudah ada.
+| Rute | Izin | Keluaran |
+|---|---|---|
+| `POST /api/v1/lending/loans` | `lending.loan.submit` (di cabang anggota) | `201` pinjaman `APPLIED`, audit `lending.loan.submit`, event `LoanSubmitted` |
+| `POST /api/v1/lending/loans/{loanId}/approve` | `lending.loan.approve` (di cabang pinjaman) | `200` pinjaman `APPROVED`, audit `lending.loan.approve`, event `LoanApproved` |
+
+- **Cabang** pinjaman diambil dari data anggota, bukan dari badan permintaan: parameter `BRANCH`
+  yang diambil dari klien bisa dipakai untuk menaruh pinjaman di cabang lain.
+- **Empat mata** ditegakkan tiga kali: `assertDistinctActors` (domain), `409 self_approval`
+  (handler, dengan alasan yang dibaca operator), dan CHECK `approved_by <> applied_by` (DB).
+- **Plafon** `lending.loan.max_principal` dibaca dari parameter institusi; tepat di plafon diterima,
+  di atasnya `409 limit_exceeded`. Parameter yang hilang/rusak = 500, bukan plafon tak terbatas.
+- **Balapan** dua penyetuju diselesaikan `SELECT … FOR UPDATE` + `UPDATE … WHERE status='APPLIED'`;
+  yang kalah menerima `409 not_applied`.
+- **Belum ada**: penolakan pengajuan (`REJECTED`), penomoran pinjaman bisnis, dan `Idempotency-Key`
+  (pencairan T-164 yang wajib). Persetujuan tidak memindahkan uang dan tidak membentuk jadwal.
+
+## Event
+
+| Event | Kapan | Dedup key |
+|---|---|---|
+| `LoanSubmitted` | pengajuan dibuat (T-163) | `lending.loan.submitted:<loanId>` |
+| `LoanApproved` | pengajuan disetujui (T-163) | `lending.loan.approved:<loanId>` |
+
+`LoanDisbursed`, `InstallmentDue`, `CollectibilityChanged` menyusul di T-164…T-166 — jangan
+menganggapnya sudah ada.
 
 ## Izin
 
-Belum ada. Rute dan izin `lending.*` menyusul di T-169; sampai itu modul ini tidak punya permukaan
-HTTP.
+`lending.loan.read`, `lending.loan.submit`, `lending.loan.approve` (migrasi `platform/0081`).
+Peran sempit: `lending_maker` (read+submit) dan `lending_checker` (read+approve), dengan baris
+`role_conflict` supaya satu orang tidak memegang keduanya. `platform_admin` memegang ketiganya.
+
+## Permukaan HTTP
+
+T-163 memasang dua rute (lihat bagian di atas). Daftar/baca pinjaman, scoping baca, dan pembayaran
+menyusul di T-169.
 
 ## Test
 
 - `./task test tloan` — domain (urutan alokasi, total jadwal, penyelesaian baris).
 - `./task test tschedule` — mesin jadwal: golden flat/efektif/anuitas + property (pokok total tepat,
   baris tanpa kewajiban, tanggal monoton) + kasus tepi (rate 0%, tenor 1, akhir bulan).
-- `./task test itlending` — skema: produk/versi, pinjaman, jadwal, CHECK + trigger imutabilitas.
+- `./task test itlending` — skema + repositori: produk/versi, pinjaman, jadwal, CHECK + trigger
+  imutabilitas, round-trip `loanById`, approve sekali, approve oleh pengaju ditolak.
+- `./task test itapi_lending` — HTTP: 401/403, pengajuan 201 + audit + event, self-approval 409,
+  approve 200 + audit + event, plafon, versi DRAFT, anggota suspended, 404.

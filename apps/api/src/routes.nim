@@ -19,6 +19,7 @@ import ./handlers_detail
 import ./handlers_journals
 import ./handlers_kyc
 import ./handlers_ledger
+import ./handlers_lending
 import ./handlers_mfa
 import ./handlers_products
 import ./handlers_reports
@@ -206,6 +207,16 @@ proc productRoutes*(): seq[RouteSpec] =
               operationId: "rejectProductVersion", handler: handleRejectProductVersion),
   ]
 
+proc lendingRoutes*(): seq[RouteSpec] =
+  ## Pinjaman (T-163): pengajuan + persetujuan. Objek ber-cabang → gerbang `authorizedAtBranch`;
+  ## pencairan dan pembayaran menyusul di T-164/T-165.
+  @[
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/lending/loans",
+              operationId: "submitLoan", handler: handleSubmitLoan),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/lending/loans/{loanId}/approve",
+              operationId: "approveLoan", handler: handleApproveLoan),
+  ]
+
 proc depositRoutes*(): seq[RouteSpec] =
   ## Rekening simpanan (T-088a): buka + baca. Objek ber-cabang → gerbang `authorizedAtBranch`.
   @[
@@ -318,6 +329,6 @@ proc userRoutes*(): seq[RouteSpec] =
 proc allRoutes*(): seq[RouteSpec] =
   systemRoutes() & authRoutes() & mfaRoutes() & paramRoutes() & auditRoutes() &
     partyRoutes() & kycRoutes() & detailRoutes() & ledgerRoutes() & journalRoutes() &
-    productRoutes() &
+    productRoutes() & lendingRoutes() &
     depositRoutes() & tellerRoutes() & tellerSessionRoutes() & tellerVaultRoutes() &
     branchRoutes() & userRoutes() & dayCloseRoutes() & eventRoutes()

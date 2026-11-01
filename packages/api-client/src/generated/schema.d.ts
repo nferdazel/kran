@@ -1724,10 +1724,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lending/loans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ajukan pinjaman (maker)
+         * @description **Pengajuan**, bukan pencairan: tidak ada uang yang bergerak dan tidak ada jadwal yang
+         *     dibentuk. Yang disimpan pokok, anggota, versi produk (syarat dibekukan saat akad), cabang
+         *     anggota, dan pengaju; status `APPLIED`.
+         *
+         *     Cabang pinjaman diambil dari data anggota, bukan dari badan permintaan: izin
+         *     `lending.loan.submit` harus dipegang di cabang itu (`params.reason=branch_not_allowed`).
+         *     Anggota yang tidak `ACTIVE` → 409 `party_not_active`; versi produk yang belum `ACTIVE` →
+         *     409 `product_version_not_active`; pokok di atas parameter `lending.loan.max_principal` →
+         *     409 `limit_exceeded` (nominal tepat di plafon diterima).
+         *
+         *     Menulis audit `lending.loan.submit` dan event `LoanSubmitted`.
+         */
+        post: operations["submitLoan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lending/loans/{loanId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Setujui pengajuan pinjaman (checker)
+         * @description Penyetuju harus **berbeda** dari pengaju: self-approval → 409 `self_approval` (ditegakkan
+         *     domain, handler, dan CHECK DB `approved_by <> applied_by`). Pinjaman yang bukan `APPLIED`
+         *     → 409 `not_applied`. Izin `lending.loan.approve` harus dipegang di cabang pinjaman.
+         *
+         *     Persetujuan **tidak** memindahkan uang dan tidak membentuk jadwal: pencairan adalah
+         *     langkah terpisah. Menulis audit `lending.loan.approve` dan event `LoanApproved`.
+         */
+        post: operations["approveLoan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        LoanSubmission: {
+            /**
+             * Format: uuid
+             * @description Anggota peminjam.
+             */
+            partyId: string;
+            /**
+             * Format: uuid
+             * @description Versi produk pinjaman yang `ACTIVE` (syarat dibekukan saat akad).
+             */
+            productVersionId: string;
+            /** @description Pokok pinjaman, desimal 2 digit, mis. `"5000000.00"`. */
+            principal: string;
+        };
+        Loan: {
+            /** Format: uuid */
+            loanId: string;
+            /** Format: uuid */
+            partyId: string;
+            /** Format: uuid */
+            productVersionId: string;
+            /** Format: uuid */
+            branchId: string;
+            principal: string;
+            /** @enum {string} */
+            status: "APPLIED" | "APPROVED" | "ACTIVE" | "CLOSED" | "WRITTEN_OFF";
+            /** @description Kosong sampai pinjaman dicairkan (T-164). */
+            disbursedOn: string | null;
+        };
         Health: {
             /** @enum {string} */
             status: "ok";
@@ -5820,6 +5904,89 @@ export interface operations {
             404: components["responses"]["Problem"];
             405: components["responses"]["Problem"];
             /** @description Ditolak keadaan sekarang (`params.reason`): `already_finished`, `scope_locked`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    submitLoan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoanSubmission"];
+            };
+        };
+        responses: {
+            /** @description Pengajuan dibuat (status `APPLIED`) */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Loan"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            /**
+             * @description Ditolak keadaan sekarang (`params.reason`): `party_not_active`,
+             *     `product_version_not_active`, `limit_exceeded`.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            415: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    approveLoan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loanId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pinjaman disetujui (status `APPROVED`) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Loan"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            /** @description Ditolak keadaan sekarang (`params.reason`): `self_approval`, `not_applied`. */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -309,8 +309,8 @@ dibangun, pilot data nyata menunggu verifikasi (O-001).
 |---|---|---|---|---|
 | T-161 | DONE | Skeleton modul `lending` + model: produk pinjaman berversi, akad/fasilitas, rekening pinjaman, jadwal angsuran; migrasi expand-only | T-142, D-002 | `archcheck` bersih; `itlending` dasar hijau; `MODULE.md` terisi; `migrate --check` bersih |
 | T-162 | DONE | Mesin jadwal angsuran flat/efektif/anuitas dengan `Money` + property & golden test | T-161 | properti (Σ angsuran = pokok + bunga, pembulatan ≤ 1 sen, total tepat) + golden fixture per metode |
-| T-163 | READY | Pengajuan & persetujuan pinjaman (maker-checker, 4-eyes, limit param) | T-162 | alur dua akun hijau; self-approval 409; audit + izin `lending.loan.submit/approve` |
-| T-164 | TODO | Pencairan + jurnal D pinjaman / K kas atau rekening simpanan | T-163 | Δ subledger = Δ GL; replay idempoten; `LoanDisbursed` sekali |
+| T-163 | DONE | Pengajuan & persetujuan pinjaman (maker-checker, 4-eyes, limit param) | T-162 | alur dua akun hijau; self-approval 409; audit + izin `lending.loan.submit/approve` |
+| T-164 | READY | Pencairan + jurnal D pinjaman / K kas atau rekening simpanan | T-163 | Δ subledger = Δ GL; replay idempoten; `LoanDisbursed` sekali |
 | T-165 | TODO | Angsuran: alokasi pokok/bunga/denda dengan urutan dari parameter | T-164 | property test alokasi; angsuran terakhir menutup saldo tepat 0 |
 | T-166 | TODO | Task day-close `lending.dpd_regrade` (ambang D-180) | T-165 | idempoten per business date; audit per chunk; ambang dari parameter |
 | T-167 | TODO | Task PPAP/CKPN + jurnal penyisihan/pembalik | T-166 | Δ subledger PPAP = Δ GL; run kedua tidak menggandakan |
