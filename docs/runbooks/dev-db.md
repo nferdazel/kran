@@ -31,6 +31,11 @@ Bila `KRAN_DATABASE_URL` kosong atau tunnel mati, uji integrasi **melewati dirin
   menunjuk ke sana; DB `cbs` milik sistem lama tidak disentuh.
 - Tidak ada perubahan kuadlet/container/config/backup/hook di server.
 - Tidak ada data nyata di DB dev; data uji selalu sintetis (AGENTS.md §3).
+- `./task e2e` **menjatuhkan seluruh schema modul** di DB dev sebelum migrasi + seed
+  (`dbtools reset`, ditolak bila nama DB bukan `_dev`/`_test`). Data yang kamu masukkan manual
+  lewat UI dev ikut hilang. Alasannya: sisa integration test (mis. periode akuntansi CLOSED)
+  membuat seed dev gagal dan e2e menuduh fitur yang salah; jalan dari nol juga membuktikan
+  migrasi DB kosong setiap kali gate ini dijalankan.
 
 ## 4. Provisioning awal (sekali, 2026-10-13)
 

@@ -4,6 +4,7 @@
 ##   dbtools [--root <dir>] migrate [--dry-run]   # butuh KRAN_DATABASE_URL
 ##   dbtools [--root <dir>] status                # butuh KRAN_DATABASE_URL
 ##   dbtools [--root <dir>] seed [--dev]          # butuh KRAN_DATABASE_URL; --dev = seed dev/test
+##   dbtools [--root <dir>] reset                 # butuh KRAN_DATABASE_URL; hanya DB _dev/_test
 ##
 ## Keluar: 0 sukses, 1 masalah data/migrasi, 2 kesalahan pemakaian, 3 ditolak pada keadaan itu
 ## (mis. `seed --dev` diarahkan ke basis data yang bukan dev/test — lihat O-062).
@@ -16,7 +17,8 @@ import "platform-lib/db/pool"
 import lib
 
 proc usage() =
-  stderr.writeLine("pemakaian: dbtools [--root <dir>] validate|migrate|status|seed [--dry-run] [--dev]")
+  stderr.writeLine(
+    "pemakaian: dbtools [--root <dir>] validate|migrate|status|seed|reset [--dry-run] [--dev]")
 
 var root = getCurrentDir()
 var command = ""
@@ -132,7 +134,7 @@ try:
     runPlan()
     quit(0)
 
-  of "migrate", "status", "seed":
+  of "migrate", "status", "seed", "reset":
     let envT = envTableFromProcess()
     if not databaseUrlSet(envT):
       stderr.writeLine("KRAN_DATABASE_URL belum diisi (lihat docs/runbooks/dev-db.md)")
@@ -144,7 +146,18 @@ try:
         case command
         of "status": runStatus(db)
         of "seed": runSeed(db)
+        of "reset":
+          # Dipakai `./task e2e` supaya keadaan awal deterministik: sisa integration test (mis.
+          # periode akuntansi CLOSED) membuat seed dev gagal, dan e2e akan menuduh fitur yang salah.
+          # Penjaga nama DB ada di `resetTestSchemas` (hanya berakhiran `_dev`/`_test`).
+          resetTestSchemas(db, root)
+          echo "dbtools reset: schema modul dijatuhkan lalu siap dimigrasi dari nol"
+          0
         else: runMigrate(db))
+    except ValueError as e:
+      # Satu-satunya ValueError yang bisa muncul di sini adalah penjaga nama DB.
+      stderr.writeLine("dbtools reset: " & e.msg)
+      quit(3)
     finally:
       pool.close()
     quit(code)

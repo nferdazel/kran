@@ -146,6 +146,7 @@ ci_gate() { # ci_gate <rev>
   log "==> GERBANG CI: menunggu ${wait_seconds}s untuk ${rev:0:12} di ${repo}"
   local deadline=$((SECONDS + wait_seconds))
   local body_file head_file code etag verdict
+  local rate_reset rate_resets=0 wait_reset
   body_file="$(mktemp)"
   head_file="$(mktemp)"
   # shellcheck disable=SC2064  # path temp sengaja di-resolve sekarang.
@@ -178,6 +179,25 @@ ci_gate() { # ci_gate <rev>
         verdict="${verdict:-PENDING belum ada check-run}"
         ;;
       *)
+        # 403/429 hampir selalu kuota IP (batas 60/jam tanpa token), bukan commit yang salah.
+        # Menunggu sampai `X-RateLimit-Reset` lebih jujur daripada gagal: reset diumumkan GitHub,
+        # dan deploy ini memang asinkron. Sekali saja, dan hanya bila resetnya masih di dalam
+        # anggaran tunggu — kalau tidak, gagal dengan sebab yang bisa ditindaklanjuti.
+        rate_reset="$(sed -n 's/^[Xx]-[Rr]ate[Ll]imit-[Rr]eset: *//p' "$head_file" | tr -d '\r' | head -1)"
+        if [ "$code" = "403" ] || [ "$code" = "429" ]; then
+          case "$rate_reset" in '' | *[!0-9]*) rate_reset="" ;; esac
+          if [ "$rate_resets" -eq 0 ] && [ -n "$rate_reset" ] && [ "$rate_reset" -gt "$(date +%s)" ] &&
+            [ $((rate_reset - $(date +%s))) -le "$wait_seconds" ]; then
+            rate_resets=1
+            wait_reset=$((rate_reset - $(date +%s) + 5))
+            log "==> GERBANG CI: kuota GitHub API habis (HTTP $code); tunggu ${wait_reset}s sampai reset"
+            sleep "$wait_reset"
+            etag=""
+            deadline=$((SECONDS + wait_seconds))
+            continue
+          fi
+          die "GERBANG CI: kuota GitHub API habis (HTTP $code; reset ${rate_reset:-tidak diketahui}) — isi KRAN_GITHUB_TOKEN di $ENV_FILE atau tunggu reset; commit ini TIDAK di-deploy"
+        fi
         die "GERBANG CI: GitHub API menjawab HTTP $code untuk ${repo}; deploy dibatalkan (fail-closed)"
         ;;
     esac

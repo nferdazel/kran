@@ -4661,3 +4661,28 @@ melayani". Selain itu repo belum punya versi: `package.json` `0.0.0`, `kran.nimb
 CI merah, deploy berhenti sebelum menyentuh apa pun. Nama job di `ci.yml` menjadi kontrak yang harus
 ikut diperbarui bersama `CI_EXPECTED` (O-119). Gate rilis lokal sengaja bukan `./task ci` penuh; e2e
 butuh stack khusus, dan jaminan menyeluruh datang dari CI pada commit yang sama yang menahan deploy.
+
+## D-179 — Gate yang tidak boleh berbohong: `test`/`e2e` menolak melewati integrasi secara senyap (1 Nov 2026)
+
+**Konteks.** `./task ci` sudah fail-closed saat `KRAN_DATABASE_URL` kosong, tetapi `./task test` dan
+`./task e2e` tidak: `test` melewati **seluruh** suite integrasi dengan satu baris `SKIP`, dan `e2e`
+tetap menjalankan Playwright lalu melaporkan "e2e green" dengan jumlah spec jauh lebih sedikit
+(hanya spec yang tidak butuh API). Di mesin developer hal itu tertutup oleh `.local/dev.env`, jadi
+yang paling mungkin terkena adalah CI atau mesin baru — persis tempat hijau palsu paling mahal.
+
+**Keputusan.**
+
+1. `./task test`: kalau pemilihan test benar-benar menyertakan integration test dan
+   `KRAN_DATABASE_URL` kosong → **gagal** dengan pesan yang menyebut `./task devdb up`. Filter yang
+   hanya menyentuh unit test tetap boleh jalan tanpa DB (tidak ada integrasi yang dilewati).
+2. `./task e2e`: tanpa `KRAN_DATABASE_URL` → **gagal**. Playwright hanya dijalankan bila DB ada,
+   sehingga ambang `KRAN_E2E_MIN_TESTS` selalu bermakna.
+3. Pelewatan tetap mungkin, tetapi harus dinyatakan: `KRAN_ALLOW_NO_DB=1`, pola yang sama dengan
+   `./task ci`. Job CI `Nim (check + unit/property test)` memakai flag itu secara eksplisit; job
+   `DB (integrasi, Postgres 18)` menyediakan DB sungguhan.
+
+**Konsekuensi.** Job CI yang hanya bermaksud menjalankan unit test harus menyebut
+`KRAN_ALLOW_NO_DB=1` (sudah dilakukan, `ci.yml`). Perintah harian tidak berubah selama
+`.local/dev.env` berisi URL DB. Trade-off yang diterima: lebih baik satu perintah gagal dan
+menyuruh menyalakan tunnel daripada hijau yang tidak menguji apa pun.
+

@@ -27,6 +27,11 @@ tidak bergantung pada kapan binary dibangun.
 
 ## Alur rilis
 
+Rilis **dikumpulkan per batch**, bukan per commit: satu tag menjalankan workflow rilis dan
+menandai deploy yang menunggu CI penuh (~10–15 menit di GitHub Actions). Menandai setiap commit
+hanya menghabiskan runner dan membuat `CHANGELOG.md` jadi derau. Aturan praktisnya: rilis saat satu
+pekerjaan utuh selesai (satu task, satu batch perbaikan, atau sebelum fase baru dibuka).
+
 ```sh
 ./task release            # bump diturunkan dari Conventional Commits
 ./task release minor      # paksa minor (major|minor|patch)
@@ -66,7 +71,10 @@ Aturan: hanya `success` yang hijau (`skipped`/`neutral` = check tidak berjalan),
 dari run terbaru, check yang hilang atau timeout = **gagal** (fail-closed). Perubahan yang hanya
 menyentuh dokumen melewati gerbang karena CI juga tidak berjalan untuk path itu. Permintaan ke API
 bersyarat (`If-None-Match`), jadi poll yang tidak membawa perubahan dijawab `304` dan tidak memakan
-kuota — penting karena tanpa token batasnya 60 permintaan/jam per IP.
+kuota — penting karena tanpa token batasnya 60 permintaan/jam per IP. Kalau kuota toh habis
+(`HTTP 403`/`429`), gerbang membaca `X-RateLimit-Reset` dan menunggu sampai reset **sekali** (masih
+di dalam anggaran tunggu) sebelum gagal; pesan gagalnya menyebut `KRAN_GITHUB_TOKEN`, karena token
+read-only adalah obatnya (O-120).
 
 | Variabel | Default | Arti |
 | --- | --- | --- |

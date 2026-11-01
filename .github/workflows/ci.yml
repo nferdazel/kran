@@ -66,8 +66,10 @@ jobs:
         run: ./task check
 
       - name: ./task test
-        # unit + property. Test integrasi melewati dirinya sendiri tanpa KRAN_DATABASE_URL
-        # (job db-tests yang menyediakannya, lihat docs/ci-jobs.md).
+        # unit + property saja. Test integrasi dijalankan job db-tests yang menyediakan DB; job ini
+        # menyatakan pelewatan itu secara eksplisit (D-179), bukan mengandalkan skip senyap.
+        env:
+          KRAN_ALLOW_NO_DB: "1"
         run: ./task test
 
   db-tests:
@@ -134,8 +136,9 @@ jobs:
     name: Web (svelte-check + axe + Playwright)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    # Database nyata untuk e2e: tanpa ini 9 dari 11 spec melewati dirinya sendiri dan job tetap
-    # hijau (audit 24 Okt 2026, BLK-1/T-126). `./task e2e` memigrasi + seed dev sendiri.
+    # Database nyata untuk e2e: tanpa ini sebagian besar spec melewati dirinya sendiri dan job
+    # tetap hijau (audit 24 Okt 2026, BLK-1/T-126). `./task e2e` memigrasi + seed dev sendiri, dan
+    # sejak D-179 ia menolak jalan tanpa DB alih-alih melaporkan hijau dengan test lebih sedikit.
     services:
       postgres:
         image: postgres:18
