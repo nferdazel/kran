@@ -4,6 +4,11 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.1.4] - 2026-11-01
+
+### Added
+- **lending:** Pembayaran angsuran dengan alokasi per parameter
+
 ## [0.1.3] - 2026-11-01
 
 ### Added
