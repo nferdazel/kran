@@ -3845,3 +3845,10 @@ Bukti: `bash -n` + shellcheck bersih; harness gate: SHA hijau `d6358a1` → `OK`
 
 Gate yang dijalankan: `build`, `check-fast` (version sync, nimpretty 270 berkas, archcheck,
 lint-nomagic, paramgen, i18n, 8 skrip shell), `lint-web`, svelte-check web + ui.
+
+**Verifikasi di host deploy** (1 Nov): pemeriksaan `git` di server menunjukkan `podman build` pada
+deploy `747fcb4` benar-benar memakai konteks baru (`/src/VERSION` + `version_gen.nim` ada di lapisan
+COPY) — API tidak berubah karena binernya byte-identik dengan build sebelumnya, bukan karena build
+dilewati. Web ter-swap (`kran-footer__version` ada di CSS yang disajikan) dan bundle memuat `0.1.0`.
+Gerbang CI dijalankan langsung di host: saat CI masih berjalan → menunggu lalu `ERROR ... timeout`;
+setelah CI hijau → `semua check hijau`.
