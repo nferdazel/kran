@@ -535,9 +535,23 @@ suite "login: pembatas percobaan (T-128)":
   test "percobaan beruntun dari alamat yang sama dijawab 429 + Retry-After":
     # Server terpisah dengan `loginGuard` aktif: `app` milik suite lain sengaja tanpa pembatas
     # (ratusan login di satu proses test tidak boleh saling mengunci).
+    #
+    # Jatah per-IP diturunkan **khusus server test ini**: login dengan username tidak dikenal
+    # menjalankan KDF dummy ±5 detik (menutup enumerasi akun), jadi jatah default 10 percobaan
+    # saja sudah ±55 detik — jendela 60 detik bisa berganti sebelum batas tercapai, dan test
+    # gagal bukan karena pembatasnya salah. Kontrak jendela (reset, `Retry-After`) diuji dengan
+    # waktu yang dioper eksplisit di `tlogin_guard`; di sini yang dibuktikan adalah jalur
+    # HTTP-nya (429 + badan problem + header).
+    const guardedLimit = 2
+    let savedLimit = getEnv("KRAN_LOGIN_ATTEMPTS_PER_MINUTE")
+    putEnv("KRAN_LOGIN_ATTEMPTS_PER_MINUTE", $guardedLimit)
     let guarded = AppContext(version: "itapi-users-guarded-0.0.0", role: "api",
       startedAt: epochTime(), pool: dbPool, clock: systemClock(),
       loginGuard: newLoginGuard())
+    if savedLimit.len == 0:
+      delEnv("KRAN_LOGIN_ATTEMPTS_PER_MINUTE")
+    else:
+      putEnv("KRAN_LOGIN_ATTEMPTS_PER_MINUTE", savedLimit)
     let port = freePort()
     let server = newApiServer(guarded)
     var thread: Thread[ServeArgs]
@@ -557,12 +571,12 @@ suite "login: pembatas percobaan (T-128)":
     doAssert up, "server test ber-pembatas tidak pernah siap"
 
     let badBody = $ %*{"username": "tidak-ada", "password": "salah-panjang-123"}
-    # Jatah berasal dari konstanta modul, jadi jumlah percobaan yang dibutuhkan tidak ditulis ulang
-    # di sini. Batas atas 3x memberi ruang bila jendela 60 detik berganti di tengah loop (hitung
-    # ulang), tanpa membuat test menunggu.
+    # Dua percobaan boleh lewat, percobaan berikutnya ditahan. Batas atas +3 hanya jaring pengaman
+    # supaya loop tidak bergantung pada satu angka: kalau pembatas tidak menahan sama sekali,
+    # `blocked` tetap 401 dan pemeriksaan di bawah gagal dengan pesan yang jelas.
     var blocked = Reply(code: 401)
     var allowedAt = 0
-    for i in 0 ..< loginAttemptsPerMinute * 3:
+    for i in 0 ..< guardedLimit + 3:
       let attempt = call("POST", LoginPath, badBody, "", origin)
       if attempt.code == 429:
         blocked = attempt
@@ -572,7 +586,7 @@ suite "login: pembatas percobaan (T-128)":
       inc allowedAt
 
     check blocked.code == 429
-    check allowedAt >= loginAttemptsPerMinute - 1
+    check allowedAt >= guardedLimit
 
     check blocked.body["code"].getStr() == "TOO_MANY_REQUESTS"
     check blocked.body["i18nKey"].getStr() == "error_too_many_requests"

@@ -4721,3 +4721,21 @@ memuat tag, laporan wajib menyebutnya, dan O-001 menutup jalur verifikasinya seb
 nyata. Butir 1 menambah beban uji (tiga metode × pembulatan), tetapi menghindari migrasi ulang model
 jadwal ketika koperasi meminta metode lain.
 
+## D-181 — Test pembatas login tidak lagi bergantung pada jendela 60 detik (1 Nov 2026)
+
+**Konteks.** `itapi_users` membuktikan bahwa percobaan login beruntun dari satu IP dijawab `429`
+dengan `Retry-After`. Test itu memakai jatah default (10 percobaan/menit). Login dengan username
+tidak dikenal sengaja menjalankan KDF dummy (±5,6 detik) untuk menutup enumerasi akun, sehingga
+sepuluh percobaan memakan ±56 detik — tepat di tepi jendela 60 detik. Bila mesin sedikit lebih
+lambat, percobaan ke-11 tiba setelah jendela ter-reset, pembatas tidak pernah menahan, dan test
+gagal **bukan karena pembatasnya salah**. Terjadi nyata pada run penuh 1 Nov 2026 (`29 percobaan
+-> 401`, semuanya `401`).
+
+**Keputusan.** Server test khusus itu membuat guard dengan `KRAN_LOGIN_ATTEMPTS_PER_MINUTE=2`
+(dipulihkan setelah guard dibuat), lalu membuktikan: dua percobaan pertama `401`, percobaan ketiga
+`429` + badan problem + `Retry-After`. Kontrak jendela (hitungan per IP, reset setelah jendela,
+`Retry-After` benar) tetap diuji dengan waktu yang **dioper eksplisit** di `tlogin_guard`, jadi tidak
+ada perilaku yang berhenti dibuktikan — yang dihapus hanya ketergantungan pada kecepatan mesin.
+
+**Konsekuensi.** Test HTTP tidak lagi flaky; batas default 10/menit tetap yang berlaku di produksi
+(angka itu kapasitas proses, bukan kebijakan, dan tidak berubah).
