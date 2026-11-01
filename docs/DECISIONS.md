@@ -4739,3 +4739,43 @@ ada perilaku yang berhenti dibuktikan — yang dihapus hanya ketergantungan pada
 
 **Konsekuensi.** Test HTTP tidak lagi flaky; batas default 10/menit tetap yang berlaku di produksi
 (angka itu kapasitas proses, bukan kebijakan, dan tidak berubah).
+
+## D-182 — Pencairan pinjaman masuk ke rekening simpanan; tunai lewat teller (1 Nov 2026)
+
+**Konteks.** T-164 memindahkan uang untuk pertama kalinya di modul `lending`: pinjaman `APPROVED`
+dicairkan dan pokoknya menjadi kewajiban. Dua jalur mungkin secara akuntansi (`D 110 Piutang
+Pembiayaan / K 201 Simpanan Anggota` atau `D 110 / K 101 Kas`), dan pemilik memilih **keduanya**
+bila memungkinkan. Setelah ditelusuri ke skema, "keduanya" tidak bisa dibangun hari ini:
+
+- `teller.cash_movement.transaction_id` **wajib** menunjuk `deposit.transaction`;
+- `deposit.transaction.account_id` **wajib** menunjuk `deposit.account` (rekening simpanan).
+
+Jadi uang tunai keluar hanya sebagai penarikan dari rekening simpanan. Jalur tunai khusus pinjaman
+akan menuntut kolom referensi opsional (atau transaksi sintetis tanpa rekening), dan itu mengubah
+invarian `expected_cash`/variance penutupan sesi teller — perubahan uang-kritis yang butuh task dan
+keputusan sendiri, bukan tambahan di dalam T-164.
+
+**Keputusan.** Pencairan selalu mengkredit **rekening simpanan anggota** (pilihan pemilik untuk
+akun piutang: akun COA yang sudah ada lewat `ledger.posting_rule`, bukan konstanta kode). Bila
+anggota menghendaki uang tunai, teller menariknya dari rekening itu lewat jalur `CASH_WITHDRAWAL`
+yang sudah ada. Konsekuensinya dicatat terbuka: dua langkah terlihat di riwayat anggota
+("pencairan pinjaman" lalu "penarikan tunai"), bukan satu baris gabungan.
+
+**Subledger.** Baris `deposit.transaction` untuk pencairan memakai jenis baru
+`LOAN_DISBURSEMENT` (migrasi `deposit/0082`, CHECK diganti dengan pola `deposit/0074`), bukan
+`CASH_DEPOSIT`: rekening koran anggota tidak boleh menyebut "setoran tunai" untuk uang yang tidak
+pernah masuk laci, dan rekonsiliasi teller tidak boleh menghitungnya sebagai kas. Tandanya di
+`reconcile_repo` adalah **+1** (menambah saldo rekening); jenis tak dikenal tetap ditandai
+`unmapped`, bukan dianggap nol. Jenis yang sama muncul di rekening koran sebagai `kind: LOAN`.
+
+**Jurnal.** `D 110 / K 201` ditulis dari `ledger.posting_rule` (`LoanDisbursed`, migrasi
+`ledger/0083`) di transaksi DB yang sama dengan jadwal angsuran, saldo rekening, status pinjaman,
+audit, dan event `LoanDisbursed` — saldo berubah tanpa jurnal atau jadwal tanpa akad sama-sama tidak
+bisa dipertanggungjawabkan. Koreksi pencairan memakai jurnal pembalik (spec §9.1(3)), bukan rule
+lain.
+
+**Penjaga.** Rekening tujuan wajib milik anggota peminjam, se-cabang dengan pinjaman, dan `ACTIVE`;
+`Idempotency-Key` wajib, karena hanya di sini modul `lending` memindahkan uang. **NEEDS-COMPLIANCE-REVIEW**:
+pemetaan akun 110 untuk pinjaman konvensional belum ditinjau compliance (COA dasar disusun sebelum
+modul `lending` ada); strukturnya sengaja lewat `posting_rule` supaya akun final bisa diganti tanpa
+migrasi.

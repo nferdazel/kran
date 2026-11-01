@@ -822,6 +822,7 @@
   "teller_session_tx_out": "Out",
   "teller_session_tx_empty": "No cash transactions in this session yet.",
   "teller_session_tx_count": "Showing {shown} of {total} session transactions.",
+  "statement_kind_loan": "Loan disbursement",
   "statement_kind_early_withdrawal": "Early withdrawal",
   "teller_early_transfer_heading": "Early withdrawal (transfer)",
   "teller_early_credited": "Credited to destination",

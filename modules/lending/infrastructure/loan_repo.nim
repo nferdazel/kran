@@ -108,3 +108,33 @@ proc approveLoan*(db: DbConn, loanId: Id; approver: Id): bool =
        SET status = 'APPROVED', approved_by = ?
      WHERE loan_id = ? AND status = 'APPLIED'
   """, $approver, $loanId) == 1
+
+proc insertInstallment*(db: DbConn, inst: Installment) =
+  ## Satu baris jadwal. `paid_*` sengaja tidak dikirim: jadwal baru selalu belum dibayar, dan
+  ## trigger DB menolak perubahan baris yang sudah dibayar.
+  db.exec(sql"""
+    INSERT INTO lending.installment
+      (loan_id, no, due_on, principal_due, interest_due, penalty_due)
+    VALUES (?, ?, ?::date, ?::numeric, ?::numeric, ?::numeric)
+  """, $inst.loanId, inst.no, inst.dueOn, toDecimalString(inst.principalDue),
+      toDecimalString(inst.interestDue), toDecimalString(inst.penaltyDue))
+
+proc installmentCountOf*(db: DbConn, loanId: Id): int =
+  parseInt(db.getValue(sql"SELECT count(*) FROM lending.installment WHERE loan_id = ?", $loanId))
+
+proc insertBalance*(db: DbConn, loanId: Id, principalOutstanding: Money) =
+  ## Cache saldo awal saat pencairan: pokok penuh, belum ada tunggakan bunga/denda.
+  db.exec(sql"""
+    INSERT INTO lending.loan_balance
+      (loan_id, principal_outstanding, interest_overdue, penalty_outstanding)
+    VALUES (?, ?::numeric, 0, 0)
+  """, $loanId, toDecimalString(principalOutstanding))
+
+proc markDisbursed*(db: DbConn, loanId: Id; disbursedOn, maturityOn: string): bool =
+  ## `APPROVED → ACTIVE` dengan tanggal cair dan jatuh tempo. `false` = pengajuan sudah berubah
+  ## (balapan/keputusan lain), bukan galat: pemanggil menjawab 409.
+  db.execAffectedRows(sql"""
+    UPDATE lending.loan
+       SET status = 'ACTIVE', disbursed_on = ?::date, maturity_on = ?::date
+     WHERE loan_id = ? AND status = 'APPROVED'
+  """, disbursedOn, maturityOn, $loanId) == 1

@@ -77,6 +77,10 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
   (D 101.2/K 201) dari `0005` dipakai ulang. **Batas PB:** kedua sisi akun `201` yang sama → jurnal
   net-nol di GL; perpindahan per rekening dicatat di modul `deposit` (`deposit.transfer`), belum ada
   GL per pemilik — lihat `docs/ACCEPTED-LIMITS.md` dan T-101/Fase 3.
+- Rule pencairan pinjaman (T-164, D-182): `LoanDisbursed` (`0083`) = D 110 Piutang Pembiayaan /
+  K 201 Simpanan Anggota. Akunnya **data** di `posting_rule_line`, bukan konstanta kode, sehingga
+  pemetaan final bisa diganti tanpa deploy — **NEEDS-COMPLIANCE-REVIEW** (COA dasar disusun sebelum
+  modul `lending` ada).
 - Migrasi `0033_ledger_cash_clearing.sql` (T-118) memisahkan kas konter: `101` menjadi induk
   non-postable, `101.2 KAS DI TELLER` menggantikan `101` pada **semua** `posting_rule_line` yang
   sebelumnya menunjuk `101` (5 baris lintas `0005`/`0012`/`0014`). Jurnal historis tetap `101`.

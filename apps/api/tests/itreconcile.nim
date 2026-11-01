@@ -191,4 +191,25 @@ suite "rekonsiliasi saldo simpanan (T-101)":
     check runCtl(reconcileDepositsCmd, ".", branchId = BranchB) == 1
     check runCtl(reconcileDepositsCmd, ".", branchId = BranchA) == 0
 
+  test "pencairan pinjaman menambah saldo rekening (LOAN_DISBURSEMENT, T-164)":
+    # Baris ini bukan transaksi tunai: uang tidak masuk laci teller, tetapi saldo rekening
+    # anggota bertambah. Kalau tandanya tidak dipetakan, rekonsiliasi melihat saldo lebih tinggi
+    # daripada subledger tanpa suara — persis kegagalan yang `unmapped` ada untuk mencegah.
+    seedJournal("bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbb4", "RECON_LOAN_DISBURSEMENT", "25.00")
+    exec(sql"""
+      INSERT INTO deposit.transaction
+        (transaction_id, tx_type, account_id, amount, business_date, journal_id, created_by)
+      VALUES (md5('itreconcile|loan-disbursement')::uuid, 'LOAN_DISBURSEMENT', ?::uuid,
+              '25.00', current_date, 'bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbb4'::uuid, ?::uuid)""",
+      AccA, Actor)
+    # Cache dibiarkan apa adanya dulu: 50,00 lama → selisih 25,00 harus terlihat.
+    let stale = accountBalanceMismatches(db, BranchA)
+    check stale.len == 1
+    check stale[0].accountNo == "1110000001"
+    check stale[0].cached == "50.00"
+    check stale[0].expected == "75.00"
+
+    setBalance(AccA, "75.00")
+    check accountBalanceMismatches(db, BranchA).len == 0
+
 dbPool.release(db)

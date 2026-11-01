@@ -198,3 +198,11 @@ proc principalOfSchedule*(rows: openArray[Installment]): Money =
   for r in rows:
     acc = acc + r.principalDue
   acc
+
+proc addMonthsIso*(isoDate: string; months: int): AppResult[string] =
+  ## Tanggal + `months` bulan kalender (penjepitan akhir bulan), untuk menghitung jatuh tempo
+  ## pertama dari tanggal cair. Dipakai pencairan (T-164) supaya aturan tanggalnya tetap satu.
+  let parsed = parseBusinessDate(isoDate)
+  if not parsed.isOk:
+    return err[string, AppError](scheduleErr("tanggal tidak sah: " & isoDate))
+  ok[string, AppError](toIso(addMonths(parsed.val, months)))

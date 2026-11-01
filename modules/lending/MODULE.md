@@ -2,7 +2,7 @@
 
 Pinjaman (spec §9.2, §23 Fase 4): produk pinjaman berversi, akad/fasilitas, jadwal angsuran, lalu
 kolektibilitas/PPAP di fase yang sama. Status: **T-161** (model + skema) + **T-162** (mesin jadwal) + **T-163** (pengajuan &
-persetujuan). Pencairan T-164, angsuran T-165.
+persetujuan) + **T-164** (pencairan). Angsuran T-165.
 pengajuan/pencairan T-163/T-164; task day-close T-166/T-167; API/UI T-169/T-170.
 
 Keputusan angka & aturan: **D-180**. Rencana fase: `docs/proposals/fase4-lending.md`.
@@ -79,8 +79,36 @@ Nilai di atas **bukan** angka final untuk pilot data nyata; lihat O-001.
   di atasnya `409 limit_exceeded`. Parameter yang hilang/rusak = 500, bukan plafon tak terbatas.
 - **Balapan** dua penyetuju diselesaikan `SELECT … FOR UPDATE` + `UPDATE … WHERE status='APPLIED'`;
   yang kalah menerima `409 not_applied`.
-- **Belum ada**: penolakan pengajuan (`REJECTED`), penomoran pinjaman bisnis, dan `Idempotency-Key`
-  (pencairan T-164 yang wajib). Persetujuan tidak memindahkan uang dan tidak membentuk jadwal.
+- **Belum ada**: penolakan pengajuan (`REJECTED`) dan penomoran pinjaman bisnis. Persetujuan tidak
+  memindahkan uang dan tidak membentuk jadwal — itu pencairan (di bawah).
+
+## Pencairan (T-164, D-182)
+
+`POST /api/v1/lending/loans/{loanId}/disburse` · izin `lending.loan.disburse` (migrasi
+`platform/0084`; `lending_maker` + `platform_admin`) · **`Idempotency-Key` wajib**.
+
+Satu transaksi DB: jadwal angsuran dibentuk dari atribut versi produk (metode/tenor/rate), jurnal
+`D 110 Piutang Pembiayaan / K 201 Simpanan Anggota` dari rule `LoanDisbursed`, baris subledger
+`LOAN_DISBURSEMENT` + saldo rekening anggota, status `APPROVED → ACTIVE`, audit
+`lending.loan.disburse`, event `LoanDisbursed`.
+
+| Ditolak | `params.reason` |
+|---|---|
+| Belum disetujui | `not_approved` |
+| Sudah dicairkan | `already_disbursed` (kalah balapan / permintaan kedua) |
+| Rekening bukan milik peminjam | `account_party_mismatch` |
+| Rekening di cabang lain | `account_branch_mismatch` |
+| Rekening tidak `ACTIVE` | `account_not_active` |
+| Rekening tanpa baris saldo | `account_without_balance` |
+| Jadwal tidak bisa dibentuk | `schedule_invalid` |
+
+- **Uang tunai tidak keluar di sini.** Pencairan mengkredit rekening simpanan; anggota menarik tunai
+  lewat teller (`CASH_WITHDRAWAL`) dari rekening itu. Alasannya di D-182: `teller.cash_movement`
+  mewajibkan `deposit.transaction`, dan tabel itu mewajibkan rekening simpanan — jalur tunai khusus
+  akan mengubah invarian `expected_cash` penutupan sesi.
+- **Replay** dengan kunci + isi sama menjawab `200` + `Idempotent-Replayed` dengan isi respons asli;
+  tidak ada jadwal/jurnal/transaksi kedua (dibuktikan test).
+- **Koreksi** pencairan memakai jurnal pembalik (spec §9.1(3)), bukan status baru.
 
 ## Event
 
@@ -88,24 +116,28 @@ Nilai di atas **bukan** angka final untuk pilot data nyata; lihat O-001.
 |---|---|---|
 | `LoanSubmitted` | pengajuan dibuat (T-163) | `lending.loan.submitted:<loanId>` |
 | `LoanApproved` | pengajuan disetujui (T-163) | `lending.loan.approved:<loanId>` |
+| `LoanDisbursed` | pinjaman dicairkan (T-164) | `lending.loan.disbursed:<loanId>` |
 
-`LoanDisbursed`, `InstallmentDue`, `CollectibilityChanged` menyusul di T-164…T-166 — jangan
-menganggapnya sudah ada.
+`InstallmentDue`, `CollectibilityChanged` menyusul di T-165/T-166 — jangan menganggapnya sudah ada.
 
 ## Izin
 
 `lending.loan.read`, `lending.loan.submit`, `lending.loan.approve` (migrasi `platform/0081`).
-Peran sempit: `lending_maker` (read+submit) dan `lending_checker` (read+approve), dengan baris
-`role_conflict` supaya satu orang tidak memegang keduanya. `platform_admin` memegang ketiganya.
+`lending.loan.disburse` ditambahkan migrasi `platform/0084`: pencairan memindahkan uang, jadi
+tidak otomatis ikut izin approve. Peran sempit: `lending_maker` (read+submit+disburse) dan
+`lending_checker` (read+approve), dengan baris `role_conflict` supaya satu orang tidak memegang
+keduanya. `platform_admin` memegang keempatnya.
 
 ## Permukaan HTTP
 
-T-163 memasang dua rute (lihat bagian di atas). Daftar/baca pinjaman, scoping baca, dan pembayaran
-menyusul di T-169.
+T-163/T-164 memasang tiga rute (lihat bagian di atas). Daftar/baca pinjaman, scoping baca, dan
+pembayaran menyusul di T-169/T-165.
 
 ## Test
 
 - `./task test tloan` — domain (urutan alokasi, total jadwal, penyelesaian baris).
+- `./task test itapi_lending` — HTTP: pengajuan/persetujuan/pencairan (jadwal, jurnal, subledger,
+  saldo, replay idempoten, penolakan rekening bukan milik peminjam).
 - `./task test tschedule` — mesin jadwal: golden flat/efektif/anuitas + property (pokok total tepat,
   baris tanpa kewajiban, tanggal monoton) + kasus tepi (rate 0%, tenor 1, akhir bulan).
 - `./task test itlending` — skema + repositori: produk/versi, pinjaman, jadwal, CHECK + trigger

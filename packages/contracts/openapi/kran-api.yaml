@@ -2140,6 +2140,85 @@ paths:
         "500":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/lending/loans/{loanId}/disburse:
+    post:
+      operationId: disburseLoan
+      tags: [lending]
+      summary: Cairkan pinjaman ke rekening simpanan anggota
+      description: |
+        Satu transaksi DB: jadwal angsuran dibentuk dari atribut versi produk, jurnal
+        `D 110 Piutang Pembiayaan / K 201 Simpanan Anggota` (dari `ledger.posting_rule`, bukan
+        konstanta kode), baris subledger `LOAN_DISBURSEMENT` + saldo rekening anggota, status
+        pinjaman `APPROVED → ACTIVE`, audit, dan event `LoanDisbursed`.
+
+        Rekening tujuan **wajib** milik anggota peminjam dan berada di cabang pinjaman
+        (`account_party_mismatch`, `account_branch_mismatch`); rekening yang tidak aktif ditolak
+        (`account_not_active`). Pinjaman yang belum disetujui → 409 `not_approved`; yang sudah
+        dicairkan → 409 `already_disbursed`.
+
+        **Uang tunai tidak keluar di sini** (D-183): anggota menariknya lewat teller setelah dana
+        masuk rekening, sehingga invarian kas penutupan sesi tidak berubah.
+
+        `Idempotency-Key` wajib. Replay kunci+isi sama → 200 dengan header `Idempotent-Replayed`
+        dan isi respons asli (tidak mencairkan dua kali); kunci sama isi beda → 409.
+
+        **HUMAN-REVIEW-REQUIRED** (pergerakan uang, AGENTS.md §8).
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoanDisbursement"
+      responses:
+        "200":
+          description: |
+            Pinjaman dicairkan (`status: ACTIVE`). Replay permintaan yang sama mengembalikan
+            respons ini dengan header `Idempotent-Replayed: true`.
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanDisbursementResult"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "409":
+          description: |
+            Ditolak keadaan sekarang (`params.reason`): `not_approved`, `already_disbursed`,
+            `account_party_mismatch`, `account_branch_mismatch`, `account_not_active`,
+            `account_without_balance`, `schedule_invalid`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+
   /api/v1/deposit/accounts:
     get:
       operationId: listDepositAccounts
@@ -3873,6 +3952,34 @@ components:
             $ref: "#/components/schemas/Problem"
 
   schemas:
+    LoanDisbursement:
+      type: object
+      additionalProperties: false
+      required: [accountId]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+          description: Rekening simpanan anggota penerima (harus milik peminjam, se-cabang, aktif).
+    LoanDisbursementResult:
+      type: object
+      additionalProperties: false
+      required: [loan, journalId, accountId, maturityOn, installmentCount]
+      properties:
+        loan:
+          $ref: "#/components/schemas/Loan"
+        journalId:
+          type: string
+          format: uuid
+        accountId:
+          type: string
+          format: uuid
+        maturityOn:
+          type: string
+          format: date
+        installmentCount:
+          type: integer
+          minimum: 1
     LoanSubmission:
       type: object
       additionalProperties: false
@@ -5770,7 +5877,8 @@ components:
       description: |
         Satu baris statement. `kind` membedakan sumber; `CASH` = transaksi tunai teller, `MATURITY` =
         perpindahan jatuh tempo deposito (pokok/bunga, tanpa kas), `TRANSFER` = pemindahbukuan,
-        `EARLY_WITHDRAWAL` = bunga atau penalti pencairan dini deposito lewat PB (T-148).
+        `EARLY_WITHDRAWAL` = bunga atau penalti pencairan dini deposito lewat PB (T-148),
+        `LOAN` = pencairan pinjaman yang dikreditkan ke rekening (T-164).
         Tepat satu dari `transactionId` (`CASH`/`MATURITY`) atau `transferId` (`TRANSFER`) terisi,
         yang lain `null`. `direction` relatif ke rekening yang diminta: `IN` = masuk, `OUT` = keluar.
       required: [kind, direction, amount, businessDate, journalId, narration, transactionId,
@@ -5778,7 +5886,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [CASH, TRANSFER, MATURITY, EARLY_WITHDRAWAL]
+          enum: [CASH, TRANSFER, MATURITY, EARLY_WITHDRAWAL, LOAN]
         direction:
           type: string
           enum: [IN, OUT]

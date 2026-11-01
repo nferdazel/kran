@@ -49,7 +49,7 @@ proc operationJson(doc: JsonNode, operationId: string): JsonNode =
         return op
   nil
 
-suite "empat endpoint pembuat objek memakai idempotensi":
+suite "endpoint pembuat objek & pencairan memakai idempotensi":
   test "header wajib, 409 terdeklarasi, replay 200, 201 tanpa header replay":
     let doc = loadContractFile(ContractPath).doc
     let header = doc["components"]["parameters"]["IdempotencyKey"]
@@ -57,7 +57,8 @@ suite "empat endpoint pembuat objek memakai idempotensi":
     check header["in"].getStr() == "header"
     check header["required"].getBool() == true
 
-    for operationId in ["createParty", "ratePartyRisk", "submitParamChange", "openDepositAccount"]:
+    for operationId in ["createParty", "ratePartyRisk", "submitParamChange",
+                         "openDepositAccount", "disburseLoan"]:
       let op = operationJson(doc, operationId)
       check op != nil
       var memakaiHeader = false
@@ -68,7 +69,10 @@ suite "empat endpoint pembuat objek memakai idempotensi":
       check op["responses"].hasKey("409")
       check op["responses"].hasKey("200")
       check op["responses"]["200"]["headers"].hasKey("Idempotent-Replayed")
-      check not op["responses"]["201"].hasKey("headers")
+      # Operasi yang suksesnya 201 tidak memakai header replay di 201; yang suksesnya 200
+      # (pencairan pinjaman) membedakan replay lewat header di status yang sama.
+      if op["responses"].hasKey("201"):
+        check not op["responses"]["201"].hasKey("headers")
 
 suite "klasifikasi simpanan dideklarasikan kontrak (T-111)":
   ## Kontrak harus memuat klasifikasi simpanan agar klien TS (dan validasi bentuk respons)

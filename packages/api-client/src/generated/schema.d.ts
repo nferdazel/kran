@@ -935,6 +935,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lending/loans/{loanId}/disburse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cairkan pinjaman ke rekening simpanan anggota
+         * @description Satu transaksi DB: jadwal angsuran dibentuk dari atribut versi produk, jurnal
+         *     `D 110 Piutang Pembiayaan / K 201 Simpanan Anggota` (dari `ledger.posting_rule`, bukan
+         *     konstanta kode), baris subledger `LOAN_DISBURSEMENT` + saldo rekening anggota, status
+         *     pinjaman `APPROVED → ACTIVE`, audit, dan event `LoanDisbursed`.
+         *
+         *     Rekening tujuan **wajib** milik anggota peminjam dan berada di cabang pinjaman
+         *     (`account_party_mismatch`, `account_branch_mismatch`); rekening yang tidak aktif ditolak
+         *     (`account_not_active`). Pinjaman yang belum disetujui → 409 `not_approved`; yang sudah
+         *     dicairkan → 409 `already_disbursed`.
+         *
+         *     **Uang tunai tidak keluar di sini** (D-183): anggota menariknya lewat teller setelah dana
+         *     masuk rekening, sehingga invarian kas penutupan sesi tidak berubah.
+         *
+         *     `Idempotency-Key` wajib. Replay kunci+isi sama → 200 dengan header `Idempotent-Replayed`
+         *     dan isi respons asli (tidak mencairkan dua kali); kunci sama isi beda → 409.
+         *
+         *     **HUMAN-REVIEW-REQUIRED** (pergerakan uang, AGENTS.md §8).
+         */
+        post: operations["disburseLoan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/deposit/accounts": {
         parameters: {
             query?: never;
@@ -1783,6 +1819,23 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        LoanDisbursement: {
+            /**
+             * Format: uuid
+             * @description Rekening simpanan anggota penerima (harus milik peminjam, se-cabang, aktif).
+             */
+            accountId: string;
+        };
+        LoanDisbursementResult: {
+            loan: components["schemas"]["Loan"];
+            /** Format: uuid */
+            journalId: string;
+            /** Format: uuid */
+            accountId: string;
+            /** Format: date */
+            maturityOn: string;
+            installmentCount: number;
+        };
         LoanSubmission: {
             /**
              * Format: uuid
@@ -2808,13 +2861,14 @@ export interface components {
         /**
          * @description Satu baris statement. `kind` membedakan sumber; `CASH` = transaksi tunai teller, `MATURITY` =
          *     perpindahan jatuh tempo deposito (pokok/bunga, tanpa kas), `TRANSFER` = pemindahbukuan,
-         *     `EARLY_WITHDRAWAL` = bunga atau penalti pencairan dini deposito lewat PB (T-148).
+         *     `EARLY_WITHDRAWAL` = bunga atau penalti pencairan dini deposito lewat PB (T-148),
+         *     `LOAN` = pencairan pinjaman yang dikreditkan ke rekening (T-164).
          *     Tepat satu dari `transactionId` (`CASH`/`MATURITY`) atau `transferId` (`TRANSFER`) terisi,
          *     yang lain `null`. `direction` relatif ke rekening yang diminta: `IN` = masuk, `OUT` = keluar.
          */
         StatementRow: {
             /** @enum {string} */
-            kind: "CASH" | "TRANSFER" | "MATURITY" | "EARLY_WITHDRAWAL";
+            kind: "CASH" | "TRANSFER" | "MATURITY" | "EARLY_WITHDRAWAL" | "LOAN";
             /** @enum {string} */
             direction: "IN" | "OUT";
             /** @description Nominal desimal string 2 desimal (tanpa float). */
@@ -4784,6 +4838,65 @@ export interface operations {
             404: components["responses"]["Problem"];
             405: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    disburseLoan: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Kunci idempotensi per pemanggil (D-098). Wajib pada endpoint pembuat objek: kirim ulang
+                 *     dengan kunci yang sama untuk mengulang permintaan tanpa membuat objek ganda. Replay
+                 *     dijawab 200 + header `Idempotent-Replayed: true`; kunci sama dengan isi berbeda → 409.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                loanId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoanDisbursement"];
+            };
+        };
+        responses: {
+            /**
+             * @description Pinjaman dicairkan (`status: ACTIVE`). Replay permintaan yang sama mengembalikan
+             *     respons ini dengan header `Idempotent-Replayed: true`.
+             */
+            200: {
+                headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoanDisbursementResult"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            /**
+             * @description Ditolak keadaan sekarang (`params.reason`): `not_approved`, `already_disbursed`,
+             *     `account_party_mismatch`, `account_branch_mismatch`, `account_not_active`,
+             *     `account_without_balance`, `schedule_invalid`.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];

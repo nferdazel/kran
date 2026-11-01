@@ -3938,3 +3938,35 @@ menunggu angka compliance final untuk pilot data nyata.
 
 **Sisa**: penolakan pengajuan (`REJECTED`), penomoran pinjaman bisnis, daftar/baca pinjaman (T-169),
 dan `Idempotency-Key` di pencairan (T-164) — sengaja tidak dikerjakan setengah.
+
+## 2026-11-01 — T-164: pencairan pinjaman (uang pertama yang bergerak di `lending`)
+
+**Rute**: `POST /api/v1/lending/loans/{loanId}/disburse`, izin `lending.loan.disburse`
+(migrasi `platform/0084`), `Idempotency-Key` wajib. Satu transaksi DB: jadwal angsuran dari atribut
+versi produk, jurnal `D 110 Piutang Pembiayaan / K 201 Simpanan Anggota` dari rule `LoanDisbursed`
+(`ledger/0083`), subledger `LOAN_DISBURSEMENT` + saldo rekening (`deposit/0082`), status
+`APPROVED → ACTIVE`, audit `lending.loan.disburse`, event `LoanDisbursed`.
+
+**Keputusan D-182 — dua jalur yang tidak bisa dibangun bersamaan.** Pemilik memilih pencairan ke
+rekening simpanan *dan* tunai, tetapi tunai tidak bisa dibangun hari ini:
+`teller.cash_movement.transaction_id` wajib menunjuk `deposit.transaction`, dan tabel itu wajib
+punya `account_id` (rekening simpanan). Jalur tunai khusus akan mengubah invarian
+`expected_cash`/variance penutupan kas — perubahan uang-kritis yang butuh task sendiri. Jadi
+pencairan mengkredit rekening simpanan; anggota menarik tunai lewat teller dari rekening itu, dan
+kedua langkahnya terlihat di riwayat. Baris subledger memakai jenis baru `LOAN_DISBURSEMENT`
+(tanda `+` di rekonsiliasi, `kind: LOAN` di rekening koran), **bukan** `CASH_DEPOSIT`: uang yang
+tidak pernah masuk laci tidak boleh muncul sebagai setoran tunai.
+
+**Penjaga**: rekening tujuan wajib milik peminjam, se-cabang, `ACTIVE`, punya baris saldo
+(`account_party_mismatch` / `account_branch_mismatch` / `account_not_active` /
+`account_without_balance`); pinjaman belum disetujui `409 not_approved`; sudah cair `409
+already_disbursed` (kalah `FOR UPDATE` juga). Replay `Idempotency-Key` yang sama menjawab `200` +
+`Idempotent-Replayed` dengan isi respons asli — tidak ada jadwal/jurnal/transaksi kedua.
+
+**Dua bug nyata yang ditangkap test**: closure idempotensi mengembalikan `(0, payload)` karena
+`status` tidak pernah di-set `200` (helper membaca non-2xx sebagai bug server → 500), dan query test
+memakai kolom fiktif `journal_line.side` (skema menyimpan `debit`/`credit`).
+
+**Bukti**: `itapi_lending` 18 (suite pencairan 6), `itreconcile` +1 kasus (`LOAN_DISBURSEMENT`
+menambah saldo yang diharapkan), `tcontract` menyertakan `disburseLoan` di daftar idempotensi,
+`itlending` 17, `tschedule` 15, `tloan` 15. Gate lengkap dijalankan setelah entri ini ditulis.

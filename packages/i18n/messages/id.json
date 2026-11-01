@@ -822,6 +822,7 @@
   "teller_session_tx_out": "Keluar",
   "teller_session_tx_empty": "Belum ada transaksi tunai di sesi ini.",
   "teller_session_tx_count": "Menampilkan {shown} dari {total} transaksi sesi.",
+  "statement_kind_loan": "Pencairan pinjaman",
   "statement_kind_early_withdrawal": "Pencairan dini",
   "teller_early_transfer_heading": "Pencairan dini (pemindahbukuan)",
   "teller_early_credited": "Dana masuk ke tujuan",
