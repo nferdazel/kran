@@ -971,6 +971,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lending/loans/{loanId}/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bayar angsuran pinjaman dari rekening simpanan anggota
+         * @description Satu transaksi DB: jadwal dibaca `FOR UPDATE`, nominal dialokasikan ke baris jatuh tempo
+         *     **tertua lebih dulu** mengikuti urutan komponen parameter `lending.allocation_order`
+         *     (bawaan `INTEREST,PRINCIPAL,PENALTY`), `paid_*` bertambah, saldo rekening sumber berkurang
+         *     (tidak menembus saldo minimum produk), satu jurnal per komponen yang **tidak nol**
+         *     (`LoanPrincipalPaid` D 201/K 110, `LoanInterestPaid` D 201/K 401, `LoanPenaltyPaid`
+         *     D 201/K 403), satu baris subledger `LOAN_PAYMENT` per komponen yang menunjuk jurnalnya
+         *     sendiri, cache saldo pinjaman turun, audit `lending.loan.pay`, dan event
+         *     `LoanInstallmentPaid`.
+         *
+         *     Rekening sumber wajib milik anggota peminjam, se-cabang, dan `ACTIVE`. Pinjaman yang belum
+         *     dicairkan → 409 `not_disbursed`; yang sudah tidak berjalan → 409 `loan_inactive`. Nominal
+         *     melebihi sisa kewajiban ditolak `409 amount_exceeds_outstanding` (kelebihan bayar belum
+         *     punya keputusan bisnis). Saldo tidak cukup → 409 `insufficient_balance`.
+         *
+         *     **Pelunasan tidak mengubah status pinjaman** menjadi `CLOSED`: penutupan akad menyangkut
+         *     pelepasan agunan/berkas dan belum punya aturan. `principalOutstanding` bernilai `0` adalah
+         *     tanda pinjaman sudah lunas.
+         *
+         *     `Idempotency-Key` wajib. Replay kunci+isi sama → 200 + `Idempotent-Replayed` tanpa
+         *     pembayaran/jurnal kedua; kunci sama isi beda → 409.
+         *
+         *     **HUMAN-REVIEW-REQUIRED** (pergerakan uang, AGENTS.md §8).
+         */
+        post: operations["payLoan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/deposit/accounts": {
         parameters: {
             query?: never;
@@ -1835,6 +1876,33 @@ export interface components {
             /** Format: date */
             maturityOn: string;
             installmentCount: number;
+        };
+        LoanPaymentRequest: {
+            /**
+             * Format: uuid
+             * @description Rekening simpanan sumber dana (milik peminjam, se-cabang, aktif).
+             */
+            accountId: string;
+            /** @description Nominal pembayaran, desimal 2 digit, mis. `"1500000.00"`. */
+            amount: string;
+        };
+        LoanPaymentResult: {
+            /** Format: uuid */
+            paymentId: string;
+            /** Format: uuid */
+            loanId: string;
+            /** Format: uuid */
+            accountId: string;
+            amount: string;
+            principalPaid: string;
+            interestPaid: string;
+            penaltyPaid: string;
+            /** Format: date */
+            businessDate: string;
+            /** @description Sisa pokok setelah pembayaran; `"0.00"` berarti pinjaman sudah lunas. */
+            principalOutstanding: string;
+            /** @description Satu jurnal per komponen yang dibayar (pokok/bunga/denda bisa nol). */
+            journalIds: string[];
         };
         LoanSubmission: {
             /**
@@ -4888,6 +4956,66 @@ export interface operations {
              * @description Ditolak keadaan sekarang (`params.reason`): `not_approved`, `already_disbursed`,
              *     `account_party_mismatch`, `account_branch_mismatch`, `account_not_active`,
              *     `account_without_balance`, `schedule_invalid`.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            415: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    payLoan: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Kunci idempotensi per pemanggil (D-098). Wajib pada endpoint pembuat objek: kirim ulang
+                 *     dengan kunci yang sama untuk mengulang permintaan tanpa membuat objek ganda. Replay
+                 *     dijawab 200 + header `Idempotent-Replayed: true`; kunci sama dengan isi berbeda → 409.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                loanId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoanPaymentRequest"];
+            };
+        };
+        responses: {
+            /**
+             * @description Pembayaran diterima dan dialokasikan. Replay permintaan yang sama mengembalikan
+             *     respons ini dengan header `Idempotent-Replayed: true`.
+             */
+            200: {
+                headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoanPaymentResult"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            /**
+             * @description Ditolak keadaan sekarang (`params.reason`): `not_approved`, `not_disbursed`,
+             *     `loan_inactive`, `schedule_missing`, `amount_exceeds_outstanding`,
+             *     `insufficient_balance`, `account_party_mismatch`, `account_branch_mismatch`,
+             *     `account_not_active`, `allocation_conflict`.
              */
             409: {
                 headers: {

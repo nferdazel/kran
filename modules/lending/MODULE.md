@@ -2,7 +2,7 @@
 
 Pinjaman (spec §9.2, §23 Fase 4): produk pinjaman berversi, akad/fasilitas, jadwal angsuran, lalu
 kolektibilitas/PPAP di fase yang sama. Status: **T-161** (model + skema) + **T-162** (mesin jadwal) + **T-163** (pengajuan &
-persetujuan) + **T-164** (pencairan). Angsuran T-165.
+persetujuan) + **T-164** (pencairan) + **T-165** (pembayaran angsuran). Kolektibilitas T-166.
 pengajuan/pencairan T-163/T-164; task day-close T-166/T-167; API/UI T-169/T-170.
 
 Keputusan angka & aturan: **D-180**. Rencana fase: `docs/proposals/fase4-lending.md`.
@@ -110,6 +110,35 @@ Satu transaksi DB: jadwal angsuran dibentuk dari atribut versi produk (metode/te
   tidak ada jadwal/jurnal/transaksi kedua (dibuktikan test).
 - **Koreksi** pencairan memakai jurnal pembalik (spec §9.1(3)), bukan status baru.
 
+## Pembayaran angsuran (T-165, D-183)
+
+`POST /api/v1/lending/loans/{loanId}/payments` · izin `lending.loan.pay` (migrasi `platform/0088`;
+`lending_maker` + `platform_admin`) · **`Idempotency-Key` wajib**.
+
+Jadwal dibaca `FOR UPDATE` (tertua lebih dulu), nominal dialokasikan menurut parameter
+`lending.allocation_order`, lalu satu transaksi DB: `paid_*` bertambah, saldo rekening sumber
+berkurang (tanpa menembus saldo minimum produk), **satu jurnal per komponen yang tidak nol**
+(`LoanPrincipalPaid` D 201/K 110, `LoanInterestPaid` D 201/K 401, `LoanPenaltyPaid` D 201/K 403),
+**satu baris subledger `LOAN_PAYMENT` per komponen** — masing-masing menunjuk jurnalnya sendiri,
+karena satu baris `deposit.transaction` hanya bisa menunjuk satu jurnal — cache saldo pinjaman
+turun, audit `lending.loan.pay`, event `LoanInstallmentPaid`.
+
+| Ditolak | `params.reason` |
+|---|---|
+| Belum disetujui / belum dicairkan | `not_approved` / `not_disbursed` |
+| Sudah tidak berjalan | `loan_inactive` |
+| Nominal melebihi sisa kewajiban | `amount_exceeds_outstanding` |
+| Saldo tidak cukup (atau menembus saldo minimum) | `insufficient_balance` |
+| Rekening bukan milik peminjam / cabang lain / tidak aktif | `account_party_mismatch` / `account_branch_mismatch` / `account_not_active` |
+| Jadwal berubah saat diproses | `allocation_conflict` |
+
+- **Kelebihan bayar ditolak**, tidak dikreditkan ke pokok berikutnya: belum ada keputusan bisnis
+  untuk uang muka (D-183).
+- **Pelunasan tidak mengubah status** menjadi `CLOSED` — penutupan akad menyangkut pelepasan
+  agunan/berkas. `principalOutstanding: "0.00"` adalah tandanya.
+- **Trigger `0079` dilonggarkan `0089`**: baris yang sudah dibayar tetap tidak bisa dihapus dan
+  kewajibannya beku, tetapi boleh menerima pembayaran berikutnya (`paid_*` hanya naik).
+
 ## Event
 
 | Event | Kapan | Dedup key |
@@ -117,27 +146,31 @@ Satu transaksi DB: jadwal angsuran dibentuk dari atribut versi produk (metode/te
 | `LoanSubmitted` | pengajuan dibuat (T-163) | `lending.loan.submitted:<loanId>` |
 | `LoanApproved` | pengajuan disetujui (T-163) | `lending.loan.approved:<loanId>` |
 | `LoanDisbursed` | pinjaman dicairkan (T-164) | `lending.loan.disbursed:<loanId>` |
+| `LoanInstallmentPaid` | angsuran dibayar (T-165) | `lending.loan.payment:<paymentId>` |
 
-`InstallmentDue`, `CollectibilityChanged` menyusul di T-165/T-166 — jangan menganggapnya sudah ada.
+`InstallmentDue`, `CollectibilityChanged` menyusul di T-166 — jangan menganggapnya sudah ada.
 
 ## Izin
 
 `lending.loan.read`, `lending.loan.submit`, `lending.loan.approve` (migrasi `platform/0081`).
-`lending.loan.disburse` ditambahkan migrasi `platform/0084`: pencairan memindahkan uang, jadi
-tidak otomatis ikut izin approve. Peran sempit: `lending_maker` (read+submit+disburse) dan
-`lending_checker` (read+approve), dengan baris `role_conflict` supaya satu orang tidak memegang
-keduanya. `platform_admin` memegang keempatnya.
+`lending.loan.disburse` ditambahkan migrasi `platform/0084` dan `lending.loan.pay` migrasi
+`platform/0088`: memindahkan uang dan menerima uang tidak otomatis ikut izin approve. Peran sempit:
+`lending_maker` (read+submit+disburse+pay) dan `lending_checker` (read+approve), dengan baris
+`role_conflict` supaya satu orang tidak memegang keduanya. `platform_admin` memegang kelimanya.
 
 ## Permukaan HTTP
 
-T-163/T-164 memasang tiga rute (lihat bagian di atas). Daftar/baca pinjaman, scoping baca, dan
-pembayaran menyusul di T-169/T-165.
+T-163…T-165 memasang empat rute (lihat bagian di atas). Daftar/baca pinjaman dan scoping baca
+menyusul di T-169.
 
 ## Test
 
 - `./task test tloan` — domain (urutan alokasi, total jadwal, penyelesaian baris).
-- `./task test itapi_lending` — HTTP: pengajuan/persetujuan/pencairan (jadwal, jurnal, subledger,
-  saldo, replay idempoten, penolakan rekening bukan milik peminjam).
+- `./task test itapi_lending` — HTTP: pengajuan/persetujuan/pencairan/pembayaran (jadwal, jurnal
+  per komponen, subledger, saldo, replay idempoten, penolakan rekening bukan milik peminjam, saldo
+  tidak cukup, kelebihan bayar, pelunasan).
+- `./task test tpayment` — alokasi: golden dua urutan parameter, denda paling akhir, kelebihan bayar
+  ditolak, pelunasan bertahap, property 200 kasus acak (`Σ alokasi == nominal`).
 - `./task test tschedule` — mesin jadwal: golden flat/efektif/anuitas + property (pokok total tepat,
   baris tanpa kewajiban, tanggal monoton) + kasus tepi (rate 0%, tenor 1, akhir bulan).
 - `./task test itlending` — skema + repositori: produk/versi, pinjaman, jadwal, CHECK + trigger

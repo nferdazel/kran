@@ -4779,3 +4779,47 @@ lain.
 pemetaan akun 110 untuk pinjaman konvensional belum ditinjau compliance (COA dasar disusun sebelum
 modul `lending` ada); strukturnya sengaja lewat `posting_rule` supaya akun final bisa diganti tanpa
 migrasi.
+
+## D-183 — Pembayaran angsuran: alokasi per parameter, satu jurnal per komponen (1 Nov 2026)
+
+**Konteks.** T-165 menerima uang dari anggota untuk pertama kalinya. Tiga hal tidak bisa dijawab
+oleh kode yang sudah ada, dan masing-masing akan mengarang aturan uang bila ditebak:
+
+1. **Satu jurnal atau tiga.** `ledger.posting_rule` memakai **satu nominal** per jurnal
+   (`buildLines` memberi nominal yang sama ke sisi debit dan kredit; template dipaksa tepat satu
+   debit + satu kredit — `validateTemplate`, "split multi-baris = T-076" yang belum pernah
+   dikerjakan). Pembayaran angsuran mengalir ke tiga tujuan berbeda (110 pokok, 401 bunga,
+   403 denda), jadi satu jurnal tidak bisa mewakilinya tanpa menumpangkan pokok ke pendapatan
+   bunga.
+2. **Satu baris subledger atau tiga.** `deposit.transaction.journal_id` menunjuk **satu** jurnal
+   (dan `UNIQUE (journal_id, account_id)`), sedangkan `teller.cash_movement`/slip membaca kolom itu.
+3. **Trigger `0079`.** Fungsi `reject_paid_installment_mutation` menolak **setiap** UPDATE pada
+   baris jadwal yang sudah punya `paid_* > 0`. Maksud aslinya benar (baris lunas tidak boleh
+   diubah), tetapi konsekuensinya angsuran tidak mungkin dicicil: pembayaran pertama membuat baris
+   itu "terkunci", sehingga pembayaran berikutnya dan bahkan komponen kedua pada pembayaran pertama
+   ditolak.
+
+**Keputusan.**
+
+1. **Satu jurnal per komponen yang tidak nol** (`LoanPrincipalPaid` D 201/K 110, `LoanInterestPaid`
+   D 201/K 401, `LoanPenaltyPaid` D 201/K 403). Komponen nol tidak menghasilkan jurnal nol. Akun
+   `403 PENDAPATAN DENDA` ditambahkan di migrasi `ledger/0087` dan ditandai
+   **NEEDS-COMPLIANCE-REVIEW** (nama/kode akun contoh pilot, REG-011 `V!`).
+2. **Satu baris subledger per komponen** (`LOAN_PAYMENT`, tanda `−` di rekonsiliasi, rekening koran
+   `kind: LOAN`, `direction: OUT`), masing-masing menunjuk jurnalnya sendiri. Rekening koran
+   menampilkan beberapa baris untuk satu pembayaran; itu konsekuensi yang diterima, dan lebih baik
+   daripada slip yang menunjuk jurnal yang nominalnya tidak cocok dengan barisnya.
+3. **Trigger dilonggarkan, bukan dimatikan** (`lending/0089`): DELETE baris berbayar tetap ditolak,
+   `loan_id`/`no`/`due_on`/`*_due` beku setelah ada pembayaran, `paid_*` hanya boleh naik,
+   `paid_on` yang sudah terisi tidak boleh diubah. Koreksi resmi tetap lewat jurnal pembalik.
+
+**Batas yang dicatat, bukan disembunyikan.**
+
+- **Kelebihan bayar ditolak** (`409 amount_exceeds_outstanding`). Mengkreditkannya ke pokok
+  berikutnya atau mengembalikannya tunai adalah keputusan bisnis yang belum ada; menebaknya berarti
+  membuat aturan uang baru di kode.
+- **Pinjaman lunas tidak otomatis `CLOSED`**: penutupan akad menyangkut pelepasan agunan/berkas dan
+  belum punya aturan. `principalOutstanding: "0.00"` adalah tandanya; status tetap `ACTIVE`.
+- **`interest_overdue`/`penalty_outstanding` adalah tunggakan**, bukan bunga/denda berjalan. Yang
+  mengisinya kelak adalah regrading kolektibilitas (T-166); pada T-165 keduanya nol, jadi
+  pengurangan cache dijepit `GREATEST(…, 0)` alih-alih dibiarkan negatif.

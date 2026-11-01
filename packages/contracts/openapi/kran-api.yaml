@@ -2219,6 +2219,91 @@ paths:
         "503":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/lending/loans/{loanId}/payments:
+    post:
+      operationId: payLoan
+      tags: [lending]
+      summary: Bayar angsuran pinjaman dari rekening simpanan anggota
+      description: |
+        Satu transaksi DB: jadwal dibaca `FOR UPDATE`, nominal dialokasikan ke baris jatuh tempo
+        **tertua lebih dulu** mengikuti urutan komponen parameter `lending.allocation_order`
+        (bawaan `INTEREST,PRINCIPAL,PENALTY`), `paid_*` bertambah, saldo rekening sumber berkurang
+        (tidak menembus saldo minimum produk), satu jurnal per komponen yang **tidak nol**
+        (`LoanPrincipalPaid` D 201/K 110, `LoanInterestPaid` D 201/K 401, `LoanPenaltyPaid`
+        D 201/K 403), satu baris subledger `LOAN_PAYMENT` per komponen yang menunjuk jurnalnya
+        sendiri, cache saldo pinjaman turun, audit `lending.loan.pay`, dan event
+        `LoanInstallmentPaid`.
+
+        Rekening sumber wajib milik anggota peminjam, se-cabang, dan `ACTIVE`. Pinjaman yang belum
+        dicairkan → 409 `not_disbursed`; yang sudah tidak berjalan → 409 `loan_inactive`. Nominal
+        melebihi sisa kewajiban ditolak `409 amount_exceeds_outstanding` (kelebihan bayar belum
+        punya keputusan bisnis). Saldo tidak cukup → 409 `insufficient_balance`.
+
+        **Pelunasan tidak mengubah status pinjaman** menjadi `CLOSED`: penutupan akad menyangkut
+        pelepasan agunan/berkas dan belum punya aturan. `principalOutstanding` bernilai `0` adalah
+        tanda pinjaman sudah lunas.
+
+        `Idempotency-Key` wajib. Replay kunci+isi sama → 200 + `Idempotent-Replayed` tanpa
+        pembayaran/jurnal kedua; kunci sama isi beda → 409.
+
+        **HUMAN-REVIEW-REQUIRED** (pergerakan uang, AGENTS.md §8).
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoanPaymentRequest"
+      responses:
+        "200":
+          description: |
+            Pembayaran diterima dan dialokasikan. Replay permintaan yang sama mengembalikan
+            respons ini dengan header `Idempotent-Replayed: true`.
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanPaymentResult"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "409":
+          description: |
+            Ditolak keadaan sekarang (`params.reason`): `not_approved`, `not_disbursed`,
+            `loan_inactive`, `schedule_missing`, `amount_exceeds_outstanding`,
+            `insufficient_balance`, `account_party_mismatch`, `account_branch_mismatch`,
+            `account_not_active`, `allocation_conflict`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+
   /api/v1/deposit/accounts:
     get:
       operationId: listDepositAccounts
@@ -3980,6 +4065,59 @@ components:
         installmentCount:
           type: integer
           minimum: 1
+    LoanPaymentRequest:
+      type: object
+      additionalProperties: false
+      required: [accountId, amount]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+          description: Rekening simpanan sumber dana (milik peminjam, se-cabang, aktif).
+        amount:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+          description: Nominal pembayaran, desimal 2 digit, mis. `"1500000.00"`.
+    LoanPaymentResult:
+      type: object
+      additionalProperties: false
+      required: [paymentId, loanId, accountId, amount, principalPaid, interestPaid, penaltyPaid,
+                 businessDate, principalOutstanding, journalIds]
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        loanId:
+          type: string
+          format: uuid
+        accountId:
+          type: string
+          format: uuid
+        amount:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+        principalPaid:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+        interestPaid:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+        penaltyPaid:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+        businessDate:
+          type: string
+          format: date
+        principalOutstanding:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+          description: Sisa pokok setelah pembayaran; `"0.00"` berarti pinjaman sudah lunas.
+        journalIds:
+          type: array
+          description: Satu jurnal per komponen yang dibayar (pokok/bunga/denda bisa nol).
+          items:
+            type: string
+            format: uuid
     LoanSubmission:
       type: object
       additionalProperties: false

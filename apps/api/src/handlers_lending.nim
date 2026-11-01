@@ -22,8 +22,9 @@ import platform/domain/[audit, event, idempotency, scope]
 import platform/infrastructure/[audit_repo, auth_service, outbox_repo, param_repo]
 import deposit/domain/[account, transaction]
 import deposit/infrastructure/[account_repo, transaction_repo]
-import lending/domain/[loan, schedule]
+import lending/domain/[loan, payment, schedule]
 import lending/infrastructure/loan_repo
+import product/infrastructure/product_repo
 import party/domain/party
 import party/infrastructure/party_repo
 
@@ -40,6 +41,7 @@ const
   permissionLendingSubmit* = "lending.loan.submit"
   permissionLendingApprove* = "lending.loan.approve"
   permissionLendingDisburse* = "lending.loan.disburse"
+  permissionLendingPay* = "lending.loan.pay"
   ## Idempotensi lapis HTTP: operasi pencairan memindahkan uang, jadi replay kunci yang sama harus
   ## mengembalikan respons asli, bukan mencairkan dua kali.
   operationIdLoanDisburse = "lending.loan.disburse"
@@ -486,6 +488,315 @@ proc handleDisburseLoan*(app: AppContext, req: Request) {.gcsafe.} =
       status = 500
     if problemText.len == 0:
       problemText = "pencairan pinjaman gagal (jurnal/periode ditolak database)"
+
+  if outcome.decision != idemProceed:
+    discard req.respondIdempotent(outcome)
+    return
+
+  case status
+  of 200:
+    req.respondJson(200, payload)
+  of 400:
+    respondLendingReason(req, pkBadRequest, "Bad Request", reason, problemText)
+  of 403:
+    respondLendingReason(req, pkForbidden, "Forbidden", reason, problemText)
+  of 404:
+    respondLendingReason(req, pkNotFound, "Not Found", reason, problemText)
+  of 409:
+    respondLendingReason(req, pkConflict, "Conflict", reason, problemText)
+  else:
+    req.respondProblem(pkInternal, "Internal Server Error", problemText)
+
+type
+  LendingConfigError* = object of CatchableError
+    ## Data produk (binding versi) atau cache saldo rusak: 500, bukan 400 — itu konfigurasi
+    ## institusi, bukan kesalahan pemanggil.
+
+const
+  ## Binding saldo minimum versi produk akun, sama dengan jalur teller (`handlers_teller`). Nilainya
+  ## dari produk, bukan kode: pembayaran angsuran tetap tidak boleh menembus saldo minimum yang
+  ## disepakati saat rekening dibuka.
+  minBalanceParamKey = "product.savings.min_balance"
+  operationIdLoanPay = "lending.loan.pay"
+
+proc minBalanceFor(db: DbConn, versionId: Id): Money =
+  ## `0` bila produk tidak mengikat saldo minimum (D-095: pack default 0). Binding ada tetapi bukan
+  ## nominal sah = data produk rusak.
+  for binding in bindingsOf(db, versionId):
+    if binding.paramKey != minBalanceParamKey:
+      continue
+    if binding.value.isNil or binding.value.kind != JString:
+      raise newException(LendingConfigError,
+        "binding " & minBalanceParamKey & " bukan string desimal")
+    let parsed = moneyFromString(binding.value.getStr())
+    if parsed.isErr:
+      raise newException(LendingConfigError,
+        "binding " & minBalanceParamKey & " bukan nominal sah")
+    if parsed.value() < zero():
+      raise newException(LendingConfigError,
+        "binding " & minBalanceParamKey & " negatif (konfigurasi produk rusak)")
+    return parsed.value()
+  zero()
+
+proc allocationOrder(db: DbConn; asOf: string): seq[AllocationComponent] =
+  ## Urutan komponen pembayaran dari parameter `lending.allocation_order` (D-180 butir 4). Rusak =
+  ## galat konfigurasi: alokasi tanpa urutan akan menebak komponen mana yang dibayar lebih dulu.
+  let node =
+    try:
+      activeValueJson(db, keyString(P_lending_allocation_order), asOf,
+        lookupFor(institutionScope()))
+    except ValueError as e:
+      raise newException(LendingConfigError, e.msg)
+  if node.kind != JString:
+    raise newException(LendingConfigError,
+      "parameter " & keyString(P_lending_allocation_order) & " bukan daftar komponen")
+  let parsed = parseAllocationOrder(node.getStr())
+  if not parsed.isOk:
+    raise newException(LendingConfigError, parsed.error.details)
+  parsed.val
+
+proc postComponentJournal(db: DbConn, clock: Clock, eventType: string, amount: Money,
+    branchId: Id, paymentId: Id, businessDate, component: string, actor: Id): Id =
+  ## Satu jurnal per komponen yang **tidak nol**. `posting_rule` memakai satu nominal per jurnal, jadi
+  ## pokok, bunga, dan denda tidak bisa menumpang satu jurnal tanpa membuat laporan pendapatan salah.
+  postRuleJournalSync(db, clock, eventType, amount, branchId, paymentId, businessDate,
+    "lending:payment:" & $paymentId & ":" & component, actor,
+    %*{"paymentId": $paymentId})
+
+proc handlePayLoan*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `POST /api/v1/lending/loans/{loanId}/payments` — terima angsuran dari rekening simpanan anggota.
+  ##
+  ## Satu transaksi DB: jadwal dibaca `FOR UPDATE`, alokasi menurut parameter, `paid_*` bertambah,
+  ## saldo rekening berkurang (tidak menembus saldo minimum produk), satu jurnal per komponen yang
+  ## tidak nol, satu baris subledger per komponen (masing-masing menunjuk jurnalnya sendiri — satu
+  ## baris tidak bisa menunjuk tiga jurnal), cache saldo pinjaman turun, audit, dan event.
+  let principalOpt = requirePrincipal(app, req)
+  if principalOpt.isNone:
+    return
+  let principal = principalOpt.get()
+  if not requirePermission(app, req, principal, permissionLendingPay):
+    return
+  let loanId = parseId(pathParam(req, "loanId"))
+  if loanId.isErr:
+    req.respondProblem(pkNotFound, "Not Found", "pinjaman tidak ditemukan")
+    return
+  if not requireIdempotencyKey(req):
+    req.respondProblem(pkBadRequest, "Bad Request", "Idempotency-Key wajib diisi")
+    return
+
+  let body = parseJsonBody(req)
+  if body.isNone or body.get().kind != JObject:
+    req.respondProblem(pkBadRequest, "Bad Request", "badan permintaan harus objek JSON")
+    return
+  let accountId = parseId(body.get().jsonField("accountId"))
+  if accountId.isErr:
+    req.respondProblem(pkBadRequest, "Bad Request", "accountId harus UUID yang sah")
+    return
+  let amount = moneyFromString(body.get().jsonField("amount"))
+  if not amount.isOk or not amount.val.isPositive:
+    req.respondProblem(pkBadRequest, "Bad Request",
+      "amount harus nominal positif, mis. \"1500000.00\"")
+    return
+  let asOf = businessDateIso(app.clock)
+
+  var
+    status = 0
+    reason = ""
+    problemText = ""
+    payload = newJObject()
+    outcome = IdempotentOutcome(decision: idemProceed)
+  try:
+    outcome = withDbTx(app.pool, proc(db: DbConn): IdempotentOutcome {.gcsafe.} =
+      dbCalls:
+        withIdempotency(db, principal, req, operationIdLoanPay, $body.get(), asOf,
+            app.clock.now(), proc(): tuple[status: int, payload: JsonNode] {.gcsafe.} =
+          dbCalls:
+            let found = loanById(db, loanId.val, forUpdate = true)
+            if found.isNone:
+              status = 404
+              reason = "loan_not_found"
+              problemText = "pinjaman tidak ditemukan"
+              raise newException(ValueError, problemText)
+            let loan = found.get()
+            let branch = $loan.branchId
+            if not authorizedAtBranch(db, principal, branch, permissionLendingPay):
+              status = 403
+              reason = "branch_not_allowed"
+              problemText = "izin " & permissionLendingPay & " tidak dipegang di cabang ini"
+              raise newException(ValueError, problemText)
+            case loan.status
+            of lsActive:
+              discard
+            of lsApplied:
+              status = 409
+              reason = "not_approved"
+              problemText = "pinjaman belum disetujui"
+              raise newException(ValueError, problemText)
+            of lsApproved:
+              status = 409
+              reason = "not_disbursed"
+              problemText = "pinjaman belum dicairkan; tidak ada yang bisa diangsur"
+              raise newException(ValueError, problemText)
+            of lsClosed, lsWrittenOff:
+              status = 409
+              reason = "loan_inactive"
+              problemText = "pinjaman sudah tidak berjalan"
+              raise newException(ValueError, problemText)
+
+            let account = accountById(db, accountId.val)
+            if account.isNone:
+              status = 404
+              reason = "account_not_found"
+              problemText = "rekening sumber tidak ditemukan"
+              raise newException(ValueError, problemText)
+            if account.get().partyId != loan.partyId:
+              status = 409
+              reason = "account_party_mismatch"
+              problemText = "rekening sumber bukan milik anggota peminjam"
+              raise newException(ValueError, problemText)
+            if account.get().branchId != loan.branchId:
+              status = 409
+              reason = "account_branch_mismatch"
+              problemText = "rekening sumber bukan di cabang pinjaman"
+              raise newException(ValueError, problemText)
+            if account.get().status != asActive:
+              status = 409
+              reason = "account_not_active"
+              problemText = "rekening sumber tidak aktif"
+              raise newException(ValueError, problemText)
+
+            let businessDate = businessDateFor(db, institutionScope(), asOf)
+            let rows = installmentsForUpdate(db, loan.loanId)
+            if rows.len == 0:
+              status = 409
+              reason = "schedule_missing"
+              problemText = "pinjaman belum punya jadwal angsuran"
+              raise newException(ValueError, problemText)
+
+            let allocated = allocatePayment(rows, allocationOrder(db, asOf), amount.val)
+            if not allocated.isOk:
+              status = 409
+              reason = "amount_exceeds_outstanding"
+              problemText = allocated.error.details
+              raise newException(ValueError, problemText)
+            let plan = allocated.val
+
+            let actor = parseId(principal.user.userId).value()
+            let payment = Payment(
+              paymentId: newId(app.clock),
+              loanId: loan.loanId,
+              accountId: account.get().accountId,
+              amount: amount.val,
+              principalPaid: plan.principal,
+              interestPaid: plan.interest,
+              penaltyPaid: plan.penalty,
+              businessDate: businessDate,
+            )
+
+            # Saldo rekening lebih dulu: bila tidak cukup (atau menembus saldo minimum), tidak ada
+            # jurnal yang sudah terlanjur ditulis.
+            let minBalance = minBalanceFor(db, account.get().productVersionId)
+            if decreaseBalance(db, account.get().accountId, amount.val, minBalance).isNone:
+              status = 409
+              reason = "insufficient_balance"
+              problemText = "saldo rekening tidak cukup untuk pembayaran ini"
+              raise newException(ValueError, problemText)
+
+            var journalIds: seq[string] = @[]
+            proc postFor(component: AllocationComponent, componentAmount: Money,
+                eventType, label: string) =
+              if not componentAmount.isPositive:
+                return
+              let journalId = postComponentJournal(db, app.clock, eventType, componentAmount,
+                loan.branchId, payment.paymentId, businessDate, label, actor)
+              journalIds.add($journalId)
+              insertTransaction(db, Transaction(
+                transactionId: newId(app.clock),
+                txType: ttLoanPayment,
+                accountId: account.get().accountId,
+                amount: componentAmount,
+                businessDate: businessDate,
+                narration: "angsuran pinjaman (" & label & ")",
+                journalId: journalId), actor)
+
+            postFor(acPrincipal, plan.principal, "LoanPrincipalPaid", "principal")
+            postFor(acInterest, plan.interest, "LoanInterestPaid", "interest")
+            postFor(acPenalty, plan.penalty, "LoanPenaltyPaid", "penalty")
+
+            for line in plan.lines:
+              if not addInstallmentPayment(db, loan.loanId, line.installmentNo, line.component,
+                  line.amount):
+                status = 409
+                reason = "allocation_conflict"
+                problemText = "jadwal berubah saat pembayaran diproses; ulangi permintaan"
+                raise newException(ValueError, problemText)
+            markSettledRows(db, loan.loanId, businessDate)
+
+            insertPayment(db, payment, actor)
+            for line in plan.lines:
+              insertPaymentAllocation(db, payment.paymentId, line)
+
+            if not decreaseLoanBalance(db, loan.loanId, plan.principal, plan.interest,
+                plan.penalty):
+              status = 500
+              problemText = "saldo pinjaman tidak sinkron dengan jadwal (cache hilang/negatif)"
+              raise newException(ValueError, problemText)
+            let outstanding = principalOutstanding(db, loan.loanId)
+
+            let ctx = auditContextFor(principal, req, app.clock, "", branch = branch)
+            discard appendAudit(db, newAuditEntry(ctx, "lending.loan.pay", "lending.loan",
+              $loan.loanId, app.clock,
+              businessDate = businessDate,
+              after = %*{"paymentId": $payment.paymentId, "amount": toDecimalString(amount.val),
+                         "accountId": $account.get().accountId,
+                         "principalPaid": toDecimalString(plan.principal),
+                         "interestPaid": toDecimalString(plan.interest),
+                         "penaltyPaid": toDecimalString(plan.penalty),
+                         "principalOutstanding": toDecimalString(outstanding)}))
+            discard appendEvent(db, newOutboxEvent(newId(app.clock), "LoanInstallmentPaid",
+              "lending.loan", $loan.loanId, "lending.loan.payment:" & $payment.paymentId,
+              %*{"loanId": $loan.loanId, "paymentId": $payment.paymentId,
+                 "partyId": $loan.partyId, "branchId": $branch,
+                 "amount": toDecimalString(amount.val),
+                 "principalPaid": toDecimalString(plan.principal),
+                 "interestPaid": toDecimalString(plan.interest),
+                 "penaltyPaid": toDecimalString(plan.penalty),
+                 "principalOutstanding": toDecimalString(outstanding),
+                 "journals": journalIds}))
+
+            payload = %*{
+              "paymentId": $payment.paymentId,
+              "loanId": $loan.loanId,
+              "accountId": $account.get().accountId,
+              "amount": toDecimalString(amount.val),
+              "principalPaid": toDecimalString(plan.principal),
+              "interestPaid": toDecimalString(plan.interest),
+              "penaltyPaid": toDecimalString(plan.penalty),
+              "businessDate": businessDate,
+              "principalOutstanding": toDecimalString(outstanding),
+              "journalIds": journalIds,
+            }
+            status = 200
+            (status, payload)))
+  except IdempotencyConfigError:
+    status = 500
+    problemText = "konfigurasi idempotensi di server tidak sah"
+  except IdempotencyStateError:
+    status = 500
+    problemText = "idempotensi gagal diselesaikan"
+  except LendingConfigError as e:
+    status = 500
+    problemText = "konfigurasi pinjaman tidak sah: " & e.msg
+  except ValueError as e:
+    if status == 0:
+      status = 500
+    if problemText.len == 0:
+      problemText = e.msg
+  except DbError:
+    if status == 0:
+      status = 500
+    if problemText.len == 0:
+      problemText = "pembayaran angsuran gagal (jurnal/periode ditolak database)"
 
   if outcome.decision != idemProceed:
     discard req.respondIdempotent(outcome)

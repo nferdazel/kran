@@ -212,6 +212,34 @@ suite "lending: jadwal angsuran":
     expectDbError(proc() =
       db.exec(sql"DELETE FROM lending.installment WHERE loan_id = ? AND no = 1", $l))
 
+  test "baris yang sudah dibayar masih bisa menerima pembayaran berikutnya (T-165)":
+    # T-161 membekukan seluruh UPDATE pada baris berbayar, sehingga angsuran tidak mungkin dicicil
+    # (pembayaran kedua selalu ditolak trigger). Migrasi `0089` mengizinkannya selama **kewajiban**
+    # tetap dan `paid_*` hanya naik.
+    let l = activeLoan()
+    discard scheduleFor(l, paidPrincipal = "100000.00", paidInterest = "50000.00")
+    db.exec(sql"""
+      UPDATE lending.installment
+         SET paid_principal = paid_principal + 25000.00
+       WHERE loan_id = ? AND no = 1""", $l)
+    check db.getValue(sql"""
+      SELECT paid_principal::text FROM lending.installment WHERE loan_id = ? AND no = 1""",
+      $l) == "125000.00"
+
+  test "kewajiban dan pembayaran yang sudah tercatat tidak bisa diubah lewat UPDATE (T-165)":
+    let l = activeLoan()
+    discard scheduleFor(l, paidPrincipal = "100000.00", paidInterest = "50000.00")
+    # Mengubah kewajiban setelah uang diterima = mengarang utang.
+    expectDbError(proc() =
+      db.exec(sql"""
+        UPDATE lending.installment SET principal_due = principal_due + 1000.00
+         WHERE loan_id = ? AND no = 1""", $l))
+    # Mengurangi pembayaran = menghapus bukti uang yang sudah diterima.
+    expectDbError(proc() =
+      db.exec(sql"""
+        UPDATE lending.installment SET paid_principal = 0
+         WHERE loan_id = ? AND no = 1""", $l))
+
   test "baris belum dibayar masih bisa disesuaikan (DRAFT jadwal)":
     let l = activeLoan()
     discard scheduleFor(l)

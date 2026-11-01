@@ -25,6 +25,8 @@ const
   ContractPath = "packages/contracts/openapi/kran-api.yaml"
   LoansPath = "/api/v1/lending/loans"
   ApprovePath = "/api/v1/lending/loans/{loanId}/approve"
+  DisbursePath = "/api/v1/lending/loans/{loanId}/disburse"
+  PaymentsPath = "/api/v1/lending/loans/{loanId}/payments"
   LoginPath = "/api/v1/auth/login"
   MakerUser = "dev.maker"
   ApproverUser = "dev.approver"
@@ -50,6 +52,7 @@ var versionActive = ""
 var versionDraft = ""
 var accountId = ""
 var otherAccountId = ""
+var zeroAccountId = ""
 
 block:
   let db = dbPool.acquire()
@@ -128,7 +131,7 @@ block:
   # pengesahan versi supaya commit-nya satu.
   execScript(db, """
     INSERT INTO product.product_param_binding (version_id, param_key, value)
-    VALUES (md5('lending|savings-version')::uuid, 'product.savings.min_balance', '0.00'::jsonb)
+    VALUES (md5('lending|savings-version')::uuid, 'product.savings.min_balance', '"0.00"'::jsonb)
     ON CONFLICT DO NOTHING;
     UPDATE product.product_version
        SET status = 'ACTIVE', checker = '""" & ActorId & """', approved_at = now(), sealed = true
@@ -152,9 +155,23 @@ block:
        '""" & ActorId & """', '""" & ActorId & """')
     ON CONFLICT DO NOTHING
   """)
+  # Rekening ketiga: milik peminjam juga, saldo nol — dipakai membuktikan penolakan saldo tidak
+  # cukup, bukan penolakan kepemilikan rekening (itu diuji dengan `account-other`).
+  execScript(db, """
+    INSERT INTO deposit.account
+      (account_id, account_no, party_id, product_id, product_version_id, branch_id,
+       account_type, status, opened_on, created_by, updated_by)
+    VALUES (md5('lending|account-zero')::uuid, '0001111113', '""" & PartyId &
+      """',
+            md5('lending|savings-product')::uuid, md5('lending|savings-version')::uuid,
+            '""" & BranchId & """', 'SAVINGS', 'ACTIVE', DATE '2020-01-01',
+            '""" & ActorId & """', '""" & ActorId & """')
+    ON CONFLICT DO NOTHING
+  """)
   execScript(db, """
     INSERT INTO deposit.account_balance (account_id, balance)
-    VALUES (md5('lending|account')::uuid, 0), (md5('lending|account-other')::uuid, 0)
+    VALUES (md5('lending|account')::uuid, 0), (md5('lending|account-other')::uuid, 0),
+           (md5('lending|account-zero')::uuid, 0)
     ON CONFLICT DO NOTHING
   """)
   # Jurnal pencairan butuh periode akuntansi OPEN yang mencakup tanggal buku. Seed test ini tidak
@@ -168,6 +185,7 @@ block:
   """)
   accountId = db.getValue(sql"SELECT md5('lending|account')::uuid::text")
   otherAccountId = db.getValue(sql"SELECT md5('lending|account-other')::uuid::text")
+  zeroAccountId = db.getValue(sql"SELECT md5('lending|account-zero')::uuid::text")
   versionActive = db.getValue(sql"SELECT md5('lending|version-active')::uuid::text")
   versionDraft = db.getValue(sql"SELECT md5('lending|version-draft')::uuid::text")
   dbPool.release(db)
@@ -405,8 +423,6 @@ suite "lending: persetujuan":
     check postJson(fill(ApprovePath, "bukan-uuid"), %*{}, approverToken).code == 404
 
 suite "lending: pencairan (T-164)":
-  const DisbursePath = "/api/v1/lending/loans/{loanId}/disburse"
-
   proc approvedLoan(amount = "9000000.00"): string =
     let created = postJson(LoansPath, loanBody(PartyId, versionActive, amount), makerToken)
     check created.code == 201
@@ -503,3 +519,146 @@ suite "lending: pencairan (T-164)":
     check postJson(fill(DisbursePath, loanId), %*{"accountId": accountId}, makerToken).code == 400
     check postJson(fill(DisbursePath, loanId), %*{"accountId": "bukan-uuid"}, makerToken,
       "itapi-lending-bad-" & loanId).code == 400
+
+suite "lending: pembayaran angsuran (T-165)":
+  proc disbursedLoan(amount = "9000000.00"): string =
+    let created = postJson(LoansPath, loanBody(PartyId, versionActive, amount), makerToken)
+    check created.code == 201
+    let loanId = created.body["loanId"].getStr()
+    check postJson(fill(ApprovePath, loanId), %*{}, approverToken).code == 200
+    let paid = postJson(fill(DisbursePath, loanId), %*{"accountId": accountId}, makerToken,
+      "itapi-lending-pay-disburse-" & loanId)
+    check paid.code == 200
+    loanId
+
+  proc balanceOf(id: string): string =
+    dbValue(sql"""SELECT balance::numeric(24,2)::text FROM deposit.account_balance
+                  WHERE account_id = ?""", id)
+
+  test "pembayaran sebagian: alokasi, jurnal per komponen, saldo, cache, audit, event":
+    let loanId = disbursedLoan()
+    let before = balanceOf(accountId)
+    let r = postJson(fill(PaymentsPath, loanId), %*{"accountId": accountId,
+      "amount": "1500000.00"}, makerToken, "itapi-lending-pay-" & loanId)
+    check r.code == 200
+    checkJson(PaymentsPath, "POST", "200", r.body)
+    let paymentId = r.body["paymentId"].getStr()
+    check r.body["amount"].getStr() == "1500000.00"
+    # INTEREST,PRINCIPAL,PENALTY: bunga baris 1 tertutup penuh lebih dulu.
+    check r.body["interestPaid"].getStr().len > 0
+    check r.body["journalIds"].len == 2 # tanpa denda: pokok + bunga
+
+    let principalPaid = r.body["principalPaid"].getStr()
+    let interestPaid = r.body["interestPaid"].getStr()
+    check dbValue(sql"""SELECT (principal_paid + interest_paid + penalty_paid)::numeric(24,2)::text
+                          FROM lending.payment WHERE payment_id = ?""", paymentId) == "1500000.00"
+    check dbValue(sql"""SELECT principal_paid::numeric(24,2)::text FROM lending.payment
+                         WHERE payment_id = ?""", paymentId) == principalPaid
+    check dbValue(sql"""SELECT count(*) FROM lending.payment_allocation WHERE payment_id = ?""",
+      paymentId) != "0"
+
+    # Baris 1 tertutup (bunga penuh + sebagian pokok), tanggal lunas belum diisi karena pokok belum.
+    check dbValue(sql"""SELECT (principal_due - paid_principal)::numeric(24,2)::text
+                          FROM lending.installment WHERE loan_id = ? AND no = 1""", loanId) != "0"
+    check dbValue(sql"""SELECT (interest_due - paid_interest)::numeric(24,2)::text
+                          FROM lending.installment WHERE loan_id = ? AND no = 1""", loanId) == "0.00"
+
+    # Jurnal: debit 201 sebesar nominal, kredit 110 (pokok) + 401 (bunga).
+    check dbValue(sql"""
+      SELECT coalesce(sum(l.debit), 0)::numeric(24,2)::text
+        FROM ledger.journal_line l JOIN ledger.journal j USING (journal_id)
+       WHERE j.source_ref = ? AND j.source_event IN
+             ('LoanPrincipalPaid', 'LoanInterestPaid', 'LoanPenaltyPaid')""", paymentId) ==
+      "1500000.00"
+    check dbValue(sql"""
+      SELECT string_agg(DISTINCT gl_account, ',' ORDER BY gl_account)
+        FROM ledger.journal_line l JOIN ledger.journal j USING (journal_id)
+       WHERE j.source_ref = ? AND l.credit > 0 AND j.source_event IN
+             ('LoanPrincipalPaid', 'LoanInterestPaid', 'LoanPenaltyPaid')""", paymentId) == "110,401"
+
+    # Saldo rekening turun tepat sebesar nominal; subledger LOAN_PAYMENT satu baris per komponen.
+    check balanceOf(accountId) == (parseFloat(before) - 1_500_000.0).formatFloat(ffDecimal, 2)
+    check dbValue(sql"""
+      SELECT count(*) FROM deposit.transaction t
+        JOIN ledger.journal j USING (journal_id)
+       WHERE j.source_ref = ? AND t.tx_type = 'LOAN_PAYMENT'""", paymentId) == "2"
+
+    # Cache saldo pinjaman turun sebesar pokok yang dibayar.
+    check dbValue(sql"""SELECT principal_outstanding::numeric(24,2)::text
+                          FROM lending.loan_balance WHERE loan_id = ?""", loanId) ==
+      (9_000_000.0 - parseFloat(principalPaid)).formatFloat(ffDecimal, 2)
+    check dbValue(sql"""SELECT count(*) FROM platform.audit_log
+                         WHERE action = 'lending.loan.pay' AND resource_id = ?""", loanId) == "1"
+    check dbValue(sql"""SELECT count(*) FROM platform.outbox
+                         WHERE event_type = 'LoanInstallmentPaid' AND aggregate_id = ?""",
+      loanId) == "1"
+
+  test "pelunasan: sisa pokok 0,00 dan status tetap ACTIVE":
+    let loanId = disbursedLoan("600000.00")
+    let outstanding = dbValue(sql"""SELECT principal_outstanding::numeric(24,2)::text
+                                      FROM lending.loan_balance WHERE loan_id = ?""", loanId)
+    # Bayar seluruh sisa kewajiban: pokok + bunga jadwal (dibaca dari jadwal, bukan dihitung test).
+    let owed = dbValue(sql"""SELECT sum(principal_due + interest_due + penalty_due - paid_principal
+                                    - paid_interest - paid_penalty)::numeric(24,2)::text
+                               FROM lending.installment WHERE loan_id = ?""", loanId)
+    let r = postJson(fill(PaymentsPath, loanId), %*{"accountId": accountId, "amount": owed},
+      makerToken, "itapi-lending-settle-" & loanId)
+    check r.code == 200
+    check r.body["principalOutstanding"].getStr() == "0.00"
+    check r.body["principalPaid"].getStr() == outstanding
+    check dbValue(sql"""SELECT count(*) FROM lending.installment
+                         WHERE loan_id = ? AND (paid_principal < principal_due
+                                             OR paid_interest < interest_due
+                                             OR paid_penalty < penalty_due)""", loanId) == "0"
+    check dbValue(sql"SELECT status FROM lending.loan WHERE loan_id = ?", loanId) == "ACTIVE"
+
+  test "nominal melebihi sisa kewajiban ditolak, saldo tidak berubah":
+    let loanId = disbursedLoan("300000.00")
+    let before = balanceOf(accountId)
+    let over = postJson(fill(PaymentsPath, loanId), %*{"accountId": accountId,
+      "amount": "99000000.00"}, makerToken, "itapi-lending-over-" & loanId)
+    check over.code == 409
+    check over.body["params"]["reason"].getStr() == "amount_exceeds_outstanding"
+    checkProblem(PaymentsPath, "POST", "409", over.body)
+    check balanceOf(accountId) == before
+
+  test "replay Idempotency-Key sama tidak membayar dua kali":
+    let loanId = disbursedLoan("1200000.00")
+    let key = "itapi-lending-pay-replay-" & loanId
+    let first = postJson(fill(PaymentsPath, loanId), %*{"accountId": accountId,
+      "amount": "100000.00"}, makerToken, key)
+    check first.code == 200
+    let balanceAfterFirst = balanceOf(accountId)
+    let second = postJson(fill(PaymentsPath, loanId), %*{"accountId": accountId,
+      "amount": "100000.00"}, makerToken, key)
+    check second.code == 200
+    check second.body["paymentId"].getStr() == first.body["paymentId"].getStr()
+    check balanceOf(accountId) == balanceAfterFirst
+    check dbValue(sql"""SELECT count(*) FROM lending.payment WHERE loan_id = ?""", loanId) == "1"
+
+  test "saldo tidak cukup, rekening anggota lain, dan pinjaman belum cair ditolak":
+    let loanId = disbursedLoan("400000.00")
+    let poor = postJson(fill(PaymentsPath, loanId), %*{"accountId": zeroAccountId,
+      "amount": "100000.00"}, makerToken, "itapi-lending-poor-" & loanId)
+    check poor.code == 409
+    check poor.body["params"]["reason"].getStr() == "insufficient_balance"
+
+    let other = postJson(fill(PaymentsPath, loanId), %*{"accountId": otherAccountId,
+      "amount": "100000.00"}, makerToken, "itapi-lending-other-day-" & loanId)
+    check other.code == 409
+    check other.body["params"]["reason"].getStr() == "account_party_mismatch"
+
+    let created = postJson(LoansPath, loanBody(PartyId, versionActive, "200000.00"), makerToken)
+    let freshLoan = created.body["loanId"].getStr()
+    check postJson(fill(ApprovePath, freshLoan), %*{}, approverToken).code == 200
+    let notYet = postJson(fill(PaymentsPath, freshLoan), %*{"accountId": accountId,
+      "amount": "10000.00"}, makerToken, "itapi-lending-notdisbursed-" & freshLoan)
+    check notYet.code == 409
+    check notYet.body["params"]["reason"].getStr() == "not_disbursed"
+
+  test "tanpa Idempotency-Key dan amount tidak sah → 400":
+    let loanId = disbursedLoan("200000.00")
+    check postJson(fill(PaymentsPath, loanId), %*{"accountId": accountId,
+      "amount": "10000.00"}, makerToken).code == 400
+    check postJson(fill(PaymentsPath, loanId), %*{"accountId": accountId, "amount": "0"},
+      makerToken, "itapi-lending-badpay-" & loanId).code == 400

@@ -3970,3 +3970,35 @@ memakai kolom fiktif `journal_line.side` (skema menyimpan `debit`/`credit`).
 **Bukti**: `itapi_lending` 18 (suite pencairan 6), `itreconcile` +1 kasus (`LOAN_DISBURSEMENT`
 menambah saldo yang diharapkan), `tcontract` menyertakan `disburseLoan` di daftar idempotensi,
 `itlending` 17, `tschedule` 15, `tloan` 15. Gate lengkap dijalankan setelah entri ini ditulis.
+
+## 2026-11-01 — T-165: pembayaran angsuran (alokasi per parameter, jurnal per komponen)
+
+**Rute**: `POST /api/v1/lending/loans/{loanId}/payments`, izin `lending.loan.pay` (migrasi
+`platform/0088`), `Idempotency-Key` wajib. Dana diambil dari rekening simpanan anggota (D-182),
+jadwal dibaca `FOR UPDATE` dan dialokasikan ke baris **tertua lebih dulu** mengikuti parameter
+`lending.allocation_order`.
+
+**D-183 — tiga hal yang tidak bisa dijawab kode lama, dan tidak boleh ditebak.**
+
+1. `ledger.posting_rule` memakai satu nominal per jurnal (template dipaksa satu debit + satu
+   kredit). Pembayaran mengalir ke tiga tujuan berbeda (110 pokok, 401 bunga, 403 denda), jadi
+   dibuat **satu jurnal per komponen yang tidak nol** — plus akun baru `403 PENDAPATAN DENDA`
+   (`ledger/0087`, `NEEDS-COMPLIANCE-REVIEW`).
+2. `deposit.transaction.journal_id` hanya bisa menunjuk satu jurnal, jadi ditulis **satu baris
+   subledger `LOAN_PAYMENT` per komponen**, masing-masing dengan jurnalnya sendiri. Rekening koran
+   menampilkan beberapa baris untuk satu pembayaran — itu diterima, dan lebih baik daripada slip
+   yang menunjuk jurnal yang nominalnya tidak cocok.
+3. Trigger `0079` menolak **setiap** UPDATE pada baris jadwal yang sudah punya `paid_* > 0`:
+   maksudnya benar (baris lunas beku) tetapi akibatnya angsuran tidak mungkin dicicil. `0089`
+   melonggarkannya tanpa mematikan: DELETE baris berbayar tetap ditolak, `due_on`/`*_due`/`no` beku
+   setelah ada pembayaran, `paid_*` hanya boleh naik, `paid_on` tidak bisa diubah.
+
+**Batas yang dicatat**: kelebihan bayar → `409 amount_exceeds_outstanding` (kredit ke pokok
+berikutnya = aturan bisnis baru), dan pelunasan **tidak** mengubah status ke `CLOSED` (penutupan
+akad menyangkut pelepasan agunan). `interest_overdue`/`penalty_outstanding` adalah tunggakan yang
+kelak diisi T-166, jadi pengurangannya dijepit `GREATEST(…, 0)` — bukan dibiarkan negatif.
+
+**Bukti**: `tpayment` 10 (golden dua urutan parameter, denda paling akhir, kelebihan bayar ditolak,
+pelunasan bertahap, property 200 kasus), `itapi_lending` 24 (suite pembayaran 6), `itlending` 19
+(+2 kasus trigger `0089`), `itreconcile` 5 (+1 `LOAN_PAYMENT`), `tcontract` menyertakan `payLoan`.
+Gate lengkap dijalankan setelah entri ini ditulis.

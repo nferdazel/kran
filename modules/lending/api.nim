@@ -4,6 +4,6 @@
 ## `tools/archcheck`). Repositori DB sengaja **tidak** diekspor: yang boleh menyentuhnya hanya
 ## composition root (`apps/api`) dan test modul.
 
-import ./domain/[loan, schedule]
+import ./domain/[loan, payment, schedule]
 
-export loan, schedule
+export loan, payment, schedule

@@ -8,7 +8,7 @@ import std/[options, strutils]
 import db_connector/db_postgres
 
 import kernel/[ids, money, rate, result]
-import ../domain/loan
+import ../domain/[loan, payment]
 
 proc scheduleMethodOrRaise(raw: string): ScheduleMethod =
   let parsed = scheduleMethodOf(raw)
@@ -138,3 +138,110 @@ proc markDisbursed*(db: DbConn, loanId: Id; disbursedOn, maturityOn: string): bo
        SET status = 'ACTIVE', disbursed_on = ?::date, maturity_on = ?::date
      WHERE loan_id = ? AND status = 'APPROVED'
   """, disbursedOn, maturityOn, $loanId) == 1
+
+
+proc installmentOf(row: Row): Installment =
+  ## `paid_on` kosong selama baris belum lunas (`NULL`), jadi dibaca `coalesce`.
+  Installment(
+    loanId: Id(row[0]),
+    no: parseInt(row[1]),
+    dueOn: row[2],
+    principalDue: moneyFromString(row[3]).value(),
+    interestDue: moneyFromString(row[4]).value(),
+    penaltyDue: moneyFromString(row[5]).value(),
+    paidPrincipal: moneyFromString(row[6]).value(),
+    paidInterest: moneyFromString(row[7]).value(),
+    paidPenalty: moneyFromString(row[8]).value(),
+    paidOn: row[9],
+  )
+
+proc installmentsForUpdate*(db: DbConn, loanId: Id): seq[Installment] =
+  ## Jadwal pinjaman, **tertua lebih dulu** (`due_on`, lalu `no`), baris dikunci supaya dua
+  ## pembayaran bersamaan tidak mengalokasikan nominal yang sama dua kali dan tidak melewati
+  ## `paid_* <= *_due` (CHECK DB adalah jaring terakhir, bukan alat alokasi).
+  for row in db.getAllRows(sql"""
+    SELECT loan_id::text, no, due_on::text, principal_due::text, interest_due::text,
+           penalty_due::text, paid_principal::text, paid_interest::text, paid_penalty::text,
+           coalesce(paid_on::text, '')
+      FROM lending.installment
+     WHERE loan_id = ?
+     ORDER BY due_on, no
+       FOR UPDATE""", $loanId):
+    result.add installmentOf(row)
+
+proc addInstallmentPayment*(db: DbConn, loanId: Id, installmentNo: int,
+    component: AllocationComponent, amount: Money): bool =
+  ## Menambah `paid_<komponen>` satu baris. `false` = baris tidak ada atau penambahan akan melewati
+  ## kewajiban (balapan) — pemanggil menggagalkan transaksi, bukan memotong nominal diam-diam.
+  ## Nama kolom berasal dari `case` di sini, bukan dari string masukan.
+  let column =
+    case component
+    of acPrincipal: "paid_principal, principal_due"
+    of acInterest: "paid_interest, interest_due"
+    of acPenalty: "paid_penalty, penalty_due"
+  let parts = column.split(", ")
+  let sqlText = "UPDATE lending.installment SET " & parts[0] & " = " & parts[0] & " + ?::numeric" &
+    " WHERE loan_id = ? AND no = ? AND " & parts[0] & " + ?::numeric <= " & parts[1]
+  db.execAffectedRows(sql(sqlText), toDecimalString(amount), $loanId, installmentNo,
+    toDecimalString(amount)) == 1
+
+proc markSettledRows*(db: DbConn, loanId: Id; businessDate: string) =
+  ## Stempel tanggal lunas untuk baris yang **seluruh** komponennya tertutup. `paid_on` hanya
+  ## ditulis sekali: tanggal pelunasan adalah fakta, bukan nilai yang ikut berubah saat pembayaran
+  ## berikutnya.
+  discard db.execAffectedRows(sql"""
+    UPDATE lending.installment
+       SET paid_on = ?::date
+     WHERE loan_id = ? AND paid_on IS NULL
+       AND paid_principal = principal_due
+       AND paid_interest = interest_due
+       AND paid_penalty = penalty_due""", businessDate, $loanId)
+
+proc insertPayment*(db: DbConn, payment: Payment, actor: Id) =
+  db.exec(sql"""
+    INSERT INTO lending.payment
+      (payment_id, loan_id, account_id, amount, principal_paid, interest_paid, penalty_paid,
+       business_date, created_by)
+    VALUES (?, ?, ?, ?::numeric, ?::numeric, ?::numeric, ?::numeric, ?::date, ?)
+  """, $payment.paymentId, $payment.loanId, $payment.accountId,
+      toDecimalString(payment.amount), toDecimalString(payment.principalPaid),
+      toDecimalString(payment.interestPaid), toDecimalString(payment.penaltyPaid),
+      payment.businessDate, $actor)
+
+proc insertPaymentAllocation*(db: DbConn, paymentId: Id, line: PaymentLine) =
+  db.exec(sql"""
+    INSERT INTO lending.payment_allocation (payment_id, installment_no, component, amount)
+    VALUES (?, ?, ?, ?::numeric)
+  """, $paymentId, line.installmentNo, $line.component, toDecimalString(line.amount))
+
+proc decreaseLoanBalance*(db: DbConn, loanId: Id, principal, interest, penalty: Money): bool =
+  ## Cache saldo pinjaman berkurang sebesar yang dibayar. `false` = cache tidak ada atau pokok akan
+  ## negatif (CHECK `>= 0`), yang berarti jadwal dan cache tidak sinkron — bug, bukan data pengguna.
+  ##
+  ## `interest_overdue`/`penalty_outstanding` adalah **tunggakan**, bukan bunga/denda berjalan: yang
+  ## mengisinya adalah regrading kolektibilitas (T-166), dan pada T-164 keduanya masih nol. Karena
+  ## itu pengurangannya dijepit `GREATEST(…, 0)`: membayar bunga berjalan yang tidak pernah masuk
+  ## cache tidak boleh membuat cache negatif (dan tidak boleh pula menutupi tunggakan yang belum
+  ## pernah dihitung — itu pekerjaan T-166 yang membaca jadwal, bukan cache).
+  db.execAffectedRows(sql"""
+    UPDATE lending.loan_balance
+       SET principal_outstanding = principal_outstanding - ?::numeric,
+           interest_overdue = greatest(interest_overdue - ?::numeric, 0),
+           penalty_outstanding = greatest(penalty_outstanding - ?::numeric, 0),
+           updated_at = now()
+     WHERE loan_id = ?
+  """, toDecimalString(principal), toDecimalString(interest), toDecimalString(penalty),
+      $loanId) == 1
+
+proc principalOutstanding*(db: DbConn, loanId: Id): Money =
+  ## Sisa pokok dari cache. Baris cache wajib ada untuk pinjaman `ACTIVE`; hilang = data rusak,
+  ## bukan nol (nol akan menampilkan pinjaman yang seolah lunas).
+  let rows = db.getAllRows(sql"""
+    SELECT principal_outstanding::text FROM lending.loan_balance WHERE loan_id = ?""", $loanId)
+  if rows.len == 0:
+    raise newException(ValueError,
+      "saldo pinjaman tidak ditemukan untuk " & $loanId & " (cache hilang)")
+  let parsed = moneyFromString(rows[0][0])
+  if not parsed.isOk:
+    raise newException(ValueError, "saldo pinjaman tersimpan bukan nominal sah")
+  parsed.val

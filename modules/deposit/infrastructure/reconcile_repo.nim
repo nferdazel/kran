@@ -34,6 +34,7 @@ WITH typed AS (
            WHEN 'INTEREST_PAID_EARLY' THEN 1
            WHEN 'PENALTY_CHARGE' THEN -1
            WHEN 'LOAN_DISBURSEMENT' THEN 1
+           WHEN 'LOAN_PAYMENT' THEN -1
          END AS sign
     FROM deposit.transaction t
 ), cash AS (

@@ -14,7 +14,8 @@ jatuh tempo/ARO deposito berjangka). UI teller = T-088d.
 | `deposit.account` | Identitas rekening: `account_no` (unik), `party_id`, `product_id`, `product_version_id`, `branch_id`, `account_type` (`SAVINGS`/`TIME_DEPOSIT`), `status` (`ACTIVE`/`CLOSED`/`DORMANT` — `0071`), `opened_on`, plus `maturity_date`/`aro_instruction` untuk deposito berjangka (nullable, T-138b); `last_activity` dibuang `deposit/0075` (D-170). Satu cabang per rekening. |
 | `deposit.account_balance` | Satu baris per rekening: `balance numeric(24,2)` dengan CHECK `balance >= 0`. Cache; sumber kebenaran tetap jurnal ledger (spec §9.1(4)). |
 | `deposit.transaction` | Subledger rekening: `tx_type` (`CASH_DEPOSIT`/`CASH_WITHDRAWAL` dari teller, `MATURITY_OUT`/`MATURITY_IN`/`INTEREST_CREDIT` dari jatuh tempo deposito — `0068`, `INTEREST_PAID_EARLY`/`PENALTY_CHARGE` dari PB pencairan dini — `0074`,
-`LOAN_DISBURSEMENT` dari pencairan pinjaman ke rekening — `0082`), `account_id`, `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (FK `ledger.journal`, UNIQUE **`(journal_id, account_id)`**). Satu baris = satu jurnal per rekening; satu jurnal boleh mencatat dua rekening untuk perpindahan jatuh tempo (`NONE`). |
+`LOAN_DISBURSEMENT` dari pencairan pinjaman ke rekening — `0082`, `LOAN_PAYMENT` dari
+pembayaran angsuran — `0086`), `account_id`, `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (FK `ledger.journal`, UNIQUE **`(journal_id, account_id)`**). Satu baris = satu jurnal per rekening; satu jurnal boleh mencatat dua rekening untuk perpindahan jatuh tempo (`NONE`). |
 | `deposit.transfer` | Pemindahbukuan/PB (T-088c): `source_account_id` + `destination_account_id` (FK `deposit.account`, CHECK berbeda), `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (UNIQUE, FK `ledger.journal`). Satu baris = satu perpindahan = satu jurnal. |
 
 `deposit.account_seq` memberi nomor urut rekening. **Nomor berkas tidak berurutan rapat**: tabel
@@ -210,6 +211,10 @@ Keputusan per `aro_instruction` (D-155):
   anggota (`+`, `kind: LOAN` di rekening koran) dengan jurnal `D 110 / K 201` dari rule
   `LoanDisbursed`. Bukan transaksi tunai: kas laci tidak bergerak, jadi `expected_cash` tidak
   terpengaruh. Uang tunai tetap lewat `CASH_WITHDRAWAL` dari rekening itu.
+- **Pembayaran angsuran** (T-165, D-183): baris `LOAN_PAYMENT` (`−`, `kind: LOAN`, `direction: OUT`)
+  satu per komponen yang dibayar, masing-masing menunjuk jurnalnya sendiri — satu baris
+  `deposit.transaction` hanya bisa menunjuk satu jurnal, sedangkan pembayaran mengalir ke piutang,
+  pendapatan bunga, dan pendapatan denda sekaligus.
 - **Batas yang belum tertutup**: belum ada endpoint untuk membuka deposito berjangka; setoran tunai
   di tengah tenor masih membuat akrual menilai ulang hari sebelumnya pada pokok baru.
 - **NEEDS-COMPLIANCE-REVIEW** (kode akun `202`/`204`/`501`) dan **HUMAN-REVIEW-REQUIRED** (pergerakan

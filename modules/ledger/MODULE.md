@@ -81,6 +81,10 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
   K 201 Simpanan Anggota. Akunnya **data** di `posting_rule_line`, bukan konstanta kode, sehingga
   pemetaan final bisa diganti tanpa deploy — **NEEDS-COMPLIANCE-REVIEW** (COA dasar disusun sebelum
   modul `lending` ada).
+- Rule pembayaran angsuran (T-165, D-183): `LoanPrincipalPaid` D 201/K 110, `LoanInterestPaid`
+  D 201/K 401, `LoanPenaltyPaid` D 201/K 403 (`0087`), plus akun baru `403 PENDAPATAN DENDA`
+  (**NEEDS-COMPLIANCE-REVIEW**). Satu rule per komponen karena template jurnal memakai satu nominal
+  per jurnal — laporan pendapatan bunga tidak boleh memuat pokok.
 - Migrasi `0033_ledger_cash_clearing.sql` (T-118) memisahkan kas konter: `101` menjadi induk
   non-postable, `101.2 KAS DI TELLER` menggantikan `101` pada **semua** `posting_rule_line` yang
   sebelumnya menunjuk `101` (5 baris lintas `0005`/`0012`/`0014`). Jurnal historis tetap `101`.

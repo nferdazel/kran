@@ -212,4 +212,22 @@ suite "rekonsiliasi saldo simpanan (T-101)":
     setBalance(AccA, "75.00")
     check accountBalanceMismatches(db, BranchA).len == 0
 
+  test "pembayaran angsuran mengurangi saldo rekening (LOAN_PAYMENT, T-165)":
+    # Kebalikan baris sebelumnya: uang keluar dari rekening anggota ke piutang/pendapatan. Tanda
+    # yang salah di sini akan membuat rekonsiliasi melaporkan saldo lebih rendah daripada subledger.
+    seedJournal("bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbb5", "RECON_LOAN_PAYMENT", "10.00")
+    exec(sql"""
+      INSERT INTO deposit.transaction
+        (transaction_id, tx_type, account_id, amount, business_date, journal_id, created_by)
+      VALUES (md5('itreconcile|loan-payment')::uuid, 'LOAN_PAYMENT', ?::uuid,
+              '10.00', current_date, 'bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbb5'::uuid, ?::uuid)""",
+      AccA, Actor)
+    let stale = accountBalanceMismatches(db, BranchA)
+    check stale.len == 1
+    check stale[0].cached == "75.00"
+    check stale[0].expected == "65.00"
+
+    setBalance(AccA, "65.00")
+    check accountBalanceMismatches(db, BranchA).len == 0
+
 dbPool.release(db)
