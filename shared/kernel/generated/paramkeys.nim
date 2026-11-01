@@ -25,6 +25,9 @@ const paramKeys*: seq[string] = @[
   "ledger.posting.max_attempts",
   "ledger.posting.poll_interval_ms",
   "ledger.posting.retry_backoff_seconds",
+  "lending.allocation_order",
+  "lending.collectibility.dpd_bounds",
+  "lending.ppap.rates",
   "party.cif.format",
   "party.identity.doc_lengths",
   "party.identity.doc_types",
@@ -103,6 +106,12 @@ const P_ledger_posting_max_attempts* = ParamKey[int64]("ledger.posting.max_attem
 const P_ledger_posting_poll_interval_ms* = ParamKey[int64]("ledger.posting.poll_interval_ms")
 
 const P_ledger_posting_retry_backoff_seconds* = ParamKey[int64]("ledger.posting.retry_backoff_seconds")
+
+const P_lending_allocation_order* = ParamKey[string]("lending.allocation_order")
+
+const P_lending_collectibility_dpd_bounds* = ParamKey[JsonNode]("lending.collectibility.dpd_bounds")
+
+const P_lending_ppap_rates* = ParamKey[JsonNode]("lending.ppap.rates")
 
 const P_party_cif_format* = ParamKey[string]("party.cif.format")
 
@@ -376,6 +385,39 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.ledger.posting.retry_backoff_seconds",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "lending.allocation_order",
+    module: "lending",
+    valueType: pvtString,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.lending.allocation_order",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "lending.collectibility.dpd_bounds",
+    module: "lending",
+    valueType: pvtJson,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.lending.collectibility.dpd_bounds",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "lending.ppap.rates",
+    module: "lending",
+    valueType: pvtJson,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.lending.ppap.rates",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(

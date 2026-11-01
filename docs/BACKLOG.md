@@ -94,8 +94,8 @@ Satu putaran review independen di akhir batch atas diff seluruh batch (pola batc
 
 | Fase | Fokus | Status |
 |---|---|---|
-| 1 | Core Ledger & Party | berjalan — dibuka pemilik 19 Okt 2026; task T-070…T-077 |
-| 2 | Deposit + Teller | belum mulai |
+| 1 | Core Ledger & Party | **selesai** (20 Okt 2026) — T-070…T-077 `DONE`; laporan `docs/milestones/M1-report.md` |
+| 2 | Deposit + Teller | **selesai** (23 Okt 2026) — T-088…T-124 `DONE`; laporan `docs/milestones/M2-report.md` |
 | 3 | Day-Close Framework | **selesai, menunggu tinjauan milestone** (28 Okt 2026) — T-134…T-140 `DONE`; laporan `docs/milestones/M3-report.md` |
 | 4 | Lending | belum mulai |
 | 5 | Koperasi Pack (MVP pilot) | belum mulai |
@@ -288,3 +288,34 @@ Sumber: **D-178**, `docs/RELEASE.md`. Dipicu kejadian nyata: produksi menyajikan
 | T-157 | DONE | `VERSION` sebagai satu sumber versi + stempel ke API/web + gate kesamaan | — | **1 Nov 2026 DONE**: `tools/gen-version.sh` menulis `version_gen.nim` + `version.ts`; `./task version-check` (bagian `check`/`check-fast`) gagal bila `VERSION` ≠ `kran.nimble` ≠ `package.json` ≠ dua berkas generated; footer menampilkan versi. Bukti: `./task build`, `check-fast` (`ok: v0.1.0`), svelte-check 0 error |
 | T-158 | DONE | `./task release`: bump dari Conventional Commits, CHANGELOG, gate, commit, tag anotasi | T-157 | **1 Nov 2026 DONE**: `tools/gen-changelog.sh` (Keep a Changelog, blok per kategori) + `cmd_release` di `task`; `release.yml` (tag `v*`) memverifikasi `VERSION == tag` + manifest + generated lalu membuat release idempoten, hanya tag terbaru `--latest`. Bukti: `sh -n task`, `release.yml` lint workflow, `gh release` idempoten |
 | T-159 | DONE | Deploy menunggu check-run CI (fail-closed) + lock berbatas waktu | T-157 | **1 Nov 2026 DONE**: `ci_gate` di `deploy-vps.sh` menunggu 4 nama job `ci.yml`, hanya `success`, run terbaru per nama, timeout/check hilang = gagal, perubahan dokumen dilewati, `KRAN_SKIP_CI_GATE=1` darurat; `flock -w` (default 900 dtk). Bukti: shellcheck bersih, harness gate pada SHA hijau `d6358a1` = `OK`, payload kosong = `PENDING`, `failure`+`skipped` = `FAILED`, run terbaru menang |
+
+## Bersih-bersih Fase 0–3 (dibuka 1 Nov 2026)
+
+Sebelum Fase 4 dibuka, sisa Fase 0–3 dirapikan: satu gate yang bisa hijau palsu, satu jalur deploy
+yang gagal karena kuota API, dan 12 klaim dokumen yang sudah tidak sesuai kode (audit read-only
+1 Nov 2026). Detail: **T-160**, **D-179**.
+
+| ID | Status | Tujuan | Deps | Kriteria selesai (dapat diverifikasi mesin) |
+|---|---|---|---|---|
+| T-160 | DONE | `test`/`e2e` menolak melewati integrasi tanpa DB; gerbang CI tahan kuota; dokumen Fase 0–3 diselaraskan dengan kode | — | `check-fast`, `build`, `lint-web` hijau; `./task test` hijau dengan DB dan **gagal** tanpa DB kecuali `KRAN_ALLOW_NO_DB=1`; `migrate --check` 105/105 tanpa drift; `./task e2e` hijau di atas ambang jumlah test |
+
+## Fase 4 — Lending (dibuka 1 Nov 2026)
+
+Rencana lengkap: `docs/proposals/fase4-lending.md`; keputusan angka/aturan: **D-180**. Angka
+kolektibilitas & PPAP masih bertanda `NEEDS-COMPLIANCE-REVIEW` (REG-204 `V!`) — strukturnya boleh
+dibangun, pilot data nyata menunggu verifikasi (O-001).
+
+| ID | Status | Tujuan | Deps | Kriteria selesai (dapat diverifikasi mesin) |
+|---|---|---|---|---|
+| T-161 | DONE | Skeleton modul `lending` + model: produk pinjaman berversi, akad/fasilitas, rekening pinjaman, jadwal angsuran; migrasi expand-only | T-142, D-002 | `archcheck` bersih; `itlending` dasar hijau; `MODULE.md` terisi; `migrate --check` bersih |
+| T-162 | DONE | Mesin jadwal angsuran flat/efektif/anuitas dengan `Money` + property & golden test | T-161 | properti (Σ angsuran = pokok + bunga, pembulatan ≤ 1 sen, total tepat) + golden fixture per metode |
+| T-163 | READY | Pengajuan & persetujuan pinjaman (maker-checker, 4-eyes, limit param) | T-162 | alur dua akun hijau; self-approval 409; audit + izin `lending.loan.submit/approve` |
+| T-164 | TODO | Pencairan + jurnal D pinjaman / K kas atau rekening simpanan | T-163 | Δ subledger = Δ GL; replay idempoten; `LoanDisbursed` sekali |
+| T-165 | TODO | Angsuran: alokasi pokok/bunga/denda dengan urutan dari parameter | T-164 | property test alokasi; angsuran terakhir menutup saldo tepat 0 |
+| T-166 | TODO | Task day-close `lending.dpd_regrade` (ambang D-180) | T-165 | idempoten per business date; audit per chunk; ambang dari parameter |
+| T-167 | TODO | Task PPAP/CKPN + jurnal penyisihan/pembalik | T-166 | Δ subledger PPAP = Δ GL; run kedua tidak menggandakan |
+| T-168 | TODO | Restrukturisasi & hapus buku | T-167 | restruk mengubah jadwal tanpa memutus riwayat; write-off nol-kan saldo dengan jurnal |
+| T-169 | TODO | API + OpenAPI + izin + scoping cabang | T-163…T-167 | `./task openapi` hijau; contract test; 403 lintas cabang teruji |
+| T-170 | TODO | UI operator pinjaman | T-169 | axe `moderate` 2 tema × 2 locale; keyboard-only; baseline visual |
+| T-171 | TODO | Laporan: tunggakan, aging DPD, PPAP, rekonsiliasi | T-167 | angka cocok dengan subledger pada fixture tetap |
+| T-172 | TODO | Simulasi + benchmark EOD dengan pinjaman; laporan M4 | T-166, T-167 | `itdaycloser_sim` mencakup pinjaman; bench 100k simpanan + 50k pinjaman |

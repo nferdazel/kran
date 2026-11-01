@@ -321,6 +321,58 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "lending.allocation_order",
+    "module": "lending",
+    "valueType": "string",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.lending.allocation_order",
+    "jsonSchema": {
+      "minLength": 1,
+      "maxLength": 64
+    }
+  },
+  {
+    "key": "lending.collectibility.dpd_bounds",
+    "module": "lending",
+    "valueType": "json",
+    "tsType": "unknown",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.lending.collectibility.dpd_bounds",
+    "jsonSchema": {
+      "type": "array"
+    }
+  },
+  {
+    "key": "lending.ppap.rates",
+    "module": "lending",
+    "valueType": "json",
+    "tsType": "unknown",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.lending.ppap.rates",
+    "jsonSchema": {
+      "type": "array"
+    }
+  },
+  {
     "key": "party.cif.format",
     "module": "party",
     "valueType": "string",

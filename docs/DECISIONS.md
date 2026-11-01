@@ -4686,3 +4686,38 @@ yang paling mungkin terkena adalah CI atau mesin baru — persis tempat hijau pa
 `.local/dev.env` berisi URL DB. Trade-off yang diterima: lebih baik satu perintah gagal dan
 menyuruh menyalakan tunnel daripada hijau yang tidak menguji apa pun.
 
+## D-180 — Fase 4 (lending): metode, ambang, penyisihan, alokasi (1 Nov 2026)
+
+**Konteks.** Fase 0–3 ditutup dan dirapikan (T-160, D-179). Fase 4 (spec §23) tidak bisa dimulai
+tanpa beberapa angka/aturan yang bukan milik implementasi — dan angka regulasi di spec §4 bertanda
+`V!` (REG-204, kolektibilitas & PPAP). Keputusan ini mencatat apa yang **diputuskan pemilik** pada
+1 Nov 2026, termasuk yang masih sementara.
+
+**Keputusan.**
+
+1. **Metode jadwal angsuran**: flat, efektif, dan anuitas semuanya dibangun dan diuji golden test
+   sejak fase ini. Jadwal disimpan per baris (`lending.installment`), jadi metode hanya memengaruhi
+   cara jadwal dibentuk, bukan bentuk penyimpanan.
+2. **Ambang DPD → kolektibilitas 1–5**: `0` → 1, `1–90` → 2, `91–120` → 3, `121–180` → 4,
+   `>180` → 5. Dipilih pemilik sebagai pola bank; **belum diklaim sesuai pasal** dan tetap bertanda
+   `NEEDS-COMPLIANCE-REVIEW` (REG-204 `V!`).
+3. **PPAP/CKPN sementara**: golongan 1 `0%`, 2 `0,5%`, 3 `10%`, 4 `50%`, 5 `100%`, semuanya di
+   `lending/seeds/params.yaml` dengan tag `NEEDS-COMPLIANCE-REVIEW`. **Pemetaan ini pun
+   sementara** — yang mapan hanya strukturnya (lima nilai, per golongan, effective-dated,
+   maker-checker). Task PPAP boleh berjalan untuk uji; **tidak** untuk data anggota nyata sampai
+   compliance menetapkan angka dan pemetaannya.
+4. **Urutan alokasi pembayaran**: **parameter** (daftar terurut), bukan urutan yang dikunci di kode.
+   Nilai awalnya diisi saat seed dibuat; mengubahnya cukup lewat maker-checker.
+5. Fase 4 dibuka mulai **T-161** (skeleton + model) dan **T-162** (mesin jadwal + golden test).
+   T-163…T-172 menyusul berurutan seperti `docs/proposals/fase4-lending.md`.
+
+**Nilai awal urutan alokasi** (dipilih pemilik, 1 Nov 2026): `INTEREST,PRINCIPAL,PENALTY` —
+bunga/margin dibayar lebih dulu, pokok menyusul, denda terakhir. Disimpan di seed
+`lending.allocation_order`; mengubahnya cukup lewat maker-checker dan berlaku untuk pembayaran
+berikutnya.
+
+**Konsekuensi.** Angka pada butir 2–3 adalah hutang yang kelihatan, bukan yang tersembunyi: seed
+memuat tag, laporan wajib menyebutnya, dan O-001 menutup jalur verifikasinya sebelum pilot data
+nyata. Butir 1 menambah beban uji (tiga metode × pembulatan), tetapi menghindari migrasi ulang model
+jadwal ketika koperasi meminta metode lain.
+

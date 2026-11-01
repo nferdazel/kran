@@ -1,0 +1,51 @@
+# Definisi parameter modul `lending` (spec §10.3, T-161).
+#
+# Nilai di `default_pack` adalah nilai awal pack, BUKAN fallback kode: aplikasi tetap gagal-cepat
+# bila nilai aktif tidak ada (spec §10.6).
+#
+# `regulatory_refs` sengaja kosong sampai register regulasi §4 diverifikasi compliance
+# (docs/OPEN_ITEMS.md O-001) — jangan menebak nomor pasal, dan jangan menyalin angka dari
+# dokumen lain tanpa sumber.
+
+# Urutan alokasi pembayaran (D-180 butir 4). Mesin membaca urutan ini, bukan mengunci urutan di
+# kode: komponen yang hilang/duplikat ditolak domain, jadi nilai ini harus memuat ketiga komponen
+# tepat sekali. Nilai awal dipilih pemilik 1 Nov 2026 (bunga dulu, denda terakhir); mengubahnya
+# cukup lewat maker-checker dan berlaku untuk pembayaran berikutnya.
+- key: lending.allocation_order
+  type: string
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minLength: 1, maxLength: 64 }
+  sensitivity: NORMAL
+  provenance:
+    class: kebijakan
+    note: "Urutan alokasi pembayaran (INTEREST,PRINCIPAL,PENALTY). Divalidasi domain; bukan angka regulasi."
+  default_pack: { base: "INTEREST,PRINCIPAL,PENALTY" }
+
+# Batas DPD untuk golongan kolektibilitas (REG-204 bertanda `V!` di spec §4, jadi angka ini
+# **belum terverifikasi**). Bentuk nilai: tiga batas atas untuk golongan 2, 3, dan 4; golongan 1
+# adalah DPD 0 dan golongan 5 adalah DPD di atas batas terakhir. Pola bank (0 / 1–90 / 91–120 /
+# 121–180 / >180) dipilih pemilik 1 Nov 2026 sebagai struktur, bukan klaim kepatuhan.
+- key: lending.collectibility.dpd_bounds
+  type: json
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { type: array }
+  sensitivity: NORMAL
+  provenance:
+    class: kebijakan
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: "Batas atas DPD golongan 2–4 pola bank (90/120/180), D-180 butir 2; pasal belum diverifikasi."
+  default_pack: { base: [90, 120, 180] }
+
+# Persentase PPAP/CKPN per golongan kolektibilitas 1–5 (D-180 butir 3). Angka sementara supaya
+# mesin dan rekonsiliasi bisa diuji; **bukan** angka untuk pilot data nyata sampai compliance
+# menetapkan nilai dan pemetaannya. Disimpan sebagai string agar desimalnya eksak (Rate 1e6).
+- key: lending.ppap.rates
+  type: json
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { type: array }
+  sensitivity: NORMAL
+  provenance:
+    class: kebijakan
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: "Golongan 1–5 = 0/0,5/10/50/100 (persen, string). Pemetaan pun sementara; D-180 butir 3."
+  default_pack: { base: ["0", "0.5", "10", "50", "100"] }
