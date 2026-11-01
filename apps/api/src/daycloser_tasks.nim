@@ -20,6 +20,7 @@ import daycloser/domain/[registry, types]
 import daycloser/infrastructure/run_repo
 
 import ./daycloser_deposit
+import ./daycloser_lending
 import ./daycloser_gates
 import ./daycloser_ledger
 
@@ -77,6 +78,10 @@ proc registerDayCloseTasks*(reg: Registry; pool: DbPool) =
   # `registerDepositTasks`). Snapshot saldo harian sebaiknya melihat jurnal akrual hari itu,
   # bukan jurnal kemarin.
   registerDepositTasks(reg, pool)
+
+  # Kolektibilitas pinjaman (T-166). Tidak bergantung pada task deposit/ledger: DPD dihitung dari
+  # jadwal angsuran, bukan dari saldo. Tidak kritis — penilaian golongan tidak memindahkan uang.
+  registerLendingTasks(reg, pool)
 
   # Pekerjaan buku besar (spec §11.6): snapshot saldo harian + tutup periode GL bulanan (T-137).
   registerLedgerTasks(reg, pool)

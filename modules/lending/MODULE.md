@@ -2,7 +2,8 @@
 
 Pinjaman (spec §9.2, §23 Fase 4): produk pinjaman berversi, akad/fasilitas, jadwal angsuran, lalu
 kolektibilitas/PPAP di fase yang sama. Status: **T-161** (model + skema) + **T-162** (mesin jadwal) + **T-163** (pengajuan &
-persetujuan) + **T-164** (pencairan) + **T-165** (pembayaran angsuran). Kolektibilitas T-166.
+persetujuan) + **T-164** (pencairan) + **T-165** (pembayaran angsuran) + **T-166**
+(kolektibilitas). PPAP T-167.
 pengajuan/pencairan T-163/T-164; task day-close T-166/T-167; API/UI T-169/T-170.
 
 Keputusan angka & aturan: **D-180**. Rencana fase: `docs/proposals/fase4-lending.md`.
@@ -139,6 +140,23 @@ turun, audit `lending.loan.pay`, event `LoanInstallmentPaid`.
 - **Trigger `0079` dilonggarkan `0089`**: baris yang sudah dibayar tetap tidak bisa dihapus dan
   kewajibannya beku, tetapi boleh menerima pembayaran berikutnya (`paid_*` hanya naik).
 
+## Kolektibilitas (T-166, D-184)
+
+Task day-close `lending.dpd_regrade` (`apps/api/src/daycloser_lending.nim`) menilai setiap pinjaman
+`ACTIVE` sekali per tanggal buku:
+
+- **DPD** = hari sejak tanggal jatuh tempo angsuran **belum lunas tertua** (bukan tanggal cair, bukan
+  pembayaran terakhir). Semua angsuran lunas → DPD 0, status tetap `ACTIVE` (D-183).
+- **Golongan** dari ambang parameter `lending.collectibility.dpd_bounds` (seed `[90,120,180]`,
+  `NEEDS-COMPLIANCE-REVIEW`): `0` lancar, `1–90` kurang lancar, `91–120` diragukan,
+  `121–180` macet, `>180` macet total. Parameter hilang/rusak → task gagal `DAY-372`.
+- **Snapshot** `lending.collectibility_snapshot` ber-PK `(loan_id, business_date)` = idempotensi;
+  kolom `lending.loan.collectibility` hanya nilai terkini. Run kedua pada tanggal yang sama
+  melaporkan `skipped` dan tidak menerbitkan event kedua.
+- **Tidak kritis**: tidak memindahkan uang. PPAP (T-167) yang membuat jurnal dan harus kritis.
+- Audit satu per chunk berisi daftar pinjaman yang berubah; event `CollectibilityChanged` hanya saat
+  golongan benar-benar berubah (termasuk dari `NULL`).
+
 ## Event
 
 | Event | Kapan | Dedup key |
@@ -147,8 +165,9 @@ turun, audit `lending.loan.pay`, event `LoanInstallmentPaid`.
 | `LoanApproved` | pengajuan disetujui (T-163) | `lending.loan.approved:<loanId>` |
 | `LoanDisbursed` | pinjaman dicairkan (T-164) | `lending.loan.disbursed:<loanId>` |
 | `LoanInstallmentPaid` | angsuran dibayar (T-165) | `lending.loan.payment:<paymentId>` |
+| `CollectibilityChanged` | golongan berubah pada regrading (T-166) | `lending.collectibility:<loanId>:<businessDate>` |
 
-`InstallmentDue`, `CollectibilityChanged` menyusul di T-166 — jangan menganggapnya sudah ada.
+`InstallmentDue` menyusul bila denda keterlambatan diputuskan (D-180 belum menetapkan rumusnya).
 
 ## Izin
 
@@ -169,6 +188,10 @@ menyusul di T-169.
 - `./task test itapi_lending` — HTTP: pengajuan/persetujuan/pencairan/pembayaran (jadwal, jurnal
   per komponen, subledger, saldo, replay idempoten, penolakan rekening bukan milik peminjam, saldo
   tidak cukup, kelebihan bayar, pelunasan).
+- `./task test tcollectibility` — hari tunggakan (termasuk lintas bulan/tahun), pemetaan ambang dua
+  kebijakan berbeda, ambang tidak sah ditolak.
+- `./task test itdaycloser_lending` — task day-close: DPD dari angsuran tertua, idempotensi run
+  ulang, ambang dari parameter, event per perubahan, parameter hilang → `DAY-372`, paginasi chunk.
 - `./task test tpayment` — alokasi: golden dua urutan parameter, denda paling akhir, kelebihan bayar
   ditolak, pelunasan bertahap, property 200 kasus acak (`Σ alokasi == nominal`).
 - `./task test tschedule` — mesin jadwal: golden flat/efektif/anuitas + property (pokok total tepat,

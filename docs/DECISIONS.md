@@ -4823,3 +4823,32 @@ oleh kode yang sudah ada, dan masing-masing akan mengarang aturan uang bila dite
 - **`interest_overdue`/`penalty_outstanding` adalah tunggakan**, bukan bunga/denda berjalan. Yang
   mengisinya kelak adalah regrading kolektibilitas (T-166); pada T-165 keduanya nol, jadi
   pengurangan cache dijepit `GREATEST(…, 0)` alih-alih dibiarkan negatif.
+
+## D-184 — Kolektibilitas disimpan per tanggal buku, dan task-nya tidak kritis (1 Nov 2026)
+
+**Konteks.** T-166 menilai golongan pinjaman setiap hari buku. `lending.loan_balance` sudah punya
+kolom `interest_overdue`/`penalty_outstanding`, dan `lending.loan` bisa saja cukup diberi satu kolom
+golongan — tetapi `UPDATE` pada satu kolom "berhasil" berapa kali pun dijalankan, sehingga tidak ada
+cara membedakan "sudah diproses" dari "diproses ulang", dan jejak audit bisa berlipat tanpa bukti
+apa pun. PPAP (T-167) juga butuh angka **per tanggal**, bukan hanya nilai terkini.
+
+**Keputusan.**
+
+1. `lending.collectibility_snapshot` dengan PK `(loan_id, business_date)` adalah sumber kebenaran per
+   tanggal; `lending.loan.collectibility` hanya nilai terkini untuk laporan/UI. Idempotensi dimiliki
+   skema, bukan kode pemanggil: run kedua pada tanggal yang sama melaporkan `skipped` dan tidak
+   menerbitkan event kedua.
+2. **DPD dihitung dari tanggal jatuh tempo angsuran belum lunas tertua**, bukan dari pembayaran
+   terakhir atau tanggal cair. Anggota yang hanya membayar bunga (atau denda) tetap menunggak pokok,
+   dan itu yang harus terlihat. `paid_on` hanya terisi saat **semua** komponen baris tertutup
+   (D-183), jadi "belum lunas" tidak ambigu.
+3. **Task tidak kritis**: penilaian golongan tidak memindahkan uang dan tidak menghitung penyisihan.
+   PPAP (T-167) yang membuat jurnal dan karena itu harus kritis. Task non-kritis tetap tercatat
+   `FAILED` dan bisa diulang, jadi kegagalannya terlihat — hanya tidak menahan penutupan buku.
+4. **Ambang hanya dari parameter** (`lending.collectibility.dpd_bounds`, seed `[90,120,180]`,
+   `NEEDS-COMPLIANCE-REVIEW`). Parameter hilang/rusak = task gagal `DAY-372`, bukan ambang bawaan:
+   ambang yang ditebak akan menjadi kebijakan yang tidak pernah disetujui siapa pun.
+
+**Konsekuensi.** Menambah golongan berarti menambah enum domain **dan** ambang di parameter; jumlah
+ambang yang diharapkan diturunkan dari `high(Collectibility)` sehingga keduanya tidak bisa menyimpang
+tanpa gagal di test.

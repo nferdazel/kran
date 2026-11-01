@@ -4002,3 +4002,27 @@ kelak diisi T-166, jadi pengurangannya dijepit `GREATEST(…, 0)` — bukan dibi
 pelunasan bertahap, property 200 kasus), `itapi_lending` 24 (suite pembayaran 6), `itlending` 19
 (+2 kasus trigger `0089`), `itreconcile` 5 (+1 `LOAN_PAYMENT`), `tcontract` menyertakan `payLoan`.
 Gate lengkap dijalankan setelah entri ini ditulis.
+
+## 2026-11-01 — T-166: penilaian kolektibilitas harian (`lending.dpd_regrade`)
+
+**Task day-close baru** (`apps/api/src/daycloser_lending.nim`, modul `lending`): setiap pinjaman
+`ACTIVE` dinilai sekali per tanggal buku. DPD dihitung dari tanggal jatuh tempo angsuran **belum
+lunas tertua** — bukan tanggal cair, bukan pembayaran terakhir — lalu dipetakan ke golongan memakai
+parameter `lending.collectibility.dpd_bounds` (`[90,120,180]`, `NEEDS-COMPLIANCE-REVIEW`).
+
+**D-184 — idempotensi milik skema, bukan kode.** Tabel `lending.collectibility_snapshot` ber-PK
+`(loan_id, business_date)`; `lending.loan.collectibility` hanya nilai terkini. Run kedua pada tanggal
+yang sama melaporkan `skipped`, tidak menambah snapshot, dan tidak menerbitkan event kedua. Event
+`CollectibilityChanged` hanya saat golongan benar-benar berubah, termasuk dari `NULL`.
+
+**Tidak kritis**, dan itu keputusan sadar: penilaian golongan tidak memindahkan uang dan tidak
+menghitung penyisihan. PPAP (T-167) yang membuat jurnal — task itu harus kritis. Kegagalan day-close
+non-kritis tetap tercatat `FAILED` dan bisa diulang, jadi tidak hilang diam-diam.
+
+**Penjaga**: parameter hilang/rusak → task gagal `DAY-372`, bukan ambang bawaan (ambang yang ditebak
+adalah kebijakan yang tidak pernah disetujui siapa pun); jumlah ambang diturunkan dari
+`high(Collectibility)`, jadi menambah golongan tanpa memperbarui parameter gagal di test.
+
+**Bukti**: `tcollectibility` 9 hijau, `itdaycloser_lending` 6 hijau (DPD dari angsuran tertua,
+idempotensi run ulang, ambang dari parameter dengan dua kebijakan, event per perubahan, parameter
+hilang → `DAY-372`, paginasi chunk tepat sekali). Gate lengkap dijalankan setelah entri ini ditulis.

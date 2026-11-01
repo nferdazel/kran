@@ -312,8 +312,8 @@ dibangun, pilot data nyata menunggu verifikasi (O-001).
 | T-163 | DONE | Pengajuan & persetujuan pinjaman (maker-checker, 4-eyes, limit param) | T-162 | alur dua akun hijau; self-approval 409; audit + izin `lending.loan.submit/approve` |
 | T-164 | DONE | Pencairan + jurnal D pinjaman / K kas atau rekening simpanan | T-163 | Δ subledger = Δ GL; replay idempoten; `LoanDisbursed` sekali |
 | T-165 | DONE | Angsuran: alokasi pokok/bunga/denda dengan urutan dari parameter | T-164 | property test alokasi; angsuran terakhir menutup saldo tepat 0 |
-| T-166 | READY | Task day-close `lending.dpd_regrade` (ambang D-180) | T-165 | idempoten per business date; audit per chunk; ambang dari parameter |
-| T-167 | TODO | Task PPAP/CKPN + jurnal penyisihan/pembalik | T-166 | Δ subledger PPAP = Δ GL; run kedua tidak menggandakan |
+| T-166 | DONE | Task day-close `lending.dpd_regrade` (ambang D-180) | T-165 | idempoten per business date; audit per chunk; ambang dari parameter |
+| T-167 | READY | Task PPAP/CKPN + jurnal penyisihan/pembalik | T-166 | Δ subledger PPAP = Δ GL; run kedua tidak menggandakan |
 | T-168 | TODO | Restrukturisasi & hapus buku | T-167 | restruk mengubah jadwal tanpa memutus riwayat; write-off nol-kan saldo dengan jurnal |
 | T-169 | TODO | API + OpenAPI + izin + scoping cabang | T-163…T-167 | `./task openapi` hijau; contract test; 403 lintas cabang teruji |
 | T-170 | TODO | UI operator pinjaman | T-169 | axe `moderate` 2 tema × 2 locale; keyboard-only; baseline visual |
