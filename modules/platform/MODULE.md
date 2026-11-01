@@ -14,7 +14,7 @@ Lintas-modul: audit trail, outbox/inbox, parameter, kalender & business date, us
 | Repo denyut worker | `infrastructure/worker_repo.nim` | `touchWorkerHeartbeat`, `workerHeartbeatAgeSeconds`, `deadEventCount` (O-081) |
 | Repo inbox | `infrastructure/inbox_repo.nim` | `claimInbox` (de-dup per konsumen) |
 | Repo idempotency | `infrastructure/idempotency_repo.nim` | `claimIdempotency`, `completeIdempotency` (T-084) |
-| Migrasi | `migrations/0001..0037` | schema, audit_log, outbox+inbox, parameter, kalender, auth, RBAC, NOTIFY outbox (realtime), heartbeat, SoD, idempotency |
+| Migrasi | lihat `modules/platform/migrations/` | daftar lengkap ada di direktori itu; jangan menulis rentang nomor di sini — cepat basi |
 
 `api.nim` (permukaan publik modul) belum dibuat: saat ini belum ada konsumen lintas-modul, jadi
 belum ada yang perlu diekspor.
@@ -54,10 +54,15 @@ belum ada yang perlu diekspor.
 ## Batas yang diketahui (jujur)
 
 - Rantai hash mendeteksi perusakan **tanpa** rekalkulasi. Penyerang dengan hak tulis penuh
-  bisa menulis ulang seluruh ekor rantai; **anchor harian** (spec §18.2) belum ada —
-  dicatat di `docs/OPEN_ITEMS.md`.
-- Proteksi append-only bersandar pada trigger. Pemisahan privilege (role aplikasi tanpa
-  UPDATE/DELETE) baru berlaku saat role produksi dibuat — juga di `docs/OPEN_ITEMS.md`.
+  bisa menulis ulang seluruh ekor rantai; yang menutupnya adalah **anchor harian** (spec §18.2).
+  Anchor-nya sudah ada di kode: `kran-api --role=ctl audit-anchor [--out=<berkas>]`
+  (`apps/api/src/main.nim`, O-009/D-108) mencatat `waktu seq hash` kepala rantai. Sisa yang
+  terbuka hanya operasional: **jadwalkan timer** dan simpan salinan anchor di luar server.
+- Proteksi append-only bersandar pada trigger **dan** privilege: `kran_runtime` tidak punya
+  `UPDATE/DELETE/TRUNCATE` pada `ledger.journal`/`journal_line`, `platform.audit_log`, serta
+  `DELETE/TRUNCATE` pada `platform.param_value` (migrasi `0042`, O-010/D-110). Tabel immutable
+  **baru** wajib mencabut hak runtime di migrasinya sendiri — `ALTER DEFAULT PRIVILEGES` tidak
+  bisa mengecualikan tabel.
 - Lock `pg_advisory_xact_lock` pada rantai menyerialkan transaksi yang menulis audit. Aman
   untuk volume Fase 0; bila jadi leher botol, ganti dengan `seq` + retry (ADR kecil).
 - Verifikasi rantai (migrasi `0011`) mengikuti `prev_hash` dan tidak bergantung urutan `seq`, tetapi

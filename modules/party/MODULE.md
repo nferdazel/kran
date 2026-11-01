@@ -143,7 +143,8 @@ bertanda `NEEDS-COMPLIANCE-REVIEW` di parameter/seed, bukan dikarang di kode (sp
   check digit Luhn mod 10 = kode (invarian matematis); salah konfigurasi → 500, bukan 400.
 - T-070 menunda PII ke T-071 agar tidak ada kolom sensitif lahir plaintext; audit pembacaan PII
   ikut T-071 (T-070 baru mengaudit pembuatan).
-- `Idempotency-Key` pada `POST` master data belum ada → O-072 (keputusan lingkup menyusul).
+- `Idempotency-Key` wajib pada pembuatan objek (`POST` master data): `handlers_party.nim` menolak
+  permintaan tanpa header (400), dan replay/konflik ditangani `withIdempotency` (T-084/T-085, D-098).
 
 ## Menjalankan test
 

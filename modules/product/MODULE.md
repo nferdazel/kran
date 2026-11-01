@@ -98,13 +98,19 @@ dan semantiknya tidak boleh dikarang. Baris lama di DB ditandai `deprecated` ole
   versi-baru tetap dijaga trigger `product_version_guard_insert`.
 - Migrasi platform `0017` memuat grant no-op ke `product.read/manage` (kode lama); grant sebenarnya
   ada di `0018`. Dibiarkan karena `0017` sudah diterapkan (checksum).
-- Binding `pvtJson` dibatasi ukuran (16 KiB) tetapi bentuknya belum divalidasi schema; batas schema
-  pecahan ditolak (fail-closed), bukan diabaikan. Plafon teknis teks 200 karakter dan `decimal`
-  mewarisi 2 desimal `moneyFromString` (**O-087**).
+- Binding `pvtJson` dibatasi ukuran (16 KiB) **dan** bentuknya: kedalaman maksimum 8, `null` serta
+  angka tak hingga ditolak lewat `jsonFormProblem` (`modules/platform/domain/param.nim`), dipakai
+  jalur binding produk (`definitionError` di `apps/api/src/handlers_products.nim`) dan `submitValue`
+  — O-087 SELESAI (D-172). Batas schema pecahan tetap **ditolak fail-closed**, bukan diabaikan.
+  Plafon teknis teks 200 karakter dan `decimal` mewarisi 2 desimal `moneyFromString`.
 - Migrasi modul ini pernah diubah sebelum deploy (review T-076); DB dev yang dibuat sebelum
   `4930514` harus reset schema `product` + hapus riwayat `product/%` sebelum `dbtools migrate`.
-  Jalur DB kosong belum dikunci test otomatis (**O-088**).
-- Belum ada UI; pengelolaan lewat API.
+  Jalur DB kosong kini terkunci: `resetTestSchemas` ikut `DROP EXTENSION … CASCADE`
+  (`tools/dbtools/lib.nim`), jadi `CREATE EXTENSION` benar-benar dieksekusi di setiap reset
+  lokal — O-088 SELESAI (T-152).
+- UI ada di `/app/products` (daftar versi, approve/reject DRAFT; tombol hanya tampil bila sesi
+  memegang `product.catalog.approve`, server tetap memeriksa) — T-119 PR #5 (`db8122d`).
+  Pembuatan versi + binding masih lewat API/`ctl`.
 
 ## Klasifikasi simpanan koperasi (T-111)
 

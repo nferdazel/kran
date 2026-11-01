@@ -1,7 +1,11 @@
 # Modul `hello`
 
-> Kerangka hasil `./task scaffold hello` (spec §5.5). Ganti isi placeholder ini saat modul
-> diisi; jangan biarkan tetap seperti ini di modul yang sudah dipakai.
+> **Modul contoh hasil `./task scaffold hello` (T-011), sengaja minimal dan tidak dipakai
+> produksi.** Isinya hanya untuk membuktikan template `tools/scaffold` menghasilkan modul yang
+> lolos `./task ci` dan archcheck; tidak ada aggregate, tabel, parameter, atau event nyata.
+> Jangan meniru kelengkapan dokumen ini sebagai standar modul sungguhan — bandingkan dengan
+> `modules/ledger/MODULE.md`. Teks `TODO` di bawah **adalah placeholder yang disengaja**; jangan
+> diganti dengan klaim palsu, dan jangan hapus modulnya tanpa memutus uji scaffold (T-011).
 
 ## Tujuan & Bounded Context
 

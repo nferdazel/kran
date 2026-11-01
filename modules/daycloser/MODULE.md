@@ -86,7 +86,10 @@ boleh dipakai untuk menyegel.
 |---|---|---|---|
 | `BusinessDateOpened` | 1 | saat seal, satu transaksi dengan `run → COMPLETED` dan rollover | `businessDate` (tanggal baru), `closedDate`, `scopeType`, `scopeId`, `runId` |
 
-Progress realtime (`DayCloseProgress`) menyusul bersama UI monitor (T-139).
+Progres realtime **belum ada**: tidak ada `DayCloseProgress` di kode, dan T-139 tidak
+memintanya. Layar `/app/dayclose` memuat status/run dengan **polling** berantai selama masih ada
+run yang belum berakhir (`setTimeout`, lihat komentar di `+page.svelte`), bukan dorongan lewat
+hub realtime. Bila push realtime dibutuhkan, itu pekerjaan baru dan **belum masuk backlog**.
 
 ## Parameter key (+ sensitivitas, regulatory_refs)
 
@@ -117,18 +120,41 @@ Schema `daycloser` (migrasi `0051_daycloser_schema.sql`):
 
 ## Task day-close yang didaftarkan
 
+Registry diisi oleh modul saat start (`apps/api/src/daycloser_{gates,ledger,deposit,tasks}.nim`).
+Level dan `critical` diambil dari definisi task, bukan dari dokumen ini — kalau keduanya berbeda,
+kode yang benar.
+
 | Task | Level | Kritis | Catatan |
 |---|---|---|---|
-| `platform.idempotency_sweep` | EOD | tidak | Hapus klaim idempotensi kedaluwarsa bertahap (`chunk_size` per putaran); menutup T-089/O-094 sebagian |
+| `teller.sessions_closed` | EOD | ya | gate pra-tutup: semua sesi kas tertutup |
+| `teller.pending_approvals` | EOD | ya | gate pra-tutup: tidak ada persetujuan menggantung |
+| `ledger.suspense_zero` | EOD | ya | gate pra-tutup; akun suspense dari `daycloser.precheck.suspense_accounts` |
+| `ledger.daily_snapshot` | EOD | ya | snapshot saldo + bukti cache = jurnal dalam satu transaksi (T-137) |
+| `deposit.interest_accrual` | EOD | ya | akrual bunga harian, pembulatan sekali per rentang (T-138c) |
+| `deposit.maturity_aro` | EOD | ya | jatuh tempo + perpanjangan otomatis (T-138d) |
+| `deposit.dormant` | EOD | tidak | penandaan dormant + reaktivasi otomatis (T-138e) |
+| `deposit.dormant_close` | EOD | tidak | penutupan rekening dormant bersaldo nol; `dependsOn` `deposit.dormant` (T-155) |
+| `ledger.trial_balance` | EOD | ya | gate pasca-tutup: TB seimbang |
+| `ledger.subledger_vs_gl` | EOD | ya | gate pasca-tutup; akun dari `daycloser.postcheck.subledger_gl_accounts` |
+| `ledger.no_late_postings` | EOD | ya | gate pasca-tutup: tidak ada jurnal terlambat |
+| `ledger.period_close` | EOM | ya | pasca-tutup dan tidak bisa dibatalkan; menunggu seluruh task proses + gate pasca-tutup (T-137) |
+| `platform.idempotency_sweep` | EOD | tidak | hapus klaim idempotensi kedaluwarsa bertahap (`chunk_size` per putaran); menutup T-089/O-094 sebagian |
 
 ## Permission
 
-Belum ada izin HTTP; perintah dijalankan lewat `ctl` (operator). Izin `daycloser.run.execute` dan
-UI-nya menyusul di T-139.
+| Permission | Resource | platform_admin | Peran lain |
+|---|---|---|---|
+| `dayclose.run.read` | `run` | ya | `ops_admin`, `ledger_admin` (migrasi `0061`) |
+| `dayclose.run.manage` | `run` | ya | `ledger_admin` (migrasi `0063`; `ops_admin` sengaja baca saja) |
+
+Rutenya ada di `apps/api/src/routes.nim` (`/api/v1/dayclose/status`, `/runs`,
+`/runs/{runId}`, `POST /run`, `…/resume`, `…/pause`, `…/cancel`). Keduanya menuntut sesi +
+**grant tanpa batas cabang**, karena penutupan adalah urusan institusi (D-062); `manage`
+tidak cukup sendirian.
 
 ## Namespace i18n
 
-Belum ada teks UI. Prefix `dayclose.` disiapkan untuk T-139.
+Prefix `dayclose_` (katalog `packages/i18n/messages/{id,en}.json`), dipakai layar `/app/dayclose`.
 
 ## Requirement regulasi terkait (REG-xxx → test)
 

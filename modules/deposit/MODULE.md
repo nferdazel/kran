@@ -234,8 +234,11 @@ mengembalikan `DORMANT` ke `ACTIVE` begitu ada aktivitas lagi.
   (`resource_type = daycloser_run`, D-170). Chunk tanpa perubahan tidak menulis audit.
 - **Tidak ada uang yang bergerak**: hanya `status`, `updated_by`, dan `updated_at` yang ditulis.
   Keputusan diulang **di dalam** `UPDATE` (`markDormantIfStale`/`reactivateIfActive`), jadi setoran
-  yang commit setelah halaman dibaca tidak diabaikan. Audit per transisi belum ada (O-113), dan
-  penutupan otomatis rekening dormant belum diputuskan (O-114).
+  yang commit setelah halaman dibaca tidak diabaikan. Audit ditulis **per chunk** (satu entri
+  `deposit.dormant.chunk` berisi daftar `dormant`/`reactivated`, D-170/T-150) — bukan per transisi
+  rekening. Penutupan otomatis rekening dormant ada sebagai task terpisah
+  `deposit.dormant_close` (hanya `DORMANT` bersaldo nol, aktivitas > 24 bulan; O-114/D-174,
+  T-155).
 - Rekening `DORMANT` **tetap diakrualkan** (akrual memakai `status <> 'CLOSED'`) dan **tetap menerima
   setoran tunai**; penarikan/PB ditolak `409 account_not_active` sampai aturan penolakan transaksi
   dormant diputuskan.

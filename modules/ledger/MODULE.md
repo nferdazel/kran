@@ -155,8 +155,13 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 
 ## Task day-close yang didaftarkan
 
-Belum ada. Penutupan periode **tidak** memakai cron/batch sendiri (AGENTS §1.7); integrasi
-`daycloser` menyusul di Fase 5.
+| Task | Level | Kritis | Catatan |
+|---|---|---|---|
+| `ledger.daily_snapshot` | EOD (fase proses) | ya | Menulis ulang cache `ledger.balance_snapshot` lalu membuktikan cache = jurnal dalam satu transaksi (`DAY-321/322`, bukti `snapshotHash`) — T-137 |
+| `ledger.period_close` | EOM (fase pasca-tutup) | ya | Menutup periode GL yang berakhir di bulan tanggal buku setelah snapshot + 3 gate (`DAY-324/326/328`), audit + event `period.closed` — T-137 |
+
+Pendaftarannya ada di `apps/api/src/daycloser_ledger.nim`. Penutupan tetap **tidak** memakai
+cron/batch sendiri (AGENTS §1.7); jadwalnya milik framework `daycloser`.
 
 ## Permission
 

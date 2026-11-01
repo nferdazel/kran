@@ -3857,14 +3857,60 @@ setelah CI hijau → `semua check hijau`.
 (`chore: release v0.1.1`, changelog: dua `fix(tools|ops)`), `gh release` membuat Release, dan tag
 dipush bersama `main`. Deploy di host menunggu CI: `GERBANG CI: menunggu 900s untuk 4c0bb4c13c47`
 → **14m04s** kemudian `semua check hijau` (Nim/Web/Security selesai lebih dulu, DB yang menentukan).
-Karena itu `KRAN_CI_WAIT_SECONDS` dinaikkan ke 1800. Hasil deploy: biner `d38ed733…` (bukan lagi
-`c0230813…`), `/healthz` = `0.1.1`, web ter-swap.
-
-**Rilis v0.1.1 dan deploy ber-gerbang pertama (lanjutan).** `./task release` memotong `v0.1.1` dan
-`gh release` membuat Release. Deploy di host menunggu CI dan lulus setelah **14m04s** (Nim/Web/
-Security lebih dulu; DB yang menentukan) — terlalu mepet untuk anggaran 15 menit, jadi
-`KRAN_CI_WAIT_SECONDS` dinaikkan ke 1800. Deploy berikutnya (`9f955b2`) **gagal di gerbang** dengan
-`HTTP 403`: kuota API IP host habis (0/60). Setelah reset, deploy manual menjalankan gerbang yang
-sama dan lulus dalam 1 detik (`semua check hijau`), lalu memasang skrip baru (1800) — jadi jalur
-gagal-closed terbukti, bukan dilewati. Catatan lanjutan: O-120 (token read-only).
+Karena itu anggaran naik: `KRAN_CI_WAIT_SECONDS` **default 1800**. Hasil deploy: biner `d38ed733…`
+(bukan lagi `c0230813…`), `/healthz` = `0.1.1`, web ter-swap.
+Deploy berikutnya (`9f955b2`) **gagal di gerbang** dengan `HTTP 403`: kuota API IP host habis
+(0/60). Setelah kuota reset, deploy manual menjalankan gerbang yang sama dan lulus dalam 1 detik
+(`semua check hijau`), lalu memasang skrip baru (1800) — jadi jalur gagal-closed terbukti, bukan
+dilewati. Catatan lanjutan: O-120 (token read-only).
 Produksi sekarang: `rev=9f955b2`, `/healthz` = `0.1.1`, biner `d38ed733…`.
+
+## 2026-11-01 — Penutupan Fase 0–3 + Fase 4 dibuka: modul `lending` (T-160…T-162, D-179…D-181)
+
+**Konteks**: Fase 0–3 sudah berjalan di produksi, tetapi audit read-only menemukan 12 klaim dokumen
+yang basi, `./task test`/`./task e2e` yang "hijau" tanpa database, dan gerbang CI deploy yang mati
+saat kuota API habis. Batch ini menutup ketiganya dan langsung membuka Fase 4 (T-161 + T-162).
+
+**D-179 — gate yang tidak boleh berbohong.** `cmd_test` menolak melewati integration test tanpa
+`KRAN_DATABASE_URL` (kecuali `KRAN_ALLOW_NO_DB=1`), `cmd_e2e` menolak jalan tanpa DB, dan job
+`nim-check` di `ci.yml` menyatakan pelewatan itu eksplisit. Sebelumnya seluruh suite integrasi
+dilewati tanpa suara.
+
+**Gerbang CI tahan kuota.** `HTTP 403/429` dari GitHub API dibaca sebagai kuota → tunggu
+`X-RateLimit-Reset` sekali (masih di dalam anggaran) → lanjut; pesan gagal menyebut
+`KRAN_GITHUB_TOKEN`. Terbukti pada kejadian nyata (403 setelah 0/60 permintaan).
+
+**D-181 — test pembatas login berhenti bergantung waktu mesin.** Login username tak dikenal
+menjalankan KDF dummy ±5,6 detik, jadi jatah default 10 percobaan = ±56 detik, tepat di tepi jendela
+60 detik; pada run penuh test gagal dengan 29 percobaan `401` beruntun. Server test kini memakai
+jatah 2 percobaan lewat `KRAN_LOGIN_ATTEMPTS_PER_MINUTE`; kontrak jendela tetap diuji di
+`tlogin_guard` dengan waktu eksplisit.
+
+**`./task e2e` deterministik.** Gate ini kini me-reset schema DB dev (`dbtools reset`, ditolak bila
+nama DB bukan `_dev`/`_test`) lalu migrasi + seed dari nol. Sebelumnya sisa integration test
+(periode akuntansi `CLOSED`) membuat seed dev gagal pada jurnal demo dan e2e menuduh fitur yang
+salah. Efek samping yang diinginkan: jalur migrasi DB kosong kini terbukti setiap kali e2e jalan
+(`101 diterapkan, 0 dilewati`).
+
+**T-161 — modul `lending` (D-180).** Migrasi `0076`…`0080`: schema, produk pinjaman + versi
+(empat mata, versi `ACTIVE` immutable), akad (`disbursed_on` wajib saat berjalan, penyetuju ≠
+pembuat), saldo cache (`CHECK >= 0`), jadwal per baris (`UNIQUE (loan_id, no)`, `paid_* <= *_due`,
+baris yang sudah dibayar tidak bisa diubah), grant runtime. Domain: `ScheduleMethod`,
+`AllocationComponent`, `parseAllocationOrder` (menolak urutan kosong/tak lengkap/duplikat).
+Parameter: `lending.allocation_order` = `INTEREST,PRINCIPAL,PENALTY` (pilihan pemilik),
+`collectibility.dpd_bounds` = `[90,120,180]`, `ppap.rates` = `["0","0.5","10","50","100"]` —
+dua terakhir `NEEDS-COMPLIANCE-REVIEW` (REG-204 `V!`).
+
+**T-162 — mesin jadwal flat/efektif/anuitas.** `domain/schedule.nim`: bunga satu pembulatan
+half-to-even per baris, `Σ pokok` tepat sama dengan pokok pinjaman (sisa pembulatan di baris
+terakhir), angsuran anuitas dicari dengan pencarian biner atas amortisasi bilangan bulat (tanpa
+`float`, tanpa pangkat berskala), tanggal jatuh tempo bulanan dengan penjepitan akhir bulan.
+Golden: flat `1.440.000,00` bunga, efektif `120.000 → 10.000`, anuitas `1.066.185,47`; ditambah
+property test 300 kasus acak deterministik.
+
+**Verifikasi.** `check-fast` hijau (276 berkas nimpretty, archcheck, lint-nomagic, paramgen 9 seed,
+i18n, 11 skrip shell), `build`, `openapi`, `./task test` penuh hijau (0 `[FAILED]`), `./task e2e`
+**63 lulus / 4 skip** (visual regression hanya Linux), `tloan` 13, `tschedule` 15, `itlending` 12.
+
+**Sisa Fase 4**: T-163 (pengajuan/persetujuan) sedang jadi task `READY` berikutnya; T-166/T-167
+menunggu angka compliance final untuk pilot data nyata.
