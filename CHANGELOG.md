@@ -4,6 +4,12 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.1.8] - 2026-11-02
+
+### Added
+- **dayclose:** Simulasi 12 bulan berpinjaman, benchmark EOD 100k+50k
+- **lending:** Laporan tunggakan/aging, penyisihan, dan rekonsiliasi
+
 ## [0.1.7] - 2026-11-02
 
 ### Added
