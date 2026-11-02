@@ -39,12 +39,19 @@ Di luar lingkup (dikerjakan agen lain saat audit ini): `SECURITY.md`, `CONTRIBUT
 Severity: **BLOCKER** (harus sebelum publik/berikutnya), **MAJOR** (kerjakan sekarang),
 **MINOR** (kerjakan terjadwal), **INFO** (dicatat, tidak perlu aksi).
 
-> **Tindak lanjut 2 Nov 2026 (keputusan pemilik).** Riwayat git **ditulis ulang** untuk menghapus
-> `<deploy-user>@<vps-host>` dari seluruh blob (4 commit: `5964665`, `75847b1`, `1f65a63`, `5344f47`),
-> lalu force-push `main` + tag. Semua SHA berubah; `.deployed_rev` di server menunjuk SHA lama,
-> sehingga deploy berikutnya membangun ulang penuh. **Pesan commit tidak pernah memuat** IP, user,
-> atau kredensial — hanya isi berkas (`docs/PROGRESS.md`, `docs/runbooks/demo-data.md`,
-> `tools/devdb.sh`).
+> **Tindak lanjut 2 Nov 2026 (keputusan pemilik).** Riwayat git **ditulis ulang** dengan
+> `git-filter-repo --replace-text` untuk menghapus `<deploy-user>@<vps-host>` dari seluruh blob
+> (4 commit: `5964665`, `75847b1`, `1f65a63`, `5344f47`) dan `<registry-npm-privat>` di
+> `docs/DECISIONS.md`, lalu force-push `main` + semua tag. **Pesan commit tidak pernah memuat** IP,
+> user, atau kredensial — hanya isi berkas.
+>
+> Tulis ulang **tidak cukup**: force-push hanya memindahkan ref, objek lama tetap dilayani GitHub
+> lewat URL SHA (`/commit/5344f47` → 200, isinya masih memuat IP). Karena itu repo **dihapus dan
+> dibuat ulang** (`nferdazel/kran`) dengan riwayat yang sama tetapi tanpa objek lama, lalu `main`
+> + tag di-push ulang. Rilis lama dibuat ulang oleh `release.yml` dari tag.
+>
+> **Risiko tersisa:** fork `choepru/kran` (dibuat 31 Okt 2026, sebelum scrub) tetap menyimpan objek
+> lama dan tidak ikut terhapus saat repo sumber dihapus. Menunggu pemilik fork menghapusnya.
 
 | ID | Sev | Lokasi (file:line) | Risiko | Status |
 |----|-----|--------------------|--------|--------|
@@ -121,9 +128,9 @@ Diperiksa `ops/scripts/deploy-vps.sh` (36 KB):
 4. **Isi `.local/`** (dev.env, prod.env) tidak dianalisis nilainya — hanya status ignore-nya.
    Diasumsikan berkas itu memang memuat kredensial nyata (komentar `tools/devdb.sh:10` menyebut
    demikian) dan karena itu **tidak boleh** ikut ter-track (terverifikasi tidak).
-5. **Riwayat git tidak ditulis ulang.** Bila pemilik memutuskan rewrite (filter-repo) untuk
-   menghapus SEC-02, seluruh SHA berubah dan fork/klon lama tetap memuat IP — itu keputusan
-   pemilik, bukan bagian audit ini.
+5. **Riwayat git sudah ditulis ulang dan repo dibuat ulang** (2 Nov 2026, keputusan pemilik):
+   seluruh SHA berubah, objek lama tidak lagi dilayani GitHub. Fork/klon lama (termasuk
+   `choepru/kran`) tetap memuat IP sampai dihapus pemiliknya — di luar kendali repo ini.
 
 ## 6. Rekomendasi yang belum dikerjakan (butuh keputusan/persetujuan)
 
