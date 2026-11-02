@@ -40,6 +40,7 @@ import platform/infrastructure/calendar_repo
 
 import deposit/domain/[account, transaction]
 import deposit/infrastructure/[account_repo, reconcile_repo, transaction_repo]
+import lending/infrastructure/[loan_repo, report_repo, restructure_repo]
 import party/domain/party
 import product/domain/product
 import product/infrastructure/product_repo
@@ -98,7 +99,7 @@ proc lastAccrualCumulative(accountId: Id): string =
 proc subledgerSum(accountId: Id): string =
   db.getValue(sql"""
     SELECT (coalesce(sum(CASE WHEN tx_type IN ('CASH_DEPOSIT', 'MATURITY_IN',
-                                             'INTEREST_CREDIT')
+                                             'INTEREST_CREDIT', 'LOAN_DISBURSEMENT')
                               THEN amount ELSE -amount END), 0))::numeric(24,2)::text
       FROM deposit.transaction WHERE account_id = ?""", $accountId)
 
@@ -163,6 +164,23 @@ proc addDeposit(openedOn, principal, maturityDate, aro: string): Id =
     1)
   a.accountId
 
+let loanProduct = newId(simClock)
+let loanVersion = newId(simClock)
+
+block seed:
+  execScript(db, """
+    INSERT INTO lending.loan_product (product_id, code, name, created_by)
+    VALUES ('""" & $loanProduct & """', 'SIM-LN', 'Pinjaman Simulasi', '""" & Actor & """')
+  """)
+  execScript(db, """
+    INSERT INTO lending.loan_product_version
+      (version_id, product_id, version_no, status, schedule_method, tenor_months, annual_rate,
+       allocation_order, created_by, approved_by)
+    VALUES ('""" & $loanVersion & """', '""" & $loanProduct &
+      """', 1, 'ACTIVE', 'FLAT', 12, 0, 'PRINCIPAL,INTEREST,PENALTY',
+      '""" & Actor & """', '""" & Checker & """')
+  """)
+
 block seed:
   execScript(db, """
     INSERT INTO platform.branch (branch_id, code, name)
@@ -203,6 +221,39 @@ block seed:
 # Urutan pembuatan menentukan `account_no`: tabungan tujuan lebih dulu, jadi ia yang dipilih
 # `activeSavingsAccount` (ORDER BY account_no LIMIT 1).
 let SavingsTarget = addSavings("2026-01-01", "1000000.00")
+
+proc addLoan(principal, firstDue: string): Id =
+  ## Pencairan sintetis: 12 angsuran pokok rata, bunga 0 (perhitungan bunga pinjaman diuji golden
+  ## test T-162, bukan di sini), jurnal `LoanDisbursed`, dan **kredit rekening simpanan** anggota
+  ## seperti jalur nyata (D-182). Tanpa kredit itu gerbang `ledger.subledger_vs_gl` gagal: GL `201`
+  ## akan lebih besar dari subledger simpanan.
+  let loanId = newId(simClock)
+  let value = moneyFromString(principal).value()
+  discard dbPool.withTx(proc(d: DbConn): int =
+    d.exec(sql"""
+      INSERT INTO lending.loan (loan_id, party_id, product_version_id, branch_id, principal,
+                                status, disbursed_on, maturity_on, applied_by, approved_by)
+      VALUES (?, ?, ?, ?, ?::numeric, 'ACTIVE', ?::date,
+              (?::date + interval '11 months')::date, ?::uuid, ?::uuid)""",
+      $loanId, $testParty, $loanVersion, BranchId, principal, FirstDate, firstDue, Actor, Checker)
+    insertBalance(d, loanId, value)
+    insertScheduleVersion(d, loanId, 1, FirstDate, "jadwal pencairan", Id(Actor))
+    d.exec(sql"""
+      INSERT INTO lending.installment
+        (loan_id, no, due_on, principal_due, interest_due, penalty_due)
+      SELECT ?, no, (?::date + ((no - 1) || ' month')::interval)::date,
+             (?::numeric / 12), 0, 0
+        FROM generate_series(1, 12) AS no""", $loanId, firstDue, principal)
+    let journalId = postRuleJournalSync(d, simClock, "LoanDisbursed", value, Id(BranchId), loanId,
+      FirstDate, "sim.loan:" & $loanId, Id(Actor), %*{"loanId": $loanId})
+    insertTransaction(d, Transaction(transactionId: newId(simClock), txType: ttLoanDisbursement,
+      accountId: SavingsTarget, amount: value, businessDate: FirstDate,
+      narration: "pencairan pinjaman simulasi", journalId: journalId), Id(Actor))
+    d.exec(sql"""
+      UPDATE deposit.account_balance SET balance = balance + ?::numeric WHERE account_id = ?""",
+      principal, $SavingsTarget)
+    1)
+  loanId
 let SavingsQuiet = addSavings("2025-12-01", "0.00")
 
 let DepositNone1 = addDeposit("2026-01-01", "10000000.00", "2026-02-16", "NONE")
@@ -212,6 +263,12 @@ let DepositCapitalized = addDeposit("2026-01-01", "6000000.00", "2026-04-15",
   "PRINCIPAL_AND_INTEREST")
 let DepositPrincipal2 = addDeposit("2026-01-01", "4000000.00", "2026-08-17", "PRINCIPAL")
 let DepositNone3 = addDeposit("2026-01-01", "3000000.00", "2026-12-15", "NONE")
+
+# Dua pinjaman sintetis (T-172): satu menunggak sepanjang tahun, satu baru jatuh tempo tahun
+# berikutnya. Keduanya dicairkan 1 Januari, jadi snapshot kolektibilitas harus ada untuk setiap
+# tanggal tutup, bukan hanya pada hari pencairan.
+let LoanOverdue = addLoan("12000000.00", "2026-02-01")
+let LoanCurrent = addLoan("6000000.00", "2027-01-15")
 
 suite "simulasi 12 bulan: penutupan harian sampai akhir tahun buku":
 
@@ -317,6 +374,61 @@ suite "simulasi 12 bulan: penutupan harian sampai akhir tahun buku":
       SELECT count(*)::text FROM ledger.period
        WHERE starts_on >= DATE '2026-01-01' AND ends_on <= DATE '2026-12-31'
          AND status = 'CLOSED'""") == "12"
+
+
+  test "pinjaman: kolektibilitas, penyisihan, dan rekonsiliasi utuh setelah 12 bulan":
+    let days = db.getValue(sql"""
+      SELECT count(*)::text FROM daycloser.run
+       WHERE state = 'COMPLETED'
+         AND business_date BETWEEN DATE '2026-01-01' AND DATE '2026-12-31'""")
+    let dayCount = parseInt(days)
+    check dayCount >= 250
+
+    # 1. Satu snapshot per pinjaman per tanggal buku — tidak ada hari yang terlewat dan tidak ada
+    #    baris ganda (PK `(loan_id, business_date)` yang menjaganya, invarian diuji di sini).
+    check db.getValue(sql"""
+      SELECT count(*)::text FROM lending.collectibility_snapshot""") == $(dayCount * 2)
+    check db.getValue(sql"""
+      SELECT count(*)::text FROM lending.ppap_snapshot""") == $(dayCount * 2)
+
+    # 2. Golongan akhir mengikuti DPD: yang menunggak sejak Februari = LOSS (di atas 180 hari),
+    #    yang angsurannya baru jatuh tempo tahun berikutnya = COLLECTIBLE.
+    check db.getValue(sql"SELECT collectibility FROM lending.loan WHERE loan_id = ?",
+      $LoanOverdue) == "LOSS"
+    check db.getValue(sql"SELECT collectibility FROM lending.loan WHERE loan_id = ?",
+      $LoanCurrent) == "COLLECTIBLE"
+
+    # 3. Identitas rekonsiliasi T-171 pada keadaan akhir: GL 110 = Σ sisa pokok, dan
+    #    GL 111 = Σ penyisihan terakhir. Fungsi yang dipakai laporan, bukan salinan query.
+    let glReceivable = db.getValue(sql"""
+      SELECT (coalesce(sum(debit), 0) - coalesce(sum(credit), 0))::numeric(24,2)::text
+        FROM ledger.journal_line WHERE gl_account = '110'""")
+    let glAllowance = db.getValue(sql"""
+      SELECT (coalesce(sum(credit), 0) - coalesce(sum(debit), 0))::numeric(24,2)::text
+        FROM ledger.journal_line WHERE gl_account = '111'""")
+    check glReceivable == "18000000.00"
+    check glReceivable == loanReceivableSubledger(db)
+    check glAllowance == allowanceSubledger(db)
+    # LOSS = 100% × 12.000.000,00; COLLECTIBLE = 0%.
+    check glAllowance == "12000000.00"
+
+    # 4. Laporan tanggal tutup terakhir memakai snapshot tanggal itu, bukan keadaan hari ini.
+    let lastDate = db.getValue(sql"""
+      SELECT max(business_date)::text FROM daycloser.run
+       WHERE state = 'COMPLETED'
+         AND business_date BETWEEN DATE '2026-01-01' AND DATE '2026-12-31'""")
+    let arrears = arrearsRows(db, lastDate)
+    check arrears.len == 1
+    check arrears[0].loanId == LoanOverdue
+    check arrears[0].grade == "LOSS"
+    check arrears[0].principal != "0.00"
+    let allowance = allowanceRows(db, lastDate)
+    check allowance.len == 2
+    var lossAllowance = ""
+    for row in allowance:
+      if row.grade == "LOSS":
+        lossAllowance = row.allowance
+    check lossAllowance == "12000000.00"
 
 block cleanup:
   # Suite lain (dan e2e) memakai DB yang sama: jangan tinggalkan tanggal buku yang menahan

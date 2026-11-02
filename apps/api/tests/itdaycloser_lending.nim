@@ -384,6 +384,9 @@ suite "day-close lending: penyisihan PPAP (T-167)":
       )::numeric(24,2)::text""") == totalAllowance(d3)
 
   test "parameter tarif rusak menggagalkan task, bukan menyisihkan nol":
+    # Regrading tanggal itu lebih dulu: prasyarat golongan diperiksa **saat chunk berjalan**
+    # (bukan saat perencanaan), jadi tanpa ini yang gagal adalah DAY-383, bukan pembacaan tarif.
+    discard runChunk("2026-11-13")
     db.exec(sql"""
       UPDATE platform.param_value SET value = '["0","0.5","10","50"]'::jsonb
        WHERE key = 'lending.ppap.rates'""")
@@ -398,9 +401,17 @@ suite "day-close lending: penyisihan PPAP (T-167)":
 
   test "pinjaman ACTIVE belum dinilai kolektibilitasnya menahan penyisihan (DAY-383)":
     newPpapLoan(newId(testClock), "1000000.00")
+    # Perencanaan chunk **tidak** boleh gagal hanya karena regrading hari itu belum berjalan:
+    # perencanaan terjadi sebelum dependensi dieksekusi (bug yang ditemukan simulasi T-172).
     let chunks = ppapTask().countChunks(ctxOn("2026-11-14"), 100)
-    check not chunks.isOk
-    check chunks.error.code == "DAY-383"
+    check chunks.isOk
+    # Prasyaratnya tetap fail-closed, tetapi pada saat chunk berjalan — ketika dependensi sudah
+    # selesai dan pinjaman yang belum dinilai tidak bisa lagi dilewati diam-diam.
+    let refused = ppapTask().run(ctxOn("2026-11-14"), Chunk(chunkNo: 0))
+    check not refused.isOk
+    check refused.error.code == "DAY-383"
+    check db.getValue(sql"""
+      SELECT count(*)::text FROM lending.ppap_snapshot WHERE business_date = '2026-11-14'""") == "0"
 
 
 suite "day-close lending: restrukturisasi & hapus buku (T-168)":

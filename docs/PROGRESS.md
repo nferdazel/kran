@@ -4150,3 +4150,23 @@ lintas cabang bukan haknya, berbeda dari daftar pinjaman yang disaring per baris
 **Bukti**: `treport` 9, `itapi_lending_reports` 7 (DPD 100 → SUBSTANDARD, penyisihan 500.000,00 =
 10% × 5.000.000,00, rekonsiliasi `balanced=true`), `./task openapi` hijau, dan `./task ci`
 **hijau** (1564 `[OK]`, 0 `[FAILED]`; e2e 65 test).
+
+## 2026-11-02 — T-172: simulasi 12 bulan berpinjaman, benchmark EOD, laporan M4
+
+Simulasi kini menyertakan dua pinjaman: satu menunggak sepanjang tahun (berakhir `LOSS`), satu baru
+jatuh tempo tahun berikutnya (`COLLECTIBLE`). Pencairannya menulis jurnal `LoanDisbursed` **dan**
+mengkredit rekening simpanan anggota seperti jalur nyata, sehingga gerbang `ledger.subledger_vs_gl`
+tetap berlaku. Invarian akhir tahun: snapshot = hari tutup × pinjaman, golongan sesuai DPD,
+`GL 110 = Σ sisa pokok`, `GL 111 = Σ penyisihan terakhir`, laporan tanggal tutup memakai snapshot
+tanggal itu.
+
+**Bug yang ditemukan simulasi** (bukan oleh test lain): `lending.ppap_provision` memeriksa prasyarat
+`DAY-383` di `countChunks`, yang dipanggil **sebelum** dependensi `lending.dpd_regrade` berjalan —
+EOD dengan pinjaman selalu gagal pada hari pertama. Perencanaan kini memakai populasi pinjaman
+`ACTIVE`; prasyarat dipindah ke eksekusi chunk (D-188), fail-closed tetap.
+
+Benchmark: `bench-eod` menerima `--loans N`. 100k rekening + 50k pinjaman = **245 s** `COMPLETED`
+(target 1.800 s); 100k rekening saja 153,5 s; 50k pinjaman (dengan 1k rekening) 27,3 s.
+
+**Bukti**: `itdaycloser_sim` 6/6, `itdaycloser_lending` 15/15, `itapi_lending` 40/40,
+`docs/milestones/M4-report.md`. Gate penuh **hijau** (1565 `[OK]`, 0 `[FAILED]`; e2e 65 test).

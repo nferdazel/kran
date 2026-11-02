@@ -42,9 +42,10 @@ import ../../apps/api/src/daycloser_service
 import ../../apps/api/src/deposit_posting
 
 const
-  Usage = """pemakaian: bench-eod --accounts <n> [--date YYYY-MM-DD] [--force] [--keep]
+  Usage = """pemakaian: bench-eod --accounts <n> [--loans <n>] [--date YYYY-MM-DD] [--force] [--keep]
 
   --accounts N   jumlah rekening berjangka sintetis (default 1000)
+  --loans N      jumlah pinjaman sintetis (default 0)
   --date D       tanggal buku yang ditutup (default 2026-10-28, hari kerja)
   --keep         jangan reset schema (pakai data yang sudah ada)
   --force        izinkan berjalan pada database yang namanya tidak mengandung _bench/_test
@@ -64,6 +65,7 @@ const
 type
   Options = object
     accounts: int
+    loans: int
     date: string
     force: bool
     keep: bool
@@ -77,6 +79,10 @@ proc parseOptions(args: seq[string]): Options =
       inc i
       if i >= args.len: raise newException(ValueError, "--accounts butuh angka")
       result.accounts = parseInt(args[i])
+    of "--loans":
+      inc i
+      if i >= args.len: raise newException(ValueError, "--loans butuh angka")
+      result.loans = parseInt(args[i])
     of "--date":
       inc i
       if i >= args.len: raise newException(ValueError, "--date butuh tanggal")
@@ -91,6 +97,8 @@ proc parseOptions(args: seq[string]): Options =
     inc i
   if result.accounts < 1:
     raise newException(ValueError, "--accounts harus >= 1")
+  if result.loans < 0:
+    raise newException(ValueError, "--loans tidak boleh negatif")
 
 proc guardDatabase(db: DbConn; force: bool) =
   ## Nama database dibaca dari server, bukan dari URL: URL bisa memuat parameter yang membuat
@@ -183,6 +191,58 @@ proc seed(db: DbConn; opts: Options): string =
       FROM deposit.account a
      WHERE a.branch_id = '""" & BenchBranchId & """'
   """)
+
+  # Pinjaman sintetis (T-172). Yang diukur adalah biaya task `lending.dpd_regrade` +
+  # `lending.ppap_provision`, jadi seed cukup menyiapkan populasi: akad `ACTIVE`, baris saldo, dan
+  # jadwal 12 angsuran yang sudah lewat jatuh tempo (golongan akhir `LOSS`, penyisihan 100%).
+  #
+  # **Tanpa jurnal pencairan**: alat ini mengukur biaya, bukan membuktikan identitas akuntansi
+  # (itu tugas `itdaycloser_sim` dan `itapi_lending_reports`). Jurnal `LoanDisbursed` akan
+  # mengkredit `201` tanpa baris subledger simpanan dan membuat gerbang
+  # `ledger.subledger_vs_gl` gagal — kegagalan yang bukan temuan performa.
+  if opts.loans > 0:
+    execScript(db, """
+      INSERT INTO lending.loan_product (product_id, code, name, created_by)
+      VALUES (md5('bench-loan-product')::uuid, 'BENCH-LN', 'Pinjaman Benchmark',
+              '""" & BenchMaker & """')
+      ON CONFLICT DO NOTHING
+    """)
+    execScript(db, """
+      INSERT INTO lending.loan_product_version
+        (version_id, product_id, version_no, status, schedule_method, tenor_months, annual_rate,
+         allocation_order, created_by, approved_by)
+      VALUES (md5('bench-loan-version')::uuid, md5('bench-loan-product')::uuid, 1, 'ACTIVE', 'FLAT',
+              12, 0, 'PRINCIPAL,INTEREST,PENALTY', '""" & BenchMaker &
+        """',
+              '""" & BenchChecker & """')
+      ON CONFLICT DO NOTHING
+    """)
+    execScript(db, """
+      INSERT INTO lending.loan
+        (loan_id, party_id, product_version_id, branch_id, principal, status, disbursed_on,
+         maturity_on, applied_by, approved_by)
+      SELECT gen_random_uuid(), '""" & BenchPartyId &
+        """', md5('bench-loan-version')::uuid,
+             '""" & BenchBranchId &
+        """', '12000000.00', 'ACTIVE', DATE '2026-01-01',
+             DATE '2026-12-31', '""" & BenchMaker & """', '""" & BenchChecker &
+        """'
+        FROM generate_series(1, """ & $opts.loans & """) g
+    """)
+    execScript(db, """
+      INSERT INTO lending.loan_balance
+        (loan_id, principal_outstanding, interest_overdue, penalty_outstanding)
+      SELECT loan_id, principal, 0, 0 FROM lending.loan
+       WHERE branch_id = '""" & BenchBranchId & """'
+    """)
+    execScript(db, """
+      INSERT INTO lending.installment
+        (loan_id, no, due_on, principal_due, interest_due, penalty_due)
+      SELECT l.loan_id, g, (DATE '2026-01-01' + ((g - 1) || ' month')::interval)::date,
+             '1000000.00', 0, 0
+        FROM lending.loan l, generate_series(1, 12) AS g
+       WHERE l.branch_id = '""" & BenchBranchId & """'
+    """)
   $journalId
 
 proc main(args: seq[string]): int =
@@ -223,12 +283,15 @@ proc main(args: seq[string]): int =
     state = $res.snapshot.state
     for t in res.snapshot.tasks:
       tasks.add %*{"id": t.taskId, "state": $t.state, "error": t.errorCode}
+  let units = opts.accounts + opts.loans
   let summary: JsonNode = %*{
     "accounts": opts.accounts,
+    "loans": opts.loans,
     "businessDate": opts.date,
     "seedSeconds": seedSeconds,
     "eodSeconds": seconds,
     "millisPerAccount": (if opts.accounts > 0: seconds * 1000.0 / float(opts.accounts) else: 0.0),
+    "millisPerUnit": (if units > 0: seconds * 1000.0 / float(units) else: 0.0),
     "state": state,
     "message": res.message,
     "aggregateJournal": journalId,

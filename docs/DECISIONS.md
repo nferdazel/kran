@@ -4959,3 +4959,23 @@ skema **final**, sama seperti sesudah deploy; expand-only tetap menjadi aturan u
 dengan kode; kegagalan contract terlihat di gate, bukan pertama kali saat deploy produksi.
 Seed dev (`packs/base/seed/0006_dev_lending.sql`) menambah versi produk pinjaman + akun `dev.loans`,
 karena katalog pinjaman belum punya rute API untuk membuatnya.
+
+## D-188 — Prasyarat golongan PPAP diperiksa saat chunk berjalan, bukan saat perencanaan (2 Nov 2026)
+
+**Konteks.** `lending.ppap_provision` mensyaratkan semua pinjaman `ACTIVE` sudah dinilai
+kolektibilitasnya untuk tanggal buku (`DAY-383`, fail-closed: pinjaman tanpa golongan akan dilewati
+diam-diam oleh query kandidat). Pemeriksaan itu dipasang di `countChunks`, yaitu fungsi yang dipanggil
+orchestrator **saat menyusun rencana** — sebelum dependensi (`lending.dpd_regrade`) dieksekusi. Akibatnya
+EOD dengan pinjaman selalu gagal pada hari pertama (`2 pinjaman ACTIVE belum dinilai ... untuk
+2026-01-01`) walaupun regrading berjalan tepat sesudahnya. Tidak terlihat sebelumnya karena uji PPAP
+menjalankan regrading lebih dulu secara manual, dan e2e belum punya pinjaman.
+
+**Keputusan.** Jumlah chunk dihitung dari **populasi** pinjaman `ACTIVE` (stabil, tidak bergantung
+pada hasil dependensi), sedangkan prasyarat `DAY-383` dipindah ke awal `runPpapChunk` — saat
+dependensi sudah selesai dan halaman kandidat dibaca. Pemeriksaan `DAY-384` (penyisihan menggantung)
+tetap di perencanaan karena keadaannya tidak bergantung pada tanggal yang sedang ditutup.
+
+**Konsekuensi.** Fail-closed tetap: pinjaman yang belum dinilai menggagalkan task dengan `DAY-383`
+dan tidak ada snapshot/jurnal yang ditulis. Yang berubah hanya **kapan** prasyarat itu dievaluasi.
+Regresi ditutup `itdaycloser_sim` (12 bulan dengan pinjaman) + `itdaycloser_lending` (perencanaan
+tidak gagal, eksekusi menolak).

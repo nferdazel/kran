@@ -185,28 +185,27 @@ proc ppapRates(db: DbConn; ctx: TaskContext): seq[Rate] =
   parsed.val
 
 proc countPpapChunks(pool: DbPool; businessDate: string; chunkSize: int): Result[int, TaskError] =
-  ## Dua prasyarat fail-closed sebelum satu sen pun disisihkan:
-  ##   - semua pinjaman `ACTIVE` sudah dinilai tanggal itu (`DAY-383`);
-  ##   - tidak ada pinjaman tidak aktif yang masih menyimpan penyisihan (`DAY-384`) — aturan
-  ##     pelepasan saat akad ditutup belum ada, dan membiarkannya berarti CKPN menggantung di neraca.
+  ## Jumlah chunk dihitung dari **populasi** pinjaman `ACTIVE`, bukan dari yang sudah ternilai.
+  ## Perencanaan chunk terjadi **sebelum** dependensi berjalan (`lending.dpd_regrade`), jadi
+  ## prasyarat "semua sudah dinilai" tidak bisa diperiksa di sini — dulu pemeriksaan itu membuat
+  ## EOD selalu gagal pada hari pertama ada pinjaman, karena regrading baru jalan sesudah rencana
+  ## disusun. Prasyarat itu dipindah ke `runPpapChunk`, saat dependensi sudah selesai.
+  ##
+  ## Yang tetap diperiksa di sini: penyisihan menggantung (`DAY-384`) — keadaannya tidak bergantung
+  ## pada tanggal yang sedang ditutup.
   try:
-    let counts = pool.withConn(proc(db: DbConn): tuple[graded, missing, stranded: int64] =
-      (countGradedLoans(db, businessDate), activeLoansWithoutGrade(db, businessDate),
-       strandedAllowances(db)))
-    if counts.missing > 0:
-      return err[int, TaskError](taskError("DAY-383",
-        $counts.missing & " pinjaman ACTIVE belum dinilai kolektibilitasnya untuk " & businessDate &
-        "; jalankan/ulangi lending.dpd_regrade lebih dulu"))
+    let counts = pool.withConn(proc(db: DbConn): tuple[active, stranded: int64] =
+      (countActiveLoans(db), strandedAllowances(db)))
     if counts.stranded > 0:
       return err[int, TaskError](taskError("DAY-384",
         $counts.stranded & " pinjaman tidak aktif masih menyimpan penyisihan; aturan pelepasan " &
         "belum ada (D-183 menolak penutupan akad otomatis)"))
     if chunkSize < 1:
       raise newException(ValueError, "chunk size harus >= 1")
-    ok[int, TaskError](int((counts.graded + int64(chunkSize) - 1) div int64(chunkSize)))
+    ok[int, TaskError](int((counts.active + int64(chunkSize) - 1) div int64(chunkSize)))
   except IOError as e:
     err[int, TaskError](taskError("DAY-381",
-      "jumlah pinjaman ternilai gagal dibaca: " & e.msg, retryable = true))
+      "jumlah pinjaman berjalan gagal dibaca: " & e.msg, retryable = true))
 
 proc runPpapChunk(pool: DbPool; clock: Clock; ctx: TaskContext; chunk: Chunk): TaskResult =
   ## Satu chunk = satu halaman pinjaman ternilai. Snapshot per pinjaman dan jurnal selisih ditulis
@@ -221,6 +220,14 @@ proc runPpapChunk(pool: DbPool; clock: Clock; ctx: TaskContext; chunk: Chunk): T
   var rates: seq[Rate]
   try:
     let loaded = pool.withConn(proc(db: DbConn): tuple[items: seq[PpapCandidate]; rates: seq[Rate]] =
+      # Prasyarat di sini, bukan saat perencanaan: dependensi (`lending.dpd_regrade`) sudah berjalan
+      # ketika chunk dieksekusi. Pinjaman aktif yang belum dinilai akan **dilewati diam-diam** oleh
+      # query kandidat, dan itu persis kegagalan yang tidak boleh terjadi pada penyisihan.
+      let missing = activeLoansWithoutGrade(db, ctx.businessDate)
+      if missing > 0:
+        raise abort("DAY-383",
+          $missing & " pinjaman ACTIVE belum dinilai kolektibilitasnya untuk " & ctx.businessDate &
+          "; jalankan/ulangi lending.dpd_regrade lebih dulu")
       (ppapCandidatesPage(db, ctx.businessDate, chunk.chunkNo * ctx.chunkSize, ctx.chunkSize),
        ppapRates(db, ctx)))
     items = loaded.items
