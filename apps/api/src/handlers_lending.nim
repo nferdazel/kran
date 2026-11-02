@@ -22,8 +22,8 @@ import platform/domain/[audit, event, idempotency, scope]
 import platform/infrastructure/[audit_repo, auth_service, outbox_repo, param_repo]
 import deposit/domain/[account, transaction]
 import deposit/infrastructure/[account_repo, transaction_repo]
-import lending/domain/[collectibility, loan, payment, restructure, schedule, writeoff]
-import lending/infrastructure/[loan_repo, restructure_repo, writeoff_repo]
+import lending/domain/[collectibility, loan, payment, recovery, restructure, schedule, writeoff]
+import lending/infrastructure/[loan_repo, recovery_repo, restructure_repo, writeoff_repo]
 import product/infrastructure/product_repo
 import party/domain/party
 import party/infrastructure/party_repo
@@ -46,11 +46,15 @@ const
   ## Hapus buku **tidak** dipegang `lending_maker` (migrasi `platform/0096`): yang mencairkan
   ## pinjaman tidak boleh yang menghapusbukukannya.
   permissionLendingWriteOff* = "lending.loan.write_off"
+  ## Pemulihan pasca hapus buku memakai izin sendiri (migrasi `platform/0099`): uang yang masuk
+  ## setelah piutang dibebankan mengubah laba rugi, jadi tidak dipegang `lending_maker` juga.
+  permissionLendingRecovery* = "lending.loan.recovery"
   ## Idempotensi lapis HTTP: operasi pencairan memindahkan uang, jadi replay kunci yang sama harus
   ## mengembalikan respons asli, bukan mencairkan dua kali.
   operationIdLoanDisburse = "lending.loan.disburse"
   operationIdLoanRestructure = "lending.loan.restructure"
   operationIdLoanWriteOff = "lending.loan.write_off"
+  operationIdLoanRecovery = "lending.loan.recovery"
 
 proc respondLendingReason(req: Request, kind: ProblemKind, title, reason, detail: string) =
   req.respondProblem(newProblem(kind, title, detail,
@@ -1187,6 +1191,233 @@ proc handleWriteOffLoan*(app: AppContext, req: Request) {.gcsafe.} =
       status = 500
     if problemText.len == 0:
       problemText = "hapus buku gagal (jurnal/periode ditolak database)"
+
+  if outcome.decision != idemProceed:
+    discard req.respondIdempotent(outcome)
+    return
+
+  case status
+  of 200:
+    req.respondJson(200, payload)
+  of 403:
+    respondLendingReason(req, pkForbidden, "Forbidden", reason, problemText)
+  of 404:
+    respondLendingReason(req, pkNotFound, "Not Found", reason, problemText)
+  of 409:
+    respondLendingReason(req, pkConflict, "Conflict", reason, problemText)
+  else:
+    req.respondProblem(pkInternal, "Internal Server Error", problemText)
+
+proc handleRecoverLoan*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `POST /api/v1/lending/loans/{loanId}/recovery` — catat uang yang masuk setelah hapus buku.
+  ##
+  ## Pinjaman `WRITTEN_OFF` tidak punya piutang di neraca, jadi pemulihan **bukan** pelunasan:
+  ## saldo rekening anggota berkurang (`D 201`) dan lawannya pendapatan — pokok `409`, bunga `401`,
+  ## denda `403` (D-191, `NEEDS-COMPLIANCE-REVIEW`). Batas kumulatif per komponen dijaga domain
+  ## (`planRecovery`): total pemulihan tidak boleh melebihi nilai yang dihapusbukukan.
+  let principalOpt = requirePrincipal(app, req)
+  if principalOpt.isNone:
+    return
+  let principal = principalOpt.get()
+  if not requirePermission(app, req, principal, permissionLendingRecovery):
+    return
+  let loanId = parseId(pathParam(req, "loanId"))
+  if loanId.isErr:
+    req.respondProblem(pkNotFound, "Not Found", "pinjaman tidak ditemukan")
+    return
+  if not requireIdempotencyKey(req):
+    req.respondProblem(pkBadRequest, "Bad Request", "Idempotency-Key wajib diisi")
+    return
+
+  let body = parseJsonBody(req)
+  if body.isNone or body.get().kind != JObject:
+    req.respondProblem(pkBadRequest, "Bad Request", "badan permintaan harus objek JSON")
+    return
+  let bodyNode = body.get()
+  let accountId = parseId(bodyNode.jsonField("accountId"))
+  if accountId.isErr:
+    req.respondProblem(pkBadRequest, "Bad Request", "accountId harus UUID yang sah")
+    return
+  var
+    principalReq = zero()
+    interestReq = zero()
+    penaltyReq = zero()
+  block parseComponents:
+    let fields = [("principal", "principal"), ("interest", "interest"), ("penalty", "penalty")]
+    for (name, target) in fields:
+      let raw = bodyNode.jsonField(name)
+      if raw.len == 0:
+        continue
+      let parsed = moneyFromString(raw)
+      if not parsed.isOk or parsed.val.isNegative:
+        req.respondProblem(pkBadRequest, "Bad Request",
+          name & " harus nominal tidak negatif, mis. \"1500000.00\"")
+        return
+      case target
+      of "principal": principalReq = parsed.val
+      of "interest": interestReq = parsed.val
+      else: penaltyReq = parsed.val
+  let request = components(principalReq, interestReq, penaltyReq)
+  if not request.totalOf().isPositive:
+    req.respondProblem(pkBadRequest, "Bad Request",
+      "isi minimal satu komponen pemulihan (principal/interest/penalty) dengan nominal positif")
+    return
+  let reasonText = bodyNode.jsonField("reason").strip()
+  if reasonText.len == 0:
+    req.respondProblem(pkBadRequest, "Bad Request", "reason wajib diisi")
+    return
+  let asOf = businessDateIso(app.clock)
+
+  var
+    status = 0
+    reason = ""
+    problemText = ""
+    payload = newJObject()
+    outcome = IdempotentOutcome(decision: idemProceed)
+  try:
+    outcome = withDbTx(app.pool, proc(db: DbConn): IdempotentOutcome {.gcsafe.} =
+      dbCalls:
+        withIdempotency(db, principal, req, operationIdLoanRecovery, $bodyNode, asOf,
+            app.clock.now(), proc(): tuple[status: int, payload: JsonNode] {.gcsafe.} =
+          dbCalls:
+            let found = loanById(db, loanId.val, forUpdate = true)
+            if found.isNone:
+              status = 404
+              reason = "loan_not_found"
+              problemText = "pinjaman tidak ditemukan"
+              raise newException(ValueError, problemText)
+            let loan = found.get()
+            let branch = $loan.branchId
+            if not authorizedAtBranch(db, principal, branch, permissionLendingRecovery):
+              status = 403
+              reason = "branch_not_allowed"
+              problemText = "izin " & permissionLendingRecovery & " tidak dipegang di cabang ini"
+              raise newException(ValueError, problemText)
+            if loan.status != lsWrittenOff:
+              status = 409
+              reason = "not_written_off"
+              problemText = "pemulihan hanya untuk pinjaman yang sudah dihapusbukukan"
+              raise newException(ValueError, problemText)
+
+            let account = accountById(db, accountId.val)
+            if account.isNone:
+              status = 404
+              reason = "account_not_found"
+              problemText = "rekening sumber tidak ditemukan"
+              raise newException(ValueError, problemText)
+            if account.get().partyId != loan.partyId:
+              status = 409
+              reason = "account_party_mismatch"
+              problemText = "rekening sumber bukan milik anggota peminjam"
+              raise newException(ValueError, problemText)
+            if account.get().branchId != loan.branchId:
+              status = 409
+              reason = "account_branch_mismatch"
+              problemText = "rekening sumber bukan di cabang pinjaman"
+              raise newException(ValueError, problemText)
+            if account.get().status != asActive:
+              status = 409
+              reason = "account_not_active"
+              problemText = "rekening sumber tidak aktif"
+              raise newException(ValueError, problemText)
+
+            let planned = planRecovery(request, writtenOffComponents(db, loan.loanId),
+              recoveredComponents(db, loan.loanId))
+            if not planned.isOk:
+              status = 409
+              reason = "recovery_exceeds_written_off"
+              problemText = planned.error.details
+              raise newException(ValueError, problemText)
+            let plan = planned.val
+
+            let businessDate = businessDateFor(db, institutionScope(), asOf)
+            let actor = parseId(principal.user.userId).value()
+            let recoveryId = newId(app.clock)
+
+            let minBalance = minBalanceFor(db, account.get().productVersionId)
+            if decreaseBalance(db, account.get().accountId, plan.total, minBalance).isNone:
+              status = 409
+              reason = "insufficient_balance"
+              problemText = "saldo rekening tidak cukup untuk pemulihan ini"
+              raise newException(ValueError, problemText)
+
+            var journalIds: seq[string] = @[]
+            proc postPart(eventType, suffix, label: string, amount: Money) =
+              if not amount.isPositive:
+                return
+              let journalId = postRuleJournalSync(db, app.clock, eventType, amount,
+                loan.branchId, recoveryId, businessDate,
+                "lending:recovery:" & $loan.loanId & ":" & suffix, actor,
+                %*{"loanId": $loan.loanId})
+              journalIds.add($journalId)
+              insertTransaction(db, Transaction(
+                transactionId: newId(app.clock),
+                txType: ttLoanRecovery,
+                accountId: account.get().accountId,
+                amount: amount,
+                businessDate: businessDate,
+                narration: "pemulihan hapus buku (" & label & ")",
+                journalId: journalId), actor)
+            postPart("LoanRecoveryPrincipal", "principal", "pokok", plan.request.principal)
+            postPart("LoanRecoveryInterest", "interest", "bunga", plan.request.interest)
+            postPart("LoanRecoveryPenalty", "penalty", "denda", plan.request.penalty)
+
+            insertRecovery(db, recoveryId, loan.loanId, businessDate, account.get().accountId,
+              plan, reasonText, actor)
+
+            let ctx = auditContextFor(principal, req, app.clock, "", branch = branch)
+            discard appendAudit(db, newAuditEntry(ctx, "lending.loan.recovery", "lending.loan",
+              $loan.loanId, app.clock,
+              businessDate = businessDate,
+              before = %*{"status": "WRITTEN_OFF"},
+              after = %*{"recoveryId": $recoveryId,
+                         "principal": toDecimalString(plan.request.principal),
+                         "interest": toDecimalString(plan.request.interest),
+                         "penalty": toDecimalString(plan.request.penalty),
+                         "total": toDecimalString(plan.total),
+                         "journalIds": journalIds, "reason": reasonText}))
+            discard appendEvent(db, newOutboxEvent(newId(app.clock), "LoanRecovered",
+              "lending.loan", $loan.loanId, "lending.loan.recovered:" & $recoveryId,
+              %*{"loanId": $loan.loanId, "partyId": $loan.partyId, "branchId": $branch,
+                 "businessDate": businessDate, "recoveryId": $recoveryId,
+                 "principal": toDecimalString(plan.request.principal),
+                 "interest": toDecimalString(plan.request.interest),
+                 "penalty": toDecimalString(plan.request.penalty),
+                 "total": toDecimalString(plan.total), "journalIds": journalIds}))
+
+            payload = %*{
+              "loanId": $loan.loanId,
+              "status": "WRITTEN_OFF",
+              "recoveryId": $recoveryId,
+              "principal": toDecimalString(plan.request.principal),
+              "interest": toDecimalString(plan.request.interest),
+              "penalty": toDecimalString(plan.request.penalty),
+              "total": toDecimalString(plan.total),
+              "journalIds": journalIds,
+              "businessDate": businessDate,
+              "reason": reasonText,
+            }
+            status = 200
+            (status, payload)))
+  except IdempotencyConfigError:
+    status = 500
+    problemText = "konfigurasi idempotensi di server tidak sah"
+  except IdempotencyStateError:
+    status = 500
+    problemText = "idempotensi gagal diselesaikan"
+  except LendingConfigError as e:
+    status = 500
+    problemText = "konfigurasi pinjaman tidak sah: " & e.msg
+  except ValueError as e:
+    if status == 0:
+      status = 500
+    if problemText.len == 0:
+      problemText = e.msg
+  except DbError:
+    if status == 0:
+      status = 500
+    if problemText.len == 0:
+      problemText = "pemulihan gagal (jurnal/periode ditolak database)"
 
   if outcome.decision != idemProceed:
     discard req.respondIdempotent(outcome)

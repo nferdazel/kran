@@ -27,6 +27,7 @@ const
   ApprovePath = "/api/v1/lending/loans/{loanId}/approve"
   DisbursePath = "/api/v1/lending/loans/{loanId}/disburse"
   PaymentsPath = "/api/v1/lending/loans/{loanId}/payments"
+  RecoveryPath = "/api/v1/lending/loans/{loanId}/recovery"
   LoginPath = "/api/v1/auth/login"
   MakerUser = "dev.maker"
   ApproverUser = "dev.approver"
@@ -886,6 +887,112 @@ suite "lending: restrukturisasi & hapus buku (T-168)":
     check postJson(fill(WriteOffPath, loanId), %*{"reason": "uji"}, approverToken).code == 400
     check postJson(fill(WriteOffPath, loanId), %*{}, approverToken,
       "it168-empty-" & loanId).code == 400
+
+  proc depositBalanceOf(id: string): string =
+    dbValue(sql"""SELECT balance::numeric(24,2)::text FROM deposit.account_balance
+                     WHERE account_id = ?""", id)
+
+  proc writtenOffLoan(amount: string): string =
+    let loanId = newActiveLoan(amount)
+    check dbValue(sql"""
+      UPDATE lending.loan SET collectibility = 'LOSS' WHERE loan_id = ? RETURNING loan_id::text""",
+      loanId) == loanId
+    check postJson(fill(WriteOffPath, loanId), %*{"reason": "uji pemulihan"}, approverToken,
+      "it176-writeoff-" & loanId).code == 200
+    loanId
+
+  test "pemulihan pasca hapus buku: pendapatan per komponen, saldo rekening turun":
+    let loanId = writtenOffLoan("3000000.00")
+    let before = depositBalanceOf(accountId)
+    let r = postJson(fill(RecoveryPath, loanId), %*{"accountId": accountId,
+      "principal": "500000.00", "interest": "100000.00", "reason": "anggota membayar sebagian"},
+      approverToken, "it176-partial-" & loanId)
+    check r.code == 200
+    checkJson(RecoveryPath, "POST", "200", r.body)
+    check r.body["total"].getStr() == "600000.00"
+    check r.body["journalIds"].len == 2 # pokok + bunga, denda nol tidak dijurnal
+    let recoveryId = r.body["recoveryId"].getStr()
+
+    # Saldo rekening turun tepat sebesar total; subledger LOAN_RECOVERY satu baris per komponen.
+    check depositBalanceOf(accountId) == (parseFloat(before) - 600_000.0).formatFloat(ffDecimal, 2)
+    check dbValue(sql"""
+      SELECT count(*) FROM deposit.transaction t JOIN ledger.journal j USING (journal_id)
+       WHERE j.source_ref = ? AND t.tx_type = 'LOAN_RECOVERY'""", recoveryId) == "2"
+
+    # Jurnal: D 201 sebesar total; kredit 409 (pokok) + 401 (bunga). Tidak menyentuh 110.
+    check dbValue(sql"""
+      SELECT coalesce(sum(debit), 0)::numeric(24,2)::text
+        FROM ledger.journal_line l JOIN ledger.journal j USING (journal_id)
+       WHERE j.source_ref = ? AND j.source_event LIKE 'LoanRecovery%'""", recoveryId) == "600000.00"
+    check dbValue(sql"""
+      SELECT string_agg(DISTINCT gl_account, ',' ORDER BY gl_account)
+        FROM ledger.journal_line l JOIN ledger.journal j USING (journal_id)
+       WHERE j.source_ref = ? AND l.credit > 0""", recoveryId) == "401,409"
+
+    check dbValue(sql"""
+      SELECT total_amount::numeric(24,2)::text FROM lending.recovery WHERE recovery_id = ?""",
+      recoveryId) == "600000.00"
+    check dbValue(sql"""
+      SELECT count(*) FROM platform.audit_log
+       WHERE action = 'lending.loan.recovery' AND resource_id = ?""", loanId) == "1"
+    check dbValue(sql"""
+      SELECT count(*) FROM platform.outbox
+       WHERE event_type = 'LoanRecovered' AND aggregate_id = ?""", loanId) == "1"
+
+  test "pemulihan melebihi nilai hapus buku ditolak tanpa jurnal":
+    let loanId = writtenOffLoan("800000.00")
+    let written = dbValue(sql"""
+      SELECT principal_amount::numeric(24,2)::text FROM lending.writeoff WHERE loan_id = ?""",
+      loanId)
+    let tooMuch = (parseFloat(written) + 1.0).formatFloat(ffDecimal, 2)
+    let r = postJson(fill(RecoveryPath, loanId), %*{"accountId": accountId,
+      "principal": tooMuch, "reason": "uji batas"}, approverToken, "it176-over-" & loanId)
+    check r.code == 409
+    check r.body["params"]["reason"].getStr() == "recovery_exceeds_written_off"
+    check dbValue(sql"SELECT count(*) FROM lending.recovery WHERE loan_id = ?", loanId) == "0"
+    check dbValue(sql"""
+      SELECT count(*) FROM ledger.journal WHERE source_event LIKE 'LoanRecovery%'
+        AND source_ref NOT IN (SELECT recovery_id FROM lending.recovery)""") == "0"
+
+  test "pemulihan ditolak untuk pinjaman aktif, tanpa izin, dan tanpa kunci":
+    let active = newActiveLoan("400000.00")
+    let notWritten = postJson(fill(RecoveryPath, active), %*{"accountId": accountId,
+      "principal": "10000.00", "reason": "uji"}, approverToken, "it176-active-" & active)
+    check notWritten.code == 409
+    check notWritten.body["params"]["reason"].getStr() == "not_written_off"
+
+    let loanId = writtenOffLoan("400000.00")
+    # Pemisahan tugas ada di data RBAC: `lending_maker` tidak memegang izin pemulihan.
+    check dbValue(sql"""
+      SELECT count(*) FROM platform.role_permission rp
+        JOIN platform.role r USING (role_id)
+        JOIN platform.permission p USING (permission_id)
+       WHERE r.code = 'lending_maker' AND p.code = 'lending.loan.recovery'""") == "0"
+    check postJson(fill(RecoveryPath, loanId), %*{"accountId": accountId,
+      "principal": "10000.00", "reason": "uji"}, checkerToken,
+      "it176-checker-" & loanId).code == 403
+    check postJson(fill(RecoveryPath, loanId), %*{"accountId": accountId,
+      "principal": "10000.00", "reason": "uji"}, approverToken).code == 400
+    check postJson(fill(RecoveryPath, loanId), %*{"accountId": accountId,
+      "reason": "uji"}, approverToken, "it176-empty-" & loanId).code == 400
+
+  test "replay kunci pemulihan tidak menjurnal dua kali":
+    let loanId = writtenOffLoan("500000.00")
+    let key = "it176-replay-" & loanId
+    let first = postJson(fill(RecoveryPath, loanId), %*{"accountId": accountId,
+      "principal": "200000.00", "reason": "uji replay"}, approverToken, key)
+    check first.code == 200
+    let journals = dbValue(sql"""
+      SELECT count(*) FROM ledger.journal WHERE source_event LIKE 'LoanRecovery%'
+        AND source_ref = ?""", first.body["recoveryId"].getStr())
+    let second = postJson(fill(RecoveryPath, loanId), %*{"accountId": accountId,
+      "principal": "200000.00", "reason": "uji replay"}, approverToken, key)
+    check second.code == 200
+    check second.body["recoveryId"].getStr() == first.body["recoveryId"].getStr()
+    check dbValue(sql"""
+      SELECT count(*) FROM ledger.journal WHERE source_event LIKE 'LoanRecovery%'
+        AND source_ref = ?""", first.body["recoveryId"].getStr()) == journals
+    check dbValue(sql"SELECT count(*) FROM lending.recovery WHERE loan_id = ?", loanId) == "1"
 
 suite "lending: baca & daftar pinjaman (T-169)":
   const

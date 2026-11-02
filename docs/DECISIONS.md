@@ -5027,3 +5027,31 @@ yang di-push — cukup untuk mencegah masuk, tetapi tidak pernah memeriksa ulang
 frasa (D-189). Hook bersifat lokal dan tidak bisa ditegakkan dari repo — karena itu CI tetap penjaga
 utama, dan `--no-verify` tetap dilarang di `CONTRIBUTING.md`. Bila `secret-scan` merah, tindak
 lanjutnya mengganti nilai + memutuskan scrub bersama pemilik, bukan menambah pengecualian.
+
+## D-191 — Pemulihan pasca hapus buku dicatat sebagai pendapatan per komponen (2 Nov 2026)
+
+**Konteks.** Hapus buku (D-186) menutup seluruh sisa kewajiban: `110` dikredit penuh, sisanya yang
+tidak tertutup penyisihan menjadi beban `504`. Sesudah itu pinjaman tidak punya piutang di neraca,
+sehingga uang yang masuk belakangan tidak bisa dicatat sebagai pelunasan — kalau dipaksa, laporan
+pelunasan dan rekening koran anggota mengklaim piutang yang sudah dibebankan.
+
+**Keputusan.** Alur baru `POST /api/v1/lending/loans/{loanId}/recovery` mencatat penerimaan sebagai
+pendapatan, satu jurnal per komponen karena template Fase 1 memaksa tepat satu debit dan satu kredit:
+
+| Komponen | Jurnal | Debit | Kredit |
+|---|---|---|---|
+| pokok | `LoanRecoveryPrincipal` | `201` | `409` pendapatan lain-lain |
+| bunga | `LoanRecoveryInterest` | `201` | `401` pendapatan bunga |
+| denda | `LoanRecoveryPenalty` | `201` | `403` pendapatan denda |
+
+Batas kumulatif: total per komponen tidak boleh melebihi nilai di `lending.writeoff`; permintaan
+berlebih ditolak `409`, bukan dipotong diam-diam (nominal yang dikirim harus sama dengan jurnal).
+Penerimaan boleh bertahap (`lending.recovery` satu baris per penerimaan), rekening sumber harus milik
+anggota, di cabang pinjaman, dan aktif. Izin `lending.loan.recovery` dipegang `lending_checker` +
+`platform_admin`, **bukan** `lending_maker`, mengikuti pemisahan tugas hapus buku.
+
+**Konsekuensi.** **NEEDS-COMPLIANCE-REVIEW**: akun `409` adalah usulan struktur pilot, bukan kutipan
+standar (REG-011 `V!`); alternatif yang sah adalah mengkredit `504` (pengembalian beban). Karena itu
+**HUMAN-REVIEW-REQUIRED** (AGENTS §8) — perubahan akun di sini langsung mengubah laba rugi.
+Pinjaman tetap `WRITTEN_OFF` (tidak dibuka kembali); pelunasan penuh hanya mengubah sisa batas
+pemulihan menjadi nol. UI aksi menyusul di T-177.

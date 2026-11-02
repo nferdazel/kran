@@ -258,7 +258,31 @@ ketiganya), rincian nilai di `lending.writeoff`, dan `loan_balance` nol.
 
 - **Penyisihan terpakai** — pemeriksaan `DAY-384` membandingkan penyisihan terakhir dengan
   `lending.writeoff.allowance_applied`, jadi hapus buku tidak menggagalkan penutupan buku.
-- **Pemulihan pasca hapus buku belum ada** (O-122): `WRITTEN_OFF` tidak menerima pembayaran.
+
+## Pemulihan pasca hapus buku (T-176, D-191)
+
+`POST /api/v1/lending/loans/{loanId}/recovery` · izin `lending.loan.recovery` (migrasi
+`platform/0099`; `lending_checker` + `platform_admin`, **bukan** `lending_maker`) ·
+**`Idempotency-Key` wajib**.
+
+Pinjaman `WRITTEN_OFF` tidak punya piutang di neraca, jadi uang yang masuk belakangan dicatat sebagai
+**pendapatan**, bukan pelunasan. Saldo rekening anggota berkurang (`D 201`), lawannya per komponen:
+
+| Jurnal | Debit | Kredit | Komponen |
+|---|---|---|---|
+| `LoanRecoveryPrincipal` | `201` simpanan | `409` pendapatan lain-lain | pokok |
+| `LoanRecoveryInterest` | `201` simpanan | `401` pendapatan bunga | bunga |
+| `LoanRecoveryPenalty` | `201` simpanan | `403` pendapatan denda | denda |
+
+Batas kumulatif per komponen: `Σ lending.recovery` tidak boleh melebihi nilai di
+`lending.writeoff`. Permintaan berlebih ditolak `409 recovery_exceeds_written_off` (tidak dipotong
+diam-diam), permintaan tanpa komponen positif ditolak `400`.
+
+- `lending.recovery` menyimpan satu baris per penerimaan (bisa bertahap) + rekening sumber + alasan.
+- Baris rekening koran memakai `tx_type = LOAN_RECOVERY` (migrasi contract `deposit/0100`).
+- **NEEDS-COMPLIANCE-REVIEW** — akun `409` adalah usulan struktur pilot (REG-011 `V!`);
+  **HUMAN-REVIEW-REQUIRED** (AGENTS.md §8).
+- UI aksi pemulihan menyusul di **T-177** (endpoint ini sudah dipakai lewat API).
 
 ## Event
 

@@ -1083,6 +1083,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lending/loans/{loanId}/recovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Catat pemulihan (uang masuk) setelah pinjaman dihapusbukukan
+         * @description Pinjaman `WRITTEN_OFF` tidak punya piutang di neraca, jadi pemulihan **bukan** pelunasan:
+         *     saldo rekening anggota berkurang (`D 201`) dan lawannya pendapatan, satu jurnal per
+         *     komponen yang bukan nol:
+         *
+         *     - `LoanRecoveryPrincipal` — `D 201` / `K 409` (pendapatan lain-lain)
+         *     - `LoanRecoveryInterest` — `D 201` / `K 401` (pendapatan bunga)
+         *     - `LoanRecoveryPenalty` — `D 201` / `K 403` (pendapatan denda)
+         *
+         *     Batas: total kumulatif per komponen tidak boleh melebihi nilai yang dihapusbukukan
+         *     (`lending.writeoff`). Permintaan berlebih ditolak 409, bukan dipotong diam-diam.
+         *
+         *     **Akun `409` bertanda NEEDS-COMPLIANCE-REVIEW** (D-191); **HUMAN-REVIEW-REQUIRED**
+         *     (AGENTS.md §8). `Idempotency-Key` wajib.
+         */
+        post: operations["recoverLoan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/lending/reports/arrears": {
         parameters: {
             query?: never;
@@ -2089,6 +2121,36 @@ export interface components {
             supersededInstallments: number;
             /** Format: date */
             businessDate: string;
+        };
+        LoanRecoveryRequest: {
+            /**
+             * Format: uuid
+             * @description Rekening simpanan sumber dana; harus milik anggota dan di cabang pinjaman.
+             */
+            accountId: string;
+            /** @description Bagian pokok yang dipulihkan. Kosong = `0.00`. */
+            principal?: string;
+            /** @description Bagian bunga yang dipulihkan. Kosong = `0.00`. */
+            interest?: string;
+            /** @description Bagian denda yang dipulihkan. Kosong = `0.00`. */
+            penalty?: string;
+            reason: string;
+        };
+        LoanRecoveryResult: {
+            /** Format: uuid */
+            loanId: string;
+            /** @enum {string} */
+            status: "WRITTEN_OFF";
+            /** Format: uuid */
+            recoveryId: string;
+            principal: string;
+            interest: string;
+            penalty: string;
+            total: string;
+            journalIds: string[];
+            /** Format: date */
+            businessDate: string;
+            reason: string;
         };
         LoanWriteOffRequest: {
             reason: string;
@@ -5487,6 +5549,62 @@ export interface operations {
             /**
              * @description Ditolak keadaan sekarang (`params.reason`): `not_loss`, `already_written_off`,
              *     `not_disbursed`, `loan_inactive`, `nothing_to_write_off`.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            415: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    recoverLoan: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Kunci idempotensi per pemanggil (D-098). Wajib pada endpoint pembuat objek: kirim ulang
+                 *     dengan kunci yang sama untuk mengulang permintaan tanpa membuat objek ganda. Replay
+                 *     dijawab 200 + header `Idempotent-Replayed: true`; kunci sama dengan isi berbeda → 409.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                loanId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoanRecoveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Pemulihan tercatat; jurnal pendapatan terbentuk. */
+            200: {
+                headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoanRecoveryResult"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            /**
+             * @description Ditolak keadaan sekarang (`params.reason`): `not_written_off`, `loan_not_found`,
+             *     `account_not_found`, `account_party_mismatch`, `account_branch_mismatch`,
+             *     `account_not_active`, `insufficient_balance`, `recovery_exceeds_written_off`.
              */
             409: {
                 headers: {

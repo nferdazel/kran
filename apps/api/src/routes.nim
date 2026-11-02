@@ -229,6 +229,8 @@ proc lendingRoutes*(): seq[RouteSpec] =
               operationId: "restructureLoan", handler: handleRestructureLoan),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/lending/loans/{loanId}/write-off",
               operationId: "writeOffLoan", handler: handleWriteOffLoan),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/lending/loans/{loanId}/recovery",
+              operationId: "recoverLoan", handler: handleRecoverLoan),
     RouteSpec(httpMethod: hmGet, path: "/api/v1/lending/reports/arrears",
               operationId: "loanArrearsReport", handler: handleArrearsReport),
     RouteSpec(httpMethod: hmGet, path: "/api/v1/lending/reports/allowance",

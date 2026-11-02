@@ -54,6 +54,9 @@ type
     ## Pembayaran angsuran pinjaman dari rekening simpanan (T-165, D-183). Bukan penarikan tunai:
     ## yang berpindah adalah kewajiban simpanan ke piutang + pendapatan, tanpa kas keluar laci.
     ttLoanPayment = "LOAN_PAYMENT"
+    ## Pemulihan pasca hapus buku (O-122, T-176): saldo rekening berkurang, lawannya pendapatan
+    ## (409/401/403) — bukan piutang, karena pinjaman sudah dibebankan. Bukan transaksi tunai.
+    ttLoanRecovery = "LOAN_RECOVERY"
 
   Transaction* = object
     transactionId*: Id
@@ -95,7 +98,7 @@ proc cashDirectionOf*(t: TransactionType): CashDirection =
   of ttCashDeposit: cdDeposit
   of ttCashWithdrawal: cdWithdrawal
   of ttMaturityOut, ttMaturityIn, ttInterestCredit, ttInterestPaidEarly, ttPenaltyCharge,
-     ttLoanDisbursement, ttLoanPayment:
+     ttLoanDisbursement, ttLoanPayment, ttLoanRecovery:
     raise newException(ValueError,
       "jenis transaksi " & $t & " bukan transaksi tunai (tidak punya arah kas)")
 
@@ -109,7 +112,7 @@ proc statementDirectionOf*(t: TransactionType): string =
   ## karena itu arah statement tidak boleh diturunkan dari `cashDirectionOf`.
   case t
   of ttCashDeposit, ttMaturityIn, ttInterestCredit, ttInterestPaidEarly, ttLoanDisbursement: "IN"
-  of ttCashWithdrawal, ttMaturityOut, ttPenaltyCharge, ttLoanPayment: "OUT"
+  of ttCashWithdrawal, ttMaturityOut, ttPenaltyCharge, ttLoanPayment, ttLoanRecovery: "OUT"
 
 proc statementKindOf*(t: TransactionType): string =
   ## `kind` baris rekening koran: `CASH` hanya untuk transaksi tunai teller, `EARLY_WITHDRAWAL`
@@ -117,7 +120,7 @@ proc statementKindOf*(t: TransactionType): string =
   ## domain supaya composition root tidak menebak dari biner "tunai atau bukan" (T-148).
   if isCashTransaction(t): "CASH"
   elif t in {ttInterestPaidEarly, ttPenaltyCharge}: "EARLY_WITHDRAWAL"
-  elif t in {ttLoanDisbursement, ttLoanPayment}: "LOAN"
+  elif t in {ttLoanDisbursement, ttLoanPayment, ttLoanRecovery}: "LOAN"
   else: "MATURITY"
 
 proc sourceEventOf*(d: CashDirection): string =
