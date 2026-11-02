@@ -4170,3 +4170,20 @@ Benchmark: `bench-eod` menerima `--loans N`. 100k rekening + 50k pinjaman = **24
 
 **Bukti**: `itdaycloser_sim` 6/6, `itdaycloser_lending` 15/15, `itapi_lending` 40/40,
 `docs/milestones/M4-report.md`. Gate penuh **hijau** (1565 `[OK]`, 0 `[FAILED]`; e2e 65 test).
+
+## 2 Nov 2026 — T-175, T-176, T-177 (pengerasan aksi pinjaman + pemulihan pasca hapus buku)
+
+- **T-175** kunci idempotensi UI disimpan per sidik isian (memuat `loanId`), Esc saat `busy` diuji
+  dengan route ditahan, pesan `account_not_found` netral. `./task e2e` 74 lulus.
+- **T-176** `POST /api/v1/lending/loans/{id}/recovery`: pendapatan per komponen (`409`/`401`/`403`),
+  `D 201`, batas kumulatif dari `lending.writeoff`, subledger `LOAN_RECOVERY`, audit + outbox,
+  idempoten. Migrasi `ledger/0097`, `lending/0098`, `platform/0099`, contract `deposit/0100`.
+  Review: putaran 1 menemukan BLOCKER (kunci jurnal per `loanId` menabrak UNIQUE pada pemulihan
+  bertahap) + MAJOR (tanda rekonsiliasi `LOAN_RECOVERY`), keduanya diperbaiki; putaran 2 APPROVE.
+- **T-177** aksi pemulihan di UI: panel tiga komponen + rekening + alasan, total via `addMoney`,
+  pratinjau native, axe 2 tema × 2 locale, e2e kirim + tolak nol. `./task e2e` 76 lulus.
+- **D-192** (T-174): `lending_maker` tidak diberi `deposit.account.read`; UI menjelaskan perlunya
+  akses teller/admin, prasyarat operasional dicatat di O-125.
+- **D-193** (O-121): CKPN tetap di akun `111`, akun kontra tidak dimodelkan.
+- **O-124**: ditunda sampai remote `rclone offsite:` tersedia (langkah konkret dicatat).
+- **O-119**: `docs/ci-jobs.md` mencatat bahwa nama job = kontrak `CI_EXPECTED` di `deploy-vps.sh`.

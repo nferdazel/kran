@@ -67,6 +67,7 @@ type Text = {
   recoveryReason: string;
   dialogRecoveryTitle: string;
   recoveredNotice: string;
+  recoveryEmpty: string;
 };
 
 const T: Record<Locale, Text> = {
@@ -102,6 +103,7 @@ const T: Record<Locale, Text> = {
     recoveryReason: "Anggota membayar setelah hapus buku",
     dialogRecoveryTitle: "Konfirmasi pemulihan",
     recoveredNotice: "Pemulihan tercatat",
+    recoveryEmpty: "Isi minimal satu komponen pemulihan dengan nominal lebih dari nol.",
   },
   en: {
     detailTitle: "Loan detail",
@@ -135,6 +137,7 @@ const T: Record<Locale, Text> = {
     recoveryReason: "Member paid after write-off",
     dialogRecoveryTitle: "Confirm recovery",
     recoveredNotice: "Recovery recorded",
+    recoveryEmpty: "Fill at least one recovery component with an amount greater than zero.",
   },
 };
 
@@ -765,31 +768,60 @@ test.describe("pinjaman: aksi tulis", () => {
       });
     });
 
+    // Panel baru wajib lolos axe di 2 tema × 2 locale (AGENTS §1.5), bukan hanya satu kombinasi.
+    const combos: Array<[Locale, string]> = [
+      ["id", "light"],
+      ["id", "dark"],
+      ["en", "light"],
+      ["en", "dark"],
+    ];
+    for (const [locale, theme] of combos) {
+      await prepare(page, locale, theme);
+      await page.goto(`/app/loans/${fixture.loanId}`);
+      await expect(
+        page.getByRole("heading", { level: 1, name: T[locale].detailTitle }),
+      ).toBeVisible();
+      await page.getByRole("button", { name: T[locale].recovery, exact: true }).click();
+      await expect(page.getByText(T[locale].recoveryHint, { exact: false })).toBeVisible();
+      await page.getByLabel(T[locale].account).selectOption(fixture.accountId);
+      await page.getByLabel(T[locale].recoveryPrincipal, { exact: true }).fill("100000");
+      await page.getByLabel(T[locale].recoveryInterest, { exact: true }).fill("25000");
+      await page.getByLabel(T[locale].reason).fill(T[locale].recoveryReason);
+
+      const panelAxe = await new AxeBuilder({ page }).include("#loans-action-form").analyze();
+      expect(blockingViolations(panelAxe.violations), `panel ${locale}/${theme}`).toEqual([]);
+
+      await page.getByRole("button", { name: T[locale].review, exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible();
+      await expect(
+        page.getByRole("heading", { level: 2, name: T[locale].dialogRecoveryTitle }),
+      ).toBeVisible();
+      // Total dijumlahkan dari string (bukan float) dan ditampilkan sebelum dikirim.
+      await expect(dialog.getByText(T[locale].recoveryTotal)).toBeVisible();
+
+      const dialogAxe = await new AxeBuilder({ page }).include("dialog").analyze();
+      const blocking = blockingViolations(dialogAxe.violations);
+      expect(
+        blocking,
+        `dialog pemulihan ${locale}/${theme}: ${blocking.map((violation) => violation.id).join(", ")}`,
+      ).toEqual([]);
+
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+    }
+
+    // Kirim sekali (kombinasi terakhir: en/dark) untuk membuktikan body yang dikirim.
+    await prepare(page, "id", "light");
     await page.goto(`/app/loans/${fixture.loanId}`);
     await expect(page.getByRole("heading", { level: 1, name: T.id.detailTitle })).toBeVisible();
     await page.getByRole("button", { name: T.id.recovery, exact: true }).click();
-    await expect(page.getByText(T.id.recoveryHint, { exact: false })).toBeVisible();
-
     await page.getByLabel(T.id.account).selectOption(fixture.accountId);
     await page.getByLabel(T.id.recoveryPrincipal, { exact: true }).fill("100000");
     await page.getByLabel(T.id.recoveryInterest, { exact: true }).fill("25000");
     await page.getByLabel(T.id.reason).fill(T.id.recoveryReason);
     await page.getByRole("button", { name: T.id.review, exact: true }).click();
-
-    const dialog = page.getByRole("dialog");
-    await expect(dialog).toBeVisible();
-    await expect(
-      page.getByRole("heading", { level: 2, name: T.id.dialogRecoveryTitle }),
-    ).toBeVisible();
-    // Total dijumlahkan dari string (bukan float) dan ditampilkan sebelum dikirim.
-    await expect(dialog.getByText(T.id.recoveryTotal)).toBeVisible();
-
-    const results = await new AxeBuilder({ page }).include("dialog").analyze();
-    const blocking = blockingViolations(results.violations);
-    expect(
-      blocking,
-      `dialog pemulihan: ${blocking.map((violation) => violation.id).join(", ")}`,
-    ).toEqual([]);
+    await expect(page.getByRole("dialog")).toBeVisible();
 
     await page.getByRole("button", { name: T.id.send, exact: true }).click();
     await expect(page.getByText(T.id.recoveredNotice, { exact: false })).toBeVisible();
@@ -843,7 +875,9 @@ test.describe("pinjaman: aksi tulis", () => {
     await page.getByLabel(T.id.reason).fill(T.id.recoveryReason);
     await page.getByRole("button", { name: T.id.review, exact: true }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    await expect(page.getByRole("alert")).toBeVisible();
+    // Pesan spesifik (bukan alert apa pun) dan fokus pindah ke komponen pokok.
+    await expect(page.getByText(T.id.recoveryEmpty)).toBeVisible();
+    await expect(page.getByLabel(T.id.recoveryPrincipal, { exact: true })).toBeFocused();
   });
 
   test("axe: detail pinjaman dengan panel aksi × 2 tema × 2 locale", async ({ page, request }) => {

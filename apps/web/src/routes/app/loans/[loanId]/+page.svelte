@@ -152,7 +152,8 @@
     if (value.kind === "recovery") {
       const recovery = value.recovery;
       if (recovery === null) return "";
-      return `${loanId}|recovery|${recovery.principal}|${recovery.interest}|${recovery.penalty}`;
+      const accountId = value.account?.accountId ?? "";
+      return `${loanId}|recovery|${accountId}|${recovery.principal}|${recovery.interest}|${recovery.penalty}|${value.reason}`;
     }
     return `${loanId}|write-off|${value.reason}`;
   }
@@ -168,6 +169,8 @@
       [recoveryError.principal, "loans-action-recovery-principal"],
       [recoveryError.interest, "loans-action-recovery-interest"],
       [recoveryError.penalty, "loans-action-recovery-penalty"],
+      // Galat "total" tidak punya field sendiri; fokus ke komponen pertama.
+      [recoveryError.total, "loans-action-recovery-principal"],
       [tenorError, "loans-action-tenor"],
       [reasonError, "loans-action-reason"],
     ];
@@ -375,7 +378,10 @@
     reasonError = "";
     if (loan === null) return false;
 
-    if ((kind === "disburse" || kind === "payment") && selectedAccount === null) {
+    if (
+      (kind === "disburse" || kind === "payment" || kind === "recovery") &&
+      selectedAccount === null
+    ) {
       accountError = m.loans_error_account_required();
       return false;
     }
@@ -846,7 +852,10 @@
                     inputmode="decimal"
                     autocomplete="off"
                     bind:value={recoveryRaw[field.key as "principal" | "interest" | "penalty"]}
-                    oninput={() => (recoveryError[field.key as "principal" | "interest" | "penalty"] = "")}
+                    oninput={() => {
+                      recoveryError[field.key as "principal" | "interest" | "penalty"] = "";
+                      recoveryError.total = "";
+                    }}
                   />
                 {/snippet}
               </Field>
