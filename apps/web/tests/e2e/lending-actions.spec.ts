@@ -58,6 +58,15 @@ type Text = {
   restructuredNotice: string;
   writtenOffNotice: string;
   insufficientBalance: string;
+  recovery: string;
+  recoveryPrincipal: string;
+  recoveryInterest: string;
+  recoveryPenalty: string;
+  recoveryTotal: string;
+  recoveryHint: string;
+  recoveryReason: string;
+  dialogRecoveryTitle: string;
+  recoveredNotice: string;
 };
 
 const T: Record<Locale, Text> = {
@@ -84,6 +93,15 @@ const T: Record<Locale, Text> = {
     restructuredNotice: "Restrukturisasi tercatat",
     writtenOffNotice: "Hapus buku tercatat",
     insufficientBalance: "Saldo rekening sumber tidak cukup.",
+    recovery: "Pemulihan",
+    recoveryPrincipal: "Pokok",
+    recoveryInterest: "Bunga",
+    recoveryPenalty: "Denda",
+    recoveryTotal: "Total pemulihan",
+    recoveryHint: "Isi minimal satu komponen",
+    recoveryReason: "Anggota membayar setelah hapus buku",
+    dialogRecoveryTitle: "Konfirmasi pemulihan",
+    recoveredNotice: "Pemulihan tercatat",
   },
   en: {
     detailTitle: "Loan detail",
@@ -108,6 +126,15 @@ const T: Record<Locale, Text> = {
     restructuredNotice: "Restructure recorded",
     writtenOffNotice: "Write-off recorded",
     insufficientBalance: "The source account balance is not enough.",
+    recovery: "Recovery",
+    recoveryPrincipal: "Principal",
+    recoveryInterest: "Interest",
+    recoveryPenalty: "Penalty",
+    recoveryTotal: "Recovery total",
+    recoveryHint: "Fill at least one component",
+    recoveryReason: "Member paid after write-off",
+    dialogRecoveryTitle: "Confirm recovery",
+    recoveredNotice: "Recovery recorded",
   },
 };
 
@@ -676,6 +703,147 @@ test.describe("pinjaman: aksi tulis", () => {
     await page.getByRole("button", { name: T.id.send, exact: true }).click();
     await expect.poll(() => keys.length).toBe(3);
     expect(keys[2], "kunci isian lama bertahan setelah isian lain dicoba").toBe(keys[0]);
+  });
+
+  test("pemulihan pasca hapus buku: tiga komponen, total dihitung, satu permintaan", async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(180_000);
+    const fixture = await createLoanFixture(request, { disburse: true });
+    await browserLogin(page, await apiLogin(request, CONSOLE));
+    await prepare(page, "id", "light");
+
+    // Pinjaman `WRITTEN_OFF` tidak bisa dibuat lewat API tanpa golongan LOSS + penyisihan, jadi
+    // detail-nya distub. Yang diuji: UI mengirim tiga komponen apa adanya + kunci idempotensi.
+    await page.route(/\/api\/v1\/lending\/loans\/[^/]+$/, async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          loanId: fixture.loanId,
+          partyId: fixture.partyId,
+          branchId: BRANCH,
+          productVersionId: "00000000-0000-4000-8000-0000000000bb",
+          status: "WRITTEN_OFF",
+          principal: "1000000.00",
+          disbursedOn: "2026-01-01",
+          maturityOn: "2026-12-01",
+          collectibility: "LOSS",
+          principalOutstanding: "0.00",
+          interestOverdue: "0.00",
+          penaltyOutstanding: "0.00",
+          scheduleVersions: [],
+        }),
+      });
+    });
+
+    const bodies: unknown[] = [];
+    const keys: string[] = [];
+    await page.route("**/api/v1/lending/loans/*/recovery", async (route) => {
+      bodies.push(route.request().postDataJSON());
+      keys.push(route.request().headers()["idempotency-key"] ?? "");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          loanId: fixture.loanId,
+          status: "WRITTEN_OFF",
+          recoveryId: "00000000-0000-4000-8000-0000000000cc",
+          principal: "100000.00",
+          interest: "25000.00",
+          penalty: "0.00",
+          total: "125000.00",
+          journalIds: ["00000000-0000-4000-8000-0000000000dd"],
+          businessDate: todayIso(),
+          reason: T.id.recoveryReason,
+        }),
+      });
+    });
+
+    await page.goto(`/app/loans/${fixture.loanId}`);
+    await expect(page.getByRole("heading", { level: 1, name: T.id.detailTitle })).toBeVisible();
+    await page.getByRole("button", { name: T.id.recovery, exact: true }).click();
+    await expect(page.getByText(T.id.recoveryHint, { exact: false })).toBeVisible();
+
+    await page.getByLabel(T.id.account).selectOption(fixture.accountId);
+    await page.getByLabel(T.id.recoveryPrincipal, { exact: true }).fill("100000");
+    await page.getByLabel(T.id.recoveryInterest, { exact: true }).fill("25000");
+    await page.getByLabel(T.id.reason).fill(T.id.recoveryReason);
+    await page.getByRole("button", { name: T.id.review, exact: true }).click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 2, name: T.id.dialogRecoveryTitle }),
+    ).toBeVisible();
+    // Total dijumlahkan dari string (bukan float) dan ditampilkan sebelum dikirim.
+    await expect(dialog.getByText(T.id.recoveryTotal)).toBeVisible();
+
+    const results = await new AxeBuilder({ page }).include("dialog").analyze();
+    const blocking = blockingViolations(results.violations);
+    expect(
+      blocking,
+      `dialog pemulihan: ${blocking.map((violation) => violation.id).join(", ")}`,
+    ).toEqual([]);
+
+    await page.getByRole("button", { name: T.id.send, exact: true }).click();
+    await expect(page.getByText(T.id.recoveredNotice, { exact: false })).toBeVisible();
+    expect(bodies, "satu permintaan pemulihan").toHaveLength(1);
+    expect(bodies[0]).toEqual({
+      accountId: fixture.accountId,
+      principal: "100000.00",
+      interest: "25000.00",
+      penalty: "0.00",
+      reason: T.id.recoveryReason,
+    });
+    expect(keys[0]).not.toBe("");
+  });
+
+  test("pemulihan: tanpa komponen positif, pratinjau tidak dibuka", async ({ page, request }) => {
+    test.setTimeout(180_000);
+    const fixture = await createLoanFixture(request, { disburse: true });
+    await browserLogin(page, await apiLogin(request, CONSOLE));
+    await prepare(page, "id", "light");
+
+    await page.route(/\/api\/v1\/lending\/loans\/[^/]+$/, async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          loanId: fixture.loanId,
+          partyId: fixture.partyId,
+          branchId: BRANCH,
+          productVersionId: "00000000-0000-4000-8000-0000000000bb",
+          status: "WRITTEN_OFF",
+          principal: "1000000.00",
+          disbursedOn: "2026-01-01",
+          maturityOn: "2026-12-01",
+          collectibility: "LOSS",
+          principalOutstanding: "0.00",
+          interestOverdue: "0.00",
+          penaltyOutstanding: "0.00",
+          scheduleVersions: [],
+        }),
+      });
+    });
+
+    await page.goto(`/app/loans/${fixture.loanId}`);
+    await expect(page.getByRole("heading", { level: 1, name: T.id.detailTitle })).toBeVisible();
+    await page.getByRole("button", { name: T.id.recovery, exact: true }).click();
+    await page.getByLabel(T.id.account).selectOption(fixture.accountId);
+    await page.getByLabel(T.id.reason).fill(T.id.recoveryReason);
+    await page.getByRole("button", { name: T.id.review, exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("alert")).toBeVisible();
   });
 
   test("axe: detail pinjaman dengan panel aksi × 2 tema × 2 locale", async ({ page, request }) => {

@@ -282,7 +282,10 @@ diam-diam), permintaan tanpa komponen positif ditolak `400`.
 - Baris rekening koran memakai `tx_type = LOAN_RECOVERY` (migrasi contract `deposit/0100`).
 - **NEEDS-COMPLIANCE-REVIEW** — akun `409` adalah usulan struktur pilot (REG-011 `V!`);
   **HUMAN-REVIEW-REQUIRED** (AGENTS.md §8).
-- UI aksi pemulihan menyusul di **T-177** (endpoint ini sudah dipakai lewat API).
+- Aksi pemulihan ada di UI detail pinjaman (T-177): panel tiga komponen + rekening sumber +
+  alasan, pratinjau dengan total dari `addMoney`, dialog native dengan axe 2 tema × 2 locale.
+- **Prasyarat operasional (D-192):** `lending_maker` tidak memegang `deposit.account.read`, jadi
+  aksi yang butuh rekening dipakai operator yang juga memegang `teller`/`platform_admin`.
 
 ## Event
 

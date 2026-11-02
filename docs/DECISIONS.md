@@ -5055,3 +5055,37 @@ standar (REG-011 `V!`); alternatif yang sah adalah mengkredit `504` (pengembalia
 **HUMAN-REVIEW-REQUIRED** (AGENTS §8) — perubahan akun di sini langsung mengubah laba rugi.
 Pinjaman tetap `WRITTEN_OFF` (tidak dibuka kembali); pelunasan penuh hanya mengubah sisa batas
 pemulihan menjadi nol. UI aksi menyusul di T-177.
+
+## D-192 — `lending_maker` tidak diberi akses baca rekening simpanan (T-174, 2 Nov 2026)
+
+**Konteks.** Aksi tulis pinjaman butuh rekening sumber (pencairan, angsuran, pemulihan). Daftar
+rekening diambil dari `GET /api/v1/deposit/accounts?partyId=` yang dijaga `deposit.account.read`.
+Peran `lending_maker` tidak memegang izin itu, sehingga tombol aksi untuk peran tersebut berakhir
+di panel rekening kosong tanpa penjelasan.
+
+**Keputusan.** **Tidak** menambah grant `deposit.account.read` ke `lending_maker`. Memberi izin itu
+berarti setiap pembuat akad bisa melihat saldo seluruh anggota — perluasan visibilitas data yang
+tidak dibutuhkan untuk pekerjaannya (API-4, D-062). Sebagai gantinya:
+
+1. UI membedakan penolakan izin dari kegagalan teknis: 403 pada daftar rekening menghasilkan pesan
+   `loans_accounts_forbidden` ("minta akses teller atau admin"), bukan "gagal memuat".
+2. Tombol "Tinjau" tetap nonaktif selama daftar rekening belum siap, jadi tidak ada jalan buntu.
+
+**Konsekuensi.** Operator yang harus mencairkan/menerima angsuran memegang role `teller` (atau
+`platform_admin`) **selain** `lending_maker`. Ini dicatat di `modules/lending/MODULE.md` dan di
+`docs/OPEN_ITEMS.md` (O-125) sebagai prasyarat operasional, bukan sebagai izin baru.
+
+## D-193 — CKPN tetap di akun `111`, akun kontra tidak dimodelkan (O-121, 2 Nov 2026)
+
+**Konteks.** `coa_normal_side_chk` memaksa `ASSET → DEBIT`, sehingga penyisihan kerugian piutang
+tidak bisa dicatat sebagai akun kontra bersaldo kredit. Saat ini CKPN memakai akun aset `111` yang
+dikredit saat dibentuk (D-185) — secara akuntansi ini bukan presentasi "akun kontra", tetapi saldo
+dan jurnalnya konsisten.
+
+**Keputusan.** **Tetap** memakai `111`. Constraint COA tidak dilonggarkan dan tidak ada jenis akun
+kontra baru. Alasannya: melonggarkan constraint inti COA menyentuh seluruh laporan neraca dan
+validasi akun, sedangkan manfaatnya hanya presentasi; risikonya tidak sebanding untuk pilot.
+
+**Konsekuensi.** Laporan yang butuh penyajian "piutang bruto − CKPN" harus menghitungnya dari saldo
+`110` dan `111` (sudah tersedia di `ledger`), bukan dari akun kontra. Bila kelak ada kebutuhan
+pelaporan regulator yang mewajibkan akun kontra, itu menjadi ADR baru + migrasi constraint.

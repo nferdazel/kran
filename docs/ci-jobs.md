@@ -147,3 +147,17 @@ dijadwalkan Senin 03:17 UTC dan bisa dijalankan manual (`gh workflow run "Secret
 Timeout tetap `timeout-minutes: 15`. Kalau hasilnya merah, jangan longgarkan `.gitleaks.toml`:
 ganti nilainya, dan bila sudah terlanjur masuk riwayat, putuskan scrub bersama pemilik (riwayat
 tidak bisa dibereskan dengan menghapus berkas).
+
+## Nama job = kontrak dengan gerbang deploy (O-119, 2 Nov 2026)
+
+`ops/scripts/deploy-vps.sh` mencocokkan **nama check-run** dengan daftar `CI_EXPECTED` sebelum
+membangun apa pun; nama yang berubah tanpa memperbarui daftar itu membuat deploy menunggu 30 menit
+lalu menolak. Aturannya:
+
+- Nama job di `ci.yml` (`Nim (check + unit/property test)`, `DB (integrasi, Postgres 18)`,
+  `Web (svelte-check + axe + Playwright)`, `Security (gitleaks)`) hanya boleh berubah **bersamaan**
+  dengan `CI_EXPECTED` di `deploy-vps.sh`, dalam satu commit.
+- Job baru tidak otomatis menjadi gerbang: masukkan ke `CI_EXPECTED` bila memang wajib hijau,
+  atau biarkan di luar daftar bila sifatnya informatif (`secret-scan.yml` mingguan, `visual-baseline.yml`).
+- `workflow_dispatch` pada `ci.yml` menjalankan job yang sama, jadi nama check-run-nya identik dan
+  tetap memenuhi gerbang.

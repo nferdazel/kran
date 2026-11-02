@@ -44,13 +44,16 @@
     loanDisburse,
     loanPay,
     loanProblemMessage,
+    loanRecover,
     loanRestructure,
     loanStatusLabel,
     loanWriteOff,
     paymentAmountPreview,
     validateLoanReason,
     validatePaymentAmount,
+    validateRecovery,
     validateTenor,
+    type RecoveryComponents,
     type LoanAction,
   } from "#lib/app/loans.js";
   import { newIdempotencyKey } from "#lib/app/teller.js";
@@ -64,9 +67,10 @@
   const canPay = $derived(session.permissions.includes("lending.loan.pay"));
   const canRestructure = $derived(session.permissions.includes("lending.loan.restructure"));
   const canWriteOff = $derived(session.permissions.includes("lending.loan.write_off"));
-  const canWrite = $derived(canDisburse || canPay || canRestructure || canWriteOff);
-  /** Hanya dua aksi ini yang butuh rekening; aksi lain tidak memuat daftar rekening. */
-  const needsAccounts = $derived(canDisburse || canPay);
+  const canRecover = $derived(session.permissions.includes("lending.loan.recovery"));
+  const canWrite = $derived(canDisburse || canPay || canRestructure || canWriteOff || canRecover);
+  /** Aksi yang memilih rekening sumber; sisanya tidak memuat daftar rekening. */
+  const needsAccounts = $derived(canDisburse || canPay || canRecover);
 
   let loan = $state<LoanDetail | null>(null);
   let loading = $state(true);
@@ -80,10 +84,14 @@
   let panelAction = $state<LoanAction | null>(null);
   let selectedAccountId = $state("");
   let amountRaw = $state("");
+  let recoveryRaw = $state<RecoveryComponents>({ principal: "", interest: "", penalty: "" });
   let tenorRaw = $state("");
   let reasonRaw = $state("");
   let accountError = $state("");
   let amountError = $state("");
+  let recoveryError = $state<{ principal: string; interest: string; penalty: string; total: string }>(
+    { principal: "", interest: "", penalty: "", total: "" },
+  );
   let tenorError = $state("");
   let reasonError = $state("");
 
@@ -95,6 +103,9 @@
     amount: string;
     tenorMonths: number;
     reason: string;
+    /** Komponen pemulihan (`""` bila aksi bukan pemulihan). */
+    recovery: RecoveryComponents | null;
+    recoveryTotal: string;
   }
 
   let pending = $state<PendingAction | null>(null);
@@ -124,7 +135,11 @@
    */
   function actionFingerprint(value: PendingAction): string {
     const loanId = params.loanId;
-    if (value.account === null && value.kind !== "restructure" && value.kind !== "write-off") {
+    if (
+      value.account === null &&
+      value.kind !== "restructure" &&
+      value.kind !== "write-off"
+    ) {
       return "";
     }
     if (value.kind === "disburse") return `${loanId}|disburse|${value.account?.accountId ?? ""}`;
@@ -133,6 +148,11 @@
     }
     if (value.kind === "restructure") {
       return `${loanId}|restructure|${value.tenorMonths}|${value.reason}`;
+    }
+    if (value.kind === "recovery") {
+      const recovery = value.recovery;
+      if (recovery === null) return "";
+      return `${loanId}|recovery|${recovery.principal}|${recovery.interest}|${recovery.penalty}`;
     }
     return `${loanId}|write-off|${value.reason}`;
   }
@@ -145,6 +165,9 @@
     const entries: Array<[string, string]> = [
       [accountError, "loans-action-account"],
       [amountError, "loans-action-amount"],
+      [recoveryError.principal, "loans-action-recovery-principal"],
+      [recoveryError.interest, "loans-action-recovery-interest"],
+      [recoveryError.penalty, "loans-action-recovery-penalty"],
       [tenorError, "loans-action-tenor"],
       [reasonError, "loans-action-reason"],
     ];
@@ -191,9 +214,14 @@
       const { data: body, error, response } = await loadPartyAccounts(partyId);
       if (!response.ok || !body) {
         accounts = [];
-        accountsError = api.isProblem(error)
-          ? loanActionProblemMessage(error)
-          : m.loans_accounts_error();
+        // T-174: `lending_maker` tidak memegang `deposit.account.read`. Pesan generik membuat
+        // operator mengira sistemnya rusak, padahal yang kurang izin baca rekening.
+        accountsError =
+          response.status === 403
+            ? m.loans_accounts_forbidden()
+            : api.isProblem(error)
+              ? loanActionProblemMessage(error)
+              : m.loans_accounts_error();
         return;
       }
       accounts = body.items;
@@ -281,6 +309,9 @@
     if (canWriteOff && status === "ACTIVE") {
       items.push({ kind: "write-off", label: m.loans_action_write_off() });
     }
+    if (canRecover && status === "WRITTEN_OFF") {
+      items.push({ kind: "recovery", label: m.loans_action_recovery() });
+    }
     return items;
   });
 
@@ -292,7 +323,7 @@
   );
   /** Aksi berlaci rekening tidak bisa ditinjau selama daftar rekening belum siap/kosong. */
   const accountStepBlocked = $derived(
-    (panel === "disburse" || panel === "payment") &&
+    (panel === "disburse" || panel === "payment" || panel === "recovery") &&
       (accountsLoading || accountsError !== "" || activeAccounts.length === 0),
   );
 
@@ -301,6 +332,7 @@
     panelAction = panelAction === kind ? null : kind;
     accountError = "";
     amountError = "";
+    recoveryError = { principal: "", interest: "", penalty: "", total: "" };
     tenorError = "";
     reasonError = "";
     actionError = "";
@@ -310,6 +342,7 @@
     if (kind === "disburse") return m.loans_confirm_disburse_title();
     if (kind === "payment") return m.loans_confirm_payment_title();
     if (kind === "restructure") return m.loans_confirm_restructure_title();
+    if (kind === "recovery") return m.loans_confirm_recovery_title();
     return m.loans_confirm_write_off_title();
   }
 
@@ -325,6 +358,7 @@
         count: value.tenorMonths,
       });
     }
+    if (value.kind === "recovery") return m.loans_confirm_consequence_recovery();
     return m.loans_confirm_consequence_write_off({ status: loanStatusLabel("WRITTEN_OFF") });
   }
 
@@ -336,6 +370,7 @@
   function buildPending(kind: LoanAction): boolean {
     accountError = "";
     amountError = "";
+    recoveryError = { principal: "", interest: "", penalty: "", total: "" };
     tenorError = "";
     reasonError = "";
     if (loan === null) return false;
@@ -367,8 +402,21 @@
       tenorMonths = check.tenorMonths;
     }
 
+    let recovery: RecoveryComponents | null = null;
+    let recoveryTotal = "";
+    if (kind === "recovery") {
+      const check = validateRecovery(recoveryRaw);
+      if (!check.ok) {
+        if (check.field === "total") recoveryError.total = check.message;
+        else recoveryError[check.field] = check.message;
+        return false;
+      }
+      recovery = check.components;
+      recoveryTotal = check.total;
+    }
+
     let reason = "";
-    if (kind === "restructure" || kind === "write-off") {
+    if (kind === "restructure" || kind === "write-off" || kind === "recovery") {
       const check = validateLoanReason(reasonRaw);
       if (!check.ok) {
         reasonError = check.message;
@@ -383,6 +431,8 @@
       amount,
       tenorMonths,
       reason,
+      recovery,
+      recoveryTotal,
     };
     return true;
   }
@@ -562,6 +612,31 @@
         );
         return;
       }
+      if (value.kind === "recovery") {
+        const account = value.account;
+        const recovery = value.recovery;
+        if (account === null || recovery === null) return;
+        const { data: body, error, response } = await loanRecover(
+          params.loanId,
+          {
+            accountId: account.accountId,
+            principal: recovery.principal,
+            interest: recovery.interest,
+            penalty: recovery.penalty,
+            reason: value.reason,
+          },
+          key,
+        );
+        if (!response.ok || body === undefined) {
+          failAction(api.isProblem(error) ? error : undefined, response.status);
+          return;
+        }
+        await succeed(
+          m.loans_notice_recovered({ total: formatMoney(body.total) }),
+          body.journalIds[0] ?? "",
+        );
+        return;
+      }
       const { data: body, error, response } = await loanWriteOff(
         params.loanId,
         { reason: value.reason },
@@ -685,7 +760,7 @@
 
       {#if panel !== null}
         <div class="kran-stack" id="loans-action-form">
-          {#if panel === "disburse" || panel === "payment"}
+          {#if panel === "disburse" || panel === "payment" || panel === "recovery"}
             {#if accountsLoading}
               <p class="kran-muted" role="status">{m.loans_accounts_loading()}</p>
             {:else if accountsError !== ""}
@@ -750,6 +825,37 @@
             {/if}
           {/if}
 
+          {#if panel === "recovery"}
+            <p class="kran-muted">{m.loans_field_recovery_hint()}</p>
+            {#each [
+              { key: "principal", label: m.loans_field_recovery_principal(), id: "loans-action-recovery-principal" },
+              { key: "interest", label: m.loans_field_recovery_interest(), id: "loans-action-recovery-interest" },
+              { key: "penalty", label: m.loans_field_recovery_penalty(), id: "loans-action-recovery-penalty" },
+            ] as field (field.key)}
+              <Field
+                label={field.label}
+                id={field.id}
+                error={recoveryError[field.key as "principal" | "interest" | "penalty"]}
+              >
+                {#snippet children(control)}
+                  <input
+                    class="kran-input"
+                    id={control.id}
+                    aria-describedby={control.describedby}
+                    aria-invalid={control.invalid}
+                    inputmode="decimal"
+                    autocomplete="off"
+                    bind:value={recoveryRaw[field.key as "principal" | "interest" | "penalty"]}
+                    oninput={() => (recoveryError[field.key as "principal" | "interest" | "penalty"] = "")}
+                  />
+                {/snippet}
+              </Field>
+            {/each}
+            {#if recoveryError.total !== ""}
+              <p class="kran-field__error" role="alert">{recoveryError.total}</p>
+            {/if}
+          {/if}
+
           {#if panel === "restructure"}
             <Field
               label={m.loans_field_tenor()}
@@ -773,7 +879,7 @@
             </Field>
           {/if}
 
-          {#if panel === "restructure" || panel === "write-off"}
+          {#if panel === "restructure" || panel === "write-off" || panel === "recovery"}
             <Field
               label={m.loans_field_reason()}
               id="loans-action-reason"
@@ -880,6 +986,17 @@
         {#if pending.kind === "restructure"}
           <dt class="kran-muted">{m.loans_field_tenor()}</dt>
           <dd>{pending.tenorMonths}</dd>
+        {/if}
+
+        {#if pending.recovery !== null}
+          <dt class="kran-muted">{m.loans_field_recovery_principal()}</dt>
+          <dd><span class="kran-num">{formatMoney(pending.recovery.principal)}</span></dd>
+          <dt class="kran-muted">{m.loans_field_recovery_interest()}</dt>
+          <dd><span class="kran-num">{formatMoney(pending.recovery.interest)}</span></dd>
+          <dt class="kran-muted">{m.loans_field_recovery_penalty()}</dt>
+          <dd><span class="kran-num">{formatMoney(pending.recovery.penalty)}</span></dd>
+          <dt class="kran-muted">{m.loans_field_recovery_total()}</dt>
+          <dd><span class="kran-num">{formatMoney(pending.recoveryTotal)}</span></dd>
         {/if}
 
         {#if pending.reason !== ""}

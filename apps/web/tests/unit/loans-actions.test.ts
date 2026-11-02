@@ -18,6 +18,7 @@ import {
   loanActionProblemMessage,
   validateLoanReason,
   validatePaymentAmount,
+  validateRecovery,
   validateTenor,
 } from "#lib/app/loans.js";
 import * as m from "#lib/paraglide/messages.js";
@@ -171,5 +172,60 @@ describe("loanActionProblemMessage", () => {
 
   it("sebab tak dikenal jatuh ke pesan amplop, bukan tebakan", () => {
     expect(loanActionProblemMessage(problem(409, "reason_baru"))).toBe(m.error_conflict());
+  });
+});
+
+describe("validateRecovery", () => {
+  it("kosong semua ditolak dengan pesan total, bukan membuka pratinjau nol", () => {
+    const check = validateRecovery({ principal: "", interest: "", penalty: "" });
+    expect(check.ok).toBe(false);
+    if (!check.ok) {
+      expect(check.field).toBe("total");
+      expect(check.message).toBe(m.loans_error_recovery_empty());
+    }
+  });
+
+  it("komponen kosong berarti nol, bukan wajib diisi", () => {
+    const check = validateRecovery({ principal: "100000", interest: "", penalty: "0" });
+    expect(check.ok).toBe(true);
+    if (check.ok) {
+      expect(check.components).toEqual({
+        principal: "100000.00",
+        interest: "0.00",
+        penalty: "0.00",
+      });
+      // Dijumlahkan sebagai string desimal, bukan float.
+      expect(check.total).toBe("100000.00");
+    }
+  });
+
+  it("total menjumlahkan ketiga komponen tanpa kehilangan sen", () => {
+    const check = validateRecovery({ principal: "0.10", interest: "0.20", penalty: "0.30" });
+    expect(check.ok).toBe(true);
+    if (check.ok) expect(check.total).toBe("0.60");
+  });
+
+  it("nominal terlalu presisi ditolak pada field yang salah", () => {
+    const check = validateRecovery({ principal: "1.234", interest: "", penalty: "" });
+    expect(check.ok).toBe(false);
+    if (!check.ok) {
+      expect(check.field).toBe("principal");
+      expect(check.message).toBe(m.loans_error_amount_precision());
+    }
+  });
+
+  it("koma desimal diterima parser uang, teks lain ditolak", () => {
+    // `parseMoneyInput` menerima "12,5" sebagai 12,50 (gaya Indonesia) — itu bukan nilai sah untuk
+    // dianggap error. Teks yang bukan nominal tetap ditolak di field-nya sendiri.
+    const comma = validateRecovery({ principal: "12,5", interest: "", penalty: "" });
+    expect(comma.ok).toBe(true);
+    if (comma.ok) expect(comma.components.principal).toBe("12.50");
+
+    const garbage = validateRecovery({ principal: "dua belas", interest: "", penalty: "" });
+    expect(garbage.ok).toBe(false);
+    if (!garbage.ok) {
+      expect(garbage.field).toBe("principal");
+      expect(garbage.message).toBe(m.loans_error_amount_format());
+    }
   });
 });

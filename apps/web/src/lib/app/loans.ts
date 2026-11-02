@@ -15,14 +15,14 @@
 import type { Problem } from "@kran/api-client";
 
 import * as m from "#lib/paraglide/messages.js";
-import { parseMoneyInput } from "@kran/ui/money";
+import { addMoney, parseMoneyInput } from "@kran/ui/money";
 
 import { api } from "#lib/app/api.js";
 import { problemMessage } from "#lib/app/errors.js";
 import type { DepositAccount, LoanStatus } from "#lib/app/types.js";
 
 /** Empat aksi tulis pada layar detail pinjaman. */
-export type LoanAction = "disburse" | "payment" | "restructure" | "write-off";
+export type LoanAction = "disburse" | "payment" | "restructure" | "write-off" | "recovery";
 
 /** Batas kolom `reason` di kontrak; batas teknis, bukan aturan bisnis. */
 export const LOAN_REASON_MAX_LENGTH = 500;
@@ -122,6 +122,17 @@ export function loanWriteOff(loanId: string, body: { reason: string }, idempoten
   });
 }
 
+export function loanRecover(
+  loanId: string,
+  body: { accountId: string; principal: string; interest: string; penalty: string; reason: string },
+  idempotencyKey: string,
+) {
+  return api.POST("/api/v1/lending/loans/{loanId}/recovery", {
+    params: { path: { loanId }, header: { "Idempotency-Key": idempotencyKey } },
+    body,
+  });
+}
+
 /** Nominal terketik → desimal polos 2 desimal untuk pratinjau dan body, tanpa menyentuh float. */
 export function paymentAmountPreview(raw: string): string {
   const parsed = parseMoneyInput(raw);
@@ -167,6 +178,44 @@ export function validateLoanReason(
   return { ok: true, reason };
 }
 
+/** Komponen pemulihan pasca hapus buku; kosong berarti nol, bukan "belum diisi". */
+export type RecoveryComponents = { principal: string; interest: string; penalty: string };
+
+/**
+ * Validasi tiga komponen pemulihan. Kosong = `0.00` (komponen itu tidak dipulihkan), minimal satu
+ * komponen harus positif. Total dijumlahkan dengan `addMoney` (string + BigInt), bukan float.
+ */
+export function validateRecovery(
+  raw: RecoveryComponents,
+):
+  | { ok: true; components: RecoveryComponents; total: string }
+  | { ok: false; field: keyof RecoveryComponents | "total"; message: string } {
+  const components: RecoveryComponents = { principal: "0.00", interest: "0.00", penalty: "0.00" };
+  for (const field of ["principal", "interest", "penalty"] as const) {
+    const value = raw[field].trim();
+    if (value === "") continue;
+    const parsed = parseMoneyInput(value);
+    if (parsed.ok) {
+      components[field] = parsed.value;
+      continue;
+    }
+    // "0" eksplisit: parser menolak nol, di sini nol sah (komponen tidak dipulihkan).
+    if (parsed.error === "not_positive") continue;
+    const message =
+      parsed.error === "too_precise"
+        ? m.loans_error_amount_precision()
+        : parsed.error === "invalid_format"
+          ? m.loans_error_amount_format()
+          : m.loans_error_amount_empty();
+    return { ok: false, field, message };
+  }
+  const total = addMoney(addMoney(components.principal, components.interest), components.penalty);
+  if (!/[1-9]/.test(total)) {
+    return { ok: false, field: "total", message: m.loans_error_recovery_empty() };
+  }
+  return { ok: true, components, total };
+}
+
 const REASON_MESSAGES: Record<string, () => string> = {
   loan_not_found: () => m.loans_detail_not_found(),
   not_approved: () => m.loans_error_not_approved(),
@@ -188,6 +237,8 @@ const REASON_MESSAGES: Record<string, () => string> = {
   account_not_found: () => m.loans_error_account_not_found(),
   account_without_balance: () => m.loans_error_account_without_balance(),
   schedule_invalid: () => m.loans_error_schedule_invalid(),
+  not_written_off: () => m.loans_error_not_written_off(),
+  recovery_exceeds_written_off: () => m.loans_error_recovery_exceeds_written_off(),
 };
 
 /**
