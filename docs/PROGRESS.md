@@ -4026,3 +4026,30 @@ adalah kebijakan yang tidak pernah disetujui siapa pun); jumlah ambang diturunka
 **Bukti**: `tcollectibility` 9 hijau, `itdaycloser_lending` 6 hijau (DPD dari angsuran tertua,
 idempotensi run ulang, ambang dari parameter dengan dua kebijakan, event per perubahan, parameter
 hilang → `DAY-372`, paginasi chunk tepat sekali). Gate lengkap dijalankan setelah entri ini ditulis.
+
+## 2026-11-01 — T-167: PPAP/CKPN dengan jurnal selisih
+
+Task day-close `lending.ppap_provision`, **kritis**, `dependsOn: lending.dpd_regrade`. Satu chunk =
+satu halaman pinjaman ternilai: dasar `principal_outstanding`, tarif dari parameter
+`lending.ppap.rates`, penyisihan `dasar × tarif` (satu pembulatan half-to-even), snapshot per
+`(loan_id, business_date)`, dan jurnal **selisih** terhadap penyisihan terakhir sebelum tanggal buku.
+
+**D-185 (keputusan pemilik) — CKPN sebagai akun aset `111` yang dikredit.** `coa_normal_side_chk`
+memaksa `ASSET → DEBIT` dan O-075 melarang akun kontra dipaksa menjadi `LIABILITY`. Akun
+`111 PENYISIHAN KERUGIAN PIUTANG` karena itu bertipe `ASSET` tetapi **dikredit**; neraca neto benar
+(110 debit + 111 kredit), saldo `111` tampil negatif sebagai bentuk presentasi kontra. Semua ditandai
+`NEEDS-COMPLIANCE-REVIEW`, deviasinya dicatat O-121 + ACCEPTED-LIMITS.
+
+**Bentuk teknis yang perlu diketahui operator:**
+
+- Jurnal **neto per cabang per chunk**, bukan per pinjaman: `ledger.journal_line.branch_id` wajib satu
+  nilai, dan kenaikan satu pinjaman memang saling menutup dengan pelepasan pinjaman lain di akun
+  penyisihan yang sama.
+- Selisih negatif dijurnal sebagai `PpapReleased` (D 111 / K 503), bukan nominal negatif.
+- Snapshot + jurnal satu `withTx`: Δ subledger == Δ GL adalah konsekuensi atomisitas.
+- **Fail-closed**: `DAY-383` bila ada pinjaman `ACTIVE` tanpa penilaian tanggal itu; `DAY-384` bila
+  pinjaman tidak aktif masih menyimpan penyisihan (aturan pelepasan menunggu T-168, dicatat O-122).
+
+**Bukti**: `tppap` 8 hijau, `itdaycloser_lending` 13 hijau (6 regrade + 7 PPAP: selisih vs tanggal
+sebelumnya, jurnal pembalik tanpa nominal negatif, run ulang, Δ snapshot == Δ GL, `DAY-380`,
+`DAY-383`), `dbtools validate` 92 migrasi bersih. Gate lengkap dijalankan setelah entri ini ditulis.

@@ -3,7 +3,7 @@
 Pinjaman (spec §9.2, §23 Fase 4): produk pinjaman berversi, akad/fasilitas, jadwal angsuran, lalu
 kolektibilitas/PPAP di fase yang sama. Status: **T-161** (model + skema) + **T-162** (mesin jadwal) + **T-163** (pengajuan &
 persetujuan) + **T-164** (pencairan) + **T-165** (pembayaran angsuran) + **T-166**
-(kolektibilitas). PPAP T-167.
+(kolektibilitas) + **T-167** (PPAP/CKPN).
 pengajuan/pencairan T-163/T-164; task day-close T-166/T-167; API/UI T-169/T-170.
 
 Keputusan angka & aturan: **D-180**. Rencana fase: `docs/proposals/fase4-lending.md`.
@@ -157,6 +157,29 @@ Task day-close `lending.dpd_regrade` (`apps/api/src/daycloser_lending.nim`) meni
 - Audit satu per chunk berisi daftar pinjaman yang berubah; event `CollectibilityChanged` hanya saat
   golongan benar-benar berubah (termasuk dari `NULL`).
 
+## PPAP/CKPN (T-167, D-185)
+
+Task day-close `lending.ppap_provision`, **kritis** (menulis jurnal beban penyisihan), bergantung pada
+`lending.dpd_regrade` lewat `dependsOn`. Satu chunk = satu halaman pinjaman ternilai:
+
+- **Dasar** = `lending.loan_balance.principal_outstanding`; **tarif** dari parameter
+  `lending.ppap.rates` (seed `["0","0.5","10","50","100"]` persen, urutan = urutan golongan,
+  `NEEDS-COMPLIANCE-REVIEW`). Parameter salah bentuk/jumlah → `DAY-380`, bukan tarif nol.
+- **Snapshot** `lending.ppap_snapshot` ber-PK `(loan_id, business_date)` menyimpan `grade`,
+  `base_amount`, `rate_micro`, `allowance`. Yang dijurnal adalah **selisih** terhadap penyisihan
+  terakhir **sebelum** tanggal buku, bukan angka mutlak.
+- **Jurnal** neto per cabang per chunk: `PpapProvisioned` (D 503 / K 111) bila bertambah,
+  `PpapReleased` (D 111 / K 503) bila berkurang — jurnal pembalik, bukan nominal negatif.
+- **Atomik**: snapshot + jurnal dalam satu `withTx`, jadi "Δ subledger == Δ GL" adalah konsekuensi,
+  bukan harapan. Run ulang tanggal yang sama → `written: 0`, `skipped: n`, tanpa jurnal kedua.
+- **Fail-closed**: pinjaman `ACTIVE` tanpa penilaian kolektibilitas tanggal itu → `DAY-383`;
+  pinjaman tidak aktif yang masih menyimpan penyisihan → `DAY-384` (aturan pelepasan menunggu T-168).
+
+Kode kegagalan: `DAY-380` tarif tidak terbaca/rusak, `DAY-381` halaman gagal dibaca, `DAY-382`
+penyisihan/jurnal/audit gagal disimpan, `DAY-383` prasyarat regrading hilang, `DAY-384` penyisihan
+menggantung pada pinjaman tidak aktif, `DAY-385` dasar/penyisihan tersimpan bukan nominal sah,
+`DAY-386` konfigurasi posting rule penyisihan tidak sah.
+
 ## Event
 
 | Event | Kapan | Dedup key |
@@ -188,10 +211,14 @@ menyusul di T-169.
 - `./task test itapi_lending` — HTTP: pengajuan/persetujuan/pencairan/pembayaran (jadwal, jurnal
   per komponen, subledger, saldo, replay idempoten, penolakan rekening bukan milik peminjam, saldo
   tidak cukup, kelebihan bayar, pelunasan).
+- `./task test tppap` — tarif parameter (lima golongan, bentuk rusak ditolak), penyisihan
+  `dasar × tarif` dengan pembulatan half-to-even, selisih bertanda.
 - `./task test tcollectibility` — hari tunggakan (termasuk lintas bulan/tahun), pemetaan ambang dua
   kebijakan berbeda, ambang tidak sah ditolak.
 - `./task test itdaycloser_lending` — task day-close: DPD dari angsuran tertua, idempotensi run
-  ulang, ambang dari parameter, event per perubahan, parameter hilang → `DAY-372`, paginasi chunk.
+  ulang, ambang dari parameter, event per perubahan, parameter hilang → `DAY-372`, paginasi chunk,
+  PPAP (selisih vs tanggal sebelumnya, jurnal pembalik, Δ snapshot == Δ GL, run ulang, `DAY-380`,
+  `DAY-383`).
 - `./task test tpayment` — alokasi: golden dua urutan parameter, denda paling akhir, kelebihan bayar
   ditolak, pelunasan bertahap, property 200 kasus acak (`Σ alokasi == nominal`).
 - `./task test tschedule` — mesin jadwal: golden flat/efektif/anuitas + property (pokok total tepat,

@@ -27,35 +27,38 @@
 ##   DAY-373 data pinjaman rusak (tanggal jatuh tempo tidak sah)
 ##   DAY-374 penilaian gagal disimpan (bisa diulang)
 
-import std/[json, options]
+import std/[json, options, tables]
 
 import db_connector/db_postgres
 
 import "platform-lib/db/pool"
 
-import kernel/[clock, dayclose, ids, paramkey, result]
+import kernel/[clock, dayclose, ids, money, paramkey, rate, result]
 import kernel/generated/paramkeys
 import platform/domain/[audit, event, scope]
 import platform/infrastructure/[audit_repo, outbox_repo, param_repo]
 
-import lending/domain/collectibility
-import lending/infrastructure/regrade_repo
+import lending/domain/[collectibility, ppap]
+import lending/infrastructure/[ppap_repo, regrade_repo]
 
 import daycloser/domain/[registry, types]
 
 import ./daycloser_common
+import ./deposit_posting
+import ./posting
 
 const
   regradeTaskId* = "lending.dpd_regrade"
+  ppapTaskId* = "lending.ppap_provision"
 
 type
-  RegradeAbort = object of CatchableError
+  LendingAbort = object of CatchableError
     ## Kegagalan yang bukan I/O: parameter rusak atau data pinjaman tidak bisa dipakai. Menaikkannya
     ## membatalkan transaksi chunk, jadi tidak ada snapshot setengah jadi.
     code*: string
 
-proc abort(code, message: string): ref RegradeAbort =
-  result = newException(RegradeAbort, message)
+proc abort(code, message: string): ref LendingAbort =
+  result = newException(LendingAbort, message)
   result.code = code
 
 proc dpdBounds(db: DbConn; ctx: TaskContext): seq[int] =
@@ -93,7 +96,7 @@ proc runRegradeChunk(pool: DbPool; clock: Clock; ctx: TaskContext; chunk: Chunk)
       (regradeCandidatesPage(db, chunk.chunkNo * ctx.chunkSize, ctx.chunkSize), dpdBounds(db, ctx)))
     items = loaded.items
     bounds = loaded.bounds
-  except RegradeAbort as e:
+  except LendingAbort as e:
     return err[TaskOutcome, TaskError](taskError(e.code, e.msg))
   except IOError as e:
     return err[TaskOutcome, TaskError](taskError("DAY-371",
@@ -141,7 +144,7 @@ proc runRegradeChunk(pool: DbPool; clock: Clock; ctx: TaskContext; chunk: Chunk)
         else:
           inc unchanged
       1)
-  except RegradeAbort as e:
+  except LendingAbort as e:
     return err[TaskOutcome, TaskError](taskError(e.code, e.msg))
   except IOError as e:
     return err[TaskOutcome, TaskError](taskError("DAY-374",
@@ -166,6 +169,145 @@ proc runRegradeChunk(pool: DbPool; clock: Clock; ctx: TaskContext; chunk: Chunk)
     "loans": items.len, "graded": graded, "unchanged": unchanged, "skipped": skipped,
     "changed": changed.len, "dpdBounds": bounds, "businessDate": ctx.businessDate}))
 
+
+proc ppapRates(db: DbConn; ctx: TaskContext): seq[Rate] =
+  ## Tarif golongan pada tanggal buku. Rusak = galat: tarif nol akan menyisihkan nol tanpa jejak,
+  ## dan angka PPAP adalah angka laporan keuangan (REG-204 `V!`).
+  var value: JsonNode
+  try:
+    value = activeValueJson(db, keyString(P_lending_ppap_rates), ctx.businessDate,
+      lookupFor(institutionScope()))
+  except ValueError as e:
+    raise abort("DAY-380", "parameter lending.ppap.rates tidak terbaca: " & e.msg)
+  let parsed = parsePpapRates(value)
+  if not parsed.isOk:
+    raise abort("DAY-380", parsed.error.details)
+  parsed.val
+
+proc countPpapChunks(pool: DbPool; businessDate: string; chunkSize: int): Result[int, TaskError] =
+  ## Dua prasyarat fail-closed sebelum satu sen pun disisihkan:
+  ##   - semua pinjaman `ACTIVE` sudah dinilai tanggal itu (`DAY-383`);
+  ##   - tidak ada pinjaman tidak aktif yang masih menyimpan penyisihan (`DAY-384`) — aturan
+  ##     pelepasan saat akad ditutup belum ada, dan membiarkannya berarti CKPN menggantung di neraca.
+  try:
+    let counts = pool.withConn(proc(db: DbConn): tuple[graded, missing, stranded: int64] =
+      (countGradedLoans(db, businessDate), activeLoansWithoutGrade(db, businessDate),
+       strandedAllowances(db)))
+    if counts.missing > 0:
+      return err[int, TaskError](taskError("DAY-383",
+        $counts.missing & " pinjaman ACTIVE belum dinilai kolektibilitasnya untuk " & businessDate &
+        "; jalankan/ulangi lending.dpd_regrade lebih dulu"))
+    if counts.stranded > 0:
+      return err[int, TaskError](taskError("DAY-384",
+        $counts.stranded & " pinjaman tidak aktif masih menyimpan penyisihan; aturan pelepasan " &
+        "belum ada (D-183 menolak penutupan akad otomatis)"))
+    if chunkSize < 1:
+      raise newException(ValueError, "chunk size harus >= 1")
+    ok[int, TaskError](int((counts.graded + int64(chunkSize) - 1) div int64(chunkSize)))
+  except IOError as e:
+    err[int, TaskError](taskError("DAY-381",
+      "jumlah pinjaman ternilai gagal dibaca: " & e.msg, retryable = true))
+
+proc runPpapChunk(pool: DbPool; clock: Clock; ctx: TaskContext; chunk: Chunk): TaskResult =
+  ## Satu chunk = satu halaman pinjaman ternilai. Snapshot per pinjaman dan jurnal selisih ditulis
+  ## dalam **satu** transaksi: kalau jurnal ditolak, snapshot ikut batal, sehingga
+  ## "Δ snapshot == Δ GL" bukan harapan melainkan konsekuensi atomisitas.
+  ##
+  ## Jurnal dikelompokkan **per cabang**: `ledger.journal_line.branch_id` wajib satu nilai, sedangkan
+  ## satu halaman bisa memuat beberapa cabang. Yang dijurnal adalah selisih **neto** per cabang —
+  ## itulah perubahan saldo akun penyisihan cabang itu, jadi kenaikan satu pinjaman dan pelepasan
+  ## pinjaman lain memang saling menutup di akun yang sama.
+  var items: seq[PpapCandidate]
+  var rates: seq[Rate]
+  try:
+    let loaded = pool.withConn(proc(db: DbConn): tuple[items: seq[PpapCandidate]; rates: seq[Rate]] =
+      (ppapCandidatesPage(db, ctx.businessDate, chunk.chunkNo * ctx.chunkSize, ctx.chunkSize),
+       ppapRates(db, ctx)))
+    items = loaded.items
+    rates = loaded.rates
+  except LendingAbort as e:
+    return err[TaskOutcome, TaskError](taskError(e.code, e.msg))
+  except IOError as e:
+    return err[TaskOutcome, TaskError](taskError("DAY-381",
+      "halaman pinjaman ternilai gagal dibaca: " & e.msg, retryable = true))
+
+  var
+    written = 0
+    skipped = 0
+    journals = 0
+    provisioned = zero()
+    released = zero()
+  try:
+    discard pool.withTx(proc(db: DbConn): int =
+      var
+        deltas = initTable[string, Money]()
+        branches = initTable[string, Id]()
+      for candidate in items:
+        let base = moneyFromString(candidate.base)
+        if not base.isOk:
+          raise abort("DAY-385", "pokok berjalan pinjaman " & $candidate.loanId &
+            " bukan nominal sah: " & candidate.base)
+        let previous = moneyFromString(candidate.previousAllowance)
+        if not previous.isOk:
+          raise abort("DAY-385", "penyisihan sebelumnya pinjaman " & $candidate.loanId &
+            " bukan nominal sah: " & candidate.previousAllowance)
+
+        let rate = rateFor(rates, candidate.grade)
+        let allowance = allowanceFor(base.val, rate)
+        if not insertPpapSnapshot(db, candidate.loanId, ctx.businessDate, candidate.grade,
+            candidate.base, toDecimalString(allowance), microUnits(rate)):
+          # Tanggal itu sudah disisihkan (run ulang): jangan menimpa, jangan menjurnal selisih lagi.
+          inc skipped
+          continue
+        inc written
+        let key = $candidate.branchId
+        deltas[key] = deltas.getOrDefault(key, zero()) + provisionDelta(previous.val, allowance)
+        branches[key] = candidate.branchId
+
+      for key, delta in deltas:
+        if delta.isZero:
+          # Saldo akun penyisihan cabang itu tidak berubah: jurnal nol bukan jurnal.
+          continue
+        let eventType = if delta.isPositive: "PpapProvisioned" else: "PpapReleased"
+        discard postRuleJournalSync(db, clock, eventType, abs(delta), branches[key],
+          Id(ctx.runId), ctx.businessDate,
+          "lending.ppap:" & ctx.businessDate & ":" & $chunk.chunkNo & ":" & key, systemActor,
+          %*{"businessDate": ctx.businessDate, "chunkNo": chunk.chunkNo}, ctx.runId)
+        inc journals
+        if delta.isPositive:
+          provisioned = provisioned + delta
+        else:
+          released = released + abs(delta)
+      1)
+  except LendingAbort as e:
+    return err[TaskOutcome, TaskError](taskError(e.code, e.msg))
+  except DbError as e:
+    return err[TaskOutcome, TaskError](taskError("DAY-382",
+      "penyisihan/jurnal ditolak database: " & e.msg, retryable = true))
+  except ValueError as e:
+    return err[TaskOutcome, TaskError](taskError("DAY-386",
+      "konfigurasi jurnal penyisihan tidak sah: " & e.msg))
+
+  if written > 0 or journals > 0:
+    try:
+      discard pool.withConn(proc(db: DbConn): int =
+        let actx = ctlAuditContext(clock, "task " & ppapTaskId)
+        discard appendAudit(db, newAuditEntry(actx, "lending.ppap.provision",
+          "daycloser_run", ctx.runId, clock, businessDate = ctx.businessDate,
+          after = %*{"businessDate": ctx.businessDate, "chunkNo": chunk.chunkNo,
+                     "written": written, "skipped": skipped,
+                     "provisioned": toDecimalString(provisioned),
+                     "released": toDecimalString(released), "journals": journals}))
+        1)
+    except IOError as e:
+      return err[TaskOutcome, TaskError](taskError("DAY-382",
+        "audit penyisihan gagal ditulis: " & e.msg, retryable = true))
+
+  ok[TaskOutcome, TaskError](okOutcome(%*{
+    "loans": items.len, "written": written, "skipped": skipped, "journals": journals,
+    "provisioned": toDecimalString(provisioned), "released": toDecimalString(released),
+    "businessDate": ctx.businessDate}))
+
 proc registerLendingTasks*(reg: Registry; pool: DbPool) =
   let clock = systemClock()
 
@@ -185,3 +327,21 @@ proc registerLendingTasks*(reg: Registry; pool: DbPool) =
     countRegradeChunks(pool, chunkSize),
     run: proc(ctx: TaskContext; chunk: Chunk): TaskResult =
     runRegradeChunk(pool, clock, ctx, chunk))
+  # PPAP/CKPN (T-167). **Kritis**: task ini menulis jurnal beban penyisihan, jadi kegagalannya
+  # harus menahan penutupan buku — angka laporan keuangan tidak boleh ditutup dengan CKPN yang tidak
+  # cocok dengan snapshot. `dependsOn` membuat "golongan hari ini sudah dinilai" menjadi kontrak
+  # registry, bukan kebetulan urutan pendaftaran.
+  reg.register DayCloseTask(
+    id: ppapTaskId,
+    module: "lending",
+    levels: {clEOD},
+    kind: tkProcess,
+    dependsOn: @[regradeTaskId],
+    critical: true,
+    idempotency: imPerBusinessDate,
+    partition: psByChunkCount,
+    requiredParams: @["lending.ppap.rates"],
+    countChunks: proc(ctx: TaskContext; chunkSize: int): Result[int, TaskError] =
+    countPpapChunks(pool, ctx.businessDate, chunkSize),
+    run: proc(ctx: TaskContext; chunk: Chunk): TaskResult =
+    runPpapChunk(pool, clock, ctx, chunk))

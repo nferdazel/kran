@@ -224,4 +224,180 @@ suite "day-close lending: penilaian kolektibilitas (T-166)":
       graded += outcome.metrics["graded"].getInt()
     check graded == chunks
 
+
+# Periode GL untuk tanggal uji PPAP (suite sebelumnya tidak menjurnal).
+execScript(db, """
+  INSERT INTO ledger.period (period_id, starts_on, ends_on, status, created_by, updated_by)
+  VALUES ('33333333-3333-4333-8333-333333333333', DATE '2026-01-01', DATE '2027-12-31', 'OPEN',
+          '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a1')
+""")
+
+proc ppapTask(): DayCloseTask =
+  let reg = newRegistry()
+  registerLendingTasks(reg, dbPool)
+  for t in reg.all():
+    if t.id == ppapTaskId:
+      return t
+  raise newException(ValueError, "task tidak terdaftar: " & ppapTaskId)
+
+proc newPpapLoan(loanId: Id; outstanding: string) =
+  db.exec(sql"""
+    INSERT INTO lending.loan
+      (loan_id, party_id, product_version_id, branch_id, principal, status, disbursed_on,
+       applied_by, approved_by)
+    VALUES (?, ?::uuid, ?::uuid, ?::uuid, 100000000.00, 'ACTIVE', DATE '2026-01-01', ?::uuid,
+            ?::uuid)""", $loanId, PartyId, VersionId, BranchId, ActorId, ApproverId)
+  db.exec(sql"""
+    INSERT INTO lending.loan_balance (loan_id, principal_outstanding)
+    VALUES (?, ?::numeric)""", $loanId, outstanding)
+
+proc setOutstanding(loanId: Id; outstanding: string) =
+  db.exec(sql"UPDATE lending.loan_balance SET principal_outstanding = ?::numeric WHERE loan_id = ?",
+    outstanding, $loanId)
+
+proc setGrade(loanId: Id; businessDate, grade: string) =
+  db.exec(sql"""
+    INSERT INTO lending.collectibility_snapshot (loan_id, business_date, dpd, grade)
+    VALUES (?, ?::date, 0, ?)""", $loanId, businessDate, grade)
+
+proc allowanceOn(loanId: Id; businessDate: string): string =
+  let rows = db.getAllRows(sql"""
+    SELECT allowance::numeric(24,2)::text FROM lending.ppap_snapshot
+     WHERE loan_id = ? AND business_date = ?::date""", $loanId, businessDate)
+  if rows.len == 0:
+    return ""
+  rows[0][0]
+
+proc journalRows(businessDate, eventType: string): int =
+  parseInt(db.getValue(sql"""
+    SELECT count(*)::text FROM ledger.journal
+     WHERE business_date = ?::date AND source_event = ?""", businessDate, eventType))
+
+proc journalTotal(businessDate, eventType: string): string =
+  db.getValue(sql"""
+    SELECT coalesce(sum(l.debit), 0)::numeric(24,2)::text
+      FROM ledger.journal_line l JOIN ledger.journal j USING (journal_id)
+     WHERE j.business_date = ?::date AND j.source_event = ?""", businessDate, eventType)
+
+proc accountsOf(businessDate, eventType: string): string =
+  ## `503:DEBIT,111:CREDIT` — arah akun adalah isi keputusan D-185, jadi diuji apa adanya.
+  db.getValue(sql"""
+    SELECT string_agg(gl_account || ':' || CASE WHEN debit > 0 THEN 'DEBIT' ELSE 'CREDIT' END,
+                      ',' ORDER BY line_no)
+      FROM ledger.journal_line l JOIN ledger.journal j USING (journal_id)
+     WHERE j.business_date = ?::date AND j.source_event = ?""", businessDate, eventType)
+
+proc totalAllowance(businessDate: string): string =
+  db.getValue(sql"""
+    SELECT coalesce(sum(allowance), 0)::numeric(24,2)::text
+      FROM lending.ppap_snapshot WHERE business_date = ?::date""", businessDate)
+
+suite "day-close lending: penyisihan PPAP (T-167)":
+  let
+    d1 = "2026-11-10"
+    d2 = "2026-11-11"
+    d3 = "2026-11-12"
+    loanA = newId(testClock)
+    loanB = newId(testClock)
+
+  # Suite sebelumnya meninggalkan pinjaman ACTIVE tanpa saldo/penilaian; menutupnya membuat populasi
+  # `ACTIVE` di sini hanya pinjaman uji PPAP. Belum ada penyisihan, jadi tidak ada yang menggantung.
+  db.exec(sql"UPDATE lending.loan SET status = 'CLOSED'")
+
+  block:
+    newPpapLoan(loanA, "12000000.00")
+    newPpapLoan(loanB, "3000000.00")
+    setGrade(loanA, d1, "SPECIAL_MENTION")
+    setGrade(loanB, d1, "COLLECTIBLE")
+    setGrade(loanA, d2, "LOSS")
+    setGrade(loanB, d2, "COLLECTIBLE")
+    setGrade(loanA, d3, "COLLECTIBLE")
+    setGrade(loanB, d3, "COLLECTIBLE")
+
+  test "menyisihkan menurut golongan dan menjurnal selisihnya (D 503 / K 111)":
+    let outcome = ppapTask().run(ctxOn(d1), Chunk(chunkNo: 0))
+    check outcome.isOk
+    if not outcome.isOk:
+      echo "PPAP-D1: ", outcome.error.code, " ", outcome.error.message
+    check outcome.val.metrics["written"].getInt() == 2
+    check outcome.val.metrics["journals"].getInt() == 1
+    check allowanceOn(loanA, d1) == "60000.00" # 12.000.000 × 0,5%
+    check allowanceOn(loanB, d1) == "0.00"
+    check journalTotal(d1, "PpapProvisioned") == "60000.00"
+    check accountsOf(d1, "PpapProvisioned") == "503:DEBIT,111:CREDIT"
+    check journalRows(d1, "PpapReleased") == 0
+    check db.getValue(sql"""
+      SELECT count(*)::text FROM platform.audit_log
+       WHERE action = 'lending.ppap.provision'""") == "1"
+
+  test "selisih dihitung terhadap tanggal buku sebelumnya, bukan angka mutlak":
+    let outcome = ppapTask().run(ctxOn(d2), Chunk(chunkNo: 0))
+    check outcome.isOk
+    check allowanceOn(loanA, d2) == "12000000.00" # 100% setelah jadi LOSS
+    # Σ baru 12.000.000 − Σ lama 60.000 = 11.940.000, itu yang dijurnal.
+    check journalTotal(d2, "PpapProvisioned") == "11940000.00"
+
+  test "golongan membaik → jurnal pembalik, bukan nominal negatif":
+    setOutstanding(loanA, "5000000.00")
+    let outcome = ppapTask().run(ctxOn(d3), Chunk(chunkNo: 0))
+    check outcome.isOk
+    check allowanceOn(loanA, d3) == "0.00" # COLLECTIBLE = 0%
+    check journalRows(d3, "PpapReleased") == 1
+    check journalTotal(d3, "PpapReleased") == "12000000.00"
+    check accountsOf(d3, "PpapReleased") == "111:DEBIT,503:CREDIT"
+    # Tidak ada sisi negatif: pembalik selalu nominal positif dengan arah berlawanan.
+    check db.getValue(sql"""
+      SELECT count(*)::text FROM ledger.journal_line l JOIN ledger.journal j USING (journal_id)
+       WHERE j.business_date = ?::date AND (l.debit < 0 OR l.credit < 0)""", d3) == "0"
+
+  test "run ulang tanggal yang sama tidak menggandakan snapshot maupun jurnal":
+    let snapshots = parseInt(db.getValue(sql"""
+      SELECT count(*)::text FROM lending.ppap_snapshot WHERE business_date = ?::date""", d3))
+    let journals = parseInt(db.getValue(sql"""
+      SELECT count(*)::text FROM ledger.journal WHERE business_date = ?::date""", d3))
+    let outcome = ppapTask().run(ctxOn(d3), Chunk(chunkNo: 0))
+    check outcome.isOk
+    check outcome.val.metrics["written"].getInt() == 0
+    check outcome.val.metrics["skipped"].getInt() == 2
+    check parseInt(db.getValue(sql"""
+      SELECT count(*)::text FROM lending.ppap_snapshot WHERE business_date = ?::date""", d3)) ==
+      snapshots
+    check parseInt(db.getValue(sql"""
+      SELECT count(*)::text FROM ledger.journal WHERE business_date = ?::date""", d3)) == journals
+
+  test "Δ snapshot == Δ jurnal di seluruh rangkaian":
+    check totalAllowance(d3) == "0.00"
+    check totalAllowance(d1) == "60000.00"
+    check journalTotal(d2, "PpapProvisioned") == "11940000.00"
+    check journalTotal(d3, "PpapReleased") == "12000000.00"
+    # 11.940.000 − 12.000.000 + 60.000 = 0 = Σ allowance d3.
+    check db.getValue(sql"""
+      SELECT (
+        (SELECT coalesce(sum(debit), 0) FROM ledger.journal_line l
+           JOIN ledger.journal j USING (journal_id)
+          WHERE j.source_event = 'PpapProvisioned')
+        - (SELECT coalesce(sum(debit), 0) FROM ledger.journal_line l
+             JOIN ledger.journal j USING (journal_id)
+            WHERE j.source_event = 'PpapReleased')
+      )::numeric(24,2)::text""") == totalAllowance(d3)
+
+  test "parameter tarif rusak menggagalkan task, bukan menyisihkan nol":
+    db.exec(sql"""
+      UPDATE platform.param_value SET value = '["0","0.5","10","50"]'::jsonb
+       WHERE key = 'lending.ppap.rates'""")
+    let failed = ppapTask().run(ctxOn("2026-11-13"), Chunk(chunkNo: 0))
+    check not failed.isOk
+    check failed.error.code == "DAY-380"
+    check db.getValue(sql"""
+      SELECT count(*)::text FROM lending.ppap_snapshot WHERE business_date = '2026-11-13'""") == "0"
+    db.exec(sql"""
+      UPDATE platform.param_value SET value = '["0","0.5","10","50","100"]'::jsonb
+       WHERE key = 'lending.ppap.rates'""")
+
+  test "pinjaman ACTIVE belum dinilai kolektibilitasnya menahan penyisihan (DAY-383)":
+    newPpapLoan(newId(testClock), "1000000.00")
+    let chunks = ppapTask().countChunks(ctxOn("2026-11-14"), 100)
+    check not chunks.isOk
+    check chunks.error.code == "DAY-383"
+
 dbPool.release(db)

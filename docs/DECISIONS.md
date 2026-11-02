@@ -4852,3 +4852,45 @@ apa pun. PPAP (T-167) juga butuh angka **per tanggal**, bukan hanya nilai terkin
 **Konsekuensi.** Menambah golongan berarti menambah enum domain **dan** ambang di parameter; jumlah
 ambang yang diharapkan diturunkan dari `high(Collectibility)` sehingga keduanya tidak bisa menyimpang
 tanpa gagal di test.
+
+## D-185 — CKPN direpresentasikan sebagai akun aset `111` yang dikredit (1 Nov 2026)
+
+**Konteks.** T-167 memposting jurnal penyisihan PPAP. Akun lawannya adalah CKPN (cadangan kerugian
+penurunan nilai), yang secara akuntansi adalah **akun kontra-piutang**. Tetapi:
+
+- `ledger.coa_account` memaksa `ASSET → normal_side DEBIT` (`coa_normal_side_chk`), jadi akun kontra
+  belum bisa dimodelkan;
+- **O-075** secara eksplisit melarang memaksa akun kontra menjadi `LIABILITY` sebagai jalan pintas;
+- tarifnya sendiri (`lending.ppap.rates`) masih `NEEDS-COMPLIANCE-REVIEW` (REG-204 `V!`).
+
+Tiga jalan yang mungkin: (a) akun aset baru yang dikredit, (b) netting langsung ke `110 Piutang
+Pembiayaan`, (c) menghentikan PPAP sampai O-075 diputuskan. Pemilik memilih **(a)** pada 1 Nov 2026.
+
+**Keputusan.**
+
+1. Akun **`111 PENYISIHAN KERUGIAN PIUTANG`** bertipe `ASSET`, `normal_side DEBIT`, `postable`.
+   Jurnal penyisihan **mengkredit** akun ini, sehingga saldo kreditnya mengurangi piutang `110` di
+   neraca (`110` debit + `111` kredit = piutang neto). Bentuk saldo negatif itulah representasi akun
+   kontra yang tersedia hari ini.
+2. Akun **`503 BEBAN PENYISIHAN PIUTANG`** (`EXPENSE`, `normal_side DEBIT`) sebagai lawan beban.
+3. Dua posting rule: `PpapProvisioned` D 503 / K 111 dan `PpapReleased` D 111 / K 503. Selisih negatif
+   **tidak** dijurnal sebagai nominal negatif — jurnal pembalik adalah bentuk yang bisa diaudit
+   (spec §9.1(3)).
+4. Semua nama/kode akun di atas ditandai **NEEDS-COMPLIANCE-REVIEW**: itu usulan struktur pilot, bukan
+   kutipan standar akuntansi (REG-011 `V!`). Tipe akun kontra resmi tetap menunggu **O-075**.
+
+**Konsekuensi yang dicatat, bukan disembunyikan.**
+
+- Laporan yang menjumlahkan aset bruto akan memuat `111` negatif. Itu **presentasi** kontra, bukan
+  kesalahan tanda; laporan yang salah memisahkan bruto/neto harus diperbaiki di lapisan laporan
+  (T-171), bukan dengan memindahkan akun.
+- Dasar penyisihan = **pokok berjalan** (`lending.loan_balance.principal_outstanding`), bukan pokok +
+  bunga tunggakan: bunga yang belum dibayar belum diakui sebagai piutang di modul ini. Perubahan dasar
+  ini keputusan kebijakan, bukan detail teknis.
+- Jurnal dijurnal **neto per cabang per chunk**, karena `ledger.journal_line.branch_id` wajib satu
+  nilai; kenaikan satu pinjaman dan pelepasan pinjaman lain memang saling menutup di akun penyisihan
+  yang sama.
+- Pinjaman yang **keluar dari `ACTIVE`** sementara masih punya penyisihan akan menggantung di neraca.
+  Aturan pelepasan saat akad ditutup/dihapusbukukan belum ada (D-183 menolak penutupan otomatis), jadi
+  task **gagal terlihat** (`DAY-384`) alih-alih menutup buku dengan angka yang salah. Ditutup bersama
+  T-168 (restrukturisasi & hapus buku).
