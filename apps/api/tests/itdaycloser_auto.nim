@@ -44,6 +44,9 @@ proc setParam(key, jsonLiteral: string) =
   execScript(db, "UPDATE platform.param_value SET value = '" & jsonLiteral & "'::jsonb " &
     "WHERE param_value_id = md5('" & key & "|base')::uuid")
 
+proc currentBusinessDate(): string =
+  db.getValue(sql"SELECT current_business_date::text FROM platform.business_date")
+
 proc runCount(): int =
   db.getValue(sql"SELECT count(*)::text FROM daycloser.run").parseInt
 
@@ -95,6 +98,23 @@ suite "penjadwal: saklar parameter":
     check autoRun(dbPool, testClock) == 0
     check runCount() == 1
 
+  test "tick berikutnya tidak menutup tanggal yang belum berjalan":
+    clearRuns()
+    seedBusinessDate(Today, "OPEN")
+    setParam("daycloser.auto.enabled", "true")
+    # 12:00 UTC + 420 = 19:00 lokal tanggal Today; jadwal 18:00 sudah lewat.
+    setParam("daycloser.auto.run_at", "\"18:00\"")
+    setParam("daycloser.auto.utc_offset_minutes", "420")
+    check autoRun(dbPool, testClock) == 0
+    check runCount() == 1
+    # Penutupan memajukan tanggal buku ke hari kerja berikutnya.
+    check currentBusinessDate() == "2026-10-29"
+    # Tick berikutnya (timer tiap 5 menit) masih hari lokal yang sama: tanggal buku sudah di
+    # depan hari lokal, jadi tidak boleh ikut ditutup.
+    check autoRun(dbPool, testClock) == 0
+    check runCount() == 1
+    check currentBusinessDate() == "2026-10-29"
+
 proc seedFinishedRun(dateIso: string) =
   ## Run yang sudah ada untuk tanggal buku berjalan. Snapshot parameter harus konsisten dengan
   ## hash-nya karena `runForDate` membacanya lewat `snapshot()`.
@@ -130,8 +150,10 @@ suite "penjadwal: keadaan tanggal buku":
 
   test "tanggal bukan hari kerja tetap dicoba dan ditolak orkestrasi, bukan diperiksa di sini":
     # Penjadwal tidak punya kalender sendiri: keputusan "hari kerja" milik penutupan (satu tempat).
+    # Tanggalnya **sebelum** hari lokal jam uji (2026-10-28) supaya yang diuji benar-benar keputusan
+    # hari kerja, bukan penjagaan "tanggal buku belum berjalan".
     clearRuns()
-    seedBusinessDate("2026-10-31", "OPEN") # Sabtu
+    seedBusinessDate("2026-10-24", "OPEN") # Sabtu
     let code = autoRun(dbPool, testClock)
     check code == 3
     check runCount() == 0

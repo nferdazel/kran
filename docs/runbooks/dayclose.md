@@ -49,6 +49,20 @@ Bila jam tidak sesuai harapan: periksa `daycloser.auto.utc_offset_minutes`. Repo
 zona waktu, jadi selisih menit itu yang dipakai — institusi dengan DST harus menyesuaikannya
 sendiri.
 
+**Penjadwal tidak pernah menutup tanggal yang belum berjalan.** Penutupan yang berhasil memajukan
+tanggal buku ke hari kerja berikutnya (`rollOverBusinessDate`), sedangkan timer berjalan tiap
+beberapa menit — jadi tanpa penjagaan, setiap tick berikutnya akan menutup satu tanggal lagi sampai
+tengah malam. Karena itu `daycloser-auto` menghitung tanggal **lokal** (`UTC + utc_offset_minutes`)
+dan berhenti dengan kode `0` bila tanggal buku sudah melewati tanggal lokal:
+
+```
+tanggal buku 2026-11-03 sudah melewati tanggal lokal 2026-11-02; penjadwal tidak menutup tanggal yang belum berjalan
+```
+
+Konsekuensi yang benar: satu tanggal per hari lokal. Bila tanggal buku tertinggal beberapa hari
+(mis. server mati), penjadwal menutup satu tanggal per tick berikutnya selama jam lokal masih lewat
+`run_at` — itu disengaja, dan `daycloser-status` menunjukkan kemajuannya.
+
 ## 1. Keadaan yang mungkin
 
 | `daycloser-status` | Arti | Tindakan |

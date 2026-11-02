@@ -8,7 +8,7 @@
 ##
 ## Tidak ada I/O, tidak ada DB, tidak ada jam sistem: semua masukan eksplisit supaya bisa diuji.
 
-import std/[math, strutils]
+import std/[math, strutils, times]
 
 type
   ClockTime* = object
@@ -52,6 +52,15 @@ proc localMinutesOfDay*(utcMinutes: int; offsetMinutes: int): int =
   result = (utcMinutes + offsetMinutes) mod minutesPerDay
   if result < 0:
     result += minutesPerDay
+
+proc localDateOf*(nowUtc: DateTime; offsetMinutes: int): string =
+  ## Tanggal kalender **lokal** dari waktu UTC + selisih zona (`yyyy-MM-dd`).
+  ##
+  ## Dipakai penjadwal untuk menolak menutup tanggal buku yang sudah melewati hari lokal.
+  ## Alasannya konkret: penutupan yang berhasil **memajukan** tanggal buku ke hari kerja berikutnya
+  ## (`rollOverBusinessDate`), sedangkan timer berjalan tiap beberapa menit — tanpa pembanding ini
+  ## setiap tick berikutnya menutup tanggal yang belum berjalan.
+  format(nowUtc + initDuration(minutes = offsetMinutes), "yyyy-MM-dd")
 
 proc dueNow*(nowMinutes, runAtMinutes: int): bool =
   ## Jadwal dianggap jatuh tempo setelah jamnya terlewati **pada hari itu**. Tanpa toleransi:

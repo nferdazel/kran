@@ -95,6 +95,14 @@ proc autoRun*(pool: DbPool; clock: Clock): int =
     echo "tanggal buku " & row.currentDate & " berstatus " & $row.state &
       "; penjadwal tidak melakukan apa pun"
     return 0
+  # Penutupan yang berhasil memajukan tanggal buku ke hari kerja berikutnya. Timer berjalan tiap
+  # beberapa menit dan `dueNow` hanya membandingkan jam, jadi tanpa penjagaan ini tick berikutnya
+  # akan menutup tanggal yang **belum berjalan** — satu tanggal per tick sampai tengah malam.
+  let localToday = localDateOf(nowUtc, cfg.utcOffsetMinutes)
+  if row.currentDate > localToday:
+    echo "tanggal buku " & row.currentDate & " sudah melewati tanggal lokal " & localToday &
+      "; penjadwal tidak menutup tanggal yang belum berjalan"
+    return 0
   if existing.isSome and existing.get().state != rsCanceled:
     echo "sudah ada run untuk " & row.currentDate & " (" & $existing.get().state & ", " &
       existing.get().runId & "); penjadwal tidak mengulang"

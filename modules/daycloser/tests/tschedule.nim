@@ -1,6 +1,6 @@
 ## Unit test jadwal penutupan otomatis (T-139b), murni tanpa DB.
 
-import std/unittest
+import std/[times, unittest]
 
 import ../api
 
@@ -15,6 +15,15 @@ suite "jadwal: bentuk jam":
     for bad in ["", "2330", "24:00", "23:60", "7:05", "ab:cd", "12:3", "12:345"]:
       expect ValueError:
         discard parseClockTime(bad)
+
+suite "jadwal: tanggal lokal":
+  test "dihitung dari UTC + offset, bukan dari UTC mentah":
+    # 16:30 UTC + 420 menit (WIB) = 23:30 lokal, tanggal masih sama.
+    check localDateOf(dateTime(2026, mNov, 2, 16, 30), 420) == "2026-11-02"
+    # 17:30 UTC + 420 = 00:30 lokal tanggal berikutnya.
+    check localDateOf(dateTime(2026, mNov, 2, 17, 30), 420) == "2026-11-03"
+    # Offset negatif bisa memundurkan tanggal.
+    check localDateOf(dateTime(2026, mNov, 2, 3, 0), -420) == "2026-11-01"
 
 suite "jadwal: menit lokal":
   test "offset positif menggeser ke depan":
