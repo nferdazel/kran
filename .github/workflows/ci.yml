@@ -9,13 +9,20 @@ name: CI
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
+    # `docs/**` dilewati karena isinya dokumentasi — kecuali register regulasi, yang justru
+    # **input** gate `traceability` (`./task traceability`). Pola dievaluasi berurutan dan yang
+    # terakhir menang, jadi baris terakhir memasukkan kembali register saja.
+    paths:
+      - '**'
+      - '!**.md'
+      - '!docs/**'
+      - 'docs/compliance/register.yaml'
   pull_request:
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
+    paths:
+      - '**'
+      - '!**.md'
+      - '!docs/**'
+      - 'docs/compliance/register.yaml'
   # Jalan manual di `main`. Dipakai saat event `push` tidak menghasilkan run sama sekali
   # (terjadi 2 Nov 2026 setelah riwayat ditulis ulang: push dan tag sama-sama tidak memicu
   # workflow, sehingga gerbang CI di `deploy-vps.sh` menunggu 30 menit lalu gagal).
@@ -75,6 +82,33 @@ jobs:
         env:
           KRAN_ALLOW_NO_DB: "1"
         run: ./task test
+
+  traceability:
+    name: Traceability (requirement -> kontrol + test)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: '2.4.0'
+
+      - name: Cache nimble
+        uses: actions/cache@v4
+        with:
+          path: ~/.nimble
+          key: nimble-${{ runner.os }}-2.4.0-${{ hashFiles('kran.nimble') }}
+
+      - name: Install dependencies
+        run: nimble install -d -y
+
+      - name: ./task traceability
+        # Fail-closed: requirement `active` tanpa kontrol/test, atau rujukan ke parameter/test yang
+        # tidak ada, menggagalkan job (spec §4.4). Sumber: docs/compliance/register.yaml.
+        run: ./task traceability
 
   db-tests:
     name: DB (integrasi, Postgres 18)

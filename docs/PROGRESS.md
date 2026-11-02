@@ -4199,3 +4199,21 @@ Benchmark: `bench-eod` menerima `--loans N`. 100k rekening + 50k pinjaman = **24
 - **T-179**: pinjaman yang direstrukturisasi tidak lagi otomatis lancar. `grade_cap` disimpan
   (migrasi `lending/0101`), regrade menahan perbaikan sampai 3 periode bersih (D-197). Bukti: unit
   `trestructure_grade` + 3 integrasi baru; `./task test itapi_lending` hijau.
+- **Riset O-001 tranche 2 (2 Nov 2026)**: REG-002 (UU 27/2022: notifikasi kebocoran 3x24 jam,
+  informasi retensi, hak akses — fitur consent/DSR/retensi belum ada), REG-003/004 (LTKT >= Rp500 juta
+  kumulatif per hari kerja, lapor <=14 hari kerja; ambang CDD Rp100 juta **bukan** ambang LTKT),
+  REG-009 (**KSP bukan peserta LPS** — jangan klaim penjaminan; rate hanya untuk pack BPR),
+  REG-103 (BMPP 10% pihak terkait / 15% tidak terkait dari Modal Sendiri, basis saldo pokok),
+  REG-104 (kerangka LHPKK: Permenkop 9/2020 + Juknis 15/2021), REG-205 dikoreksi ke **POJK 34/2025 +
+  PADK 43/2025**, REG-207 (SLIK: POJK 18/2017 jo. 64/2020 jo. 11/2024). Nomor aturan di spec §4 ikut
+  dikoreksi; detail + URL di `docs/compliance/register-validation.md`. Tidak ada nilai baru yang
+  dilepas dari `NEEDS-COMPLIANCE-REVIEW`.
+- **T-180 gate traceability (O-027)**: `docs/compliance/register.yaml` (5 requirement aktif,
+  9 deferred) divalidasi `tools/traceability`; masuk `./task check`/`check-fast` dan job CI
+  `traceability`. Fail-closed pada requirement aktif tanpa kontrol/test, parameter yang tidak ada di
+  `seeds/params.yaml`, dan nama test yang tidak ada di berkasnya. Bukti: `./task traceability` hijau,
+  8 unit test `ttraceability` hijau, register yang dirusak sengaja keluar 1 dengan dua temuan.
+- **Penutupan dokumen**: O-016 (lima pasangan SoD cukup, keputusan pemilik), O-075 (D-193: tetap
+  akun `111`), O-038/O-096/O-125 ditandai DITUTUP sesuai bukti yang sudah ada. O-094 masih menunggu
+  satu tindakan pemilik (menyalakan `daycloser.auto.enabled`); tidak bisa diselesaikan dari repo.
+

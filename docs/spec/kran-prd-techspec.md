@@ -138,12 +138,12 @@ Mobile/internet banking, ATM/EDC switching, BI-FAST/SNAP, QRIS, e-money, agen (l
 | REG-001 | **UU 4/2023 tentang Pengembangan dan Penguatan Sektor Keuangan (P2SK)** | Payung baru sektor keuangan, termasuk penguatan pengaturan/pengawasan koperasi simpan pinjam & BPR; masa transisi | V! |
 | REG-002 | **UU 27/2022 Pelindungan Data Pribadi (PDP)** | Consent, hak subjek data, retensi, enkripsi, notifikasi kebocoran (batas waktu 3×24 jam), DPO, data subject request | V? |
 | REG-003 | **UU 8/2010 PP-TPPU** & turunannya | Kontrol APU-PPT, CTR/STR ke PPATK, retensi dokumen | V? |
-| REG-004 | **POJK APU-PPT-PPSPM untuk PJK sektor jasa keuangan** (pengganti POJK 12/2017; kemungkinan POJK 8/2023) | CDD/EDD, PEP, screening DTTOT/DPPSPM, risk rating, pelaporan | V! |
+| REG-004 | **POJK APU-PPT-PPSPM untuk PJK sektor jasa keuangan** (pengganti POJK 12/2017: **POJK 8/2023**, terverifikasi 2 Nov 2026) | CDD/EDD, PEP, screening DTTOT/DPPSPM, risk rating, pelaporan | V! |
 | REG-005 | **UU ITE (11/2008 jo. perubahannya)** & **PP 71/2019 PSTE** | Tanda tangan/dokumen elektronik, keamanan sistem elektronik | V? |
 | REG-006 | **POJK Pelindungan Konsumen dan Masyarakat di Sektor Jasa Keuangan** (kemungkinan POJK 22/2023) | Transparansi produk, penanganan pengaduan (SLA), disclosure biaya/bunga | V? |
 | REG-007 | **UU 8/1997 Dokumen Perusahaan** | Retensi dokumen keuangan (umumnya 10 tahun) → param retensi + arsip | V? |
 | REG-008 | **Ketentuan perpajakan** (PPh final atas bunga/bagi hasil, PPN atas fee tertentu, bukti potong, AEOI/CRS-FATCA bila relevan) | Perhitungan & bukti potong pajak, laporan | V! |
-| REG-009 | **Ketentuan LPS** (penjaminan simpanan, tingkat bunga penjaminan) & transisi penjaminan koperasi di P2SK | Rate penjaminan sebagai parameter; flag simpanan layak dijamin; laporan | V! |
+| REG-009 | **Ketentuan LPS** (penjaminan simpanan, tingkat bunga penjaminan) & transisi penjaminan koperasi di P2SK | **Koperasi bukan peserta LPS** (riset 2 Nov 2026); rate/flag penjaminan hanya untuk pack BPR; laporan | V! |
 | REG-010 | **Ketentuan Dukcapil** (verifikasi NIK/e-KTP) | Adapter verifikasi identitas | V? |
 | REG-011 | **Standar akuntansi** (SAK EP dan ketentuan akuntansi sektoral; PSAK/SAK Syariah untuk akad syariah) | COA, posting rule, laporan keuangan, pengakuan margin/bagi hasil | V! |
 
@@ -152,8 +152,8 @@ Mobile/internet banking, ATM/EDC switching, BI-FAST/SNAP, QRIS, e-money, agen (l
 |---|---|---|---|
 | REG-101 | **UU 25/1992 Perkoperasian** (diubah via UU Cipta Kerja & turunannya) | Keanggotaan, simpanan pokok/wajib, SHU, RAT, cadangan | V? |
 | REG-102 | **PP tentang kemudahan/pelindungan koperasi & UMKM** (PP 7/2021 dan turunan) | Persyaratan badan hukum & kegiatan | V? |
-| REG-103 | **Permenkop tentang Usaha Simpan Pinjam Koperasi** (terbaru; kemungkinan Permenkop 8/2023) | Batas kegiatan, rasio, perizinan, pelaporan, BMPP | V! |
-| REG-104 | **Permenkop penilaian kesehatan KSP/USP** | Perhitungan skor kesehatan (permodalan, aset, manajemen, efisiensi, likuiditas, kemandirian, jatidiri) | V! |
+| REG-103 | **Permenkop tentang Usaha Simpan Pinjam Koperasi** (**Permenkop 8/2023**, terverifikasi 2 Nov 2026) | Batas kegiatan, rasio, perizinan, pelaporan, BMPP (10% terkait / 15% tidak terkait) | V! |
+| REG-104 | **Permenkop penilaian kesehatan KSP/USP** (Permenkop 9/2020 + Juknis Deputi 15/2021, kerangka terverifikasi 2 Nov 2026) | Perhitungan skor kesehatan (permodalan, aset, manajemen, efisiensi, likuiditas, kemandirian, jatidiri) | V! |
 | REG-105 | **Pengaturan/pengawasan KSP oleh OJK** sesuai P2SK dan ketentuan transisi | Pelaporan ke OJK, kontrol sektor jasa keuangan | V! |
 
 #### C. BPR
@@ -163,9 +163,9 @@ Mobile/internet banking, ATM/EDC switching, BI-FAST/SNAP, QRIS, e-money, agen (l
 | REG-202 | **POJK terkait BPR/BPRS (kegiatan usaha, kelembagaan, penguatan/konsolidasi)** (mis. POJK 7/2024 – verifikasi) | Batas kegiatan, permodalan | V! |
 | REG-203 | **KPMM/CAR, BMPK (Legal Lending Limit), ATMR** | Kalkulasi rasio, kontrol limit di pemberian kredit | V! |
 | REG-204 | **Kualitas aset & PPAP/CKPN** (kolektibilitas 1–5, ketentuan penyisihan) | Penentuan kolektibilitas, PPAP, parameter persentase | V! |
-| REG-205 | **POJK penyelenggaraan TI oleh BPR/BPRS** (kemungkinan POJK 19/2023) | DR/BCP, manajemen perubahan, audit trail, vendor mgmt, tata kelola TI | V! |
+| REG-205 | **POJK penyelenggaraan TI oleh BPR/BPRS** (**POJK 34/2025** + PADK 43/PADK.03/2025; koreksi 2 Nov 2026) | DR/BCP, manajemen perubahan, audit trail, vendor mgmt, tata kelola TI | V! |
 | REG-206 | **Tingkat Kesehatan BPR (RBBR)** | Perhitungan profil risiko, GCG, rentabilitas, permodalan | V! |
-| REG-207 | **Pelaporan BPR (LBPR/laporan berkala, SLIK)** | Laporan terstruktur ke OJK, format & jadwal sebagai parameter | V! |
+| REG-207 | **Pelaporan BPR (LBPR/laporan berkala, SLIK)** (POJK 18/POJK.03/2017 jo. 64/2020 jo. 11/2024) | Laporan terstruktur ke OJK, format & jadwal sebagai parameter | V! |
 
 #### D. BPRS & BMT/KSPPS
 | ID | Regulasi | Dampak | Status |

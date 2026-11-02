@@ -3,6 +3,7 @@
 # KRAN — single entry point task runner (AGENTS.md §2).
 #
 #   ./task check   format + lint + archcheck + lint-nomagic + paramgen --check + i18n check
+#   ./task traceability  requirement regulasi aktif -> kontrol + test (spec §4.4, O-027)
 #   ./task check-fast  like check without full `nim check` (dev iteration loop, D-077)
 #   ./task verify [filter]  check-fast + openapi + build + test selected modules (D-077)
 #   ./task test    unit + property + integration (Postgres) + contract
@@ -166,6 +167,14 @@ cmd_paramgen() {
   ok "in sync"
 }
 
+cmd_traceability() {
+  log "traceability (requirement aktif -> kontrol + test, spec §4.4)"
+  [ -d "$ROOT/tools/traceability" ] || { skip "tools/traceability not found (O-027)"; return 0; }
+  tool=$(build_tool "$ROOT/tools/traceability")
+  "$tool" "$ROOT" || die "requirement aktif tanpa kontrol/test (lihat docs/compliance/register.yaml)"
+  ok "register regulasi tertaut ke kontrol + test"
+}
+
 cmd_paramgen_gen() {
   tool=$(build_tool "$ROOT/tools/paramgen")
   "$tool" --root "$ROOT" --gen
@@ -265,6 +274,7 @@ cmd_check_fast() {
   cmd_archcheck
   cmd_nomagic
   cmd_paramgen
+  cmd_traceability
   cmd_i18n
   cmd_shlint
 }
@@ -285,6 +295,7 @@ cmd_check() {
   cmd_archcheck
   cmd_nomagic
   cmd_paramgen
+  cmd_traceability
   cmd_i18n
   cmd_shlint
 }
@@ -754,6 +765,7 @@ case "${1:-help}" in
   nomagic) mkdir -p "$BUILD"; cmd_nomagic ;;
   paramgen) mkdir -p "$BUILD"; cmd_paramgen ;;
   paramgen-gen) mkdir -p "$BUILD"; cmd_paramgen_gen ;;
+  traceability) mkdir -p "$BUILD"; cmd_traceability ;;
   i18n) mkdir -p "$BUILD"; cmd_i18n ;;
   openapi) mkdir -p "$BUILD"; cmd_openapi ;;
   openapi-gen) mkdir -p "$BUILD"; cmd_openapi_gen ;;

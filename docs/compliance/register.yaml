@@ -1,0 +1,131 @@
+# Register regulasi yang dibaca mesin (spec §4.4, O-027).
+#
+# `active` = requirement yang **sudah** punya kontrol di sistem. Setiap baris `active` wajib punya
+# minimal satu kontrol (parameter/modul) dan minimal satu test yang benar-benar ada; gate
+# `./task traceability` gagal bila tidak. `deferred` = baris yang sudah diriset tetapi belum punya
+# konsumen di kode; nilainya tidak boleh diklaim dipatuhi.
+#
+# Yang dicatat di sini adalah **tautan** requirement → kontrol → test. Kebenaran nilai/pasal tetap
+# milik `docs/compliance/register-validation.md` dan tanda tangan compliance owner; gate ini tidak
+# memberi klaim kepatuhan, hanya memastikan tautannya tidak putus.
+#
+# Cakupan register = baris §4 yang sudah ditelusuri ke kode. Baris §4 lain yang belum ditelusuri
+# tetap tinggal di spec dan **tidak** dianggap ter-cover oleh berkas ini.
+
+version: 1
+
+requirements:
+  - id: REG-204
+    title: "Kualitas aset & PPAP/CKPN — golongan dari ambang DPD, penyisihan per golongan (POJK 1/2024)"
+    status: active
+    controls:
+      params:
+        - lending.collectibility.dpd_bounds
+        - lending.ppap.rates
+        - lending.restructure.clean_periods
+      modules:
+        - lending
+    tests:
+      - file: modules/lending/tests/tppap.nim
+        name: "tarif dipetakan menurut urutan golongan, bukan dicari"
+      - file: modules/lending/tests/tppap.nim
+        name: "dasar × tarif dengan pembulatan sekali"
+      - file: apps/api/tests/itdaycloser_lending.nim
+        name: "menyisihkan menurut golongan dan menjurnal selisihnya (D 503 / K 111)"
+      - file: apps/api/tests/itdaycloser_lending.nim
+        name: "restrukturisasi menahan golongan di kurang lancar walau DPD nol"
+      - file: apps/api/tests/itdaycloser_lending.nim
+        name: "periode pembayaran bersih melepas batas golongan"
+
+  - id: REG-004
+    title: "APU-PPT: pemantauan risiko anggota (risk level & jadwal re-KYC); CDD/EDD penuh belum ada"
+    status: active
+    controls:
+      params:
+        - party.kyc.risk_levels
+        - party.kyc.default_risk_level
+        - party.kyc.review_months
+      modules:
+        - party
+    tests:
+      - file: apps/api/tests/itapi_kyc.nim
+        name: "profil awal terlihat dari daftar parameter"
+      - file: apps/api/tests/itapi_kyc.nim
+        name: "penilaian risiko menulis audit + event dan menggeser jadwal re-KYC"
+      - file: apps/api/tests/itapi_kyc.nim
+        name: "level di luar parameter dan alasan kosong → 400"
+
+  - id: REG-010
+    title: "Identitas anggota: jenis & panjang nomor dokumen (adapter Dukcapil belum ada)"
+    status: active
+    controls:
+      params:
+        - party.identity.doc_types
+        - party.identity.doc_lengths
+      modules:
+        - party
+    tests:
+      - file: apps/api/tests/itapi_kyc.nim
+        name: "docType di luar parameter dan panjang salah → 400"
+
+  - id: REG-011
+    title: "Standar akuntansi: pola kode COA & posting rule (SAK EP; simpanan pokok/wajib di ekuitas)"
+    status: active
+    controls:
+      params:
+        - ledger.coa.code_pattern
+      modules:
+        - ledger
+    tests:
+      - file: apps/api/tests/itapi_ledger.nim
+        name: "kode tidak cocok pola parameter → 400"
+      - file: apps/api/tests/itapi_teller.nim
+        name: "setor POKOK → ekuitas 301.1 (rule generik tidak terpilih)"
+
+  - id: REG-101
+    title: "UU 25/1992 Perkoperasian: simpanan pokok/wajib sebagai ekuitas (Permenkop 2/2024)"
+    status: active
+    controls:
+      modules:
+        - ledger
+        - deposit
+        - teller
+    tests:
+      - file: apps/api/tests/itapi_teller.nim
+        name: "setor POKOK → ekuitas 301.1 (rule generik tidak terpilih)"
+
+  - id: REG-001
+    title: "UU 4/2023 P2SK — payung pengawasan; transisi KSP ke OJK belum relevan untuk kode"
+    status: deferred
+
+  - id: REG-002
+    title: "UU 27/2022 PDP — consent, hak subjek data, retensi, notifikasi kebocoran 3x24 jam (belum dibangun)"
+    status: deferred
+
+  - id: REG-003
+    title: "UU 8/2010 PP-TPPU — LTKT/LTKM ke PPATK (pemantauan transaksi belum dibangun)"
+    status: deferred
+
+  - id: REG-008
+    title: "PPh final bunga simpanan anggota (PP 15/2009) — modul pajak belum ada"
+    status: deferred
+
+  - id: REG-009
+    title: "Penjaminan LPS — KSP bukan peserta LPS; rate/flag hanya untuk pack BPR"
+    status: deferred
+
+  - id: REG-103
+    title: "Permenkop 8/2023 — izin usaha, BMPP 10%/15%, modal sendiri (penegakan belum ada)"
+    status: deferred
+
+  - id: REG-104
+    title: "Penilaian kesehatan KSP/LHPKK (Permenkop 9/2020 + Juknis 15/2021) — laporan belum ada"
+    status: deferred
+
+  - id: REG-205
+    title: "POJK 34/2025 + PADK 43/2025 — penyelenggaraan TI BPR (pack BPR, Fase 7)"
+    status: deferred
+
+  - id: REG-207
+    title: "Pelaporan BPR & SLIK (POJK 18/2017 jo. 64/2020 jo. 11/2024) — pack BPR, Fase 7"
+    status: deferred

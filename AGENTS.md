@@ -40,9 +40,10 @@ dan `task release` supaya loop harian tidak panas. `nim check` penuh di-shard pa
 Kalau perintah ini belum ada, MEMBUATNYA adalah task pertama (Fase 0, T-001).
 
 ## 3. Git & rilis — PENTING
-- Push ke `main` = DEPLOY ke produksi (webhook → deploy-vps.sh). Karena itu:
-  **JANGAN PERNAH push/merge ke `main`.** Kerja di branch `feat/<id>-<slug>`; commit kecil;
-  buka PR (atau tinggalkan branch siap-review). Merge ke main hanya oleh manusia.
+- Push ke `main` = DEPLOY ke produksi (webhook → deploy-vps.sh). Push **hanya** lewat
+  `./task release` (satu push: commit rilis + tag), tidak pernah `git push` manual ke `main`.
+- Repo ini solo: commit boleh langsung di `main` (keputusan pemilik 2 Nov 2026, D-198); branch
+  `feat/<id>-<slug>` + PR tetap dipakai bila suatu perubahan besar butuh review terpisah.
 - Jangan sentuh server/VPS, webhook, Caddy, secret, atau `ops/` produksi kecuali task
   eksplisit meminta menulis *file* di repo (bukan menjalankan di server).
 - Jangan commit secret/ data nyata. Data uji selalu sintetis.

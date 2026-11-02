@@ -9,22 +9,39 @@ job kosong yang selalu hijau adalah "hijau palsu". Per tanggal T-001 hanya ada
 | `nim-check` | T-001 |
 | `security` (gitleaks) | T-001 |
 | `db-tests` (services: postgres:18) | T-050 — **ada** (17 Okt 2026) |
-| `traceability` (requirement ↔ kontrol/test) | T-005 |
+| `traceability` (requirement ↔ kontrol/test) | T-005 → T-180 (**ada** 2 Nov 2026) |
 | `contract` (OpenAPI ↔ implementasi) | T-008 — digabung ke job `web-e2e` (`./task openapi`) dan ke `./task test` (test Nim `tcontract`/`tapi`/`itapi`) |
 | `web` (svelte-check/vitest/i18n) | T-010 — job `web-e2e` |
 | `web-lint` (eslint: typescript-eslint + `svelte/*` non-a11y) | T-057 — dalam job `web-e2e` (`./task lint-web`, D-139) |
 | `web-unit` (vitest fungsi murni `apps/web`) | T-126 — dalam `./task e2e` |
 | `web-e2e` ber-DB (Postgres + migrate/seed) | T-126 — job `web-e2e` |
 | `e2e-a11y` (Playwright + axe ×2 tema ×2 locale) | T-010 — dalam job `web-e2e` |
-| `traceability` | **belum** dibuat — jangan dianggap ada (lihat O-027) |
+| `traceability` (requirement ↔ kontrol/test) | T-180 — **ada** (2 Nov 2026) |
 | `release.yml` (tag ↔ `VERSION`, GitHub Release) | D-178 — **ada** (2 Nov 2026) |
 | `visual-baseline.yml` (baseline Linux `visual.spec.ts`) | T-156/D-177 — **ada** (31 Okt 2026) |
 | `secret-scan.yml` (gitleaks seluruh riwayat, mingguan) | D-190 — **ada** (2 Nov 2026) |
 
-Catatan status (17 Okt 2026, T-050): job yang benar-benar ada di `ci.yml` sekarang `nim-check`,
-`db-tests`, `web-e2e`, dan `security`. Yang masih selisih dari spec §21.3: `traceability`
-(requirement ↔ kontrol/test) — dicatat sebagai item terbuka (`O-027`) supaya tidak terlihat
-seperti sudah lengkap.
+Catatan status (2 Nov 2026, T-180): seluruh job pada tabel di atas sudah ada. `traceability`
+adalah job terakhir yang menyusul; isinya dijelaskan di bagian berikut.
+
+## Job `traceability` (T-180, O-027)
+
+Gate-nya membaca **`docs/compliance/register.yaml`** dan gagal (exit 1) bila:
+
+- ada requirement berstatus `active` tanpa kontrol (`params`/`modules`) atau tanpa test;
+- parameter yang dirujuk tidak ada di `modules/*/seeds/params.yaml`;
+- modul yang dirujuk tidak ada;
+- berkas test tidak ada, atau berkasnya ada tetapi **tidak memuat** `test "<nama>"` yang dirujuk.
+
+Nama test ikut dicocokkan karena berkas test bisa tetap ada sementara test-nya dihapus — gate yang
+hanya memeriksa nama berkas akan hijau tanpa bukti. Register **bukan** klaim kepatuhan: kebenaran
+nilai/pasal tetap di `docs/compliance/register-validation.md` dan menunggu tanda tangan compliance
+owner. Cakupannya juga sengaja dibatasi pada baris §4 yang sudah punya konsumen di kode; baris lain
+tetap di spec dan tidak dianggap ter-cover.
+
+Karena register berada di `docs/`, filter `on.push`/`on.pull_request` memakai pola `paths` dengan
+pengecualian terakhir: perubahan **hanya** pada `docs/compliance/register.yaml` tetap menjalankan
+CI, sedangkan perubahan dokumentasi lain tidak.
 
 ## Pemicu manual (2 Nov 2026)
 

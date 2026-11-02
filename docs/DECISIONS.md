@@ -5170,3 +5170,45 @@ konservatif kurang lancar. Penurunan golongan tetap boleh terjadi; yang ditahan 
 membaik tetap bisa kembali lancar setelah tiga periode bersih. Pinjaman yang direstrukturisasi sebelum
 migrasi ini tidak di-backfill (nilai "sebelum" tidak tercatat) — perilakunya tetap seperti D-186 sampai
 direstrukturisasi berikutnya. Menyentuh jalur uang → `HUMAN-REVIEW-REQUIRED`.
+
+## D-198 — Alur kerja solo: commit di `main`, push hanya lewat `./task release`; backup offsite dibiarkan (2 Nov 2026)
+
+**Konteks.** AGENTS §3 meminta kerja di branch `feat/*` + PR dengan merge manual. Repo ini dikerjakan
+satu orang dan setiap push ke `main` langsung men-deploy, sehingga PR antar-branch tidak menambah
+pengaman apa pun di atas gate rilis (`check-fast` + build + test + e2e, D-194). Pemilik juga memutuskan
+bahwa backup offsite (O-124) bukan blocker dan tidak perlu dikejar sekarang.
+
+**Keputusan.**
+
+1. Commit boleh langsung di `main`. **Push tetap hanya** lewat `./task release` (commit rilis + tag
+   anotasi, satu push), tidak pernah `git push` manual ke `main`. Branch `feat/*` + PR tetap tersedia
+   bila suatu perubahan besar butuh review terpisah.
+2. O-124 (salinan backup/anchor di luar server) **dibiarkan**: dicatat sebagai risiko residual pilot,
+   bukan blocker. Skripnya sudah siap; yang belum ada remote + kredensial.
+
+**Konsekuensi.** Jejak review mengandalkan gate otomatis + reviewer subagent per task, bukan PR.
+Risiko residual yang diterima: bila server hilang sebelum remote offsite dibuat, tidak ada salinan
+data di luar host. AGENTS §3 diperbarui mengikuti keputusan ini.
+
+## D-199 — Gate traceability membaca register di repo, bukan tabel DB (O-027, 2 Nov 2026)
+
+**Konteks.** Spec §4.4 meminta `compliance.regulation` / `requirement` / `requirement_control` di
+database plus gate CI yang gagal bila requirement `active` tidak punya kontrol/test. Tabel DB belum
+ada, sedangkan job `traceability` adalah satu-satunya job §21.3 yang masih kosong (O-027).
+
+**Keputusan.** Untuk sekarang register hidup sebagai berkas **`docs/compliance/register.yaml`** dan
+divalidasi `./task traceability` (dipanggil `check`/`check-fast` dan job CI `traceability`). Validasi:
+requirement `active` wajib punya kontrol (parameter/modul) dan test; parameter harus ada di
+`modules/*/seeds/params.yaml`; modul harus ada; berkas test harus ada **dan memuat** `test "<nama>"`
+yang dirujuk. `deferred` tidak divalidasi isinya.
+
+**Alasan tidak langsung ke DB.** (a) Gate harus jalan tanpa Postgres (job-nya tidak punya service DB,
+dan lokal sering tanpa DB); (b) berkas di repo bisa di-review di diff — perubahan cakupan gate
+terlihat, tidak tersembunyi di seed; (c) tabel DB tetap bisa dibuat nanti dengan berkas ini sebagai
+sumber migrasi, tanpa membalik arah ketergantungan.
+
+**Konsekuensi.** Cakupan register **dibatasi** pada baris §4 yang sudah ditelusuri ke kode (5 aktif,
+9 deferred per 2 Nov 2026); baris lain tetap di spec dan tidak dianggap ter-cover — gate ini menguji
+tautan, bukan kepatuhan. Perubahan hanya pada `docs/compliance/register.yaml` tetap memicu CI
+(filter `paths` dengan pengecualian terakhir). Bila kelak register pindah ke DB, gate membaca tabel
+dan berkas YAML dihapus dalam satu perubahan.

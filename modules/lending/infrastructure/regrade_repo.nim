@@ -72,3 +72,24 @@ proc insertSnapshot*(db: DbConn; loanId: Id; businessDate: string; dpd: int;
 
 proc updateCollectibility*(db: DbConn; loanId: Id; grade: Collectibility) =
   db.exec(sql"UPDATE lending.loan SET collectibility = ? WHERE loan_id = ?", $grade, $loanId)
+
+proc gradeOn*(db: DbConn; loanId: Id; businessDate: string): Option[Collectibility] =
+  ## Golongan yang tercatat untuk tanggal buku itu (hasil regrade hari itu), bila sudah ada.
+  let raw = db.getValue(sql"""
+    SELECT coalesce(grade, '') FROM lending.collectibility_snapshot
+     WHERE loan_id = ? AND business_date = ?::date""", $loanId, businessDate)
+  if raw.len == 0: none(Collectibility) else: parseCollectibility(raw)
+
+proc oldestUnpaidDue*(db: DbConn; loanId: Id): string =
+  ## Tanggal jatuh tempo angsuran belum lunas tertua pada jadwal aktif; `""` = tidak ada.
+  ## Dipakai menilai golongan **pada tanggal buku** saat restrukturisasi, sebelum jadwal diarsipkan.
+  db.getValue(sql"""
+    SELECT coalesce(min(due_on)::text, '') FROM lending.installment
+     WHERE loan_id = ? AND paid_on IS NULL AND superseded_on IS NULL""", $loanId)
+
+proc gradeCapOf*(db: DbConn; loanId: Id): Option[Collectibility] =
+  ## Batas atas yang sudah tercatat dari restrukturisasi sebelumnya. Dipakai saat restrukturisasi
+  ## berikutnya: batas tidak boleh **melonggar** hanya karena jadwal barunya belum menunggak.
+  let raw = db.getValue(sql"""
+    SELECT coalesce(grade_cap, '') FROM lending.loan WHERE loan_id = ?""", $loanId)
+  if raw.len == 0: none(Collectibility) else: parseCollectibility(raw)
