@@ -4,6 +4,14 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.1.11] - 2026-11-02
+
+### Fixed
+- **security:** Allowlist sempit untuk awalan kunci uji di riwayat (D-189)
+
+### Operations
+- Izinkan pemicu manual pada workflow CI
+
 ## [0.1.10] - 2026-11-02
 
 ### Fixed
