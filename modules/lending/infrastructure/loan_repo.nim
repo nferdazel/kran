@@ -109,15 +109,16 @@ proc approveLoan*(db: DbConn, loanId: Id; approver: Id): bool =
      WHERE loan_id = ? AND status = 'APPLIED'
   """, $approver, $loanId) == 1
 
-proc insertInstallment*(db: DbConn, inst: Installment) =
+proc insertInstallment*(db: DbConn, inst: Installment; scheduleVersion = 1) =
   ## Satu baris jadwal. `paid_*` sengaja tidak dikirim: jadwal baru selalu belum dibayar, dan
-  ## trigger DB menolak perubahan baris yang sudah dibayar.
+  ## trigger DB menolak perubahan baris yang sudah dibayar. `scheduleVersion` > 1 hanya dipakai
+  ## restrukturisasi (T-168).
   db.exec(sql"""
     INSERT INTO lending.installment
-      (loan_id, no, due_on, principal_due, interest_due, penalty_due)
-    VALUES (?, ?, ?::date, ?::numeric, ?::numeric, ?::numeric)
+      (loan_id, no, due_on, principal_due, interest_due, penalty_due, schedule_version)
+    VALUES (?, ?, ?::date, ?::numeric, ?::numeric, ?::numeric, ?)
   """, $inst.loanId, inst.no, inst.dueOn, toDecimalString(inst.principalDue),
-      toDecimalString(inst.interestDue), toDecimalString(inst.penaltyDue))
+      toDecimalString(inst.interestDue), toDecimalString(inst.penaltyDue), scheduleVersion)
 
 proc installmentCountOf*(db: DbConn, loanId: Id): int =
   parseInt(db.getValue(sql"SELECT count(*) FROM lending.installment WHERE loan_id = ?", $loanId))
@@ -156,15 +157,19 @@ proc installmentOf(row: Row): Installment =
   )
 
 proc installmentsForUpdate*(db: DbConn, loanId: Id): seq[Installment] =
-  ## Jadwal pinjaman, **tertua lebih dulu** (`due_on`, lalu `no`), baris dikunci supaya dua
+  ## Jadwal **aktif** pinjaman, **tertua lebih dulu** (`due_on`, lalu `no`), baris dikunci supaya dua
   ## pembayaran bersamaan tidak mengalokasikan nominal yang sama dua kali dan tidak melewati
   ## `paid_* <= *_due` (CHECK DB adalah jaring terakhir, bukan alat alokasi).
+  ##
+  ## Baris yang sudah diarsipkan restrukturisasi (`superseded_on` terisi) tidak boleh menerima
+  ## pembayaran: kewajibannya sudah digantikan jadwal baru, dan membayarnya akan menghitung utang dua
+  ## kali.
   for row in db.getAllRows(sql"""
     SELECT loan_id::text, no, due_on::text, principal_due::text, interest_due::text,
            penalty_due::text, paid_principal::text, paid_interest::text, paid_penalty::text,
            coalesce(paid_on::text, '')
       FROM lending.installment
-     WHERE loan_id = ?
+     WHERE loan_id = ? AND superseded_on IS NULL
      ORDER BY due_on, no
        FOR UPDATE""", $loanId):
     result.add installmentOf(row)

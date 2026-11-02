@@ -4894,3 +4894,49 @@ Pembiayaan`, (c) menghentikan PPAP sampai O-075 diputuskan. Pemilik memilih **(a
   Aturan pelepasan saat akad ditutup/dihapusbukukan belum ada (D-183 menolak penutupan otomatis), jadi
   task **gagal terlihat** (`DAY-384`) alih-alih menutup buku dengan angka yang salah. Ditutup bersama
   T-168 (restrukturisasi & hapus buku).
+
+## D-186 — Restrukturisasi & hapus buku: versi jadwal, dasar sisa pokok, dan akun hapus buku (1 Nov 2026)
+
+**Konteks.** T-168 menyentuh dua operasi yang tidak punya aturan di spec (hanya disebut sebagai
+cakupan modul): restrukturisasi dan hapus buku. Tiga kendala teknis memaksa bentuk tertentu:
+
+- trigger `lending/0089` membekukan `due_on`/`*_due` pada baris jadwal yang sudah dibayar, jadi
+  restrukturisasi **tidak bisa** berupa `UPDATE` jadwal;
+- `lending.payment_allocation` menunjuk `(payment_id, installment_no)` **tanpa versi**, jadi nomor
+  angsuran tidak boleh dipakai ulang;
+- template jurnal Fase 1 memaksa tepat satu debit + satu kredit, sedangkan hapus buku mengalir ke dua
+  akun (penyisihan dan beban).
+
+**Keputusan (pemilik, 1 Nov 2026).**
+
+1. **Restrukturisasi = jadwal versi baru**, jadwal lama diarsipkan (`superseded_on`). Versi dicatat di
+   `lending.loan_schedule` (versi 1 = jadwal pencairan, dibuat saat pencairan), baris lama tidak
+   dihapus. Nomor angsuran **berlanjut** dari nomor terakhir, karena alokasi pembayaran tidak
+   menyimpan versi.
+2. **Dasar jadwal baru = sisa pokok**; tunggakan **bunga/denda** jadwal lama **dilepas** (tidak
+   ditagih, tidak dikapitalisasi). Bunga diakui saat dibayar (`LoanInterestPaid`), jadi tidak ada
+   pendapatan yang perlu dibalik — hanya pendapatan yang tidak pernah terjadi.
+3. **Kolektibilitas kembali lancar** sejak restrukturisasi. Konsekuensinya otomatis: DPD dihitung
+   dari jadwal **aktif**, yang jatuh temponya di masa depan. **NEEDS-COMPLIANCE-REVIEW** — aturan
+   "pinjaman direstrukturisasi" adalah ketentuan regulasi, bukan preferensi teknis (O-123).
+4. **Hapus buku** mensyaratkan pinjaman `ACTIVE` dan golongan **`LOSS`**, serta menghapus **seluruh
+   sisa kewajiban** (pokok + bunga + denda) dari jadwal aktif.
+5. **Jurnal hapus buku** memakai penyisihan lebih dulu, kekurangannya menjadi beban:
+   `LoanWriteOffProvisioned` D 111 / K 110 dan `LoanWriteOffExpense` D 504 / K 110. Dua jurnal karena
+   template memaksa satu debit + satu kredit; bagian nol tidak dijurnal. Akun `504 BEBAN HAPUS BUKU`
+   baru, **NEEDS-COMPLIANCE-REVIEW**.
+6. **Pemisahan tugas di RBAC**, bukan alur persetujuan baru: `lending_maker` memegang
+   `lending.loan.restructure`, `lending_checker` memegang `lending.loan.write_off` (migrasi
+   `platform/0096`). Yang mencairkan pinjaman bukan yang menghapusbukukannya.
+
+**Konsekuensi yang dicatat.**
+
+- Penyisihan yang sudah dibentuk untuk pinjaman yang dihapusbukukan **terpakai**; pemeriksaan
+  `DAY-384` membandingkan penyisihan terakhir dengan `lending.writeoff.allowance_applied`, sehingga
+  hapus buku tidak lagi menggagalkan penutupan buku (O-122 diperbarui).
+- **Pemulihan pasca hapus buku belum ada**: bila anggota membayar setelah dihapusbukukan, tidak ada
+  jalur yang mencatatnya. Dicatat sebagai batas (O-122), bukan dikerjakan sebagian.
+- Restrukturisasi **tidak mengubah tarif/metode**; keduanya diambil dari versi produk. Perubahan
+  tarif adalah keputusan produk baru.
+- Pinjaman hanya bisa direstrukturisasi saat `ACTIVE`; `APPLIED`/`APPROVED` ditolak `not_disbursed`,
+  `CLOSED`/`WRITTEN_OFF` ditolak `loan_inactive`.

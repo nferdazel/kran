@@ -2304,6 +2304,157 @@ paths:
         "503":
           $ref: "#/components/responses/Problem"
 
+  /api/v1/lending/loans/{loanId}/restructure:
+    post:
+      operationId: restructureLoan
+      tags: [lending]
+      summary: Susun jadwal versi baru dari sisa pokok (restrukturisasi)
+      description: |
+        Jadwal **versi baru** dibuat dari sisa **pokok** pinjaman; jadwal lama diarsipkan
+        (`superseded_on`), tidak diubah — trigger `0089` melarang mengubah kewajiban yang sudah
+        dibayar, dan mengubahnya akan menghapus riwayat yang ditandatangani anggota.
+
+        Keputusan pemilik 1 Nov 2026 (D-186): tunggakan **bunga/denda** jadwal lama dilepas (bunga
+        diakui saat dibayar, jadi tidak ada pendapatan yang perlu dibalik), dan kolektibilitas
+        **kembali lancar** sejak restrukturisasi karena DPD dihitung dari jadwal aktif yang jatuh
+        temponya di masa depan. Keduanya aturan regulasi yang belum diverifikasi:
+        **NEEDS-COMPLIANCE-REVIEW / HUMAN-REVIEW-REQUIRED** (O-123).
+
+        Tarif dan metode jadwal diambil dari versi produk pinjaman; mengubah tarif adalah keputusan
+        produk baru, bukan efek samping restrukturisasi. Nomor angsuran **berlanjut** dari nomor
+        terakhir jadwal lama, karena `payment_allocation` menunjuk nomor tanpa versi.
+
+        `Idempotency-Key` wajib. Replay kunci+isi sama → 200 + `Idempotent-Replayed` tanpa jadwal
+        kedua; kunci sama isi beda → 409.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoanRestructureRequest"
+      responses:
+        "200":
+          description: Jadwal versi baru dibuat dan jadwal lama diarsipkan.
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanRestructureResult"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "409":
+          description: |
+            Ditolak keadaan sekarang (`params.reason`): `not_disbursed`, `loan_inactive`,
+            `product_version_missing`, `restructure_invalid`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/lending/loans/{loanId}/write-off:
+    post:
+      operationId: writeOffLoan
+      tags: [lending]
+      summary: Hapusbukukan piutang pinjaman golongan LOSS
+      description: |
+        Syarat (D-186): pinjaman `ACTIVE` dan golongan kolektibilitas terkini **`LOSS`**. Nilai yang
+        dihapus = **seluruh sisa kewajiban** jadwal aktif (pokok + bunga + denda).
+
+        Penyisihan yang sudah dibentuk untuk pinjaman ini dipakai lebih dulu, kekurangannya menjadi
+        beban:
+
+        - `LoanWriteOffProvisioned` — `D 111` (penyisihan) / `K 110` (piutang)
+        - `LoanWriteOffExpense` — `D 504` (beban hapus buku) / `K 110`
+
+        Dua jurnal karena template Fase 1 memaksa tepat satu debit dan satu kredit per jurnal;
+        bagian yang nol tidak dijurnal. Saldo pinjaman menjadi nol dan status `WRITTEN_OFF` dengan
+        jejak tanggal, pelaku, dan alasan.
+
+        **Akun `504` dan pemakaian akun `111` bertanda NEEDS-COMPLIANCE-REVIEW** (D-185); pemulihan
+        pasca hapus buku belum didukung (O-122). **HUMAN-REVIEW-REQUIRED** (AGENTS.md §8).
+
+        `Idempotency-Key` wajib.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoanWriteOffRequest"
+      responses:
+        "200":
+          description: Piutang dihapusbukukan; jurnal penyisihan dan/atau beban terbentuk.
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanWriteOffResult"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "409":
+          description: |
+            Ditolak keadaan sekarang (`params.reason`): `not_loss`, `already_written_off`,
+            `not_disbursed`, `loan_inactive`, `nothing_to_write_off`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+
   /api/v1/deposit/accounts:
     get:
       operationId: listDepositAccounts
@@ -4065,6 +4216,109 @@ components:
         installmentCount:
           type: integer
           minimum: 1
+    LoanRestructureRequest:
+      type: object
+      additionalProperties: false
+      required: [tenorMonths, reason]
+      properties:
+        tenorMonths:
+          type: integer
+          minimum: 1
+          description: Tenor jadwal baru dalam bulan. Tarif & metode mengikuti versi produk.
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Alasan restrukturisasi, disimpan di riwayat versi jadwal dan audit.
+    LoanRestructureResult:
+      type: object
+      additionalProperties: false
+      required: [loanId, scheduleVersion, principalRestructured, tenorMonths, firstDueOn,
+                 maturityOn, firstInstallmentNo, installmentCount, supersededInstallments,
+                 businessDate]
+      properties:
+        loanId:
+          type: string
+          format: uuid
+        scheduleVersion:
+          type: integer
+          minimum: 2
+        principalRestructured:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+        tenorMonths:
+          type: integer
+          minimum: 1
+        firstDueOn:
+          type: string
+          format: date
+        maturityOn:
+          type: string
+          format: date
+        firstInstallmentNo:
+          type: integer
+          minimum: 1
+          description: Nomor angsuran pertama versi baru (lanjutan nomor jadwal lama).
+        installmentCount:
+          type: integer
+          minimum: 1
+        supersededInstallments:
+          type: integer
+          minimum: 0
+        businessDate:
+          type: string
+          format: date
+    LoanWriteOffRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    LoanWriteOffResult:
+      type: object
+      additionalProperties: false
+      required: [loanId, status, principal, interest, penalty, total, allowanceApplied, expense,
+                 journalIds, businessDate, reason]
+      properties:
+        loanId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [WRITTEN_OFF]
+        principal:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+        interest:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+        penalty:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+        total:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+        allowanceApplied:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+          description: Bagian yang ditutup penyisihan (`D 111`); `0.00` bila belum disisihkan.
+        expense:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+          description: Bagian yang menjadi beban hapus buku (`D 504`).
+        journalIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        businessDate:
+          type: string
+          format: date
+        reason:
+          type: string
     LoanPaymentRequest:
       type: object
       additionalProperties: false

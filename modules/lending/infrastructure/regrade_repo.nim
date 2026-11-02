@@ -23,9 +23,13 @@ proc countActiveLoans*(db: DbConn): int64 =
 proc regradeCandidatesPage*(db: DbConn; offset, limit: int): seq[RegradeCandidate] =
   ## `paid_on` kosong berarti angsuran belum lunas (diisi `markSettledRows` hanya saat semua
   ## komponen tertutup), jadi `min(due_on)` di antaranya adalah tanggal tunggakan tertua.
+  ## Baris yang diarsipkan restrukturisasi tidak dihitung: kewajibannya sudah digantikan jadwal baru,
+  ## dan menghitungnya membuat DPD tetap menunggak tepat setelah restrukturisasi — berlawanan dengan
+  ## keputusan "kembali lancar" (D-186, O-123).
   for row in db.getAllRows(sql"""
     SELECT l.loan_id::text, coalesce(l.collectibility, ''),
-           coalesce(min(i.due_on) FILTER (WHERE i.paid_on IS NULL)::text, '')
+           coalesce(min(i.due_on) FILTER (WHERE i.paid_on IS NULL AND i.superseded_on IS NULL)::text,
+                    '')
       FROM lending.loan l
       LEFT JOIN lending.installment i ON i.loan_id = l.loan_id
      WHERE l.status = 'ACTIVE'

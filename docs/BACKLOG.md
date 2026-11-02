@@ -314,8 +314,8 @@ dibangun, pilot data nyata menunggu verifikasi (O-001).
 | T-165 | DONE | Angsuran: alokasi pokok/bunga/denda dengan urutan dari parameter | T-164 | property test alokasi; angsuran terakhir menutup saldo tepat 0 |
 | T-166 | DONE | Task day-close `lending.dpd_regrade` (ambang D-180) | T-165 | idempoten per business date; audit per chunk; ambang dari parameter |
 | T-167 | DONE | Task PPAP/CKPN + jurnal penyisihan/pembalik | T-166 | Δ subledger PPAP = Δ GL; run kedua tidak menggandakan |
-| T-168 | READY | Restrukturisasi & hapus buku | T-167 | restruk mengubah jadwal tanpa memutus riwayat; write-off nol-kan saldo dengan jurnal |
-| T-169 | TODO | API + OpenAPI + izin + scoping cabang | T-163…T-167 | `./task openapi` hijau; contract test; 403 lintas cabang teruji |
+| T-168 | DONE | Restrukturisasi & hapus buku | T-167 | restruk mengubah jadwal tanpa memutus riwayat; write-off nol-kan saldo dengan jurnal |
+| T-169 | READY | API + OpenAPI + izin + scoping cabang | T-163…T-167 | `./task openapi` hijau; contract test; 403 lintas cabang teruji |
 | T-170 | TODO | UI operator pinjaman | T-169 | axe `moderate` 2 tema × 2 locale; keyboard-only; baseline visual |
 | T-171 | TODO | Laporan: tunggakan, aging DPD, PPAP, rekonsiliasi | T-167 | angka cocok dengan subledger pada fixture tetap |
 | T-172 | TODO | Simulasi + benchmark EOD dengan pinjaman; laporan M4 | T-166, T-167 | `itdaycloser_sim` mencakup pinjaman; bench 100k simpanan + 50k pinjaman |

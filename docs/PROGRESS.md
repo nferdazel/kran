@@ -4053,3 +4053,38 @@ memaksa `ASSET → DEBIT` dan O-075 melarang akun kontra dipaksa menjadi `LIABIL
 **Bukti**: `tppap` 8 hijau, `itdaycloser_lending` 13 hijau (6 regrade + 7 PPAP: selisih vs tanggal
 sebelumnya, jurnal pembalik tanpa nominal negatif, run ulang, Δ snapshot == Δ GL, `DAY-380`,
 `DAY-383`), `dbtools validate` 92 migrasi bersih. Gate lengkap dijalankan setelah entri ini ditulis.
+
+## 2026-11-02 — T-168: restrukturisasi (jadwal versi baru) & hapus buku
+
+Dua operasi yang spec hanya sebut namanya. Lima pertanyaan diajukan ke pemilik dan dijawab 1 Nov
+2026; semuanya dicatat di **D-186**, bukan disimpulkan dari kode.
+
+**Restrukturisasi** — jadwal versi baru, jadwal lama **diarsipkan** (`superseded_on`), bukan diubah
+(trigger `0089` membekukan kewajiban yang sudah dibayar). Versi dicatat di `lending.loan_schedule`
+(versi 1 dibuat saat pencairan); nomor angsuran **berlanjut**, karena `payment_allocation` menunjuk
+nomor tanpa versi. Dasar jadwal baru = sisa **pokok**; tunggakan bunga/denda dilepas. Kolektibilitas
+kembali lancar karena DPD dibaca dari jadwal aktif — aturan regulasi, ditandai
+`NEEDS-COMPLIANCE-REVIEW` di O-123.
+
+**Hapus buku** — syarat `ACTIVE` + golongan `LOSS`; menghapus seluruh sisa kewajiban. Penyisihan
+dipakai lebih dulu (`D 111`), kekurangannya beban (`D 504`, akun baru), keduanya `K 110`. Dua jurnal
+karena template memaksa satu debit + satu kredit. `lending.writeoff` menyimpan rincian nilai dan
+berapa penyisihan yang terpakai, sehingga pemeriksaan `DAY-384` tidak lagi menganggap hapus buku
+sebagai penyisihan menggantung.
+
+**Pemisahan tugas lewat RBAC**, bukan alur baru: `lending_maker` memegang `restructure`,
+`lending_checker` memegang `write_off` (migrasi `platform/0096`). Yang mencairkan pinjaman bukan yang
+menghapusbukukannya.
+
+**Dua bug ditemukan test, bukan ditutup dengan melonggarkan test**: (a) pinjaman yang dicairkan
+setelah migrasi tidak punya baris `lending.loan_schedule` versi 1, sehingga restrukturisasi pertama
+mencoba memakai versi 1 dan ditolak — pencairan sekarang menulis versi 1; (b) baris jadwal dari
+`buildSchedule` tidak membawa `loanId` (domain murni), sehingga insert menyimpan uuid kosong dan
+jurnal/insert gagal — `loanId` diisi di composition root.
+
+**Batas**: pemulihan pasca hapus buku belum ada (O-122); restrukturisasi tidak mengubah tarif/metode
+(selalu dari versi produk).
+
+**Bukti**: `trestructure` 4, `twriteoff` 5, `itapi_lending` 35, `itdaycloser_lending` 15,
+`dbtools validate` 96 migrasi, `check-fast` (295 berkas), `build`, `openapi`, `./task test` penuh
+hijau (**1543** `[OK]`, 0 `[FAILED]`), `./task e2e` **63 lulus / 4 skip**.

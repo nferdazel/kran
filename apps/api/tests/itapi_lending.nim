@@ -662,3 +662,227 @@ suite "lending: pembayaran angsuran (T-165)":
       "amount": "10000.00"}, makerToken).code == 400
     check postJson(fill(PaymentsPath, loanId), %*{"accountId": accountId, "amount": "0"},
       makerToken, "itapi-lending-badpay-" & loanId).code == 400
+
+suite "lending: restrukturisasi & hapus buku (T-168)":
+  const
+    RestructurePath = "/api/v1/lending/loans/{loanId}/restructure"
+    WriteOffPath = "/api/v1/lending/loans/{loanId}/write-off"
+
+  proc newActiveLoan(amount = "9000000.00"): string =
+    let created = postJson(LoansPath, loanBody(PartyId, versionActive, amount), makerToken)
+    check created.code == 201
+    let loanId = created.body["loanId"].getStr()
+    check postJson(fill(ApprovePath, loanId), %*{}, approverToken).code == 200
+    check postJson(fill(DisbursePath, loanId), %*{"accountId": accountId}, makerToken,
+      "it168-disburse-" & loanId).code == 200
+    loanId
+
+  proc activePrincipalOutstanding(loanId: string): string =
+    dbValue(sql"""
+      SELECT coalesce(sum(principal_due - paid_principal), 0)::numeric(24,2)::text
+        FROM lending.installment WHERE loan_id = ? AND superseded_on IS NULL""", loanId)
+
+  proc unpayedTotal(loanId: string): string =
+    dbValue(sql"""
+      SELECT coalesce(sum(principal_due - paid_principal + interest_due - paid_interest
+                         + penalty_due - paid_penalty), 0)::numeric(24,2)::text
+        FROM lending.installment WHERE loan_id = ? AND superseded_on IS NULL""", loanId)
+
+  test "restrukturisasi membuat versi jadwal baru dan mengarsipkan yang lama":
+    let loanId = newActiveLoan()
+    let r = postJson(fill(RestructurePath, loanId),
+      %*{"tenorMonths": 6, "reason": "penurunan kemampuan bayar"}, makerToken,
+      "it168-restructure-" & loanId)
+    check r.code == 200
+    checkJson(RestructurePath, "POST", "200", r.body)
+    check r.body["scheduleVersion"].getInt() == 2
+    check r.body["installmentCount"].getInt() == 6
+    check r.body["firstInstallmentNo"].getInt() == 13 # lanjutan nomor jadwal lama
+    check r.body["supersededInstallments"].getInt() == 12
+    # Jadwal lama diarsipkan, bukan dihapus; jadwal baru aktif.
+    check dbValue(sql"""
+      SELECT count(*) FROM lending.installment
+       WHERE loan_id = ? AND superseded_on IS NOT NULL""", loanId) == "12"
+    check dbValue(sql"""
+      SELECT count(*) FROM lending.installment
+       WHERE loan_id = ? AND superseded_on IS NULL""", loanId) == "6"
+    # Sisa pokok terurai tepat sama di jadwal baru.
+    check activePrincipalOutstanding(loanId) == "9000000.00"
+    check dbValue(sql"SELECT maturity_on::text FROM lending.loan WHERE loan_id = ?", loanId) ==
+      r.body["maturityOn"].getStr()
+    check dbValue(sql"SELECT count(*) FROM lending.loan_schedule WHERE loan_id = ?", loanId) == "2"
+    check dbValue(sql"""
+      SELECT count(*) FROM platform.audit_log
+       WHERE action = 'lending.loan.restructure' AND resource_id = ?""", loanId) == "1"
+    check dbValue(sql"""
+      SELECT count(*) FROM platform.outbox
+       WHERE event_type = 'LoanRestructured' AND aggregate_id = ?""", loanId) == "1"
+
+  test "pembayaran lama tetap utuh, pembayaran berikutnya masuk jadwal baru":
+    let loanId = newActiveLoan("6000000.00")
+    let paid = postJson(fill(PaymentsPath, loanId),
+      %*{"accountId": accountId, "amount": "500000.00"}, makerToken, "it168-pay-" & loanId)
+    check paid.code == 200
+    let paidBefore = dbValue(sql"""
+      SELECT sum(paid_principal + paid_interest + paid_penalty)::numeric(24,2)::text
+        FROM lending.installment WHERE loan_id = ?""", loanId)
+    let principalBefore = activePrincipalOutstanding(loanId)
+
+    check postJson(fill(RestructurePath, loanId),
+      %*{"tenorMonths": 3, "reason": "tenor diperpanjang"}, makerToken,
+      "it168-restructure2-" & loanId).code == 200
+    # Pembayaran lama tidak berubah sedikit pun (trigger 0089 menjaga kewajiban & paid_*).
+    check dbValue(sql"""
+      SELECT sum(paid_principal + paid_interest + paid_penalty)::numeric(24,2)::text
+        FROM lending.installment WHERE loan_id = ?""", loanId) == paidBefore
+    check activePrincipalOutstanding(loanId) == principalBefore
+
+    let oldAllocations = dbValue(sql"""
+      SELECT count(*) FROM lending.payment_allocation pa
+        JOIN lending.payment p USING (payment_id)
+       WHERE p.loan_id = ? AND pa.installment_no < 13""", loanId)
+    check oldAllocations != "0" # pembayaran pertama memang menyentuh jadwal lama
+    let after = postJson(fill(PaymentsPath, loanId),
+      %*{"accountId": accountId, "amount": "200000.00"}, makerToken, "it168-pay2-" & loanId)
+    check after.code == 200
+    # Pembayaran baru tidak boleh menyentuh jadwal lama (yang sudah diarsipkan) sama sekali.
+    check dbValue(sql"""
+      SELECT count(*) FROM lending.payment_allocation pa
+        JOIN lending.payment p USING (payment_id)
+       WHERE p.loan_id = ? AND pa.installment_no < 13""", loanId) == oldAllocations
+    check dbValue(sql"""
+      SELECT count(*) FROM lending.payment_allocation pa
+        JOIN lending.payment p USING (payment_id)
+       WHERE p.loan_id = ? AND pa.installment_no >= 13""", loanId) != "0"
+
+  test "replay kunci restrukturisasi tidak membuat jadwal kedua":
+    let loanId = newActiveLoan("1200000.00")
+    let key = "it168-restructure-replay-" & loanId
+    let first = postJson(fill(RestructurePath, loanId),
+      %*{"tenorMonths": 2, "reason": "uji replay"}, makerToken, key)
+    check first.code == 200
+    let before = dbValue(sql"SELECT count(*) FROM lending.loan_schedule WHERE loan_id = ?", loanId)
+    let second = postJson(fill(RestructurePath, loanId),
+      %*{"tenorMonths": 2, "reason": "uji replay"}, makerToken, key)
+    check second.code == 200
+    check second.body["scheduleVersion"].getInt() == first.body["scheduleVersion"].getInt()
+    check dbValue(sql"SELECT count(*) FROM lending.loan_schedule WHERE loan_id = ?", loanId) == before
+
+  test "pinjaman yang belum cair dan badan tidak sah ditolak":
+    let created = postJson(LoansPath, loanBody(PartyId, versionActive, "500000.00"), makerToken)
+    let pendingLoan = created.body["loanId"].getStr()
+    check postJson(fill(ApprovePath, pendingLoan), %*{}, approverToken).code == 200
+    let notYet = postJson(fill(RestructurePath, pendingLoan),
+      %*{"tenorMonths": 3, "reason": "uji"}, makerToken, "it168-pending-" & pendingLoan)
+    check notYet.code == 409
+    check notYet.body["params"]["reason"].getStr() == "not_disbursed"
+
+    let loanId = newActiveLoan("300000.00")
+    check postJson(fill(RestructurePath, loanId), %*{"tenorMonths": 0, "reason": "x"},
+      makerToken, "it168-bad-tenor-" & loanId).code == 400
+    check postJson(fill(RestructurePath, loanId), %*{"tenorMonths": 3},
+      makerToken, "it168-no-reason-" & loanId).code == 400
+    check postJson(fill(RestructurePath, loanId), %*{"tenorMonths": 3, "reason": "x"},
+      makerToken).code == 400
+
+  test "hapus buku memakai penyisihan lebih dulu, sisanya beban":
+    let loanId = newActiveLoan("3000000.00")
+    let total = unpayedTotal(loanId)
+    check dbValue(sql"""
+      UPDATE lending.loan SET collectibility = 'LOSS' WHERE loan_id = ? RETURNING loan_id::text""",
+      loanId) == loanId
+    execDb(sql"""
+      INSERT INTO lending.ppap_snapshot
+        (loan_id, business_date, grade, base_amount, rate_micro, allowance)
+      VALUES (?, current_date, 'LOSS', 3000000.00, 500000, 1500000.00)""", loanId)
+
+    let r = postJson(fill(WriteOffPath, loanId), %*{"reason": "tidak ada harapan tertagih"},
+      approverToken, "it168-writeoff-" & loanId)
+    check r.code == 200
+    checkJson(WriteOffPath, "POST", "200", r.body)
+    check r.body["status"].getStr() == "WRITTEN_OFF"
+    check r.body["total"].getStr() == total
+    check r.body["allowanceApplied"].getStr() == "1500000.00"
+    check r.body["expense"].getStr() == (parseFloat(total) - 1_500_000.0).formatFloat(ffDecimal, 2)
+    check r.body["journalIds"].len == 2 # penyisihan + beban
+
+    check dbValue(sql"SELECT status FROM lending.loan WHERE loan_id = ?", loanId) == "WRITTEN_OFF"
+    check dbValue(sql"""
+      SELECT written_off_on IS NOT NULL AND written_off_by IS NOT NULL
+             AND written_off_reason IS NOT NULL
+        FROM lending.loan WHERE loan_id = ?""", loanId) == "t"
+    check dbValue(sql"""
+      SELECT (principal_outstanding + interest_overdue + penalty_outstanding)::numeric(24,2)::text
+        FROM lending.loan_balance WHERE loan_id = ?""", loanId) == "0.00"
+    check dbValue(sql"""
+      SELECT allowance_applied + expense_amount = principal_amount + interest_amount + penalty_amount
+        FROM lending.writeoff WHERE loan_id = ?""", loanId) == "t"
+
+    # Kedua jurnal mengkredit 110 sebesar nilai yang dihapus; tidak ada sisi negatif.
+    check dbValue(sql"""
+      SELECT coalesce(sum(credit), 0)::numeric(24,2)::text
+        FROM ledger.journal_line l JOIN ledger.journal j USING (journal_id)
+       WHERE j.source_ref = ? AND j.source_event IN
+             ('LoanWriteOffProvisioned', 'LoanWriteOffExpense')""", loanId) == total
+    check dbValue(sql"""
+      SELECT string_agg(gl_account || ':' ||
+               CASE WHEN debit > 0 THEN 'DEBIT' ELSE 'CREDIT' END, ',' ORDER BY line_no)
+        FROM ledger.journal_line l JOIN ledger.journal j USING (journal_id)
+       WHERE j.source_ref = ? AND j.source_event = 'LoanWriteOffProvisioned'""", loanId) ==
+      "111:DEBIT,110:CREDIT"
+    check dbValue(sql"""
+      SELECT string_agg(gl_account || ':' ||
+               CASE WHEN debit > 0 THEN 'DEBIT' ELSE 'CREDIT' END, ',' ORDER BY line_no)
+        FROM ledger.journal_line l JOIN ledger.journal j USING (journal_id)
+       WHERE j.source_ref = ? AND j.source_event = 'LoanWriteOffExpense'""", loanId) ==
+      "504:DEBIT,110:CREDIT"
+    check dbValue(sql"""
+      SELECT count(*) FROM platform.audit_log
+       WHERE action = 'lending.loan.write_off' AND resource_id = ?""", loanId) == "1"
+
+  test "replay kunci hapus buku tidak menjurnal dua kali":
+    let loanId = newActiveLoan("1200000.00")
+    check dbValue(sql"""
+      UPDATE lending.loan SET collectibility = 'LOSS' WHERE loan_id = ? RETURNING loan_id::text""",
+      loanId) == loanId
+    let key = "it168-writeoff-replay-" & loanId
+    let first = postJson(fill(WriteOffPath, loanId), %*{"reason": "uji replay"}, approverToken, key)
+    check first.code == 200
+    let journals = dbValue(sql"""
+      SELECT count(*) FROM ledger.journal WHERE source_ref = ?""", loanId)
+    let second = postJson(fill(WriteOffPath, loanId), %*{"reason": "uji replay"}, approverToken, key)
+    check second.code == 200
+    check second.body["total"].getStr() == first.body["total"].getStr()
+    check dbValue(sql"SELECT count(*) FROM ledger.journal WHERE source_ref = ?", loanId) == journals
+    check dbValue(sql"SELECT count(*) FROM lending.writeoff WHERE loan_id = ?", loanId) == "1"
+
+  test "hapus buku ditolak: bukan LOSS, bukan penyetuju, tanpa kunci":
+    let loanId = newActiveLoan("600000.00")
+    # Belum dinilai → ditolak, bukan dianggap LOSS.
+    let ungraded = postJson(fill(WriteOffPath, loanId), %*{"reason": "uji"}, approverToken,
+      "it168-ungraded-" & loanId)
+    check ungraded.code == 409
+    check ungraded.body["params"]["reason"].getStr() == "not_loss"
+
+    check dbValue(sql"""
+      UPDATE lending.loan SET collectibility = 'LOSS' WHERE loan_id = ? RETURNING loan_id::text""",
+      loanId) == loanId
+    # Pemisahan tugas ada di data RBAC: `lending_maker` **tidak** memegang izin hapus buku
+    # (migrasi `platform/0096`). Fixture test memberi `dev.maker` `platform_admin`, jadi pengujian
+    # di sini memeriksa aturan perannya, bukan grant dev itu.
+    check dbValue(sql"""
+      SELECT count(*) FROM platform.role_permission rp
+        JOIN platform.role r USING (role_id)
+        JOIN platform.permission p USING (permission_id)
+       WHERE r.code = 'lending_maker' AND p.code = 'lending.loan.write_off'""") == "0"
+    check dbValue(sql"""
+      SELECT count(*) FROM platform.role_permission rp
+        JOIN platform.role r USING (role_id)
+        JOIN platform.permission p USING (permission_id)
+       WHERE r.code = 'lending_maker' AND p.code = 'lending.loan.restructure'""") == "1"
+    # Pengguna tanpa izin sama sekali tetap ditolak.
+    check postJson(fill(WriteOffPath, loanId), %*{"reason": "uji"}, checkerToken,
+      "it168-checker-" & loanId).code == 403
+    check postJson(fill(WriteOffPath, loanId), %*{"reason": "uji"}, approverToken).code == 400
+    check postJson(fill(WriteOffPath, loanId), %*{}, approverToken,
+      "it168-empty-" & loanId).code == 400

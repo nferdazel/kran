@@ -24,6 +24,8 @@ import kernel/[clock, dayclose, ids, result]
 
 import daycloser/domain/[registry, types]
 
+import lending/infrastructure/ppap_repo
+
 import ../src/daycloser_lending
 
 let envT = envTableFromProcess()
@@ -399,5 +401,58 @@ suite "day-close lending: penyisihan PPAP (T-167)":
     let chunks = ppapTask().countChunks(ctxOn("2026-11-14"), 100)
     check not chunks.isOk
     check chunks.error.code == "DAY-383"
+
+
+suite "day-close lending: restrukturisasi & hapus buku (T-168)":
+  test "tunggakan jadwal lama yang diarsipkan tidak lagi dihitung sebagai DPD":
+    let loanId = newId(testClock)
+    newPpapLoan(loanId, "12000000.00")
+    newInstallment(loanId, 1, "2026-06-01")
+    # 1 Nov 2026: 153 hari menunggak → DOUBTFUL dengan ambang [90,120,180].
+    discard runChunk("2026-11-01")
+    check db.getValue(sql"""
+      SELECT grade FROM lending.collectibility_snapshot
+       WHERE loan_id = ? AND business_date = '2026-11-01'""", $loanId) == "DOUBTFUL"
+    # Restrukturisasi: jadwal lama diarsipkan, jadwal baru jatuh tempo di masa depan.
+    db.exec(sql"""
+      UPDATE lending.installment SET superseded_on = '2026-11-15'
+       WHERE loan_id = ? AND no = 1""", $loanId)
+    newInstallment(loanId, 2, "2027-01-01")
+    db.exec(sql"""
+      UPDATE lending.installment SET schedule_version = 2
+       WHERE loan_id = ? AND no = 2""", $loanId)
+    discard runChunk("2026-12-01")
+    check db.getValue(sql"""
+      SELECT dpd::text FROM lending.collectibility_snapshot
+       WHERE loan_id = ? AND business_date = '2026-12-01'""", $loanId) == "0"
+    check db.getValue(sql"""
+      SELECT grade FROM lending.collectibility_snapshot
+       WHERE loan_id = ? AND business_date = '2026-12-01'""", $loanId) == "COLLECTIBLE"
+
+  test "penyisihan tidak dianggap menggantung setelah hapus buku":
+    let loanId = newId(testClock)
+    newPpapLoan(loanId, "1000000.00")
+    setGrade(loanId, "2026-12-05", "LOSS")
+    db.exec(sql"""
+      INSERT INTO lending.ppap_snapshot
+        (loan_id, business_date, grade, base_amount, rate_micro, allowance)
+      VALUES (?, '2026-12-05', 'LOSS', 1000000.00, 1000000, 1000000.00)""", $loanId)
+    # Pinjaman ACTIVE tidak pernah dihitung sebagai penyisihan menggantung.
+    check strandedAllowances(db) == 0
+    # Keluar dari ACTIVE tanpa hapus buku = CKPN yang tidak punya pemilik → task gagal terlihat.
+    db.exec(sql"UPDATE lending.loan SET status = 'CLOSED' WHERE loan_id = ?", $loanId)
+    check strandedAllowances(db) == 1
+    # Setelah hapus buku, penyisihannya terpakai seluruhnya.
+    db.exec(sql"""
+      UPDATE lending.loan
+         SET status = 'WRITTEN_OFF', written_off_on = '2026-12-06',
+             written_off_by = ?::uuid, written_off_reason = 'uji hapus buku'
+       WHERE loan_id = ?""", ActorId, $loanId)
+    db.exec(sql"""
+      INSERT INTO lending.writeoff
+        (loan_id, business_date, principal_amount, interest_amount, penalty_amount,
+         allowance_applied, expense_amount, created_by)
+      VALUES (?, '2026-12-06', 1000000.00, 0, 0, 1000000.00, 0, ?::uuid)""", $loanId, ActorId)
+    check strandedAllowances(db) == 0
 
 dbPool.release(db)

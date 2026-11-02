@@ -58,7 +58,8 @@ suite "endpoint pembuat objek & pencairan memakai idempotensi":
     check header["required"].getBool() == true
 
     for operationId in ["createParty", "ratePartyRisk", "submitParamChange",
-                         "openDepositAccount", "disburseLoan", "payLoan"]:
+                         "openDepositAccount", "disburseLoan", "payLoan", "restructureLoan",
+                         "writeOffLoan"]:
       let op = operationJson(doc, operationId)
       check op != nil
       var memakaiHeader = false

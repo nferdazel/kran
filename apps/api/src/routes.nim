@@ -219,6 +219,10 @@ proc lendingRoutes*(): seq[RouteSpec] =
               operationId: "disburseLoan", handler: handleDisburseLoan),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/lending/loans/{loanId}/payments",
               operationId: "payLoan", handler: handlePayLoan),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/lending/loans/{loanId}/restructure",
+              operationId: "restructureLoan", handler: handleRestructureLoan),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/lending/loans/{loanId}/write-off",
+              operationId: "writeOffLoan", handler: handleWriteOffLoan),
   ]
 
 proc depositRoutes*(): seq[RouteSpec] =

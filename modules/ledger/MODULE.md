@@ -81,6 +81,9 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
   K 201 Simpanan Anggota. Akunnya **data** di `posting_rule_line`, bukan konstanta kode, sehingga
   pemetaan final bisa diganti tanpa deploy — **NEEDS-COMPLIANCE-REVIEW** (COA dasar disusun sebelum
   modul `lending` ada).
+- Rule hapus buku (T-168, D-186): `LoanWriteOffProvisioned` D 111 / K 110 dan `LoanWriteOffExpense`
+  D 504 / K 110 (`0095`), plus akun `504 BEBAN HAPUS BUKU` (**NEEDS-COMPLIANCE-REVIEW**). Dua rule
+  karena template memaksa satu debit + satu kredit; penyisihan dipakai lebih dulu, sisanya beban.
 - Rule penyisihan PPAP (T-167, D-185): `PpapProvisioned` D 503 / K 111, `PpapReleased` D 111 / K 503
   (`0092`), plus akun `503 BEBAN PENYISIHAN PIUTANG` dan `111 PENYISIHAN KERUGIAN PIUTANG`
   (**NEEDS-COMPLIANCE-REVIEW**). `111` bertipe `ASSET` tetapi dikredit karena akun kontra belum bisa

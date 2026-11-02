@@ -72,14 +72,19 @@ proc activeLoansWithoutGrade*(db: DbConn; businessDate: string): int64 =
     businessDate))
 
 proc strandedAllowances*(db: DbConn): int64 =
-  ## Pinjaman yang **tidak** lagi `ACTIVE` tetapi masih menyimpan penyisihan. Aturan pelepasan saat
-  ## akad ditutup/dihapusbukukan belum ada (D-183 menolak menutup akad otomatis), jadi angkanya akan
-  ## salah bila dibiarkan: task gagal terlihat, bukan menutup buku dengan CKPN yang menggantung.
+  ## Pinjaman yang **tidak** lagi `ACTIVE` tetapi masih menyimpan penyisihan yang belum dipakai.
+  ##
+  ## Hapus buku (T-168) memakai penyisihan (`lending.writeoff.allowance_applied`) sesuai nilai yang
+  ## dihapus, jadi pinjaman yang sudah dihapusbukukan beres. Pinjaman yang keluar dari `ACTIVE` tanpa
+  ## hapus buku masih menggantung (D-183 menolak menutup akad otomatis): task gagal terlihat, bukan
+  ## menutup buku dengan CKPN yang tidak punya pemilik.
   parseBiggestInt(db.getValue(sql"""
     SELECT count(*) FROM lending.loan l
      WHERE l.status <> 'ACTIVE'
-       AND EXISTS (SELECT 1 FROM lending.ppap_snapshot p
-                    WHERE p.loan_id = l.loan_id AND p.allowance > 0)"""))
+       AND coalesce((SELECT p.allowance FROM lending.ppap_snapshot p
+                      WHERE p.loan_id = l.loan_id ORDER BY p.business_date DESC LIMIT 1), 0)
+         > coalesce((SELECT w.allowance_applied FROM lending.writeoff w
+                      WHERE w.loan_id = l.loan_id), 0)"""))
 
 proc insertPpapSnapshot*(db: DbConn; loanId: Id; businessDate: string;
     grade: Collectibility; base, allowance: string; rateMicro: int64): bool =
