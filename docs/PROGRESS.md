@@ -4131,3 +4131,22 @@ migrasi contract setelah expand, sebelum seed.
 kembali), unit web 154, `./task e2e` **65 lulus / 4 skip**, svelte-check 0/0, `lint-web`, `i18n`,
 `check-fast`, `build`, `openapi`, dan `./task ci` **hijau** (1548 `[OK]`, 0 `[FAILED]`; e2e 65
 test).
+
+## 2026-11-02 — T-171: laporan tunggakan/aging, penyisihan, rekonsiliasi
+
+Fase 4 butuh angka yang bisa ditunjukkan, bukan hanya jalur tulis. Tiga laporan baca-saja:
+
+- `GET /api/v1/lending/reports/arrears?asOf=` — tunggakan per pinjaman dari **jadwal aktif** (bukan
+  cache saldo), DPD = umur tunggakan tertua, aging per golongan (keranjang = golongan, ambang DPD
+  dari parameter).
+- `GET .../allowance?asOf=` — `ppap_snapshot` tanggal itu per golongan, dengan `mixedRates` bila
+  tarif berubah di tengah hari.
+- `GET .../reconciliation` — saldo jurnal `110`/`111` versus subledger saat ini; identitas
+  `GL 110 = Σ sisa pokok` dan `GL 111 = Σ penyisihan terakhir − Σ allowance_applied`.
+
+Ketiganya menuntut izin tingkat institusi; pemegang izin satu cabang ditolak 403 (laporan agregat
+lintas cabang bukan haknya, berbeda dari daftar pinjaman yang disaring per baris).
+
+**Bukti**: `treport` 9, `itapi_lending_reports` 7 (DPD 100 → SUBSTANDARD, penyisihan 500.000,00 =
+10% × 5.000.000,00, rekonsiliasi `balanced=true`), `./task openapi` hijau, dan `./task ci`
+**hijau** (1564 `[OK]`, 0 `[FAILED]`; e2e 65 test).

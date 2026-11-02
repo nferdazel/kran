@@ -1083,6 +1083,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lending/reports/arrears": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tunggakan pinjaman dan aging DPD per golongan
+         * @description Potret **per tanggal buku** (`asOf`, bawaan = tanggal buku hari ini). Tunggakan dihitung
+         *     dari jadwal aktif (`superseded_on IS NULL`): angsuran yang digantikan restrukturisasi bukan
+         *     kewajiban lagi dan tidak ikut.
+         *
+         *     `items` hanya memuat pinjaman yang **punya** angsuran lewat jatuh tempo dengan sisa > 0;
+         *     `aging` adalah agregatnya per golongan kolektibilitas (keranjang aging = golongan, karena
+         *     keduanya memakai ambang DPD yang sama dari parameter). Golongan diambil dari snapshot
+         *     tanggal itu; bila task regrading belum menilai hari itu, DPD dihitung dengan ambang yang
+         *     berlaku pada `asOf`.
+         *
+         *     Izin `lending.loan.read` harus dipegang pada **tingkat institusi**: laporan agregat lintas
+         *     cabang bukan hak pemegang izin satu cabang.
+         */
+        get: operations["loanArrearsReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lending/reports/allowance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Penyisihan PPAP tercatat per golongan
+         * @description Potret **per tanggal buku** dari `lending.ppap_snapshot` tanggal itu — laporan tanggal
+         *     lampau tidak boleh memakai angka hari ini.
+         *
+         *     `mixedRates` memuat golongan yang punya lebih dari satu `rateMicro` pada tanggal itu
+         *     (tarif berubah di tengah hari). Keadaan itu tidak melanggar skema, tetapi operator perlu
+         *     melihatnya sebelum memakai angkanya.
+         *
+         *     Izin `lending.loan.read` pada tingkat institusi.
+         */
+        get: operations["loanAllowanceReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lending/reports/reconciliation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rekonsiliasi GL piutang/penyisihan dengan subledger pinjaman
+         * @description Membandingkan **jurnal** (akun `110` piutang dan `111` penyisihan) dengan subledger pinjaman
+         *     pada keadaan sekarang. Tidak ada `asOf`: cache saldo dan penyisihan terakhir adalah keadaan
+         *     sekarang, dan membandingkannya dengan GL tanggal lampau hanya menghasilkan selisih palsu;
+         *     `asOf` di respons adalah tanggal buku yang dipakai membaca GL.
+         *
+         *     Identitas yang dijaga:
+         *     `loanReceivableGl = loanReceivableSubledger` dan
+         *     `allowanceGl = allowanceSubledger - allowanceWrittenOff`.
+         *     Selisih dilaporkan apa adanya (bisa negatif) — tanda menunjukkan sisi mana yang lebih besar.
+         */
+        get: operations["loanReconciliation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/deposit/accounts": {
         parameters: {
             query?: never;
@@ -2082,6 +2168,75 @@ export interface components {
             penaltyOutstanding: string | null;
             installments: components["schemas"]["LoanInstallment"][];
             scheduleVersions: components["schemas"]["LoanScheduleVersion"][];
+        };
+        LoanArrearsItem: {
+            /** Format: uuid */
+            loanId: string;
+            /** Format: uuid */
+            partyId: string;
+            /** Format: uuid */
+            branchId: string;
+            /** @description Hari tunggakan sejak jatuh tempo tertua yang masih bersisa. */
+            dpd: number;
+            /** @enum {string} */
+            grade: "COLLECTIBLE" | "SPECIAL_MENTION" | "SUBSTANDARD" | "DOUBTFUL" | "LOSS";
+            principal: string;
+            interest: string;
+            penalty: string;
+            total: string;
+        };
+        LoanAgingLine: {
+            /** @enum {string} */
+            grade: "COLLECTIBLE" | "SPECIAL_MENTION" | "SUBSTANDARD" | "DOUBTFUL" | "LOSS";
+            loans: number;
+            principal: string;
+            interest: string;
+            penalty: string;
+            total: string;
+        };
+        LoanArrearsReport: {
+            /** Format: date */
+            asOf: string;
+            items: components["schemas"]["LoanArrearsItem"][];
+            totals: {
+                loans: number;
+                principal: string;
+                interest: string;
+                penalty: string;
+                total: string;
+            };
+            /** @description Agregat per golongan; golongan tanpa isi tidak dicetak. */
+            aging: components["schemas"]["LoanAgingLine"][];
+        };
+        LoanAllowanceLine: {
+            /** @enum {string} */
+            grade: "COLLECTIBLE" | "SPECIAL_MENTION" | "SUBSTANDARD" | "DOUBTFUL" | "LOSS";
+            loans: number;
+            base: string;
+            /** @description Tarif dalam mikro-unit (1e6 = 100%). */
+            rateMicro: number;
+            allowance: string;
+        };
+        LoanAllowanceReport: {
+            /** Format: date */
+            asOf: string;
+            lines: components["schemas"]["LoanAllowanceLine"][];
+            total: string;
+            baseTotal: string;
+            /** @description Golongan yang punya lebih dari satu tarif pada tanggal itu. */
+            mixedRates: ("COLLECTIBLE" | "SPECIAL_MENTION" | "SUBSTANDARD" | "DOUBTFUL" | "LOSS")[];
+        };
+        LoanReconciliation: {
+            /** Format: date */
+            asOf: string;
+            loanReceivableGl: string;
+            loanReceivableSubledger: string;
+            receivableDiff: string;
+            allowanceGl: string;
+            allowanceSubledger: string;
+            allowanceWrittenOff: string;
+            allowanceDiff: string;
+            balanced: boolean;
         };
         LoanPaymentRequest: {
             /**
@@ -5342,6 +5497,90 @@ export interface operations {
                 };
             };
             415: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    loanArrearsReport: {
+        parameters: {
+            query?: {
+                asOf?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Laporan tunggakan. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoanArrearsReport"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    loanAllowanceReport: {
+        parameters: {
+            query?: {
+                asOf?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Laporan penyisihan. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoanAllowanceReport"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    loanReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Hasil rekonsiliasi. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoanReconciliation"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
             503: components["responses"]["Problem"];

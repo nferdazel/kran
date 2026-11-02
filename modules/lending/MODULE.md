@@ -197,6 +197,25 @@ menggantung pada pinjaman tidak aktif, `DAY-385` dasar/penyisihan tersimpan buka
   tulis belum ada di UI (T-173): pencairan/pembayaran butuh pemilihan rekening + pratinjau alokasi
   sebelum uang bergerak.
 
+## Laporan (T-171)
+
+`GET /api/v1/lending/reports/arrears?asOf=` · `GET .../allowance?asOf=` · `GET .../reconciliation` ·
+izin `lending.loan.read`.
+
+- **Tunggakan/aging**: potret per tanggal buku dari `lending.installment` jadwal aktif (bukan cache
+  `loan_balance`). `items` hanya pinjaman yang punya angsuran lewat jatuh tempo bersisa; `aging`
+  adalah agregatnya per golongan — keranjang aging = golongan karena ambangnya sama (D-180).
+  Golongan diambil dari snapshot tanggal itu; bila regrading belum berjalan, DPD dihitung dengan
+  ambang yang berlaku pada `asOf`.
+- **Penyisihan**: `ppap_snapshot` tanggal itu apa adanya; `mixedRates` menandai golongan yang
+  tarifnya berubah di tengah hari.
+- **Rekonsiliasi**: GL `110`/`111` dari **jurnal** versus subledger saat ini. Identitas:
+  `GL 110 = Σ sisa pokok` dan `GL 111 = Σ penyisihan terakhir − Σ allowance_applied` (hapus buku).
+  Selisih dilaporkan bertanda.
+- Ketiganya menuntut izin pada **tingkat institusi**: laporan agregat lintas cabang bukan hak
+  pemegang izin satu cabang (403), berbeda dari daftar pinjaman yang disaring per baris.
+- Tidak ada UI laporan; angka tersedia lewat API dan diverifikasi `itapi_lending_reports`.
+
 ## Restrukturisasi (T-168, D-186)
 
 `POST /api/v1/lending/loans/{loanId}/restructure` · izin `lending.loan.restructure` (migrasi

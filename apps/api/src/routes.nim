@@ -20,6 +20,7 @@ import ./handlers_journals
 import ./handlers_kyc
 import ./handlers_ledger
 import ./handlers_lending
+import ./handlers_lending_reports
 import ./handlers_mfa
 import ./handlers_products
 import ./handlers_reports
@@ -208,8 +209,9 @@ proc productRoutes*(): seq[RouteSpec] =
   ]
 
 proc lendingRoutes*(): seq[RouteSpec] =
-  ## Pinjaman (T-163): pengajuan + persetujuan. Objek ber-cabang → gerbang `authorizedAtBranch`;
-  ## pencairan dan pembayaran menyusul di T-164/T-165.
+  ## Pinjaman (T-163…T-171): pengajuan, persetujuan, pencairan, pembayaran, restrukturisasi, hapus
+  ## buku, baca, dan tiga laporan. Objek ber-cabang → gerbang `authorizedAtBranch`; laporan agregat
+  ## → izin tingkat institusi.
   @[
     RouteSpec(httpMethod: hmGet, path: "/api/v1/lending/loans",
               operationId: "listLoans", handler: handleListLoans),
@@ -227,6 +229,12 @@ proc lendingRoutes*(): seq[RouteSpec] =
               operationId: "restructureLoan", handler: handleRestructureLoan),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/lending/loans/{loanId}/write-off",
               operationId: "writeOffLoan", handler: handleWriteOffLoan),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/lending/reports/arrears",
+              operationId: "loanArrearsReport", handler: handleArrearsReport),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/lending/reports/allowance",
+              operationId: "loanAllowanceReport", handler: handleAllowanceReport),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/lending/reports/reconciliation",
+              operationId: "loanReconciliation", handler: handleReconciliation),
   ]
 
 proc depositRoutes*(): seq[RouteSpec] =
