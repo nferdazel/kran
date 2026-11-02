@@ -1186,6 +1186,13 @@ Estimasi waktu sengaja tidak dicantumkan sebelum ada keputusan kapasitas tim; te
 
 Format ADR: konteks → keputusan → konsekuensi → alternatif → status. Disimpan di `docs/adr/NNN-judul.md`.
 
+> **Catatan 2 Nov 2026.** Kolom **Status** di tabel ini adalah status **saat spec ditulis**, bukan
+> status hari ini; spec sengaja tidak ditulis ulang. Keputusan yang sudah diambil ada di
+> `docs/DECISIONS.md`: ADR-002 → **D-019** (Mummy + WebSocket), ADR-013 dipecah → **D-127**
+> (cetak lewat browser; mesin PDF server tetap terbuka sebagai ADR-013b), ADR-017 → **D-048**
+> (detail di `docs/adr/017-field-level-encryption.md`). Bila keduanya berbeda, `DECISIONS.md`
+> yang berlaku.
+
 ---
 
 ## 26. Open Questions & Asumsi

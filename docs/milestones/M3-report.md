@@ -6,6 +6,13 @@ sintetis lulus** dan **EOD 100k rekening simpanan + 50k pinjaman < 30 menit**.
 
 Branch kerja: `feat/fase3-dayclose` (tidak pernah di-push ke `main`).
 
+> **Catatan 2 Nov 2026 — laporan ini snapshot 28 Okt 2026, tidak ditulis ulang.** Yang sudah
+> bergerak sejak itu: kriteria gabungan **100k rekening + 50k pinjaman** kini terukur (245,0 detik,
+> `docs/milestones/M4-report.md` §5, masih di hardware lokal); O-108, O-109, O-110, O-111, dan O-114
+> sudah **SELESAI** (31 Okt 2026, lihat `docs/OPEN_ITEMS.md`). Sisa deviasi §5 (SIMULATION tingkat
+> rencana, chunk sekuensial, tanpa timeout per task, scope `INSTITUTION`) masih berlaku dan tercatat
+> di `ACCEPTED-LIMITS.md`.
+
 ---
 
 ## 1. Yang selesai

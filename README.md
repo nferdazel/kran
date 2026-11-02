@@ -5,13 +5,19 @@ codebase serves all three families through *product & regulatory packs*: differe
 live in parameters and packs, not in branches of code.
 
 The product is early but past the foundation. **Fase 0 (foundation), Fase 1 (core ledger & party),
-and Fase 2 (deposit + teller) are delivered**, and Fase 2 runs in a production pilot with synthetic
-data. What exists today: the platform (DB pool, migrations, outbox, hash-chain audit), effective-dated
-parameters with maker-checker, auth + RBAC + branch scoping, the working calendar, the realtime hub,
-an immutable double-entry ledger with reversals and trial balance, deposits (accounts, cash deposit/
-withdrawal, transfer), teller cash sessions, and the SvelteKit back-office (dark/light themes, i18n
-id/en, WCAG 2.2 AA gate). Phase close-out reports: [`M0`](docs/milestones/M0-report.md),
-[`M1`](docs/milestones/M1-report.md), [`M2`](docs/milestones/M2-report.md).
+Fase 2 (deposit + teller), Fase 3 (day-close framework), and Fase 4 (lending) are delivered**; Fase 2
+runs in a production pilot with synthetic data, and Fase 4 is code-complete but **not** pilot-approved
+(parameter and accounting-policy items still carry `NEEDS-COMPLIANCE-REVIEW`). What exists today: the
+platform (DB pool, migrations, outbox, hash-chain audit), effective-dated parameters with
+maker-checker, auth + RBAC + branch scoping, the working calendar, the realtime hub, an immutable
+double-entry ledger with reversals and trial balance, deposits (accounts, cash deposit/withdrawal,
+transfer), teller cash sessions, the day-close framework (idempotent EOD/EOM/EOY tasks, pre/post
+gates, operator monitor), the lending cycle (application → approval → disbursement → instalments →
+collectibility → PPAP → restructure/write-off) with arrears/allowance/reconciliation reports, and the
+SvelteKit back-office (dark/light themes, i18n id/en, WCAG 2.2 AA gate). Phase close-out reports:
+[`M0`](docs/milestones/M0-report.md), [`M1`](docs/milestones/M1-report.md),
+[`M2`](docs/milestones/M2-report.md), [`M3`](docs/milestones/M3-report.md),
+[`M4`](docs/milestones/M4-report.md).
 
 Values and regulatory clauses that are not yet verified are tagged `NEEDS-COMPLIANCE-REVIEW` in
 code/seed, and critical areas (interest, accrual, PPAP, tax, reconciliation, encryption, authz) are
@@ -91,8 +97,9 @@ enforcers are themselves tested: [`tools/archcheck`](tools/archcheck) (module bo
 values), [`tools/i18ncheck`](tools/i18ncheck) (UI text), `eslint` (TS/Svelte, non-a11y, D-139),
 [`tools/openapi`](tools/openapi) with a contract test (contract and TS client), and
 [`tools/dbtools`](tools/dbtools) (expand-only migrations).
-Money/rate are enforced by kernel types and their tests. The rules that do not yet have an enforcer
-(day-close via `daycloser`) are tracked as open items and arrive together with their modules.
+Money/rate are enforced by kernel types and their tests. Day-close is itself a module
+(`modules/daycloser`): a batch that runs outside its registered, idempotent tasks and pre/post gates
+fails review (AGENTS §1.7), so "close the books" is one code path, not one per module.
 
 ## Running and testing
 
@@ -109,7 +116,9 @@ pnpm install && pnpm --filter @kran/web dev   # back-office at http://127.0.0.1:
 ```
 
 Dev seed users: `dev.maker` (proposes parameter changes) and `dev.checker` (approves them), plus
-`dev.cashmaker`/`dev.cashchecker` (cash maker-checker) and `dev.firstlogin` (forced password change).
+`dev.cashmaker`/`dev.cashchecker` (cash maker-checker), `dev.console` (`platform_admin`),
+`dev.loans` (`lending_maker`, added for the lending e2e fixture), and `dev.firstlogin` (forced
+password change).
 Passwords are in [`packs/base/seed/0001_dev_users.sql`](packs/base/seed/0001_dev_users.sql).
 
 One command entry point: `./task` (POSIX script, no extra tooling dependencies; D-001).
@@ -126,10 +135,13 @@ One command entry point: `./task` (POSIX script, no extra tooling dependencies; 
 | `./task ci` | every gate above; must be green before a task is called done |
 | `./task ci-repeat [N]` | repeat the full gate N times (default 3), to catch flake |
 | `./task build` | build the `kran-api` binary into `.build/bin/` |
+| `./task version` | print `VERSION` (single source for API, web, `kran.nimble`, `package.json`) |
+| `./task release [major\|minor\|patch]` | bump `VERSION` + CHANGELOG, run the gate, commit + annotated tag `vX.Y.Z` |
 | `./task fmt` | format code (rewrites files in place) |
 | `./task dbtools migrate\|status\|validate\|seed` | SQL migrations and seed (needs `KRAN_DATABASE_URL`) |
 | `./task scaffold <name> [--dry-run]` | scaffold a new module |
 | `./task bench-password [--iterations N]` | benchmark password hashing cost |
+| `./task bench-eod --accounts N [--loans M]` | seed synthetic accounts/loans, then time one full EOD |
 | `./task devdb up\|down\|status\|psql` | manage the tunnel to the dev DB |
 
 Prerequisites:

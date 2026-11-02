@@ -649,6 +649,11 @@ sebelum D-029). Butir 5 D-028 sudah dianotasi agar tidak bertentangan dengan D-0
      `--up`: biner belum mendukungnya dan `ops/scripts/migrate.sh` menolaknya dengan kode 3 (O-048).
   5. `main.nim` dipagari `when isMainModule` supaya peran bisa dipanggil langsung dari test tanpa
      menjalankan server (kontrak diuji tanpa bergantung hasil `./task build`).
+
+     > **Diperbarui 2 Nov 2026:** dua butir di atas sudah tidak berlaku. `ctl daycloser-status` ada
+     > (T-134, D-148), peran `worker` menjalankan pump posting `ledger`
+     > (`apps/api/src/posting.nim`), dan `--contract`/`--down` didukung biner (T-035, O-048). Yang
+     > masih benar: skrip `ops/` belum pernah dijalankan di server.
 - **Kode keluar**: 0 sukses, 1 hasil buruk (drift/rantai audit tidak utuh), 2 salah pakai/konfigurasi
   (mis. `KRAN_DATABASE_URL` kosong), 3 dikenali tapi belum diimplementasikan. Ini kontrak yang dibaca
   skrip ops; mengubahnya berarti memperbarui skrip (dicatat di `docs/runbooks/ops-cli.md`).
@@ -1260,6 +1265,9 @@ pengajuan, bukan hanya pembacaan.
   `minimumReleaseAge` di `pnpm-workspace.yaml`, `typescript-eslint` wajib (semua `<script>`
   ber-`lang="ts"`), dan `packages/config/eslint.js` masih belum ada. Ambang axe (`serious`/
   `critical`) **tidak** diubah di sini.
+
+> **Diperbarui 2 Nov 2026:** konfigurasi eslint ada di akar repo sebagai `eslint.config.js` (flat
+> config, D-139); `packages/config/` hanya berisi `package.json` dan `tsconfig.base.json`.
 
 ---
 

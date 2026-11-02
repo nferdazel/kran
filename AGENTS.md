@@ -27,7 +27,7 @@ diam-diam memilih; catat di `docs/DECISIONS.md` dan eskalasi (lihat §8).
 `task check-fast` → seperti `check` tanpa `nim check` penuh (loop harian, D-077)
 `task verify [filter]` → `check-fast` + openapi + build + test modul terpilih (loop harian)
 `task test`    → unit + property + integration (Postgres ephemeral) + contract
-`task e2e`     → Playwright (e2e + axe 2 tema + svelte-check); visual regression belum ada (O-022)
+`task e2e`     → Playwright (e2e + axe 2 tema + svelte-check + baseline visual Linux, O-022 selesai)
 `task lint-web` → eslint (typescript-eslint + `svelte/*` non-a11y); butuh `pnpm install`
 `task ci`      → semua di atas (harus hijau sebelum menyatakan task selesai; DoD tidak berubah).
 `task version` → cetak `VERSION` (satu sumber untuk API, web, `kran.nimble`, `package.json`).

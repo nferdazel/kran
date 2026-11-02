@@ -16,6 +16,7 @@ salah.
 | [`DECISIONS.md`](DECISIONS.md) | Register keputusan (append-only; keputusan lama ditandai "diganti D-xxx", tidak dihapus) |
 | [`runbooks/`](runbooks) | Prosedur operasional yang dijalankan hari ini |
 | [`ci-jobs.md`](ci-jobs.md) | Job CI yang benar-benar ada |
+| [`RELEASE.md`](RELEASE.md) | Alur versi & rilis: `VERSION` satu sumber, `./task release`, tag sebagai penanda (D-178) |
 | [`compliance/`](compliance) | Register kepatuhan dan status verifikasi |
 | `modules/*/MODULE.md` | Batas, tabel, izin, dan invarian tiap modul |
 | [`../DESIGN.md`](../DESIGN.md) | Arah visual dan aturan UI yang mengikat |

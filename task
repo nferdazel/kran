@@ -21,7 +21,7 @@
 #   ./task dbtools migrate|status|validate   SQL migrations (requires KRAN_DATABASE_URL)
 #   ./task scaffold <name> [--dry-run]       scaffold a new module (spec §5.5)
 #   ./task bench-password [--iterations N]   benchmark password hashing cost (T-060)
-#   ./task bench-eod --accounts N             seed N rekening sintetis + ukur satu EOD (T-140)
+#   ./task bench-eod --accounts N [--loans M]  seed rekening/pinjaman sintetis + ukur satu EOD (T-140, T-172)
 #   ./task help
 #
 # Pure POSIX script chosen over Taskfile/just: zero new tooling dependencies,

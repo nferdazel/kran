@@ -104,8 +104,10 @@ Produk pilot:
 | `SIMP-SUKARELA` | Simpanan Sukarela | `SUKARELA` | 10.000 |
 | `TABUNGAN` | Tabungan Anggota | `TABUNGAN` | 25.000 |
 
-Semua produk memakai `interest_posting = NONE` dan `interest_rate = 0` karena mesin bunga
-belum ada di Fase 2 — jangan menampilkan angka bunga yang tidak dihitung.
+Semua produk memakai `interest_posting = NONE` dan `interest_rate = 0`. Mesin bunga **sudah ada**
+sejak Fase 3 (task `deposit.interest_accrual`), tetapi angka bunga/tarif untuk pilot belum
+diverifikasi compliance (`NEEDS-COMPLIANCE-REVIEW`, O-121) — jangan menampilkan angka bunga yang
+belum disetujui.
 
 ## 5. Rekening dan hari kas
 

@@ -17,6 +17,8 @@ job kosong yang selalu hijau adalah "hijau palsu". Per tanggal T-001 hanya ada
 | `web-e2e` ber-DB (Postgres + migrate/seed) | T-126 — job `web-e2e` |
 | `e2e-a11y` (Playwright + axe ×2 tema ×2 locale) | T-010 — dalam job `web-e2e` |
 | `traceability` | **belum** dibuat — jangan dianggap ada (lihat O-027) |
+| `release.yml` (tag ↔ `VERSION`, GitHub Release) | D-178 — **ada** (2 Nov 2026) |
+| `visual-baseline.yml` (baseline Linux `visual.spec.ts`) | T-156/D-177 — **ada** (31 Okt 2026) |
 
 Catatan status (17 Okt 2026, T-050): job yang benar-benar ada di `ci.yml` sekarang `nim-check`,
 `db-tests`, `web-e2e`, dan `security`. Yang masih selisih dari spec §21.3: `traceability`
@@ -53,6 +55,24 @@ Dua batasan yang mudah menjatuhkannya:
 `resetTestSchemas` (`tools/dbtools`) menghapus schema **semua modul** di DB yang ditunjuk, bukan
 hanya `platform`, jadi tiap run menyiapkan ulang dari nol — bukan mengandalkan keadaan DB yang
 tersisa. Sejak T-127 fungsi itu menolak URL yang namanya bukan `_dev`/`_test`.
+
+## Workflow lain: `release.yml` (D-178, 1 Nov 2026)
+
+Dipicu **tag** `v*`, bukan push ke `main`. Tugasnya hanya memastikan tag menyebut versi yang benar
+(`tag == "v$(cat VERSION)"`, plus `kran.nimble`, `package.json`, dan berkas generated), lalu membuat
+GitHub Release. Ia **tidak** mendeploy: deploy tetap dari push ke `main` lewat webhook →
+`ops/scripts/deploy-vps.sh`, yang menunggu check-run CI hijau untuk commit itu.
+
+## Workflow lain: `visual-baseline.yml` (T-156/D-177, 31 Okt 2026)
+
+`workflow_dispatch` saja, dengan input `update`. Screenshot Playwright bergantung pada OS dan font,
+jadi baseline **harus** dibuat di runner Linux yang sama dengan job `web-e2e` — baseline macOS akan
+gagal di sana. Alur: jalankan workflow → unduh artefak `visual-baseline-linux` → commit ke
+`apps/web/tests/e2e/visual.spec.ts-snapshots/`. Gate-nya sendiri tetap di `ci.yml` job `web-e2e`
+(`visual.spec.ts`, yang melewati diri sendiri di luar Linux).
+
+Kedua workflow memakai `timeout-minutes: 15`, runner `ubuntu-24.04`, dan cache pnpm seperti job di
+`ci.yml` (kontrak runner di atas).
 
 ## Gate kestabilan: `./task ci-repeat [N]` (T-031)
 

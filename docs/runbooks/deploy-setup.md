@@ -175,7 +175,8 @@ caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy
 systemctl --user stop cbs-web
 # 5. Jangan biarkan container lama bangkit lagi setelah reboot, tetapi jangan hapus apa pun (D-043):
 systemctl --user mask cbs-api cbs-web
-systemctl --user enable kran-api         # kran-worker menyusul sampai perannya ada (O-060)
+systemctl --user enable kran-api kran-worker   # dua peran, satu image; O-060 selesai
+#    Unit dayclose (kran-dayclose.timer) dipasang terpisah dan belum aktif di server — lihat O-094.
 ```
 
 Jalan mundur (semua berkas lama utuh):

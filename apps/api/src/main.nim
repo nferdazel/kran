@@ -9,13 +9,13 @@
 ##                                                `bootstrap-admin` dan `reset-password`)
 ##   kran-api --role=ctl bootstrap-admin --username=<nama>   admin pertama (kata sandi diacak,
 ##                                                          wajib ganti saat login pertama)
-##   kran-api --role=worker                        belum ada pekerjaan di Fase 0 → gagal cepat
+##   kran-api --role=worker                        pump posting `ledger` (outbox → jurnal)
 ##
 ## Kontrak `ctl` berisi perintah yang **aman** (tanpa menulis data), kecuali `bootstrap-admin` yang
 ## memang menulis — ia sekali-jalan (menolak bila sudah ada pemegang role admin) dan hanya mencetak
 ## kata sandi awal ke stdout, tidak pernah menyimpannya. Skrip ops dan gate deploy memanggil
-## perintah lain di role ini secara otomatis. Role `worker` masih gagal cepat dengan pesan jelas —
-## lebih baik daripada diam-diam berjalan sebagai API (O-013).
+## perintah lain di role ini secara otomatis. Role `worker` menjalankan pump posting `ledger`
+## (`posting.nim`), bukan server HTTP — satu proses tidak boleh diam-diam melayani dua peran.
 ##
 ## Yang dibaca dari lingkungan hanyalah konfigurasi bootstrap (koneksi DB, port) — bukan nilai
 ## bisnis; nilai bisnis selalu dari parameter DB (spec §10, §12.5).

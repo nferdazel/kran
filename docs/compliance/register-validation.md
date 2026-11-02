@@ -32,6 +32,12 @@ ditandatangani.
 
 Tandai deferred di `docs/OPEN_ITEMS.md`; jangan isi nilainya "supaya ada".
 
+> **Pembaruan 2 Nov 2026.** REG-203/204 sudah **tidak** deferred: modul `lending` ada dan membaca
+> `lending.ppap.rates` + `lending.collectibility.dpd_bounds` (D-180); seed memakai angka provisional
+> ber-`NEEDS-COMPLIANCE-REVIEW`, dan PPAP dilarang untuk data anggota nyata sampai angka/pasal
+> diverifikasi. Baris tabel di atas adalah snapshot 21 Okt 2026. Sisa deferred: REG-008, REG-009,
+> REG-305, REG-005/006/007.
+
 ## Risiko yang tersisa (dari SME compliance)
 
 D-095 (tidak menyemai nilai regulasi) tetap benar dan gagal-cepat (`ParamNotFound`), bukan

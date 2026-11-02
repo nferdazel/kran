@@ -5,6 +5,11 @@
 > parameter. T-161 dan T-162 boleh dimulai; T-166/T-167 menunggu angka final untuk pilot nyata. Belum ada task `READY`; belum ada
 > kode. Sumber: spec §23 (Fase 4), §8 (modul `lending`), §11.6 (task day-close), §9.2 (golden test),
 > §4 (REG-204 PPAP/kolektibilitas `V!`).
+>
+> **Status per 2 Nov 2026: SELESAI** — T-161…T-172 semuanya `DONE`, rilis v0.1.4–v0.1.8, bukti di
+> [`docs/milestones/M4-report.md`](../milestones/M4-report.md). Badan proposal di bawah adalah memo
+> sebelum keputusan dan sengaja tidak ditulis ulang; deviasi yang terjadi saat implementasi dicatat
+> di M4 §6 (mis. T-170 jadi baca-saja; aksi tulis di T-173).
 
 ## Kenapa fase ini, dan kenapa tidak boleh dimulai tanpa keputusan
 

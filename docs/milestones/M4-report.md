@@ -121,8 +121,9 @@ diukur di suite integrasi, bukan pada skala 50k.
 
 ## 7. Open items dan risiko
 
-- O-075 (akun kontra penyisihan), O-121 (parameter PPAP/DPD final), O-122 (pemulihan hapus buku),
-  O-123 (kolektibilitas pasca restrukturisasi) — semua butuh keputusan pemilik/compliance.
+- O-075/O-121 (tipe akun kontra; CKPN sementara dikredit di akun aset `111`), O-122 (pemulihan
+  hapus buku), O-123 (kolektibilitas pasca restrukturisasi) — semua butuh keputusan
+  pemilik/compliance. Tarif PPAP/ambang DPD bukan O-121: itu D-180/REG-204.
 - Regulasi §4 spec masih bertanda `V?`/`V!`: ambang DPD dan tarif PPAP di seed adalah **provisional**
   (`NEEDS-COMPLIANCE-REVIEW`). Jangan dipakai pada data nyata sebelum diverifikasi.
 - Benchmark belum dijalankan di VPS produksi; angka lokal adalah batas atas optimistis.
