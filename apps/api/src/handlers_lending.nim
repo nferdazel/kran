@@ -22,7 +22,8 @@ import platform/domain/[audit, event, idempotency, scope]
 import platform/infrastructure/[audit_repo, auth_service, outbox_repo, param_repo]
 import deposit/domain/[account, transaction]
 import deposit/infrastructure/[account_repo, transaction_repo]
-import lending/domain/[collectibility, loan, payment, recovery, restructure, schedule, writeoff]
+import lending/domain/[collectibility, loan, payment, recovery, restructure,
+                     restructure_grade, schedule, writeoff]
 import lending/infrastructure/[loan_repo, recovery_repo, restructure_repo, writeoff_repo]
 import product/infrastructure/product_repo
 import party/domain/party
@@ -949,6 +950,14 @@ proc handleRestructureLoan*(app: AppContext, req: Request) {.gcsafe.} =
               reason = "loan_inactive"
               problemText = "pinjaman berubah status saat direstrukturisasi; ulangi permintaan"
               raise newException(ValueError, problemText)
+
+            # Batas golongan sesudah restrukturisasi (O-123, D-197): DPD jadwal baru selalu nol,
+            # jadi pembandingnya harus golongan **sebelum** restrukturisasi.
+            let beforeRaw = collectibilityOf(db, loan.loanId)
+            let gradeBefore =
+              if beforeRaw.len == 0: none(Collectibility) else: parseCollectibility(beforeRaw)
+            let cap = if gradeBefore.isNone: capForUngraded() else: capFor(gradeBefore.get())
+            recordRestructureGrade(db, loan.loanId, businessDate, gradeBefore, cap)
 
             let ctx = auditContextFor(principal, req, app.clock, "", branch = branch)
             discard appendAudit(db, newAuditEntry(ctx, "lending.loan.restructure", "lending.loan",

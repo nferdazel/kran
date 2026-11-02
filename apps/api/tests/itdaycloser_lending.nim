@@ -323,9 +323,9 @@ suite "day-close lending: penyisihan PPAP (T-167)":
       echo "PPAP-D1: ", outcome.error.code, " ", outcome.error.message
     check outcome.val.metrics["written"].getInt() == 2
     check outcome.val.metrics["journals"].getInt() == 1
-    check allowanceOn(loanA, d1) == "60000.00" # 12.000.000 × 0,5%
-    check allowanceOn(loanB, d1) == "0.00"
-    check journalTotal(d1, "PpapProvisioned") == "60000.00"
+    check allowanceOn(loanA, d1) == "360000.00" # 12.000.000 × 3% (dalam perhatian khusus)
+    check allowanceOn(loanB, d1) == "15000.00" # 3.000.000 × 0,5% (PPKA umum, lancar)
+    check journalTotal(d1, "PpapProvisioned") == "375000.00"
     check accountsOf(d1, "PpapProvisioned") == "503:DEBIT,111:CREDIT"
     check journalRows(d1, "PpapReleased") == 0
     check db.getValue(sql"""
@@ -336,16 +336,17 @@ suite "day-close lending: penyisihan PPAP (T-167)":
     let outcome = ppapTask().run(ctxOn(d2), Chunk(chunkNo: 0))
     check outcome.isOk
     check allowanceOn(loanA, d2) == "12000000.00" # 100% setelah jadi LOSS
-    # Σ baru 12.000.000 − Σ lama 60.000 = 11.940.000, itu yang dijurnal.
-    check journalTotal(d2, "PpapProvisioned") == "11940000.00"
+    # Σ baru 12.015.000 − Σ lama 375.000 = 11.640.000, itu yang dijurnal.
+    check journalTotal(d2, "PpapProvisioned") == "11640000.00"
 
   test "golongan membaik → jurnal pembalik, bukan nominal negatif":
     setOutstanding(loanA, "5000000.00")
     let outcome = ppapTask().run(ctxOn(d3), Chunk(chunkNo: 0))
     check outcome.isOk
-    check allowanceOn(loanA, d3) == "0.00" # COLLECTIBLE = 0%
+    check allowanceOn(loanA, d3) == "25000.00" # 5.000.000 × 0,5% (PPKA umum)
     check journalRows(d3, "PpapReleased") == 1
-    check journalTotal(d3, "PpapReleased") == "12000000.00"
+    # Σ baru 40.000 − Σ lama 12.015.000 = 11.975.000 yang dibalik.
+    check journalTotal(d3, "PpapReleased") == "11975000.00"
     check accountsOf(d3, "PpapReleased") == "111:DEBIT,503:CREDIT"
     # Tidak ada sisi negatif: pembalik selalu nominal positif dengan arah berlawanan.
     check db.getValue(sql"""
@@ -368,11 +369,11 @@ suite "day-close lending: penyisihan PPAP (T-167)":
       SELECT count(*)::text FROM ledger.journal WHERE business_date = ?::date""", d3)) == journals
 
   test "Δ snapshot == Δ jurnal di seluruh rangkaian":
-    check totalAllowance(d3) == "0.00"
-    check totalAllowance(d1) == "60000.00"
-    check journalTotal(d2, "PpapProvisioned") == "11940000.00"
-    check journalTotal(d3, "PpapReleased") == "12000000.00"
-    # 11.940.000 − 12.000.000 + 60.000 = 0 = Σ allowance d3.
+    check totalAllowance(d3) == "40000.00"
+    check totalAllowance(d1) == "375000.00"
+    check journalTotal(d2, "PpapProvisioned") == "11640000.00"
+    check journalTotal(d3, "PpapReleased") == "11975000.00"
+    # 11.640.000 − 11.975.000 + 375.000 = 40.000 = Σ allowance d3.
     check db.getValue(sql"""
       SELECT (
         (SELECT coalesce(sum(debit), 0) FROM ledger.journal_line l
@@ -396,7 +397,7 @@ suite "day-close lending: penyisihan PPAP (T-167)":
     check db.getValue(sql"""
       SELECT count(*)::text FROM lending.ppap_snapshot WHERE business_date = '2026-11-13'""") == "0"
     db.exec(sql"""
-      UPDATE platform.param_value SET value = '["0","0.5","10","50","100"]'::jsonb
+      UPDATE platform.param_value SET value = '["0.5","3","10","50","100"]'::jsonb
        WHERE key = 'lending.ppap.rates'""")
 
   test "pinjaman ACTIVE belum dinilai kolektibilitasnya menahan penyisihan (DAY-383)":
@@ -439,6 +440,84 @@ suite "day-close lending: restrukturisasi & hapus buku (T-168)":
     check db.getValue(sql"""
       SELECT grade FROM lending.collectibility_snapshot
        WHERE loan_id = ? AND business_date = '2026-12-01'""", $loanId) == "COLLECTIBLE"
+
+  test "restrukturisasi menahan golongan di kurang lancar walau DPD nol":
+    let loanId = newId(testClock)
+    newPpapLoan(loanId, "12000000.00")
+    newInstallment(loanId, 1, "2026-06-01")
+    # 1 Nov 2026: 153 hari menunggak → DOUBTFUL dengan ambang [90,120,180].
+    discard runChunk("2026-11-01")
+    check db.getValue(sql"""
+      SELECT grade FROM lending.collectibility_snapshot
+       WHERE loan_id = ? AND business_date = '2026-11-01'""", $loanId) == "DOUBTFUL"
+    # Restrukturisasi seperti yang ditulis handler: jadwal lama diarsipkan, jadwal baru di masa
+    # depan, dan pembanding "sebelum" dicatat (O-123, D-197).
+    db.exec(sql"""
+      UPDATE lending.installment SET superseded_on = '2026-11-15'
+       WHERE loan_id = ? AND no = 1""", $loanId)
+    newInstallment(loanId, 2, "2027-01-01")
+    db.exec(sql"""
+      UPDATE lending.installment SET schedule_version = 2
+       WHERE loan_id = ? AND no = 2""", $loanId)
+    db.exec(sql"""
+      UPDATE lending.loan
+         SET restructured_on = '2026-11-15', grade_before_restructure = 'DOUBTFUL',
+             grade_cap = 'SUBSTANDARD'
+       WHERE loan_id = ?""", $loanId)
+
+    discard runChunk("2026-12-01")
+    check db.getValue(sql"""
+      SELECT dpd::text FROM lending.collectibility_snapshot
+       WHERE loan_id = ? AND business_date = '2026-12-01'""", $loanId) == "0"
+    check db.getValue(sql"""
+      SELECT grade FROM lending.collectibility_snapshot
+       WHERE loan_id = ? AND business_date = '2026-12-01'""", $loanId) == "SUBSTANDARD"
+
+  test "periode pembayaran bersih melepas batas golongan":
+    let loanId = newId(testClock)
+    newPpapLoan(loanId, "12000000.00")
+    newInstallment(loanId, 1, "2026-06-01")
+    discard runChunk("2026-11-01")
+    db.exec(sql"""
+      UPDATE lending.installment SET superseded_on = '2026-11-15'
+       WHERE loan_id = ? AND no = 1""", $loanId)
+    # Tiga angsuran baru, masing-masing dibayar tepat waktu (paid_on = due_on).
+    newInstallment(loanId, 2, "2027-01-01", paid = true)
+    newInstallment(loanId, 3, "2027-02-01", paid = true)
+    newInstallment(loanId, 4, "2027-03-01", paid = true)
+    db.exec(sql"UPDATE lending.installment SET schedule_version = 2 WHERE loan_id = ? AND no >= 2",
+      $loanId)
+    db.exec(sql"""
+      UPDATE lending.loan
+         SET restructured_on = '2026-11-15', grade_before_restructure = 'LOSS',
+             grade_cap = 'SUBSTANDARD'
+       WHERE loan_id = ?""", $loanId)
+
+    # Dua periode bersih (Januari, Februari): batas masih berlaku.
+    discard runChunk("2027-02-01")
+    check db.getValue(sql"""
+      SELECT grade FROM lending.collectibility_snapshot
+       WHERE loan_id = ? AND business_date = '2027-02-01'""", $loanId) == "SUBSTANDARD"
+    # Angsuran Maret jatuh tempo 1 Maret dan dibayar tepat waktu: tiga periode bersih, batas lepas.
+    discard runChunk("2027-03-01")
+    check db.getValue(sql"""
+      SELECT grade FROM lending.collectibility_snapshot
+       WHERE loan_id = ? AND business_date = '2027-03-01'""", $loanId) == "COLLECTIBLE"
+
+  test "sebelumnya kurang lancar tidak naik sebelum periode bersih cukup":
+    let loanId = newId(testClock)
+    newPpapLoan(loanId, "12000000.00")
+    newInstallment(loanId, 1, "2027-01-01")
+    db.exec(sql"""
+      UPDATE lending.loan
+         SET restructured_on = '2026-11-15', grade_before_restructure = 'SUBSTANDARD',
+             grade_cap = 'SUBSTANDARD', collectibility = 'SUBSTANDARD'
+       WHERE loan_id = ?""", $loanId)
+    discard runChunk("2026-12-01")
+    # DPD 0 (angsuran belum jatuh tempo) tetapi golongannya "tidak berubah": tetap kurang lancar.
+    check db.getValue(sql"""
+      SELECT grade FROM lending.collectibility_snapshot
+       WHERE loan_id = ? AND business_date = '2026-12-01'""", $loanId) == "SUBSTANDARD"
 
   test "penyisihan tidak dianggap menggantung setelah hapus buku":
     let loanId = newId(testClock)

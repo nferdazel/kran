@@ -390,6 +390,24 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "lending.restructure.clean_periods",
+    "module": "lending",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.lending.restructure.clean_periods",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 12
+    }
+  },
+  {
     "key": "party.cif.format",
     "module": "party",
     "valueType": "string",

@@ -5131,3 +5131,42 @@ posting rule. Yang boleh berada di liabilitas adalah simpanan anggota (tabungan/
 **Konsekuensi.** Pertanyaan "ubah ke liabilitas" tertutup; O-100 menyisakan hanya aturan **iuran**
 anggota (tidak ada tarif nasional — AD/ART + RAT, jadi parameter per koperasi). Sumber dan kutipan
 dicatat di `docs/compliance/register-validation.md`; pengesahan akhir tetap milik compliance owner.
+
+## D-196 — Tarif PPAP mengadopsi POJK 1/2024 (0,5/3/10/50/100) (2 Nov 2026)
+
+**Konteks.** Seed `lending.ppap.rates` sebelumnya `0/0,5/10/50/100`: pinjaman lancar tidak membentuk
+penyisihan umum sama sekali, dan golongan dalam perhatian khusus disisihkan 0,5%. Riset 2 Nov 2026
+(`docs/compliance/register-validation.md`) menemukan POJK No. 1 Tahun 2024 tentang Kualitas Aset BPR,
+Pasal 19: PPKA umum paling sedikit 0,5% dari aset produktif lancar; PPKA khusus 3% (DPK), 10% (KL),
+50% (D), 100% (M). PMK 74/2024 memakai 0,5% lancar dan 10% KL untuk koperasi.
+
+**Keputusan.** Seed menjadi `["0.5","3","10","50","100"]` (persen, urutan golongan). Nilainya tetap
+kelas `kebijakan` — bukan `regulasi-*` — karena untuk segmen KSP Permenkop 2/2024 tidak mewajibkan
+tabel persentase (penyisihan berbasis bukti objektif); ini adopsi konservatif pack BPR.
+
+**Konsekuensi.** Penyisihan bertambah pada pinjaman lancar (0,5%) dan DPK (3%), sehingga laba pilot
+turun dan CKPN lebih konservatif. Perubahan pada DB yang sudah berjalan adalah **tindakan governance**
+(nilai parameter berversi + maker-checker dengan alasan "POJK 1/2024"), bukan migrasi. Nilai tetap
+`NEEDS-COMPLIANCE-REVIEW` sampai compliance owner menandatangani. Menyentuh jalur uang →
+`HUMAN-REVIEW-REQUIRED`.
+
+## D-197 — Golongan pasca-restrukturisasi dibatasi, bukan otomatis lancar (O-123, 2 Nov 2026)
+
+**Konteks.** D-186 memutuskan DPD dihitung dari jadwal aktif, sehingga pinjaman yang direstrukturisasi
+langsung menjadi lancar. Dampaknya (dihitung dengan domain asli): pinjaman Rp10.000.000 menunggak
+100 hari (kurang lancar, penyisihan Rp1.000.000) yang direstrukturisasi → DPD 0 → penyisihan Rp0,
+artinya Rp1.000.000 dilepas ke laba seketika. POJK 1/2024 (Kualitas Aset BPR) mengatur sebaliknya:
+kualitas setelah restrukturisasi paling tinggi kurang lancar bila sebelumnya diragukan/macet, tidak
+berubah bila sebelumnya lancar/DPK/kurang lancar, dan baru boleh lancar setelah tiga periode
+pembayaran tanpa tunggakan.
+
+**Keputusan.** Simpan pembanding saat restrukturisasi: `lending.loan.restructured_on`,
+`grade_before_restructure`, `grade_cap` (migrasi `lending/0101`). Task `lending.dpd_regrade` menerapkan
+batas atas `grade_cap` selama jumlah angsuran terakhir yang sudah jatuh tempo dan dibayar tepat waktu
+< `lending.restructure.clean_periods` (default 3). Pinjaman yang belum pernah dinilai memakai batas
+konservatif kurang lancar. Penurunan golongan tetap boleh terjadi; yang ditahan hanya perbaikan.
+
+**Konsekuensi.** Restrukturisasi tidak lagi melepas penyisihan seketika, dan pinjaman yang benar-benar
+membaik tetap bisa kembali lancar setelah tiga periode bersih. Pinjaman yang direstrukturisasi sebelum
+migrasi ini tidak di-backfill (nilai "sebelum" tidak tercatat) — perilakunya tetap seperti D-186 sampai
+direstrukturisasi berikutnya. Menyentuh jalur uang → `HUMAN-REVIEW-REQUIRED`.

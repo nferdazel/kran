@@ -38,7 +38,7 @@ import kernel/generated/paramkeys
 import platform/domain/[audit, event, scope]
 import platform/infrastructure/[audit_repo, outbox_repo, param_repo]
 
-import lending/domain/[collectibility, ppap]
+import lending/domain/[collectibility, ppap, restructure_grade]
 import lending/infrastructure/[ppap_repo, regrade_repo]
 
 import daycloser/domain/[registry, types]
@@ -75,6 +75,19 @@ proc dpdBounds(db: DbConn; ctx: TaskContext): seq[int] =
     raise abort("DAY-372", parsed.error.details)
   parsed.val
 
+proc cleanPeriodsRequired(db: DbConn; ctx: TaskContext): int =
+  ## Ambang periode pembayaran bersih sebelum batas golongan pasca-restrukturisasi dilepas (O-123).
+  ## Dibaca pada tanggal buku, sama seperti ambang DPD.
+  var value: JsonNode
+  try:
+    value = activeValueJson(db, keyString(P_lending_restructure_clean_periods),
+      ctx.businessDate, lookupFor(institutionScope()))
+  except ValueError as e:
+    raise abort("DAY-372", "parameter lending.restructure.clean_periods tidak terbaca: " & e.msg)
+  if value.isNil or value.kind != JInt or value.getInt() < 1 or value.getInt() > 12:
+    raise abort("DAY-372", "parameter lending.restructure.clean_periods harus bilangan bulat 1..12")
+  int(value.getInt())
+
 proc countRegradeChunks(pool: DbPool; chunkSize: int): Result[int, TaskError] =
   ## Halaman dihitung dari populasi stabil (`ACTIVE`), bukan dari jumlah yang akan berubah: jumlah
   ## yang berubah baru diketahui setelah DPD dihitung per pinjaman.
@@ -90,12 +103,15 @@ proc countRegradeChunks(pool: DbPool; chunkSize: int): Result[int, TaskError] =
 proc runRegradeChunk(pool: DbPool; clock: Clock; ctx: TaskContext; chunk: Chunk): TaskResult =
   var items: seq[RegradeCandidate]
   var bounds: seq[int]
+  var cleanPeriods = 0
   try:
     let loaded = pool.withConn(proc(db: DbConn): tuple[items: seq[RegradeCandidate];
-        bounds: seq[int]] =
-      (regradeCandidatesPage(db, chunk.chunkNo * ctx.chunkSize, ctx.chunkSize), dpdBounds(db, ctx)))
+        bounds: seq[int]; cleanPeriods: int] =
+      (regradeCandidatesPage(db, chunk.chunkNo * ctx.chunkSize, ctx.chunkSize, ctx.businessDate),
+       dpdBounds(db, ctx), cleanPeriodsRequired(db, ctx)))
     items = loaded.items
     bounds = loaded.bounds
+    cleanPeriods = loaded.cleanPeriods
   except LendingAbort as e:
     return err[TaskOutcome, TaskError](taskError(e.code, e.msg))
   except IOError as e:
@@ -121,7 +137,15 @@ proc runRegradeChunk(pool: DbPool; clock: Clock; ctx: TaskContext; chunk: Chunk)
         if not graded2.isOk:
           # Mustahil bila `parseDpdBounds` lolos, tetapi jangan diam-diam memakai golongan lain.
           raise abort("DAY-372", graded2.error.details)
-        let grade = graded2.val
+        # Pinjaman yang direstrukturisasi tidak dinilai hanya dari DPD jadwal baru: batas atasnya
+        # dari golongan sebelum restrukturisasi, dilepas setelah cukup periode pembayaran bersih
+        # (O-123, D-197 — POJK 1/2024).
+        let grade =
+          if candidate.gradeCap.isNone:
+            graded2.val
+          else:
+            capApplication(graded2.val, candidate.gradeCap.get(), candidate.cleanPeriods,
+              cleanPeriods)
 
         let inserted = insertSnapshot(db, candidate.loanId, ctx.businessDate, dpd, grade)
         if not inserted:

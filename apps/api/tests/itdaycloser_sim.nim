@@ -409,8 +409,8 @@ suite "simulasi 12 bulan: penutupan harian sampai akhir tahun buku":
     check glReceivable == "18000000.00"
     check glReceivable == loanReceivableSubledger(db)
     check glAllowance == allowanceSubledger(db)
-    # LOSS = 100% × 12.000.000,00; COLLECTIBLE = 0%.
-    check glAllowance == "12000000.00"
+    # LOSS = 100% × 12.000.000,00; COLLECTIBLE = 0,5% × 6.000.000,00 = 30.000,00 (D-196).
+    check glAllowance == "12030000.00"
 
     # 4. Laporan tanggal tutup terakhir memakai snapshot tanggal itu, bukan keadaan hari ini.
     let lastDate = db.getValue(sql"""

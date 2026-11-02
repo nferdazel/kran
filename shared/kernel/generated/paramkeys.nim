@@ -29,6 +29,7 @@ const paramKeys*: seq[string] = @[
   "lending.collectibility.dpd_bounds",
   "lending.loan.max_principal",
   "lending.ppap.rates",
+  "lending.restructure.clean_periods",
   "party.cif.format",
   "party.identity.doc_lengths",
   "party.identity.doc_types",
@@ -115,6 +116,8 @@ const P_lending_collectibility_dpd_bounds* = ParamKey[JsonNode]("lending.collect
 const P_lending_loan_max_principal* = ParamKey[Money]("lending.loan.max_principal")
 
 const P_lending_ppap_rates* = ParamKey[JsonNode]("lending.ppap.rates")
+
+const P_lending_restructure_clean_periods* = ParamKey[int64]("lending.restructure.clean_periods")
 
 const P_party_cif_format* = ParamKey[string]("party.cif.format")
 
@@ -432,6 +435,17 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.lending.ppap.rates",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "lending.restructure.clean_periods",
+    module: "lending",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.lending.restructure.clean_periods",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(

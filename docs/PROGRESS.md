@@ -4191,3 +4191,11 @@ Benchmark: `bench-eod` menerima `--loans N`. 100k rekening + 50k pinjaman = **24
   gate harian; `./task ci` tetap penuh; `./task release` kini juga menjalankan `test` + `e2e`
   sebelum commit rilis (butuh `KRAN_DATABASE_URL`, diperiksa sebelum `VERSION` di-bump). AGENTS §2/§4/§6,
   README, CONTRIBUTING, `docs/RELEASE.md`, `docs/ci-jobs.md` ikut diperbarui. CI GitHub tidak berubah.
+- **Riset regulasi 2 Nov 2026 (O-001, O-100, O-123)**: Permenkop UKM 2/2024 (simpanan pokok/wajib di
+  ekuitas), POJK 1/2024 (PPKA 0,5/3/10/50/100 + aturan restrukturisasi), PP 15/2009 (PPh final bunga
+  simpanan anggota). Sumber + kutipan di `docs/compliance/register-validation.md`; keputusan D-195/D-196/D-197.
+- **T-178**: seed `lending.ppap.rates` → `0,5/3/10/50/100` (D-196). `./task test tppap` +
+  `itdaycloser_lending` hijau.
+- **T-179**: pinjaman yang direstrukturisasi tidak lagi otomatis lancar. `grade_cap` disimpan
+  (migrasi `lending/0101`), regrade menahan perbaikan sampai 3 periode bersih (D-197). Bukti: unit
+  `trestructure_grade` + 3 integrasi baru; `./task test itapi_lending` hijau.

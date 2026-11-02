@@ -36,19 +36,45 @@
     note: "Batas atas DPD golongan 2–4 pola bank (90/120/180), D-180 butir 2; pasal belum diverifikasi."
   default_pack: { base: [90, 120, 180] }
 
-# Persentase PPAP/CKPN per golongan kolektibilitas 1–5 (D-180 butir 3). Angka sementara supaya
-# mesin dan rekonsiliasi bisa diuji; **bukan** angka untuk pilot data nyata sampai compliance
-# menetapkan nilai dan pemetaannya. Disimpan sebagai string agar desimalnya eksak (Rate 1e6).
+# Persentase PPAP/CKPN per golongan kolektibilitas 1–5 (D-180 butir 3, diperbarui D-196).
+# Acuan: POJK No. 1 Tahun 2024 tentang Kualitas Aset BPR, Pasal 19 — PPKA umum paling sedikit 0,5%
+# dari aset produktif lancar, PPKA khusus 3% (dalam perhatian khusus), 10% (kurang lancar), 50%
+# (diragukan), 100% (macet) setelah dikurangi nilai agunan. Golongan lancar 0,5% juga sejalan dengan
+# tabel cadangan piutang tak tertagih koperasi di PMK 74/2024. Disimpan sebagai string agar
+# desimalnya eksak (Rate 1e6).
+#
+# Untuk segmen KSP, Permenkop UKM 2/2024 tidak memberi tabel persentase (penyisihan berbasis bukti
+# objektif), jadi angka ini adalah sikap konservatif pack BPR — masih `NEEDS-COMPLIANCE-REVIEW`
+# sampai compliance owner menandatangani.
 - key: lending.ppap.rates
   type: json
   scopes: [GLOBAL, INSTITUTION]
   schema: { type: array }
   sensitivity: NORMAL
   provenance:
+    # Kelas `kebijakan`, bukan `regulasi-*`: nilai ini disemai sebagai kebijakan pilot yang
+    # mengadopsi tabel POJK 1/2024, bukan sebagai klaim bahwa KSP wajib mengikuti tabel itu.
     class: kebijakan
     compliance: NEEDS-COMPLIANCE-REVIEW
-    note: "Golongan 1–5 = 0/0,5/10/50/100 (persen, string). Pemetaan pun sementara; D-180 butir 3."
-  default_pack: { base: ["0", "0.5", "10", "50", "100"] }
+    note: "Golongan 1–5 = 0,5/3/10/50/100 (persen, string), mengadopsi POJK 1/2024 Pasal 19; D-196."
+  default_pack: { base: ["0.5", "3", "10", "50", "100"] }
+
+# Jumlah periode pembayaran bersih sebelum pinjaman yang direstrukturisasi boleh naik ke lancar
+# (O-123, D-197). Acuan: POJK 1/2024 tentang Kualitas Aset BPR mengatur kualitas kredit setelah
+# restrukturisasi paling tinggi kurang lancar (bila sebelumnya diragukan/macet) atau tidak berubah
+# (bila sebelumnya lancar/DPK/kurang lancar), dan baru dapat menjadi lancar bila tidak ada tunggakan
+# selama 3 kali periode pembayaran berturut-turut. Untuk KSP aturan ini adalah sikap konservatif,
+# bukan kutipan kewajiban; masih `NEEDS-COMPLIANCE-REVIEW`.
+- key: lending.restructure.clean_periods
+  type: integer
+  scopes: [GLOBAL, INSTITUTION]
+  schema: { minimum: 1, maximum: 12 }
+  sensitivity: NORMAL
+  provenance:
+    class: kebijakan
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: "3 periode pembayaran bersih sebelum naik ke lancar (POJK 1/2024); D-197."
+  default_pack: { base: 3 }
 
 # Plafon pengajuan pinjaman (T-163). Angka ini **kebijakan pilot**, bukan ketentuan regulasi:
 # batas pengajuan yang lebih tinggi butuh persetujuan pemilik, dan angka final untuk pilot nyata

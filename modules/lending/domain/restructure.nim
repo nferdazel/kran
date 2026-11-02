@@ -6,9 +6,10 @@
 ## Dua hal yang diputuskan pemilik dan **bukan** ditebak di sini:
 ##   - tunggakan bunga/denda jadwal lama **dilepas**, dasar jadwal baru = sisa **pokok**
 ##     (bunga diakui saat dibayar, jadi tidak ada pendapatan yang perlu dibalik);
-##   - kolektibilitas **kembali lancar** sejak tanggal restrukturisasi — konsekuensinya DPD dihitung
-##     dari jadwal aktif, yang jatuh temponya di masa depan.
-## Keduanya aturan regulasi yang belum diverifikasi: `NEEDS-COMPLIANCE-REVIEW` + O-123.
+##   - DPD dihitung dari jadwal aktif, yang jatuh temponya di masa depan. Kolektibilitas **tidak**
+##     otomatis kembali lancar: `restructure_grade.nim` menahan golongan di batas atas dari golongan
+##     sebelum restrukturisasi sampai periode pembayaran bersih cukup (O-123, D-197, POJK 1/2024).
+## Pelepasan tunggakan bunga/denda tetap sikap pilot yang belum diverifikasi compliance.
 ##
 ## Penomoran angsuran **berlanjut** dari nomor terakhir versi sebelumnya: `lending.payment_allocation`
 ## menunjuk `(payment_id, installment_no)` tanpa versi, jadi nomor yang dipakai ulang akan membuat

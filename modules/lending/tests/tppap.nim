@@ -21,19 +21,19 @@ proc pct(s: string): Rate =
   doAssert r.isOk, "persen uji tidak sah: " & s
   r.val
 
-const seedRates = ["0", "0.5", "10", "50", "100"]
+const seedRates = ["0.5", "3", "10", "50", "100"]
 
 suite "lending ppap: tarif parameter":
   test "lima tarif seed terbaca dengan satuan mikro yang benar":
     let parsed = parsePpapRates(%*seedRates)
     check parsed.isOk
     check parsed.val.len == gradeCount()
-    check parsed.val.mapIt(microUnits(it)) == @[0'i64, 5_000, 100_000, 500_000, 1_000_000]
+    check parsed.val.mapIt(microUnits(it)) == @[5_000'i64, 30_000, 100_000, 500_000, 1_000_000]
 
   test "tarif dipetakan menurut urutan golongan, bukan dicari":
     let rates = parsePpapRates(%*seedRates).val
-    check microUnits(rateFor(rates, colCollectible)) == 0
-    check microUnits(rateFor(rates, colSpecialMention)) == 5_000
+    check microUnits(rateFor(rates, colCollectible)) == 5_000
+    check microUnits(rateFor(rates, colSpecialMention)) == 30_000
     check microUnits(rateFor(rates, colSubstandard)) == 100_000
     check microUnits(rateFor(rates, colDoubtful)) == 500_000
     check microUnits(rateFor(rates, colLoss)) == 1_000_000

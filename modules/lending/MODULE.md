@@ -61,7 +61,8 @@ pencairan berarti mengubah angka yang sudah disepakati anggota, jadi itu bukan o
 |---|---|---|
 | `lending.allocation_order` | urutan alokasi pembayaran (daftar terurut) | diputuskan pemilik: **parameter**, bukan kode (D-180 butir 4) |
 | `lending.collectibility.dpd_bounds` | batas DPD per golongan 1–5 | `NEEDS-COMPLIANCE-REVIEW` (REG-204 `V!`; D-180 butir 2) |
-| `lending.ppap.rates` | persentase penyisihan per golongan | `NEEDS-COMPLIANCE-REVIEW` (D-180 butir 3, angka sementara) |
+| `lending.ppap.rates` | persentase penyisihan per golongan | `0,5/3/10/50/100` mengadopsi POJK 1/2024 Pasal 19 (D-196); tetap `NEEDS-COMPLIANCE-REVIEW` |
+| `lending.restructure.clean_periods` | periode pembayaran bersih sebelum batas golongan pasca-restrukturisasi dilepas | `NEEDS-COMPLIANCE-REVIEW` (D-197, POJK 1/2024: 3 periode) |
 | `lending.loan.max_principal` | plafon pengajuan pinjaman | `komersial-konservatif` + `NEEDS-COMPLIANCE-REVIEW` (Rp100 juta, T-163) |
 
 Nilai di atas **bukan** angka final untuk pilot data nyata; lihat O-001.
@@ -149,8 +150,13 @@ Task day-close `lending.dpd_regrade` (`apps/api/src/daycloser_lending.nim`) meni
 - **DPD** = hari sejak tanggal jatuh tempo angsuran **belum lunas tertua** (bukan tanggal cair, bukan
   pembayaran terakhir). Semua angsuran lunas → DPD 0, status tetap `ACTIVE` (D-183).
 - **Golongan** dari ambang parameter `lending.collectibility.dpd_bounds` (seed `[90,120,180]`,
-  `NEEDS-COMPLIANCE-REVIEW`): `0` lancar, `1–90` kurang lancar, `91–120` diragukan,
-  `121–180` macet, `>180` macet total. Parameter hilang/rusak → task gagal `DAY-372`.
+  `NEEDS-COMPLIANCE-REVIEW`): `0` lancar, `1–90` dalam perhatian khusus, `91–120` kurang lancar,
+  `121–180` diragukan, `>180` macet. Parameter hilang/rusak → task gagal `DAY-372`.
+- **Pasca-restrukturisasi** (O-123, D-197): pinjaman yang punya `grade_cap` tidak dinilai hanya dari
+  DPD jadwal baru. Batasnya dari golongan **sebelum** restrukturisasi — diragukan/macet → paling
+  tinggi kurang lancar, selain itu tidak berubah — dan dilepas setelah
+  `lending.restructure.clean_periods` angsuran terakhir yang sudah jatuh tempo dibayar tepat waktu.
+  Penurunan tetap boleh; yang ditahan hanya perbaikan.
 - **Snapshot** `lending.collectibility_snapshot` ber-PK `(loan_id, business_date)` = idempotensi;
   kolom `lending.loan.collectibility` hanya nilai terkini. Run kedua pada tanggal yang sama
   melaporkan `skipped` dan tidak menerbitkan event kedua.
@@ -164,8 +170,8 @@ Task day-close `lending.ppap_provision`, **kritis** (menulis jurnal beban penyis
 `lending.dpd_regrade` lewat `dependsOn`. Satu chunk = satu halaman pinjaman ternilai:
 
 - **Dasar** = `lending.loan_balance.principal_outstanding`; **tarif** dari parameter
-  `lending.ppap.rates` (seed `["0","0.5","10","50","100"]` persen, urutan = urutan golongan,
-  `NEEDS-COMPLIANCE-REVIEW`). Parameter salah bentuk/jumlah → `DAY-380`, bukan tarif nol.
+  `lending.ppap.rates` (seed `["0.5","3","10","50","100"]` persen, urutan = urutan golongan,
+  mengadopsi POJK 1/2024 Pasal 19 — D-196; parameter salah bentuk/jumlah → `DAY-380`, bukan tarif nol).
 - **Snapshot** `lending.ppap_snapshot` ber-PK `(loan_id, business_date)` menyimpan `grade`,
   `base_amount`, `rate_micro`, `allowance`. Yang dijurnal adalah **selisih** terhadap penyisihan
   terakhir **sebelum** tanggal buku, bukan angka mutlak.

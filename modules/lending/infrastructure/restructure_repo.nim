@@ -4,11 +4,13 @@
 ## dihapus), dan nomor angsuran versi baru melanjutkan nomor terakhir — lihat alasan penomoran di
 ## `lending/0093` dan `domain/restructure.nim`.
 
-import std/strutils
+import std/[options, strutils]
 
 import db_connector/db_postgres
 
 import kernel/ids
+
+import ../domain/collectibility
 
 proc nextInstallmentNo*(db: DbConn; loanId: Id): int =
   ## Nomor angsuran berikutnya lintas versi. `payment_allocation` menunjuk nomor tanpa versi, jadi
@@ -41,3 +43,17 @@ proc updateMaturity*(db: DbConn; loanId: Id; maturityOn: string): bool =
   db.execAffectedRows(sql"""
     UPDATE lending.loan SET maturity_on = ?::date
      WHERE loan_id = ? AND status = 'ACTIVE'""", maturityOn, $loanId) == 1
+
+proc recordRestructureGrade*(db: DbConn; loanId: Id; businessDate: string;
+    before: Option[Collectibility]; cap: Collectibility) =
+  ## Mencatat keadaan "sebelum" dan batas atas golongan sesudah restrukturisasi (O-123, D-197).
+  ## Ditulis dalam transaksi yang sama dengan jadwal baru: batas tanpa jadwal (atau sebaliknya) akan
+  ## membuat penilaian berikutnya memakai pembanding yang tidak pernah ada.
+  db.exec(sql"""
+    UPDATE lending.loan
+       SET restructured_on = ?::date,
+           grade_before_restructure = NULLIF(?, ''),
+           grade_cap = ?
+     WHERE loan_id = ?""", businessDate,
+    (if before.isNone: "" else: $before.get()),
+    $cap, $loanId)
