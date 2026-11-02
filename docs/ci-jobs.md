@@ -161,3 +161,10 @@ lalu menolak. Aturannya:
   atau biarkan di luar daftar bila sifatnya informatif (`secret-scan.yml` mingguan, `visual-baseline.yml`).
 - `workflow_dispatch` pada `ci.yml` menjalankan job yang sama, jadi nama check-run-nya identik dan
   tetap memenuhi gerbang.
+
+## Gate lokal vs gate CI (D-194, 2 Nov 2026)
+
+Pembagian gate lokal **tidak** mengubah job CI: `./task ci-fast` (tanpa e2e) adalah loop harian,
+sedangkan `./task ci` dan `./task release` menjalankan e2e. Job `Web (svelte-check + axe + Playwright)`
+tetap dijalankan untuk setiap push dan tetap menjadi gerbang deploy, jadi commit yang lolos
+`ci-fast` tetapi merah di e2e tetap tidak sampai ke produksi.

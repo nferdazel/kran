@@ -5089,3 +5089,27 @@ validasi akun, sedangkan manfaatnya hanya presentasi; risikonya tidak sebanding 
 **Konsekuensi.** Laporan yang butuh penyajian "piutang bruto − CKPN" harus menghitungnya dari saldo
 `110` dan `111` (sudah tersedia di `ledger`), bukan dari akun kontra. Bila kelak ada kebutuhan
 pelaporan regulator yang mewajibkan akun kontra, itu menjadi ADR baru + migrasi constraint.
+
+## D-194 — `ci-fast` untuk loop harian, e2e ditumpuk ke `task ci` dan `task release` (2 Nov 2026)
+
+**Konteks.** `./task ci` menjalankan seluruh gate termasuk e2e Playwright (~2 menit + reset DB dev
+setiap kali). Dipakai sebagai DoD per task, ia membuat loop harian panas: setiap perubahan kecil
+membayar reset DB dan 76 test browser, padahal e2e paling berguna sebagai gerbang sebelum kode
+keluar mesin. Sementara itu `./task release` — satu-satunya jalur push ke `main` (= deploy) — hanya
+menjalankan `check-fast` + `build`, jadi justru gerbang terakhir yang paling tipis.
+
+**Keputusan.**
+
+1. Perintah baru `./task ci-fast` = `check` (termasuk `nim check` penuh) + openapi + `lint-web` +
+   `test`, **tanpa** e2e. Ini gate loop harian dan bukti DoD per task.
+2. `./task ci` tidak berubah cakupannya (semua gate + e2e), tetap gerbang sebelum rilis/merge.
+3. `./task release` kini menjalankan `check-fast` + `build` + `test` + **`e2e`** sebelum membuat
+   commit rilis dan tag. Karena itu rilis membutuhkan `KRAN_DATABASE_URL`, dan diperiksa **sebelum**
+   `VERSION` di-bump supaya kegagalan env tidak meninggalkan working tree setengah jadi.
+4. CI GitHub tidak berubah: job `Web (svelte-check + axe + Playwright)` tetap wajib hijau dan tetap
+   menjadi gerbang `deploy-vps.sh`.
+
+**Konsekuensi.** Perubahan UI tidak wajib membuktikan e2e di setiap iterasi, tetapi **wajib** hijau
+saat `./task ci`/`./task release` sebelum dirilis; CI pada commit yang sama mengulanginya. DoD §6
+diperbarui mengikuti ini. `--skip-check` tetap ada sebagai jalan darurat dan dicatat di catatan
+rilis — sekarang ia melewati test + e2e juga.

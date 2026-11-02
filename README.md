@@ -39,7 +39,8 @@ technical spec). Working rules for humans and agents: [`AGENTS.md`](AGENTS.md).
 
 ## Where it stands now
 
-Every task must end with `./task ci` green; that is the only evidence that counts. Recorded gate
+Every task must end with `./task ci-fast` green, and `./task ci` (which adds e2e) green before a
+release — that is the only evidence that counts (D-194). Recorded gate
 evidence per phase lives in the milestone reports and in [`docs/PROGRESS.md`](docs/PROGRESS.md); the
 counts move with every task, so they are kept there rather than duplicated here.
 
@@ -132,11 +133,12 @@ One command entry point: `./task` (POSIX script, no extra tooling dependencies; 
 | `./task e2e` | token contrast + svelte-check + Playwright (e2e, axe 2 themes, keyboard) |
 | `./task lint-web` | eslint (typescript-eslint + `svelte/*`, non-a11y) over `apps/web` and `packages/ui` |
 | `./task openapi` | lint the OpenAPI contract + check the TS client is in sync |
-| `./task ci` | every gate above; must be green before a task is called done |
+| `./task ci-fast` | `check` + openapi + lint-web + tests, no e2e — daily loop gate (D-194) |
+| `./task ci` | every gate above including e2e; must be green before a task is called done |
 | `./task ci-repeat [N]` | repeat the full gate N times (default 3), to catch flake |
 | `./task build` | build the `kran-api` binary into `.build/bin/` |
 | `./task version` | print `VERSION` (single source for API, web, `kran.nimble`, `package.json`) |
-| `./task release [major\|minor\|patch]` | bump `VERSION` + CHANGELOG, run the gate, commit + annotated tag `vX.Y.Z` |
+| `./task release [major\|minor\|patch]` | bump `VERSION` + CHANGELOG, run the gate (incl. tests + e2e), commit + annotated tag `vX.Y.Z` |
 | `./task fmt` | format code (rewrites files in place) |
 | `./task dbtools migrate\|status\|validate\|seed` | SQL migrations and seed (needs `KRAN_DATABASE_URL`) |
 | `./task scaffold <name> [--dry-run]` | scaffold a new module |

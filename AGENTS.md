@@ -29,10 +29,14 @@ diam-diam memilih; catat di `docs/DECISIONS.md` dan eskalasi (lihat §8).
 `task test`    → unit + property + integration (Postgres ephemeral) + contract
 `task e2e`     → Playwright (e2e + axe 2 tema + svelte-check + baseline visual Linux, O-022 selesai)
 `task lint-web` → eslint (typescript-eslint + `svelte/*` non-a11y); butuh `pnpm install`
-`task ci`      → semua di atas (harus hijau sebelum menyatakan task selesai; DoD tidak berubah).
+`task ci-fast` → `check` + openapi + `lint-web` + `test` **tanpa e2e** — gate loop harian (D-194).
+`task ci`      → `ci-fast` + e2e (harus hijau sebelum rilis/merge; D-194). E2e tidak lagi dijalankan
+                 per task — bukti e2e menumpang di `task ci`/`task release` dan CI.
 `task version` → cetak `VERSION` (satu sumber untuk API, web, `kran.nimble`, `package.json`).
-`task release` → bump + CHANGELOG + gate + commit + tag anotasi (D-178, `docs/RELEASE.md`).
-Selama implementasi pakai `task verify <modul>`; `nim check` penuh di-shard paralel (D-077).
+`task release` → bump + CHANGELOG + gate (`check-fast` + build + **test + e2e**) + commit + tag
+                 anotasi (D-178, D-194, `docs/RELEASE.md`).
+Selama implementasi pakai `task verify <modul>`/`task ci-fast`; e2e sengaja ditumpuk ke `task ci`
+dan `task release` supaya loop harian tidak panas. `nim check` penuh di-shard paralel (D-077).
 Kalau perintah ini belum ada, MEMBUATNYA adalah task pertama (Fase 0, T-001).
 
 ## 3. Git & rilis — PENTING
@@ -53,12 +57,13 @@ Ambil task teratas berstatus `READY` dari `docs/BACKLOG.md`, lalu:
    disentuh, bagian spec, kriteria selesai (dari Definition of Done §6).
 2. **Test-first** bila memungkinkan (domain, Money, perhitungan: property + golden test).
 3. **Implement** dalam langkah kecil; jalankan `task check` sering.
-4. **Self-verify**: `task ci` hijau. Jangan klaim selesai tanpa output yang benar-benar dijalankan.
+4. **Self-verify**: `task ci-fast` hijau (D-194). Jangan klaim selesai tanpa output yang benar-benar
+   dijalankan.
 5. **Independent review**: panggil reviewer dengan konteks BERSIH (subagent/sesi baru) memakai
    prompt di `docs/agent/REVIEWER.md`. Reviewer hanya membaca diff + spec, bukan alasanmu.
 6. **Fix**: perbaiki semua temuan `BLOCKER` dan `MAJOR`. `MINOR` boleh ditunda ke backlog
    (catat). Jangan berdebat dengan reviewer tanpa bukti (test/ referensi spec).
-7. Ulangi 4–6 sampai reviewer menyatakan `APPROVE` (tanpa BLOCKER/MAJOR) dan `task ci` hijau.
+7. Ulangi 4–6 sampai reviewer menyatakan `APPROVE` (tanpa BLOCKER/MAJOR) dan `task ci-fast` hijau.
    **Batas**: maksimal 5 putaran review per task. Lewat itu → STOP, tulis ringkasan
    masalah di `docs/ESCALATIONS.md`, tandai task `BLOCKED`, lanjut ke task independen lain.
 8. **Commit + update state**: `docs/PROGRESS.md` (apa selesai, bukti, sisa), tandai task
@@ -76,7 +81,9 @@ Ambil task teratas berstatus `READY` dari `docs/BACKLOG.md`, lalu:
 - Library Nim: cek ketersediaan & versi sebelum dipakai; dependensi baru butuh ADR singkat.
 
 ## 6. Definition of Done (task)
-- [ ] Kode + test (unit/ property/ integration sesuai jenisnya) lulus; `task ci` hijau
+- [ ] Kode + test (unit/ property/ integration sesuai jenisnya) lulus; `task ci-fast` hijau.
+      Perubahan UI juga harus lolos e2e — dijalankan sekali di `task ci`/`task release` (D-194), bukan
+      per iterasi.
 - [ ] Batas arsitektur terjaga; tidak ada magic number bisnis; param baru terdaftar + seed + schema
 - [ ] Uang via `Money`; tidak ada float
 - [ ] Use case atomik; event via outbox; idempotency pada operasi finansial

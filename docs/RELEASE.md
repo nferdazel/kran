@@ -45,7 +45,9 @@ pekerjaan utuh selesai (satu task, satu batch perbaikan, atau sebelum fase baru 
 4. `tools/gen-changelog.sh` menambah entri `CHANGELOG.md` (Keep a Changelog) dari commit:
    `feat` → Added, `fix` → Fixed, `perf`/`refactor` → Changed, `ops`/`ci`/`deploy` → Operations.
    Commit `chore: release*` dilewati. Berkas yang sama dipakai sebagai catatan GitHub Release.
-5. Gate: `./task check-fast` + `./task build`, lalu `./task version-check`.
+5. Gate: `./task check-fast` + `./task build` + `./task test` + `./task e2e`, lalu
+   `./task version-check` (D-194). Butuh `KRAN_DATABASE_URL` — diperiksa sebelum `VERSION` di-bump
+   supaya kegagalan env tidak meninggalkan working tree setengah jadi.
    `--skip-check` ada untuk darurat dan **dicatat** di catatan rilis.
 6. Commit `chore: release vX.Y.Z` (tanpa `-s`: repo ini tidak memakai DCO), tag **anotasi**
    `vX.Y.Z`, lalu `git push origin <branch> --follow-tags` dan `gh release create`.
@@ -93,7 +95,8 @@ tidak dimulai untuk commit yang sudah terbukti merah.
 
 - Nama job dicocokkan sebagai string. Mengganti nama job di `ci.yml` tanpa memperbarui
   `CI_EXPECTED` di `deploy-vps.sh` membuat gerbang timeout (fail-closed) — dicatat sebagai O-119.
-- Gate rilis lokal adalah `check-fast` + `build`, bukan `./task ci` penuh (e2e butuh stack khusus).
-  Jaminan menyeluruh datang dari CI pada commit yang sama; deploy menunggunya.
+- Gate rilis lokal mencakup test + e2e, tetapi tetap bukan `./task ci` penuh: `check-fast` melewati
+  `nim check` penuh (D-077). Jaminan menyeluruh datang dari CI pada commit yang sama; deploy
+  menunggunya.
 - `CHANGELOG.md` tidak lahir dari rilis pertama yang sudah lewat; entri ditulis hanya oleh
   `tools/gen-changelog.sh`, jangan ditulis tangan.

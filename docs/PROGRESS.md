@@ -4187,3 +4187,7 @@ Benchmark: `bench-eod` menerima `--loans N`. 100k rekening + 50k pinjaman = **24
 - **D-193** (O-121): CKPN tetap di akun `111`, akun kontra tidak dimodelkan.
 - **O-124**: ditunda sampai remote `rclone offsite:` tersedia (langkah konkret dicatat).
 - **O-119**: `docs/ci-jobs.md` mencatat bahwa nama job = kontrak `CI_EXPECTED` di `deploy-vps.sh`.
+- **D-194** loop lokal dipecah: `./task ci-fast` (check + openapi + lint-web + test, tanpa e2e) jadi
+  gate harian; `./task ci` tetap penuh; `./task release` kini juga menjalankan `test` + `e2e`
+  sebelum commit rilis (butuh `KRAN_DATABASE_URL`, diperiksa sebelum `VERSION` di-bump). AGENTS §2/§4/§6,
+  README, CONTRIBUTING, `docs/RELEASE.md`, `docs/ci-jobs.md` ikut diperbarui. CI GitHub tidak berubah.

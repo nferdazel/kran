@@ -64,13 +64,15 @@ target.
 |---|---|---|
 | while iterating | `./task check-fast` | format check + archcheck + lint-nomagic + `paramgen --check` + i18n + version + shellcheck, without the full `nim check` (D-077) |
 | one module changed | `./task verify <module>` | `check-fast` + openapi + build + tests for the selected modules |
-| before a PR | `./task ci` | `check` (including the full `nim check`), openapi, lint-web, unit/property + integration + contract tests, and e2e (which builds the binary) |
+| before a PR | `./task ci-fast` | `check` (including the full `nim check`), openapi, lint-web, unit/property + integration + contract tests — no e2e (D-194) |
+| before merging | `./task ci` | `ci-fast` + e2e (which builds the binary); also runs inside `./task release` (D-194) |
 | front-end only | `./task lint-web`, `./task e2e` | eslint over `apps/web`/`packages/ui`; token contrast, `svelte-check`, Playwright (axe, keyboard) |
 | formatting | `./task fmt` | rewrites files in place |
 | once per clone | `./task hooks` | installs the git pre-commit guardrail (see below) |
 
-`./task ci` needs a database and refuses to run without `KRAN_DATABASE_URL` rather than reporting
-green with fewer tests (D-179). `KRAN_ALLOW_NO_DB=1` exists for a deliberate skip; if you use it,
+`./task ci`/`./task ci-fast` need a database and refuse to run without `KRAN_DATABASE_URL` rather
+than reporting green with fewer tests (D-179). e2e is deliberately not part of the daily loop: it
+runs in `./task ci`, `./task release`, and CI (D-194). `KRAN_ALLOW_NO_DB=1` exists for a deliberate skip; if you use it,
 say so in the PR and do not present the result as gate evidence.
 
 ### Secret guardrails
