@@ -23,6 +23,11 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 EnvironmentFile=/srv/qouver/apps/kran/env/kran-prod.env
+# Biner ini jalan di HOST, jadi nama service podman (`qouver-postgres`) tidak bisa di-resolve.
+# Berkas kedua menimpa KRAN_DATABASE_URL dengan URL loopback berkredensial sama — pola yang juga
+# dipakai gerbang deploy (`GATE_DB_URL` di ops/scripts/deploy-vps.sh). Berkas itu mode 600 dan di
+# luar repo. Tanpa ini unit gagal `could not translate host name` (O-094, 2 Nov 2026).
+EnvironmentFile=/srv/qouver/apps/kran/env/kran-host.env
 Environment=LD_LIBRARY_PATH=/srv/qouver/apps/kran/lib
 ExecStart=/srv/qouver/apps/kran/bin/kran-api --role=ctl daycloser-auto
 StandardOutput=append:/srv/qouver/apps/kran/logs/dayclose-auto.log

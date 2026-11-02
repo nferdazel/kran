@@ -1,0 +1,17 @@
+# Timer anchor rantai audit (O-009, D-108).
+#
+# Sekali sehari, 23:50 waktu host (WIB), sebelum tanggal buku berganti. `Persistent=true` membuat
+# anchor yang terlewat (host mati/restart) dijalankan sekali saat host hidup lagi — satu baris
+# anchor per hari, bukan satu per lima menit seperti penjadwal day-close: anchor cukup menangkap
+# kepala rantai, dan baris berlebih hanya memperbesar berkas yang harus disalin ke luar server.
+[Unit]
+Description=Jalankan anchor rantai audit tiap hari (O-009, D-108)
+
+[Timer]
+OnCalendar=*-*-* 23:50:00
+Persistent=true
+RandomizedDelaySec=120
+Unit=kran-audit-anchor.service
+
+[Install]
+WantedBy=timers.target

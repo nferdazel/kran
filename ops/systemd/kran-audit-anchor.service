@@ -1,0 +1,28 @@
+# Anchor rantai audit harian (O-009, D-108) — cermin konfigurasi server.
+#
+# Pasang (operator, bukan agent):
+#   scp ops/systemd/kran-audit-anchor.{service,timer} ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now kran-audit-anchor.timer
+#   systemctl --user list-timers kran-audit-anchor.timer
+#
+# Biner host + `kran-host.env`, sama seperti `kran-dayclose.service`: nama service podman tidak
+# bisa di-resolve dari host, jadi KRAN_DATABASE_URL ditimpa URL loopback berkredensial sama.
+#
+# Berkas `--out` bersifat append-only dan **wajib** disalin ke luar server (mis. ikut backup
+# harian ke host lain). Timer ini hanya menulis salinan lokal; tanpa salinan luar, penulisan ulang
+# ekor rantai audit tidak terdeteksi. Verifikasi manual: `ctl verify-audit` + cocokkan `seq`/`hash`
+# baris anchor terakhir dengan `platform.audit_log`.
+[Unit]
+Description=KRAN audit chain anchor (ctl audit-anchor)
+Documentation=file:/srv/qouver/apps/kran/monorepo/docs/runbooks/ops-cli.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/srv/qouver/apps/kran/env/kran-prod.env
+EnvironmentFile=/srv/qouver/apps/kran/env/kran-host.env
+Environment=LD_LIBRARY_PATH=/srv/qouver/apps/kran/lib
+ExecStart=/srv/qouver/apps/kran/bin/kran-api --role=ctl audit-anchor --out=/srv/qouver/apps/kran/logs/audit-anchor.log
+StandardOutput=append:/srv/qouver/apps/kran/logs/anchor-run.log
+StandardError=append:/srv/qouver/apps/kran/logs/anchor-run.log

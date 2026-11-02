@@ -124,8 +124,21 @@ podman run --rm --network qouver \
 Satu baris = `waktu-UTC seq=<n> hash=<hash>`, ditambahkan (append) ke berkas. Simpan berkas itu di
 **luar** DB/backup DB (mis. ikut backup harian ke host lain). Verifikasi: `ctl verify-audit` harus
 menyatakan rantai utuh, dan `seq`/`hash` baris anchor terakhir harus sama dengan baris
-`platform.audit_log` pada `seq` itu. Jadwalkan harian (systemd timer/cron) — penjadwalan adalah
-tindakan host, bukan dari repo.
+`platform.audit_log` pada `seq` itu.
+
+Timer harian (terpasang di server sejak 2 Nov 2026, `kran-audit-anchor.timer` 23:50 WIB dengan
+`Persistent=true`):
+
+```bash
+scp ops/systemd/kran-audit-anchor.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now kran-audit-anchor.timer
+systemctl --user list-timers kran-audit-anchor.timer
+tail -1 /srv/qouver/apps/kran/logs/audit-anchor.log
+```
+
+Seperti `kran-dayclose.service`, unit memakai biner host + `kran-host.env`. Berkas anchor tetap
+**harus** disalin ke luar server; timer hanya menghilangkan langkah manual, bukan kewajiban
+menyimpan salinannya.
 
 ## Alert otomatis (O-092)
 

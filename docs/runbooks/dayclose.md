@@ -34,6 +34,12 @@ systemctl --user daemon-reload && systemctl --user enable --now kran-dayclose.ti
 systemctl --user list-timers kran-dayclose.timer
 ```
 
+Unit ini memakai **biner host** (`/srv/qouver/apps/kran/bin/kran-api`), bukan `podman exec`, supaya
+tidak bergantung pada podman saat penutupan dijadwalkan. Karena biner host tidak bisa me-resolve nama
+service podman, unit memuat dua berkas env: `kran-prod.env` lalu `kran-host.env` (URL loopback
+berkredensial sama, mode 600, di luar repo). Terpasang di server sejak 2 Nov 2026; saklar
+`daycloser.auto.enabled` tetap `false` sampai pemilik menyalakannya lewat maker-checker.
+
 Kode keluar `daycloser-auto`: `0` = tidak ada yang perlu dikerjakan atau penutupan selesai,
 `1` = penutupan berjalan tetapi berakhir `BLOCKED`/`FAILED`/`PAUSED` (periksa
 `daycloser-status`, lalu resume/cancel), `2` = parameter tidak sah, `3` = ditolak keadaan
