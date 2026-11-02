@@ -4,6 +4,16 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.1.15] - 2026-11-02
+
+### Added
+- **ci:** Gate traceability requirement <-> kontrol <-> test (O-027)
+- **lending:** Batas golongan pasca-restrukturisasi + tarif PPAP POJK 1/2024
+
+### Fixed
+- **daycloser:** Penjadwal tidak menutup tanggal yang belum berjalan
+- **lending:** Pembanding golongan pada tanggal buku + cap tidak melonggar saat restrukturisasi berulang
+
 ## [0.1.14] - 2026-11-02
 
 ### Added
