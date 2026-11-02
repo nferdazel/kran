@@ -25,6 +25,15 @@ Catatan status (17 Okt 2026, T-050): job yang benar-benar ada di `ci.yml` sekara
 (requirement ↔ kontrol/test) — dicatat sebagai item terbuka (`O-027`) supaya tidak terlihat
 seperti sudah lengkap.
 
+## Pemicu manual (2 Nov 2026)
+
+`ci.yml` kini juga punya `workflow_dispatch`. Alasannya konkret: setelah riwayat git ditulis ulang
+dan di-force-push, GitHub **tidak membuat run sama sekali** untuk push `main` maupun push tag
+(`gh run list` kosong, padahal webhook deploy menerima event-nya). Gerbang CI di
+`ops/scripts/deploy-vps.sh` menunggu 30 menit lalu menolak deploy. Dengan `workflow_dispatch`,
+run bisa dibuat manual (`gh workflow run CI --ref main`) tanpa memalsukan commit.
+
+
 ## Runner yang dipin, timeout, dan install browser Playwright (23 Okt 2026)
 
 Tiga hal di bawah berlaku untuk **semua** job, bukan saran:

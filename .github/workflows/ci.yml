@@ -16,6 +16,10 @@ on:
     paths-ignore:
       - '**.md'
       - 'docs/**'
+  # Jalan manual di `main`. Dipakai saat event `push` tidak menghasilkan run sama sekali
+  # (terjadi 2 Nov 2026 setelah riwayat ditulis ulang: push dan tag sama-sama tidak memicu
+  # workflow, sehingga gerbang CI di `deploy-vps.sh` menunggu 30 menit lalu gagal).
+  workflow_dispatch:
 
 permissions:
   contents: read
