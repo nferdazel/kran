@@ -1347,7 +1347,7 @@ proc handleRecoverLoan*(app: AppContext, req: Request) {.gcsafe.} =
                 return
               let journalId = postRuleJournalSync(db, app.clock, eventType, amount,
                 loan.branchId, recoveryId, businessDate,
-                "lending:recovery:" & $loan.loanId & ":" & suffix, actor,
+                "lending:recovery:" & $recoveryId & ":" & suffix, actor,
                 %*{"loanId": $loan.loanId})
               journalIds.add($journalId)
               insertTransaction(db, Transaction(

@@ -230,4 +230,22 @@ suite "rekonsiliasi saldo simpanan (T-101)":
     setBalance(AccA, "65.00")
     check accountBalanceMismatches(db, BranchA).len == 0
 
+  test "pemulihan hapus buku juga mengurangi saldo rekening (LOAN_RECOVERY, T-176)":
+    # Jenis baru wajib punya tanda; tanpa itu barisnya masuk `unmapped`, `expected` NULL, dan
+    # rekening yang pernah dipulihkan selalu dilaporkan selisih.
+    seedJournal("bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbb6", "RECON_LOAN_RECOVERY", "10.00")
+    exec(sql"""
+      INSERT INTO deposit.transaction
+        (transaction_id, tx_type, account_id, amount, business_date, journal_id, created_by)
+      VALUES (md5('itreconcile|loan-recovery')::uuid, 'LOAN_RECOVERY', ?::uuid,
+              '10.00', current_date, 'bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbb6'::uuid, ?::uuid)""",
+      AccA, Actor)
+    let stale = accountBalanceMismatches(db, BranchA)
+    check stale.len == 1
+    check stale[0].cached == "65.00"
+    check stale[0].expected == "55.00"
+
+    setBalance(AccA, "55.00")
+    check accountBalanceMismatches(db, BranchA).len == 0
+
 dbPool.release(db)

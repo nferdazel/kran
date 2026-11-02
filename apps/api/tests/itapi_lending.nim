@@ -976,6 +976,26 @@ suite "lending: restrukturisasi & hapus buku (T-168)":
     check postJson(fill(RecoveryPath, loanId), %*{"accountId": accountId,
       "reason": "uji"}, approverToken, "it176-empty-" & loanId).code == 400
 
+  test "pemulihan bertahap dengan kunci berbeda tetap dua jurnal":
+    # Kunci jurnal memakai id pemulihan, bukan loanId: dua penerimaan untuk komponen yang sama
+    # adalah dua jurnal sah, dan tidak boleh menabrak UNIQUE idempotency_key jurnal.
+    let loanId = writtenOffLoan("900000.00")
+    let first = postJson(fill(RecoveryPath, loanId), %*{"accountId": accountId,
+      "principal": "300000.00", "reason": "penerimaan pertama"}, approverToken,
+      "it176-batch-1-" & loanId)
+    check first.code == 200
+    let second = postJson(fill(RecoveryPath, loanId), %*{"accountId": accountId,
+      "principal": "200000.00", "reason": "penerimaan kedua"}, approverToken,
+      "it176-batch-2-" & loanId)
+    check second.code == 200
+    check second.body["recoveryId"].getStr() != first.body["recoveryId"].getStr()
+    check dbValue(sql"SELECT count(*) FROM lending.recovery WHERE loan_id = ?", loanId) == "2"
+    check dbValue(sql"""
+      SELECT count(*) FROM ledger.journal
+       WHERE source_event = 'LoanRecoveryPrincipal'
+         AND source_ref IN (SELECT recovery_id FROM lending.recovery WHERE loan_id = ?)""",
+      loanId) == "2"
+
   test "replay kunci pemulihan tidak menjurnal dua kali":
     let loanId = writtenOffLoan("500000.00")
     let key = "it176-replay-" & loanId

@@ -123,7 +123,7 @@
    * supaya pindah akad tanpa remount komponen tidak meminjam kunci milik akad lain.
    */
   function actionFingerprint(value: PendingAction): string {
-    const loanId = loan?.loanId ?? "";
+    const loanId = params.loanId;
     if (value.account === null && value.kind !== "restructure" && value.kind !== "write-off") {
       return "";
     }
