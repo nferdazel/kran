@@ -4,6 +4,16 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.1.9] - 2026-11-02
+
+### Added
+- Aksi tulis pinjaman dengan pratinjau di layar detail
+- **ops:** Ikutkan anchor audit ke backup harian, catat offsite yang belum ada
+- **ops:** Jadwalkan anchor audit harian dan perbaiki unit day-close host
+
+### Fixed
+- Tutup celah kunci replay dan uji sisa aksi pinjaman (review T-173)
+
 ## [0.1.8] - 2026-11-02
 
 ### Added
