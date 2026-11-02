@@ -24,7 +24,8 @@ import deposit/domain/[account, transaction]
 import deposit/infrastructure/[account_repo, transaction_repo]
 import lending/domain/[collectibility, loan, payment, recovery, restructure,
                      restructure_grade, schedule, writeoff]
-import lending/infrastructure/[loan_repo, recovery_repo, restructure_repo, writeoff_repo]
+import lending/infrastructure/[loan_repo, recovery_repo, regrade_repo, restructure_repo,
+  writeoff_repo]
 import product/infrastructure/product_repo
 import party/domain/party
 import party/infrastructure/party_repo
@@ -831,6 +832,44 @@ proc handlePayLoan*(app: AppContext, req: Request) {.gcsafe.} =
   else:
     req.respondProblem(pkInternal, "Internal Server Error", problemText)
 
+proc gradeAtRestructure*(db: DbConn; loanId: Id; businessDate: string): Option[Collectibility] =
+  ## Golongan pinjaman **pada tanggal buku** restrukturisasi, bukan hasil regrade terakhir.
+  ##
+  ## `lending.loan.collectibility` hanya ditulis EOD, jadi pada pagi hari ia masih golongan D-1:
+  ## pinjaman yang melewati ambang hari itu akan tercatat lebih baik daripada kenyataannya dan
+  ## batasnya terlalu longgar — persis kebocoran yang D-197 mau tutup. Urutannya: snapshot tanggal
+  ## buku (bila regrade hari itu sudah jalan) → hitung dari DPD jadwal aktif → ambil yang **lebih
+  ## buruk** dari nilai tersimpan.
+  let snapshot = gradeOn(db, loanId, businessDate)
+  if snapshot.isSome:
+    return snapshot
+  let boundsRaw = activeValueJson(db, keyString(P_lending_collectibility_dpd_bounds),
+    businessDate, lookupFor(institutionScope()))
+  let bounds = parseDpdBounds(boundsRaw)
+  if not bounds.isOk:
+    raise newException(ValueError, "ambang DPD tidak sah: " & bounds.error.details)
+  let due = oldestUnpaidDue(db, loanId)
+  var computed: Option[Collectibility] = none(Collectibility)
+  if due.len > 0:
+    let dpd = daysPastDue(due, businessDate)
+    if not dpd.isOk:
+      raise newException(ValueError, "DPD pinjaman tidak sah: " & dpd.error.details)
+    let graded = gradeOf(dpd.val, bounds.val)
+    if not graded.isOk:
+      raise newException(ValueError, "golongan pinjaman tidak sah: " & graded.error.details)
+    computed = some(graded.val)
+  let storedRaw = collectibilityOf(db, loanId)
+  let stored = if storedRaw.len == 0: none(Collectibility) else: parseCollectibility(storedRaw)
+  var worst = computed
+  if worst.isNone or (stored.isSome and ord(stored.get()) > ord(worst.get())):
+    worst = stored
+  # Restrukturisasi berulang pada tanggal buku yang sama tidak boleh melonggarkan batas: jadwal baru
+  # belum menunggak, jadi tanpa ini `computed` akan kembali lancar dan cap sebelumnya hilang.
+  let priorCap = gradeCapOf(db, loanId)
+  if priorCap.isSome and (worst.isNone or ord(priorCap.get()) > ord(worst.get())):
+    worst = priorCap
+  worst
+
 proc handleRestructureLoan*(app: AppContext, req: Request) {.gcsafe.} =
   ## `POST /api/v1/lending/loans/{loanId}/restructure` — susun jadwal versi baru dari sisa pokok.
   ##
@@ -915,6 +954,11 @@ proc handleRestructureLoan*(app: AppContext, req: Request) {.gcsafe.} =
               raise newException(ValueError, problemText)
 
             let businessDate = businessDateFor(db, institutionScope(), asOf)
+            # Batas golongan sesudah restrukturisasi (O-123, D-197) **dihitung sebelum jadwal lama
+            # diarsipkan**: sesudahnya DPD selalu 0 karena jadwal baru jatuh tempo di masa depan,
+            # dan pembanding "sebelum" tidak bisa lagi direkonstruksi dari data.
+            let gradeBefore = gradeAtRestructure(db, loan.loanId, businessDate)
+            let cap = if gradeBefore.isNone: capForUngraded() else: capFor(gradeBefore.get())
             let firstDue = addMonthsIso(businessDate, 1)
             if not firstDue.isOk:
               status = 500
@@ -950,14 +994,8 @@ proc handleRestructureLoan*(app: AppContext, req: Request) {.gcsafe.} =
               reason = "loan_inactive"
               problemText = "pinjaman berubah status saat direstrukturisasi; ulangi permintaan"
               raise newException(ValueError, problemText)
-
-            # Batas golongan sesudah restrukturisasi (O-123, D-197): DPD jadwal baru selalu nol,
-            # jadi pembandingnya harus golongan **sebelum** restrukturisasi.
-            let beforeRaw = collectibilityOf(db, loan.loanId)
-            let gradeBefore =
-              if beforeRaw.len == 0: none(Collectibility) else: parseCollectibility(beforeRaw)
-            let cap = if gradeBefore.isNone: capForUngraded() else: capFor(gradeBefore.get())
             recordRestructureGrade(db, loan.loanId, businessDate, gradeBefore, cap)
+
 
             let ctx = auditContextFor(principal, req, app.clock, "", branch = branch)
             discard appendAudit(db, newAuditEntry(ctx, "lending.loan.restructure", "lending.loan",

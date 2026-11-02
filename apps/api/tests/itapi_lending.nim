@@ -718,6 +718,59 @@ suite "lending: restrukturisasi & hapus buku (T-168)":
     check dbValue(sql"""
       SELECT count(*) FROM platform.outbox
        WHERE event_type = 'LoanRestructured' AND aggregate_id = ?""", loanId) == "1"
+    # Pembanding golongan dicatat saat restrukturisasi (O-123, D-197). Pinjaman ini belum pernah
+    # dinilai EOD, jadi golongannya dihitung dari DPD jadwal lama pada tanggal buku — masih lancar.
+    check dbValue(sql"""
+      SELECT coalesce(grade_before_restructure, 'NULL') FROM lending.loan WHERE loan_id = ?""",
+      loanId) == "COLLECTIBLE"
+    check dbValue(sql"SELECT grade_cap FROM lending.loan WHERE loan_id = ?", loanId) ==
+      "COLLECTIBLE"
+    check dbValue(sql"SELECT restructured_on::text FROM lending.loan WHERE loan_id = ?",
+      loanId) == r.body["businessDate"].getStr()
+
+  test "pembanding golongan memakai penilaian pada tanggal buku, bukan hasil EOD terakhir":
+    let loanId = newActiveLoan("1200000.00")
+    # Regrade terakhir mencatat COLLECTIBLE (mis. kemarin), tetapi jadwal aktif sudah menunggak
+    # jauh pada tanggal buku hari ini.
+    check dbValue(sql"""
+      UPDATE lending.loan SET collectibility = 'COLLECTIBLE' WHERE loan_id = ? RETURNING
+        collectibility""", loanId) == "COLLECTIBLE"
+    check dbValue(sql"""
+      UPDATE lending.installment SET due_on = DATE '2026-01-01'
+       WHERE loan_id = ? AND no = 1 RETURNING no::text""", loanId) == "1"
+    let r = postJson(fill(RestructurePath, loanId),
+      %*{"tenorMonths": 3, "reason": "menunggak tapi EOD belum jalan"}, makerToken,
+      "it168-restructure-stale-" & loanId)
+    check r.code == 200
+    # DPD pada tanggal buku jauh di atas ambang → pembandingnya LOSS, bukan COLLECTIBLE.
+    check dbValue(sql"""
+      SELECT coalesce(grade_before_restructure, 'NULL') FROM lending.loan WHERE loan_id = ?""",
+      loanId) == "LOSS"
+    check dbValue(sql"SELECT grade_cap FROM lending.loan WHERE loan_id = ?", loanId) ==
+      "SUBSTANDARD"
+
+  test "restrukturisasi dua kali di tanggal buku yang sama tidak melonggarkan batas":
+    let loanId = newActiveLoan("1200000.00")
+    # Menunggak jauh, tetapi kolom collectibility masih hasil EOD kemarin (belum pernah dinilai).
+    check dbValue(sql"""
+      UPDATE lending.installment SET due_on = DATE '2026-01-01'
+       WHERE loan_id = ? AND no = 1 RETURNING no::text""", loanId) == "1"
+    check postJson(fill(RestructurePath, loanId),
+      %*{"tenorMonths": 3, "reason": "pertama"}, makerToken,
+      "it168-restructure-twice-1-" & loanId).code == 200
+    check dbValue(sql"SELECT grade_cap FROM lending.loan WHERE loan_id = ?", loanId) ==
+      "SUBSTANDARD"
+    check postJson(fill(RestructurePath, loanId),
+      %*{"tenorMonths": 6, "reason": "diulang koreksi tenor"}, makerToken,
+      "it168-restructure-twice-2-" & loanId).code == 200
+    # Jadwal kedua juga belum menunggak; tanpa pembawaan cap nilainya akan kembali COLLECTIBLE.
+    check dbValue(sql"SELECT grade_cap FROM lending.loan WHERE loan_id = ?", loanId) ==
+      "SUBSTANDARD"
+    # Pembanding untuk restrukturisasi kedua adalah golongan efektif setelah yang pertama (batas
+    # SUBSTANDARD), bukan COLLECTIBLE dari jadwal yang baru dibuat.
+    check dbValue(sql"""
+      SELECT coalesce(grade_before_restructure, 'NULL') FROM lending.loan WHERE loan_id = ?""",
+      loanId) == "SUBSTANDARD"
 
   test "pembayaran lama tetap utuh, pembayaran berikutnya masuk jadwal baru":
     let loanId = newActiveLoan("6000000.00")

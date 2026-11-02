@@ -353,7 +353,10 @@ proc registerLendingTasks*(reg: Registry; pool: DbPool) =
     critical: false,
     idempotency: imPerBusinessDate,
     partition: psByChunkCount,
-    requiredParams: @["lending.collectibility.dpd_bounds"],
+    # `clean_periods` dibaca setiap chunk (batas golongan pasca-restrukturisasi), jadi ia
+      # prasyarat yang sama kerasnya dengan ambang DPD.
+    requiredParams: @["lending.collectibility.dpd_bounds",
+      "lending.restructure.clean_periods"],
     countChunks: proc(ctx: TaskContext; chunkSize: int): Result[int, TaskError] =
     countRegradeChunks(pool, chunkSize),
     run: proc(ctx: TaskContext; chunk: Chunk): TaskResult =

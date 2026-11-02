@@ -1,6 +1,6 @@
 ## Penyisihan penghapusan aset produktif (PPAP/CKPN) — murni, tanpa I/O (T-167, D-180 butir 3).
 ##
-## Tarif per golongan datang dari parameter `lending.ppap.rates` (`["0","0.5","10","50","100"]`
+## Tarif per golongan datang dari parameter `lending.ppap.rates` (`["0.5","3","10","50","100"]`
 ## persen, urutan = urutan `Collectibility`). Tidak ada tarif di kode: angka PPAP adalah ketentuan
 ## yang harus disetujui compliance (REG-204 `V!`), dan tarif yang ditulis di kode akan menjadi
 ## kebijakan yang tidak pernah ditandatangani siapa pun.

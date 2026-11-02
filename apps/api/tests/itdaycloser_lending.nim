@@ -504,6 +504,29 @@ suite "day-close lending: restrukturisasi & hapus buku (T-168)":
       SELECT grade FROM lending.collectibility_snapshot
        WHERE loan_id = ? AND business_date = '2027-03-01'""", $loanId) == "COLLECTIBLE"
 
+  test "angsuran yang dibayar terlambat tidak dihitung sebagai periode bersih":
+    let loanId = newId(testClock)
+    newPpapLoan(loanId, "12000000.00")
+    # Dibayar, tetapi lewat lima hari dari jatuh tempo: bukan periode bersih. Ditulis langsung
+    # karena trigger `0089` menolak mengubah `paid_on` setelah baris dibayar (dan itu benar).
+    for (no, due, paid) in [(1, "2027-01-01", "2027-01-06"),
+        (2, "2027-02-01", "2027-02-06"), (3, "2027-03-01", "2027-03-06")]:
+      db.exec(sql"""
+        INSERT INTO lending.installment
+          (loan_id, no, due_on, principal_due, interest_due, penalty_due,
+           paid_principal, paid_interest, paid_penalty, paid_on)
+        VALUES (?, ?, ?::date, 100000.00, 10000.00, 0, 100000.00, 10000.00, 0, ?::date)""",
+        $loanId, no, due, paid)
+    db.exec(sql"""
+      UPDATE lending.loan
+         SET restructured_on = '2026-11-15', grade_before_restructure = 'LOSS',
+             grade_cap = 'SUBSTANDARD'
+       WHERE loan_id = ?""", $loanId)
+    discard runChunk("2027-04-01")
+    check db.getValue(sql"""
+      SELECT grade FROM lending.collectibility_snapshot
+       WHERE loan_id = ? AND business_date = '2027-04-01'""", $loanId) == "SUBSTANDARD"
+
   test "sebelumnya kurang lancar tidak naik sebelum periode bersih cukup":
     let loanId = newId(testClock)
     newPpapLoan(loanId, "12000000.00")
@@ -518,6 +541,44 @@ suite "day-close lending: restrukturisasi & hapus buku (T-168)":
     check db.getValue(sql"""
       SELECT grade FROM lending.collectibility_snapshot
        WHERE loan_id = ? AND business_date = '2026-12-01'""", $loanId) == "SUBSTANDARD"
+
+  test "ambang periode bersih dibaca dari parameter, bukan angka di kode":
+    let loanId = newId(testClock)
+    newPpapLoan(loanId, "12000000.00")
+    newInstallment(loanId, 1, "2027-01-01", paid = true)
+    db.exec(sql"""
+      UPDATE lending.loan
+         SET restructured_on = '2026-11-15', grade_before_restructure = 'LOSS',
+             grade_cap = 'SUBSTANDARD'
+       WHERE loan_id = ?""", $loanId)
+    db.exec(sql"""
+      UPDATE platform.param_value SET value = '1'::jsonb
+       WHERE key = 'lending.restructure.clean_periods'""")
+    try:
+      # Satu periode bersih sudah cukup bila parameter bernilai 1.
+      discard runChunk("2027-02-01")
+      check db.getValue(sql"""
+        SELECT grade FROM lending.collectibility_snapshot
+         WHERE loan_id = ? AND business_date = '2027-02-01'""", $loanId) == "COLLECTIBLE"
+    finally:
+      db.exec(sql"""
+        UPDATE platform.param_value SET value = '3'::jsonb
+         WHERE key = 'lending.restructure.clean_periods'""")
+
+  test "parameter periode bersih hilang menggagalkan task, bukan memakai bawaan":
+    db.exec(sql"""
+      DELETE FROM platform.param_value WHERE key = 'lending.restructure.clean_periods'""")
+    let failed = task().run(ctxOn("2027-05-01"), Chunk(chunkNo: 0))
+    check not failed.isOk
+    check failed.error.code == "DAY-372"
+    db.exec(sql"""
+      INSERT INTO platform.param_value
+        (param_value_id, key, scope_type, scope_id, value, effective_from, status,
+         maker, checker, reason)
+      VALUES (md5('itdaycloser_lending|clean_periods')::uuid,
+              'lending.restructure.clean_periods', 'GLOBAL', NULL, '3'::jsonb,
+              DATE '1970-01-01', 'ACTIVE', '00000000-0000-4000-8000-0000000000a1',
+              '00000000-0000-4000-8000-0000000000a2', 'uji: pulihkan parameter')""")
 
   test "penyisihan tidak dianggap menggantung setelah hapus buku":
     let loanId = newId(testClock)
