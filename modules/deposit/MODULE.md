@@ -301,9 +301,12 @@ membandingkan
 mencetak setiap rekening yang berbeda (termasuk cache yang hilang), dan keluar **1** bila ada selisih.
 Baca saja: koreksi harus lewat penyelidikan, bukan ditulis ulang alat ini.
 
-Tanda per jenis baris: `CASH_DEPOSIT`/`MATURITY_IN`/`INTEREST_CREDIT` menambah saldo,
-`CASH_WITHDRAWAL`/`MATURITY_OUT` mengurangi. Baris dengan jenis yang tidak dikenal membuat `expected`
-kosong (NULL) sehingga rekeningnya **dilaporkan** — bukan dihitung sebagai keluar (D-155).
+Tanda per jenis baris: `CASH_DEPOSIT`/`MATURITY_IN`/`INTEREST_CREDIT`/`INTEREST_PAID_EARLY`/
+`LOAN_DISBURSEMENT` menambah saldo; `CASH_WITHDRAWAL`/`MATURITY_OUT`/`PENALTY_CHARGE`/
+`LOAN_PAYMENT`/`LOAN_RECOVERY` mengurangi. Daftar lengkapnya ada di `reconciliationSql`
+(`infrastructure/reconcile_repo.nim`) dan **harus** ikut diperbarui setiap kali `TransactionType`
+bertambah — jenis yang tidak dikenal membuat `expected` kosong (NULL) sehingga rekeningnya
+**dilaporkan** — bukan dihitung sebagai keluar (D-155).
 
 Kenapa bukan `journal_line`: kedua kaki PB memakai akun `201` yang sama (net-nol), jadi jurnal tidak
 bisa memisahkan saldo per rekening (D-124). Jurnal simpanan yang dibalik di ledger juga tidak
