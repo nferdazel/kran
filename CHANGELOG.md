@@ -4,6 +4,14 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.1.14] - 2026-11-02
+
+### Added
+- Aksi pemulihan pasca hapus buku di UI (T-177)
+
+### Fixed
+- Tutup temuan review T-177 (sidik, rekening wajib, axe 4 kombinasi)
+
 ## [0.1.13] - 2026-11-02
 
 ### Added
