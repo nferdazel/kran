@@ -193,9 +193,12 @@ menggantung pada pinjaman tidak aktif, `DAY-385` dasar/penyisihan tersimpan buka
 - Pinjaman di cabang lain dijawab **404**, sama seperti id yang tidak ada: 403 akan membocorkan
   keberadaan akad di cabang lain.
 - `status`/`limit` divalidasi (nilai salah → 400), `limit` dipotong ke batas atas respons.
-- Layar operator `/app/loans` dan `/app/loans/{loanId}` (T-170) hanya **membaca** data ini. Aksi
-  tulis belum ada di UI (T-173): pencairan/pembayaran butuh pemilihan rekening + pratinjau alokasi
-  sebelum uang bergerak.
+- Layar operator `/app/loans` dan `/app/loans/{loanId}` (T-170/T-173) membaca data ini dan
+  menjalankan empat aksi tulis dengan pratinjau sebelum uang bergerak: pencairan, pembayaran
+  angsuran, restrukturisasi, dan hapus buku. Rekening sumber dipilih dari
+  `GET /deposit/accounts?partyId=` (hanya `ACTIVE` yang ditawarkan, server tetap memvalidasi);
+  `Idempotency-Key` dibuat saat dialog konfirmasi dibuka; tidak ada aritmetika uang di peramban —
+  nominal dikirim apa adanya dan `params.reason` dipetakan ke pesan yang menyebut sebabnya.
 
 ## Laporan (T-171)
 
