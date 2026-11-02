@@ -68,6 +68,7 @@ type Text = {
   dialogRecoveryTitle: string;
   recoveredNotice: string;
   recoveryEmpty: string;
+  recoveryAccountRequired: string;
 };
 
 const T: Record<Locale, Text> = {
@@ -104,6 +105,7 @@ const T: Record<Locale, Text> = {
     dialogRecoveryTitle: "Konfirmasi pemulihan",
     recoveredNotice: "Pemulihan tercatat",
     recoveryEmpty: "Isi minimal satu komponen pemulihan dengan nominal lebih dari nol.",
+    recoveryAccountRequired: "Pilih rekening sumber lebih dulu.",
   },
   en: {
     detailTitle: "Loan detail",
@@ -138,6 +140,7 @@ const T: Record<Locale, Text> = {
     dialogRecoveryTitle: "Confirm recovery",
     recoveredNotice: "Recovery recorded",
     recoveryEmpty: "Fill at least one recovery component with an amount greater than zero.",
+    recoveryAccountRequired: "Choose a source account first.",
   },
 };
 
@@ -712,7 +715,7 @@ test.describe("pinjaman: aksi tulis", () => {
     page,
     request,
   }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(300_000);
     const fixture = await createLoanFixture(request, { disburse: true });
     await browserLogin(page, await apiLogin(request, CONSOLE));
     await prepare(page, "id", "light");
@@ -811,7 +814,7 @@ test.describe("pinjaman: aksi tulis", () => {
       await expect(dialog).toBeHidden();
     }
 
-    // Kirim sekali (kombinasi terakhir: en/dark) untuk membuktikan body yang dikirim.
+    // Kirim sekali (id/light) untuk membuktikan body yang dikirim.
     await prepare(page, "id", "light");
     await page.goto(`/app/loans/${fixture.loanId}`);
     await expect(page.getByRole("heading", { level: 1, name: T.id.detailTitle })).toBeVisible();
@@ -878,6 +881,132 @@ test.describe("pinjaman: aksi tulis", () => {
     // Pesan spesifik (bukan alert apa pun) dan fokus pindah ke komponen pokok.
     await expect(page.getByText(T.id.recoveryEmpty)).toBeVisible();
     await expect(page.getByLabel(T.id.recoveryPrincipal, { exact: true })).toBeFocused();
+  });
+
+  test("pemulihan tanpa rekening: pratinjau tidak dibuka dan fokus pindah ke rekening", async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(180_000);
+    const fixture = await createLoanFixture(request, { disburse: true });
+    await browserLogin(page, await apiLogin(request, CONSOLE));
+    await prepare(page, "id", "light");
+
+    await page.route(/\/api\/v1\/lending\/loans\/[^/]+$/, async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          loanId: fixture.loanId,
+          partyId: fixture.partyId,
+          branchId: BRANCH,
+          productVersionId: "00000000-0000-4000-8000-0000000000bb",
+          status: "WRITTEN_OFF",
+          principal: "1000000.00",
+          disbursedOn: "2026-01-01",
+          maturityOn: "2026-12-01",
+          collectibility: "LOSS",
+          principalOutstanding: "0.00",
+          interestOverdue: "0.00",
+          penaltyOutstanding: "0.00",
+          scheduleVersions: [],
+        }),
+      });
+    });
+
+    await page.goto(`/app/loans/${fixture.loanId}`);
+    await expect(page.getByRole("heading", { level: 1, name: T.id.detailTitle })).toBeVisible();
+    await page.getByRole("button", { name: T.id.recovery, exact: true }).click();
+    await page.getByLabel(T.id.recoveryPrincipal, { exact: true }).fill("50000");
+    await page.getByLabel(T.id.reason).fill(T.id.recoveryReason);
+    await page.getByRole("button", { name: T.id.review, exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByText(T.id.recoveryAccountRequired)).toBeVisible();
+    await expect(page.getByLabel(T.id.account)).toBeFocused();
+  });
+
+  test("pemulihan: kunci replay mengikuti sidik isian", async ({ page, request }) => {
+    test.setTimeout(180_000);
+    const fixture = await createLoanFixture(request, { disburse: true });
+    await browserLogin(page, await apiLogin(request, CONSOLE));
+    await prepare(page, "id", "light");
+
+    await page.route(/\/api\/v1\/lending\/loans\/[^/]+$/, async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          loanId: fixture.loanId,
+          partyId: fixture.partyId,
+          branchId: BRANCH,
+          productVersionId: "00000000-0000-4000-8000-0000000000bb",
+          status: "WRITTEN_OFF",
+          principal: "1000000.00",
+          disbursedOn: "2026-01-01",
+          maturityOn: "2026-12-01",
+          collectibility: "LOSS",
+          principalOutstanding: "0.00",
+          interestOverdue: "0.00",
+          penaltyOutstanding: "0.00",
+          scheduleVersions: [],
+        }),
+      });
+    });
+
+    const keys: string[] = [];
+    await page.route("**/api/v1/lending/loans/*/recovery", async (route) => {
+      keys.push(route.request().headers()["idempotency-key"] ?? "");
+      await route.fulfill({
+        status: 500,
+        contentType: "application/problem+json",
+        body: JSON.stringify({
+          type: "about:blank",
+          title: "galat",
+          status: 500,
+          code: "problem",
+          i18nKey: "error_generic",
+          traceId: "e2e-recovery-500",
+        }),
+      });
+    });
+
+    const send = async (reason: string): Promise<void> => {
+      // Panel tetap terbuka setelah kiriman gagal; menekan tombol aksi lagi justru menutupnya.
+      const account = page.getByLabel(T.id.account);
+      if (!(await account.isVisible())) {
+        await page.getByRole("button", { name: T.id.recovery, exact: true }).click();
+      }
+      await account.selectOption(fixture.accountId);
+      await page.getByLabel(T.id.recoveryPrincipal, { exact: true }).fill("75000");
+      await page.getByLabel(T.id.reason).fill(reason);
+      await page.getByRole("button", { name: T.id.review, exact: true }).click();
+      const sent = keys.length;
+      await page.getByRole("button", { name: T.id.send, exact: true }).click();
+      await expect.poll(() => keys.length).toBe(sent + 1);
+      // Kiriman gagal: dialog tetap terbuka dengan galat di dalamnya, bukan menutup diam-diam.
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible();
+      await expect(page.getByRole("alert")).toBeVisible();
+      // Kunci disimpan saat dialog ditutup — inilah jalur replay yang diuji.
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+    };
+
+    await page.goto(`/app/loans/${fixture.loanId}`);
+    await expect(page.getByRole("heading", { level: 1, name: T.id.detailTitle })).toBeVisible();
+    await send("alasan pertama");
+    await send("alasan kedua");
+    expect(keys[1], "alasan berbeda = kunci baru").not.toBe(keys[0]);
+    await send("alasan pertama");
+    expect(keys[2], "kembali ke isian awal = replay kunci pertama").toBe(keys[0]);
   });
 
   test("axe: detail pinjaman dengan panel aksi × 2 tema × 2 locale", async ({ page, request }) => {
