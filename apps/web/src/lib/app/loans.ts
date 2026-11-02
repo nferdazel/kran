@@ -62,12 +62,20 @@ export function valueOrDash(value: string | null | undefined): string | null {
 }
 
 /**
- * Rekening yang boleh dipilih sebagai sumber dana: hanya `ACTIVE`. Dormant/closed tetap ditolak
- * server (`account_not_active`), dan menyembunyikannya di sini bukan pengganti validasi itu —
- * UI tidak boleh menjadi satu-satunya penjaga.
+ * Rekening yang boleh dipilih sebagai sumber dana: `ACTIVE` **dan** satu cabang dengan akad.
+ * `GET /deposit/accounts?partyId=` menyaring per izin cabang pemanggil, bukan cabang pinjaman, jadi
+ * operator multi-cabang tetap bisa melihat rekening cabang lain; menawarkannya hanya menghasilkan
+ * `account_branch_mismatch` setelah konfirmasi. Server tetap penjaga terakhir, seperti untuk
+ * `account_not_active`.
  */
-export function activePartyAccounts(accounts: readonly DepositAccount[]): DepositAccount[] {
-  return accounts.filter((account) => account.status === "ACTIVE");
+export function activePartyAccounts(
+  accounts: readonly DepositAccount[],
+  branchId?: string,
+): DepositAccount[] {
+  return accounts.filter(
+    (account) =>
+      account.status === "ACTIVE" && (branchId === undefined || account.branchId === branchId),
+  );
 }
 
 export function loadPartyAccounts(partyId: string, signal?: AbortSignal) {
@@ -177,6 +185,7 @@ const REASON_MESSAGES: Record<string, () => string> = {
   nothing_to_write_off: () => m.loans_error_nothing_to_write_off(),
   restructure_invalid: () => m.loans_error_restructure_invalid(),
   product_version_missing: () => m.loans_error_product_version_missing(),
+  account_not_found: () => m.loans_error_account_not_found(),
   account_without_balance: () => m.loans_error_account_without_balance(),
   schedule_invalid: () => m.loans_error_schedule_invalid(),
 };

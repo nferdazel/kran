@@ -929,6 +929,7 @@
   "loans_error_amount_exceeds_outstanding": "Nominal melebihi sisa kewajiban saat ini.",
   "loans_error_insufficient_balance": "Saldo rekening sumber tidak cukup.",
   "loans_error_account_without_balance": "Rekening sumber tidak punya saldo untuk dicairkan ke rekening itu.",
+  "loans_error_account_not_found": "Rekening sumber tidak ditemukan di cabang ini.",
   "loans_error_account_party_mismatch": "Rekening sumber bukan milik anggota akad ini.",
   "loans_error_account_branch_mismatch": "Rekening sumber berada di cabang lain.",
   "loans_error_account_not_active": "Rekening sumber tidak aktif.",

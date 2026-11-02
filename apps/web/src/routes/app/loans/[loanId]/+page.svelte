@@ -107,9 +107,45 @@
    */
   let idempotencyKey = $state("");
 
+  /**
+   * Kunci yang dipertahankan setelah hasil kiriman **tidak pasti** (5xx/jaringan/Esc saat
+   * mengirim). Dibuka lagi dengan isian yang sama = replay, bukan operasi baru (D-098).
+   */
+  let retry = $state<{ key: string; fingerprint: string } | null>(null);
+
   let dialogEl = $state<HTMLDialogElement | undefined>(undefined);
   /** Elemen pemegang fokus sebelum dialog dibuka; dikembalikan saat dialog ditutup. */
   let restoreFocusTo: HTMLElement | null = null;
+
+  /** Sidik isian: kunci hanya dipakai ulang bila body yang dikirim identik. */
+  function actionFingerprint(value: PendingAction): string {
+    if (value.kind === "disburse") {
+      return value.account === null ? "" : `disburse|${value.account.accountId}`;
+    }
+    if (value.kind === "payment") {
+      return value.account === null
+        ? ""
+        : `payment|${value.account.accountId}|${value.amount}`;
+    }
+    if (value.kind === "restructure") return `restructure|${value.tenorMonths}|${value.reason}`;
+    return `write-off|${value.reason}`;
+  }
+
+  /**
+   * Fokus ke kontrol tidak sah pertama. `Field` hanya mengaitkan galat lewat `aria-describedby`,
+   * jadi tanpa ini pengguna keyboard tidak tahu apa yang menahan pratinjau (spec §17.1).
+   */
+  function focusFirstError(): void {
+    const entries: Array<[string, string]> = [
+      [accountError, "loans-action-account"],
+      [amountError, "loans-action-amount"],
+      [tenorError, "loans-action-tenor"],
+      [reasonError, "loans-action-reason"],
+    ];
+    const hit = entries.find(([message]) => message !== "");
+    if (hit === undefined) return;
+    document.getElementById(hit[1])?.focus();
+  }
 
   const FEEDBACK_FOCUSABLE =
     "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]";
@@ -208,7 +244,7 @@
 
   const backHref = $derived(resolve("/app/loans"));
 
-  const activeAccounts = $derived(activePartyAccounts(accounts));
+  const activeAccounts = $derived(activePartyAccounts(accounts, loan?.branchId));
   const selectedAccount = $derived(
     activeAccounts.find((account) => account.accountId === selectedAccountId) ?? null,
   );
@@ -247,6 +283,11 @@
     panelAction !== null && actionItems.some((item) => item.kind === panelAction)
       ? panelAction
       : null,
+  );
+  /** Aksi berlaci rekening tidak bisa ditinjau selama daftar rekening belum siap/kosong. */
+  const accountStepBlocked = $derived(
+    (panel === "disburse" || panel === "payment") &&
+      (accountsLoading || accountsError !== "" || activeAccounts.length === 0),
   );
 
   function selectAction(kind: LoanAction): void {
@@ -342,10 +383,17 @@
 
   async function openPreview(kind: LoanAction): Promise<void> {
     if (busy) return;
-    if (!buildPending(kind)) return;
+    if (!buildPending(kind)) {
+      focusFirstError();
+      return;
+    }
+    const value = pending;
+    if (value === null) return;
     actionError = "";
     notice = null;
-    idempotencyKey = newIdempotencyKey();
+    const fingerprint = actionFingerprint(value);
+    retry = retry !== null && retry.fingerprint !== fingerprint ? null : retry;
+    idempotencyKey = retry !== null ? retry.key : newIdempotencyKey();
     restoreFocusTo =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     await tick();
@@ -360,6 +408,11 @@
 
   /** `close` datang dari Esc, tombol batal, atau `closeDialog()`: satu jalur pemulihan fokus. */
   function onDialogClose(): void {
+    // Kunci belum dipakai bila kiriman tidak pernah jalan; menyimpannya tidak berbahaya, dan
+    // dibutuhkan saat hasil kiriman tidak pasti (timeout/jaringan) supaya "Kirim" berikutnya replay.
+    if (pending !== null && idempotencyKey !== "") {
+      retry = { key: idempotencyKey, fingerprint: actionFingerprint(pending) };
+    }
     pending = null;
     actionError = "";
     idempotencyKey = "";
@@ -395,9 +448,17 @@
     }
   }
 
+  /** `cancel` (Esc bawaan peramban) juga tidak boleh menutup dialog saat permintaan berjalan. */
+  function onDialogCancel(event: Event): void {
+    if (busy) event.preventDefault();
+  }
+
   function onDialogKeydown(event: KeyboardEvent): void {
     if (event.key === "Escape") {
       event.preventDefault();
+      // Esc saat permintaan berjalan: jangan tutup. Hasilnya belum pasti, dan kunci replay hilang
+      // bila dialog dibuang (pola yang sama dengan teller: `errorKind === "unknown"`).
+      if (busy) return;
       closeDialog();
       return;
     }
@@ -410,11 +471,16 @@
    */
   function failAction(problem: Problem | undefined, status: number): void {
     actionError = problem === undefined ? m.error_generic() : loanActionProblemMessage(problem);
-    if (status < 500) idempotencyKey = "";
+    if (status < 500) {
+      // Penolakan final: kiriman berikutnya adalah permintaan baru, bukan replay.
+      idempotencyKey = "";
+      retry = null;
+    }
   }
 
   async function succeed(title: string, reference: string): Promise<void> {
     idempotencyKey = "";
+    retry = null;
     pending = null;
     // Pemicu (tombol "Tinjau") ikut hilang saat panel ditutup; fokus jatuh ke landmark utama.
     restoreFocusTo = null;
@@ -730,7 +796,7 @@
               variant="primary"
               type="button"
               onclick={() => void openPreview(panel)}
-              disabled={busy}
+              disabled={busy || accountStepBlocked}
             >
               {m.loans_review_submit()}
             </Button>
@@ -779,6 +845,7 @@
   aria-labelledby="loans-confirm-title"
   aria-describedby="loans-confirm-body"
   onkeydown={onDialogKeydown}
+  oncancel={onDialogCancel}
   onclose={onDialogClose}
 >
   {#if pending !== null}

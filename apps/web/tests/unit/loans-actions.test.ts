@@ -63,6 +63,18 @@ describe("activePartyAccounts", () => {
     expect(activePartyAccounts(list).map((item) => item.accountId)).toEqual(["a", "d"]);
   });
 
+  it("menyaring rekening cabang lain saat cabang akad diketahui", () => {
+    // `GET /deposit/accounts?partyId=` menyaring per izin cabang pemanggil, bukan cabang akad:
+    // operator multi-cabang akan melihat rekening cabang lain tanpa filter ini.
+    const own = "55555555-5555-4555-8555-555555555555";
+    const list = [
+      account({ accountId: "own", branchId: own }),
+      account({ accountId: "other", branchId: "99999999-9999-4999-8999-999999999999" }),
+      account({ accountId: "dormant-own", branchId: own, status: "DORMANT" }),
+    ];
+    expect(activePartyAccounts(list, own).map((item) => item.accountId)).toEqual(["own"]);
+  });
+
   it("tidak mengubah daftar masukan", () => {
     const list = [account({ status: "DORMANT" })];
     activePartyAccounts(list);
@@ -139,6 +151,9 @@ describe("loanActionProblemMessage", () => {
       ["nothing_to_write_off", m.loans_error_nothing_to_write_off()],
       ["restructure_invalid", m.loans_error_restructure_invalid()],
       ["product_version_missing", m.loans_error_product_version_missing()],
+      ["account_without_balance", m.loans_error_account_without_balance()],
+      ["schedule_invalid", m.loans_error_schedule_invalid()],
+      ["account_not_found", m.loans_error_account_not_found()],
     ];
     for (const [reason, expected] of cases) {
       expect(loanActionProblemMessage(problem(409, reason))).toBe(expected);

@@ -49,6 +49,15 @@ type Text = {
   disbursedNotice: string;
   paidNotice: string;
   activeStatus: string;
+  restructure: string;
+  writeOff: string;
+  tenor: string;
+  reason: string;
+  dialogRestructureTitle: string;
+  dialogWriteOffTitle: string;
+  restructuredNotice: string;
+  writtenOffNotice: string;
+  insufficientBalance: string;
 };
 
 const T: Record<Locale, Text> = {
@@ -66,6 +75,15 @@ const T: Record<Locale, Text> = {
     disbursedNotice: "Pencairan tercatat",
     paidNotice: "Pembayaran tercatat",
     activeStatus: "Berjalan",
+    restructure: "Restrukturisasi",
+    writeOff: "Hapus buku",
+    tenor: "Tenor baru (bulan)",
+    reason: "Alasan",
+    dialogRestructureTitle: "Konfirmasi restrukturisasi",
+    dialogWriteOffTitle: "Konfirmasi hapus buku",
+    restructuredNotice: "Restrukturisasi tercatat",
+    writtenOffNotice: "Hapus buku tercatat",
+    insufficientBalance: "Saldo rekening sumber tidak cukup.",
   },
   en: {
     detailTitle: "Loan detail",
@@ -81,6 +99,15 @@ const T: Record<Locale, Text> = {
     disbursedNotice: "Disbursement recorded",
     paidNotice: "Payment recorded",
     activeStatus: "Active",
+    restructure: "Restructure",
+    writeOff: "Write off",
+    tenor: "New tenor (months)",
+    reason: "Reason",
+    dialogRestructureTitle: "Confirm restructure",
+    dialogWriteOffTitle: "Confirm write-off",
+    restructuredNotice: "Restructure recorded",
+    writtenOffNotice: "Write-off recorded",
+    insufficientBalance: "The source account balance is not enough.",
   },
 };
 
@@ -397,6 +424,189 @@ test.describe("pinjaman: aksi tulis", () => {
     // `lending_maker` memegang bayar + restrukturisasi, tetapi bukan hapus buku.
     await expect(page.getByRole("button", { name: T.id.payment, exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Hapus buku", exact: true })).toHaveCount(0);
+  });
+
+  test("restrukturisasi: tenor + alasan terkirim apa adanya dan jadwal jadi versi kedua", async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(180_000);
+    const fixture = await createLoanFixture(request, { disburse: true });
+    await browserLogin(page, await apiLogin(request, CONSOLE));
+    await prepare(page, "id", "light");
+
+    const bodies: unknown[] = [];
+    const keys: string[] = [];
+    page.on("request", (req) => {
+      if (req.method() !== "POST" || !req.url().endsWith("/restructure")) return;
+      bodies.push(req.postDataJSON());
+      keys.push(req.headers()["idempotency-key"] ?? "");
+    });
+
+    await page.goto(`/app/loans/${fixture.loanId}`);
+    await expect(page.getByRole("heading", { level: 1, name: T.id.detailTitle })).toBeVisible();
+    await page.getByRole("button", { name: T.id.restructure, exact: true }).click();
+    await page.getByLabel(T.id.tenor).fill("24");
+    await page.getByLabel(T.id.reason).fill("Penurunan kemampuan bayar anggota");
+    await page.getByRole("button", { name: T.id.review, exact: true }).click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 2, name: T.id.dialogRestructureTitle }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: T.id.send, exact: true }).click();
+    await expect(page.getByText(T.id.restructuredNotice, { exact: false })).toBeVisible();
+
+    expect(bodies, "satu permintaan restrukturisasi").toHaveLength(1);
+    expect(bodies[0]).toEqual({ tenorMonths: 24, reason: "Penurunan kemampuan bayar anggota" });
+    expect(keys[0]).not.toBe("");
+
+    const after = await fetchLoan(request, await apiLogin(request, CONSOLE), fixture.loanId);
+    expect(after.scheduleVersions, "jadwal versi baru dibuat, yang lama diarsipkan").toHaveLength(2);
+  });
+
+  test("hapus buku: dialog meminta alasan, body hanya berisi reason", async ({ page, request }) => {
+    test.setTimeout(180_000);
+    const fixture = await createLoanFixture(request, { disburse: true });
+    await browserLogin(page, await apiLogin(request, CONSOLE));
+    await prepare(page, "id", "light");
+
+    // Tanpa fixture LOSS + penyisihan, regrading tidak bisa dipaksa dari e2e. Yang diuji di sini
+    // adalah jalur UI-nya: konfirmasi, body, dan penguncian izin. Server tetap diuji `itapi_lending`.
+    const bodies: unknown[] = [];
+    await page.route("**/api/v1/lending/loans/*/write-off", async (route) => {
+      bodies.push(route.request().postDataJSON());
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          loanId: fixture.loanId,
+          status: "WRITTEN_OFF",
+          principal: "0.00",
+          interest: "0.00",
+          penalty: "0.00",
+          total: "0.00",
+          allowanceApplied: "0.00",
+          expense: "0.00",
+          journalIds: ["00000000-0000-4000-8000-0000000000aa"],
+          businessDate: todayIso(),
+          reason: "Anggota pindah domisili",
+        }),
+      });
+    });
+
+    await page.goto(`/app/loans/${fixture.loanId}`);
+    await expect(page.getByRole("heading", { level: 1, name: T.id.detailTitle })).toBeVisible();
+    await page.getByRole("button", { name: T.id.writeOff, exact: true }).click();
+    // Tanpa alasan, pratinjau tidak dibuka dan fokus pindah ke field yang salah.
+    await page.getByRole("button", { name: T.id.review, exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByLabel(T.id.reason)).toBeFocused();
+    await expect(page.getByLabel(T.id.reason)).toHaveAttribute("aria-invalid", "true");
+
+    await page.getByLabel(T.id.reason).fill("Anggota pindah domisili");
+    await page.getByRole("button", { name: T.id.review, exact: true }).click();
+    await expect(
+      page.getByRole("heading", { level: 2, name: T.id.dialogWriteOffTitle }),
+    ).toBeVisible();
+
+    const results = await new AxeBuilder({ page }).include("dialog").analyze();
+    const blocking = blockingViolations(results.violations);
+    expect(
+      blocking,
+      `dialog hapus buku: ${blocking.map((violation) => violation.id).join(", ")}`,
+    ).toEqual([]);
+
+    await page.getByRole("button", { name: T.id.send, exact: true }).click();
+    await expect(page.getByText(T.id.writtenOffNotice, { exact: false })).toBeVisible();
+    expect(bodies[0]).toEqual({ reason: "Anggota pindah domisili" });
+  });
+
+  test("kunci idempotensi: 5xx dipertahankan (replay), 409 membuat kunci baru", async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(180_000);
+    const fixture = await createLoanFixture(request, { disburse: true });
+    await browserLogin(page, await apiLogin(request, CONSOLE));
+    await prepare(page, "id", "light");
+
+    const keys: string[] = [];
+    let reply: "500" | "409" = "500";
+    await page.route("**/api/v1/lending/loans/*/payments", async (route) => {
+      keys.push(route.request().headers()["idempotency-key"] ?? "");
+      if (reply === "500") {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/problem+json",
+          body: JSON.stringify({
+            type: "about:blank",
+            title: "galat",
+            status: 500,
+            code: "problem",
+            i18nKey: "error_generic",
+            traceId: "e2e-500",
+          }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 409,
+        contentType: "application/problem+json",
+        body: JSON.stringify({
+          type: "about:blank",
+          title: "saldo tidak cukup",
+          status: 409,
+          code: "problem",
+          i18nKey: "error_conflict",
+          traceId: "e2e-409",
+          params: { reason: "insufficient_balance" },
+        }),
+      });
+    });
+
+    await page.goto(`/app/loans/${fixture.loanId}`);
+    await expect(page.getByRole("heading", { level: 1, name: T.id.detailTitle })).toBeVisible();
+    await page.getByRole("button", { name: T.id.payment, exact: true }).click();
+    await page.getByLabel(T.id.account).selectOption(fixture.accountId);
+    await page.getByLabel(T.id.amount).fill("100000");
+    await page.getByRole("button", { name: T.id.review, exact: true }).click();
+    await page.getByRole("button", { name: T.id.send, exact: true }).click();
+
+    // Hasil belum pasti: dialog tetap terbuka, "Kirim" berikutnya adalah replay kunci yang sama.
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.getByRole("button", { name: T.id.send, exact: true }).click();
+    await expect.poll(() => keys.length).toBe(2);
+    expect(keys[0]).not.toBe("");
+    expect(keys[1], "5xx tidak membuang kunci").toBe(keys[0]);
+
+    // Tunggu respons pertama selesai diproses (`busy` turun), baru boleh menutup dengan Esc:
+    // Esc saat permintaan berjalan sengaja diabaikan supaya kunci replay tidak hilang.
+    await expect(page.getByRole("button", { name: T.id.send, exact: true })).toBeEnabled();
+
+    // Esc saat tidak mengirim boleh menutup; dibuka lagi dengan isian sama = masih replay.
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toBeHidden();
+    await page.getByRole("button", { name: T.id.review, exact: true }).click();
+    await page.getByRole("button", { name: T.id.send, exact: true }).click();
+    await expect.poll(() => keys.length).toBe(3);
+    expect(keys[2], "kunci replay bertahan setelah dialog ditutup").toBe(keys[0]);
+
+    // 409 = penolakan final: pesan menyebut sebabnya, lalu kunci dibuang.
+    reply = "409";
+    await expect(page.getByRole("button", { name: T.id.send, exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: T.id.send, exact: true }).click();
+    await expect(page.getByText(T.id.insufficientBalance)).toBeVisible();
+    await expect.poll(() => keys.length).toBe(4);
+    expect(keys[3], "409 tetap memakai kunci kiriman itu").toBe(keys[0]);
+
+    // Kiriman berikutnya dari dialog yang sama adalah permintaan baru (kunci baru).
+    await expect(page.getByRole("button", { name: T.id.send, exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: T.id.send, exact: true }).click();
+    await expect.poll(() => keys.length).toBe(5);
+    expect(keys[4], "409 membuang kunci replay").not.toBe(keys[0]);
   });
 
   test("axe: detail pinjaman dengan panel aksi × 2 tema × 2 locale", async ({ page, request }) => {
