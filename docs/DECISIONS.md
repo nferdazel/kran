@@ -5113,3 +5113,21 @@ menjalankan `check-fast` + `build`, jadi justru gerbang terakhir yang paling tip
 saat `./task ci`/`./task release` sebelum dirilis; CI pada commit yang sama mengulanginya. DoD §6
 diperbarui mengikuti ini. `--skip-check` tetap ada sebagai jalan darurat dan dicatat di catatan
 rilis — sekarang ia melewati test + e2e juga.
+
+## D-195 — Simpanan pokok & wajib tetap ekuitas; klasifikasi "liabilitas" ditolak berdasarkan Permenkop 2/2024 (2 Nov 2026)
+
+**Konteks.** O-100 membuka pertanyaan apakah simpanan pokok/wajib sebaiknya dipindah ke liabilitas.
+Pemilik meminta dasar regulasinya, bukan preferensi.
+
+**Temuan.** Permenkop UKM No. 2 Tahun 2024 (Kebijakan Akuntansi Koperasi, BN 2024 No. 35) mewajibkan KSP
+memakai SAK Indonesia untuk Entitas Privat (Pasal 4, Pasal 13 — paling lambat tahun buku 2025) dan
+Lampiran I kebijakan akuntansi ekuitas 5.1 menyatakan: "Simpanan pokok dan wajib disajikan di ekuitas."
+Format laporan posisi keuangannya menempatkan "Simpanan anggota" di liabilitas, sedangkan "Simpanan
+pokok/modal tetap" dan "Simpanan wajib/modal tambahan" di ekuitas.
+
+**Keputusan.** Akun `301.1`/`301.2` **tetap ekuitas**. Tidak ada migrasi COA dan tidak ada perubahan
+posting rule. Yang boleh berada di liabilitas adalah simpanan anggota (tabungan/sukarela/berjangka).
+
+**Konsekuensi.** Pertanyaan "ubah ke liabilitas" tertutup; O-100 menyisakan hanya aturan **iuran**
+anggota (tidak ada tarif nasional — AD/ART + RAT, jadi parameter per koperasi). Sumber dan kutipan
+dicatat di `docs/compliance/register-validation.md`; pengesahan akhir tetap milik compliance owner.
