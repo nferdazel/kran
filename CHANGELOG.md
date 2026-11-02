@@ -4,6 +4,12 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.1.5] - 2026-11-02
+
+### Added
+- **lending:** PPAP/CKPN dengan jurnal selisih harian
+- **lending:** Penilaian kolektibilitas harian lewat day-close
+
 ## [0.1.4] - 2026-11-01
 
 ### Added
