@@ -1,0 +1,36 @@
+#!/bin/sh
+# Guardrail lokal: tolak commit yang membawa kredensial atau berkas rahasia.
+#
+# Dipasang lewat `./task hooks` (mengatur `core.hooksPath=.githooks`). CI tetap penjaga utama —
+# hook ini murni supaya rahasia tidak sempat masuk riwayat di mesin pengembang, karena riwayat
+# yang sudah ter-push tidak bisa dibereskan tanpa menulis ulang seluruh history.
+#
+# Butuh gitleaks >= 8.19 (`gitleaks git --staged`). Bila tidak terpasang, hook **melewati**
+# pemindaian dengan peringatan: memblokir commit hanya karena tool lokal tidak ada akan membuat
+# orang mematikan hook, dan itu lebih buruk daripada pemindaian yang tidak jalan.
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+# 1. Berkas yang tidak boleh masuk repo sama sekali (`.gitignore` sudah menutup sebagian, ini
+#    lapis kedua untuk berkas yang di-`git add -f`).
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+if [ -n "$staged" ]; then
+  blocked=$(printf '%s\n' "$staged" | grep -E '(^|/)(\.env|\.env\..*)$|\.(pem|key|p12|pfx)$|(^|/)id_(rsa|ed25519)' | grep -v '\.example$' || true)
+  if [ -n "$blocked" ]; then
+    echo "pre-commit: berkas berikut tampak memuat kredensial — jangan di-commit:" >&2
+    printf '%s\n' "$blocked" | sed 's/^/  /' >&2
+    echo "Kalau ini contoh tanpa nilai nyata, pakai akhiran .example." >&2
+    exit 1
+  fi
+fi
+
+# 2. Pemindaian isi staged (termasuk string yang mirip kredensial di berkas biasa).
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks tidak ada — pemindaian dilewati (CI tetap memindai push/PR)." >&2
+  echo "pre-commit: pasang dengan 'brew install gitleaks' untuk guardrail lokal." >&2
+  exit 0
+fi
+
+exec gitleaks git --staged --config .gitleaks.toml --redact

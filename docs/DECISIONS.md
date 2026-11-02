@@ -5006,3 +5006,24 @@ yang dikenali gitleaks 8.24.3 di CI. Ini **tidak** mengecualikan berkas, direkto
 `gitleaks detect --no-git --source <dir-uji>` pada token `ghp_…` palsu → tetap **1 temuan**, dan
 `gitleaks detect --config .gitleaks.toml --log-opts=--all` (468 commit) → **no leaks found**. Bila
 gitleaks di CI dinaikkan versinya, migrasikan ke `[[allowlists]]` dan ulangi kedua uji itu.
+
+## D-190 — Tiga lapis guardrail kredensial: hook lokal, CI per-push, dan scan riwayat mingguan (2 Nov 2026)
+
+**Konteks.** Audit repo publik (2 Nov 2026) menunjukkan risiko terbesar bukan kredensial di kode
+(tidak ada), melainkan **bocornya data ke riwayat**, yang hanya bisa dibereskan dengan menghapus repo
+dan membuatnya ulang. `security` job di CI memakai `gitleaks-action`, yang memindai rentang commit
+yang di-push — cukup untuk mencegah masuk, tetapi tidak pernah memeriksa ulang riwayat lama.
+
+**Keputusan.** Tiga lapis, semuanya baru kecuali nomor 2:
+
+1. **`./task hooks` + `.githooks/pre-commit`** — menolak berkas yang berbentuk kunci
+   (`*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa*`, `.env*` kecuali `*.example`) dan menjalankan
+   `gitleaks git --staged`. Bila gitleaks tidak terpasang, hook hanya memeriksa nama berkas dan
+   memberi peringatan (bukan memblokir commit): hook yang membuat commit mustahil akan dimatikan.
+2. **`security` job** tetap seperti sekarang (rentang push/PR).
+3. **`secret-scan.yml`** memindai seluruh riwayat (`--log-opts=--all`) setiap Senin + manual.
+
+**Konsekuensi.** Gate tidak dilonggarkan di mana pun; `.gitleaks.toml` tetap allowlist sempit berbasis
+frasa (D-189). Hook bersifat lokal dan tidak bisa ditegakkan dari repo — karena itu CI tetap penjaga
+utama, dan `--no-verify` tetap dilarang di `CONTRIBUTING.md`. Bila `secret-scan` merah, tindak
+lanjutnya mengganti nilai + memutuskan scrub bersama pemilik, bukan menambah pengecualian.

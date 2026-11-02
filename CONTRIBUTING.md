@@ -67,10 +67,30 @@ target.
 | before a PR | `./task ci` | `check` (including the full `nim check`), openapi, lint-web, unit/property + integration + contract tests, and e2e (which builds the binary) |
 | front-end only | `./task lint-web`, `./task e2e` | eslint over `apps/web`/`packages/ui`; token contrast, `svelte-check`, Playwright (axe, keyboard) |
 | formatting | `./task fmt` | rewrites files in place |
+| once per clone | `./task hooks` | installs the git pre-commit guardrail (see below) |
 
 `./task ci` needs a database and refuses to run without `KRAN_DATABASE_URL` rather than reporting
 green with fewer tests (D-179). `KRAN_ALLOW_NO_DB=1` exists for a deliberate skip; if you use it,
 say so in the PR and do not present the result as gate evidence.
+
+### Secret guardrails
+
+Credentials must never reach the repository, and once a secret is in git history it cannot be
+removed without rewriting every SHA. Three layers guard that:
+
+1. **Local, before the commit** — `./task hooks` sets `core.hooksPath=.githooks`, so
+   [`.githooks/pre-commit`](.githooks/pre-commit) rejects staged files that look like keys
+   (`*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa*`, `.env*` except `*.example`) and runs
+   `gitleaks git --staged` against `.gitleaks.toml`. Install `gitleaks` (>= 8.19) locally to get the
+   content scan; without it the hook only checks filenames and prints a warning.
+2. **CI, on every push and PR** — the `security` job in `ci.yml` runs `gitleaks-action` over the
+   pushed commits.
+3. **Weekly, whole history** — `secret-scan.yml` scans `--log-opts=--all` so anything that slipped
+   through earlier shows up within a week.
+
+Do not bypass the hook with `--no-verify`. If gitleaks flags something that is genuinely not a
+credential, extend the narrow `[allowlist]` in `.gitleaks.toml` with the exact phrase **and** an
+entry in `docs/DECISIONS.md` (D-189 is the precedent) — never exclude a directory or a rule.
 
 Rules that are not negotiable:
 

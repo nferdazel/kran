@@ -19,6 +19,7 @@ job kosong yang selalu hijau adalah "hijau palsu". Per tanggal T-001 hanya ada
 | `traceability` | **belum** dibuat — jangan dianggap ada (lihat O-027) |
 | `release.yml` (tag ↔ `VERSION`, GitHub Release) | D-178 — **ada** (2 Nov 2026) |
 | `visual-baseline.yml` (baseline Linux `visual.spec.ts`) | T-156/D-177 — **ada** (31 Okt 2026) |
+| `secret-scan.yml` (gitleaks seluruh riwayat, mingguan) | D-190 — **ada** (2 Nov 2026) |
 
 Catatan status (17 Okt 2026, T-050): job yang benar-benar ada di `ci.yml` sekarang `nim-check`,
 `db-tests`, `web-e2e`, dan `security`. Yang masih selisih dari spec §21.3: `traceability`
@@ -137,3 +138,12 @@ latensi tunnel DB dev bisa membuat satu pinjaman menunggu > 15 dtk walau pool be
 anggaran tunggunya 60 dtk (`stressAcquireTimeoutMs`). Assertion tidak berubah: galat harus 0,
 `inUse` kembali 0, `created <= poolSize`. Timeout yang masih muncul = indikasi kebocoran/koneksi
 mati, bukan alasan menaikkan ambang lagi.
+
+## Job `secret-scan` (D-190, 2 Nov 2026)
+
+Terpisah dari `ci.yml` karena `gitleaks-action` memindai **rentang commit** yang di-push (atau PR),
+bukan seluruh riwayat. Job ini memindai `--log-opts=--all` dengan binary gitleaks versi terpin,
+dijadwalkan Senin 03:17 UTC dan bisa dijalankan manual (`gh workflow run "Secret scan (riwayat penuh)"`).
+Timeout tetap `timeout-minutes: 15`. Kalau hasilnya merah, jangan longgarkan `.gitleaks.toml`:
+ganti nilainya, dan bila sudah terlanjur masuk riwayat, putuskan scrub bersama pemilik (riwayat
+tidak bisa dibereskan dengan menghapus berkas).

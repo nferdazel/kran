@@ -15,6 +15,7 @@
 #   ./task ci-repeat [N]  repeat full gate N times (default 3) - stability gate (T-031)
 #   ./task build   build apps/api binary (also stamps VERSION into API + web sources)
 #   ./task version print VERSION (single source for API, web, manifests)
+#   ./task hooks   install git hooks (pre-commit: tolak berkas/kredensial di staged)
 #   ./task release [major|minor|patch] [--skip-check] [--no-push]
 #                  bump VERSION, changelog, gate, commit + annotated tag vX.Y.Z (D-178)
 #   ./task fmt     format code (rewrites files in place)
@@ -233,6 +234,9 @@ cmd_shlint() {
   log "ops script shell syntax (bash -n + shellcheck)"
   # `tools/*.sh` ikut di-gate: generator versi/changelog ikut menandai dan men-push rilis.
   files=$(find "$ROOT/ops" "$ROOT/tools" -type f -name '*.sh' 2>/dev/null | sort)
+  # Git hooks ikut di-gate (tanpa akhiran .sh): hook yang salah memblokir commit yang sah.
+  hooks=$(find "$ROOT/.githooks" -maxdepth 1 -type f 2>/dev/null | sort)
+  files=$(printf '%s\n%s\n' "$files" "$hooks" | grep -v '^$' | sort)
   if [ -z "$files" ]; then
     skip "no ops scripts found (T-013)"
     return 0
@@ -473,6 +477,20 @@ cmd_build() {
   ok "$BIN/kran-api"
 }
 
+cmd_hooks() {
+  # Guardrail lokal (bukan gate CI): menolak commit yang membawa berkas rahasia atau string yang
+  # mirip kredensial. Dipasang per klon, karena hook git tidak ikut ter-commit secara otomatis.
+  if [ ! -d "$ROOT/.githooks" ]; then
+    die ".githooks/ tidak ada — hook tidak bisa dipasang"
+  fi
+  chmod +x "$ROOT"/.githooks/* 2>/dev/null || true
+  git -C "$ROOT" config core.hooksPath .githooks
+  log "git hooks dipasang: core.hooksPath=.githooks (pre-commit = gitleaks --staged)"
+  if ! command -v gitleaks >/dev/null 2>&1; then
+    info "gitleaks belum terpasang — pemindaian lokal dilewati sampai dipasang (CI tetap memindai)"
+  fi
+}
+
 cmd_version() {
   [ -f "$ROOT/VERSION" ] || die "VERSION tidak ada"
   tr -d ' \n\r' <"$ROOT/VERSION"
@@ -700,6 +718,7 @@ case "${1:-help}" in
   ci-repeat) shift; cmd_ci_repeat "${1:-3}" ;;
   build) cmd_build ;;
   version) cmd_version ;;
+  hooks) cmd_hooks ;;
   version-check) cmd_version_check ;;
   release) shift; cmd_release "$@" ;;
   fmt) cmd_fmt ;;
