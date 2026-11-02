@@ -4,6 +4,15 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.1.13] - 2026-11-02
+
+### Added
+- **lending:** Pemulihan pasca hapus buku lewat API (T-176, O-122)
+
+### Fixed
+- **lending:** Kunci jurnal pemulihan memakai id pemulihan + tanda rekonsiliasi
+- Simpan kunci idempotensi per sidik isian (T-175)
+
 ## [0.1.12] - 2026-11-02
 
 ### Added
