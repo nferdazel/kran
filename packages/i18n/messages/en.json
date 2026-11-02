@@ -929,7 +929,7 @@
   "loans_error_amount_exceeds_outstanding": "The amount exceeds the current outstanding balance.",
   "loans_error_insufficient_balance": "The source account balance is not enough.",
   "loans_error_account_without_balance": "The source account has no balance to disburse into it.",
-  "loans_error_account_not_found": "The source account was not found in this branch.",
+  "loans_error_account_not_found": "The source account was not found.",
   "loans_error_account_party_mismatch": "The source account does not belong to this agreement's member.",
   "loans_error_account_branch_mismatch": "The source account is in another branch.",
   "loans_error_account_not_active": "The source account is not active.",

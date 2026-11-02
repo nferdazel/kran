@@ -609,6 +609,75 @@ test.describe("pinjaman: aksi tulis", () => {
     expect(keys[4], "409 membuang kunci replay").not.toBe(keys[0]);
   });
 
+  test("Esc saat kirim berjalan tidak menutup dialog; kunci bertahan per isian", async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(180_000);
+    const fixture = await createLoanFixture(request, { disburse: true });
+    await browserLogin(page, await apiLogin(request, CONSOLE));
+    await prepare(page, "id", "light");
+
+    // Route ditahan sampai test melepasnya: dipakai untuk membuktikan Esc diabaikan **selama**
+    // permintaan berjalan, tanpa `waitForTimeout`.
+    const keys: string[] = [];
+    const holder: { release?: () => void } = {};
+    const held = new Promise<void>((resolve) => {
+      holder.release = resolve;
+    });
+    await page.route("**/api/v1/lending/loans/*/payments", async (route) => {
+      keys.push(route.request().headers()["idempotency-key"] ?? "");
+      await held;
+      await route.fulfill({
+        status: 500,
+        contentType: "application/problem+json",
+        body: JSON.stringify({
+          type: "about:blank",
+          title: "galat",
+          status: 500,
+          code: "problem",
+          i18nKey: "error_generic",
+          traceId: "e2e-held",
+        }),
+      });
+    });
+
+    await page.goto(`/app/loans/${fixture.loanId}`);
+    await expect(page.getByRole("heading", { level: 1, name: T.id.detailTitle })).toBeVisible();
+    await page.getByRole("button", { name: T.id.payment, exact: true }).click();
+    await page.getByLabel(T.id.account).selectOption(fixture.accountId);
+    await page.getByLabel(T.id.amount).fill("100000");
+    await page.getByRole("button", { name: T.id.review, exact: true }).click();
+    await page.getByRole("button", { name: T.id.send, exact: true }).click();
+
+    await expect.poll(() => keys.length).toBe(1);
+    await page.keyboard.press("Escape");
+    // Permintaan belum selesai: dialog harus tetap terbuka, kalau tidak kunci replay hilang.
+    await expect(page.getByRole("dialog")).toBeVisible();
+
+    holder.release?.();
+    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(page.getByRole("button", { name: T.id.send, exact: true })).toBeEnabled();
+
+    // Isian berbeda = kunci baru; kembali ke isian lama = replay kunci pertama (peta per sidik).
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toBeHidden();
+    await page.getByLabel(T.id.amount).fill("200000");
+    await page.getByRole("button", { name: T.id.review, exact: true }).click();
+    await page.getByRole("button", { name: T.id.send, exact: true }).click();
+    await expect.poll(() => keys.length).toBe(2);
+    expect(keys[1], "isian lain tidak memakai kunci isian pertama").not.toBe(keys[0]);
+
+    await expect(page.getByRole("alert")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toBeHidden();
+    await page.getByLabel(T.id.amount).fill("100000");
+    await page.getByRole("button", { name: T.id.review, exact: true }).click();
+    await page.getByRole("button", { name: T.id.send, exact: true }).click();
+    await expect.poll(() => keys.length).toBe(3);
+    expect(keys[2], "kunci isian lama bertahan setelah isian lain dicoba").toBe(keys[0]);
+  });
+
   test("axe: detail pinjaman dengan panel aksi × 2 tema × 2 locale", async ({ page, request }) => {
     test.setTimeout(300_000);
     const fixture = await createLoanFixture(request, { disburse: true });

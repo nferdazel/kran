@@ -108,27 +108,33 @@
   let idempotencyKey = $state("");
 
   /**
-   * Kunci yang dipertahankan setelah hasil kiriman **tidak pasti** (5xx/jaringan/Esc saat
-   * mengirim). Dibuka lagi dengan isian yang sama = replay, bukan operasi baru (D-098).
+   * Kunci yang dipertahankan setelah hasil kiriman **tidak pasti** (5xx/jaringan), dipetakan per
+   * sidik isian. Dibuka lagi dengan isian yang sama = replay, bukan operasi baru (D-098); isian
+   * lain mendapat kunci sendiri, jadi mencoba body berbeda tidak menghapus kunci yang belum pasti.
    */
-  let retry = $state<{ key: string; fingerprint: string } | null>(null);
+  let retry = $state<Record<string, string>>({});
 
   let dialogEl = $state<HTMLDialogElement | undefined>(undefined);
   /** Elemen pemegang fokus sebelum dialog dibuka; dikembalikan saat dialog ditutup. */
   let restoreFocusTo: HTMLElement | null = null;
 
-  /** Sidik isian: kunci hanya dipakai ulang bila body yang dikirim identik. */
+  /**
+   * Sidik isian: kunci hanya dipakai ulang bila body yang dikirim identik. `loanId` ikut serta
+   * supaya pindah akad tanpa remount komponen tidak meminjam kunci milik akad lain.
+   */
   function actionFingerprint(value: PendingAction): string {
-    if (value.kind === "disburse") {
-      return value.account === null ? "" : `disburse|${value.account.accountId}`;
+    const loanId = loan?.loanId ?? "";
+    if (value.account === null && value.kind !== "restructure" && value.kind !== "write-off") {
+      return "";
     }
+    if (value.kind === "disburse") return `${loanId}|disburse|${value.account?.accountId ?? ""}`;
     if (value.kind === "payment") {
-      return value.account === null
-        ? ""
-        : `payment|${value.account.accountId}|${value.amount}`;
+      return `${loanId}|payment|${value.account?.accountId ?? ""}|${value.amount}`;
     }
-    if (value.kind === "restructure") return `restructure|${value.tenorMonths}|${value.reason}`;
-    return `write-off|${value.reason}`;
+    if (value.kind === "restructure") {
+      return `${loanId}|restructure|${value.tenorMonths}|${value.reason}`;
+    }
+    return `${loanId}|write-off|${value.reason}`;
   }
 
   /**
@@ -392,8 +398,7 @@
     actionError = "";
     notice = null;
     const fingerprint = actionFingerprint(value);
-    retry = retry !== null && retry.fingerprint !== fingerprint ? null : retry;
-    idempotencyKey = retry !== null ? retry.key : newIdempotencyKey();
+    idempotencyKey = (fingerprint === "" ? undefined : retry[fingerprint]) ?? newIdempotencyKey();
     restoreFocusTo =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     await tick();
@@ -410,8 +415,9 @@
   function onDialogClose(): void {
     // Kunci belum dipakai bila kiriman tidak pernah jalan; menyimpannya tidak berbahaya, dan
     // dibutuhkan saat hasil kiriman tidak pasti (timeout/jaringan) supaya "Kirim" berikutnya replay.
+    // Peta, bukan satu slot: isian lain tidak boleh menghapus kunci yang hasilnya belum pasti.
     if (pending !== null && idempotencyKey !== "") {
-      retry = { key: idempotencyKey, fingerprint: actionFingerprint(pending) };
+      retry[actionFingerprint(pending)] = idempotencyKey;
     }
     pending = null;
     actionError = "";
@@ -473,14 +479,14 @@
     actionError = problem === undefined ? m.error_generic() : loanActionProblemMessage(problem);
     if (status < 500) {
       // Penolakan final: kiriman berikutnya adalah permintaan baru, bukan replay.
+      if (pending !== null) delete retry[actionFingerprint(pending)];
       idempotencyKey = "";
-      retry = null;
     }
   }
 
   async function succeed(title: string, reference: string): Promise<void> {
+    if (pending !== null) delete retry[actionFingerprint(pending)];
     idempotencyKey = "";
-    retry = null;
     pending = null;
     // Pemicu (tombol "Tinjau") ikut hilang saat panel ditutup; fokus jatuh ke landmark utama.
     restoreFocusTo = null;
