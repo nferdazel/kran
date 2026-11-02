@@ -886,3 +886,119 @@ suite "lending: restrukturisasi & hapus buku (T-168)":
     check postJson(fill(WriteOffPath, loanId), %*{"reason": "uji"}, approverToken).code == 400
     check postJson(fill(WriteOffPath, loanId), %*{}, approverToken,
       "it168-empty-" & loanId).code == 400
+
+suite "lending: baca & daftar pinjaman (T-169)":
+  const
+    BranchA = BranchId
+    BranchB = "b0000000-0000-4000-8000-0000000000e9"
+    DetailPath = "/api/v1/lending/loans/{loanId}"
+
+  # Pembaca yang memegang `lending_maker` **hanya di cabang A**: tanpa itu, "disaring per cabang"
+  # tidak bisa dibedakan dari "semua pinjaman terlihat" (fixture memberi `dev.maker`
+  # `platform_admin`, yang berlaku di semua cabang).
+  execDb(sql"""
+    INSERT INTO platform.app_user
+      (user_id, username, full_name, password_algo, password_hash, must_change_password)
+    SELECT md5('it169|reader')::uuid, 'it169.reader', 'Uji Pembaca Pinjaman (dev)',
+           password_algo, password_hash, false
+      FROM platform.app_user WHERE username = 'dev.maker'
+    ON CONFLICT (username) DO UPDATE SET must_change_password = false, status = 'ACTIVE'""")
+  execDb(sql"""
+    INSERT INTO platform.user_role (user_id, role_id, branch_id)
+    SELECT u.user_id, r.role_id, ?::uuid
+      FROM platform.app_user u, platform.role r
+     WHERE u.username = 'it169.reader' AND r.code = 'lending_maker'
+    ON CONFLICT DO NOTHING""", BranchA)
+  let
+    readerToken = tokenOf(postJson(LoginPath, %*{"username": "it169.reader",
+      "password": DevPassword}))
+    branchBLoan = "01a199bc-0169-7000-8000-00000000b169"
+
+  doAssert readerToken.len > 0, "login pembaca cabang A gagal"
+
+  block:
+    # Pinjaman di cabang B, dibuat langsung: `POST /loans` menurunkan cabang dari anggota.
+    execDb(sql"""
+      INSERT INTO lending.loan
+        (loan_id, party_id, product_version_id, branch_id, principal, status, applied_by)
+      VALUES (?::uuid, ?::uuid, ?::uuid, ?::uuid, 1000000.00, 'APPLIED', ?::uuid)""",
+      branchBLoan, PartyId, versionActive, BranchB, ActorId)
+
+  proc getJson(path, token: string): Reply =
+    call("GET", path, "", token)
+
+  proc activeLoan(): string =
+    let created = postJson(LoansPath, loanBody(PartyId, versionActive, "9000000.00"), makerToken)
+    check created.code == 201
+    let loanId = created.body["loanId"].getStr()
+    check postJson(fill(ApprovePath, loanId), %*{}, approverToken).code == 200
+    check postJson(fill(DisbursePath, loanId), %*{"accountId": accountId}, makerToken,
+      "it169-disburse-" & loanId).code == 200
+    loanId
+
+  test "daftar disaring per cabang: akad cabang lain tidak ikut":
+    let mine = activeLoan()
+    let listed = getJson(LoansPath & "?partyId=" & PartyId, readerToken)
+    check listed.code == 200
+    checkJson(LoansPath, "GET", "200", listed.body)
+    var ids: seq[string] = @[]
+    for item in listed.body["items"]:
+      ids.add item["loanId"].getStr()
+    check ids.contains(mine)
+    check not ids.contains(branchBLoan)
+    # Pemegang izin di semua cabang (fixture: `platform_admin`) tetap melihatnya.
+    let all = getJson(LoansPath & "?partyId=" & PartyId, makerToken)
+    check all.code == 200
+    var allIds: seq[string] = @[]
+    for item in all.body["items"]:
+      allIds.add item["loanId"].getStr()
+    check allIds.contains(branchBLoan)
+
+  test "detail cabang lain 404, bukan 403":
+    check getJson(fill(DetailPath, branchBLoan), readerToken).code == 404
+    check getJson(fill(DetailPath, branchBLoan), makerToken).code == 200
+    check getJson("/api/v1/lending/loans/01a199bc-0169-7000-8000-00000000dead", makerToken).code == 404
+
+  test "detail memuat saldo, jadwal aktif, dan riwayat versi":
+    let loanId = activeLoan()
+    let before = getJson(fill(DetailPath, loanId), readerToken)
+    check before.code == 200
+    checkJson(DetailPath, "GET", "200", before.body)
+    check before.body["status"].getStr() == "ACTIVE"
+    check before.body["principalOutstanding"].getStr() == "9000000.00"
+    check before.body["collectibility"].kind == JNull
+    check before.body["installments"].len == 12
+    check before.body["scheduleVersions"].len == 1
+
+    check postJson(fill("/api/v1/lending/loans/{loanId}/restructure", loanId),
+      %*{"tenorMonths": 3, "reason": "uji detail setelah restrukturisasi"}, makerToken,
+      "it169-restructure-" & loanId).code == 200
+    let after = getJson(fill(DetailPath, loanId), readerToken)
+    check after.code == 200
+    checkJson(DetailPath, "GET", "200", after.body)
+    # Hanya jadwal aktif yang dihitung sebagai kewajiban; versi lama tetap terlihat sebagai riwayat.
+    check after.body["installments"].len == 3
+    check after.body["scheduleVersions"].len == 2
+    check after.body["principalOutstanding"].getStr() == "9000000.00"
+
+  test "filter status dan limit divalidasi, bukan diabaikan":
+    let loanId = activeLoan()
+    let active = getJson(LoansPath & "?partyId=" & PartyId & "&status=ACTIVE&limit=500", readerToken)
+    check active.code == 200
+    for item in active.body["items"]:
+      check item["status"].getStr() == "ACTIVE"
+    let applied = getJson(LoansPath & "?partyId=" & PartyId & "&status=APPLIED", readerToken)
+    check applied.code == 200
+    var appliedIds: seq[string] = @[]
+    for item in applied.body["items"]:
+      appliedIds.add item["loanId"].getStr()
+    check not appliedIds.contains(loanId)
+
+    check getJson(LoansPath & "?status=BOGUS", readerToken).code == 400
+    check getJson(LoansPath & "?limit=0", readerToken).code == 400
+    check getJson(LoansPath & "?limit=banyak", readerToken).code == 400
+    check getJson(LoansPath & "?partyId=bukan-uuid", readerToken).code == 400
+
+  test "tanpa izin baca ditolak 403":
+    check getJson(LoansPath, checkerToken).code == 403
+    check getJson(fill(DetailPath, branchBLoan), checkerToken).code == 403

@@ -416,6 +416,12 @@ cmd_e2e() {
     # dari DB kosong setiap kali dijalankan (O-088). Ditolak sendiri bila nama DB bukan _dev/_test.
     "$dbt" --root "$ROOT" reset || die "dev DB reset failed (hanya DB berakhiran _dev/_test)"
     "$dbt" --root "$ROOT" migrate || die "dev DB migration failed"
+    # `dbtools migrate` hanya menjalankan migrasi expand; berkas contract (drop/rename/CHECK
+    # dilonggarkan) menunggu operator. Test harus memakai skema **final**, sama seperti sesudah
+    # deploy — tanpa langkah ini layar/API yang bergantung pada constraint hasil contract (mis.
+    # `LOAN_DISBURSEMENT`) gagal di e2e padahal jalur produksinya sah.
+    "$BUILD/bin/kran-api" --role=migrate --contract --root="$ROOT" \
+      || die "dev DB contract migration failed"
     "$dbt" --root "$ROOT" seed --dev || die "dev seed failed"
     ok "API e2e ready (DB dev di-reset, migrasi + seed dari nol)"
   fi

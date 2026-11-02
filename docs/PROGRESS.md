@@ -4088,3 +4088,46 @@ jurnal/insert gagal — `loanId` diisi di composition root.
 **Bukti**: `trestructure` 4, `twriteoff` 5, `itapi_lending` 35, `itdaycloser_lending` 15,
 `dbtools validate` 96 migrasi, `check-fast` (295 berkas), `build`, `openapi`, `./task test` penuh
 hijau (**1543** `[OK]`, 0 `[FAILED]`), `./task e2e` **63 lulus / 4 skip**.
+
+## 2026-11-02 — T-169: baca & daftar pinjaman dengan scoping cabang
+
+Sampai T-168 modul `lending` hanya punya jalur tulis. Dua rute baca ditambahkan:
+
+- `GET /api/v1/lending/loans?partyId=&status=&limit=` — daftar, disaring **per baris** menurut cabang
+  yang izin `lending.loan.read` dipegang (`loadBranchAuthz` sekali per permintaan, pola D-062),
+  bukan 403 seluruh daftar.
+- `GET /api/v1/lending/loans/{loanId}` — akad, saldo (`principal_outstanding`/`interest_overdue`/
+  `penalty_outstanding`), golongan terkini, **jadwal aktif saja**, dan riwayat versi jadwal.
+
+Pinjaman di cabang yang tidak diizinkan dijawab **404**, bukan 403: 403 memberitahu bahwa akad itu
+ada di cabang lain.
+
+`loanById` dan daftar sekarang memakai satu pemetaan (`loanOf`); sebelumnya pemetaan status ada di
+dalam `loanById` dan salinan kedua di daftar pasti akan menyimpang.
+
+**Bukti**: `itapi_lending` **40** hijau (suite baru 5), `tcontract` hijau, `check-fast` 300 berkas,
+`openapi` (kontrak + klien TS). Gate penuh dijalankan setelah entri ini ditulis.
+
+## 2026-11-02 — T-170: layar pinjaman (daftar + detail)
+
+Modul `lending` sudah punya jalur tulis sejak T-163…T-168 dan jalur baca sejak T-169, tetapi belum
+ada layar: operator hanya bisa melihat pinjaman lewat DB. Dua layar ditambahkan.
+
+- `/app/loans` — daftar dengan saringan `partyId`/status. `partyId` yang bukan UUID ditolak di
+  peramban sebelum permintaan (pesan katalog), karena 400 dari server tidak bisa menjelaskan kolom
+  mana yang salah. Scoping cabang tetap milik server: layar tidak menyaring ulang.
+- `/app/loans/[loanId]` — fakta akad, golongan, saldo (`null` = belum dicairkan, ditampilkan "—"),
+  **jadwal aktif** (12 angsuran pada akad uji), dan riwayat versi jadwal setelah restrukturisasi.
+
+Aksi tulis (pencairan, pembayaran, restrukturisasi, hapus buku) sengaja **tidak** ada di sini:
+masing-masing butuh pemilihan rekening + pratinjau alokasi sebelum uang bergerak. Itu T-173.
+
+**Gate e2e memakai skema final (D-187).** Uji ini menemukan bahwa `./task e2e` hanya menjalankan
+migrasi expand, sehingga constraint `tx_type` versi lama masih terpasang dan pencairan pinjaman
+ditolak `500` — padahal di produksi (sesudah contract) jalur itu sah. Gate sekarang menerapkan
+migrasi contract setelah expand, sebelum seed.
+
+**Bukti**: `loans.spec.ts` (axe daftar + detail × 2 tema × 2 locale, keyboard-only daftar → detail →
+kembali), unit web 154, `./task e2e` **65 lulus / 4 skip**, svelte-check 0/0, `lint-web`, `i18n`,
+`check-fast`, `build`, `openapi`, dan `./task ci` **hijau** (1548 `[OK]`, 0 `[FAILED]`; e2e 65
+test).

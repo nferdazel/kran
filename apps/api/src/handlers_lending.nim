@@ -1203,3 +1203,134 @@ proc handleWriteOffLoan*(app: AppContext, req: Request) {.gcsafe.} =
     respondLendingReason(req, pkConflict, "Conflict", reason, problemText)
   else:
     req.respondProblem(pkInternal, "Internal Server Error", problemText)
+
+const maxLoanListLimit* = 200 # nomagic:ok batas ukuran respons daftar
+
+proc maybeStr(s: string): JsonNode {.inline.} =
+  ## `null` untuk "belum ada" (tanggal cair, golongan). String kosong di JSON akan terbaca sebagai
+  ## nilai sah oleh klien.
+  if s.len == 0: newJNull() else: %s
+
+proc handleListLoans*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `GET /api/v1/lending/loans?partyId=&status=&limit=` — daftar pinjaman, disaring **per baris**
+  ## menurut cabang yang izin bacanya dipegang (pola D-062/`handleListDepositAccounts`), bukan 403
+  ## seluruh daftar: operator cabang lain tidak perlu tahu akad itu ada.
+  let principalOpt = requirePrincipal(app, req)
+  if principalOpt.isNone:
+    return
+  let principal = principalOpt.get()
+  if not requirePermission(app, req, principal, permissionLendingRead):
+    return
+
+  let partyRaw = queryValue(req, "partyId").strip
+  var partyId = none(Id)
+  if partyRaw.len > 0:
+    let parsed = parseId(partyRaw)
+    if parsed.isErr:
+      req.respondProblem(pkBadRequest, "Bad Request", "partyId harus UUID yang sah")
+      return
+    partyId = some(parsed.value())
+
+  let statusRaw = queryValue(req, "status").strip
+  if statusRaw.len > 0 and statusRaw notin
+      ["APPLIED", "APPROVED", "ACTIVE", "CLOSED", "WRITTEN_OFF"]:
+    # Nilai tak dikenal ditolak, bukan diabaikan: daftar yang "kosong karena status salah ketik"
+    # terlihat seperti "tidak ada pinjaman".
+    req.respondProblem(pkBadRequest, "Bad Request", "status tidak dikenal: " & statusRaw)
+    return
+
+  var limit = 50
+  let limitRaw = queryValue(req, "limit").strip
+  if limitRaw.len > 0:
+    var parsed = 0
+    try:
+      parsed = parseInt(limitRaw)
+    except ValueError:
+      req.respondProblem(pkBadRequest, "Bad Request", "limit harus bilangan bulat")
+      return
+    if parsed < 1:
+      req.respondProblem(pkBadRequest, "Bad Request", "limit harus >= 1")
+      return
+    limit = min(parsed, maxLoanListLimit)
+
+  var items = newJArray()
+  try:
+    withDbConn(app.pool, proc(db: DbConn) {.gcsafe.} =
+      dbCalls:
+        let authz = loadBranchAuthz(db, principal)
+        for loan in loansPage(db, partyId, statusRaw, limit):
+          if items.len >= limit:
+            break
+          if authz.allowedAt($loan.branchId, permissionLendingRead):
+            items.add loanJson(loan))
+  except DbError:
+    req.respondProblem(pkInternal, "Internal Server Error", "pinjaman gagal dibaca")
+    return
+  req.respondJson(200, %*{"items": items})
+
+proc handleGetLoan*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `GET /api/v1/lending/loans/{loanId}` — akad + saldo + **jadwal aktif** + riwayat versi jadwal.
+  ##
+  ## Pinjaman di cabang yang izin bacanya tidak dipegang dijawab **404**, sama seperti id yang tidak
+  ## ada: 403 akan memberitahu bahwa akad itu ada di cabang lain.
+  let principalOpt = requirePrincipal(app, req)
+  if principalOpt.isNone:
+    return
+  let principal = principalOpt.get()
+  if not requirePermission(app, req, principal, permissionLendingRead):
+    return
+  let loanId = parseId(pathParam(req, "loanId"))
+  if loanId.isErr:
+    req.respondProblem(pkNotFound, "Not Found", "pinjaman tidak ditemukan")
+    return
+
+  var payload = newJNull()
+  var found = false
+  try:
+    withDbConn(app.pool, proc(db: DbConn) {.gcsafe.} =
+      dbCalls:
+        let loanOpt = loanById(db, loanId.val)
+        if loanOpt.isNone or
+            not authorizedAtBranch(db, principal, $loanOpt.get().branchId, permissionLendingRead):
+          return
+        let loan = loanOpt.get()
+        let balance = loanBalanceOf(db, loan.loanId)
+        var installments = newJArray()
+        for inst in activeInstallments(db, loan.loanId):
+          installments.add %*{
+            "no": inst.no,
+            "dueOn": inst.dueOn,
+            "principalDue": toDecimalString(inst.principalDue),
+            "interestDue": toDecimalString(inst.interestDue),
+            "penaltyDue": toDecimalString(inst.penaltyDue),
+            "paidPrincipal": toDecimalString(inst.paidPrincipal),
+            "paidInterest": toDecimalString(inst.paidInterest),
+            "paidPenalty": toDecimalString(inst.paidPenalty),
+            "paidOn": maybeStr(inst.paidOn),
+          }
+        var versions = newJArray()
+        for version in scheduleVersionsOf(db, loan.loanId):
+          versions.add %*{"versionNo": version.versionNo, "createdOn": version.createdOn,
+                          "reason": version.reason}
+
+        var detail = loanJson(loan)
+        detail["maturityOn"] = maybeStr(loan.maturityOn)
+        detail["collectibility"] = maybeStr(collectibilityOf(db, loan.loanId))
+        detail["principalOutstanding"] = (if balance.isNone: newJNull()
+          else: %balance.get().principalOutstanding)
+        detail["interestOverdue"] = (if balance.isNone: newJNull()
+          else: %balance.get().interestOverdue)
+        detail["penaltyOutstanding"] = (if balance.isNone: newJNull()
+          else: %balance.get().penaltyOutstanding)
+        detail["installments"] = installments
+        detail["scheduleVersions"] = versions
+        payload = detail
+        found = true)
+  except DbError:
+    req.respondProblem(pkInternal, "Internal Server Error", "pinjaman gagal dibaca")
+    return
+
+  if not found:
+    req.respondProblem(pkNotFound, "Not Found", "pinjaman tidak ditemukan")
+    return
+  req.respondJson(200, payload)

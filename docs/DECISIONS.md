@@ -4940,3 +4940,22 @@ cakupan modul): restrukturisasi dan hapus buku. Tiga kendala teknis memaksa bent
   tarif adalah keputusan produk baru.
 - Pinjaman hanya bisa direstrukturisasi saat `ACTIVE`; `APPLIED`/`APPROVED` ditolak `not_disbursed`,
   `CLOSED`/`WRITTEN_OFF` ditolak `loan_inactive`.
+
+## D-187 — Gate e2e memakai skema final: migrasi contract ikut diterapkan (2 Nov 2026)
+
+**Konteks.** `dbtools migrate` sengaja hanya menjalankan migrasi **expand**; berkas bertanda
+`-- dbtools:contract` (drop/rename/CHECK dilonggarkan) menunggu operator lewat
+`kran-api --role=migrate --contract`. `./task e2e` hanya memanggil `dbtools reset|migrate|seed`, jadi
+DB e2e tertinggal pada skema *sebelum* contract. Akibatnya jalur yang sah di produksi — mis.
+pencairan pinjaman yang menulis `deposit.transaction.tx_type = 'LOAN_DISBURSEMENT'` (contract
+`deposit/0082`) — gagal di e2e dengan `500` karena constraint lama masih terpasang.
+
+**Keputusan.** `./task e2e` menerapkan migrasi contract setelah `dbtools migrate` dan sebelum seed,
+memakai biner yang baru dibangun (`$BUILD/bin/kran-api --role=migrate --contract`). Test memakai
+skema **final**, sama seperti sesudah deploy; expand-only tetap menjadi aturan untuk jalur deploy
+(`ops/scripts/migrate.sh`), bukan untuk gate uji.
+
+**Konsekuensi.** e2e kini ikut membuktikan bahwa berkas contract terpasang berurutan dan konsisten
+dengan kode; kegagalan contract terlihat di gate, bukan pertama kali saat deploy produksi.
+Seed dev (`packs/base/seed/0006_dev_lending.sql`) menambah versi produk pinjaman + akun `dev.loans`,
+karena katalog pinjaman belum punya rute API untuk membuatnya.

@@ -211,6 +211,10 @@ proc lendingRoutes*(): seq[RouteSpec] =
   ## Pinjaman (T-163): pengajuan + persetujuan. Objek ber-cabang → gerbang `authorizedAtBranch`;
   ## pencairan dan pembayaran menyusul di T-164/T-165.
   @[
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/lending/loans",
+              operationId: "listLoans", handler: handleListLoans),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/lending/loans/{loanId}",
+              operationId: "getLoan", handler: handleGetLoan),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/lending/loans",
               operationId: "submitLoan", handler: handleSubmitLoan),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/lending/loans/{loanId}/approve",

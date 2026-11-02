@@ -77,6 +77,7 @@ describe("visibleNavLinks", () => {
       "/app/vault",
       "/app/dayclose",
       "/app/accounts/open",
+      "/app/loans",
       "/app/params",
       "/app/products",
       "/app/users",

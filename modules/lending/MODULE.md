@@ -3,7 +3,8 @@
 Pinjaman (spec §9.2, §23 Fase 4): produk pinjaman berversi, akad/fasilitas, jadwal angsuran, lalu
 kolektibilitas/PPAP di fase yang sama. Status: **T-161** (model + skema) + **T-162** (mesin jadwal) + **T-163** (pengajuan &
 persetujuan) + **T-164** (pencairan) + **T-165** (pembayaran angsuran) + **T-166**
-(kolektibilitas) + **T-167** (PPAP/CKPN) + **T-168** (restrukturisasi & hapus buku).
+(kolektibilitas) + **T-167** (PPAP/CKPN) + **T-168** (restrukturisasi & hapus buku) + **T-169**
+(baca & daftar dengan scoping cabang).
 pengajuan/pencairan T-163/T-164; task day-close T-166/T-167; API/UI T-169/T-170.
 
 Keputusan angka & aturan: **D-180**. Rencana fase: `docs/proposals/fase4-lending.md`.
@@ -180,6 +181,22 @@ penyisihan/jurnal/audit gagal disimpan, `DAY-383` prasyarat regrading hilang, `D
 menggantung pada pinjaman tidak aktif, `DAY-385` dasar/penyisihan tersimpan bukan nominal sah,
 `DAY-386` konfigurasi posting rule penyisihan tidak sah.
 
+## Baca & daftar (T-169)
+
+`GET /api/v1/lending/loans?partyId=&status=&limit=` · `GET /api/v1/lending/loans/{loanId}` · izin
+`lending.loan.read`.
+
+- Daftar disaring **per baris** menurut cabang yang izinnya dipegang (pola D-062,
+  `loadBranchAuthz` sekali per permintaan), bukan 403 seluruh daftar.
+- Detail memuat saldo (`principal_outstanding`, `interest_overdue`, `penalty_outstanding`),
+  golongan terkini, **jadwal aktif saja**, dan riwayat versi jadwal.
+- Pinjaman di cabang lain dijawab **404**, sama seperti id yang tidak ada: 403 akan membocorkan
+  keberadaan akad di cabang lain.
+- `status`/`limit` divalidasi (nilai salah → 400), `limit` dipotong ke batas atas respons.
+- Layar operator `/app/loans` dan `/app/loans/{loanId}` (T-170) hanya **membaca** data ini. Aksi
+  tulis belum ada di UI (T-173): pencairan/pembayaran butuh pemilihan rekening + pratinjau alokasi
+  sebelum uang bergerak.
+
 ## Restrukturisasi (T-168, D-186)
 
 `POST /api/v1/lending/loans/{loanId}/restructure` · izin `lending.loan.restructure` (migrasi
@@ -247,8 +264,8 @@ Hapus buku sengaja **tidak** dipegang `lending_maker`. `platform_admin` memegang
 
 ## Permukaan HTTP
 
-T-163…T-168 memasang enam rute (lihat bagian di atas). Daftar/baca pinjaman dan scoping baca
-menyusul di T-169.
+T-163…T-169 memasang delapan rute (lihat bagian di atas): empat tulis dari T-163…T-165, dua dari
+T-168, dan dua baca dari T-169.
 
 ## Test
 
@@ -256,7 +273,8 @@ menyusul di T-169.
 - `./task test itapi_lending` — HTTP: pengajuan/persetujuan/pencairan/pembayaran/restrukturisasi/
   hapus buku (jadwal & versi, jurnal per komponen dan per bagian hapus buku, subledger, saldo,
   replay idempoten, penolakan rekening bukan milik peminjam, saldo tidak cukup, kelebihan bayar,
-  pelunasan, `not_loss`, `not_disbursed`).
+  pelunasan, `not_loss`, `not_disbursed`), daftar & detail dengan scoping cabang (`404` untuk
+  akad cabang lain), validasi `status`/`limit`.
 - `./task test trestructure` — jadwal versi baru: sisa pokok terurai tepat, nomor angsuran
   berlanjut, jadwal mulai di masa depan, bentuk tidak sah ditolak.
 - `./task test twriteoff` — pembagian penyisihan vs beban, penyisihan melebihi nilai, komponen

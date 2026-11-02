@@ -61,21 +61,15 @@ proc insertLoan*(db: DbConn, loan: Loan) =
       toDecimalString(loan.principal), $loan.status, loan.disbursedOn, loan.maturityOn,
       $loan.appliedBy)
 
-proc loanById*(db: DbConn, loanId: Id; forUpdate = false): Option[Loan] =
-  ## `forUpdate` dipakai approve: dua penyetuju bersamaan harus antre di baris yang sama, bukan
-  ## sama-sama membaca `APPLIED` lalu satu di antaranya menimpa.
-  let suffix = if forUpdate: " FOR UPDATE" else: ""
-  let rows = db.getAllRows(sql(
-    """
+const loanColumns = """
     SELECT loan_id::text, party_id::text, product_version_id::text, branch_id::text,
            principal::text, status, coalesce(disbursed_on::text, ''),
            coalesce(maturity_on::text, ''), applied_by::text, coalesce(approved_by::text, '')
-      FROM lending.loan
-     WHERE loan_id = ?
-    """ & suffix), $loanId)
-  if rows.len == 0:
-    return none(Loan)
-  let row = rows[0]
+      FROM lending.loan"""
+
+proc loanOf(row: Row): Loan =
+  ## Satu bentuk baca untuk detail dan daftar: dua salinan pemetaan akan cepat berbeda, dan
+  ## perbedaan itu hanya terlihat sebagai status yang salah di satu layar.
   let status =
     case row[5]
     of "APPLIED": lsApplied
@@ -87,7 +81,7 @@ proc loanById*(db: DbConn, loanId: Id; forUpdate = false): Option[Loan] =
   let principal = moneyFromString(row[4])
   if not principal.isOk:
     raise newException(ValueError, "pokok pinjaman tersimpan bukan nominal sah: " & row[4])
-  some(Loan(
+  Loan(
     loanId: Id(row[0]),
     partyId: Id(row[1]),
     productVersionId: Id(row[2]),
@@ -98,7 +92,28 @@ proc loanById*(db: DbConn, loanId: Id; forUpdate = false): Option[Loan] =
     maturityOn: row[7],
     appliedBy: Id(row[8]),
     approvedBy: (if row[9].len == 0: Id("") else: Id(row[9])),
-  ))
+  )
+
+proc loanById*(db: DbConn, loanId: Id; forUpdate = false): Option[Loan] =
+  ## `forUpdate` dipakai approve: dua penyetuju bersamaan harus antre di baris yang sama, bukan
+  ## sama-sama membaca `APPLIED` lalu satu di antaranya menimpa.
+  let suffix = if forUpdate: " FOR UPDATE" else: ""
+  let rows = db.getAllRows(sql(loanColumns & "\n     WHERE loan_id = ?\n    " & suffix), $loanId)
+  if rows.len == 0:
+    return none(Loan)
+  some(loanOf(rows[0]))
+
+proc loansPage*(db: DbConn; partyId: Option[Id]; status: string; limit: int): seq[Loan] =
+  ## Halaman daftar pinjaman. Penyaringan cabang **tidak** di sini: itu otorisasi, dan pemanggil
+  ## yang memegang grant-nya (`BranchAuthz`). `NULLIF(…, '')` dipakai supaya filter kosong tidak
+  ## memaksa cast uuid atas string kosong.
+  let partyText = (if partyId.isSome: $partyId.get() else: "")
+  for row in db.getAllRows(sql(loanColumns & """
+     WHERE (NULLIF(?, '')::uuid IS NULL OR party_id = NULLIF(?, '')::uuid)
+       AND (NULLIF(?, '') IS NULL OR status = ?)
+     ORDER BY created_at DESC, loan_id
+     LIMIT ?"""), partyText, partyText, status, status, limit):
+    result.add loanOf(row)
 
 proc approveLoan*(db: DbConn, loanId: Id; approver: Id): bool =
   ## `false` = pengajuan sudah diputuskan pihak lain (balapan), bukan galat. Penyetuju disimpan
@@ -156,23 +171,29 @@ proc installmentOf(row: Row): Installment =
     paidOn: row[9],
   )
 
-proc installmentsForUpdate*(db: DbConn, loanId: Id): seq[Installment] =
-  ## Jadwal **aktif** pinjaman, **tertua lebih dulu** (`due_on`, lalu `no`), baris dikunci supaya dua
-  ## pembayaran bersamaan tidak mengalokasikan nominal yang sama dua kali dan tidak melewati
-  ## `paid_* <= *_due` (CHECK DB adalah jaring terakhir, bukan alat alokasi).
-  ##
-  ## Baris yang sudah diarsipkan restrukturisasi (`superseded_on` terisi) tidak boleh menerima
-  ## pembayaran: kewajibannya sudah digantikan jadwal baru, dan membayarnya akan menghitung utang dua
-  ## kali.
-  for row in db.getAllRows(sql"""
+proc installmentsOf(db: DbConn; loanId: Id; forUpdate: bool): seq[Installment] =
+  ## Jadwal **aktif** pinjaman, **tertua lebih dulu** (`due_on`, lalu `no`). Baris yang sudah
+  ## diarsipkan restrukturisasi (`superseded_on` terisi) tidak ikut: kewajibannya sudah digantikan
+  ## jadwal baru, dan membacanya membuat utang terlihat dua kali.
+  let suffix = if forUpdate: "\n       FOR UPDATE" else: ""
+  for row in db.getAllRows(sql("""
     SELECT loan_id::text, no, due_on::text, principal_due::text, interest_due::text,
            penalty_due::text, paid_principal::text, paid_interest::text, paid_penalty::text,
            coalesce(paid_on::text, '')
       FROM lending.installment
      WHERE loan_id = ? AND superseded_on IS NULL
-     ORDER BY due_on, no
-       FOR UPDATE""", $loanId):
+     ORDER BY due_on, no""" & suffix), $loanId):
     result.add installmentOf(row)
+
+proc installmentsForUpdate*(db: DbConn, loanId: Id): seq[Installment] =
+  ## Dipakai pembayaran: baris dikunci supaya dua pembayaran bersamaan tidak mengalokasikan nominal
+  ## yang sama dua kali dan tidak melewati `paid_* <= *_due` (CHECK DB adalah jaring terakhir, bukan
+  ## alat alokasi).
+  installmentsOf(db, loanId, true)
+
+proc activeInstallments*(db: DbConn, loanId: Id): seq[Installment] =
+  ## Dipakai pembacaan (detail pinjaman): tanpa lock, bentuk yang sama dengan jalur pembayaran.
+  installmentsOf(db, loanId, false)
 
 proc addInstallmentPayment*(db: DbConn, loanId: Id, installmentNo: int,
     component: AllocationComponent, amount: Money): bool =
@@ -250,3 +271,35 @@ proc principalOutstanding*(db: DbConn, loanId: Id): Money =
   if not parsed.isOk:
     raise newException(ValueError, "saldo pinjaman tersimpan bukan nominal sah")
   parsed.val
+
+
+type
+  LoanScheduleVersion* = object
+    versionNo*: int
+    createdOn*: string
+    reason*: string
+
+  LoanBalanceSnapshot* = object
+    principalOutstanding*: string
+    interestOverdue*: string
+    penaltyOutstanding*: string
+
+proc loanBalanceOf*(db: DbConn; loanId: Id): Option[LoanBalanceSnapshot] =
+  ## `none` = cache saldo tidak ada (pinjaman belum dicairkan). Nol bukan pengganti yang jujur:
+  ## "belum ada" dan "sisa nol" adalah dua keadaan berbeda.
+  let rows = db.getAllRows(sql"""
+    SELECT principal_outstanding::numeric(24,2)::text,
+           interest_overdue::numeric(24,2)::text,
+           penalty_outstanding::numeric(24,2)::text
+      FROM lending.loan_balance WHERE loan_id = ?""", $loanId)
+  if rows.len == 0:
+    return none(LoanBalanceSnapshot)
+  some(LoanBalanceSnapshot(principalOutstanding: rows[0][0], interestOverdue: rows[0][1],
+    penaltyOutstanding: rows[0][2]))
+
+proc scheduleVersionsOf*(db: DbConn; loanId: Id): seq[LoanScheduleVersion] =
+  for row in db.getAllRows(sql"""
+    SELECT version_no, created_on::text, reason
+      FROM lending.loan_schedule WHERE loan_id = ? ORDER BY version_no""", $loanId):
+    result.add LoanScheduleVersion(
+      versionNo: parseInt(row[0]), createdOn: row[1], reason: row[2])

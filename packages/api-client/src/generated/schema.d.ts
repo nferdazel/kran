@@ -1879,7 +1879,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Daftar pinjaman (disaring per cabang)
+         * @description Hasil disaring **per baris** menurut cabang yang izin `lending.loan.read` dipegang
+         *     pemanggil; pinjaman di cabang lain tidak dikembalikan sama sekali. `partyId` dan `status`
+         *     opsional; `status` yang tidak dikenal → 400 (bukan diabaikan, karena daftar kosong karena
+         *     salah ketik terlihat seperti "tidak ada pinjaman"). `limit` dipotong ke batas atas respons;
+         *     `limit` bukan bilangan bulat atau < 1 → 400.
+         */
+        get: operations["listLoans"];
         put?: never;
         /**
          * Ajukan pinjaman (maker)
@@ -1896,6 +1904,31 @@ export interface paths {
          *     Menulis audit `lending.loan.submit` dan event `LoanSubmitted`.
          */
         post: operations["submitLoan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lending/loans/{loanId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detail pinjaman, jadwal aktif, dan riwayat versi jadwal
+         * @description `installments` hanya memuat **jadwal aktif** (`superseded_on IS NULL`); jadwal yang
+         *     diarsipkan restrukturisasi tetap ada di `scheduleVersions` sebagai riwayat, tetapi tidak
+         *     dihitung sebagai kewajiban.
+         *
+         *     Pinjaman di cabang yang izin bacanya tidak dipegang dijawab **404**, sama seperti id yang
+         *     tidak ada: 403 akan memberitahu bahwa akad itu ada di cabang lain.
+         */
+        get: operations["getLoan"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1991,6 +2024,64 @@ export interface components {
             /** Format: date */
             businessDate: string;
             reason: string;
+        };
+        LoanSummary: {
+            /** Format: uuid */
+            loanId: string;
+            /** Format: uuid */
+            partyId: string;
+            /** Format: uuid */
+            productVersionId: string;
+            /** Format: uuid */
+            branchId: string;
+            principal: string;
+            /** @enum {string} */
+            status: "APPLIED" | "APPROVED" | "ACTIVE" | "CLOSED" | "WRITTEN_OFF";
+            disbursedOn: string | null;
+        };
+        LoanList: {
+            items: components["schemas"]["LoanSummary"][];
+        };
+        LoanInstallment: {
+            no: number;
+            /** Format: date */
+            dueOn: string;
+            principalDue: string;
+            interestDue: string;
+            penaltyDue: string;
+            paidPrincipal: string;
+            paidInterest: string;
+            paidPenalty: string;
+            paidOn: string | null;
+        };
+        LoanScheduleVersion: {
+            versionNo: number;
+            /** Format: date */
+            createdOn: string;
+            reason: string;
+        };
+        LoanDetail: {
+            /** Format: uuid */
+            loanId: string;
+            /** Format: uuid */
+            partyId: string;
+            /** Format: uuid */
+            productVersionId: string;
+            /** Format: uuid */
+            branchId: string;
+            principal: string;
+            /** @enum {string} */
+            status: "APPLIED" | "APPROVED" | "ACTIVE" | "CLOSED" | "WRITTEN_OFF";
+            disbursedOn: string | null;
+            maturityOn: string | null;
+            /** @description `null` = belum pernah dinilai task regrading. */
+            collectibility: ("COLLECTIBLE" | "SPECIAL_MENTION" | "SUBSTANDARD" | "DOUBTFUL" | "LOSS") | null;
+            /** @description `null` = pinjaman belum dicairkan (cache saldo belum ada). */
+            principalOutstanding: string | null;
+            interestOverdue: string | null;
+            penaltyOutstanding: string | null;
+            installments: components["schemas"]["LoanInstallment"][];
+            scheduleVersions: components["schemas"]["LoanScheduleVersion"][];
         };
         LoanPaymentRequest: {
             /**
@@ -6383,6 +6474,37 @@ export interface operations {
             503: components["responses"]["Problem"];
         };
     };
+    listLoans: {
+        parameters: {
+            query?: {
+                partyId?: string;
+                status?: "APPLIED" | "APPROVED" | "ACTIVE" | "CLOSED" | "WRITTEN_OFF";
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar pinjaman yang boleh dibaca pemanggil. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoanList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
     submitLoan: {
         parameters: {
             query?: never;
@@ -6423,6 +6545,35 @@ export interface operations {
                 };
             };
             415: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    getLoan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loanId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Detail pinjaman. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoanDetail"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
             503: components["responses"]["Problem"];

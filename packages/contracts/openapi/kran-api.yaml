@@ -4024,6 +4024,58 @@ paths:
           $ref: "#/components/responses/Problem"
 
   /api/v1/lending/loans:
+    get:
+      operationId: listLoans
+      tags: [lending]
+      summary: Daftar pinjaman (disaring per cabang)
+      description: |
+        Hasil disaring **per baris** menurut cabang yang izin `lending.loan.read` dipegang
+        pemanggil; pinjaman di cabang lain tidak dikembalikan sama sekali. `partyId` dan `status`
+        opsional; `status` yang tidak dikenal → 400 (bukan diabaikan, karena daftar kosong karena
+        salah ketik terlihat seperti "tidak ada pinjaman"). `limit` dipotong ke batas atas respons;
+        `limit` bukan bilangan bulat atau < 1 → 400.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: partyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [APPLIED, APPROVED, ACTIVE, CLOSED, WRITTEN_OFF]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Daftar pinjaman yang boleh dibaca pemanggil.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
     post:
       operationId: submitLoan
       tags: [lending]
@@ -4074,6 +4126,49 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
         "415":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/lending/loans/{loanId}:
+    get:
+      operationId: getLoan
+      tags: [lending]
+      summary: Detail pinjaman, jadwal aktif, dan riwayat versi jadwal
+      description: |
+        `installments` hanya memuat **jadwal aktif** (`superseded_on IS NULL`); jadwal yang
+        diarsipkan restrukturisasi tetap ada di `scheduleVersions` sebagai riwayat, tetapi tidak
+        dihitung sebagai kewajiban.
+
+        Pinjaman di cabang yang izin bacanya tidak dipegang dijawab **404**, sama seperti id yang
+        tidak ada: 403 akan memberitahu bahwa akad itu ada di cabang lain.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Detail pinjaman.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanDetail"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "405":
           $ref: "#/components/responses/Problem"
         "500":
           $ref: "#/components/responses/Problem"
@@ -4319,6 +4414,156 @@ components:
           format: date
         reason:
           type: string
+    LoanSummary:
+      type: object
+      additionalProperties: false
+      required: [loanId, partyId, productVersionId, branchId, principal, status, disbursedOn]
+      properties:
+        loanId:
+          type: string
+          format: uuid
+        partyId:
+          type: string
+          format: uuid
+        productVersionId:
+          type: string
+          format: uuid
+        branchId:
+          type: string
+          format: uuid
+        principal:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+        status:
+          type: string
+          enum: [APPLIED, APPROVED, ACTIVE, CLOSED, WRITTEN_OFF]
+        disbursedOn:
+          oneOf:
+            - type: string
+              format: date
+            - type: "null"
+    LoanList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LoanSummary"
+    LoanInstallment:
+      type: object
+      additionalProperties: false
+      required: [no, dueOn, principalDue, interestDue, penaltyDue, paidPrincipal, paidInterest,
+                 paidPenalty, paidOn]
+      properties:
+        no:
+          type: integer
+          minimum: 1
+        dueOn:
+          type: string
+          format: date
+        principalDue:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+        interestDue:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+        penaltyDue:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+        paidPrincipal:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+        paidInterest:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+        paidPenalty:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+        paidOn:
+          oneOf:
+            - type: string
+              format: date
+            - type: "null"
+    LoanScheduleVersion:
+      type: object
+      additionalProperties: false
+      required: [versionNo, createdOn, reason]
+      properties:
+        versionNo:
+          type: integer
+          minimum: 1
+        createdOn:
+          type: string
+          format: date
+        reason:
+          type: string
+    LoanDetail:
+      type: object
+      additionalProperties: false
+      required: [loanId, partyId, productVersionId, branchId, principal, status, disbursedOn,
+                 maturityOn, collectibility, principalOutstanding, interestOverdue,
+                 penaltyOutstanding, installments, scheduleVersions]
+      properties:
+        loanId:
+          type: string
+          format: uuid
+        partyId:
+          type: string
+          format: uuid
+        productVersionId:
+          type: string
+          format: uuid
+        branchId:
+          type: string
+          format: uuid
+        principal:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+        status:
+          type: string
+          enum: [APPLIED, APPROVED, ACTIVE, CLOSED, WRITTEN_OFF]
+        disbursedOn:
+          oneOf:
+            - type: string
+              format: date
+            - type: "null"
+        maturityOn:
+          oneOf:
+            - type: string
+              format: date
+            - type: "null"
+        collectibility:
+          oneOf:
+            - type: string
+              enum: [COLLECTIBLE, SPECIAL_MENTION, SUBSTANDARD, DOUBTFUL, LOSS]
+            - type: "null"
+          description: '`null` = belum pernah dinilai task regrading.' 
+        principalOutstanding:
+          oneOf:
+            - type: string
+              pattern: '^[0-9]+\.[0-9]{2}$'
+            - type: "null"
+          description: '`null` = pinjaman belum dicairkan (cache saldo belum ada).' 
+        interestOverdue:
+          oneOf:
+            - type: string
+              pattern: '^[0-9]+\.[0-9]{2}$'
+            - type: "null"
+        penaltyOutstanding:
+          oneOf:
+            - type: string
+              pattern: '^[0-9]+\.[0-9]{2}$'
+            - type: "null"
+        installments:
+          type: array
+          items:
+            $ref: "#/components/schemas/LoanInstallment"
+        scheduleVersions:
+          type: array
+          items:
+            $ref: "#/components/schemas/LoanScheduleVersion"
     LoanPaymentRequest:
       type: object
       additionalProperties: false

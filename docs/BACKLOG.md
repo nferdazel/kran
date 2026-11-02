@@ -315,7 +315,8 @@ dibangun, pilot data nyata menunggu verifikasi (O-001).
 | T-166 | DONE | Task day-close `lending.dpd_regrade` (ambang D-180) | T-165 | idempoten per business date; audit per chunk; ambang dari parameter |
 | T-167 | DONE | Task PPAP/CKPN + jurnal penyisihan/pembalik | T-166 | Δ subledger PPAP = Δ GL; run kedua tidak menggandakan |
 | T-168 | DONE | Restrukturisasi & hapus buku | T-167 | restruk mengubah jadwal tanpa memutus riwayat; write-off nol-kan saldo dengan jurnal |
-| T-169 | READY | API + OpenAPI + izin + scoping cabang | T-163…T-167 | `./task openapi` hijau; contract test; 403 lintas cabang teruji |
-| T-170 | TODO | UI operator pinjaman | T-169 | axe `moderate` 2 tema × 2 locale; keyboard-only; baseline visual |
+| T-169 | DONE | API + OpenAPI + izin + scoping cabang | T-163…T-167 | `./task openapi` hijau; contract test; 403 lintas cabang teruji |
+| T-170 | DONE | UI operator pinjaman | T-169 | axe `moderate` 2 tema × 2 locale; keyboard-only; baseline visual |
 | T-171 | TODO | Laporan: tunggakan, aging DPD, PPAP, rekonsiliasi | T-167 | angka cocok dengan subledger pada fixture tetap |
 | T-172 | TODO | Simulasi + benchmark EOD dengan pinjaman; laporan M4 | T-166, T-167 | `itdaycloser_sim` mencakup pinjaman; bench 100k simpanan + 50k pinjaman |
+| T-173 | TODO | Aksi tulis pinjaman di UI (pencairan, pembayaran, restrukturisasi, hapus buku) | T-170 | pratinjau sebelum uang bergerak; rekening sumber dipilih dari data; konfirmasi hapus buku dengan alasan; axe 2 tema × 2 locale |

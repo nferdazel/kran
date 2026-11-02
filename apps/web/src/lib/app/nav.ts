@@ -123,6 +123,14 @@ export const appNavLinks: readonly NavLink<NavHref>[] = [
     permissions: ["deposit.account.manage"],
   },
   {
+    // Layar baca pinjaman (T-170). Aksi tulis (pencairan, pembayaran) belum ada di sini; izin baca
+    // dipakai sebagai gerbang menu, dan server tetap menyaring per cabang.
+    href: resolve("/app/loans"),
+    group: "members",
+    label: (locale) => m.common_nav_loans({}, { locale }),
+    permissions: ["lending.loan.read"],
+  },
+  {
     href: resolve("/app/params"),
     group: "admin",
     label: (locale) => m.common_nav_params({}, { locale }),
