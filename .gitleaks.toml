@@ -21,5 +21,12 @@
 useDefault = true
 
 [allowlist]
-description = "Frasa jalur teknis di dokumentasi register, bukan kredensial (temuan palsu 16 Okt 2026)"
-regexes = ['''migrasi/outbox''']
+description = "Frasa teknis yang terbaca `generic-api-key` padahal bukan kredensial (2026-10-16, 2026-11-02)"
+regexes = [
+  # Jalur register di docs/OPEN_ITEMS.md, entropi 3.52 (commit 9470a4c, 16 Okt 2026).
+  '''migrasi/outbox''',
+  # Awalan Idempotency-Key uji di apps/api/tests/itapi_lending.nim:782, entropi 3.58. Hanya ada
+  # di riwayat (sudah diganti `tenor-nol` di working tree); pemindaian penuh `--log-opts=--all`
+  # tetap menemukannya. Keputusan: D-189 di docs/DECISIONS.md.
+  '''it168-[a-z]+-''',
+]

@@ -4987,3 +4987,22 @@ tetap di perencanaan karena keadaannya tidak bergantung pada tanggal yang sedang
 dan tidak ada snapshot/jurnal yang ditulis. Yang berubah hanya **kapan** prasyarat itu dievaluasi.
 Regresi ditutup `itdaycloser_sim` (12 bulan dengan pinjaman) + `itdaycloser_lending` (perencanaan
 tidak gagal, eksekusi menolak).
+
+## D-189 — Allowlist gitleaks sempit untuk awalan Idempotency-Key uji (2 Nov 2026)
+
+**Konteks.** Job `security` menjalankan `gitleaks-action` dengan `fetch-depth: 0`. Untuk event `push`
+action itu memindai rentang commit yang di-push; untuk `workflow_dispatch` tidak ada rentang, jadi
+seluruh riwayat dipindai. Pemindaian penuh menemukan satu temuan: `"it168-bad-tenor-"` di
+`apps/api/tests/itapi_lending.nim:782` (awalan kunci idempoten uji, entropi 3.58, melewati ambang
+`generic-api-key` 3.5). String itu bukan kredensial, dan di working tree sudah diganti `"tenor-nol"`,
+tetapi **riwayat tidak bisa diubah lagi** tanpa menulis ulang seluruh history untuk kedua kalinya
+(repo sudah dibuat ulang 2 Nov 2026 demi scrub data infra).
+
+**Keputusan.** Tambah satu regex ke `[allowlist]` di `.gitleaks.toml`: `'''it168-[a-z]+-'''`, dengan
+komentar alasan + rujukan entri ini. Bentuk `[allowlist]` (tunggal) dipertahankan karena hanya itu
+yang dikenali gitleaks 8.24.3 di CI. Ini **tidak** mengecualikan berkas, direktori, atau aturan lain.
+
+**Konsekuensi.** Gate tidak dilonggarkan untuk bentuk lain: diverifikasi dengan
+`gitleaks detect --no-git --source <dir-uji>` pada token `ghp_…` palsu → tetap **1 temuan**, dan
+`gitleaks detect --config .gitleaks.toml --log-opts=--all` (468 commit) → **no leaks found**. Bila
+gitleaks di CI dinaikkan versinya, migrasikan ke `[[allowlists]]` dan ulangi kedua uji itu.

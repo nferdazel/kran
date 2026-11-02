@@ -61,14 +61,10 @@ Severity: **BLOCKER** (harus sebelum publik/berikutnya), **MAJOR** (kerjakan sek
 | SEC-04 | MINOR | `docs/runbooks/dev-web.md:12` (`<registry-npm-privat>`) | Hostname registry npm **internal milik organisasi lain** (bukan KRAN), terpublikasi tanpa manfaat bagi pembaca luar. Bukan kredensial dan tidak resolve publik; murni pengungkapan inventaris infra pihak ketiga. | **DIPERBAIKI**: diganti `<registry-npm-privat>`; perintah kerja (`pnpm_config_registry=https://registry.npmjs.org/`) tidak berubah. Sisa di `docs/DECISIONS.md:200,235` dan `docs/PROGRESS.md:306` (bertanggal) — dilaporkan saja. |
 | SEC-05 | MINOR | `apps/api/tests/itapi_lending.nim:782` | gitleaks aturan `generic-api-key` menandai `"it168-bad-tenor-"` (awalan idempotency-key uji, entropi 3.58). Bukan rahasia: tidak ada nilai kredensial, hanya string uji. | **DIPERBAIKI di working tree** tanpa melonggarkan gate: string uji diganti `"tenor-nol"` (konteks `makerToken,` yang memicu aturan tetap sama, entropi turun). `gitleaks detect --no-git --source apps/api/tests/itapi_lending.nim` → **no leaks found**.
 
-Yang **belum** tertutup: pemindaian riwayat (`--log-opts=--all`, 467 commit) masih menemukan satu
-temuan lama di commit `3b15a71` dan sebelumnya. Pilihannya dua, keduanya butuh keputusan pemilik:
-
-1. **Allowlist sempit** (disarankan): tambahkan satu regex ke `[allowlist]` `.gitleaks.toml` dengan
-   alasan tertulis + entri `DECISIONS.md` — gate tidak dilonggarkan untuk bentuk lain. Pola usulan
-   hanya untuk prefix kunci idempoten uji: `'''it168-[a-z]+-'''`.
-2. Terima 1 temuan palsu di riwayat dan jangan jalankan pemindaian riwayat penuh di CI (saat ini CI
-   memindai working tree, dan itu hijau). **Sejarah tetap memuat string lama** (commit `3b15a71` dan sebelumnya), jadi pemindaian riwayat penuh masih melaporkan 1 temuan sampai allowlist sempit disetujui (§6.1) atau riwayat ditulis ulang — keduanya butuh keputusan pemilik. |
+Pemindaian riwayat juga tertutup: `[allowlist]` `.gitleaks.toml` diberi satu regex sempit
+(`'''it168-[a-z]+-'''`, alasan + entri **D-189**). Setelah itu `gitleaks detect --config
+.gitleaks.toml --log-opts=--all` (468 commit) → **no leaks found**, sedangkan token `ghp_…` palsu
+tetap terdeteksi (diuji ulang). **Sejarah tetap memuat string lama** (commit `3b15a71` dan sebelumnya), jadi pemindaian riwayat penuh masih melaporkan 1 temuan sampai allowlist sempit disetujui (§6.1) atau riwayat ditulis ulang — keduanya butuh keputusan pemilik. |
 | SEC-06 | MINOR | `.github/workflows/ci.yml:34,37,100,103,163,166,172,181,205,210,235,240`; `release.yml:27`; `visual-baseline.yml:47,50,53,62,71,76,105` | Semua action dipin ke **tag mayor** (`@v4`, `@v2`), bukan SHA — termasuk dua action pihak ketiga (`jiro4989/setup-nim-action@v2`, `gitleaks/gitleaks-action@v2`). Tag bisa dipindahkan pemilik action; rantai pasok CI. | **DILAPORKAN**. Tidak diubah: pekerjaan `.github/workflows/*` di luar izin tugas ini kecuali ada injeksi konkret (tidak ada). |
 | SEC-07 | MINOR | `docs/runbooks/dev-db.md:42`, `ops/env/kran-prod.env.example:7` | Nama akun OS operator (`sachiel`) tersisa di dua tempat. Sendiri-sendiri tidak dapat dieksploitasi (tanpa host/kunci); nilainya bertambah hanya bila dipasangkan dengan IP yang sudah publik di riwayat (SEC-02). | **DILAPORKAN** (sengaja tidak diubah: tidak menambah kemampuan penyerang, dan contoh env tetap terbaca). |
 | SEC-08 | INFO | `.gitignore:7-9`; `.local/` (dev.env, prod.env) | Apakah `.local/` (URL DB dev ber-password, env prod) ter-ignore dan tidak ikut ter-track. | **TERVERIFIKASI**: `.gitignore:7` = `.local/`; `git ls-files .local` kosong; `git check-ignore -v .local/` → `.gitignore:7:.local/`. Tidak ada berkas ter-ignore yang ter-track (`git ls-files -i -c --exclude-standard` kosong). |
@@ -134,7 +130,7 @@ Diperiksa `ops/scripts/deploy-vps.sh` (36 KB):
 
 ## 6. Rekomendasi yang belum dikerjakan (butuh keputusan/persetujuan)
 
-### 6.1 Positif palsu gitleaks (SEC-05) — sudah ditutup di sumbernya
+### 6.1 Positif palsu gitleaks (SEC-05) — ditutup di sumbernya + allowlist sempit (D-189)
 
 Allowlist **tidak** dilonggarkan (AGENTS.md §5: melonggarkan gate butuh entri `DECISIONS.md`).
 Sebagai gantinya string uji yang memicu aturan `generic-api-key` diganti: `"it168-bad-tenor-"` →
