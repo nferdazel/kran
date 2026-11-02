@@ -73,6 +73,18 @@ globals="$DAILY/globals-$stamp.sql"
 echo "==> globals -> $globals"
 podman exec "$PG_CONTAINER" pg_dumpall -U "$PG_SUPERUSER" --globals-only > "$globals"
 
+# Anchor rantai audit KRAN (O-009, D-108): ikut dibackup supaya tersalin bersama dump.
+# Salinan di server ini juga dipakai skrip backup produksi (`/srv/qouver/scripts/backup-postgres.sh`);
+# berkasnya append-only, jadi menyalin utuh tiap hari tidak menghilangkan baris lama.
+anchor="${KRAN_ANCHOR_FILE:-/srv/qouver/apps/kran/logs/audit-anchor.log}"
+if [ -f "$anchor" ]; then
+  mkdir -p "$BACKUP_ROOT/anchor"
+  cp -f "$anchor" "$BACKUP_ROOT/anchor/audit-anchor.log"
+  echo "==> anchor audit disalin ($(wc -l <"$anchor") baris)"
+else
+  echo "==> anchor audit belum ada; dilewati"
+fi
+
 # Retensi (spec §21.1).
 find "$DAILY"   -maxdepth 1 -type f -mtime +7  -delete
 find "$WEEKLY"  -maxdepth 1 -type f -mtime +28 -delete
