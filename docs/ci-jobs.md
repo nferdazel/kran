@@ -44,8 +44,14 @@ Tiga hal di bawah berlaku untuk **semua** job, bukan saran:
 ## Job `db-tests` (T-050, 17 Okt 2026)
 
 `services: postgres:18` + `KRAN_DATABASE_URL` menunjuk basis data `kran_test`; langkahnya
-`./task dbtools migrate`, `./task dbtools seed --dev`, lalu `./task test` (test integrasi ikut
-berjalan karena URL terisi).
+`./task dbtools migrate`, `./task dbtools seed --dev`, lalu `./task test` dengan
+`KRAN_TEST_SCOPE=integration`.
+
+**Kenapa hanya integrasi (2 Nov 2026).** Job ini dulu menjalankan `./task test` penuh, padahal job
+`nim-check` sudah menjalankan unit + property test yang sama. Totalnya 13m18s (3m09s di antaranya
+unit) dan satu run menembus `timeout-minutes: 15` → job dibatalkan, gerbang deploy gagal, padahal
+kodenya hijau. Sisa anggaran sekarang ±4 menit untuk pertumbuhan test; bila itu habis, pecah per
+modul — **jangan** menaikkan timeout (kontrak §21.3).
 
 Dua batasan yang mudah menjatuhkannya:
 - Nama basis data **harus** berakhiran `_test`/`_dev`: `dbtools seed --dev` fail-closed (O-062)

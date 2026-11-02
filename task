@@ -6,6 +6,7 @@
 #   ./task check-fast  like check without full `nim check` (dev iteration loop, D-077)
 #   ./task verify [filter]  check-fast + openapi + build + test selected modules (D-077)
 #   ./task test    unit + property + integration (Postgres) + contract
+#                  KRAN_TEST_SCOPE=unit|integration membatasi cakupan (dipakai job CI)
 #   ./task e2e     web: token contrast + svelte-check + Playwright (axe 2 themes x 2 locales, keyboard,
 #                   login/maker-checker/realtime flows if KRAN_DATABASE_URL is available)
 #   ./task lint-web  eslint (typescript-eslint + svelte/*, non-a11y) over apps/web + packages/ui
@@ -310,6 +311,14 @@ select_tests() {
 
 cmd_test() {
   filter="${1:-}"
+  # `KRAN_TEST_SCOPE`: all (default) | unit | integration. Job CI `nim-check` menjalankan unit +
+  # property, job `db-tests` hanya integrasi — tanpa pemisahan ini keduanya mengulang unit test
+  # yang sama dan job DB menembus batas 15 menit (2 Nov 2026: 13m18s, 3m09s di antaranya unit).
+  scope="${KRAN_TEST_SCOPE:-all}"
+  case "$scope" in
+    all | unit | integration) ;;
+    *) die "KRAN_TEST_SCOPE harus all|unit|integration (dapat: $scope)" ;;
+  esac
   matched=0
   strict=0
   if [ -n "$filter" ]; then
@@ -319,6 +328,7 @@ cmd_test() {
       fi
     done
   fi
+  if [ "$scope" != "integration" ]; then
   log "unit + property test${filter:+ (filter: $filter)}"
   list=$(test_files)
   list=$(select_tests "$list" "$filter" "$strict")
@@ -332,7 +342,9 @@ cmd_test() {
     matched=1
     for f in $list; do info "$f"; run_nim_test "$f"; done
   fi
+  fi
 
+  if [ "$scope" != "unit" ]; then
   log "integration test (Postgres)"
   its=$(it_files)
   its=$(select_tests "$its" "$filter" "$strict")
@@ -351,6 +363,7 @@ cmd_test() {
   else
     matched=1
     for f in $its; do info "$f"; run_nim_test "$f"; done
+  fi
   fi
 
   if [ -n "$filter" ] && [ "$matched" -eq 0 ]; then

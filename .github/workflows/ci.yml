@@ -128,8 +128,11 @@ jobs:
           ./task dbtools migrate
           ./task dbtools seed --dev
 
-      - name: ./task test
-        # Test integrasi kini benar-benar berjalan di CI (KRAN_DATABASE_URL terisi).
+      - name: ./task test (integrasi)
+        # Hanya integrasi: unit + property sudah dijalankan job `nim-check`. Mengulanginya di sini
+        # membuat job ini menembus `timeout-minutes: 15` (2 Nov 2026: 13m18s total, 3m09s unit).
+        env:
+          KRAN_TEST_SCOPE: integration
         run: ./task test
 
   web-e2e:
