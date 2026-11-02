@@ -9,7 +9,7 @@
 ## hari libur, tanggal buku yang belum ada, run yang sudah ada, dan jam yang belum jatuh tempo
 ## bukan kegagalan jadwal.
 
-import std/[json, options, strutils, times]
+import std/[json, options, times]
 
 import db_connector/db_postgres
 

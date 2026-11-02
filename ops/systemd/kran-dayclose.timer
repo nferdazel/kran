@@ -2,8 +2,10 @@
 #
 # Interval 5 menit: jadwalnya sendiri (jam berapa) ditentukan parameter
 # `daycloser.auto.run_at`, jadi timer hanya perlu cukup rapat agar penutupan tidak terlambat lama.
-# Penjaga "sudah ada run untuk tanggal buku ini" membuat pengulangan tiap 5 menit aman — tidak ada
-# penutupan ganda walaupun jam terlewati berkali-kali.
+# Pengulangan tiap 5 menit aman karena dua penjagaan: (a) run untuk tanggal buku itu tidak diulang,
+# dan (b) penjadwal berhenti bila tanggal buku sudah **melewati tanggal lokal** — penutupan yang
+# berhasil memajukan tanggal buku ke hari kerja berikutnya, sehingga tanpa (b) setiap tick akan
+# menutup satu tanggal yang belum berjalan (bug, diperbaiki 2 Nov 2026).
 #
 # Timer ini **tidak** mengaktifkan apa pun bila `daycloser.auto.enabled = false` (default): penjadwal
 # tetap jalan, tetapi tidak melakukan apa pun dan keluar dengan kode 0.

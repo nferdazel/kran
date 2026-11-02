@@ -193,6 +193,19 @@ SELECT t.task_id, t.state, t.error->>'code' AS code, t.metrics
 | `DAY-353` | status dormant gagal disimpan | galat basis data; task dicoba ulang. Tidak ada uang yang berpindah, dan task ini **tidak kritis** — penutupan tetap bisa selesai dengan mencatat kegagalan |
 | `DAY-354` | versi produk rekening tidak mengikat `product.savings.rollover_tenor_days` (atau nilainya bukan bilangan bulat > 0) | lengkapi atribut produk pada versi yang dipakai (D-165), lalu `daycloser-resume`. Task **tidak** menebak tenor dari `maturity_date − opened_on` |
 
+### Grant role runtime: `permission denied` sebelum run dimulai
+
+Penolakan berbentuk `rencana chunk <nama> gagal: DAY-38x ... permission denied for table ...`
+**bukan** masalah data. Role runtime (`kran_runtime`) tidak punya hak pada tabel yang dibaca task —
+terjadi pada tabel yang dibuat **setelah** migrasi grant schema-nya, karena `GRANT ... ON ALL TABLES`
+hanya mencakup tabel yang ada saat migrasi itu berjalan. Preseden: `deposit/0070`, `teller/0007`,
+`lending/0102`.
+
+Perbaikan: tambahkan migrasi grant di modul terkait, rilis, lalu deploy (gerbang migrasi yang
+menerapkannya) — sesudah itu penutupan dijalankan lagi. **Jangan** menambal dengan `psql` di
+produksi: grant yang hanya hidup di satu server akan hilang saat pemulihan ke lingkungan lain, dan
+tidak ada jejaknya di repo.
+
 Karena gate **pra**-tutup berjalan sebelum freeze, kegagalannya tidak membekukan tanggal: institusi
 masih bisa melayani, tetapi tanggal itu tidak bisa ditutup dua kali (run `BLOCKED` harus di-resume
 atau dibatalkan). Gate **pasca**-tutup berjalan saat tanggal sudah `CLOSING`, jadi semua tulisan
