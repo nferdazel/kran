@@ -1,0 +1,95 @@
+name: Bug report
+description: Report behaviour that differs from what the code, tests, or documentation say.
+title: "[bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Security problems do not belong here.** Report them privately as described in
+        [SECURITY.md](https://github.com/nferdazel/kran/blob/main/SECURITY.md) — never in a public issue.
+
+        Before filing, check whether the behaviour is already listed in
+        [docs/ACCEPTED-LIMITS.md](https://github.com/nferdazel/kran/blob/main/docs/ACCEPTED-LIMITS.md)
+        as a known, accepted limit.
+
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One sentence describing what is wrong.
+      placeholder: "Saving a cash session succeeds without an open drawer"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps, including the role and branch used. Use synthetic data only.
+      placeholder: |
+        1. Run ./task devdb up && ./task dbtools migrate && ./task dbtools seed --dev
+        2. Log in as dev.cashmaker
+        3. Open /app/vault and submit a top-up of ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What should happen, and why (link the spec, test, or document if there is one).
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What happens instead. Include the HTTP status, error code, or visible message.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `./task version` at the commit you tested.
+      placeholder: "0.1.9"
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Enough to reproduce the setup.
+      placeholder: |
+        OS: macOS 15.6 / Ubuntu 24.04
+        Nim: 2.4.0
+        PostgreSQL: 18 (dev tunnel via ./task devdb up)
+        Node/pnpm: 24.x / 10.x
+        Binary role: api | worker | ctl | migrate
+        UI: theme light|dark, locale id|en
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and evidence
+      description: |
+        Relevant log lines, stack traces, or a screenshot. Paste text rather than screenshots for logs.
+        **Never include credentials, session cookies, real personal data, or database URLs.**
+        Dev seed passwords are public and do not need to be redacted.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: I reproduced this on a dev/test database with synthetic data, not against production.
+          required: true
+        - label: This is an accessibility barrier (see ACCESSIBILITY.md).
+          required: false

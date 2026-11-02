@@ -1,0 +1,92 @@
+name: Feature request
+description: Propose a product or engineering change, or point at a gap you found.
+title: "[feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Phases 0–4 (foundation, ledger & party, deposit + teller, day-close, lending) are delivered.
+        Later phases are listed in the spec, §23. Check
+        [docs/BACKLOG.md](https://github.com/nferdazel/kran/blob/main/docs/BACKLOG.md) and
+        [docs/OPEN_ITEMS.md](https://github.com/nferdazel/kran/blob/main/docs/OPEN_ITEMS.md)
+        before proposing something that is already planned or knowingly blocked.
+
+        Business values (rates, limits, fees, thresholds) must be database parameters, not code
+        constants. A proposal that hardcodes a number will be asked to register a parameter instead.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is hard, missing, or wrong today? Describe the operator's or the system's situation, not the solution.
+      placeholder: "A teller cannot reverse a same-day cash deposit without closing the session..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: The smallest change that solves the problem. Mention the affected API, screen, or parameter if you know it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other options, and why they are worse or were rejected.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: Affected area
+      description: Pick every area the change touches.
+      multiple: true
+      options:
+        - "platform (auth, RBAC, parameters, audit, outbox)"
+        - "ledger"
+        - "party"
+        - "deposit"
+        - "teller"
+        - "product"
+        - "lending"
+        - "daycloser"
+        - "apps/api (HTTP, CLI)"
+        - "apps/web (back-office)"
+        - "packages/ (contracts, api-client, ui, i18n)"
+        - "packs/ (segment & regulatory packs)"
+        - "tools/ (archcheck, paramgen, i18ncheck, dbtools)"
+        - "docs/, CI, deploy"
+        - "not sure"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase (spec §23)
+      description: Where this belongs in the roadmap. "Delivered" means it changes behaviour that already exists.
+      options:
+        - "Delivered behaviour (Fase 0–4)"
+        - "Fase 5 — Koperasi pack"
+        - "Fase 6 — Compliance & reporting"
+        - "Fase 7 — BPR pack"
+        - "Fase 8 — Syariah pack"
+        - "Fase 9 — Integrasi & hardening"
+        - "not sure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: risk
+    attributes:
+      label: Risks and compliance
+      description: |
+        Money, interest, accrual, PPAP, tax, reconciliation, encryption, authorization, or audit-chain
+        changes are reviewed by a human and need tests (AGENTS §8). Regulatory values that are not
+        verified must stay tagged `NEEDS-COMPLIANCE-REVIEW`.
+    validations:
+      required: false

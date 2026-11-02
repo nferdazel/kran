@@ -779,7 +779,7 @@ suite "lending: restrukturisasi & hapus buku (T-168)":
 
     let loanId = newActiveLoan("300000.00")
     check postJson(fill(RestructurePath, loanId), %*{"tenorMonths": 0, "reason": "x"},
-      makerToken, "it168-bad-tenor-" & loanId).code == 400
+      makerToken, "tenor-nol" & loanId).code == 400
     check postJson(fill(RestructurePath, loanId), %*{"tenorMonths": 3},
       makerToken, "it168-no-reason-" & loanId).code == 400
     check postJson(fill(RestructurePath, loanId), %*{"tenorMonths": 3, "reason": "x"},

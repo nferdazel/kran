@@ -12,9 +12,10 @@ Berlaku untuk `apps/web`, `packages/{config,i18n,ui}` (spec §7, §14–§17). S
 registry=https://<registry-npm-privat>/repository/npm-group-1/
 ```
 
-Registry itu **tidak resolve** dari jaringan biasa (`NXDOMAIN`), dan `pnpm` mengabaikan
-`npm_config_registry` (nama env yang dibaca pnpm adalah `pnpm_config_registry`). Untuk memasang /
-memutakhirkan dependency, pakai:
+Registry itu milik jaringan internal pemilik (bukan KRAN) dan **tidak resolve** dari jaringan
+biasa (`NXDOMAIN`); alamat aslinya hanya ada di `~/.npmrc` mesin dev, tidak ditulis di repo publik.
+`pnpm` juga mengabaikan `npm_config_registry` (nama env yang dibaca pnpm adalah
+`pnpm_config_registry`). Untuk memasang / memutakhirkan dependency, pakai:
 
 ```sh
 pnpm_config_registry=https://registry.npmjs.org/ pnpm install --frozen-lockfile

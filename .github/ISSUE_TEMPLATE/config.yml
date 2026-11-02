@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability (private)
+    url: https://github.com/nferdazel/kran/security/advisories/new
+    about: Never open a public issue for a security problem. See SECURITY.md for scope and what to include.
+  - name: Read the contributing guide
+    url: https://github.com/nferdazel/kran/blob/main/CONTRIBUTING.md
+    about: Setup, the ./task commands, branch and commit rules, and what review checks.

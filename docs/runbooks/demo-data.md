@@ -8,6 +8,9 @@ diterapkan manual dan boleh dihapus kapan saja.
 ## Terapkan
 
 ```bash
+# Repo ini publik: host dan user SSH nyata TIDAK ditulis di sini. Nilainya ada di
+# `~/.ssh/config` mesin operator (alias apa pun yang dipakai di sana) atau catatan pemilik
+# di `.local/` (gitignored). Ganti `<vps-host>` / `<deploy-user>` dengan nilai itu.
 ssh <deploy-user>@<vps-host>
 podman exec -i qouver-postgres psql -U qouver -d kran \
   < /srv/qouver/apps/kran/monorepo/packs/demo/manual/0001_demo_parties.sql

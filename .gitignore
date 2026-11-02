@@ -9,6 +9,15 @@ node_modules/
 !*.env.example
 !**/ops/env/*.env.example
 
+# kunci & sertifikat (KEK field-encryption, kunci SSH hasil salin manual, sertifikat klien).
+# Tidak ada berkas semacam ini yang sah di-commit; yang boleh masuk repo hanya *.example.
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+
 # data cluster lokal (bila pernah dipakai)
 pgdata/
 

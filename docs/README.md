@@ -18,6 +18,7 @@ salah.
 | [`ci-jobs.md`](ci-jobs.md) | Job CI yang benar-benar ada |
 | [`RELEASE.md`](RELEASE.md) | Alur versi & rilis: `VERSION` satu sumber, `./task release`, tag sebagai penanda (D-178) |
 | [`compliance/`](compliance) | Register kepatuhan dan status verifikasi |
+| [`security/public-repo-audit.md`](security/public-repo-audit.md) | Audit repo sebagai artefak publik (2 Nov 2026): rahasia, pengungkapan infra, CI/CD, higiene |
 | `modules/*/MODULE.md` | Batas, tabel, izin, dan invarian tiap modul |
 | [`../DESIGN.md`](../DESIGN.md) | Arah visual dan aturan UI yang mengikat |
 | [`../AGENTS.md`](../AGENTS.md) | Aturan kerja manusia & agen, termasuk protokol per task |
