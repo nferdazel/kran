@@ -8,6 +8,11 @@
    * katalog, dan 403 (terkunci/tidak aktif) hanya mungkin datang **setelah** kata sandi benar
    * (O-034), jadi pesannya boleh lebih spesifik untuk pemilik akun.
    *
+   * 403 `mfa_required` (O-071) juga hanya datang setelah kata sandi benar: server sudah menyetel
+   * cookie sesi **setengah**, dan langkah kedua halaman ini mengirim kode ke
+   * `POST /api/v1/auth/mfa/challenge` memakai cookie itu. Login ulang tidak diperlukan (dan tidak
+   * akan membantu) sampai kodenya diterima.
+   *
    * Tata letak mengikuti DESIGN §11: satu bidang kerja sempit (`.kran-page`), tajuk layar bersama,
    * dan form bersama. Tidak ada CSS lokal di berkas ini; aturan visual tinggal di `packages/ui`.
    */
@@ -30,6 +35,8 @@
   let password = $state("");
   let errorMessage = $state("");
   let submitting = $state(false);
+  let mfaRequired = $state(false);
+  let code = $state("");
 
   function loginErrorMessage(error: unknown): string {
     if (api.isProblem(error)) {
@@ -59,19 +66,22 @@
       });
 
       if (!response.ok) {
+        // Kata sandi benar tetapi faktor kedua belum: cookie sesi setengah sudah terpasang,
+        // jadi berpindah ke langkah kode alih-alih menampilkan kegagalan masuk.
+        if (
+          api.isProblem(error) &&
+          error.status === 403 &&
+          error.params?.reason === "mfa_required"
+        ) {
+          mfaRequired = true;
+          code = "";
+          return;
+        }
         errorMessage = loginErrorMessage(error);
         return;
       }
 
-      // Cookie sesi sudah terpasang. Landing harus mengikuti izin: `teller` tidak punya
-      // `ledger.journal.read`, jadi mengarahkannya ke `/app/ledger` hanya menampilkan halaman
-      // "tidak berizin". Ambil sesi sekali, lalu pilih tautan nav pertama yang boleh dibuka;
-      // admin tetap mendarat di buku besar (tautan pertama).
-      const { data: session } = await api.GET("/api/v1/auth/session");
-      // Tujuan pendaratan dipilih fungsi yang sama dengan `/app` dan palette, supaya tiga jalur
-      // masuk tidak pernah menyimpang.
-      const target = landingHref(visibleNavLinks(appNavLinks, sessionPermissions(session)));
-      await goto(target);
+      await continueToApp();
     } catch {
       // Jaringan putus / proxy mati bukan "kredensial salah": tanpa penanganan ini `submitting`
       // tertahan `true`, tombol mati permanen dan pengguna tidak diberi tahu apa pun
@@ -80,6 +90,47 @@
     } finally {
       submitting = false;
     }
+  }
+
+  async function submitCode(event: SubmitEvent) {
+    event.preventDefault();
+    if (submitting || code.trim().length === 0) return;
+    submitting = true;
+    errorMessage = "";
+
+    try {
+      const { error, response } = await api.POST("/api/v1/auth/mfa/challenge", {
+        body: { code: code.trim() },
+      });
+
+      if (!response.ok) {
+        if (api.isProblem(error) && error.params?.reason === "mfa_code_invalid") {
+          errorMessage = m.login_mfa_invalid();
+        } else {
+          errorMessage = api.isProblem(error) ? problemMessage(error) : m.error_generic();
+        }
+        return;
+      }
+
+      await continueToApp();
+    } catch {
+      errorMessage = m.error_generic();
+    } finally {
+      submitting = false;
+    }
+  }
+
+  /** Setelah sesi penuh (langsung atau sesudah kode): pilih tujuan sesuai izin lalu masuk. */
+  async function continueToApp() {
+    // Cookie sesi sudah terpasang. Landing harus mengikuti izin: `teller` tidak punya
+    // `ledger.journal.read`, jadi mengarahkannya ke `/app/ledger` hanya menampilkan halaman
+    // "tidak berizin". Ambil sesi sekali, lalu pilih tautan nav pertama yang boleh dibuka;
+    // admin tetap mendarat di buku besar (tautan pertama).
+    const { data: session } = await api.GET("/api/v1/auth/session");
+    // Tujuan pendaratan dipilih fungsi yang sama dengan `/app` dan palette, supaya tiga jalur
+    // masuk tidak pernah menyimpang.
+    const target = landingHref(visibleNavLinks(appNavLinks, sessionPermissions(session)));
+    await goto(target);
   }
 </script>
 
@@ -97,34 +148,53 @@
     </div>
   </div>
 
-  <form class="kran-form" onsubmit={submit} novalidate>
-    <div class="kran-field">
-      <label class="kran-label" for="login-username">{m.login_username_label()}</label>
-      <input
-        class="kran-input"
-        id="login-username"
-        name="username"
-        type="text"
-        autocomplete="username"
-        autocapitalize="none"
-        spellcheck="false"
-        bind:value={username}
-        required
-      />
-    </div>
+  <form class="kran-form" onsubmit={mfaRequired ? submitCode : submit} novalidate>
+    {#if mfaRequired}
+      <div class="kran-field">
+        <p class="kran-muted">{m.login_mfa_prompt()}</p>
+        <label class="kran-label" for="login-mfa-code">{m.login_mfa_code_label()}</label>
+        <input
+          class="kran-input"
+          id="login-mfa-code"
+          name="code"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          autocapitalize="none"
+          spellcheck="false"
+          bind:value={code}
+          required
+        />
+      </div>
+    {:else}
+      <div class="kran-field">
+        <label class="kran-label" for="login-username">{m.login_username_label()}</label>
+        <input
+          class="kran-input"
+          id="login-username"
+          name="username"
+          type="text"
+          autocomplete="username"
+          autocapitalize="none"
+          spellcheck="false"
+          bind:value={username}
+          required
+        />
+      </div>
 
-    <div class="kran-field">
-      <label class="kran-label" for="login-password">{m.login_password_label()}</label>
-      <input
-        class="kran-input"
-        id="login-password"
-        name="password"
-        type="password"
-        autocomplete="current-password"
-        bind:value={password}
-        required
-      />
-    </div>
+      <div class="kran-field">
+        <label class="kran-label" for="login-password">{m.login_password_label()}</label>
+        <input
+          class="kran-input"
+          id="login-password"
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          bind:value={password}
+          required
+        />
+      </div>
+    {/if}
 
     {#if errorMessage}
       <Alert tone="negative" title={errorMessage} />
@@ -132,7 +202,11 @@
 
     <div class="kran-actions">
       <Button variant="primary" type="submit" disabled={submitting}>
-        {submitting ? m.login_submitting() : m.login_submit()}
+        {submitting
+          ? m.login_submitting()
+          : mfaRequired
+            ? m.login_mfa_submit()
+            : m.login_submit()}
       </Button>
     </div>
   </form>

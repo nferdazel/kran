@@ -39,6 +39,14 @@ proc mfaOf*(db: DbConn, userId: string): Option[MfaRow] =
     return none(MfaRow)
   some(mfaFromRow(found.get()))
 
+proc hasActiveMfa*(db: DbConn, userId: string): bool =
+  ## `true` bila akun punya faktor `ACTIVE` — satu-satunya keadaan yang membuat kewajiban faktor
+  ## kedua saat login berlaku (O-071). Faktor `PENDING` belum melindungi apa pun: rahasianya belum
+  ## pernah dibuktikan pemiliknya.
+  db.getValue(sql("""
+    SELECT count(*)::text FROM platform.user_mfa
+     WHERE user_id = ?::uuid AND status = 'ACTIVE'"""), userId) != "0"
+
 proc upsertPending*(db: DbConn, userId, secretEnc: string, digits, periodSeconds: int,
                     nowIso: string): bool =
   ## Menulis pendaftaran baru berstatus PENDING; mengganti PENDING lama (rahasia lama belum pernah

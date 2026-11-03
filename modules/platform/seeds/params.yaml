@@ -107,9 +107,11 @@
   default_pack: { base: 480 }
 
 # --- MFA TOTP (T-046, spec §13) -------------------------------------------------------------
-# Saklar fitur: **default mati** (D-046 butir 9). Selama `false`, rute MFA menolak dengan
-# `mfa_disabled`; alur login tidak berubah sama sekali. Mengaktifkan MFA adalah keputusan
-# institusi terpisah, bukan efek samping nilai parameter ini.
+# Saklar **layanan** MFA: **default mati** (D-046 butir 9). Selama `false`, rute MFA menolak
+# dengan `mfa_disabled` dan alur login tidak berubah sama sekali. Ini bukan kewajiban login —
+# yang mewajibkan faktor kedua saat masuk adalah `platform.security.mfa.require_login`
+# (O-071), sehingga institusi bisa membuka pendaftaran lebih dulu tanpa langsung mengunci
+# pengguna yang belum mendaftar.
 - key: platform.security.mfa.enabled
   type: bool
   scopes: [GLOBAL, INSTITUTION]
@@ -118,6 +120,24 @@
     class: teknis
     compliance: NEEDS-COMPLIANCE-REVIEW
     note: default mati = penerimaan risiko pemilik untuk pilot (spec §18.2), bukan klaim patuh
+  default_pack: { base: false }
+
+# Kewajiban faktor kedua saat login (O-071, spec §13). Selama `false`, faktor `ACTIVE` tetap
+# hanya fitur self-service: login tidak meminta kode. Selama `true` **dan** `mfa.enabled` hidup,
+# login akun yang punya faktor `ACTIVE` hanya memberi sesi **setengah** sampai kode diverifikasi
+# (`POST /api/v1/auth/mfa/challenge`). Kewajiban bergantung pada `mfa.enabled` karena tanpa rute
+# verifikasi yang hidup sesi setengah tidak akan pernah bisa dinaikkan.
+# Akun **tanpa** faktor `ACTIVE` tetap boleh login (dengan catatan di audit): menolaknya berarti
+# pengguna tidak bisa mendaftar — rute pendaftaran butuh sesi, dan belum ada jalur
+# pemulihan/administratif untuk faktor (lihat O-071).
+- key: platform.security.mfa.require_login
+  type: bool
+  scopes: [GLOBAL, INSTITUTION]
+  sensitivity: NORMAL
+  provenance:
+    class: kebijakan
+    compliance: NEEDS-COMPLIANCE-REVIEW
+    note: default mati; mengaktifkan = kebijakan keamanan institusi mewajibkan faktor kedua saat login
   default_pack: { base: false }
 
 # Nama penerbit yang tampil di aplikasi authenticator (`otpauth://` label & issuer).

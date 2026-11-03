@@ -11,7 +11,7 @@ import mummy
 import db_connector/db_postgres
 
 import platform/domain/[authz, scope]
-import platform/infrastructure/[auth_service, calendar_repo]
+import platform/infrastructure/[auth_service, calendar_repo, mfa_service]
 import kernel/[auditcontext, clock, ids, result]
 
 import ./access
@@ -41,6 +41,12 @@ proc utcDateOf(clock: Clock): string =
 
 proc handleLogin*(app: AppContext, req: Request) {.gcsafe.} =
   ## `POST /api/v1/auth/login` — kredensial → cookie sesi `HttpOnly` (spec §13).
+  ##
+  ## Bila `platform.security.mfa.require_login` aktif dan akun punya faktor kedua `ACTIVE`
+  ## (O-071), cookie yang sama terbit tetapi sesinya **setengah**: jawabannya 403 `mfa_required`
+  ## (alasan yang sama dengan `locked`/`inactive`, hanya bisa dilihat pemegang kata sandi benar)
+  ## dan satu-satunya rute yang menerima sesi itu adalah `POST /api/v1/auth/mfa/challenge`.
+  ## Akun tanpa faktor tetap masuk penuh; keadaannya dicatat audit `mfa_enrolment_missing`.
   if app.pool.isNil:
     req.respondProblem(pkNotImplemented, "Not Implemented",
       "layanan basis data tidak dikonfigurasi (KRAN_DATABASE_URL kosong saat start)")
@@ -73,15 +79,21 @@ proc handleLogin*(app: AppContext, req: Request) {.gcsafe.} =
 
   let now = app.clock.now()
   var settings: SecuritySettings
+  var mfaEnforced = false
   var authResult: AuthResult
   try:
     withDbConn(app.pool, proc(db: DbConn) {.gcsafe.} =
       dbCalls:
         let instScope = institutionScope()
-        settings = settingsOf(db, instScope, utcDateOf(app.clock))
+        let asOf = utcDateOf(app.clock)
+        settings = settingsOf(db, instScope, asOf)
+        # Saklar O-071 hanya perlu nilai boolean; kebijakan bentuk kode/dekripsi dibaca rute
+        # challenge. Jadi login tidak ikut gagal hanya karena `mfa.digits` belum tersemai.
+        mfaEnforced = mfaRequireLogin(db, instScope, asOf)
         let ctx = newAuditContext(Id(""), ip = clientIp(req), device = deviceOf(req),
           reason = "login", correlationId = traceIdFrom(req), startedAt = now)
-        authResult = authenticate(db, ctx, app.clock, instScope, settings, username, password))
+        authResult = authenticate(db, ctx, app.clock, instScope, settings, username, password,
+          mfaEnforced = mfaEnforced))
   except DbError:
     req.respondProblem(pkInternal, "Internal Server Error", "login gagal diproses")
     return
@@ -106,6 +118,16 @@ proc handleLogin*(app: AppContext, req: Request) {.gcsafe.} =
       "userId": authResult.userId,
       "sessionId": authResult.sessionId,
       "expiresAt": utcIso(sessionDeadlines(policy, now)[0])})
+  of aoMfaRequired:
+    # Cookie tetap diset, tetapi sesinya setengah (O-071): 403 + `mfa_required` adalah bentuk
+    # penolakan yang sudah dipakai `locked`/`inactive`, dan klien menyelesaikannya lewat
+    # `POST /api/v1/auth/mfa/challenge` dengan cookie itu.
+    let policy = sessionPolicy(settings.sessionIdleMinutes, settings.sessionAbsoluteMinutes)
+    req.respondProblem(newProblem(pkForbidden, "Forbidden",
+      "faktor kedua (MFA) harus diverifikasi", traceId = traceIdFrom(req),
+      params = @[("reason", "mfa_required")]),
+      @[("Set-Cookie", SessionCookieName & "=" & authResult.token & "; " &
+        sessionCookieAttributes(policy))])
   of aoInvalidCredentials:
     req.respondProblem(newProblem(pkUnauthorized, "Unauthorized", "kredensial tidak cocok",
       traceId = traceIdFrom(req), params = @[("reason", "invalid_credentials")]))
@@ -164,7 +186,11 @@ proc handleSession*(app: AppContext, req: Request) {.gcsafe.} =
 
 proc handleLogout*(app: AppContext, req: Request) {.gcsafe.} =
   ## `POST /api/v1/auth/logout` — cabut sesi + hapus cookie.
-  let principal = requirePrincipal(app, req)
+  ##
+  ## Sesi setengah (O-071) juga boleh dicabut — mencabut sesi tidak membocorkan apa pun, dan
+  ## tanpa ini pengguna yang berhenti di tengah tantangan MFA tertahan dengan cookie yang tidak
+  ## bisa ia buang.
+  let principal = requirePrincipal(app, req, allowMfaPending = true)
   if principal.isNone:
     return
   let p = principal.get()

@@ -198,9 +198,15 @@ proc eventScopeFor*(db: DbConn, clock: Clock, identity: string): EventScope =
           grant.branchId notin result.branchIds:
         result.branchIds.add grant.branchId
 
-proc requirePrincipal*(ctx: AppContext, req: Request): Option[Principal] =
-  ## Penjaga rute: membalas 501 (DB tidak dikonfigurasi) atau 401 (tanpa sesi sah) sendiri dan
-  ## mengembalikan `none`; handler cukup berhenti.
+proc requirePrincipal*(ctx: AppContext, req: Request,
+                       allowMfaPending = false): Option[Principal] =
+  ## Penjaga rute: membalas 501 (DB tidak dikonfigurasi), 401 (tanpa sesi sah), atau 403
+  ## (sesi setengah yang belum melewati faktor kedua) sendiri dan mengembalikan `none`; handler
+  ## cukup berhenti.
+  ##
+  ## `allowMfaPending = true` hanya untuk rute yang memang tugasnya menaikkan sesi setengah
+  ## menjadi sesi penuh (`POST /api/v1/auth/mfa/challenge`). Default `false` supaya setiap rute
+  ## baru ikut tertutup tanpa harus ingat.
   if ctx.pool.isNil:
     req.respondProblem(pkNotImplemented, "Not Implemented",
       "layanan basis data tidak dikonfigurasi (KRAN_DATABASE_URL kosong saat start)")
@@ -208,6 +214,15 @@ proc requirePrincipal*(ctx: AppContext, req: Request): Option[Principal] =
   let principal = principalOf(ctx, req)
   if principal.isNone:
     req.respondProblem(pkUnauthorized, "Unauthorized", "sesi tidak ada atau sudah berakhir")
+    return none(Principal)
+  if not allowMfaPending and principal.get().session.mfaPending:
+    # Sesi setengah (O-071) bukan sesi sah untuk rute mana pun kecuali verifikasi kode: kata
+    # sandinya benar, faktor keduanya belum. 403 (bukan 401) mengikuti pola `password_change_required`
+    # — sesinya ada, yang kurang satu langkah.
+    req.respondProblem(newProblem(pkForbidden, "Forbidden",
+      "faktor kedua (MFA) belum diverifikasi",
+      traceId = traceIdFrom(req), params = @[("reason", "mfa_required")]))
+    return none(Principal)
   principal
 
 proc requirePermission*(ctx: AppContext, req: Request, principal: Principal,
@@ -240,14 +255,15 @@ proc requirePermission*(ctx: AppContext, req: Request, principal: Principal,
   allowed
 
 proc sessionCanWork*(ctx: AppContext, identity: string): bool {.gcsafe.} =
-  ## Sesi yang boleh **bekerja**: ada, sah, dan tidak sedang wajib ganti kata sandi (T-027).
-  ## Dipakai jalur realtime supaya sesi ber-kata-sandi-sementara tidak bisa menyedot data lewat
-  ## langganan, sejalan dengan penjagaan `requirePermission`.
+  ## Sesi yang boleh **bekerja**: ada, sah, tidak sedang wajib ganti kata sandi (T-027), dan
+  ## sudah melewati faktor kedua bila kebijakannya menuntut (O-071).
+  ## Dipakai jalur realtime supaya sesi ber-kata-sandi-sementara maupun sesi setengah tidak bisa
+  ## menyedot data lewat langganan, sejalan dengan penjagaan `requirePrincipal`.
   if ctx.pool.isNil:
     return false
   withDbConn(ctx.pool, proc(db: DbConn): bool {.gcsafe.} =
     let p = resolvePrincipal(db, ctx.clock, identity)
-    p.isSome and not p.get().user.mustChangePassword)
+    p.isSome and not p.get().user.mustChangePassword and not p.get().session.mfaPending)
 
 proc realtimePolicy*(ctx: AppContext): TopicPolicy =
   ## Kebijakan untuk `events.newEventService`: koneksi hanya dibuka bila cookie sesinya sah dan

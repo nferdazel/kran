@@ -34,6 +34,7 @@ type
     expiresAt*: string
     absoluteExpiresAt*: string
     revoked*: bool
+    mfaPending*: bool ## true = kata sandi benar, faktor kedua belum diverifikasi (O-071)
 
   RoleGrant* = object
     ## Satu pemberian role ke pengguna: kode role + cabangnya ("" = tingkat institusi).
@@ -384,26 +385,29 @@ proc revokeRole*(db: DbConn, userId, roleCode, branchId: string): bool =
 # --- sesi --------------------------------------------------------------------------
 
 proc createSession*(db: DbConn, sessionId, userId, tokenHash, expiresAtIso,
-                    absoluteExpiresAtIso, ip, device, correlationId: string): bool =
+                    absoluteExpiresAtIso, ip, device, correlationId: string,
+                    mfaPending = false): bool =
+  ## `mfaPending = true` hanya untuk sesi setengah dari login yang masih menunggu faktor kedua
+  ## (O-071); default `false` supaya sesi yang dibuat jalur/prosedur lain tetap sesi penuh.
   db.execAffectedRows(sql"""
     INSERT INTO platform.session
       (session_id, user_id, token_hash, expires_at, absolute_expires_at, ip, device,
-       correlation_id)
+       correlation_id, mfa_pending)
     VALUES (?::uuid, ?::uuid, ?, ?::timestamptz, ?::timestamptz, NULLIF(?, ''), NULLIF(?, ''),
-            NULLIF(?, ''))
+            NULLIF(?, ''), ?)
     ON CONFLICT (session_id) DO NOTHING""",
     sessionId, userId, tokenHash, expiresAtIso, absoluteExpiresAtIso, ip, device,
-    correlationId) == 1
+    correlationId, mfaPending) == 1
 
 proc sessionFromRow(row: Row): SessionRow =
   SessionRow(sessionId: row[0], userId: row[1], expiresAt: row[2],
-    absoluteExpiresAt: row[3], revoked: row[4] == "t")
+    absoluteExpiresAt: row[3], revoked: row[4] == "t", mfaPending: row[5] == "t")
 
 const sessionColumns = """
     session_id::text, user_id::text,
     to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
     to_char(absolute_expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-    (revoked_at IS NOT NULL)"""
+    (revoked_at IS NOT NULL), mfa_pending"""
 
 proc activeSessionByTokenHash*(db: DbConn, tokenHash, nowIso: string): Option[SessionRow] =
   ## Sesi aktif pada `nowIso`: belum dicabut, belum lewat batas idle, belum lewat batas absolut.
@@ -433,6 +437,14 @@ proc touchSession*(db: DbConn, sessionId, nowIso, expiresAtIso: string): bool =
            expires_at = LEAST(?::timestamptz, absolute_expires_at)
      WHERE session_id = ?::uuid AND revoked_at IS NULL""",
     nowIso, expiresAtIso, sessionId) == 1
+
+proc clearSessionMfaPending*(db: DbConn, sessionId: string): bool =
+  ## Menaikkan sesi setengah menjadi sesi penuh setelah kode faktor kedua terbukti benar
+  ## (O-071). Sesi yang sudah penuh (atau sudah dicabut) tidak berubah: `false`.
+  db.execAffectedRows(sql"""
+    UPDATE platform.session SET mfa_pending = false
+     WHERE session_id = ?::uuid AND revoked_at IS NULL AND mfa_pending""",
+    sessionId) == 1
 
 proc revokeSession*(db: DbConn, sessionId, nowIso, reason: string): bool =
   db.execAffectedRows(sql"""

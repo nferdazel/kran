@@ -341,10 +341,10 @@ mengubah cabang tetap lewat `ctl create-branch` (O-101 sebagian selesai).
 | Bagian | Berkas | Catatan |
 |---|---|---|
 | Primitif | `shared/platform-lib/crypto/totp.nim` | base32 RFC 4648, HOTP RFC 4226, TOTP RFC 6238, `otpauthUri`; tanpa I/O dan tanpa waktu implisit |
-| Repo | `infrastructure/mfa_repo.nim` | `mfaOf`, `upsertPending`, `activateMfa`, `recordUsedStep`; ciphertext diperlakukan buram (tidak mendekripsi) |
-| Layanan | `infrastructure/mfa_service.nim` | `mfaSettingsOf` (kebijakan), `mfaStatusOf`, `startEnrolment`, `confirmEnrolment` + audit |
-| Skema | `migrations/0012_platform_user_mfa.sql` | satu baris per akun, status `PENDING`/`ACTIVE`, `last_used_step` |
-| HTTP | `apps/api/src/handlers_mfa.nim` | `GET /api/v1/auth/mfa`, `POST …/mfa/enrolment`, `POST …/mfa/verify` — self-service, tanpa izin baru |
+| Repo | `infrastructure/mfa_repo.nim` | `mfaOf`, `hasActiveMfa`, `upsertPending`, `activateMfa`, `recordUsedStep`; ciphertext diperlakukan buram (tidak mendekripsi) |
+| Layanan | `infrastructure/mfa_service.nim` | `mfaSettingsOf`/`mfaRequireLogin` (kebijakan), `mfaStatusOf`, `startEnrolment`, `confirmEnrolment`, `verifyLoginChallenge` + audit |
+| Skema | `migrations/0012_platform_user_mfa.sql`, `0100_platform_session_mfa_pending.sql` | satu baris per akun, status `PENDING`/`ACTIVE`, `last_used_step`; penanda sesi setengah |
+| HTTP | `apps/api/src/handlers_mfa.nim` | `GET /api/v1/auth/mfa`, `POST …/mfa/enrolment`, `POST …/mfa/verify` (self-service), `POST …/mfa/challenge` (sesi setengah, O-071) |
 
 Invarian tambahan:
 
@@ -358,20 +358,33 @@ Invarian tambahan:
     bisa ditimpa. Faktor yang sudah aktif adalah keadaan yang pemulihannya butuh alur sendiri —
     lihat O-071.
 18. **`mfa.enabled` default `false`**, dan gerbang itu diputuskan **sebelum** apa pun menyentuh
-    kripto/data: selama mati, ketiga rute menjawab 403 `mfa_disabled` dan tidak ada baris yang lahir —
+    kripto/data: selama mati, rute MFA menjawab 403 `mfa_disabled` dan tidak ada baris yang lahir —
     termasuk di instalasi tanpa `KRAN_KEK_FILE` (periksa keyring **setelah** gerbang fitur) maupun di
     instalasi yang nilai `platform.security.mfa.*`-nya belum tersemai (saklar dibaca lewat
     `activeValueOpt`: tidak ada nilai → fitur mati, bukan 500). Pemanggil karena itu tidak bisa
     menyimpulkan status konfigurasi server dari beda 403/501/500 pada rute ini. Nilai kebijakan lain
-    hanya dibaca setelah saklarnya hidup. Parameter MFA dibaca lewat `mfaSettingsOf` saja — jalur
-    login (`settingsOf`) tidak bergantung padanya, jadi seed MFA yang belum dijalankan tidak bisa
-    mematikan login.
+    hanya dibaca setelah saklarnya hidup. Parameter MFA dibaca lewat `mfaSettingsOf`; jalur login
+    hanya membaca dua saklar boolean (`mfa.enabled`, `mfa.require_login`) sehingga seed MFA yang
+    belum lengkap tidak bisa mematikan login kecuali kebijakan login-nya sendiri sudah dinyalakan.
 19. **Rahasia, kode, dan URI tidak pernah masuk audit**: hanya `auth.mfa.enrol`,
-    `auth.mfa.verify`, `auth.mfa.verify_failure` beserta bentuk pendaftaran (status, digit, periode).
+    `auth.mfa.verify`, `auth.mfa.verify_failure`, `auth.mfa.login`, `auth.mfa.login_failure`
+    beserta bentuk pendaftaran (status, digit, periode).
 20. **Respons ditulis setelah transaksi selesai**, tidak dari dalam closure `withDbTx`: COMMIT yang
     gagal setelah respons terkirim akan mengirim respons kedua di koneksi yang sama. Respons yang
     memuat rahasia (201 pendaftaran) memakai `Cache-Control: no-store` — rahasia TOTP adalah
     kredensial berumur panjang.
+21. **Kewajiban faktor kedua saat login terpisah dari saklar layanan** (O-071,
+    `platform.security.mfa.require_login`, default `false`, dan hanya berlaku bila
+    `mfa.enabled` hidup — tanpa rute verifikasi yang hidup sesi setengah tidak bisa dinaikkan).
+    Bila hidup dan akun punya faktor `ACTIVE`, login membuat sesi **setengah**
+    (`session.mfa_pending = true`): cookie terbit dan jawabannya 403 `mfa_required`, lalu
+    `POST /api/v1/auth/mfa/challenge` memverifikasi kode terhadap faktor yang sudah ada (tanpa
+    mengubah status) dan menaikkan baris sesi itu saja. `requirePrincipal` menolak sesi setengah di
+    **semua** rute kecuali challenge (default tertutup, `allowMfaPending = false`), dan
+    `sessionCanWork` ikut menolaknya untuk realtime. Akun **tanpa** faktor `ACTIVE` tetap mendapat
+    sesi penuh (dicatat audit `mfa_enrolment_missing`): menolaknya akan mengunci pengguna yang
+    belum mendaftar, sementara rute pendaftaran butuh sesi. Belum ada pembatas percobaan kode, kode
+    pemulihan, atau UI faktor — sisa O-071.
 
 Catatan: tugas wajib-ganti-kata-sandi dan MFA keduanya **tidak** memakai `requirePermission` —
 alasan yang sama (pengguna harus bisa menyelesaikan keadaan akunnya sendiri, termasuk saat ia belum

@@ -50,6 +50,7 @@ const paramKeys*: seq[string] = @[
   "platform.security.mfa.enabled",
   "platform.security.mfa.issuer",
   "platform.security.mfa.period_seconds",
+  "platform.security.mfa.require_login",
   "platform.security.password_history_count",
   "platform.security.password_min_classes",
   "platform.security.password_min_length",
@@ -158,6 +159,8 @@ const P_platform_security_mfa_enabled* = ParamKey[bool]("platform.security.mfa.e
 const P_platform_security_mfa_issuer* = ParamKey[string]("platform.security.mfa.issuer")
 
 const P_platform_security_mfa_period_seconds* = ParamKey[int64]("platform.security.mfa.period_seconds")
+
+const P_platform_security_mfa_require_login* = ParamKey[bool]("platform.security.mfa.require_login")
 
 const P_platform_security_password_history_count* = ParamKey[int64]("platform.security.password_history_count")
 
@@ -666,6 +669,17 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.platform.security.mfa.period_seconds",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "platform.security.mfa.require_login",
+    module: "platform",
+    valueType: pvtBool,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.platform.security.mfa.require_login",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(

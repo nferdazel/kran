@@ -52,6 +52,7 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | `platform.security.mfa.enabled` | teknis | base | `NEEDS-COMPLIANCE-REVIEW` | default mati = penerimaan risiko pemilik untuk pilot (spec §18.2), bukan klaim patuh |
 | `platform.security.mfa.issuer` | teknis | base | - | - |
 | `platform.security.mfa.period_seconds` | teknis | base | - | - |
+| `platform.security.mfa.require_login` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | default mati; mengaktifkan = kebijakan keamanan institusi mewajibkan faktor kedua saat login |
 | `platform.security.password_history_count` | kebijakan | base | - | - |
 | `platform.security.password_min_classes` | kebijakan | base | - | - |
 | `platform.security.password_min_length` | kebijakan | base | - | - |
@@ -81,7 +82,7 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | kelas | jumlah definisi |
 |---|---|
 | teknis | 19 |
-| kebijakan | 38 |
+| kebijakan | 39 |
 | komersial-konservatif | 3 |
 | belum-bermakna | 0 |
 | regulasi-tidak-disemai | 5 |

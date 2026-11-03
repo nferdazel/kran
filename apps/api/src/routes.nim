@@ -94,11 +94,15 @@ proc authRoutes*(): seq[RouteSpec] =
   ]
 
 proc mfaRoutes*(): seq[RouteSpec] =
-  ## MFA TOTP self-service (T-046, spec §13). Semua butuh sesi; saklar fitur
+  ## MFA TOTP (T-046, O-071, spec §13). Rute self-service butuh sesi; saklar layanan
   ## `platform.security.mfa.enabled` (default mati) diputuskan di handler, bukan di tabel rute.
+  ## `…/mfa/challenge` adalah satu-satunya rute yang menerima sesi setengah (kebijakan
+  ## `platform.security.mfa.require_login`).
   @[
     RouteSpec(httpMethod: hmGet, path: "/api/v1/auth/mfa", operationId: "getMfaStatus",
               handler: handleMfaStatus),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/auth/mfa/challenge",
+              operationId: "verifyMfaChallenge", handler: handleMfaChallenge),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/auth/mfa/enrolment",
               operationId: "startMfaEnrolment", handler: handleMfaEnrolment),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/auth/mfa/verify",
