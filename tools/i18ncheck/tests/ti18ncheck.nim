@@ -166,3 +166,43 @@ suite "renderReport":
     let text = renderReport(report)
     check "2 locale, 1 key/locale" in text
     check "tidak ada temuan" in text
+
+suite "katalog DB (role/permission, O-053)":
+  test "literal role./perm. di SQL dikenali, identifier lain diabaikan":
+    let sql = """
+INSERT INTO platform.permission (code, description_key) VALUES
+  ('platform.param.read', 'perm.platform.param.read');
+INSERT INTO platform.role (code, name_key) VALUES ('teller', 'role.teller');
+-- kode role tanpa prefiks bukan kunci katalog, jadi tidak ikut.
+"""
+    check dbCatalogueKeysIn(sql) == @["perm.platform.param.read", "role.teller"]
+
+  test "titik pada key DB menjadi garis bawah di katalog":
+    check dbCatalogueMessageKey("perm.platform.param.read") == "perm_platform_param_read"
+    check dbCatalogueMessageKey("role.platform_admin") == "role_platform_admin"
+
+  test "key DB yang diterjemahkan dihitung dipakai (bukan yatim)":
+    let root = makeRepo("db-terjemah")
+    writeFileWithDirs(root / "packages/i18n/messages/id.json",
+      """{ "role_teller": "Teller", "perm_platform_param_read": "Melihat parameter" }""")
+    writeFileWithDirs(root / "packages/i18n/messages/en.json",
+      """{ "role_teller": "Teller", "perm_platform_param_read": "Read parameters" }""")
+    writeFileWithDirs(root / "modules/platform/migrations/0001_rbac.sql", """
+INSERT INTO platform.role (code, name_key) VALUES ('teller', 'role.teller');
+INSERT INTO platform.permission (code, description_key)
+VALUES ('platform.param.read', 'perm.platform.param.read');
+""")
+
+    check checkCatalogs(root).problems.len == 0
+
+  test "role/izin di SQL tanpa terjemahan = temuan (fail-closed)":
+    let root = makeRepo("db-tanpa-terjemahan")
+    writeFileWithDirs(root / "packages/i18n/messages/id.json", """{ "role_teller": "Teller" }""")
+    writeFileWithDirs(root / "packages/i18n/messages/en.json", """{ "role_teller": "Teller" }""")
+    writeFileWithDirs(root / "modules/platform/migrations/0001_rbac.sql", """
+INSERT INTO platform.role (code, name_key) VALUES ('teller', 'role.teller');
+INSERT INTO platform.permission (code, description_key)
+VALUES ('platform.param.read', 'perm.platform.param.read');
+""")
+
+    check checkCatalogs(root).hasProblem("perm_platform_param_read' di packages/i18n/messages")

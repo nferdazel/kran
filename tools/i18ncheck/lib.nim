@@ -27,6 +27,13 @@ const
   ## artefak build. Tanpa ini, panggilan seperti `arr.join(...)` di kode hasil generate
   ## (`m.join(`, `m.push(`) akan salah dianggap sebagai pemakaian key pesan.
   ignoredDirParts* = ["/lib/paraglide/", "/.svelte-kit/", "/node_modules/", "/build/", "/dist/"]
+  ## Katalog kode yang disimpan **di DB**, bukan di kode aplikasi: `platform.role.name_key`
+  ## (`role.*`) dan `platform.permission.description_key` (`perm.*`). Nilainya adalah nama kunci
+  ## katalog pesan, jadi harus punya terjemahan walau tidak ada komponen yang menyebutnya
+  ## langsung (O-053). Berkas sumbernya migrasi/seed SQL.
+  dbCatalogueSqlRoots* = ["modules", "packs"]
+  dbCatalogueSqlDirParts* = ["/migrations/", "/seed/"]
+  dbCatalogueKeyPrefixes* = ["role.", "perm."]
 
 proc fail(report: var CheckReport, msg: string) =
   report.problems.add msg
@@ -137,6 +144,60 @@ proc usedMessageKeys(root: string): HashSet[string] =
       for name in messageCallsIn(readFile(path)):
         result.incl name
 
+proc dbCatalogueKeysIn*(content: string): seq[string] =
+  ## Literal kunci katalog yang disimpan di DB, mis. `'role.teller'` atau
+  ## `'perm.platform.param.read'`. Hanya literal satu baris berhuruf kecil/angka/titik/garis
+  ## bawah yang diterima; teks lain (komentar prosa, kode role tanpa prefiks) diabaikan.
+  var seen = initHashSet[string]()
+  for i in 0 ..< content.len:
+    if content[i] != '\'':
+      continue
+    var prefix = ""
+    for p in dbCatalogueKeyPrefixes:
+      if content.continuesWith(p, i + 1):
+        prefix = p
+        break
+    if prefix.len == 0:
+      continue
+    var j = i + 1
+    var lit = ""
+    var valid = true
+    while j < content.len and content[j] != '\'':
+      let c = content[j]
+      if c in {'a' .. 'z', '0' .. '9', '.', '_'}:
+        lit.add c
+      else:
+        valid = false
+        break
+      inc j
+    if valid and j < content.len and lit.len > prefix.len and lit notin seen:
+      seen.incl lit
+      result.add lit
+
+proc dbCatalogueMessageKey*(key: string): string =
+  ## Konvensi katalog repo: titik pada `name_key`/`description_key` menjadi `_`
+  ## (`role.platform_admin` → `role_platform_admin`).
+  key.replace('.', '_')
+
+proc dbCatalogueFiles(root: string): seq[string] =
+  for dirRel in dbCatalogueSqlRoots:
+    let base = root / dirRel
+    if not dirExists(base):
+      continue
+    for path in walkDirRec(base):
+      if path.splitFile.ext != ".sql":
+        continue
+      for part in dbCatalogueSqlDirParts:
+        if part in path:
+          result.add path
+          break
+  result.sort()
+
+proc dbCatalogueKeys(root: string): HashSet[string] =
+  for path in dbCatalogueFiles(root):
+    for key in dbCatalogueKeysIn(readFile(path)):
+      result.incl key
+
 proc checkCatalogs*(root: string): CheckReport =
   ## Memeriksa `packages/i18n/messages/*.json` + pemakaian key di kode.
   let dir = root / messagesDirRel
@@ -191,16 +252,28 @@ proc checkCatalogs*(root: string): CheckReport =
         if want != got:
           fail(result, &"{c.locale}: placeholder '{key}' berbeda — {got} vs {want} ({reference.locale})")
 
-  # 4. Key yatim terhadap kode: didefinisikan tetapi tidak pernah dipakai.
-  let used = usedMessageKeys(root)
+  # 4. Key yatim terhadap kode: didefinisikan tetapi tidak pernah dipakai. Kunci yang dirujuk DB
+  #    (`role.*`/`perm.*`) juga dihitung dipakai — pemakainya data, bukan komponen.
+  let codeUsed = usedMessageKeys(root)
+  var used = codeUsed
+  let dbKeys = dbCatalogueKeys(root)
+  for key in dbKeys:
+    used.incl dbCatalogueMessageKey(key)
   for key in allKeys:
     if key notin used:
       fail(result, &"key '{key}' tidak dipakai di kode mana pun (" & scannedDirs.join(", ") & ")")
 
   # 5. Key yang dipakai kode tetapi tidak ada di katalog.
-  for key in used:
+  for key in codeUsed:
     if key notin allKeys:
       fail(result, &"kode memakai key '{key}' yang tidak ada di katalog " & messagesDirRel)
+
+  # 6. Setiap kunci katalog yang disimpan di DB wajib punya terjemahan (O-053). Fail-closed:
+  #    role/izin baru di migrasi tanpa pesan menggagalkan gate ini, bukan tampil mentah diam-diam.
+  for key in dbKeys:
+    let messageKey = dbCatalogueMessageKey(key)
+    if messageKey notin allKeys:
+      fail(result, &"katalog DB '{key}' tidak punya terjemahan '{messageKey}' di " & messagesDirRel)
 
 proc renderReport*(report: CheckReport): string =
   result = &"i18ncheck: {report.locales.len} locale, {report.keyCount} key/locale\n"
