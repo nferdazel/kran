@@ -4,6 +4,11 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.1.17] - 2026-11-03
+
+### Fixed
+- **daycloser:** Gate subledger ikut menghitung akun ekuitas simpanan (O-127)
+
 ## [0.1.16] - 2026-11-03
 
 ### Fixed
