@@ -98,7 +98,7 @@ Satu putaran review independen di akhir batch atas diff seluruh batch (pola batc
 | 2 | Deposit + Teller | **selesai** (23 Okt 2026) — T-088…T-124 `DONE`; laporan `docs/milestones/M2-report.md` |
 | 3 | Day-Close Framework | **selesai & ditutup** (28 Okt 2026; ditutup bersama Fase 0–3 pada 1 Nov 2026, T-160/D-179) — T-134…T-140 `DONE`; laporan `docs/milestones/M3-report.md` |
 | 4 | Lending | **selesai** (2 Nov 2026) — T-161…T-172 `DONE`; laporan `docs/milestones/M4-report.md`; parameter PPAP/DPD masih `NEEDS-COMPLIANCE-REVIEW` untuk data nyata |
-| 5 | Koperasi Pack (MVP pilot) | belum mulai |
+| 5 | Koperasi Pack (MVP pilot) | **usulan siap dinilai** (3 Nov 2026) — belum dibuka; urutan task di `docs/proposals/fase5-koperasi.md` |
 | 6 | Compliance & Reporting | belum mulai |
 | 7 | BPR Pack | belum mulai |
 | 8 | Syariah Pack (BPRS/BMT) | belum mulai |
@@ -328,3 +328,26 @@ dibangun, pilot data nyata menunggu verifikasi (O-001).
 | T-180 | DONE | Gate traceability requirement ↔ kontrol ↔ test (O-027) | spec §4.4, §21.3, D-199 | `docs/compliance/register.yaml` (5 aktif, 9 deferred) + `tools/traceability` (fail-closed: kontrol wajib, parameter harus ada di seeds, test harus ada **dan** namanya cocok) + `./task traceability` masuk `check`/`check-fast` + job CI `traceability`. Bukti: `./task traceability` hijau; register yang dirusak sengaja (parameter & nama test palsu) keluar 1 dengan dua temuan |
 | T-181 | TODO | Penegakan BMPP KSP (10% pihak terkait / 15% tidak terkait dari Modal Sendiri) | riset O-001, REG-103 | Batas & basis (saldo pokok pinjaman) sudah terverifikasi di `docs/compliance/register-validation.md`, tetapi penegakannya butuh definisi operasional Modal Sendiri di COA (accounting owner) + parameter baru + pemeriksaan saat pencairan. Jangan dikerjakan sebelum keputusan itu ada |
 | T-174 | DONE | Keputusan izin: `lending_maker` tidak memegang `deposit.account.read` | T-173 | **D-192**: grant tidak ditambahkan; UI membedakan 403 rekening dari kegagalan teknis dan menjelaskan perlunya akses teller/admin; prasyarat operasional dicatat di O-125 |
+
+## Fase 5 — Koperasi Pack (usulan, belum dibuka)
+
+Rencana lengkap: `docs/proposals/fase5-koperasi.md`. Ditulis 3 Nov 2026 atas permintaan pemilik untuk
+menilai scope sebelum satu baris kode pun jalan. **Tidak ada baris `READY`** di sini: status `PROPOSED`
+berarti usulan menunggu persetujuan. Sumber: spec §23 (Fase 5), §8 (`coop`), §11.6 (EOQ/EOY), REG-101,
+REG-104. **Iuran anggota tidak termasuk** (keputusan pemilik 3 Nov 2026; O-100).
+
+| ID | Status | Tujuan | Deps | Kriteria selesai (dapat diverifikasi mesin) |
+|---|---|---|---|---|
+| T-182 | PROPOSED | Skeleton modul `coop` + model anggota (relasi `party`, nomor anggota, status, tanggal masuk/keluar); migrasi expand-only | pengalaman T-161 | `archcheck` bersih; `migrate --check` bersih; `itcoop` dasar hijau; status sah dari parameter |
+| T-183 | PROPOSED | Siklus keanggotaan: registrasi dari CIF, aktivasi, penonaktifan, keluar; `MembershipChanged` via outbox; audit; izin `coop.member.*` | T-182 | transisi sah/tidak sah teruji; keluar saat pinjaman aktif 409; audit per perubahan |
+| T-184 | PROPOSED | Kewajiban & realisasi simpanan pokok/wajib per anggota, dibaca dari produk + transaksi `deposit`; laporan tunggakan | T-182, T-183 | Σ realisasi = saldo `301.1`/`301.2` pada fixture; tidak ada tabel tagihan baru |
+| T-185 | PROPOSED | Tutup buku tahunan: task EOY `coop.year_close` (jurnal penutup → SHU belum dibagi), akun dari parameter | T-182, T-137 | `itdaycloser_coop`: TB seimbang; run kedua tidak menggandakan jurnal. `HUMAN-REVIEW-REQUIRED` |
+| T-186 | PROPOSED | Perhitungan & usulan SHU per anggota (jasa simpanan vs jasa usaha, cadangan/dana), event `SHUProposed` | T-184, T-185 | Σ alokasi = SHU; golden test vs fixture akunting; idempoten per tahun. Angka `NEEDS-COMPLIANCE-REVIEW` |
+| T-187 | PROPOSED | Distribusi SHU setelah RAT: maker-checker, posting kas/simpanan, arsip keputusan RAT | T-186 | Δ GL = Σ distribusi; replay tidak menggandakan; ditolak tanpa persetujuan RAT |
+| T-188 | PROPOSED | Paket laporan RAT: posisi keuangan, laba-rugi, perubahan ekuitas, daftar anggota, SHU per anggota; cetak | T-184, T-187 | angka cocok fixture; halaman cetak teruji; server yang menghitung |
+| T-189 | PROPOSED | Laporan rasio & aspek kesehatan (REG-104): komponen terukur + input manual; bobot/ambang parameter | T-188 | rasio cocok hitungan tangan; laporan tidak mengklaim skor LHPKK resmi |
+| T-190 | PROPOSED | Permukaan API: rute, OpenAPI, izin, scoping cabang | T-183…T-188 | `./task openapi` hijau; contract test; 403 lintas cabang |
+| T-191 | PROPOSED | UI operator: anggota, tunggakan, SHU (usulan → distribusi), paket RAT | T-190, DESIGN v2 | axe `moderate` 2 tema × 2 locale; keyboard-only; baseline visual |
+| T-192 | PROPOSED | Simulasi setahun penuh + benchmark EOY + laporan M5 | T-185…T-187 | `itdaycloser_sim` mencakup siklus tahunan; bench 5.000 anggota + 50k pinjaman; `M5-report.md` |
+| T-193 | PROPOSED | Paket pilot: data demo sintetis + checklist UAT + runbook RAT | T-191, T-192 | data demo dimuat ulang dengan satu perintah; **kriteria non-mesin: sign-off UAT koperasi** |
+| T-194 | BLOCKED | Penyelesaian anggota keluar (pengembalian simpanan pokok/wajib, potong pinjaman/tunggakan) | T-183 + keputusan pemilik/akuntan | Menunggu perlakuan ekuitas saat keluar; jurnalnya `HUMAN-REVIEW-REQUIRED` |
