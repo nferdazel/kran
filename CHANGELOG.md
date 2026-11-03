@@ -4,6 +4,11 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.1.19] - 2026-11-03
+
+### Changed
+- **build:** Bangun API dan biner test dengan --mm:atomicArc (O-128/D-201)
+
 ## [0.1.18] - 2026-11-03
 
 ### Added
