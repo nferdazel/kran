@@ -148,9 +148,26 @@ proc apiWorkerThreads*(app: AppContext): int =
   ## (`countProcessors() * 10`) supaya test dan peran non-API berperilaku seperti sebelumnya.
   if app.serverThreads > 0: app.serverThreads else: max(countProcessors() * 10, 1)
 
+const
+  ## Batas parser Mummy dipin **di sini**, bukan dibiarkan memakai bawaan pustaka (D-037).
+  ## Bawaannya pada 0.4.8 memang 8 KB/1 MB/64 KB, tetapi kenaikan versi minor boleh mengubahnya
+  ## tanpa satu pun galat kompilasi — dan batas inilah satu-satunya kendali kita atas berapa banyak
+  ## memori parser yang boleh ditahan satu koneksi **sebelum** handler dipanggil.
+  ##
+  ## Relevan dengan T-044: kerusakan heap yang mematikan API e2e terjadi di jalur alokasi parser
+  ## (`afterRecvHttp` → `newString` potongan baris permintaan/header). Batas eksplisit tidak
+  ## menyembuhkan kerusakan itu (akarnya di serah-terima lintas-thread Mummy + ORC), tetapi
+  ## memastikan blast radius satu koneksi tidak ikut berubah diam-diam saat versi naik.
+  ## Nilai di bawah = bawaan Mummy 0.4.8 (diuji `tapi_limits.nim`).
+  apiMaxHeadersLen* = 8 * 1024
+  apiMaxBodyLen* = 1024 * 1024
+  apiMaxMessageLen* = 64 * 1024
+
 proc newApiServer*(app: AppContext, logHandler: LogHandler = nil): Server =
   newServer(requestHandler(app), websocketHandler = websocketHandlerOf(app),
-            logHandler = logHandler, workerThreads = apiWorkerThreads(app))
+            logHandler = logHandler, workerThreads = apiWorkerThreads(app),
+            maxHeadersLen = apiMaxHeadersLen, maxBodyLen = apiMaxBodyLen,
+            maxMessageLen = apiMaxMessageLen)
 
 proc serveApi*(app: AppContext, port: int, address: string) =
   let server = newApiServer(app)

@@ -264,6 +264,27 @@ jobs:
         # kontras token + svelte-check + Playwright (axe 2 tema x 2 locale, alur keyboard-only)
         run: ./task e2e
 
+      - name: "Klasifikasi kegagalan e2e (crash API vs assertion)"
+        # T-044: API e2e pernah mati oleh SIGSEGV di allocator Mummy+ORC (3 Nov 2026, commit
+        # 2bec65e) dan 60+ test sesudahnya gagal dengan ECONNREFUSED — terbaca seperti 60 regresi
+        # fitur. Langkah ini hanya MELAPORKAN; hasil job sudah ditentukan `./task e2e` dan tidak
+        # diubah di sini (tidak ada test/timeout yang dilonggarkan).
+        # Log ditulis `./task` ke `.build/e2e.log` (`cmd_e2e`), bukan dari ekspresi GitHub.
+        if: failure()
+        env:
+          E2E_LOG: .build/e2e.log
+        run: |
+          if [ ! -f "$E2E_LOG" ]; then
+            echo "::notice::log e2e $E2E_LOG tidak ada (gagal sebelum Playwright) - tidak ada yang diklasifikasikan"
+            exit 0
+          fi
+          if grep -q "Illegal storage access" "$E2E_LOG"; then
+            echo "::error::API e2e mati oleh SIGSEGV di allocator (kelas T-044, lihat docs/ACCEPTED-LIMITS.md). Kegagalan test sesudahnya adalah efek berantai ECONNREFUSED 127.0.0.1:8099, bukan regresi fitur. Traceback:"
+            grep -n -B2 -A25 "Illegal storage access" "$E2E_LOG" | head -80
+          else
+            echo "::notice::tidak ada SIGSEGV API di log e2e - kegagalan tampak seperti regresi biasa (periksa assertion pertama)"
+          fi
+
   security:
     name: Security (gitleaks)
     runs-on: ubuntu-24.04
