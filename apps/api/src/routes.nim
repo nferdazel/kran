@@ -116,6 +116,15 @@ proc paramRoutes*(): seq[RouteSpec] =
               operationId: "approveParamChange", handler: handleApproveParamChange),
     RouteSpec(httpMethod: hmPost, path: "/api/v1/params/changes/{paramValueId}/reject",
               operationId: "rejectParamChange", handler: handleRejectParamChange),
+    # Pengakhiran nilai tanpa penerus (O-064): maker-checker terpisah dari perubahan nilai.
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/params/{paramValueId}/end-requests",
+              operationId: "submitParamEndRequest", handler: handleSubmitParamEndRequest),
+    RouteSpec(httpMethod: hmGet, path: "/api/v1/params/end-requests",
+              operationId: "listParamEndRequests", handler: handleListParamEndRequests),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/params/end-requests/{requestId}/approve",
+              operationId: "approveParamEndRequest", handler: handleApproveParamEndRequest),
+    RouteSpec(httpMethod: hmPost, path: "/api/v1/params/end-requests/{requestId}/reject",
+              operationId: "rejectParamEndRequest", handler: handleRejectParamEndRequest),
   ]
 
 proc auditRoutes*(): seq[RouteSpec] =

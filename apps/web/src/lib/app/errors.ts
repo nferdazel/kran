@@ -63,8 +63,11 @@ export function passwordProblemMessage(problem: Problem): string {
 const PARAM_REASON_MESSAGES: Record<string, () => string> = {
   value_missing: () => m.param_error_value_missing(),
   reason_missing: () => m.param_error_reason_missing(),
+  reason_too_long: () => m.param_error_reason_too_long(),
   effective_from_invalid: () => m.param_error_effective_from_invalid(),
   effective_to_invalid: () => m.param_error_effective_to_invalid(),
+  effective_to_not_future: () => m.param_error_effective_to_not_future(),
+  effective_to_not_earlier: () => m.param_error_effective_to_not_earlier(),
   period_invalid: () => m.param_error_period_invalid(),
   scope_id_required: () => m.param_error_scope_id_required(),
   scope_id_forbidden: () => m.param_error_scope_id_forbidden(),
@@ -73,6 +76,10 @@ const PARAM_REASON_MESSAGES: Record<string, () => string> = {
   effective_to_without_successor: () => m.param_error_effective_to_without_successor(),
   invalid_combination: () => m.param_error_invalid_combination(),
   value_invalid: () => m.param_error_value_invalid(),
+  not_active: () => m.param_error_not_active(),
+  end_request_pending: () => m.param_error_end_request_pending(),
+  not_pending: () => m.param_error_not_pending(),
+  self_approval: () => m.param_error_self_approval(),
 };
 
 export function paramProblemMessage(problem: Problem): string {

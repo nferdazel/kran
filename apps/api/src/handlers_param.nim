@@ -58,16 +58,15 @@ proc itemJson(row: ParamValueRow): JsonNode =
     "reason": row.reason,
     "requiresApproval": row.requiresApproval}
 
-proc auditCrossBranchReads(db: DbConn, principal: Principal, req: Request, clock: Clock,
-                           rows: openArray[ParamValueRow], grants: seq[Grant]) =
-  ## D-046 butir 6: pembacaan lintas-cabang dicatat audit. Satu entri **per cabang** yang dibaca
-  ## di luar cabang tugas, bukan per baris maupun per permintaan: barisnya tetap kecil dan bisa
-  ## ditelusuri per cabang, dan satu permintaan yang membaca cabang yang sama berulang tidak
-  ## menggandakan entri.
+proc auditCrossBranchScope(db: DbConn, principal: Principal, req: Request, clock: Clock,
+                           scopes: openArray[(string, string)], grants: seq[Grant]) =
+  ## D-046 butir 6: pembacaan lintas-cabang dicatat audit, satu entri **per cabang** yang dibaca
+  ## di luar cabang tugas. Dipakai daftar nilai **dan** daftar pengajuan pengakhiran (O-064):
+  ## keduanya memperlihatkan metadata nilai ber-scope cabang.
   var branches: HashSet[string]
-  for row in rows:
-    if row.scopeType == $pstBranch and isCrossBranchRead(grants, permissionParamRead, row.scopeId):
-      branches.incl row.scopeId
+  for (scopeType, scopeId) in scopes:
+    if scopeType == $pstBranch and isCrossBranchRead(grants, permissionParamRead, scopeId):
+      branches.incl scopeId
   for branch in branches:
     # Cabang entri ini = cabang yang **dibaca** (T-058, D-062), bukan cabang tugas pelaku: auditor
     # cabang itu yang berkepentingan tahu siapa membaca datanya — termasuk pembacaan dari pusat.
@@ -75,6 +74,13 @@ proc auditCrossBranchReads(db: DbConn, principal: Principal, req: Request, clock
       auditContextFor(principal, req, clock, "cross_branch_read", branch),
       "param.read_cross_branch", "param_branch", branch, clock,
       businessDate = businessDateIso(clock)))
+
+proc auditCrossBranchReads(db: DbConn, principal: Principal, req: Request, clock: Clock,
+                           rows: openArray[ParamValueRow], grants: seq[Grant]) =
+  var scopes: seq[(string, string)]
+  for row in rows:
+    scopes.add (row.scopeType, row.scopeId)
+  auditCrossBranchScope(db, principal, req, clock, scopes, grants)
 
 proc handleListParams*(app: AppContext, req: Request) {.gcsafe.} =
   ## `GET /api/v1/params?status=` — daftar nilai parameter beserta statusnya.
@@ -484,6 +490,404 @@ proc handleRejectParamChange*(app: AppContext, req: Request) {.gcsafe.} =
   of 403: req.respondParamReason(pkForbidden, "Forbidden", reasonParam, problem)
   of 404: req.respondProblem(pkNotFound, "Not Found", problem)
   of 400: req.respondParamReason(pkBadRequest, "Bad Request", reasonParam, problem)
+  of 409: req.respondProblem(newProblem(pkConflict, "Conflict", problem,
+           traceId = traceIdFrom(req), params = @[("reason", reasonParam)]))
+  else: req.respondProblem(pkInternal, "Internal Server Error", problem)
+
+# --- Pengakhiran nilai parameter (O-064) ------------------------------------------------------
+#
+# Jalur ini ada karena `effectiveToGapProblem` (O-043) menuntut penerus pada setiap `effectiveTo`
+# yang diajukan bersama nilai baru — padahal ada nilai yang memang harus berhenti ("produk
+# dihentikan", "tarif dicabut"). Pengakhiran **tidak** melonggarkan aturan itu: ia operasi
+# terpisah, dengan pengaju + pemutus berbeda, alasan wajib, audit, dan event.
+#
+# Pengamannya, secara berurutan: baris harus ACTIVE, tanggal berhenti harus setelah tanggal buku
+# (tidak surut, O-127 tetap batas terpisah), hanya boleh memindahkan tanggal berhenti lebih awal,
+# dan satu pengajuan berjalan per nilai.
+
+const
+  ## Alasan berkode stabil untuk pengakhiran (dipetakan UI seperti alasan parameter lain, O-045).
+  reasonEndNotActive* = "not_active"
+  reasonEndPending* = "end_request_pending"
+  reasonEndNotFuture* = "effective_to_not_future"
+  reasonEndNotEarlier* = "effective_to_not_earlier"
+  reasonEndNotPending* = "not_pending"
+  reasonEndSelfApproval* = "self_approval"
+
+proc endRequestJson(row: ParamEndRequestRow): JsonNode =
+  %*{
+    "requestId": row.requestId,
+    "paramValueId": row.paramValueId,
+    "key": row.key,
+    "scopeType": row.scopeType,
+    "scopeId": row.scopeId,
+    "effectiveFrom": row.effectiveFrom,
+    "effectiveTo": row.effectiveTo,
+    "status": row.status,
+    "reason": row.reason,
+    "requestedBy": row.requestedBy,
+    "decidedBy": row.decidedBy,
+    "decisionNote": row.decisionNote,
+    "createdAt": row.createdAt}
+
+proc handleSubmitParamEndRequest*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `POST /api/v1/params/{paramValueId}/end-requests` — ajukan pengakhiran nilai (maker).
+  ##
+  ## Belum mengubah apa pun: nilai baru berhenti berlaku setelah persetujuan orang lain.
+  let principal = requirePrincipal(app, req)
+  if principal.isNone:
+    return
+  if not requirePermission(app, req, principal.get(), permissionParamSubmit):
+    return
+
+  let paramValueId = pathParam(req, "paramValueId")
+  if paramValueId.len == 0:
+    req.respondProblem(pkBadRequest, "Bad Request", "paramValueId kosong")
+    return
+  if parseId(paramValueId).isErr:
+    # Id bukan UUID tidak bisa merujuk baris mana pun: "tidak ditemukan", sama seperti approve.
+    req.respondProblem(pkNotFound, "Not Found", "paramValueId bukan UUID yang sah")
+    return
+
+  let body = parseJsonBody(req)
+  if body.isNone or body.get().kind != JObject:
+    req.respondParamReason(pkBadRequest, "Bad Request", "reason_missing",
+      "badan permintaan harus objek JSON dengan field effectiveTo dan reason")
+    return
+  let node = body.get()
+  let effectiveTo = node.jsonField("effectiveTo").strip()
+  if not isIsoDate(effectiveTo):
+    req.respondParamReason(pkBadRequest, "Bad Request", "effective_to_invalid",
+      "effectiveTo harus tanggal YYYY-MM-DD yang sah")
+    return
+  let reason = node.jsonField("reason").strip()
+  if reason.len == 0:
+    req.respondParamReason(pkBadRequest, "Bad Request", "reason_missing",
+      "field reason wajib diisi")
+    return
+  if reason.len > maxParamReasonLength:
+    req.respondParamReason(pkBadRequest, "Bad Request", "reason_too_long",
+      "reason maksimum " & $maxParamReasonLength & " karakter")
+    return
+  if not requireIdempotencyKey(req):
+    req.respondParamReason(pkBadRequest, "Bad Request", "idempotency_key_required",
+      "header Idempotency-Key wajib diisi")
+    return
+
+  let asOf = businessDateIso(app.clock)
+  var status = 0
+  var payload = newJObject()
+  var problem = ""
+  var problemCode = ""
+  var outcome = IdempotentOutcome(decision: idemProceed)
+  try:
+    outcome = withDbTx(app.pool, proc(db: DbConn): IdempotentOutcome {.gcsafe.} =
+      dbCalls:
+        withIdempotency(db, principal.get(), req, "param.end.submit", $node, asOf,
+            app.clock.now(),
+          proc(): tuple[status: int, payload: JsonNode] {.gcsafe.} =
+          dbCalls:
+            let current = statusOf(db, paramValueId)
+            let row = pendingValueOf(db, paramValueId)
+            # Setiap penolakan melempar `ValueError` (bukan mengembalikan status non-2xx):
+            # `withIdempotency` hanya boleh menutup klaim dengan respons sukses, dan transaksi
+            # inilah yang membatalkan klaimnya.
+            if current.isNone or row.isNone:
+              status = 404
+              raise newException(ValueError, "nilai parameter tidak ditemukan")
+            elif current.get() != pvActive:
+              status = 409
+              problemCode = reasonEndNotActive
+              raise newException(ValueError,
+                "nilai tidak berstatus ACTIVE (sekarang " & $current.get() & ")")
+            else:
+              let targetBranch =
+                if row.get().scopeType == $pstBranch: row.get().scopeId else: ""
+              # D-047: wewenang mengusulkan tidak boleh melebihi wewenang melihat scope itu.
+              if not mayReadScope(grantsOf(db, principal.get().user.userId), permissionParamRead,
+                                  parseScopeType(row.get().scopeType), row.get().scopeId):
+                status = 403
+                problemCode = "scope_not_readable"
+                raise newException(ValueError, "nilai ini di luar wewenang baca pengaju")
+              elif not authorizedAtBranch(db, principal.get(), targetBranch,
+                                          permissionParamSubmit):
+                status = 403
+                problemCode = reasonBranchNotAllowed
+                raise newException(ValueError, branchNotAllowedProblem(targetBranch, "pengaju"))
+              elif effectiveTo <= asOf:
+                # Tidak surut (O-127 tetap batas terpisah): nilai tetap berlaku sampai tanggal
+                # buku hari ini, berhenti mulai tanggal yang diminta.
+                status = 400
+                problemCode = reasonEndNotFuture
+                raise newException(ValueError, "effectiveTo " & effectiveTo &
+                  " harus setelah tanggal buku " & asOf)
+              elif effectiveTo <= row.get().effectiveFrom:
+                status = 400
+                problemCode = "period_invalid"
+                raise newException(ValueError, "effectiveTo harus setelah effectiveFrom nilai " &
+                  row.get().effectiveFrom)
+              elif row.get().effectiveTo.len > 0 and effectiveTo >= row.get().effectiveTo:
+                status = 400
+                problemCode = reasonEndNotEarlier
+                raise newException(ValueError, "nilai ini sudah berakhir pada " &
+                  row.get().effectiveTo &
+                  "; pengakhiran hanya boleh memindahkan tanggal itu lebih awal")
+              elif pendingEndRequestOf(db, paramValueId).isSome:
+                status = 409
+                problemCode = reasonEndPending
+                raise newException(ValueError,
+                  "nilai ini sudah punya pengajuan pengakhiran yang menunggu keputusan")
+              else:
+                let ctx = auditContextFor(principal.get(), req, app.clock,
+                  "pengajuan pengakhiran nilai parameter: " & reason, targetBranch)
+                let change = submitEndChange(db, ctx, app.clock, paramValueId, effectiveTo,
+                  asOf, reason)
+                let stored = endRequestById(db, change.requestId)
+                if stored.isNone:
+                  # Tidak mungkin dalam satu transaksi; kalau terjadi, jangan menutup klaim
+                  # idempotensi dengan respons sukses.
+                  status = 500
+                  raise newException(ValueError, "pengajuan tidak bisa dibaca kembali")
+                status = 201
+                payload = endRequestJson(stored.get())
+            (status, payload)))
+  except IdempotencyConfigError:
+    status = 500
+    problem = "konfigurasi idempotensi di server tidak sah"
+  except IdempotencyStateError:
+    status = 500
+    problem = "idempotensi gagal diselesaikan"
+  except ValueError as e:
+    if status == 0:
+      status = 400
+    problem = e.msg
+    if problemCode.len == 0:
+      problemCode = "value_invalid"
+  except DbError as e:
+    # Balapan dengan pengajuan lain: indeks unik parsial `param_end_request_pending_uq`.
+    if e.msg.contains("param_end_request_pending_uq"):
+      status = 409
+      problemCode = reasonEndPending
+      problem = "nilai ini sudah punya pengajuan pengakhiran yang menunggu keputusan"
+    else:
+      status = 500
+      problem = "pengajuan pengakhiran gagal disimpan"
+
+  if outcome.decision != idemProceed:
+    discard req.respondIdempotent(outcome)
+    return
+
+  case status
+  of 201: req.respondJson(201, payload)
+  of 400: req.respondParamReason(pkBadRequest, "Bad Request", problemCode, problem)
+  of 403: req.respondParamReason(pkForbidden, "Forbidden", problemCode, problem)
+  of 404: req.respondProblem(pkNotFound, "Not Found", problem)
+  of 409: req.respondProblem(newProblem(pkConflict, "Conflict", problem,
+           traceId = traceIdFrom(req), params = @[("reason", problemCode)]))
+  else: req.respondProblem(pkInternal, "Internal Server Error", problem)
+
+proc handleListParamEndRequests*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `GET /api/v1/params/end-requests?status=` — daftar pengajuan pengakhiran (UI Parameter Admin).
+  let principal = requirePrincipal(app, req)
+  if principal.isNone:
+    return
+  if not requirePermission(app, req, principal.get(), permissionParamRead):
+    return
+
+  let status = queryValue(req, "status").strip()
+  if status.len > 0 and status notin ["PENDING", "APPROVED", "REJECTED"]:
+    req.respondProblem(pkBadRequest, "Bad Request", "status tidak dikenal: " & status)
+    return
+
+  var rows: seq[ParamEndRequestRow]
+  var grants: seq[Grant]
+  try:
+    withDbConn(app.pool, proc(db: DbConn) {.gcsafe.} =
+      dbCalls:
+        grants = grantsOf(db, principal.get().user.userId)
+        rows = endRequests(db, status, listLimit,
+          readableScopeFilter(grants, permissionParamRead))
+        # D-046 butir 6: daftar ini memperlihatkan metadata nilai ber-scope cabang.
+        var scopes: seq[(string, string)]
+        for row in rows:
+          scopes.add (row.scopeType, row.scopeId)
+        auditCrossBranchScope(db, principal.get(), req, app.clock, scopes, grants))
+  except DbError:
+    req.respondProblem(pkInternal, "Internal Server Error",
+      "daftar pengajuan pengakhiran gagal dibaca")
+    return
+
+  var items = newJArray()
+  for row in rows:
+    items.add endRequestJson(row)
+  req.respondJson(200, %*{"items": items})
+
+proc handleApproveParamEndRequest*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `POST /api/v1/params/end-requests/{requestId}/approve` (checker) — nilai berhenti pada
+  ## tanggal yang diajukan. Setelah tanggal itu parameter **tidak** punya nilai aktif, dan
+  ## pembaca gagal-cepat (`ParamNotFound`), bukan diam-diam memakai nilai lama.
+  let principalOpt = requirePrincipal(app, req)
+  if principalOpt.isNone:
+    return
+  let principal = principalOpt.get()
+  if not requirePermission(app, req, principal, permissionParamApprove):
+    return
+
+  let requestId = pathParam(req, "requestId")
+  if requestId.len == 0:
+    req.respondProblem(pkBadRequest, "Bad Request", "requestId kosong")
+    return
+  if parseId(requestId).isErr:
+    req.respondProblem(pkNotFound, "Not Found", "requestId bukan UUID yang sah")
+    return
+
+  var status = 0
+  var payload = newJObject()
+  var problem = ""
+  var reasonParam = ""
+  try:
+    withDbTx(app.pool, proc(db: DbConn) {.gcsafe.} =
+      dbCalls:
+        let found = endRequestById(db, requestId)
+        if found.isNone:
+          status = 404
+          problem = "pengajuan pengakhiran tidak ditemukan"
+        else:
+          let request = found.get()
+          let targetBranch =
+            if request.scopeType == $pstBranch: request.scopeId else: ""
+          # Wewenang diperiksa lebih dulu daripada keadaan baris (sama seperti approve perubahan):
+          # penolakan izin tidak boleh bergantung pada isi pengajuannya.
+          if not authorizedAtBranch(db, principal, targetBranch, permissionParamApprove):
+            status = 403
+            reasonParam = reasonBranchNotAllowed
+            problem = branchNotAllowedProblem(targetBranch, "penyetuju")
+          elif request.requestedBy == principal.user.userId:
+            status = 409
+            reasonParam = reasonEndSelfApproval
+            problem = "pengesahan sendiri ditolak: pemutus harus orang lain (spec §10.2)"
+          elif request.status != "PENDING":
+            status = 409
+            reasonParam = reasonEndNotPending
+            problem = "pengajuan tidak berstatus PENDING (sekarang " & request.status & ")"
+          else:
+            let ctx = auditContextFor(principal, req, app.clock,
+              "persetujuan pengakhiran nilai parameter", targetBranch)
+            let change = approveEndChange(db, ctx, app.clock, requestId)
+            status = 200
+            payload = %*{
+              "requestId": change.requestId,
+              "paramValueId": change.paramValueId,
+              "status": "APPROVED",
+              "effectiveTo": change.effectiveTo})
+  except ValueError as e:
+    status = 409
+    if reasonParam.len == 0:
+      reasonParam = reasonEndNotPending
+    problem = e.msg
+  except DbError as e:
+    if e.msg.contains("param_end_request_self_approval_chk"):
+      status = 409
+      reasonParam = reasonEndSelfApproval
+      problem = "pengesahan sendiri ditolak: pemutus harus orang lain (spec §10.2)"
+    elif e.msg.contains("exclusion") or e.msg.contains("conflict"):
+      status = 409
+      reasonParam = "period_conflict"
+      problem = "tanggal berhenti bertabrakan dengan nilai lain"
+    else:
+      status = 500
+      problem = "persetujuan pengakhiran gagal disimpan"
+
+  case status
+  of 200: req.respondJson(200, payload)
+  of 403: req.respondParamReason(pkForbidden, "Forbidden", reasonParam, problem)
+  of 404: req.respondProblem(pkNotFound, "Not Found", problem)
+  of 409: req.respondProblem(newProblem(pkConflict, "Conflict", problem,
+           traceId = traceIdFrom(req), params = @[("reason", reasonParam)]))
+  else: req.respondProblem(pkInternal, "Internal Server Error", problem)
+
+proc handleRejectParamEndRequest*(app: AppContext, req: Request) {.gcsafe.} =
+  ## `POST /api/v1/params/end-requests/{requestId}/reject` — tolak pengakhiran; nilai ACTIVE
+  ## tidak disentuh. Tanpa jalur ini pengajuan yang salah menumpuk (alasan yang sama dengan O-065).
+  let principalOpt = requirePrincipal(app, req)
+  if principalOpt.isNone:
+    return
+  let principal = principalOpt.get()
+  if not requirePermission(app, req, principal, permissionParamApprove):
+    return
+
+  let requestId = pathParam(req, "requestId")
+  if requestId.len == 0:
+    req.respondProblem(pkBadRequest, "Bad Request", "requestId kosong")
+    return
+  if parseId(requestId).isErr:
+    req.respondProblem(pkNotFound, "Not Found", "requestId bukan UUID yang sah")
+    return
+
+  let body = parseJsonBody(req)
+  if body.isNone or body.get().kind != JObject:
+    req.respondParamReason(pkBadRequest, "Bad Request", "reason_missing",
+      "badan permintaan harus objek JSON dengan field reason")
+    return
+  let reason = body.get().jsonField("reason").strip()
+  if reason.len == 0:
+    req.respondParamReason(pkBadRequest, "Bad Request", "reason_missing",
+      "field reason wajib diisi")
+    return
+  if reason.len > maxParamReasonLength:
+    req.respondParamReason(pkBadRequest, "Bad Request", "reason_too_long",
+      "reason maksimum " & $maxParamReasonLength & " karakter")
+    return
+
+  var status = 0
+  var payload = newJObject()
+  var problem = ""
+  var reasonParam = ""
+  try:
+    withDbTx(app.pool, proc(db: DbConn) {.gcsafe.} =
+      dbCalls:
+        let found = endRequestById(db, requestId)
+        if found.isNone:
+          status = 404
+          problem = "pengajuan pengakhiran tidak ditemukan"
+        else:
+          let request = found.get()
+          let targetBranch =
+            if request.scopeType == $pstBranch: request.scopeId else: ""
+          if not authorizedAtBranch(db, principal, targetBranch, permissionParamApprove):
+            status = 403
+            reasonParam = reasonBranchNotAllowed
+            problem = branchNotAllowedProblem(targetBranch, "penyetuju")
+          elif request.requestedBy == principal.user.userId:
+            status = 409
+            reasonParam = reasonEndSelfApproval
+            problem = "keputusan sendiri ditolak: pemutus harus orang lain (spec §10.2)"
+          elif request.status != "PENDING":
+            status = 409
+            reasonParam = reasonEndNotPending
+            problem = "pengajuan tidak berstatus PENDING (sekarang " & request.status & ")"
+          else:
+            let ctx = auditContextFor(principal, req, app.clock,
+              "penolakan pengakhiran nilai parameter: " & reason, targetBranch)
+            let change = rejectEndChange(db, ctx, app.clock, requestId, reason)
+            status = 200
+            payload = %*{
+              "requestId": change.requestId,
+              "paramValueId": change.paramValueId,
+              "status": "REJECTED"})
+  except ValueError as e:
+    status = 409
+    if reasonParam.len == 0:
+      reasonParam = reasonEndNotPending
+    problem = e.msg
+  except DbError:
+    status = 500
+    problem = "penolakan pengakhiran gagal disimpan"
+
+  case status
+  of 200: req.respondJson(200, payload)
+  of 403: req.respondParamReason(pkForbidden, "Forbidden", reasonParam, problem)
+  of 404: req.respondProblem(pkNotFound, "Not Found", problem)
   of 409: req.respondProblem(newProblem(pkConflict, "Conflict", problem,
            traceId = traceIdFrom(req), params = @[("reason", reasonParam)]))
   else: req.respondProblem(pkInternal, "Internal Server Error", problem)

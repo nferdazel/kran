@@ -1326,3 +1326,133 @@ test "idempotency param submit: replay, konflik, tanpa header":
 
   let noKey = postJson(path, body, token, sendKey = false)
   check noKey.code == 400
+
+suite "pengakhiran nilai parameter lewat HTTP (O-064)":
+
+  proc activeRowOf(token, key: string): JsonNode =
+    for item in itemWith(getJson(ParamsPath, token).body, key):
+      if item["status"].getStr() == "ACTIVE":
+        return item
+    newJNull()
+
+  proc endDay(daysAhead: int): string =
+    (now().utc + initDuration(days = daysAhead)).format("yyyy-MM-dd")
+
+  test "pengajuan → persetujuan: effectiveTo tertulis, pengajuan terlihat, tanggal surut ditolak":
+    let makerToken = tokenOf(login(MakerUser))
+    let checkerToken = tokenOf(login(CheckerUser))
+    let row = activeRowOf(makerToken, ParamKey)
+    check row != nil
+    let pvId = row["paramValueId"].getStr()
+    let endDate = endDay(2)
+    let endPath = "/api/v1/params/" & pvId & "/end-requests"
+
+    # Tanggal lampau ditolak: pengakhiran tidak berlaku surut (O-127 tetap batas terpisah).
+    let lampau = postJson(endPath, %*{"effectiveTo": "2026-01-01", "reason": "uji surut"},
+      makerToken)
+    check lampau.code == 400
+    check lampau.body["params"]["reason"].getStr() == "effective_to_not_future"
+    checkProblem("/api/v1/params/{paramValueId}/end-requests", "POST", "400",
+      lampau.body)
+    # Alasan wajib (audit harus bisa menjelaskan "mengapa").
+    let tanpaAlasan = postJson(endPath, %*{"effectiveTo": endDate, "reason": "   "}, makerToken)
+    check tanpaAlasan.code == 400
+    check tanpaAlasan.body["params"]["reason"].getStr() == "reason_missing"
+    # Izin terpisah: checker tidak boleh mengajukan, maker tidak boleh memutuskan.
+    check postJson(endPath, %*{"effectiveTo": endDate, "reason": "checker mengajukan"},
+      checkerToken).code == 403
+
+    let submitted = postJson(endPath,
+      %*{"effectiveTo": endDate, "reason": "uji otomatis: produk dihentikan"}, makerToken)
+    check submitted.code == 201
+    checkJson("/api/v1/params/{paramValueId}/end-requests", "POST", "201",
+      submitted.body)
+    check submitted.body["status"].getStr() == "PENDING"
+    check submitted.body["effectiveTo"].getStr() == endDate
+    let requestId = submitted.body["requestId"].getStr()
+    check requestId.len > 0
+
+    # Satu pengajuan berjalan per nilai.
+    let kedua = postJson(endPath, %*{"effectiveTo": endDate, "reason": "pengajuan kedua"},
+      makerToken)
+    check kedua.code == 409
+    check kedua.body["params"]["reason"].getStr() == "end_request_pending"
+
+    # Pengajuan terlihat di daftar (bahan UI), dan bentuknya sesuai kontrak.
+    let daftar = getJson("/api/v1/params/end-requests?status=PENDING", makerToken)
+    check daftar.code == 200
+    checkJson("/api/v1/params/end-requests", "GET", "200", daftar.body)
+    var terlihat = false
+    for item in daftar.body["items"]:
+      if item["requestId"].getStr() == requestId:
+        terlihat = true
+    check terlihat
+
+    check postJson("/api/v1/params/end-requests/" & requestId & "/approve", newJObject(),
+      makerToken).code == 403
+
+    let approved = postJson("/api/v1/params/end-requests/" & requestId & "/approve",
+      newJObject(), checkerToken)
+    check approved.code == 200
+    checkJson("/api/v1/params/end-requests/{requestId}/approve", "POST", "200", approved.body)
+    check approved.body["status"].getStr() == "APPROVED"
+    check approved.body["effectiveTo"].getStr() == endDate
+
+    # Baris nilainya benar-benar berubah, dan persetujuan ulang bukan lagi 200.
+    check activeRowOf(makerToken, ParamKey)["effectiveTo"].getStr() == endDate
+    let ulang = postJson("/api/v1/params/end-requests/" & requestId & "/approve",
+      newJObject(), checkerToken)
+    check ulang.code == 409
+    check ulang.body["params"]["reason"].getStr() == "not_pending"
+
+    # Bukti dua orang + audit: satu pengajuan, satu persetujuan, aktor berbeda.
+    check dbValue(sql"""
+      SELECT count(*)::text FROM platform.audit_log
+       WHERE action IN ('param.end.submit', 'param.end.approve') AND resource_id = ?""",
+      requestId) == "2"
+    check dbValue(sql"""
+      SELECT count(DISTINCT actor_user_id)::text FROM platform.audit_log
+       WHERE action IN ('param.end.submit', 'param.end.approve') AND resource_id = ?""",
+      requestId) == "2"
+
+    # Pengajuan untuk nilai yang tidak ada → 404 (bukan 500 dari cast uuid).
+    let asing = postJson(
+      "/api/v1/params/00000000-0000-7000-8000-000000000000/end-requests",
+      %*{"effectiveTo": endDate, "reason": "tidak ada"}, makerToken)
+    check asing.code == 404
+
+  test "penolakan pengakhiran: nilai tetap berlaku dan pengajuan berikutnya bisa diajukan":
+    # Parameter lain supaya test ini tidak bergantung urutan dengan test di atas.
+    const key = "ledger.coa.code_pattern"
+    let makerToken = tokenOf(login(MakerUser))
+    let checkerToken = tokenOf(login(CheckerUser))
+    let row = activeRowOf(makerToken, key)
+    check row != nil
+    let sebelum = row["effectiveTo"].getStr()
+    let endDate = endDay(3)
+    let endPath = "/api/v1/params/" & row["paramValueId"].getStr() & "/end-requests"
+
+    let submitted = postJson(endPath, %*{"effectiveTo": endDate, "reason": "uji penolakan"},
+      makerToken)
+    check submitted.code == 201
+    let requestId = submitted.body["requestId"].getStr()
+    let rejectPath = "/api/v1/params/end-requests/" & requestId & "/reject"
+
+    # Alasan wajib, dan pembuat pengajuan tidak boleh memutuskan pengajuannya sendiri.
+    check postJson(rejectPath, newJObject(), checkerToken).code == 400
+    check postJson(rejectPath, %*{"reason": "sendiri"}, makerToken).code == 403
+    let rejected = postJson(rejectPath, %*{"reason": "tarif masih berlaku"}, checkerToken)
+    check rejected.code == 200
+    checkJson("/api/v1/params/end-requests/{requestId}/reject", "POST", "200", rejected.body)
+    check rejected.body["status"].getStr() == "REJECTED"
+
+    # Nilai tidak berubah, dan pengajuan yang sudah ditolak tidak bisa ditolak dua kali.
+    check activeRowOf(makerToken, key)["effectiveTo"].getStr() == sebelum
+    let ulang = postJson(rejectPath, %*{"reason": "ulang"}, checkerToken)
+    check ulang.code == 409
+    check ulang.body["params"]["reason"].getStr() == "not_pending"
+
+    # Setelah ditolak, pengajuan baru boleh dibuat lagi (tidak menumpuk selamanya).
+    let lagi = postJson(endPath, %*{"effectiveTo": endDate, "reason": "pengajuan ulang"},
+      makerToken)
+    check lagi.code == 201

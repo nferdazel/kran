@@ -37,7 +37,7 @@
     type RealtimeClient,
     type RealtimeState,
   } from "#lib/app/realtime.js";
-  import type { AuditItem, ParamValue, SessionInfo } from "#lib/app/types.js";
+  import type { AuditItem, ParamEndRequest, ParamValue, SessionInfo } from "#lib/app/types.js";
   import type { PageProps } from "./$types";
 
   let { data }: PageProps = $props();
@@ -79,6 +79,23 @@
   let submitKeyIdentity = $state("");
   let approvingId = $state("");
 
+  // Pengakhiran nilai (O-064): pengajuan oleh maker, keputusan oleh checker lain.
+  let endRequests = $state<ParamEndRequest[]>([]);
+  let endingRow = $state<ParamValue | null>(null);
+  let endDate = $state("");
+  let endReason = $state("");
+  let endSending = $state(false);
+  /**
+   * Kunci idempotensi pengajuan pengakhiran, pola yang sama dengan pengajuan perubahan nilai:
+   * dipertahankan saat gagal 5xx/jaringan, dibersihkan setelah sukses atau 4xx.
+   */
+  let endIdempotencyKey = $state("");
+  let decidingEnd = $state<{ request: ParamEndRequest; kind: "approve" | "reject" } | null>(
+    null,
+  );
+  let endRejectReason = $state("");
+  let endBusy = $state("");
+
   /** Kunci yang bisa diajukan = kunci yang sedang punya nilai aktif (urutan dari server). */
   const selectableKeys = $derived([...new Set(active.map((row) => row.key))]);
 
@@ -107,6 +124,21 @@
     return "neutral";
   }
 
+  /** Status pengajuan pengakhiran (`APPROVED` tidak ada di daftar status nilai parameter). */
+  function endStatusText(status: string): string {
+    if (status === "PENDING") return m.param_status_pending();
+    if (status === "APPROVED") return m.params_end_status_approved();
+    if (status === "REJECTED") return m.param_status_rejected();
+    return status;
+  }
+
+  function endStatusTone(status: string): "positive" | "warning" | "negative" | "neutral" {
+    if (status === "APPROVED") return "positive";
+    if (status === "PENDING") return "warning";
+    if (status === "REJECTED") return "negative";
+    return "neutral";
+  }
+
   function displayValue(value: unknown): string {
     return typeof value === "string" ? value : JSON.stringify(value);
   }
@@ -127,6 +159,9 @@
       canReadParams
         ? api.GET("/api/v1/params", { params: { query: { status: "PENDING" } } })
         : Promise.resolve(null),
+      canReadParams
+        ? api.GET("/api/v1/params/end-requests", { params: { query: { status: "PENDING" } } })
+        : Promise.resolve(null),
       canReadAudit
         ? api.GET("/api/v1/audit", { params: { query: { limit: 20 } } })
         : Promise.resolve(null),
@@ -135,14 +170,16 @@
       errorMessage = m.app_error();
       return;
     }
-    const [activeRes, pendingRes, auditRes] = results;
-    const firstProblem = activeRes?.error ?? pendingRes?.error ?? auditRes?.error ?? null;
+    const [activeRes, pendingRes, endRes, auditRes] = results;
+    const firstProblem =
+      activeRes?.error ?? pendingRes?.error ?? endRes?.error ?? auditRes?.error ?? null;
     if (firstProblem) {
       errorMessage = errorFrom(firstProblem);
       return;
     }
     active = activeRes?.data?.items ?? [];
     pending = pendingRes?.data?.items ?? [];
+    endRequests = endRes?.data?.items ?? [];
     audit = auditRes?.data?.items ?? [];
     updatedAt = new Date();
     const firstKey = selectableKeys[0];
@@ -290,6 +327,110 @@
       errorMessage = errorFrom(error);
       return;
     }
+    await refresh();
+  }
+
+  /**
+   * Pengakhiran nilai (O-064): nilai berhenti berlaku pada tanggal yang diajukan, tanpa nilai
+   * pengganti. Dua orang tetap diperlukan — pengajuan di sini, keputusan di daftar pengajuan.
+   */
+  function startEnding(row: ParamValue): void {
+    const same = endingRow?.paramValueId === row.paramValueId;
+    endingRow = same ? null : row;
+    endDate = "";
+    endReason = "";
+    endIdempotencyKey = "";
+  }
+
+  async function submitEnd(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    if (endSending || endingRow === null) return;
+    const row = endingRow;
+
+    endSending = true;
+    errorMessage = "";
+    notice = "";
+    if (endIdempotencyKey === "") endIdempotencyKey = crypto.randomUUID();
+
+    try {
+      const { response, error } = await api.POST(
+        "/api/v1/params/{paramValueId}/end-requests",
+        {
+          params: {
+            path: { paramValueId: row.paramValueId },
+            header: { "Idempotency-Key": endIdempotencyKey },
+          },
+          body: { effectiveTo: endDate, reason: endReason.trim() },
+        },
+      );
+      if (!response.ok) {
+        // 4xx: isi permintaan tidak akan pernah sah bila diulang dengan kunci yang sama.
+        if (response.status < 500) endIdempotencyKey = "";
+        errorMessage = errorFrom(error);
+        return;
+      }
+      endIdempotencyKey = "";
+      endingRow = null;
+      endDate = "";
+      endReason = "";
+      notice = m.params_end_success();
+      await refresh();
+    } catch {
+      errorMessage = m.app_error();
+    } finally {
+      endSending = false;
+    }
+  }
+
+  function startDecision(request: ParamEndRequest, kind: "approve" | "reject"): void {
+    decidingEnd = { request, kind };
+    endRejectReason = "";
+  }
+
+  async function approveEnd(request: ParamEndRequest): Promise<void> {
+    endBusy = request.requestId;
+    errorMessage = "";
+    notice = "";
+
+    const { response, error } = await api.POST(
+      "/api/v1/params/end-requests/{requestId}/approve",
+      { params: { path: { requestId: request.requestId } } },
+    );
+    endBusy = "";
+    decidingEnd = null;
+
+    if (!response.ok) {
+      errorMessage = errorFrom(error);
+      return;
+    }
+    notice = m.params_end_approve_success();
+    await refresh();
+  }
+
+  async function rejectEnd(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    if (decidingEnd === null || endBusy !== "") return;
+    const request = decidingEnd.request;
+
+    endBusy = request.requestId;
+    errorMessage = "";
+    notice = "";
+
+    const { response, error } = await api.POST(
+      "/api/v1/params/end-requests/{requestId}/reject",
+      {
+        params: { path: { requestId: request.requestId } },
+        body: { reason: endRejectReason.trim() },
+      },
+    );
+    endBusy = "";
+    decidingEnd = null;
+
+    if (!response.ok) {
+      errorMessage = errorFrom(error);
+      return;
+    }
+    notice = m.params_end_reject_success();
     await refresh();
   }
 
@@ -461,6 +602,130 @@
         {/if}
       </section>
 
+      <section class="kran-section" aria-labelledby="end-requests-heading">
+        <h2 class="kran-section__title" id="end-requests-heading">
+          {m.params_end_requests_heading()}
+        </h2>
+        {#if endRequests.length === 0}
+          <EmptyState title={m.params_end_requests_empty()} />
+        {:else}
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <div
+            class="kran-table-wrap"
+            role="region"
+            tabindex="0"
+            aria-label={m.common_table_region({ name: m.params_end_requests_heading() })}
+          >
+            <table class="kran-table">
+              <thead>
+                <tr>
+                  <th scope="col">{m.params_col_key()}</th>
+                  <th scope="col">{m.params_col_effective_to()}</th>
+                  <th scope="col">{m.params_col_maker()}</th>
+                  <th scope="col">{m.params_col_status()}</th>
+                  {#if canApprove}<th scope="col">{m.params_col_action()}</th>{/if}
+                </tr>
+              </thead>
+              <tbody>
+                {#each endRequests as request (request.requestId)}
+                  <tr>
+                    <th scope="row">{request.key}</th>
+                    <td>{formatDate(request.effectiveTo)}</td>
+                    <td>{request.requestedBy}</td>
+                    <td>
+                      <StatusBadge tone={endStatusTone(request.status)}>
+                        {endStatusText(request.status)}
+                      </StatusBadge>
+                    </td>
+                    {#if canApprove}
+                      <td>
+                        <div class="kran-actions">
+                          <Button
+                            type="button"
+                            onclick={() => startDecision(request, "approve")}
+                            disabled={endBusy !== ""}
+                          >
+                            {m.params_approve()}
+                          </Button>
+                          <Button
+                            type="button"
+                            onclick={() => startDecision(request, "reject")}
+                            disabled={endBusy !== ""}
+                          >
+                            {m.params_end_reject_action()}
+                          </Button>
+                        </div>
+                      </td>
+                    {/if}
+                  </tr>
+
+                  {#if canApprove && decidingEnd?.request.requestId === request.requestId}
+                    <tr class="kran-table__selected">
+                      <td colspan={5}>
+                        {#if decidingEnd.kind === "approve"}
+                          <div class="kran-stack kran-stack--loose">
+                            <p>
+                              {m.params_end_approve_confirm({
+                                key: request.key,
+                                date: formatDate(request.effectiveTo),
+                              })}
+                            </p>
+                            <div class="kran-actions">
+                              <Button
+                                variant="primary"
+                                type="button"
+                                onclick={() => void approveEnd(request)}
+                                disabled={endBusy !== ""}
+                              >
+                                {m.params_approve()}
+                              </Button>
+                              <Button
+                                type="button"
+                                onclick={() => (decidingEnd = null)}
+                                disabled={endBusy !== ""}
+                              >
+                                {m.params_end_cancel()}
+                              </Button>
+                            </div>
+                          </div>
+                        {:else}
+                          <form class="kran-form" onsubmit={rejectEnd}>
+                            <div class="kran-field">
+                              <label class="kran-label" for="param-end-reject-reason">
+                                {m.params_end_reject_prompt()}
+                              </label>
+                              <input
+                                class="kran-input"
+                                id="param-end-reject-reason"
+                                name="reason"
+                                bind:value={endRejectReason}
+                                required
+                              />
+                            </div>
+                            <div class="kran-actions">
+                              <Button variant="primary" type="submit" disabled={endBusy !== ""}>
+                                {m.params_end_reject_submit()}
+                              </Button>
+                              <Button
+                                type="button"
+                                onclick={() => (decidingEnd = null)}
+                                disabled={endBusy !== ""}
+                              >
+                                {m.params_end_cancel()}
+                              </Button>
+                            </div>
+                          </form>
+                        {/if}
+                      </td>
+                    </tr>
+                  {/if}
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+      </section>
+
       <section class="kran-section" aria-labelledby="active-heading">
         <div class="kran-toolbar">
           <h2 class="kran-section__title" id="active-heading">{m.params_active_heading()}</h2>
@@ -489,12 +754,13 @@
                   <th scope="col">{m.params_col_value()}</th>
                   <th scope="col">{m.params_col_effective_from()}</th>
                   <th scope="col">{m.params_col_status()}</th>
+                  {#if canSubmit}<th scope="col">{m.params_col_action()}</th>{/if}
                 </tr>
               </thead>
               <tbody>
                 {#if filteredActive.length === 0}
                   <tr>
-                    <td colspan="4" class="kran-muted">{m.params_search_empty()}</td>
+                    <td colspan={canSubmit ? 5 : 4} class="kran-muted">{m.params_search_empty()}</td>
                   </tr>
                 {/if}
                 {#each filteredActive as row (row.paramValueId)}
@@ -505,7 +771,70 @@
                     <td>
                       <StatusBadge tone={statusTone(row.status)}>{statusText(row.status)}</StatusBadge>
                     </td>
+                    {#if canSubmit}
+                      <td>
+                        <Button
+                          type="button"
+                          onclick={() => startEnding(row)}
+                          disabled={endSending}
+                          aria-expanded={endingRow?.paramValueId === row.paramValueId}
+                        >
+                          {m.params_end_action()}
+                        </Button>
+                      </td>
+                    {/if}
                   </tr>
+
+                  {#if canSubmit && endingRow?.paramValueId === row.paramValueId}
+                    <tr class="kran-table__selected">
+                      <td colspan={5}>
+                        <form class="kran-form" onsubmit={submitEnd}>
+                          <p class="kran-muted">{m.params_end_hint()}</p>
+                          <div class="kran-field">
+                            <label class="kran-label" for="param-end-date">
+                              {m.params_end_effective_to_label()}
+                            </label>
+                            <input
+                              class="kran-input"
+                              id="param-end-date"
+                              name="effectiveTo"
+                              type="date"
+                              bind:value={endDate}
+                              required
+                            />
+                          </div>
+                          <div class="kran-field">
+                            <label class="kran-label" for="param-end-reason">
+                              {m.params_end_reason_label()}
+                            </label>
+                            <input
+                              class="kran-input"
+                              id="param-end-reason"
+                              name="reason"
+                              bind:value={endReason}
+                              required
+                            />
+                          </div>
+                          <div class="kran-actions">
+                            <Button
+                              variant="primary"
+                              type="submit"
+                              disabled={endSending || endDate === "" || endReason.trim() === ""}
+                            >
+                              {endSending ? m.params_end_sending() : m.params_end_submit()}
+                            </Button>
+                            <Button
+                              type="button"
+                              onclick={() => (endingRow = null)}
+                              disabled={endSending}
+                            >
+                              {m.params_end_cancel()}
+                            </Button>
+                          </div>
+                        </form>
+                      </td>
+                    </tr>
+                  {/if}
                 {/each}
               </tbody>
             </table>

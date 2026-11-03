@@ -7,6 +7,7 @@ import type { components } from "@kran/api-client/schema";
 
 export type SessionInfo = components["schemas"]["SessionInfo"];
 export type ParamValue = components["schemas"]["ParamValue"];
+export type ParamEndRequest = components["schemas"]["ParamEndRequest"];
 export type AuditItem = components["schemas"]["AuditItem"];
 export type Product = components["schemas"]["Product"];
 export type ProductSummary = components["schemas"]["ProductSummary"];
