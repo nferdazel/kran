@@ -4249,3 +4249,33 @@ masih kosong.
   `run_at=23:30`, `utc_offset_minutes=420`, `lending.ppap.rates` → `0,5/3/10/50/100` (D-196/POKJ
   1/2024). `ctl daycloser-auto` keluar 0 dengan `belum waktunya: jadwal 23:30 lokal (offset 420
   menit)`; `daycloser-status` → `deploy: boleh`.
+
+## 2026-11-03 — 4 branch paralel (T-044, O-071, O-053, O-064)
+
+**Konteks**: dikerjakan 4 subagent paralel, satu worktree + satu database + satu cache Nim per
+branch (DB terpisah menghapus larangan "jangan dua `./task` bersamaan"; cache dipisah lewat
+`XDG_CACHE_HOME`). Dokumen bersama sengaja tidak disentuh subagent — dikonsolidasikan di sini.
+Semua branch merge `--no-ff` tanpa konflik, lalu dirilis sekali.
+
+- **O-053 (selesai)**: katalog i18n memuat 11 label peran + 39 label izin (id+en). `tools/i18ncheck`
+  kini membaca literal `role.*`/`perm.*` dari migrasi/seed dan **gagal** bila ada kunci DB tanpa
+  terjemahan (bukti mutasi: hapus satu kunci → gate gagal). `./task i18n` 1016 key/locale.
+- **T-044 (belum selesai, dimitigasi)**: bug baru teridentifikasi — API e2e mati `SIGSEGV` di
+  `compensateCounters` (alokasi parser Mummy), **bukan OOM** (RSS 15–17 MB setelah 1,16 juta
+  permintaan). Kelas sama dengan T-042: `Request` ORC diserahkan antar-thread. Mitigasi: batas
+  parser dipin eksplisit (`server.nim` + `tapi_limits`, mutasi memerahkan test), langkah CI
+  mengklasifikasikan crash tanpa mengubah hasil gate, `ACCEPTED-LIMITS.md` + diagnosis di
+  `docs/tasks/T-044.md`. Penutupan akar butuh ADR (O-128).
+- **O-071 (aktivasi login selesai, D-200)**: `platform.security.mfa.require_login` (default mati,
+  hanya berlaku bila `mfa.enabled` hidup) + sesi setengah + `POST /api/v1/auth/mfa/challenge` +
+  penjagaan terpusat di `requirePrincipal`/`sessionCanWork` + anti-replay. Akun tanpa faktor tetap
+  masuk penuh dan dicatat `mfa_enrolment_missing` — asumsi yang diputuskan di D-200, bukan
+  disembunyikan. Bukti: `itauth` 37 OK, `itapi_mfa` 24 OK, tiga mutasi memerahkan suite.
+- **O-064 (selesai)**: tabel `platform.param_end_request` (migrasi `0103`, maker-checker) + 4
+  endpoint + UI Parameter Admin. Persetujuan memangkas `effective_to`, audit `param.end.*`, event,
+  `NOTIFY` — pembacaan sesudah tanggal itu gagal-cepat, bukan memakai nilai lama. Invarian O-043
+  tidak dilonggarkan. Bukti: `itparam` 9 test baru, `itapi_auth` 2 test alur penuh, `tcontract`
+  hijau, tiga mutasi memerahkan suite.
+- **Catatan integrasi**: tabel baru O-064 awalnya **tanpa grant role runtime** — ditambahkan saat
+  merge (`GRANT SELECT, INSERT, UPDATE`) karena itu kelas yang sama dengan O-126 dan hanya akan
+  muncul di produksi. `.nimcache/` ditambahkan ke `.gitignore` (cache per worktree).

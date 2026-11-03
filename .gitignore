@@ -1,5 +1,6 @@
 # build & tool cache
 .build/
+.nimcache/
 node_modules/
 .turbo/
 

@@ -5212,3 +5212,29 @@ sumber migrasi, tanpa membalik arah ketergantungan.
 tautan, bukan kepatuhan. Perubahan hanya pada `docs/compliance/register.yaml` tetap memicu CI
 (filter `paths` dengan pengecualian terakhir). Bila kelak register pindah ke DB, gate membaca tabel
 dan berkas YAML dihapus dalam satu perubahan.
+
+## D-200 — MFA diminta saat login lewat parameter terpisah; akun tanpa faktor tetap masuk (O-071, 3 Nov 2026)
+
+**Konteks.** MFA sudah bisa didaftarkan (`platform.user_mfa`) tetapi login tidak pernah meminta
+faktor kedua — pendaftaran MFA hanya menambah rasa aman, bukan menambah keamanan. Pemicu yang
+disepakati: sebelum pengguna nyata pertama.
+
+**Keputusan.**
+
+1. Kewajiban MFA adalah parameter **tersendiri** `platform.security.mfa.require_login` (default
+   `false`), bukan menumpang `platform.security.mfa.enabled`. Saklar layanan dan kebijakan
+   kewajiban punya pemilik dan akibat berbeda; menumpangkan keduanya membuat sekadar membuka
+   pendaftaran langsung mengunci akun yang belum mendaftar.
+2. Kewajiban hanya berlaku bila `mfa.enabled` hidup. Tanpa rute verifikasi, sesi setengah tidak
+   akan pernah bisa dinaikkan — itu kunci permanen, bukan keamanan.
+3. Verifikasi memakai **sesi setengah** (`platform.session.mfa_pending`, migrasi `0100`): semua
+   rute menolak sesi setengah kecuali `POST /api/v1/auth/mfa/challenge` dan logout; realtime ikut
+   menolak (`sessionCanWork`). Kode diverifikasi terhadap faktor `ACTIVE` dengan anti-replay.
+4. **Akun tanpa faktor `ACTIVE` tetap masuk penuh**, dicatat di audit `auth.login.success` sebagai
+   `mfa_enrolment_missing`. Alasannya operasional: belum ada jalur pemulihan/administratif, jadi
+   menolak berarti mengunci semua akun yang belum mendaftar — termasuk admin. Konsekuensi yang
+   diterima: akun seperti itu hanya dilindungi kata sandi.
+
+**Sisa (masih O-071).** Pembatas percobaan kode, kode pemulihan, penghapusan/penonaktifan faktor,
+UI pengelolaan faktor. Bila kebijakan berubah menjadi lockdown penuh (tolak login tanpa faktor),
+itu keputusan baru dan **wajib** disertai jalur pemulihan lebih dulu.
