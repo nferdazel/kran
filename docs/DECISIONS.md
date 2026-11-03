@@ -5238,3 +5238,36 @@ disepakati: sebelum pengguna nyata pertama.
 **Sisa (masih O-071).** Pembatas percobaan kode, kode pemulihan, penghapusan/penonaktifan faktor,
 UI pengelolaan faktor. Bila kebijakan berubah menjadi lockdown penuh (tolak login tanpa faktor),
 itu keputusan baru dan **wajib** disertai jalur pemulihan lebih dulu.
+
+## D-201 — API dibangun dengan `--mm:atomicArc`, bukan orc (O-128, 3 Nov 2026)
+
+**Konteks.** API e2e pernah mati `SIGSEGV` di allocator Mummy+ORC (3 Nov 2026, O-128):
+`afterRecvHttp` → `newString` → `alloc.nim` `compensateCounters` → `Attempt to read from nil?`.
+Bukan OOM (RSS 15–17 MB setelah 1,16 juta permintaan). Mekanismenya sekelas T-042, yang sudah
+terbukti deterministik di repo ini: Mummy menyerahkan `Request` (string/seq) dari thread loop ke
+thread worker, sementara ORC **tidak** thread-safe untuk siklus yang berpindah thread — tabel di
+catatan rilis Nim 2.4.0 menyatakannya eksplisit ("ORC can only handle cycles that stay inside one
+thread").
+
+**Keputusan.** Biner API dan **seluruh biner test** memakai `--mm:atomicArc`. Gate harus menguji
+memori manager yang sama dengan produksi; kalau test tetap orc, gate tidak menguji apa pun soal
+kelas ini.
+
+**Yang ditolak, dan alasannya.**
+
+- **YRC** (thread-safe *dan* punya pemungut siklus — pilihan paling tepat secara teori). Ditolak
+  karena **Mummy 0.4.8 menolaknya saat kompilasi**: `Error: Using --mm:arc, --mm:orc or
+  --mm:atomicArc is required by Mummy`. Sudah diuji, bukan diasumsikan.
+- **`-D:useMalloc` dengan ORC.** Hanya menukar satu jalur pembukuan dengan yang lain; akar
+  (pembukuan lintas-thread) tetap ada, dan tanpa reproducer kita tidak bisa membuktikan apa pun.
+- **Upgrade Mummy.** Menyentuh D-037 (API internal Mummy dipakai `dropClient`) — keputusan
+  tersendiri, bukan efek samping perbaikan ini.
+
+**Konsekuensi yang diterima.** `atomicArc` tidak punya pemungut siklus, jadi grafik objek yang
+siklik akan bocor. Diukur, bukan diasumsikan: server `atomicArc` terhadap DB dev, 20.000 permintaan
+(`/healthz` + `/readyz`, ~80 req/s berurutan) → RSS 17,9 MB → 23,9 MB setelah 5.000 permintaan
+pertama, lalu **datar** (23,9 / 23,9 / 23,5 MB). Tidak ada pertumbuhan yang terlihat pada beban itu.
+
+**Batas jujur.** Crash-nya **tidak** terbukti hilang — tidak ada reproducer. Yang berubah: mekanisme
+penyebabnya (pembukuan siklus lintas-thread) dihapus dari desain. Pemicu meninjau ulang: Mummy
+>0.4.8 yang menerima YRC, atau RSS produksi yang menanjak dalam hitungan hari.

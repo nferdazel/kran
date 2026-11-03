@@ -43,7 +43,14 @@ NIMFLAGS="--hints:off --warnings:on --path:$ROOT/shared --path:$ROOT/modules --p
 # Tests are compiled (and checked) with `--threads:on`, matching API binary: several integration
 # tests reproduce interleaving between two DB connections (double-approve races, outbox cursor invariants)
 # which are only possible with real threads (O-040).
-TESTFLAGS="$NIMFLAGS --threads:on"
+# `--mm:atomicArc` (bukan orc): ORC tidak thread-safe untuk siklus yang berpindah thread, sedangkan
+# Mummy menyerahkan `Request` (string/seq) dari thread loop ke thread worker — kelas itu sudah memakan
+# korban dua kali (T-042 deterministik, lalu SIGSEGV intermiten di e2e = O-128/D-201).
+#
+# YRC (thread-safe **dan** punya pemungut siklus) tidak bisa dipakai: Mummy 0.4.8 menolaknya di level
+# kompilasi (`--mm:arc|orc|atomicArc is required by Mummy`). Konsekuensi atomicArc: tidak ada pemungut
+# siklus, jadi grafik objek yang siklik akan bocor — diukur, bukan diasumsikan (lihat D-201).
+TESTFLAGS="$NIMFLAGS --threads:on --mm:atomicArc"
 
 # Bootstrap local config (non-business value): KRAN_DATABASE_URL for integration tests.
 if [ -f "$ROOT/.local/dev.env" ]; then
@@ -486,7 +493,7 @@ cmd_build() {
   # Stempel VERSION ditulis sebelum kompilasi: biner dan bundle web harus membawa versi yang
   # sama dengan berkas VERSION, bukan nilai yang tertinggal dari build sebelumnya.
   sh "$ROOT/tools/gen-version.sh" || die "gagal menstempel VERSION (tools/gen-version.sh)"
-  nim c $NIMFLAGS --mm:orc --threads:on --out:"$BIN/kran-api" "$ROOT/apps/api/src/main.nim"
+  nim c $NIMFLAGS --mm:atomicArc --threads:on --out:"$BIN/kran-api" "$ROOT/apps/api/src/main.nim"
   ok "$BIN/kran-api"
 }
 

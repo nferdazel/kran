@@ -49,9 +49,14 @@ COPY kran.nimble ./
 RUN nimble install -d -y
 
 COPY . .
-# Flag build mengikuti `./task` (D-001): `--mm:orc` + `--threads:on` bukan pilihan gaya — pool DB dan
-# pump realtime memakai thread, dan `./task test`/`ci` menguji dengan flag yang sama.
-RUN nim c -d:release --mm:orc --threads:on --hints:off --out:/out/kran-api apps/api/src/main.nim
+# Flag build mengikuti `./task` (D-001): `--threads:on` bukan pilihan gaya — pool DB dan pump realtime
+# memakai thread, dan `./task test`/`ci` menguji dengan flag yang sama.
+#
+# `--mm:atomicArc`, **bukan** orc (O-128/D-201). ORC tidak thread-safe untuk siklus yang berpindah
+# thread, sedangkan Mummy menyerahkan `Request` (string/seq) dari thread loop ke thread worker.
+# YRC akan lebih tepat (thread-safe + pemungut siklus) tetapi **Mummy 0.4.8 menolaknya saat kompilasi**;
+# atomicArc adalah MM thread-safe terdekat yang diterimanya, dengan konsekuensi siklus bocor (diukur).
+RUN nim c -d:release --mm:atomicArc --threads:on --hints:off --out:/out/kran-api apps/api/src/main.nim
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 # libpq dibuka **saat jalan** lewat dynlib (db_connector), bukan ditautkan saat build — tanpa paket ini

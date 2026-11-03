@@ -4279,3 +4279,20 @@ Semua branch merge `--no-ff` tanpa konflik, lalu dirilis sekali.
 - **Catatan integrasi**: tabel baru O-064 awalnya **tanpa grant role runtime** — ditambahkan saat
   merge (`GRANT SELECT, INSERT, UPDATE`) karena itu kelas yang sama dengan O-126 dan hanya akan
   muncul di produksi. `.nimcache/` ditambahkan ke `.gitignore` (cache per worktree).
+
+## 2026-11-03 — O-128: API pindah ke `atomicArc` (D-201)
+
+**Konteks**: O-128 (crash SIGSEGV di allocator Mummy+ORC) diputuskan ditangani dengan mengganti memori
+manager, bukan dengan `-D:useMalloc`.
+
+- **YRC diuji lebih dulu dan gagal di dependency**: Mummy 0.4.8 menolak MM selain `arc|orc|atomicArc`
+  saat kompilasi (`Error: Using --mm:arc, --mm:orc or --mm:atomicArc is required by Mummy`). Ini
+  ketahuan sebelum dikirim — kalau tidak, rilis akan gagal di job build.
+- **Keputusan (D-201)**: biner API **dan seluruh biner test** memakai `--mm:atomicArc`, supaya gate
+  menguji MM yang sama dengan produksi.
+- **Bukti**: `./task build` hijau; `itapi_teardown` (2 OK), `itapi_ws` (22 OK), `itapi_lending` (43 OK)
+  hijau dengan atomicArc; `./task ci` hijau. Kebocoran siklus (konsekuensi atomicArc) **diukur**:
+  20.000 permintaan ke server atomicArc → RSS 17,9 MB → 23,9 MB setelah 5.000 permintaan pertama lalu
+  datar (23,9 / 23,9 / 23,5 MB).
+- **Batas jujur**: crash-nya belum terbukti hilang (tidak ada reproducer). Yang dihapus adalah
+  mekanismenya (pembukuan siklus lintas-thread), bukan gejalanya.
