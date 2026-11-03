@@ -16,6 +16,8 @@ const ROLE_LABELS: Record<string, () => string> = {
   product_checker: () => m.role_product_checker(),
   ops_admin: () => m.role_ops_admin(),
   ledger_admin: () => m.role_ledger_admin(),
+  lending_checker: () => m.role_lending_checker(),
+  lending_maker: () => m.role_lending_maker(),
   cash_admin: () => m.role_cash_admin(),
   product_maker: () => m.role_product_maker(),
 };
