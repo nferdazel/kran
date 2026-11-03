@@ -12,7 +12,7 @@ import std/[algorithm, json, options, strutils, times]
 import db_connector/db_postgres
 
 import ../domain/[audit, authz, scope]
-import ./[audit_repo, auth_repo, calendar_repo, param_repo, password_hasher]
+import ./[audit_repo, auth_repo, calendar_repo, mfa_repo, param_repo, password_hasher]
 import kernel/[auditcontext, clock, ids, paramkey, result]
 import kernel/generated/paramkeys
 
@@ -32,6 +32,7 @@ type
     aoInvalidCredentials = "INVALID_CREDENTIALS"
     aoLocked = "LOCKED"
     aoInactive = "INACTIVE"
+    aoMfaRequired = "MFA_REQUIRED" ## kata sandi benar, tetapi faktor kedua belum diverifikasi
 
   AuthResult* = object
     outcome*: AuthOutcome
@@ -199,8 +200,21 @@ proc auditAuth(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
     businessDate = businessDateFor(db, scope, utcIso(clock.now())), after = payload))
 
 proc authenticate*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
-                   settings: SecuritySettings, username, password: string): AuthResult =
+                   settings: SecuritySettings, username, password: string,
+                   mfaEnforced: bool): AuthResult =
   ## Login: verifikasi password + kebijakan lockout → sesi baru.
+  ##
+  ## `mfaEnforced` = kebijakan institusi `platform.security.mfa.require_login` (O-071). Bila true
+  ## dan akun punya faktor TOTP `ACTIVE`, hasilnya `aoMfaRequired` **dengan sesi setengah**
+  ## (`session.mfa_pending = true`): cookie terbit supaya kode bisa diverifikasi, tetapi sesi itu
+  ## belum boleh dipakai rute lain. Nilai diberikan pemanggil (bukan dibaca di sini) karena
+  ## `mfa_service` sudah bergantung pada berkas ini — membaca parameter di sana akan membuat
+  ## lingkaran impor.
+  ##
+  ## **Akun tanpa faktor `ACTIVE` tetap mendapat sesi penuh** saat kebijakan aktif (asumsi O-071):
+  ## menolaknya berarti pengguna tidak bisa mendaftar — rute pendaftaran butuh sesi — dan belum ada
+  ## jalur pemulihan administratif untuk faktor. Keadaan itu dicatat di audit
+  ## (`mfa_enrolment_missing`) supaya kebijakan yang belum dipenuhi terlihat operator.
   ##
   ## Pesan/gagal tidak membedakan "user tidak ada" dan "password salah" (`aoInvalidCredentials`)
   ## supaya tidak membocorkan keberadaan akun; bedanya hanya tercatat di audit.
@@ -246,11 +260,24 @@ proc authenticate*(db: DbConn, ctx: AuditContext, clock: Clock, scope: ScopeRef,
   let (idleDeadline, absoluteDeadline) = sessionDeadlines(policy, now)
   let token = newSessionToken()
   let sessionId = $newId(clock)
+  # Faktor kedua yang wajib (O-071): sesi lahir **setengah** dan hanya naik ke sesi penuh lewat
+  # `verifyLoginChallenge` + `clearSessionMfaPending`. Penanda disimpan di baris sesi, bukan di
+  # memori proses, supaya restart/pemroses lain tidak diam-diam menjadikannya sesi penuh.
+  let mfaPending = mfaEnforced and hasActiveMfa(db, user.userId)
   discard createSession(db, sessionId, user.userId, tokenHash(token),
-    utcIso(idleDeadline), utcIso(absoluteDeadline), ctx.ip, ctx.device, ctx.correlationId)
-  auditAuth(db, ctx, clock, scope, "auth.login.success", user.userId,
-    %*{"session_id": sessionId, "must_change_password": user.mustChangePassword,
-       "expires_at": utcIso(idleDeadline), "absolute_expires_at": utcIso(absoluteDeadline)})
+    utcIso(idleDeadline), utcIso(absoluteDeadline), ctx.ip, ctx.device, ctx.correlationId,
+    mfaPending = mfaPending)
+  var payload = %*{"session_id": sessionId, "must_change_password": user.mustChangePassword,
+    "expires_at": utcIso(idleDeadline), "absolute_expires_at": utcIso(absoluteDeadline)}
+  if mfaEnforced:
+    # Hanya dicatat saat kebijakannya hidup: jejak default (kebijakan mati) tidak berubah, dan
+    # `mfa_enrolment_missing` adalah keadaan yang harus bisa ditindaklanjuti operator.
+    payload["mfa_pending"] = %mfaPending
+    payload["mfa_enrolment_missing"] = %(not mfaPending)
+  auditAuth(db, ctx, clock, scope, "auth.login.success", user.userId, payload)
+  if mfaPending:
+    return AuthResult(outcome: aoMfaRequired, userId: user.userId, sessionId: sessionId,
+      token: token)
   AuthResult(outcome: aoSuccess, userId: user.userId, sessionId: sessionId, token: token)
 
 proc parseIsoZ*(s: string): DateTime =

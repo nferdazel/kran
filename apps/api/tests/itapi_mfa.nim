@@ -3,8 +3,9 @@
 ## Yang dibuktikan di sini adalah **jalur penuh lewat HTTP**: gerbang fitur (default mati → 403,
 ## juga saat keyring tidak ada), pendaftaran yang mengembalikan rahasia sekali saja, penyimpanan
 ## rahasia sebagai ciphertext (`kran:enc:v1`) dan bukan plaintext, bahwa **bentuk kode datang dari
-## parameter** tapi dibekukan di baris pendaftaran, jejak audit, dan bahwa **alur login tidak
-## berubah** (tanpa tantangan MFA).
+## parameter** tapi dibekukan di baris pendaftaran, jejak audit, dan (sejak O-071) bahwa
+## `platform.security.mfa.require_login` — juga **default mati** — mengubah login akun berfaktor
+## `ACTIVE` menjadi sesi setengah yang hanya bisa dinaikkan lewat `POST …/mfa/challenge`.
 ##
 ## Rahasia/kode tidak pernah masuk audit — itu juga diperiksa (assertion pada `after_value`).
 ##
@@ -38,13 +39,19 @@ const
   StatusPath = "/api/v1/auth/mfa"
   EnrolmentPath = "/api/v1/auth/mfa/enrolment"
   VerifyPath = "/api/v1/auth/mfa/verify"
+  ChallengePath = "/api/v1/auth/mfa/challenge"
   LoginPath = "/api/v1/auth/login"
   MfaEnabledKey = "platform.security.mfa.enabled"
+  MfaRequireLoginKey = "platform.security.mfa.require_login"
   MfaDigitsKey = "platform.security.mfa.digits"
   MfaPeriodKey = "platform.security.mfa.period_seconds"
   MfaIssuerKey = "platform.security.mfa.issuer"
   MakerUser = "dev.maker"
   CheckerUser = "dev.checker"
+  ## Akun dev tanpa faktor MFA: `cashchecker` dipakai untuk mendaftarkan faktor baru di suite
+  ## O-071, `cashmaker` untuk membuktikan akun tanpa faktor tetap masuk (dengan catatan audit).
+  CashmakerUser = "dev.cashmaker"
+  CashcheckerUser = "dev.cashchecker"
   DevPassword = "rahasia-panjang-123"
   CookieName = "kran_session"
   ## Bentuk kode uji: **berbeda dari nilai seed** (6 digit / 30 detik) supaya test bisa
@@ -568,12 +575,154 @@ suite "MFA: pendaftaran & verifikasi":
     check benar.code == 204
     check mfaStatusOf(CheckerUser) == "ACTIVE"
 
-  test "login tetap tidak meminta MFA (alur login tidak berubah)":
-    # D-046 butir 9 / batas task T-046: faktor ACTIVE **tidak** mengubah proses masuk. Ini akan
-    # berubah di task aktivasi login (O-071) — saat itu test ini yang harus diubah lebih dulu.
+  test "kebijakan MFA mati (default) → login tidak meminta kode":
+    # `platform.security.mfa.require_login` bawaan pack = `false`, jadi faktor ACTIVE **tidak**
+    # mengubah proses masuk. Kewajiban itu dibuktikan suite terakhir, setelah parameternya
+    # dinyalakan lewat maker-checker (O-071).
     let reply = login(MakerUser)
     check reply.code == 200
     checkJson(LoginPath, "POST", "200", reply.body)
     check tokenOf(reply).len > 0
     check not reply.body.hasKey("mfa")
     check not reply.body.hasKey("mfaRequired")
+
+# --- suite: kewajiban faktor kedua saat login (O-071) -----------------------------------------
+# Suite ini berjalan **terakhir**: ia menyalakan `platform.security.mfa.require_login`, sehingga
+# login akun berfaktor `ACTIVE` berhenti memberi sesi penuh. Suite sebelumnya sengaja berjalan
+# dengan kebijakan itu mati (default pack) — itulah bukti bahwa default tidak mengubah alur login.
+
+proc auditLoginPayload(username: string): JsonNode =
+  ## `after_value` audit login terakhir akun itu (jejak kebijakan MFA dibaca dari sana, bukan
+  ## diasumsikan).
+  let conn = dbPool.acquire()
+  try:
+    let rows = conn.getAllRows(sql"""
+      SELECT after_value::text FROM platform.audit_log
+       WHERE action = 'auth.login.success' AND resource_id = ?
+       ORDER BY seq DESC LIMIT 1""", userIdOf(username))
+    if rows.len == 0:
+      return newJObject()
+    parseJson(rows[0][0])
+  finally:
+    dbPool.release(conn)
+
+suite "MFA: kewajiban faktor kedua saat login (O-071)":
+
+  var challengeSecret = ""
+  var challengeDigits = 0
+  var challengePeriod = 0
+
+  test "kebijakan hidup: akun tanpa faktor tetap masuk penuh, keadaan dicatat audit":
+    # Asumsi O-071: menolak akun tanpa faktor akan mengunci setiap pengguna yang belum mendaftar
+    # (rute pendaftaran butuh sesi, dan belum ada jalur pemulihan faktor). Yang dijaga: keadaan itu
+    # terlihat operator lewat audit, bukan dianggap "sudah MFA".
+    check setParamValue(MfaRequireLoginKey, %true)
+
+    let reply = login(CashmakerUser)
+    check reply.code == 200
+    check tokenOf(reply).len > 0
+    let sesi = getJson("/api/v1/auth/session", tokenOf(reply))
+    check sesi.code == 200
+    check auditLoginPayload(CashmakerUser)["mfa_enrolment_missing"].getBool()
+
+  test "faktor baru bisa didaftarkan lewat sesi penuh, lalu diwajibkan pada login berikutnya":
+    let reply = login(CashcheckerUser)
+    check reply.code == 200
+    let enrol = postJson(EnrolmentPath, newJObject(), tokenOf(reply))
+    check enrol.code == 201
+    challengeSecret = enrol.body["secret"].getStr()
+    challengeDigits = enrol.body["digits"].getInt()
+    challengePeriod = enrol.body["periodSeconds"].getInt()
+
+    # Kode langkah **sebelumnya** (masih dalam `drift_steps`): aktivasi mencatat langkah itu sebagai
+    # `last_used_step`, jadi kode langkah berjalan tetap boleh dipakai sesudah ini (anti-replay).
+    let verify = postJson(VerifyPath,
+      %*{"code": codeFor(challengeSecret, challengeDigits, challengePeriod, offsetSteps = -1)},
+      tokenOf(reply))
+    check verify.code == 204
+    check mfaStatusOf(CashcheckerUser) == "ACTIVE"
+
+  test "login akun berfaktor ACTIVE → 403 mfa_required + sesi setengah yang belum boleh bekerja":
+    let reply = login(CashcheckerUser)
+    check reply.code == 403
+    checkProblem(LoginPath, "POST", "403", reply.body, reason = "mfa_required")
+    let token = tokenOf(reply)
+    check token.len > 0 # cookie sesi setengah tetap terbit: tanpanya kode tidak bisa diverifikasi
+
+    # Sesi setengah ditolak di semua rute lain — bukan hanya di layar MFA.
+    let sesi = getJson("/api/v1/auth/session", token)
+    check sesi.code == 403
+    check sesi.body["params"]["reason"].getStr() == "mfa_required"
+
+    let param = getJson("/api/v1/params", token)
+    check param.code == 403
+    checkProblem("/api/v1/params", "GET", "403", param.body, reason = "mfa_required")
+
+    let status = getJson(StatusPath, token)
+    check status.code == 403
+    checkProblem(StatusPath, "GET", "403", status.body, reason = "mfa_required")
+
+  test "kode salah → 403 mfa_code_invalid, sesi tetap setengah":
+    let reply = login(CashcheckerUser)
+    let token = tokenOf(reply)
+    check reply.code == 403
+
+    let salah = postJson(ChallengePath,
+      %*{"code": "0".repeat(challengeDigits)}, token)
+    check salah.code == 403
+    checkProblem(ChallengePath, "POST", "403", salah.body, reason = "mfa_code_invalid")
+    check getJson("/api/v1/auth/session", token).code == 403
+    check auditRows("auth.mfa.login_failure", CashcheckerUser) >= 1
+
+  test "kode benar → 204 dan sesi menjadi penuh":
+    let reply = login(CashcheckerUser)
+    let token = tokenOf(reply)
+    check reply.code == 403
+
+    let benar = postJson(ChallengePath,
+      %*{"code": codeFor(challengeSecret, challengeDigits, challengePeriod)}, token)
+    check benar.code == 204
+
+    let sesi = getJson("/api/v1/auth/session", token)
+    check sesi.code == 200
+    check sesi.body["userId"].getStr() == userIdOf(CashcheckerUser)
+
+    let status = getJson(StatusPath, token)
+    check status.code == 200
+    check status.body["status"].getStr() == "ACTIVE"
+
+    check auditRows("auth.mfa.login", CashcheckerUser) == 1
+    check not auditPayloadLeaksSecret(CashcheckerUser, challengeSecret)
+    check auditLoginPayload(CashcheckerUser)["mfa_pending"].getBool()
+
+  test "kode yang sudah dipakai tidak bisa membuka sesi kedua (anti-replay)":
+    let reply = login(CashcheckerUser)
+    let token = tokenOf(reply)
+    check reply.code == 403
+
+    # Kode yang sama dengan test sebelumnya: langkah waktunya sudah tercatat di `last_used_step`.
+    let ulang = postJson(ChallengePath,
+      %*{"code": codeFor(challengeSecret, challengeDigits, challengePeriod)}, token)
+    check ulang.code == 403
+    checkProblem(ChallengePath, "POST", "403", ulang.body, reason = "mfa_code_invalid")
+    check getJson("/api/v1/auth/session", token).code == 403
+
+  test "sesi penuh yang tidak menunggu tantangan → 409 mfa_no_pending_challenge":
+    let reply = login(CashmakerUser) # akun tanpa faktor: sesi penuh
+    check reply.code == 200
+    let token = tokenOf(reply)
+    let body = postJson(ChallengePath, %*{"code": "123456"}, token)
+    check body.code == 409
+    checkProblem(ChallengePath, "POST", "409", body.body,
+      reason = "mfa_no_pending_challenge")
+
+  test "sesi setengah bisa dicabut (logout) — bukan jalan buntu":
+    # Tanpa ini pengguna yang berhenti di tengah tantangan MFA tertahan dengan cookie yang tidak
+    # bisa dibuang lewat API. Mencabut sesi tidak membocorkan apa pun, jadi rute itu menerima sesi
+    # setengah.
+    let reply = login(CashcheckerUser)
+    let token = tokenOf(reply)
+    check reply.code == 403
+    let logout = postJson("/api/v1/auth/logout", newJObject(), token)
+    check logout.code == 204
+    check getJson("/api/v1/auth/session", token).code == 401

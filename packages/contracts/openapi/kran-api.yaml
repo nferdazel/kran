@@ -254,7 +254,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
         "403":
-          description: Akun terkunci atau tidak aktif (`params.reason` = `locked`/`inactive`)
+          description: |
+            Akun terkunci atau tidak aktif (`params.reason` = `locked`/`inactive`), atau kata
+            sandi benar tetapi faktor kedua wajib diverifikasi (`params.reason` = `mfa_required`,
+            O-071 — lihat catatan di bawah). Semuanya hanya bisa dilihat pemegang kata sandi yang
+            benar.
+          headers:
+            Set-Cookie:
+              description: |
+                Pada `mfa_required`, cookie sesi **setengah** diset dengan atribut yang sama
+                seperti 200. Cookie itu hanya diterima `POST /api/v1/auth/mfa/challenge`; rute lain
+                menjawab 403 `mfa_required` sampai kode diverifikasi.
+              schema:
+                type: string
           content:
             application/problem+json:
               schema:
@@ -449,9 +461,12 @@ paths:
         `PENDING` (rahasia ada, belum dikonfirmasi kode), `ACTIVE` (terkonfirmasi).
 
         `featureEnabled` mencerminkan parameter institusi `platform.security.mfa.enabled`, yang
-        **default `false`**. Selama `false`, ketiga rute MFA menjawab 403 dengan `params.reason` =
-        `mfa_disabled`. **Alur login belum meminta MFA** (D-046 butir 9): faktor terdaftar pun tidak
-        mengubah proses masuk pada tahap ini.
+        **default `false`**. Selama `false`, rute MFA menjawab 403 dengan `params.reason` =
+        `mfa_disabled`. Kewajiban faktor kedua saat login dikendalikan parameter terpisah
+        `platform.security.mfa.require_login` (juga default `false`, lihat O-071): bila hidup,
+        login akun yang punya faktor `ACTIVE` hanya memberi sesi setengah dan kode diselesaikan
+        lewat `POST /api/v1/auth/mfa/challenge`. Rute status ini sendiri menolak sesi setengah
+        (403 `mfa_required`).
       security:
         - sessionCookie: []
       responses:
@@ -471,6 +486,78 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "403":
           description: MFA belum diaktifkan (`params.reason` = `mfa_disabled`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "405":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "501":
+          $ref: "#/components/responses/Problem"
+
+  /api/v1/auth/mfa/challenge:
+    post:
+      operationId: verifyMfaChallenge
+      tags: [auth]
+      summary: Verifikasi kode faktor kedua untuk sesi setengah (O-071)
+      description: |
+        Menyelesaikan login yang menuntut faktor kedua: memverifikasi kode TOTP terhadap faktor
+        `ACTIVE` akun pemanggil dan, bila cocok, menaikkan **sesi setengah** menjadi sesi penuh.
+
+        Sesi setengah lahir dari `POST /api/v1/auth/login` ketika parameter institusi
+        `platform.security.mfa.require_login` hidup dan akun punya faktor `ACTIVE`; login itu
+        menjawab 403 `mfa_required` **dan** menyetel cookie sesi. Cookie itulah yang harus
+        dikirim ke rute ini. Selama sesi masih setengah, rute lain menjawab 403 `mfa_required`.
+
+        Digit/periode yang dipakai adalah bentuk yang tercatat saat pendaftaran (bukan parameter
+        saat ini). Kode yang sudah pernah dipakai ditolak (anti-replay RFC 6238 §5.2) dan dijawab
+        sama seperti kode salah. Kode salah → 403 `params.reason` = `mfa_code_invalid`, sesi tetap
+        setengah, dan kejadiannya dicatat di audit (`auth.mfa.login_failure`) tanpa memuat kode.
+
+        Batas yang disengaja (O-071): belum ada pembatas jumlah percobaan kode dan belum ada kode
+        pemulihan.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaVerifyRequest"
+      responses:
+        "503":
+          $ref: "#/components/responses/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "204":
+          description: Kode benar; sesi menjadi sesi penuh
+        "400":
+          description: Badan permintaan tidak lengkap
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Tidak ada sesi sah
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: |
+            MFA tidak hidup (`params.reason` = `mfa_disabled`) atau kode tidak cocok
+            (`params.reason` = `mfa_code_invalid`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: |
+            Tidak ada tantangan yang bisa diselesaikan: sesi sudah penuh
+            (`params.reason` = `mfa_no_pending_challenge`) atau akun tidak punya faktor aktif
+            (`params.reason` = `mfa_no_active_factor`)
           content:
             application/problem+json:
               schema:

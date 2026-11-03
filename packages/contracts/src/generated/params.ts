@@ -755,6 +755,21 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "platform.security.mfa.require_login",
+    "module": "platform",
+    "valueType": "bool",
+    "tsType": "boolean",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.security.mfa.require_login",
+    "jsonSchema": null
+  },
+  {
     "key": "platform.security.password_history_count",
     "module": "platform",
     "valueType": "integer",

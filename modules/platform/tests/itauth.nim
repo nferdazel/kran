@@ -16,8 +16,8 @@ import dbtools/lib
 import kernel/[auditcontext, clock, ids, paramkey, result]
 import platform/domain/[audit, authz, scope]
 import platform/domain/param
-import platform/infrastructure/[audit_repo, auth_repo, auth_service, calendar_repo, param_repo,
-  password_hasher]
+import platform/infrastructure/[audit_repo, auth_repo, auth_service, calendar_repo, mfa_repo,
+  mfa_service, param_repo, password_hasher]
 
 const
   repoRoot = "."
@@ -102,12 +102,13 @@ proc auditRows(action: string): seq[Row] =
       FROM platform.audit_log WHERE action = ? ORDER BY seq""", action)
 
 proc loginWith(username, password: string; setelan: SecuritySettings;
-               branch = branchBandung): AuthResult =
+               branch = branchBandung; mfaEnforced = false): AuthResult =
   ## Login dengan setelan eksplisit. Dipakai uji biaya KDF (O-034) yang perlu jumlah iterasi
   ## terkendali — bukan nilai parameter dev yang sengaja diturunkan supaya suite ini cepat.
   let found = userByUsername(db, username)
   let uid = if found.isSome: found.get().userId else: ""
-  authenticate(db, ctxFor(uid, branch), jamKerja, instScope, setelan, username, password)
+  authenticate(db, ctxFor(uid, branch), jamKerja, instScope, setelan, username, password,
+    mfaEnforced = mfaEnforced)
 
 proc login(username, password: string; branch = branchBandung): AuthResult =
   ## Login dengan konteks lengkap seperti dari HTTP layer nanti.
@@ -590,3 +591,83 @@ suite "platform: secret TOTP wajib ciphertext (T-129/DB-3)":
       mfaUser)
     check db.getValue(sql"""
       SELECT count(*)::text FROM platform.user_mfa WHERE user_id = ?::uuid""", mfaUser) == "1"
+
+suite "login: kewajiban faktor kedua (O-071)":
+  ## Kebijakan `platform.security.mfa.require_login` dibaca pemanggil (handler) dan diteruskan
+  ## sebagai `mfaEnforced`; di sini yang dinilai adalah keputusan `authenticate` + bentuk sesi.
+  ## Verifikasi kode yang sungguhan (dekripsi rahasia + TOTP) diuji lewat HTTP di `itapi_mfa`.
+  const mfaAktifIso = "2026-10-13T09:00:00Z"
+
+  proc faktorkan(userId: string) =
+    ## Menandai akun punya faktor `ACTIVE` tanpa kripto: rahasia tiruan tidak pernah didekripsi
+    ## di suite ini, yang dibutuhkan hanya keadaannya di DB.
+    check db.upsertPending(userId, "kran:enc:v1:uji", 6, 30, mfaAktifIso)
+    check db.activateMfa(userId, 0, mfaAktifIso)
+
+  test "kebijakan mati (default): faktor ACTIVE tidak mengubah login":
+    let uid = buatUser("mfa.mati")
+    faktorkan(uid)
+    let res = login("mfa.mati", passwordAwal)
+    check res.outcome == aoSuccess
+    let sesi = sessionFor(db, jamKerja, res.token)
+    check sesi.isSome
+    check not sesi.get().mfaPending
+    # Jejak audit default tidak berubah: kunci kebijakan MFA hanya muncul saat kebijakannya hidup.
+    check not parseJson(auditRows("auth.login.success")[^1][7]).hasKey("mfa_pending")
+
+  test "kebijakan hidup + faktor ACTIVE: sesi lahir setengah, bukan sesi penuh":
+    let uid = buatUser("mfa.aktif")
+    faktorkan(uid)
+    let res = loginWith("mfa.aktif", passwordAwal, settings(), mfaEnforced = true)
+    check res.outcome == aoMfaRequired
+    check res.token.len >= 40
+    let sesi = sessionFor(db, jamKerja, res.token).get()
+    check sesi.mfaPending
+    check parseJson(auditRows("auth.login.success")[^1][7])["mfa_pending"].getBool
+
+    # Hanya jalur verifikasi kode yang boleh menaikkannya; setelah itu penandanya hilang dan
+    # operasi kedua menjadi no-op (bukan sesi baru).
+    check clearSessionMfaPending(db, sesi.sessionId)
+    check not sessionFor(db, jamKerja, res.token).get().mfaPending
+    check not clearSessionMfaPending(db, sesi.sessionId)
+
+  test "kebijakan hidup tanpa faktor ACTIVE: tetap sesi penuh, keadaan dicatat audit":
+    # Asumsi O-071: menolak akun tanpa faktor berarti pengguna tidak bisa mendaftar (rute
+    # pendaftaran butuh sesi) dan tidak ada jalur pemulihan. Keadaannya dibuat terlihat operator
+    # lewat `mfa_enrolment_missing` di audit, bukan disembunyikan.
+    discard buatUser("mfa.tanpafaktor")
+    let res = loginWith("mfa.tanpafaktor", passwordAwal, settings(), mfaEnforced = true)
+    check res.outcome == aoSuccess
+    check not sessionFor(db, jamKerja, res.token).get().mfaPending
+    check parseJson(auditRows("auth.login.success")[^1][7])["mfa_enrolment_missing"].getBool
+
+  test "faktor PENDING belum mewajibkan kode (rahasianya belum dibuktikan pemiliknya)":
+    let uid = buatUser("mfa.pending")
+    check db.upsertPending(uid, "kran:enc:v1:uji", 6, 30, mfaAktifIso)
+    let res = loginWith("mfa.pending", passwordAwal, settings(), mfaEnforced = true)
+    check res.outcome == aoSuccess
+    check not sessionFor(db, jamKerja, res.token).get().mfaPending
+
+suite "kebijakan MFA: kewajiban login hanya berlaku bila layanan MFA hidup":
+  ## `mfaRequireLogin` adalah satu-satunya tempat aturan itu didefinisikan; handler login hanya
+  ## menerima hasilnya. Diuji di sini karena keputusan ini yang menentukan bentuk sesi di
+  ## `authenticate`.
+  proc ubahParam(key: string; nilai: JsonNode) =
+    let change = submitChange(db, adminCtx, sysClock, key, "GLOBAL", "", nilai,
+      "2026-01-01", "", "uji otomatis MFA")
+    discard approveChange(db, newAuditContext(parseId($newId(sysClock)).value(), sysClock),
+      sysClock, change.paramValueId)
+
+  test "default (kedua saklar mati) → tidak ada kewajiban":
+    check not db.mfaRequireLogin(instScope, asOf)
+
+  test "require_login hidup tanpa layanan MFA → dibaca mati, bukan kunci":
+    # Tanpa `mfa.enabled`, rute challenge menjawab `mfa_disabled`; seandainya kewajiban tetap
+    # berlaku, setiap akun berfaktor akan terkunci permanen.
+    ubahParam("platform.security.mfa.require_login", %*true)
+    check not db.mfaRequireLogin(instScope, asOf)
+
+  test "layanan MFA hidup + require_login hidup → wajib, dan nilainya tidak berubah":
+    ubahParam("platform.security.mfa.enabled", %*true)
+    check db.mfaRequireLogin(instScope, asOf)
+    check db.mfaRequireLogin(instScope, asOf)

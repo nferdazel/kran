@@ -1,8 +1,12 @@
 ## Layanan MFA TOTP (T-046, spec §13/§18.2). **HUMAN-REVIEW-REQUIRED (kripto/autentikasi)**.
 ##
-## Batas yang disengaja: berkas ini **tidak** menyentuh `authenticate`/login. MFA belum diminta
-## saat login (D-046 butir 9); yang ada di sini adalah jalur self-service untuk mendaftarkan faktor
-## dan membuktikan satu kode — kerangka yang bisa diuji, bukan aktivasi.
+## Dua lapis kebijakan, sengaja terpisah:
+##   * `platform.security.mfa.enabled` = layanan MFA hidup (rute pendaftaran bisa dipakai);
+##   * `platform.security.mfa.require_login` = faktor kedua **wajib** saat login untuk akun yang
+##     sudah punya faktor `ACTIVE` (O-071). Kebijakan ini dibaca `authenticate` lewat
+##     `mfaRequireLogin`; berkas ini menyediakan jalur verifikasi sesi-setengahnya
+##     (`verifyLoginChallenge`). Kewajiban itu terpisah supaya institusi bisa membuka pendaftaran
+##     lebih dulu tanpa langsung mengunci pengguna yang belum mendaftar.
 ##
 ## Semua angka (digit, periode, toleransi jam, penerbit) dari parameter DB lewat `mfaSettingsOf`.
 ## Bentuk rahasia (digit/periode) **disimpan per pendaftaran** dan dipakai saat verifikasi, bukan
@@ -53,26 +57,58 @@ type
     mvoInvalidCode
     mvoNoPending
 
+  MfaLoginOutcome* = enum
+    ## Hasil verifikasi kode pada sesi **setengah** (login, O-071).
+    mloVerified = "VERIFIED"
+    mloInvalidCode = "INVALID_CODE" ## termasuk kode yang sudah pernah dipakai (anti-replay)
+    mloNoActiveFactor = "NO_ACTIVE_FACTOR"
+
   MfaDataError* = object of CatchableError
     ## Rahasia tersimpan tidak bisa dipakai (ciphertext rusak / bukan base32). Ini keadaan data,
     ## bukan kesalahan pengguna: pemanggil HTTP menjawab 500.
+
+proc mfaEnabledFlag(db: DbConn, scope: ScopeRef, asOf: string): bool =
+  ## Saklar layanan MFA. Fail-closed ke **mati** bila nilainya belum ada (`activeValueOpt`, bukan
+  ## `activeValueJson`): instalasi baru — atau produksi yang seed parameter MFA-nya belum dijalankan
+  ## — harus menjawab 403 `mfa_disabled`, bukan galat 500. Nilai non-bool = kebijakan rusak
+  ## (`ValueError`), bukan diam-diam dianggap mati.
+  let enabled = db.activeValueOpt(keyString(P_platform_security_mfa_enabled), asOf, lookupFor(scope))
+  if enabled.isNone:
+    return false
+  if enabled.get().kind != JBool:
+    raise newException(ValueError, "parameter mfa.enabled bukan boolean: " & $enabled.get())
+  enabled.get().getBool
+
+proc mfaRequireLogin*(db: DbConn, scope: ScopeRef, asOf: string): bool =
+  ## Kewajiban faktor kedua saat login (O-071). Fail-closed ke **mati** bila nilainya belum
+  ## tersemai, pola yang sama dengan `mfa.enabled`: instalasi yang belum menyemai parameter baru
+  ## ini tidak boleh berubah perilaku loginnya.
+  ##
+  ## Kewajiban **hanya berlaku bila layanan MFA hidup**. Tanpa itu tidak ada rute yang bisa
+  ## memverifikasi kode (`mfa_disabled`), sehingga sesi setengah tidak akan pernah bisa dinaikkan
+  ## dan setiap akun berfaktor terkunci permanen. Kombinasi `require_login` tanpa `mfa.enabled`
+  ## karena itu dibaca sebagai "MFA mati", bukan sebagai kunci — dan mematikan layanan MFA memang
+  ## mematikan seluruh kebijakan MFA, bukan hanya rute pendaftaran.
+  if not db.mfaEnabledFlag(scope, asOf):
+    return false
+  let value = db.activeValueOpt(
+    keyString(P_platform_security_mfa_require_login), asOf, lookupFor(scope))
+  if value.isNone:
+    return false
+  if value.get().kind != JBool:
+    raise newException(ValueError,
+      "parameter mfa.require_login bukan boolean: " & $value.get())
+  value.get().getBool
 
 proc mfaSettingsOf*(db: DbConn, scope: ScopeRef, asOf: string): MfaSettings =
   ## Kebijakan MFA institusi. Dipisahkan dari `settingsOf` (login) supaya login tidak ikut
   ## bergantung pada nilai parameter MFA: bila nilai ini belum tersemai, hanya rute MFA yang menolak.
   ##
-  ## Saklarnya fail-closed ke **mati** bila nilainya belum ada (`activeValueOpt`, bukan
-  ## `activeValueJson`): instalasi baru — atau produksi yang seed parameter MFA-nya belum dijalankan
-  ## — harus menjawab 403 `mfa_disabled`, bukan galat 500. Nilai lain dibaca **hanya** saat saklarnya
-  ## hidup, sehingga kebijakan yang setengah tersemai tetap gagal keras alih-alih memakai bentuk kode
-  ## yang tak pernah diputuskan siapa pun.
+  ## Saklarnya fail-closed ke **mati** (`mfaEnabledFlag`). Nilai lain dibaca **hanya** saat
+  ## saklarnya hidup, sehingga kebijakan yang setengah tersemai tetap gagal keras alih-alih memakai
+  ## bentuk kode yang tak pernah diputuskan siapa pun.
   let lookup = lookupFor(scope)
-  let enabled = db.activeValueOpt(keyString(P_platform_security_mfa_enabled), asOf, lookup)
-  if enabled.isNone:
-    return MfaSettings(enabled: false)
-  if enabled.get().kind != JBool:
-    raise newException(ValueError, "parameter mfa.enabled bukan boolean: " & $enabled.get())
-  if not enabled.get().getBool:
+  if not db.mfaEnabledFlag(scope, asOf):
     return MfaSettings(enabled: false)
   let issuer = db.activeValueJson(keyString(P_platform_security_mfa_issuer), asOf, lookup)
   if issuer.kind != JString:
@@ -168,3 +204,48 @@ proc confirmEnrolment*(db: DbConn, fc: FieldCrypto, ctx: AuditContext, clock: Cl
   auditMfa(db, ctx, clock, scope, "auth.mfa.verify", userId,
     %*{"status": "ACTIVE", "digits": row.digits, "period_seconds": row.periodSeconds})
   mvoActivated
+
+proc verifyLoginChallenge*(db: DbConn, fc: FieldCrypto, ctx: AuditContext, clock: Clock,
+                           scope: ScopeRef, settings: MfaSettings,
+                           userId, code: string): MfaLoginOutcome =
+  ## Memverifikasi kode pada sesi **setengah** (login, O-071). Berbeda dengan `confirmEnrolment`:
+  ## status tidak berubah (sudah `ACTIVE`), dan langkah waktu yang berhasil dipakai **dicatat**
+  ## (`recordUsedStep`, RFC 6238 §5.2) supaya satu kode tidak bisa membuka dua sesi.
+  ##
+  ## Digit/periode tetap dari baris pendaftaran; `settings.driftSteps` dari parameter (toleransi
+  ## jam, bukan bentuk rahasia).
+  ##
+  ## Batas yang disengaja: tidak ada pembatas jumlah percobaan kode dan tidak ada kode pemulihan.
+  ## Keduanya sisa pekerjaan O-071 yang dicatat, bukan sesuatu yang dianggap selesai di sini.
+  ## Akibat yang diterima: penebak kode dibatasi hanya oleh rentang langkah TOTP + laju request.
+  let found = mfaOf(db, userId)
+  if found.isNone or found.get().status != "ACTIVE":
+    return mloNoActiveFactor
+  let row = found.get()
+
+  var secret: seq[byte]
+  try:
+    secret = base32Decode(decryptField(fc, mfaTableName, row.secretEnc))
+  except DecryptError:
+    raise newException(MfaDataError, "rahasia MFA tersimpan tidak bisa didekripsi")
+  except ValueError:
+    raise newException(MfaDataError, "rahasia MFA tersimpan bukan base32 yang sah")
+
+  let now = clock.now()
+  let matched = verifyTotp(secret, code, now.toTime.toUnix, row.periodSeconds, row.digits,
+    settings.driftSteps)
+  if matched.isNone:
+    auditMfa(db, ctx, clock, scope, "auth.mfa.login_failure", userId,
+      %*{"reason": "invalid_code"})
+    return mloInvalidCode
+
+  if not recordUsedStep(db, userId, matched.get(), utcIso(now)):
+    # Langkah ini sudah pernah dipakai: kode yang sama tidak boleh membuka sesi kedua. Dijawab
+    # sama seperti kode salah — bedanya hanya di audit, supaya penebak tidak bisa menyimpulkan
+    # status langkah dari respons.
+    auditMfa(db, ctx, clock, scope, "auth.mfa.login_failure", userId,
+      %*{"reason": "code_replayed"})
+    return mloInvalidCode
+
+  auditMfa(db, ctx, clock, scope, "auth.mfa.login", userId, %*{"status": "ACTIVE"})
+  mloVerified

@@ -218,13 +218,50 @@ export interface paths {
          *     `PENDING` (rahasia ada, belum dikonfirmasi kode), `ACTIVE` (terkonfirmasi).
          *
          *     `featureEnabled` mencerminkan parameter institusi `platform.security.mfa.enabled`, yang
-         *     **default `false`**. Selama `false`, ketiga rute MFA menjawab 403 dengan `params.reason` =
-         *     `mfa_disabled`. **Alur login belum meminta MFA** (D-046 butir 9): faktor terdaftar pun tidak
-         *     mengubah proses masuk pada tahap ini.
+         *     **default `false`**. Selama `false`, rute MFA menjawab 403 dengan `params.reason` =
+         *     `mfa_disabled`. Kewajiban faktor kedua saat login dikendalikan parameter terpisah
+         *     `platform.security.mfa.require_login` (juga default `false`, lihat O-071): bila hidup,
+         *     login akun yang punya faktor `ACTIVE` hanya memberi sesi setengah dan kode diselesaikan
+         *     lewat `POST /api/v1/auth/mfa/challenge`. Rute status ini sendiri menolak sesi setengah
+         *     (403 `mfa_required`).
          */
         get: operations["getMfaStatus"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/mfa/challenge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verifikasi kode faktor kedua untuk sesi setengah (O-071)
+         * @description Menyelesaikan login yang menuntut faktor kedua: memverifikasi kode TOTP terhadap faktor
+         *     `ACTIVE` akun pemanggil dan, bila cocok, menaikkan **sesi setengah** menjadi sesi penuh.
+         *
+         *     Sesi setengah lahir dari `POST /api/v1/auth/login` ketika parameter institusi
+         *     `platform.security.mfa.require_login` hidup dan akun punya faktor `ACTIVE`; login itu
+         *     menjawab 403 `mfa_required` **dan** menyetel cookie sesi. Cookie itulah yang harus
+         *     dikirim ke rute ini. Selama sesi masih setengah, rute lain menjawab 403 `mfa_required`.
+         *
+         *     Digit/periode yang dipakai adalah bentuk yang tercatat saat pendaftaran (bukan parameter
+         *     saat ini). Kode yang sudah pernah dipakai ditolak (anti-replay RFC 6238 §5.2) dan dijawab
+         *     sama seperti kode salah. Kode salah → 403 `params.reason` = `mfa_code_invalid`, sesi tetap
+         *     setengah, dan kejadiannya dicatat di audit (`auth.mfa.login_failure`) tanpa memuat kode.
+         *
+         *     Batas yang disengaja (O-071): belum ada pembatas jumlah percobaan kode dan belum ada kode
+         *     pemulihan.
+         */
+        post: operations["verifyMfaChallenge"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3806,9 +3843,20 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Akun terkunci atau tidak aktif (`params.reason` = `locked`/`inactive`) */
+            /**
+             * @description Akun terkunci atau tidak aktif (`params.reason` = `locked`/`inactive`), atau kata
+             *     sandi benar tetapi faktor kedua wajib diverifikasi (`params.reason` = `mfa_required`,
+             *     O-071 — lihat catatan di bawah). Semuanya hanya bisa dilihat pemegang kata sandi yang
+             *     benar.
+             */
             403: {
                 headers: {
+                    /**
+                     * @description Pada `mfa_required`, cookie sesi **setengah** diset dengan atribut yang sama
+                     *     seperti 200. Cookie itu hanya diterima `POST /api/v1/auth/mfa/challenge`; rute lain
+                     *     menjawab 403 `mfa_required` sampai kode diverifikasi.
+                     */
+                    "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -4029,6 +4077,76 @@ export interface operations {
                 };
             };
             405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    verifyMfaChallenge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Kode benar; sesi menjadi sesi penuh */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Badan permintaan tidak lengkap */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Tidak ada sesi sah */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /**
+             * @description MFA tidak hidup (`params.reason` = `mfa_disabled`) atau kode tidak cocok
+             *     (`params.reason` = `mfa_code_invalid`)
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            405: components["responses"]["Problem"];
+            /**
+             * @description Tidak ada tantangan yang bisa diselesaikan: sesi sudah penuh
+             *     (`params.reason` = `mfa_no_pending_challenge`) atau akun tidak punya faktor aktif
+             *     (`params.reason` = `mfa_no_active_factor`)
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            415: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
             501: components["responses"]["Problem"];
             503: components["responses"]["Problem"];
