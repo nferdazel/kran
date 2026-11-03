@@ -1,7 +1,7 @@
 # Satu paket Nim untuk seluruh monorepo (lihat docs/DECISIONS.md D-002).
 # Nama berkas = nama paket Nim; ikut nama repo sejak D-038 (`kran`).
 # Direktori sumber ditambahkan lewat `-p:` di ./task, bukan lewat `srcDir` tunggal.
-version     = "0.1.15"
+version     = "0.1.16"
 author      = "Fredianto"
 description = "KRAN - core banking system (Nim backend + SvelteKit web)"
 # `LICENSE` di akar repo adalah sumber kebenaran lisensi: publik untuk dibaca/audit, **tanpa** izin
