@@ -4,6 +4,17 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.1.18] - 2026-11-03
+
+### Added
+- **auth:** Require MFA second factor at login when policy enabled (O-071)
+- **platform:** Let an operator end a parameter value without a successor (O-064)
+- **i18n:** Translate role and permission catalogue keys (O-053)
+
+### Fixed
+- **platform:** Grant role runtime pada platform.param_end_request (O-064)
+- **api:** Pin Mummy parser limits and classify e2e API crashes (T-044)
+
 ## [0.1.17] - 2026-11-03
 
 ### Fixed
