@@ -531,3 +531,256 @@ proc rejectChange*(db: DbConn, ctx: AuditContext, clock: Clock,
     paramValueId, "param.change:" & paramValueId & ":rejected", %*{
       "key": pending.key, "scope_type": pending.scopeType, "scope_id": pending.scopeId,
       "status": $pvRejected, "effective_from": pending.effectiveFrom}))
+
+# --- Pengakhiran nilai parameter (O-064) ------------------------------------------------------
+#
+# Alurnya maker-checker seperti `teller.vault_topup_request` (T-118), bukan penanda pada
+# `param_value`: nilai yang diakhiri **tetap** ACTIVE (riwayatnya masih menjawab tanggal lampau),
+# sedangkan keputusan "nilai ini berhenti" punya pengaju, penyetuju, dan alasannya sendiri.
+#
+# Kenapa pengakhiran tidak boleh sekadar memperpanjang/mempersingkat lewat `param_value`:
+# `effectiveToGapProblem` menolak `effective_to` tanpa penerus pada jalur pengajuan nilai (O-043),
+# dan invarian itu **tidak** dilonggarkan. Jalur ini terpisah karena tujuannya memang celah nilai,
+# sehingga pengamannya adalah dua orang + alasan + audit, bukan pemeriksaan periode.
+
+type
+  ParamEndRequestRow* = object
+    ## Satu pengajuan pengakhiran + konteks nilai yang diakhiri (bahan daftar UI).
+    requestId*: string
+    paramValueId*: string
+    key*: string
+    scopeType*: string
+    scopeId*: string
+    effectiveFrom*: string
+    effectiveTo*: string ## tanggal berhenti yang diminta
+    status*: string      ## PENDING | APPROVED | REJECTED
+    reason*: string
+    requestedBy*: string
+    decidedBy*: string   ## "" = belum diputuskan
+    decisionNote*: string
+    createdAt*: string
+
+  EndRequestOutcome* = object
+    requestId*: string
+    paramValueId*: string
+    effectiveTo*: string
+    auditHash*: string
+    eventId*: Id
+
+const endRequestColumns = """
+  r.request_id::text, r.param_value_id::text, v.key, v.scope_type, coalesce(v.scope_id, ''),
+  to_char(v.effective_from, 'YYYY-MM-DD'), to_char(r.effective_to, 'YYYY-MM-DD'),
+  r.status, r.reason, r.requested_by::text, coalesce(r.decided_by::text, ''),
+  coalesce(r.decision_note, ''),
+  to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')"""
+
+proc endRequestOf(row: Row): ParamEndRequestRow =
+  ParamEndRequestRow(
+    requestId: row[0], paramValueId: row[1], key: row[2], scopeType: row[3], scopeId: row[4],
+    effectiveFrom: row[5], effectiveTo: row[6], status: row[7], reason: row[8],
+    requestedBy: row[9], decidedBy: row[10], decisionNote: row[11], createdAt: row[12])
+
+proc endRequestById*(db: DbConn, requestId: string,
+                     forUpdate = false): Option[ParamEndRequestRow] =
+  ## `forUpdate` mengunci baris pengajuan supaya dua pemutus bersamaan tidak sama-sama lolos.
+  let suffix = if forUpdate: " FOR UPDATE OF r" else: ""
+  let found = db.singleRow(sql("SELECT " & endRequestColumns &
+    " FROM platform.param_end_request r" &
+    " JOIN platform.param_value v ON v.param_value_id = r.param_value_id" &
+    " WHERE r.request_id = ?::uuid" & suffix), requestId)
+  if found.isNone:
+    return none(ParamEndRequestRow)
+  some(endRequestOf(found.get()))
+
+proc pendingEndRequestOf*(db: DbConn, paramValueId: string): Option[string] =
+  ## Id pengajuan yang masih PENDING untuk satu nilai, `none` bila tidak ada.
+  let found = db.singleRow(sql"""
+    SELECT request_id::text FROM platform.param_end_request
+     WHERE param_value_id = ?::uuid AND status = 'PENDING'""", paramValueId)
+  if found.isNone:
+    return none(string)
+  some(found.get()[0])
+
+proc insertEndRequest*(db: DbConn, requestId, paramValueId, effectiveTo, requestedBy,
+                       reason: string): bool =
+  ## `false` bila (paramValueId) sudah punya pengajuan PENDING lain — indeks unik parsial
+  ## `param_end_request_pending_uq` yang memutuskan, bukan pemeriksaan di kode.
+  db.getAllRows(sql"""
+    INSERT INTO platform.param_end_request
+      (request_id, param_value_id, effective_to, requested_by, reason)
+    VALUES (?::uuid, ?::uuid, ?::date, ?::uuid, ?)
+    ON CONFLICT DO NOTHING
+    RETURNING request_id""", requestId, paramValueId, effectiveTo, requestedBy, reason).len > 0
+
+proc decideEndRequest*(db: DbConn, requestId, status, decidedBy, decisionNote: string): bool =
+  ## Menulis keputusan **hanya** bila masih PENDING (`false` = sudah diputuskan orang lain).
+  db.execAffectedRows(sql"""
+    UPDATE platform.param_end_request
+       SET status = ?, decided_by = ?::uuid, decided_at = now(),
+           decision_note = NULLIF(?, '')
+     WHERE request_id = ?::uuid AND status = 'PENDING'""",
+    status, decidedBy, decisionNote, requestId) == 1
+
+proc applyEndToValue*(db: DbConn, paramValueId, effectiveTo: string): bool =
+  ## Memangkas `effective_to` nilai ACTIVE. `false` = nilai sudah tidak ACTIVE, atau tanggal
+  ## berhentinya sudah sama/lebih awal (tidak ada yang berubah).
+  ##
+  ## Pengakhiran hanya boleh **memindahkan tanggal berhenti lebih awal** — tidak pernah
+  ## memperpanjang nilai yang sudah dijadwalkan berhenti (`effective_to > ?`).
+  db.execAffectedRows(sql"""
+    UPDATE platform.param_value
+       SET effective_to = ?::date
+     WHERE param_value_id = ?::uuid
+       AND status = 'ACTIVE'
+       AND (effective_to IS NULL OR effective_to > ?::date)""",
+    effectiveTo, paramValueId, effectiveTo) == 1
+
+proc submitEndChange*(db: DbConn, ctx: AuditContext, clock: Clock, paramValueId, effectiveTo,
+                      today, reason: string): EndRequestOutcome =
+  ## Pengajuan pengakhiran (maker) → PENDING. Satu transaksi (pemanggil membungkus `withTx`).
+  ##
+  ## Ditegakkan di sini juga (defense in depth, spec §10.4): baris harus ada dan ACTIVE, tanggal
+  ## berhenti harus **setelah** `effective_from` nilai itu dan **setelah** tanggal buku (`today`),
+  ## dan tidak boleh memperpanjang tanggal berhenti yang sudah ada. `today` dikirim pemanggil
+  ## supaya penolakan tanggal lampau memakai tanggal buku yang sama dengan handler.
+  let found = pendingValueOf(db, paramValueId)
+  if found.isNone:
+    raise newException(ValueError, "param_value_id tidak ditemukan: " & paramValueId)
+  let row = found.get()
+  let current = statusOf(db, paramValueId)
+  if current.isNone or current.get() != pvActive:
+    raise newException(ValueError, "nilai " & paramValueId & " tidak berstatus ACTIVE")
+  if effectiveTo <= row.effectiveFrom:
+    raise newException(ValueError, "effectiveTo harus setelah effectiveFrom nilai " &
+      row.effectiveFrom)
+  if effectiveTo <= today:
+    raise newException(ValueError, "effectiveTo " & effectiveTo &
+      " tidak boleh surut: harus setelah tanggal buku " & today)
+  if row.effectiveTo.len > 0 and effectiveTo >= row.effectiveTo:
+    raise newException(ValueError, "nilai ini sudah berakhir pada " & row.effectiveTo &
+      "; pengakhiran hanya boleh memindahkan tanggal itu lebih awal")
+
+  let requestId = $newId(clock)
+  if not insertEndRequest(db, requestId, paramValueId, effectiveTo, $ctx.userId, reason):
+    raise newException(ValueError, "nilai " & paramValueId &
+      " sudah punya pengajuan pengakhiran yang menunggu keputusan")
+
+  result.requestId = requestId
+  result.paramValueId = paramValueId
+  result.effectiveTo = effectiveTo
+  result.auditHash = appendAudit(db, newAuditEntry(ctx, "param.end.submit",
+    "param_end_request", requestId, clock, businessDate = today, after = %*{
+      "requestId": requestId, "paramValueId": paramValueId, "key": row.key,
+      "scope_type": row.scopeType, "scope_id": row.scopeId,
+      "effective_from": row.effectiveFrom, "effective_to": effectiveTo, "reason": reason,
+      "status": "PENDING"}))
+  result.eventId = newId(clock)
+  discard appendEvent(db, newOutboxEvent(result.eventId, "param.changed", "param_value",
+    paramValueId, "param.change:" & paramValueId & ":end_requested:" & requestId, %*{
+      "key": row.key, "scope_type": row.scopeType, "scope_id": row.scopeId,
+      "status": $pvActive, "effective_from": row.effectiveFrom,
+      "effective_to": effectiveTo, "end_request_id": requestId, "end_request": "PENDING"}))
+
+proc approveEndChange*(db: DbConn, ctx: AuditContext, clock: Clock,
+                       requestId: string): EndRequestOutcome =
+  ## Persetujuan (checker): memangkas `effective_to` nilai ACTIVE + audit + event + `NOTIFY`.
+  ## Raise `ValueError` bila pengajuan tidak ada/bukan PENDING, pemutus = pengaju (CHECK skema
+  ## `param_end_request_self_approval_chk` menolak juga), atau nilainya sudah tidak ACTIVE.
+  let found = endRequestById(db, requestId, forUpdate = true)
+  if found.isNone:
+    raise newException(ValueError, "pengajuan pengakhiran tidak ditemukan: " & requestId)
+  let request = found.get()
+  if request.status != "PENDING":
+    raise newException(ValueError, "pengajuan " & requestId & " tidak berstatus PENDING")
+  if request.requestedBy == $ctx.userId:
+    raise newException(ValueError,
+      "pengesahan sendiri ditolak: pemutus harus orang lain (spec §10.2)")
+
+  let before = pendingValueOf(db, request.paramValueId)
+  if not applyEndToValue(db, request.paramValueId, request.effectiveTo):
+    raise newException(ValueError, "nilai " & request.paramValueId &
+      " sudah tidak ACTIVE atau tanggal berhentinya sudah sama/lebih awal")
+  if not decideEndRequest(db, requestId, "APPROVED", $ctx.userId, ""):
+    raise newException(ValueError, "pengajuan " & requestId & " sudah diputuskan")
+
+  result.requestId = requestId
+  result.paramValueId = request.paramValueId
+  result.effectiveTo = request.effectiveTo
+  result.auditHash = appendAudit(db, newAuditEntry(ctx, "param.end.approve",
+    "param_end_request", requestId, clock,
+    businessDate = if before.isSome: before.get().effectiveFrom else: "",
+    before = %*{"effective_to": (if before.isSome: before.get().effectiveTo else: "")},
+    after = %*{
+      "requestId": requestId, "paramValueId": request.paramValueId, "key": request.key,
+      "scope_type": request.scopeType, "scope_id": request.scopeId,
+      "effective_from": request.effectiveFrom, "effective_to": request.effectiveTo,
+      "status": "APPROVED"}))
+  result.eventId = newId(clock)
+  discard appendEvent(db, newOutboxEvent(result.eventId, "param.changed", "param_value",
+    request.paramValueId, "param.change:" & request.paramValueId & ":ended:" & requestId, %*{
+      "key": request.key, "scope_type": request.scopeType, "scope_id": request.scopeId,
+      "status": $pvActive, "effective_from": request.effectiveFrom,
+      "effective_to": request.effectiveTo, "end_request_id": requestId,
+      "end_request": "APPROVED"}))
+  # Validasi cache in-proc: tanpa NOTIFY, pembaca bisa terus memakai nilai yang sudah berakhir.
+  notifyChange(db, request.key)
+
+proc rejectEndChange*(db: DbConn, ctx: AuditContext, clock: Clock, requestId,
+                      reason: string): EndRequestOutcome =
+  ## Penolakan pengakhiran: PENDING → REJECTED + audit + event. Nilai ACTIVE tidak disentuh.
+  let found = endRequestById(db, requestId, forUpdate = true)
+  if found.isNone:
+    raise newException(ValueError, "pengajuan pengakhiran tidak ditemukan: " & requestId)
+  let request = found.get()
+  if request.status != "PENDING":
+    raise newException(ValueError, "pengajuan " & requestId & " tidak berstatus PENDING")
+  if request.requestedBy == $ctx.userId:
+    raise newException(ValueError,
+      "keputusan sendiri ditolak: pemutus harus orang lain (spec §10.2)")
+  if not decideEndRequest(db, requestId, "REJECTED", $ctx.userId, reason):
+    raise newException(ValueError, "pengajuan " & requestId & " sudah diputuskan")
+
+  result.requestId = requestId
+  result.paramValueId = request.paramValueId
+  result.effectiveTo = request.effectiveTo
+  result.auditHash = appendAudit(db, newAuditEntry(ctx, "param.end.reject",
+    "param_end_request", requestId, clock, businessDate = request.effectiveFrom,
+    after = %*{
+      "requestId": requestId, "paramValueId": request.paramValueId, "key": request.key,
+      "scope_type": request.scopeType, "scope_id": request.scopeId,
+      "effective_to": request.effectiveTo, "status": "REJECTED", "reason": reason}))
+  result.eventId = newId(clock)
+  discard appendEvent(db, newOutboxEvent(result.eventId, "param.changed", "param_value",
+    request.paramValueId, "param.change:" & request.paramValueId & ":end_rejected:" &
+      requestId, %*{
+      "key": request.key, "scope_type": request.scopeType, "scope_id": request.scopeId,
+      "status": $pvActive, "effective_to": request.effectiveTo,
+      "end_request_id": requestId, "end_request": "REJECTED"}))
+
+proc endRequests*(db: DbConn, status: string, limit: int,
+                  scope: ScopeFilter): seq[ParamEndRequestRow] =
+  ## Daftar pengajuan pengakhiran untuk UI. `status` kosong = semua status.
+  ##
+  ## Penyaringan scope memakai terjemahan yang sama dengan `paramValueRows` (D-046 butir 6):
+  ## disaring **di SQL**, bukan setelah `LIMIT`, supaya baris yang tidak boleh dibaca tidak
+  ## memakan jatah halaman.
+  let allBranches = if scope.allBranches: "1" else: "0"
+  var branches: seq[string]
+  for b in scope.branches:
+    branches.add b
+  let readableBranches = $ %* branches
+  for row in db.getAllRows(sql("SELECT " & endRequestColumns &
+      """
+      FROM platform.param_end_request r
+      JOIN platform.param_value v ON v.param_value_id = r.param_value_id
+     WHERE (?::text = '' OR r.status = ?)
+       AND (v.scope_type = 'GLOBAL'
+            OR (v.scope_type = 'INSTITUTION' AND ?::int = 1)
+            OR (v.scope_type = 'BRANCH'
+                AND (?::int = 1
+                     OR v.scope_id::text IN
+                        (SELECT value FROM jsonb_array_elements_text(?::jsonb)))))
+     ORDER BY r.created_at DESC
+     LIMIT ?::int"""), status, status, allBranches, allBranches, readableBranches,
+    $limit):
+    result.add endRequestOf(row)

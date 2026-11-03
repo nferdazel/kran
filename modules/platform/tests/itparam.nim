@@ -553,3 +553,211 @@ suite "param: effectiveTo tanpa penerus (O-043, D-046 butir 8)":
       " 'PENDING', '" & $maker & "', NULL, 'uji penerus global')")
     check effectiveToGapProblem(db, keyAkhir, "BRANCH", "uji-akhir-global", "2026-03-01",
       "2026-04-01").len == 0
+
+suite "param: pengakhiran nilai (O-064)":
+  ## Jalur "nilai ini berhenti pada tanggal X tanpa pengganti". Yang dibuktikan: nilai benar-benar
+  ## berhenti berlaku setelah tanggal itu, pembacaan menjawab galat yang jelas (bukan nilai lama),
+  ## tanggal surut ditolak, pengesahan sendiri ditolak, dan invarian O-043 tetap utuh untuk jalur
+  ## pengajuan nilai biasa.
+  const
+    today = "2026-10-13" ## tanggal buku tetap: test tidak boleh bergantung jam dinding
+
+  proc aktifkan(key, scopeId: string, nilai: JsonNode, fromDate: string,
+                toDate = ""): string =
+    ## Nilai ACTIVE lewat jalur normal (pengajuan + persetujuan orang lain).
+    let submit = dbPool.withTx(proc(d: DbConn): ChangeOutcome =
+      submitChange(d, ctxMaker, sysClock, key, "INSTITUTION", scopeId, nilai, fromDate, toDate,
+        "nilai yang akan diakhiri"))
+    discard dbPool.withTx(proc(d: DbConn): ChangeOutcome =
+      approveChange(d, ctxChecker, sysClock, submit.paramValueId))
+    submit.paramValueId
+
+  proc lewat(scopeId: string): ScopeValueLookup =
+    lookup(@[(pstInstitution, scopeId)])
+
+  test "pengakhiran yang disetujui: nilai berhenti, pembacaan gagal jelas, audit + event":
+    let pvId = aktifkan(sessionKey, "akhir-1", %*40, "2026-01-01")
+    let request = dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+      submitEndChange(d, ctxMaker, sysClock, pvId, "2026-11-01", today, "produk dihentikan"))
+    check request.requestId.len > 0
+    # Pengajuan belum mengubah apa pun: nilai masih menjawab sampai persetujuan.
+    let sebelum = activeValueOpt(db, sessionKey, "2026-12-31", lewat("akhir-1"))
+    check sebelum.isSome
+    check sebelum.get().getInt == 40
+
+    discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+      approveEndChange(d, ctxChecker, sysClock, request.requestId))
+
+    # Sampai sehari sebelum tanggal berhenti nilainya masih berlaku; mulai tanggal itu tidak ada
+    # nilai aktif sama sekali — dan pembacaan **gagal**, bukan mengembalikan nilai lama.
+    let sehariSebelum = activeValueOpt(db, sessionKey, "2026-10-31", lewat("akhir-1"))
+    check sehariSebelum.isSome
+    check sehariSebelum.get().getInt == 40
+    check activeValueOpt(db, sessionKey, "2026-11-01", lewat("akhir-1")).isNone
+    var raised = false
+    try:
+      discard activeValueJson(db, sessionKey, "2026-11-01", lewat("akhir-1"))
+    except ValueError as e:
+      raised = true
+      check "tidak punya nilai aktif" in e.msg
+    check raised
+    # Startup check memakai jalur resolusi yang sama, jadi key ini ikut dilaporkan hilang.
+    check missingActiveKeys(db, [sessionKey], pstInstitution, "akhir-1",
+      "2026-11-01") == @[sessionKey]
+
+    # Bukti keputusan dua orang: pengajuan + persetujuan tercatat, event outbox menyebut tanggal.
+    check db.getValue(sql"""
+      SELECT count(*) FROM platform.audit_log
+       WHERE action = 'param.end.submit' AND resource_id = ?""", request.requestId) == "1"
+    check db.getValue(sql"""
+      SELECT count(*) FROM platform.audit_log
+       WHERE action = 'param.end.approve' AND resource_id = ?""", request.requestId) == "1"
+    check db.getValue(sql"SELECT status FROM platform.param_end_request WHERE request_id = ?",
+      request.requestId) == "APPROVED"
+    check db.getValue(sql"""
+      SELECT count(*) FROM platform.outbox
+       WHERE dedup_key = ?""", "param.change:" & pvId & ":ended:" & request.requestId) == "1"
+    check rowStatus(db, pvId) == "ACTIVE"
+
+  test "tanggal berhenti surut ditolak (tidak ada nilai yang bisa diubah di masa lalu)":
+    let pvId = aktifkan(sessionKey, "akhir-2", %*41, "2026-01-01")
+    var raised = false
+    try:
+      discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+        submitEndChange(d, ctxMaker, sysClock, pvId, today, today, "mundur ke hari ini"))
+    except ValueError as e:
+      raised = true
+      check "tidak boleh surut" in e.msg
+    check raised
+    raised = false
+    try:
+      discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+        submitEndChange(d, ctxMaker, sysClock, pvId, "2026-09-01", today, "mundur"))
+    except ValueError as e:
+      raised = true
+      check "tidak boleh surut" in e.msg
+    check raised
+    check db.getValue(sql"""
+      SELECT count(*) FROM platform.param_end_request WHERE param_value_id = ?::uuid""",
+      pvId) == "0"
+
+  test "tanggal berhenti harus setelah effective_from nilai itu":
+    let pvId = aktifkan(sessionKey, "akhir-3", %*42, "2026-12-01")
+    var raised = false
+    try:
+      discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+        submitEndChange(d, ctxMaker, sysClock, pvId, "2026-11-15", today, "sebelum mulai"))
+    except ValueError as e:
+      raised = true
+      check "setelah effectiveFrom" in e.msg
+    check raised
+
+  test "pengakhiran tidak boleh memperpanjang tanggal berhenti yang sudah ada":
+    # Nilai yang sudah dijadwalkan berhenti hanya boleh dipindahkan **lebih awal**; memperpanjang
+    # sama dengan menghidupkan kembali nilai yang sudah diputuskan berakhir.
+    let pvId = aktifkan(sessionKey, "akhir-4", %*43, "2026-01-01", "2026-12-01")
+    var raised = false
+    try:
+      discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+        submitEndChange(d, ctxMaker, sysClock, pvId, "2026-12-01", today, "sama"))
+    except ValueError as e:
+      raised = true
+      check "sudah berakhir" in e.msg
+    check raised
+    raised = false
+    try:
+      discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+        submitEndChange(d, ctxMaker, sysClock, pvId, "2027-01-01", today, "memperpanjang"))
+    except ValueError as e:
+      raised = true
+      check "sudah berakhir" in e.msg
+    check raised
+
+    # Memindahkan lebih awal tetap boleh, dan hanya mengubah tanggal berhentinya.
+    let request = dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+      submitEndChange(d, ctxMaker, sysClock, pvId, "2026-11-01", today, "berhenti lebih awal"))
+    discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+      approveEndChange(d, ctxChecker, sysClock, request.requestId))
+    check db.getValue(sql"""
+      SELECT to_char(effective_to, 'YYYY-MM-DD') FROM platform.param_value
+       WHERE param_value_id = ?::uuid""", pvId) == "2026-11-01"
+
+  test "pengesahan sendiri ditolak (dan nilainya tidak berubah)":
+    let pvId = aktifkan(sessionKey, "akhir-5", %*44, "2026-01-01")
+    let request = dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+      submitEndChange(d, ctxMaker, sysClock, pvId, "2026-11-01", today, "usulan pengaju"))
+    var raised = false
+    try:
+      discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+        approveEndChange(d, ctxMaker, sysClock, request.requestId))
+    except ValueError as e:
+      raised = true
+      check "pengesahan sendiri" in e.msg
+    check raised
+    check db.getValue(sql"SELECT status FROM platform.param_end_request WHERE request_id = ?",
+      request.requestId) == "PENDING"
+    check activeValueOpt(db, sessionKey, "2026-12-31", lewat("akhir-5")).get().getInt == 44
+
+  test "satu pengajuan berjalan per nilai; penolakan membuka jalan pengajuan berikutnya":
+    let pvId = aktifkan(sessionKey, "akhir-6", %*45, "2026-01-01")
+    let first = dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+      submitEndChange(d, ctxMaker, sysClock, pvId, "2026-11-01", today, "pengajuan pertama"))
+    var raised = false
+    try:
+      discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+        submitEndChange(d, ctxMaker, sysClock, pvId, "2026-12-01", today, "pengajuan kedua"))
+    except ValueError as e:
+      raised = true
+      check "menunggu keputusan" in e.msg
+    check raised
+
+    discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+      rejectEndChange(d, ctxChecker, sysClock, first.requestId, "produk masih dipakai"))
+    # Penolakan tidak menyentuh nilai yang sedang berlaku.
+    check activeValueOpt(db, sessionKey, "2026-12-31", lewat("akhir-6")).get().getInt == 45
+    check db.getValue(sql"""
+      SELECT count(*) FROM platform.audit_log
+       WHERE action = 'param.end.reject' AND resource_id = ?""", first.requestId) == "1"
+    let second = dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+      submitEndChange(d, ctxMaker, sysClock, pvId, "2026-12-01", today, "pengajuan ulang"))
+    check second.requestId.len > 0
+
+  test "nilai yang belum ACTIVE tidak bisa diakhiri":
+    let submit = dbPool.withTx(proc(d: DbConn): ChangeOutcome =
+      submitChange(db, ctxMaker, sysClock, sessionKey, "INSTITUTION", "akhir-7", %*46,
+        "2026-01-01", "", "masih menunggu"))
+    var raised = false
+    try:
+      discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+        submitEndChange(d, ctxMaker, sysClock, submit.paramValueId, "2026-11-01", today, "uji"))
+    except ValueError as e:
+      raised = true
+      check "tidak berstatus ACTIVE" in e.msg
+    check raised
+
+  test "invarian O-043 tetap: pengajuan nilai ber-effectiveTo tanpa penerus masih ditolak":
+    # Jalur pengakhiran menambah kemampuan **berhenti**, bukan melonggarkan pemeriksaan periode pada
+    # pengajuan nilai baru. Scope khusus supaya tidak bergantung urutan test di suite ini.
+    let pvId = aktifkan(sessionKey, "akhir-8", %*47, "2026-01-01")
+    check effectiveToGapProblem(db, sessionKey, "INSTITUTION", "akhir-8", "2026-03-01",
+      "2026-04-01").len > 0
+    # Setelah nilai itu diakhiri pun, celah yang disengaja tidak membuat pengajuan terbatas lolos.
+    let request = dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+      submitEndChange(d, ctxMaker, sysClock, pvId, "2026-11-01", today, "diakhiri"))
+    discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+      approveEndChange(d, ctxChecker, sysClock, request.requestId))
+    check effectiveToGapProblem(db, sessionKey, "INSTITUTION", "akhir-8", "2026-03-01",
+      "2026-04-01").len > 0
+
+  test "persetujuan pengakhiran mengirim NOTIFY invalidasi cache":
+    # Tanpa NOTIFY, cache in-proc bisa terus menjawab nilai yang sudah berakhir sampai TTL-nya.
+    let pvId = aktifkan(sessionKey, "akhir-9", %*48, "2026-01-01")
+    listenChanges(talker)
+    let request = dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+      submitEndChange(d, ctxMaker, sysClock, pvId, "2026-11-01", today, "uji invalidasi cache"))
+    # Notifikasi dari test lain dibuang dulu supaya assertion di bawah milik persetujuan ini.
+    discard pollChanges(talker, 50)
+    discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+      approveEndChange(d, ctxChecker, sysClock, request.requestId))
+    let keys = pollChanges(talker, 3000)
+    check sessionKey in keys

@@ -26,6 +26,9 @@ belum ada yang perlu diekspor.
 - `platform.outbox`, `platform.inbox` — transactional outbox + de-dup.
 - `platform.worker_heartbeat` — denyut worker untuk `/readyz` (teknis, O-081).
 - `platform.param_definition`, `platform.param_value` — parameter framework (T-005).
+- `platform.param_end_request` — pengajuan pengakhiran nilai parameter (O-064): maker-checker
+  dengan alasan wajib; persetujuan memangkas `platform.param_value.effective_to` **tanpa** menuntut
+  nilai penerus, dan `NOTIFY` ikut dikirim agar cache in-proc tidak menjawab nilai yang berakhir.
 - `platform.holiday`, `platform.business_date` — kalender & tanggal buku (T-007).
 - `platform.app_user`, `platform.role`, `platform.permission`, `platform.role_permission`,
   `platform.user_role`, `platform.role_conflict`, `platform.session` — identitas, akses, sesi (T-006).

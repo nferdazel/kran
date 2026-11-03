@@ -435,6 +435,115 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/params/{paramValueId}/end-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ajukan pengakhiran nilai parameter (maker)
+         * @description Mengajukan agar sebuah nilai `ACTIVE` **berhenti berlaku** pada `effectiveTo` tanpa nilai
+         *     penerus (O-064). Hasilnya selalu `PENDING`: pengakhiran baru berlaku setelah disetujui akun
+         *     lain (`platform.param.approve`).
+         *
+         *     Jalur ini terpisah dari pengajuan nilai: aturan O-043 tetap berlaku pada
+         *     `POST /api/v1/params/{key}/changes` — `effectiveTo` di sana tetap wajib punya penerus.
+         *     Pengakhiran sengaja menghasilkan celah nilai; setelah tanggal itu pembacaan parameter
+         *     gagal-cepat (`ParamNotFound`, spec §10.6), bukan memakai nilai lama.
+         *
+         *     Batas konservatif: nilai harus `ACTIVE`; `effectiveTo` harus **setelah tanggal buku**
+         *     (tidak surut — nilai tetap berlaku sampai hari ini); `effectiveTo` harus setelah
+         *     `effectiveFrom` nilai itu; dan pengakhiran hanya boleh **memindahkan tanggal berhenti lebih
+         *     awal**, tidak pernah memperpanjang nilai yang sudah dijadwalkan berhenti. Satu pengajuan
+         *     berjalan per nilai.
+         *
+         *     Penolakan memakai `params.reason` berkode stabil: `idempotency_key_required`,
+         *     `effective_to_invalid`, `reason_missing`, `reason_too_long`, `effective_to_not_future`,
+         *     `period_invalid`, `effective_to_not_earlier` (400), `scope_not_readable` /
+         *     `branch_not_allowed` (403), `not_active` / `end_request_pending` (409).
+         */
+        post: operations["submitParamEndRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/params/end-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daftar pengajuan pengakhiran nilai parameter
+         * @description Pengajuan pengakhiran beserta keputusannya (O-064), untuk UI Parameter Admin. Filter
+         *     `status=PENDING` = yang menunggu pemutus. Hasil disaring per scope menurut wewenang
+         *     pembaca, sama seperti daftar nilai parameter (D-046 butir 6).
+         */
+        get: operations["listParamEndRequests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/params/end-requests/{requestId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Setujui pengakhiran nilai parameter (checker)
+         * @description Menulis `effective_to` pada nilai `ACTIVE` sesuai tanggal yang diajukan: nilai berhenti
+         *     berlaku mulai tanggal itu, tanpa penerus. Persetujuan menulis audit `param.end.approve` +
+         *     event `param.changed` dalam transaksi yang sama. Pemutus **wajib berbeda** dari pengaju —
+         *     ditegakkan skema DB (`param_end_request_self_approval_chk`), bukan hanya kode, dan juga
+         *     sebagai 409 `self_approval` sebelum menyentuh nilai.
+         *
+         *     Setelah tanggal itu parameter tidak punya nilai aktif sampai ada nilai baru disetujui;
+         *     pembacaan gagal-cepat (spec §10.6), bukan memakai nilai lama (cache in-proc divalidasi
+         *     lewat `NOTIFY`).
+         */
+        post: operations["approveParamEndRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/params/end-requests/{requestId}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tolak pengajuan pengakhiran nilai (checker)
+         * @description Menolak pengajuan pengakhiran menjadi `REJECTED`; nilai `ACTIVE` tidak disentuh dan tetap
+         *     berlaku. Alasan wajib (maksimum 500 karakter) dan disimpan di audit `param.end.reject`.
+         */
+        post: operations["rejectParamEndRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/audit": {
         parameters: {
             query?: never;
@@ -2651,6 +2760,61 @@ export interface components {
             /** @enum {string} */
             status: "REJECTED";
         };
+        ParamEndRequestCreate: {
+            /**
+             * Format: date
+             * @description Tanggal nilai berhenti berlaku (`[effective_from, effective_to)`), harus setelah
+             *     tanggal buku dan setelah `effectiveFrom` nilai itu.
+             */
+            effectiveTo: string;
+            /** @description Alasan pengakhiran; disimpan di audit (`param.end.submit`). */
+            reason: string;
+        };
+        ParamEndRequest: {
+            /** Format: uuid */
+            requestId: string;
+            /** Format: uuid */
+            paramValueId: string;
+            key: string;
+            /** @enum {string} */
+            scopeType: "GLOBAL" | "INSTITUTION" | "BRANCH" | "PRODUCT" | "SEGMENT";
+            scopeId: string;
+            /**
+             * Format: date
+             * @description Tanggal mulai nilai yang diakhiri.
+             */
+            effectiveFrom: string;
+            /**
+             * Format: date
+             * @description Tanggal nilai berhenti berlaku bila pengajuan ini disetujui.
+             */
+            effectiveTo: string;
+            /** @enum {string} */
+            status: "PENDING" | "APPROVED" | "REJECTED";
+            reason: string;
+            /** Format: uuid */
+            requestedBy: string;
+            /** @description Kosong = belum diputuskan. */
+            decidedBy: string;
+            decisionNote: string;
+            createdAt: string;
+        };
+        ParamEndRequestList: {
+            items: components["schemas"]["ParamEndRequest"][];
+        };
+        ParamEndDecisionResponse: {
+            /** Format: uuid */
+            requestId: string;
+            /** Format: uuid */
+            paramValueId: string;
+            /** @enum {string} */
+            status: "APPROVED" | "REJECTED";
+            /**
+             * Format: date
+             * @description Tanggal berhenti yang disetujui (hanya pada persetujuan).
+             */
+            effectiveTo?: string;
+        };
         AuditItem: {
             seq: number;
             /** @description ISO-8601 UTC (zona tetap, bukan zona server). */
@@ -4465,6 +4629,224 @@ export interface operations {
             };
             405: components["responses"]["Problem"];
             /** @description Tidak bisa ditolak: bukan `PENDING` (`params.reason` = `not_pending`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            415: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    submitParamEndRequest: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Kunci idempotensi per pemanggil (D-098). Wajib pada endpoint pembuat objek: kirim ulang
+                 *     dengan kunci yang sama untuk mengulang permintaan tanpa membuat objek ganda. Replay
+                 *     dijawab 200 + header `Idempotent-Replayed: true`; kunci sama dengan isi berbeda → 409.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Nilai `ACTIVE` yang akan diakhiri. */
+                paramValueId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ParamEndRequestCreate"];
+            };
+        };
+        responses: {
+            /**
+             * @description Replay permintaan sebelumnya (`Idempotency-Key` sama dengan isi yang sama); tidak ada
+             *     pengajuan/audit baru.
+             */
+            200: {
+                headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParamEndRequest"];
+                };
+            };
+            /** @description Pengajuan pengakhiran tercatat sebagai `PENDING` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParamEndRequest"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            /** @description paramValueId tidak ditemukan */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            405: components["responses"]["Problem"];
+            /**
+             * @description Nilai bukan `ACTIVE` (`params.reason` = `not_active`) atau sudah punya pengajuan
+             *     pengakhiran yang menunggu (`end_request_pending`).
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            415: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    listParamEndRequests: {
+        parameters: {
+            query?: {
+                status?: "PENDING" | "APPROVED" | "REJECTED";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daftar pengajuan pengakhiran */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParamEndRequestList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            405: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    approveParamEndRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Nilai berhenti berlaku pada tanggal yang diajukan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParamEndDecisionResponse"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            /** @description requestId tidak ditemukan */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            405: components["responses"]["Problem"];
+            /**
+             * @description Tidak bisa disetujui: bukan `PENDING` (`params.reason` = `not_pending`), pengesahan
+             *     sendiri (`self_approval`), atau nilainya sudah tidak `ACTIVE` / tanggal berhentinya
+             *     sudah lebih awal (`not_active`).
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            500: components["responses"]["Problem"];
+            501: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+        };
+    };
+    rejectParamEndRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ParamRejectRequest"];
+            };
+        };
+        responses: {
+            /** @description Pengajuan pengakhiran ditolak */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParamEndDecisionResponse"];
+                };
+            };
+            /** @description `reason` kosong atau lebih dari 500 karakter (`params.reason` = `reason_missing`/`reason_too_long`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            /** @description requestId tidak ditemukan */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            405: components["responses"]["Problem"];
+            /**
+             * @description Tidak bisa ditolak: bukan `PENDING` (`params.reason` = `not_pending`) atau keputusan
+             *     sendiri (`self_approval`).
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
