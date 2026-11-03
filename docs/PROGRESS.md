@@ -4296,3 +4296,22 @@ manager, bukan dengan `-D:useMalloc`.
   datar (23,9 / 23,9 / 23,5 MB).
 - **Batas jujur**: crash-nya belum terbukti hilang (tidak ada reproducer). Yang dihapus adalah
   mekanismenya (pembukuan siklus lintas-thread), bukan gejalanya.
+
+## 2026-11-03 — verifikasi biner produksi v0.1.19 benar ber-`atomicArc`
+
+Deploy v0.1.19 (`c6b7c79`) sukses: CI hijau, `.deployed_rev` cocok, `kran-api`/`kran-worker` aktif,
+`/readyz` 200, penjadwal menjawab `belum waktunya: jadwal 23:30 lokal (offset 420 menit)`.
+
+Sempat muncul alarm palsu: satu-satunya baris `STEP 11/11` di `deploy.log` tertulis `--mm:orc`.
+Itu **bukan** build v0.1.19 — log berhenti merekam output buildkit sejak deploy pertama
+(catat sebagai O-129). Verifikasi dipindah ke biner hasil deploy:
+
+| Bukti | Hasil |
+|---|---|
+| sha256 biner di image vs `/srv/qouver/apps/kran/bin/kran-api` vs catatan `releases.txt` | sama semua: `e4032c7d…2fa668` (rev `c6b7c79`) |
+| simbol pemungut siklus (`collectCycles`, `rememberCycle`) | **0** di v0.1.19; **3** di `kran-api.prev` (v0.1.18, ORC) |
+| instruksi ber-`lock` (refcount atomik) | **1.846** di v0.1.19; **6** di v0.1.18 |
+| `RUN nim c` di `apps/api/Dockerfile` pada rev deploy | `-d:release --mm:atomicArc --threads:on` |
+
+Kesimpulan: biner yang melayani produksi adalah ARC-family **atomik tanpa pemungut siklus** =
+`--mm:atomicArc`, sesuai D-201. Build ORC akan memuat simbol `collectCycles` seperti v0.1.18.
