@@ -50,3 +50,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS param_end_request_pending_uq
 
 CREATE INDEX IF NOT EXISTS param_end_request_status_idx
   ON platform.param_end_request (status, created_at DESC);
+
+-- Hak role runtime untuk tabel baru ini (pola `lending/0102`, `deposit/0070`): `GRANT ... ON ALL
+-- TABLES` hanya mencakup tabel yang ada saat migrasi grant berjalan, jadi setiap tabel baru butuh
+-- grant sendiri — kalau tidak, produksi mendapat "permission denied" sementara seluruh test hijau
+-- karena test berjalan sebagai role migrator (O-126).
+--
+-- Verba yang diberikan hanya yang dipakai kode: INSERT saat pengajuan, UPDATE saat keputusan,
+-- SELECT saat daftar. Tidak ada DELETE: catatan keputusan adalah jejak audit, bukan data yang
+-- boleh dihapus. No-op bila role belum ada (dev/CI).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kran_runtime') THEN
+    GRANT SELECT, INSERT, UPDATE ON platform.param_end_request TO kran_runtime;
+  END IF;
+END
+$$;
