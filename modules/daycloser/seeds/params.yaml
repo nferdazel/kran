@@ -71,8 +71,12 @@
   default_pack: { base: ["101.9"] }
 
 # Akun GL kewajiban yang menampung subledger simpanan (spec §11.5 #5 "saldo subledger = GL").
-# 201 SIMPANAN ANGGOTA, 202 SIMPANAN BERJANGKA (COA dasar). Gate membandingkan **total** subledger
-# dengan total akun-akun ini: pemetaan per jenis produk belum ada, dan pemetaan per rekening tidak
+# 201 SIMPANAN ANGGOTA, 202 SIMPANAN BERJANGKA (COA dasar). Isi daftar ini **hanya akun
+# kewajiban**: akun ekuitas yang menampung posting simpanan (mis. `301.1`/`301.2` untuk pokok/wajib,
+# T-111/D-195) diturunkan gate dari rule `DepositPosted` yang aktif, bukan dari parameter — supaya
+# perpindahan jenis simpanan ke ekuitas tidak perlu menunggu perubahan parameter yang berlaku surut
+# (tidak mungkin: lihat O-127). Gate membandingkan **total** subledger dengan total akun-akun ini
+# plus akun ekuitas turunan: pemetaan per jenis produk belum ada, dan pemetaan per rekening tidak
 # mungkin karena jurnal pemindahbukuan sengaja net-nol di akun yang sama.
 - key: daycloser.postcheck.subledger_gl_accounts
   type: json
@@ -82,7 +86,7 @@
   provenance:
     class: kebijakan
     compliance: NEEDS-COMPLIANCE-REVIEW
-    note: "Akun GL kewajiban untuk total subledger simpanan; pemetaan per jenis produk = open item."
+    note: "Akun GL kewajiban untuk total subledger simpanan; akun ekuitas yang menampung posting simpanan diturunkan dari rule `DepositPosted` (O-127). Pemetaan per jenis produk = open item."
   default_pack: { base: ["201", "202"] }
 
 # Penjadwal penutupan harian (T-139b, O-094). Selama `enabled` mati, `daycloser-auto` tidak

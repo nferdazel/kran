@@ -10,7 +10,7 @@
 ## Suite ini me-reset seluruh schema (pola suite integrasi lain) dan menghapus
 ## `platform.business_date` di akhir supaya e2e/suite berikutnya mulai tanpa penutupan berjalan.
 
-import std/[json, options, os, unittest]
+import std/[json, options, os, sequtils, times, unittest]
 
 import db_connector/db_postgres
 
@@ -18,11 +18,17 @@ import "platform-lib/db/config"
 import "platform-lib/db/pool"
 import dbtools/lib
 
-import kernel/dayclose
+import kernel/[clock, dayclose, ids]
 
 import daycloser/domain/types
+import deposit/domain/account
+import deposit/infrastructure/account_repo
+import party/domain/party
+import party/infrastructure/party_repo
 import platform/domain/[calendar, scope]
 import platform/infrastructure/calendar_repo
+import product/domain/product
+import product/infrastructure/product_repo
 
 import ../src/[daycloser_ctl, daycloser_gates]
 
@@ -51,6 +57,13 @@ execScript(db, readFile(repoRoot / "packs/base/seed/0001_dev_users.sql"))
 # Prasyarat data: cabang, satu periode OPEN yang menutup seluruh tanggal uji (trigger
 # `ledger.assert_journal_period_open` menolak jurnal tanpa periode), dan tanggal buku awal.
 let actor = db.getValue(sql"SELECT user_id::text FROM platform.app_user LIMIT 1")
+
+let
+  ## Akun pengguna nyata (FK `created_by`) untuk fixture produk/rekening. Dua id berbeda supaya
+  ## maker ≠ checker versi produk, sama seperti provisioning aslinya.
+  prodMaker = Id(db.getValue(sql"SELECT md5('dev|dev.maker')::uuid::text"))
+  prodChecker = Id(db.getValue(sql"SELECT md5('dev|dev.checker')::uuid::text"))
+  testClock = fakeClock(dateTime(2026, mOct, 28, 20, 0, 0))
 execScript(db, """
   INSERT INTO platform.branch (branch_id, code, name)
   VALUES ('""" & BranchId & """', '131', 'Cabang Gate')
@@ -88,6 +101,41 @@ proc taskOf(businessDate, taskId: string): tuple[state, code, metrics: string] =
   if rows.len == 0:
     return ("", "", "")
   (rows[0][0], rows[0][1], rows[0][2])
+
+proc newEquitySavingsProduct(): tuple[product: Product, version: ProductVersion] =
+  ## Produk simpanan berjenis POKOK: setorannya diposting ke **ekuitas** (T-111/D-195), bukan ke
+  ## akun kewajiban — inilah bentuk data yang membuat gate lama selalu `DAY-308`.
+  let prod = Product(productId: newId(testClock), code: "PK001", name: "Simpanan Pokok Uji",
+    productType: ptSavings, savingsKind: some(skPokok))
+  let v = ProductVersion(versionId: newId(testClock), productId: prod.productId, versionNo: 1,
+    effectiveFrom: "2020-01-01")
+  discard dbPool.withTx(proc(d: DbConn): int =
+    insertProduct(d, prod, prodMaker)
+    insertVersion(d, v, prodMaker)
+    insertBinding(d, v.versionId,
+      ParamBinding(paramKey: "product.savings.min_balance", value: %"0.00"))
+    1)
+  doAssert approveVersion(db, v.versionId, prodChecker), "versi produk uji gagal di-approve"
+  (prod, v)
+
+proc clearDepositAccounts() =
+  ## Fixture rekening hanya milik test ini; gate lain di suite ini mengandalkan subledger kosong.
+  execScript(db, "DELETE FROM deposit.account_balance")
+  execScript(db, "DELETE FROM deposit.account")
+
+proc newEquitySavingsAccount(version: ProductVersion; productCode, balance: string): Id =
+  let member = newParty(newId(testClock), pkPerson, "Anggota Gate Uji", Id(BranchId),
+    "{seq:6}{check}", nextCifSeq(db))
+  discard insertParty(db, member, prodMaker)
+  let acc = newAccount(newId(testClock), member.partyId, version.productId, version.versionId,
+    productCode, Id(BranchId), "131", Monday, nextAccountSeq(db))
+  discard dbPool.withTx(proc(d: DbConn): int =
+    insertAccount(d, acc, prodMaker)
+    discard d.execAffectedRows(sql"""
+      UPDATE deposit.account_balance SET balance = ?::numeric WHERE account_id = ?""",
+      balance, $acc.accountId)
+    1)
+  acc.accountId
 
 proc ctxOn(businessDate: string): TaskContext =
   TaskContext(runId: "test", scopeType: "INSTITUTION", scopeId: "", businessDate: businessDate,
@@ -257,6 +305,24 @@ suite "gate day-close: dijalankan langsung":
     # Kembalikan supaya gate lain tidak mewarisi selisih ini.
     postJournal("100.00", "201", "101.1", Thursday)
     check subledgerCheck(dbPool, ctxOn(Thursday)).ok
+
+  test "saldo simpanan pokok (ekuitas) ikut dibandingkan walau parameter hanya daftar kewajiban":
+    # Regresi O-127: gate lama hanya menjumlahkan akun dari parameter (`201`/`202`), sedangkan
+    # setoran pokok/wajib diposting ke ekuitas `301.1`/`301.2` (T-111/D-195) → penutupan selalu
+    # `DAY-308` sebesar saldo pokok+wajib, dan parameter tidak bisa ditambal surut.
+    clearDepositAccounts()
+    let (prod, ver) = newEquitySavingsProduct()
+    discard newEquitySavingsAccount(ver, prod.code, "150.00")
+    postJournal("150.00", "101.1", "301.1", Thursday)
+    let r = subledgerCheck(dbPool, ctxOn(Thursday))
+    check r.ok
+    check r.metrics{"subledger"}.getStr == "150.00"
+    check r.metrics{"gl"}.getStr == "150.00"
+    # Akun ekuitas turunan rule posting ikut dilaporkan sebagai bukti, bukan disembunyikan.
+    check "301.1" in r.metrics{"glAccounts"}.getElems.mapIt(it.getStr)
+    # Bersihkan supaya gate berikutnya tidak mewarisi rekening maupun saldo GL.
+    postJournal("150.00", "301.1", "101.1", Thursday)
+    clearDepositAccounts()
 
   test "jurnal yang direkam setelah tanggal dibekukan = DAY-310":
     # Bekukan **sekarang**: jurnal yang sudah ada direkam sebelum titik ini, jadi bukan terlambat.

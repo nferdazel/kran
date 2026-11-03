@@ -193,6 +193,20 @@ SELECT t.task_id, t.state, t.error->>'code' AS code, t.metrics
 | `DAY-353` | status dormant gagal disimpan | galat basis data; task dicoba ulang. Tidak ada uang yang berpindah, dan task ini **tidak kritis** — penutupan tetap bisa selesai dengan mencatat kegagalan |
 | `DAY-354` | versi produk rekening tidak mengikat `product.savings.rollover_tenor_days` (atau nilainya bukan bilangan bulat > 0) | lengkapi atribut produk pada versi yang dipakai (D-165), lalu `daycloser-resume`. Task **tidak** menebak tenor dari `maturity_date − opened_on` |
 
+### Gate subledger (`DAY-308`): akun ekuitas ikut dihitung
+
+`ledger.subledger_vs_gl` membandingkan **total saldo subledger simpanan** dengan total akun GL yang
+menampungnya. Akun kewajiban (`201`/`202`) datang dari parameter
+`daycloser.postcheck.subledger_gl_accounts`; akun **ekuitas** yang menampung posting simpanan
+(`301.1` pokok, `301.2` wajib — T-111/D-195) **diturunkan** dari rule `DepositPosted` yang aktif,
+bukan dari parameter.
+
+Konsekuensi yang perlu diingat saat membaca `DAY-308`: selisih yang besarnya **persis** saldo pokok
++ wajib berarti akun ekuitas tidak ikut terhitung (bentuk bug O-127, sudah diperbaiki) **atau** ada
+posting pokok/wajib yang masuk ke akun yang tidak dipakai rule. Jangan menambal dengan menambahkan
+akun ekuitas ke parameter: parameter itu khusus akun kewajiban, dan nilai parameter tidak bisa
+diberlakukan surut untuk tanggal yang sedang ditutup (lihat O-127).
+
 ### Grant role runtime: `permission denied` sebelum run dimulai
 
 Penolakan berbentuk `rencana chunk <nama> gagal: DAY-38x ... permission denied for table ...`

@@ -154,12 +154,40 @@ proc trialBalanceCheck*(pool: DbPool; ctx: TaskContext): GateResult =
     return blocked("DAY-305", "trial balance tidak seimbang", metrics)
   passed(metrics)
 
+proc equityBackingAccounts(pool: DbPool; ctx: TaskContext): seq[string] =
+  ## Akun GL **ekuitas** yang menampung posting simpanan (simpanan pokok/wajib, T-111/D-195).
+  ##
+  ## **HUMAN-REVIEW-REQUIRED** (AGENTS §8): gate ini membandingkan angka finansial.
+  ##
+  ## Diturunkan dari rule posting aktif (`DepositPosted` → akun bertipe `EQUITY`), bukan dari
+  ## daftar jenis simpanan di kode: begitu accounting memindahkan jenis lain ke ekuitas, gate ikut
+  ## tanpa perubahan kode. Tanpa ini gate hanya menutup akun kewajiban, sehingga penutupan pertama
+  ## setelah T-111 selalu gagal `DAY-308` dengan selisih tepat sebesar saldo pokok+wajib —
+  ## dan itu tidak bisa ditambal lewat parameter, karena nilai parameter berlaku per tanggal buku
+  ## sedangkan tanggal yang sedang ditutup tidak bisa diberi nilai surut (lihat O-127).
+  pool.withConn(proc(db: DbConn): seq[string] =
+    {.cast(gcsafe).}:
+      for row in db.getAllRows(sql"""
+        SELECT DISTINCT l.gl_account
+          FROM ledger.posting_rule r
+          JOIN ledger.posting_rule_line l ON l.rule_id = r.rule_id
+          JOIN ledger.coa_account c ON c.code = l.gl_account
+         WHERE r.event_type = 'DepositPosted' AND r.status = 'ACTIVE'
+           AND l.side = 'CREDIT' AND c.account_type = 'EQUITY'
+         ORDER BY 1"""):
+        result.add row[0])
+
 proc subledgerCheck*(pool: DbPool; ctx: TaskContext): GateResult =
-  ## Saldo subledger simpanan harus sama dengan akun GL kewajibannya (spec §11.5 #5).
+  ## Saldo subledger simpanan harus sama dengan akun GL yang menampungnya (spec §11.5 #5):
+  ## akun kewajiban dari parameter + akun ekuitas turunan rule posting.
   let accounts = paramAccounts(pool, ctx, keyString(P_daycloser_postcheck_subledger_gl_accounts))
   if accounts.len == 0:
     return blocked("DAY-312", "parameter daftar akun GL subledger kosong")
-  let unknown = unknownAccounts(pool, ctx, accounts)
+  var glAccounts: seq[string]
+  for acc in accounts & equityBackingAccounts(pool, ctx):
+    if acc notin glAccounts:
+      glAccounts.add acc
+  let unknown = unknownAccounts(pool, ctx, glAccounts)
   if unknown.len > 0:
     return blocked("DAY-311", "akun GL subledger tidak dikenal/non-aktif: " & unknown.join(", "),
       %*{"unknownAccounts": unknown})
@@ -170,7 +198,7 @@ proc subledgerCheck*(pool: DbPool; ctx: TaskContext): GateResult =
   var gl = zero()
   var found: seq[string]
   for line in lines:
-    if line.accountCode in accounts:
+    if line.accountCode in glAccounts:
       gl = gl + signedBalance(line)
       found.add line.accountCode
 

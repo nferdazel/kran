@@ -15,7 +15,7 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | `daycloser.auto.utc_offset_minutes` | teknis | base | - | Selisih zona institusi dari UTC dalam menit (WIB = 420). Batas ±14 jam = batas zona waktu dunia. |
 | `daycloser.chunk_size` | teknis | base | - | Jumlah entitas per chunk. Angka awal 1000; disetel setelah benchmark EOD (T-140). |
 | `daycloser.max_attempts` | teknis | base | - | Percobaan maksimum per chunk/task sebelum dinyatakan FAILED. |
-| `daycloser.postcheck.subledger_gl_accounts` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Akun GL kewajiban untuk total subledger simpanan; pemetaan per jenis produk = open item. |
+| `daycloser.postcheck.subledger_gl_accounts` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Akun GL kewajiban untuk total subledger simpanan; akun ekuitas yang menampung posting simpanan diturunkan dari rule `DepositPosted` (O-127). Pemetaan per jenis produk = open item. |
 | `daycloser.precheck.suspense_accounts` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Daftar akun selisih/suspense yang wajib nol sebelum tutup; nilai awal hanya 101.9 karena akun antar-kantor belum ada. |
 | `daycloser.retry_backoff_seconds` | teknis | base | - | Jeda tetap antar percobaan. Backoff eksponensial menyusul bersama worker pool (T-140). |
 | `daycloser.txn_policy_during_close` | kebijakan | base | `NEEDS-COMPLIANCE-REVIEW` | Pilihan kebijakan operasional institusi; nilai ALLOW belum diuji terhadap task penutup nyata (T-140). |
