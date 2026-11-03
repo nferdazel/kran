@@ -4217,3 +4217,35 @@ Benchmark: `bench-eod` menerima `--loans N`. 100k rekening + 50k pinjaman = **24
   akun `111`), O-038/O-096/O-125 ditandai DITUTUP sesuai bukti yang sudah ada. O-094 masih menunggu
   satu tindakan pemilik (menyalakan `daycloser.auto.enabled`); tidak bisa diselesaikan dari repo.
 
+
+## 2026-11-03 — penutupan buku pertama pilot (O-094) + dua bug yang tertangkap
+
+**Konteks**: penutupan harian otomatis dinyalakan di produksi. Yang terjadi bukan sekadar
+"menyalakan saklar": penutupan pertama menyingkap dua bug yang tidak mungkin muncul selama buku
+masih kosong.
+
+- **v0.1.15 — penjadwal menutup tanggal yang belum berjalan** (temuan sebelum saklar dinyalakan).
+  Penutupan yang berhasil memajukan tanggal buku ke hari kerja berikutnya, sedangkan timer berjalan
+  tiap 5 menit dan `dueNow` hanya membandingkan jam → setiap tick menutup satu tanggal lagi sampai
+  tengah malam. Perbaikan: `localDateOf` di domain + penjagaan "tanggal buku > tanggal lokal" di
+  `daycloser-auto`; test integrasi dua tick hanya menutup satu tanggal. Bukti bergigi: guard
+  dimatikan → test `FAILED`.
+- **v0.1.16 — tujuh tabel `lending` tanpa hak role runtime** (O-126). Bootstrap pertama ditolak
+  `DAY-381 ... permission denied for table ppap_snapshot`. Audit `has_table_privilege` menemukan
+  `loan_schedule`, `payment`, `payment_allocation`, `collectibility_snapshot`, `ppap_snapshot`,
+  `writeoff`, `recovery` tanpa hak sama sekali (semuanya lahir setelah `lending/0080`), jadi bukan
+  satu task yang akan gagal melainkan seluruh penutupan lending dan pencairan pertama. Perbaikan:
+  migrasi `lending/0102` (`GRANT SELECT, INSERT`, sesuai pernyataan yang benar-benar dipakai kode).
+  Test tidak menangkapnya karena test berjalan sebagai role migrator — dicatat di runbook.
+- **v0.1.17 — gate subledger tidak menghitung akun ekuitas** (O-127). Penutupan 2026-11-02 berhenti
+  di `DAY-308` dengan selisih tepat 150.000 = pokok 100.000 + wajib 50.000. Sejak T-111/D-195
+  setoran pokok/wajib diposting ke ekuitas `301.1`/`301.2`, sedangkan gate membandingkan subledger
+  dengan akun parameter (`201`/`202`) saja. Menambal lewat parameter tidak mungkin (nilai parameter
+  tidak bisa surut; `EXCLUDE` menolak), jadi akun ekuitas diturunkan dari rule `DepositPosted`
+  aktif lalu digabung sebagai himpunan. `HUMAN-REVIEW-REQUIRED` (area kritis, AGENTS §8). Bukti
+  bergigi: union dilepas → test regresi `FAILED`.
+- **Hasil**: penutupan **2026-11-02 `COMPLETED` 14/14 task, tersegel**, tanggal buku maju ke
+  **2026-11-03 `OPEN`**. Parameter lewat maker-checker (bukan psql): `daycloser.auto.enabled=true`,
+  `run_at=23:30`, `utc_offset_minutes=420`, `lending.ppap.rates` → `0,5/3/10/50/100` (D-196/POKJ
+  1/2024). `ctl daycloser-auto` keluar 0 dengan `belum waktunya: jadwal 23:30 lokal (offset 420
+  menit)`; `daycloser-status` → `deploy: boleh`.
