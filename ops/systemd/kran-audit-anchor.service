@@ -14,7 +14,7 @@
 # baris anchor terakhir dengan `platform.audit_log`.
 [Unit]
 Description=KRAN audit chain anchor (ctl audit-anchor)
-Documentation=file:/srv/qouver/apps/kran/monorepo/docs/runbooks/ops-cli.md
+Documentation=file:/srv/qouver/apps/kran/monorepo/docs/OPERATIONS.md
 After=network-online.target
 Wants=network-online.target
 

@@ -1,59 +1,73 @@
-# Dokumentasi KRAN — peta dan aturan kesegaran
+# KRAN documentation map
 
-Dokumen di `docs/` tidak semuanya berlaku sama. Sebagian adalah **keadaan sekarang**, sebagian
-adalah **catatan bertanggal** yang sengaja tidak ditulis ulang. Membedakannya penting: menyalin
-angka dari catatan lama ke kode adalah cara paling mudah membuat dokumen "benar" tapi sistemnya
-salah.
+This directory holds the living documents for KRAN. One page, one entry point, no status
+table and no second inventory.
 
-## Keadaan sekarang (harus akurat hari ini)
+## Rule 1: current state versus history
 
-| Dokumen | Isi |
-| --- | --- |
-| [`spec/kran-prd-techspec.md`](spec/kran-prd-techspec.md) | Sumber kebenaran produk + teknis (termasuk daftar fase §23) |
-| [`BACKLOG.md`](BACKLOG.md) | Status task (`TODO`/`READY`/`IN_PROGRESS`/`DONE`/`BLOCKED`) |
-| [`OPEN_ITEMS.md`](OPEN_ITEMS.md) | Hal yang belum bisa ditutup + pemilik tindakannya |
-| [`ACCEPTED-LIMITS.md`](ACCEPTED-LIMITS.md) | Batas yang **diterima** beserta cara mendeteksi dan pemiliknya |
-| [`DECISIONS.md`](DECISIONS.md) | Register keputusan (append-only; keputusan lama ditandai "diganti D-xxx", tidak dihapus) |
-| [`runbooks/`](runbooks) | Prosedur operasional yang dijalankan hari ini |
-| [`ci-jobs.md`](ci-jobs.md) | Job CI yang benar-benar ada |
-| [`RELEASE.md`](RELEASE.md) | Alur versi & rilis: `VERSION` satu sumber, `./task release`, tag sebagai penanda (D-178) |
-| [`compliance/`](compliance) | Register kepatuhan dan status verifikasi |
-| [`security/public-repo-audit.md`](security/public-repo-audit.md) | Audit repo sebagai artefak publik (2 Nov 2026): rahasia, pengungkapan infra, CI/CD, higiene |
-| `modules/*/MODULE.md` | Batas, tabel, izin, dan invarian tiap modul |
-| [`../DESIGN.md`](../DESIGN.md) | Arah visual dan aturan UI yang mengikat |
-| [`../AGENTS.md`](../AGENTS.md) | Aturan kerja manusia & agen, termasuk protokol per task |
+- A living document describes the tree as it is today and is updated in the same commit as
+  the behaviour it describes.
+- History is frozen. `history/PHASES.md` records closed phases and is not rewritten when a
+  later phase changes the product.
+- Generated files (`PARAMETERS.md`, `SCHEMA.md`, `CAPABILITIES.md`) are read-only in review;
+  they are regenerated from their source, never hand-edited.
+- A statement without a code path, a test, or a decision id is a defect in the document, not
+  a fact about the product.
 
-Kalau isi dokumen di tabel ini bertentangan dengan kode, **kode + test yang menang** sampai
-diperbaiki; catat pertentangannya di `DECISIONS.md` (dan `OPEN_ITEMS.md` bila butuh keputusan).
+## Rule 2: code and tests win over prose
 
-## Catatan bertanggal (riwayat, tidak ditulis ulang)
+For what the system **does**, the code and the tests are authoritative. For what the system
+**should** do, `spec/kran-prd-techspec.md` and `DECISIONS.md` are authoritative. When prose
+and behaviour disagree, record the difference, fix the document or the code in the same task,
+and never quietly pick the convenient one.
 
-| Lokasi | Kenapa tidak diubah |
-| --- | --- |
-| [`PROGRESS.md`](PROGRESS.md), `PROGRESS-T0*.md` | Log per tanggal: angka dan keadaan saat itu. Angka terkini dicari di bagian terakhir, bukan di tengah |
-| [`tasks/`](tasks) | Rencana + bukti per task. Fakta di dalamnya benar **pada tanggal pengerjaan** |
-| [`proposals/`](proposals) | Memo usulan sebelum keputusan; bisa memuat opsi yang akhirnya ditolak |
-| [`milestones/`](milestones) | Laporan penutupan fase |
-| [`spikes/`](spikes) | Eksperimen dengan hasil terukur saat itu |
-| [`migration/`](migration) | Inventaris sistem lama (referensi, bukan target) |
-| [`audit/`](audit) | Hasil audit bertanggal; temuan yang sudah ditutup tetap tercatat di sana |
-| [`ESCALATIONS.md`](ESCALATIONS.md) | Titik STOP beserta jawabannya (status `TERJAWAB` + tanggal) |
+## Rule 3: where to look
 
-Aturan untuk catatan bertanggal:
+| Document | Use it for |
+|---|---|
+| `spec/kran-prd-techspec.md` | Product scope, domain model, invariants, security, UX, operations, compliance, references |
+| `ROADMAP.md` | Phase order P0-P8, exit criteria, serial and parallel rules |
+| `BACKLOG.md` | The task queue: id, phase, size, risk class, dependency, capability, status |
+| `CAPABILITIES.md` | The capability ledger: can persona X do Y today, and which test proves it |
+| `capabilities.yaml` | Machine-readable source for the ledger; same ids as the markdown table |
+| `DOMAIN.md` | Glossary, aggregate ownership, Indonesian operator terms with English gloss |
+| `DESIGN-INDEX.md` | Design direction, dials, the 12 design decisions, the 24-screen map, prototype pointers |
+| `DECISIONS.md` | Owner rulings R-01 to R-30, active decisions in full, one-line archive index |
+| `OPEN_ITEMS.md` | Items still open, plus closed ids that code or tests still cite |
+| `ACCEPTED-LIMITS.md` | Risks the owner accepted, with a detection method and an owner per row |
+| `ESCALATIONS.md` | Stop-and-ask log and the escalation template |
+| `PARAMETERS.md` | Generated parameter catalogue; never a place for business values in code |
+| `SCHEMA.md` | Generated schema inventory: tables, keys, FKs, invariant triggers, migration id |
+| `OPERATIONS.md` | Deploy, migrations, backup and restore, day-close, ops CLI, break-glass, key rotation |
+| `SECURITY.md` | Authentication, authorization, audit chain, retention, privacy controls |
+| `COMPLIANCE.md` | Obligation map O1-O8, evidence per obligation, `NEEDS-COMPLIANCE-REVIEW` register |
+| `RELEASE.md` | Version, tag, and deploy flow |
+| `tasks/_TEMPLATE.md` | The task file to copy before starting work |
+| `agent/REVIEWER.md` | The clean-context reviewer prompt for R-25 |
+| `history/PHASES.md` | Condensed evidence for Fase 0-4 |
+| `compliance/register.yaml` | Requirement to control to test traceability; read by the traceability gate |
+| `compliance/register-validation.md` | Research log with sources for the compliance register |
+| `adr/` | Architecture decision records, including `017-field-level-encryption.md` |
 
-1. **Jangan sunting fakta lamanya.** Kalau sebuah fakta sudah tidak berlaku, tambahkan catatan
-   bertanggal di tempat yang sama (contoh: memo T-118 diberi catatan D-136 di kepalanya).
-2. **Jangan salin angka** dari catatan bertanggal ke dokumen keadaan sekarang tanpa memeriksa kode.
-3. **Jangan hapus dokumen** hanya karena isinya sudah digantikan; riwayat alasannya yang membuat
-   keputusan berikutnya bisa dinilai.
+The API reference is the contract itself: `packages/contracts/openapi/kran-api.yaml`. There is
+no prose API document that could drift from it.
 
-## Jebakan yang sudah pernah menggigit
+## Starting a task
 
-- **Presisi uang.** Sebelum 24 Okt 2026 uang 4 desimal; sekarang **2 desimal di penyimpanan, API, dan
-  tampilan** (D-136). Dokumen lama yang menulis `numeric(24,4)` atau `0.0000` adalah riwayat.
-- **Jumlah test/berkas.** Angka seperti "1099 OK" adalah snapshot pada tanggal task itu, bukan janji.
-  Selalu jalankan gate sendiri; hasilnya yang berlaku.
-- **Status task.** `BACKLOG.md` adalah satu-satunya tempat status task. Dokumen task bisa bilang
-  "IN PROGRESS" walau task sudah `DONE`; percayai backlog + commit.
-- **Batas yang sudah ditutup.** `ACCEPTED-LIMITS.md` memakai coretan (`~~…~~`) untuk batas yang sudah
-  tidak berlaku, supaya tidak dikutip ulang sebagai masalah yang masih ada.
+1. Take the top `READY` row from `BACKLOG.md`.
+2. Copy `tasks/_TEMPLATE.md` to a new task file in `tasks/`.
+3. Fill the Definition of Ready. If any item is false, the task goes back to the backlog, not
+   into the code.
+4. Implement test-first where the task touches money, a calculation, or a state machine.
+5. Run the gate named in the task, then `./task check-fast` and `./task ci-fast` for backend or
+   schema work.
+6. Append the evidence block, update the capability row, and request review when the risk class
+   requires it (`money`, `schema`, `authz`, `audit`).
+7. Mark the task `DONE` only after the evidence exists. A partial result is a new task.
+
+## Archive
+
+The old corpus (229 files, including the 166 task files and the five milestone reports) is kept in a local
+planning archive outside git (not in this repository). Historical `T-xxx` ids resolve
+through `history/PHASES.md` and the old task files in git history; they are not paths in the
+current tree.

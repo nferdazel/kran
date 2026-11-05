@@ -37,21 +37,21 @@ them.
 
 This is core banking software, so the following are security-relevant:
 
-- **Authentication and sessions** — PBKDF2-HMAC-SHA256 password hashing, login lockout, forced
+- **Authentication and sessions** - PBKDF2-HMAC-SHA256 password hashing, login lockout, forced
   password change, password history, session tokens stored only as hashes, idle/absolute session
   limits, and the TOTP MFA framework. (MFA is present but not enabled by default; see the accepted
   limits below.)
-- **Authorization** — permission codes (`module.resource.action`), branch scoping, and
+- **Authorization** - permission codes (`module.resource.action`), branch scoping, and
   segregation-of-duties checks that fail closed.
-- **Ledger integrity** — the immutable journal, reversal-only corrections, balance computation, and
+- **Ledger integrity** - the immutable journal, reversal-only corrections, balance computation, and
   the reconciliation commands (`ctl reconcile-deposits`, trial balance, day-close gates).
-- **Audit trail** — the append-only `platform.audit_log` hash chain, its daily anchor
+- **Audit trail** - the append-only `platform.audit_log` hash chain, its daily anchor
   (`kran-api --role=ctl audit-anchor`), and the database privileges that prevent the runtime role
   from rewriting or deleting rows.
-- **Personal data protection** — field-level encryption for identity data (envelope KEK→DEK,
+- **Personal data protection** - field-level encryption for identity data (envelope KEK→DEK,
   AES-256-GCM, blind index), masking of sensitive values in logs, and retention of idempotency
   response bodies that may contain customer data.
-- **Deployment pipeline** — webhook authentication, the guard that accepts only pushes to
+- **Deployment pipeline** - webhook authentication, the guard that accepts only pushes to
   `main`, the CI check-run gate before a build, image rollback, and secret handling in
   [`ops/`](ops). Real values live on the server; the repository contains templates only.
 

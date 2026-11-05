@@ -10,7 +10,7 @@ import { expect, test, type Page } from "@playwright/test";
  * gate axe **dengan dialog terbuka** × 2 tema × 2 locale.
  *
  * Batas yang diuji: aksi palette = **navigasi** ke halaman yang sudah ada (tanpa aksi mutasi), dan
- * `Ctrl+K` tidak direbut saat fokus ada di field teks (keputusan di `docs/tasks/T-110.md`).
+ * `Ctrl+K` tidak direbut saat fokus ada di field teks (keputusan di `T-110 (git history)`).
  *
  * Butuh DB + seed user dev (`./task e2e` menyiapkannya). Tanpa `KRAN_DATABASE_URL` **seluruh**
  * berkas dilewati karena semua skenario butuh login.

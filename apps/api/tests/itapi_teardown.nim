@@ -5,7 +5,7 @@
 ## pool dari dalam proses test. Kalau teardown memang bermasalah, kegagalannya harus terisolasi ke
 ## berkas ini — bukan menjatuhkan seluruh suite realtime.
 ##
-## Temuan (reproduksi deterministik, lihat `docs/spikes/O-025-shutdown.md`): `server.close()` pada
+## Temuan (reproduksi deterministik, lihat `git history`): `server.close()` pada
 ## Mummy 0.4.8 + ORC **SIGSEGV** bila server dibangun di satu thread lalu `destroy`-nya (`=destroy`
 ## ServerObj) berjalan di thread lain — ORC menyimpan pembukuan siklus per-thread, jadi menghancurkan
 ## closure handler yang dialokasikan thread lain membaca state thread itu. Urutan aman: **bangun dan

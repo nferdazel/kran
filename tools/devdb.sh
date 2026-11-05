@@ -27,12 +27,12 @@ SSH_PERSIST="${KRAN_DEVDB_PERSIST:-600}"
 
 die() { printf '!! %s\n' "$*" >&2; exit 1; }
 load_env() {
-  [ -f "$ENVFILE" ] || die "belum ada $ENVFILE (lihat docs/runbooks/dev-db.md)"
+  [ -f "$ENVFILE" ] || die "belum ada $ENVFILE (lihat docs/OPERATIONS.md)"
   set -a
   # shellcheck disable=SC1090  # jalur berkas env ditentukan saat runtime.
   . "$ENVFILE"
   set +a
-  [ -n "$SSH_HOST" ] || die "KRAN_DEVDB_SSH belum diisi (lihat docs/runbooks/dev-db.md)"
+  [ -n "$SSH_HOST" ] || die "KRAN_DEVDB_SSH belum diisi (lihat docs/OPERATIONS.md)"
 }
 
 probe() {

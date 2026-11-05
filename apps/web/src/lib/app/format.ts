@@ -24,7 +24,7 @@ export function formatMoney(decimal: string, options: { decimals?: MoneyDecimals
 /**
  * Jamak (spec §16.2). Paraglide v2 **tidak** menafsirkan sintaks ICU mentah
  * (`{n, plural, …}`) — string-nya rusak menjadi placeholder saat kompilasi (terbukti pada
- * `packages/i18n/messages`, lihat docs/tasks/T-010.md). Karena itu bentuk jamak dipilih di kode
+ * `packages/i18n/messages`, lihat T-010 (git history)). Karena itu bentuk jamak dipilih di kode
  * dengan `Intl.PluralRules`, dan katalog menyediakan satu pesan per bentuk.
  */
 export function formatAccountCount(count: number): string {

@@ -3,7 +3,7 @@
 ## Modul ini **tidak** menyentuh kriptografi: ciphertext + blind index dibuat composition root
 ## (`apps/api`) dengan `FieldCrypto`, karena kepemilikan kunci adalah urusan platform (ADR-017).
 ## Yang diputuskan di sini hanyalah bentuk nilai yang diterima, validasi per jenis party, dan
-## bentuk tersamar untuk UI (pola D-069). Alasan + format kolom: `docs/tasks/T-078.md`.
+## bentuk tersamar untuk UI (pola D-069). Alasan + format kolom: `T-078 (git history)`.
 ##
 ## **HUMAN-REVIEW-REQUIRED**: area PII/enkripsi (AGENTS.md §8).
 

@@ -6,7 +6,7 @@
 ## `compensateCounters` ("Attempt to read from nil?") → 60+ test e2e gagal berantai dengan
 ## `ECONNREFUSED 127.0.0.1:8099`. Rerun job yang sama hijau, jadi ini intermiten.
 ##
-## Test ini **tidak** mengklaim menyembuhkan akarnya (lihat `docs/tasks/T-044.md` + entri batas
+## Test ini **tidak** mengklaim menyembuhkan akarnya (lihat `T-044 (git history)` + entri batas
 ## yang diterima): yang dijaga adalah satu hal yang memang milik kita — batas ukuran parser yang
 ## dulu diwarisi diam-diam dari bawaan Mummy. Yang diuji adalah **perilaku**, bukan angka konstanta:
 ## koneksi yang menyatakan badan/header melebihi batas harus ditutup parser sebelum handler

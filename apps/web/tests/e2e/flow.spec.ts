@@ -187,7 +187,7 @@ function addDays(isoDate: string, days: number): string {
  * saat menyetujui, nilai lama di-supersede dengan `effective_to = effective_from` nilai baru.
  * Bila tanggal baru <= tanggal lama, CHECK `effective_to > effective_from` dilanggar → 409
  * `period_conflict`. Jadi tanggal selalu **di atas** tanggal efektif terbesar yang sudah ada
- * untuk kunci itu (lihat juga `docs/tasks/T-012.md`).
+ * untuk kunci itu (lihat juga `T-012 (git history)`).
  */
 async function nextEffectiveFrom(page: Page, key: string): Promise<string> {
   const response = await page.request.get("/api/v1/params");

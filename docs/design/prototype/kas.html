@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="id-ID" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kas · Prototipe KRAN</title>
+    <script src="assets/theme-init.js"></script>
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/base.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <script src="assets/app.js" defer></script>
+  </head>
+  <body data-title-key="kas.docTitle">
+    <a class="skip-link" href="#main" data-i18n="common.skip">Lewati ke konten utama</a>
+    <p class="synthetic-strip" role="region" aria-label="Prototipe, data sintetis" data-i18n-aria-label="common.prototype" data-i18n="common.prototype">Prototipe, data sintetis</p>
+
+    <header class="app-header">
+      <a class="brand" href="index.html">
+        <span class="brand__name">KRAN</span>
+        <span class="brand__sub" data-i18n="common.appSub">Inti koperasi</span>
+      </a>
+      <p class="header-meta">
+        <span class="header-meta__item">
+          <span data-i18n="kas.businessDate">Tanggal usaha</span>
+          <span class="header-meta__value" data-date="2026-11-05">5 Nov 2026</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="kas.branch">Cabang</span>
+          <span class="header-meta__value" data-i18n="kas.branchValue">[NAMA CABANG] · 001</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="kas.cashier">Kasir</span>
+          <span class="header-meta__value" data-i18n="kas.cashierValue">[NAMA KASIR]</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="common.session">Sesi</span>
+          <span id="session-state">Sesi terbuka</span>
+        </span>
+      </p>
+    </header>
+
+    <div class="app-shell">
+      <nav class="app-nav" aria-label="Navigasi utama" data-i18n-aria-label="common.navMain">
+        <ul>
+          <li class="app-nav__group-label" data-i18n="common.navWork">Pekerjaan</li>
+          <li><a href="kas.html" aria-current="page" data-i18n="common.kas">Kas</a></li>
+          <li><a href="komponen.html" data-i18n="common.components">Komponen</a></li>
+          <li class="app-nav__group-label" data-i18n="common.navPrototype">Prototipe</li>
+          <li><a href="index.html" data-i18n="common.home">Indeks</a></li>
+        </ul>
+      </nav>
+
+      <main id="main" class="app-main" tabindex="-1">
+        <div class="page-header">
+          <div>
+            <h1 data-i18n="kas.title">Kas</h1>
+            <p class="page-header__intro" data-i18n="kas.intro"></p>
+          </div>
+          <div class="page-header__actions">
+            <button type="button" class="btn" id="close-cash-open" data-dialog-open="close-cash-dialog">
+              <span data-i18n="kas.closeCash">Tutup kas</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="alert alert--warning" id="session-closed" hidden>
+          <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <div>
+            <p class="alert__body" data-i18n="kas.closedBanner"></p>
+            <div class="alert__actions">
+              <button type="button" class="btn btn--sm" id="session-reopen" data-i18n="kas.reopen"></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <div class="segmented" role="group" aria-label="Jenis transaksi" data-i18n-aria-label="kas.modeGroup">
+            <button type="button" data-kas-mode="deposit" aria-pressed="true" data-i18n="kas.deposit">Setor (masuk)</button>
+            <button type="button" data-kas-mode="withdrawal" aria-pressed="false" data-i18n="kas.withdrawal">Tarik (keluar)</button>
+          </div>
+          <button
+            type="button"
+            class="btn"
+            id="session-search-toggle"
+            aria-expanded="false"
+            aria-controls="session-search-panel"
+          >
+            <span data-i18n="kas.searchToggle">Cari transaksi</span>
+          </button>
+          <div class="toolbar__spacer"></div>
+          <button type="button" class="btn btn--ghost" data-lock-open>
+            <span data-i18n="kas.demoLock">Demo kunci sesi</span>
+          </button>
+        </div>
+
+        <div class="work-grid">
+          <div class="work-main">
+            <form class="panel work-form" id="kas-form" novalidate>
+              <div class="panel__header">
+                <h2 class="panel__title" data-i18n="kas.identityTitle">Rekening</h2>
+                <span class="note" data-i18n="kas.loadedAt">dimuat 08:14</span>
+              </div>
+
+              <div class="stack-md">
+                <div class="field">
+                  <label class="label" for="kas-account" data-i18n="kas.account">Nomor rekening</label>
+                  <div class="input-group">
+                    <input
+                      class="input"
+                      id="kas-account"
+                      value="1000000001"
+                      inputmode="numeric"
+                      autocomplete="off"
+                      spellcheck="false"
+                      aria-describedby="kas-account-hint kas-account-status"
+                    />
+                    <button type="button" class="btn" id="kas-account-load">
+                      <span data-i18n="kas.load">Muat</span>
+                    </button>
+                  </div>
+                  <p class="hint" id="kas-account-hint" data-i18n="kas.accountHint"></p>
+                  <p class="hint" id="kas-account-status" aria-live="polite"></p>
+                </div>
+
+                <div class="identity-grid">
+                  <div>
+                    <p class="demo-label" data-i18n="kas.holder">Pemilik</p>
+                    <p><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 01</p>
+                  </div>
+                  <div>
+                    <p class="demo-label" data-i18n="kas.memberNo">Nomor anggota</p>
+                    <p><span data-i18n="ph.memberNo">[NOMOR ANGGOTA]</span> 0042</p>
+                  </div>
+                  <div>
+                    <p class="demo-label" data-i18n="kas.accountNo">Rekening</p>
+                    <p class="num">1000000001</p>
+                  </div>
+                  <div>
+                    <p class="demo-label" data-i18n="kas.kind">Jenis simpanan</p>
+                    <p data-i18n="kas.kindValue">Simpanan sukarela</p>
+                  </div>
+                  <div>
+                    <p class="demo-label" data-i18n="kas.status">Status</p>
+                    <p><span class="badge badge--success" data-badge="active">Aktif</span></p>
+                  </div>
+                  <div>
+                    <p class="demo-label" data-i18n="kas.balance">Saldo</p>
+                    <p class="money" id="kas-balance" data-money="1000000">1.000.000,00</p>
+                  </div>
+                </div>
+
+                <div class="form-grid">
+                  <div class="amount-field" id="kas-amount-field">
+                    <label class="label" for="kas-amount" data-i18n="kas.amount">Nominal (IDR)</label>
+                    <input
+                      class="input input--amount"
+                      id="kas-amount"
+                      value="250000"
+                      inputmode="decimal"
+                      autocomplete="off"
+                      aria-describedby="kas-amount-hint kas-amount-error"
+                    />
+                    <p class="hint" id="kas-amount-hint" data-i18n="kas.amountHint"></p>
+                    <p class="field-error" id="kas-amount-error" data-money-error hidden></p>
+                  </div>
+
+                  <div class="field">
+                    <label class="label" for="kas-reference" data-i18n="kas.reference">Rujukan</label>
+                    <input class="input" id="kas-reference" value="TRX-000129" readonly />
+                  </div>
+
+                  <div class="field form-grid__wide">
+                    <label class="label" for="kas-narration" data-i18n="kas.narration">Keterangan</label>
+                    <input
+                      class="input"
+                      id="kas-narration"
+                      maxlength="200"
+                      autocomplete="off"
+                      aria-describedby="kas-narration-hint"
+                    />
+                    <p class="hint" id="kas-narration-hint" data-i18n="kas.narrationHint"></p>
+                  </div>
+                </div>
+
+                <div class="alert alert--error" id="kas-summary" role="alert" hidden></div>
+              </div>
+            </form>
+
+            <div class="alert alert--success" id="kas-result" hidden></div>
+
+            <section class="panel" aria-labelledby="session-tx-title">
+              <div class="panel__header">
+                <h2 class="panel__title" id="session-tx-title" data-i18n="kas.sessionTitle">Transaksi sesi ini</h2>
+              </div>
+
+              <div class="search-panel" id="session-search-panel" role="search" aria-label="Cari transaksi" data-i18n-aria-label="kas.searchToggle" hidden>
+                <div class="field">
+                  <label class="label" for="session-search" data-i18n="kas.searchLabel">Cari anggota atau rujukan</label>
+                  <input class="input" id="session-search" type="search" autocomplete="off" />
+                </div>
+                <div class="field">
+                  <label class="label" for="session-type" data-i18n="kas.filterType">Jenis</label>
+                  <select class="select" id="session-type">
+                    <option value="" data-i18n="kas.allTypes">Semua jenis</option>
+                    <option value="deposit" data-i18n="type.deposit">Setor (masuk)</option>
+                    <option value="withdrawal" data-i18n="type.withdrawal">Tarik (keluar)</option>
+                  </select>
+                </div>
+                <button type="button" class="btn" id="session-filter-reset" data-i18n="common.clearFilters"></button>
+                <p class="filter-bar__count" id="session-count" role="status"></p>
+              </div>
+
+              <div class="table-wrap" role="region" tabindex="0" aria-label="Tabel transaksi sesi ini" data-i18n-aria-label="kas.tableRegion">
+                <table id="session-table">
+                  <caption class="sr-only" data-i18n="kas.tableCaption">Transaksi tunai pada sesi ini</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" data-column="time" aria-sort="descending">
+                        <button type="button" class="sort-btn" data-kas-sort="time">
+                          <span data-i18n="kas.colTime">Jam</span>
+                          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5v14"/><path d="m5 8 3-3 3 3"/><path d="M16 19V5"/><path d="m13 16 3 3 3-3"/></svg>
+                        </button>
+                      </th>
+                      <th scope="col" data-i18n="kas.colType">Jenis</th>
+                      <th scope="col" data-column="member">
+                        <button type="button" class="sort-btn" data-kas-sort="member">
+                          <span data-i18n="kas.colMember">Anggota</span>
+                          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5v14"/><path d="m5 8 3-3 3 3"/><path d="M16 19V5"/><path d="m13 16 3 3 3-3"/></svg>
+                        </button>
+                      </th>
+                      <th scope="col" class="money-cell" data-column="amount">
+                        <button type="button" class="sort-btn" data-kas-sort="amount">
+                          <span data-i18n="kas.colAmount">Nominal (IDR)</span>
+                          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5v14"/><path d="m5 8 3-3 3 3"/><path d="M16 19V5"/><path d="m13 16 3 3 3-3"/></svg>
+                        </button>
+                      </th>
+                      <th scope="col" data-i18n="kas.colStatus">Status</th>
+                      <th scope="col" data-i18n="kas.colReceipt">Slip</th>
+                    </tr>
+                  </thead>
+                  <tbody id="session-tbody"></tbody>
+                  <tfoot>
+                    <tr>
+                      <th scope="row" colspan="3" data-i18n="kas.totalVisible">Total baris terlihat (IDR)</th>
+                      <td class="money-cell"><span class="money" id="session-total">0,00</span></td>
+                      <td colspan="2"></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              <div class="session-table__meta">
+                <span class="pagination__range" id="session-range"></span>
+                <span class="pagination__range" id="session-page"></span>
+                <div class="pagination__pages">
+                  <button type="button" class="btn btn--sm" id="session-prev" data-i18n="common.prev"></button>
+                  <button type="button" class="btn btn--sm" id="session-next" data-i18n="common.next"></button>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <aside class="panel review-panel" aria-labelledby="kas-review-title">
+            <div class="panel__header">
+              <h2 class="panel__title" id="kas-review-title" data-i18n="kas.reviewTitle">Periksa sebelum menyimpan</h2>
+              <span class="badge badge--info" id="kas-review-direction">Setor (masuk)</span>
+            </div>
+
+            <div id="kas-review-filled" class="stack-sm">
+              <dl class="facts">
+                <dt data-i18n="kas.holder">Pemilik</dt>
+                <dd><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 01</dd>
+                <dt data-i18n="kas.accountNo">Rekening</dt>
+                <dd class="num">1000000001</dd>
+                <dt data-i18n="kas.kind">Jenis simpanan</dt>
+                <dd data-i18n="kas.kindValue">Simpanan sukarela</dd>
+              </dl>
+
+              <dl class="amount-summary">
+                <dt class="amount-summary__label" data-i18n="kas.amountLine">Nominal</dt>
+                <dd class="amount-summary__value" id="kas-review-amount">+ 250.000,00</dd>
+              </dl>
+
+              <dl class="stack-sm">
+                <div class="amount-line">
+                  <dt data-i18n="kas.before">Saldo sebelum</dt>
+                  <dd id="kas-review-before">1.000.000,00</dd>
+                </div>
+                <div class="amount-line amount-line--total">
+                  <dt data-i18n="kas.after">Saldo sesudah</dt>
+                  <dd id="kas-review-after">1.250.000,00</dd>
+                </div>
+              </dl>
+
+              <div class="review-panel__ref">
+                <span data-i18n="common.reference">Rujukan</span>
+                <code id="kas-review-ref">TRX-000129</code>
+                <button type="button" class="btn btn--sm" data-copy-target="#kas-review-ref" data-i18n="common.copyRef"></button>
+              </div>
+            </div>
+
+            <div id="kas-review-empty" hidden>
+              <div class="empty-state">
+                <p class="empty-state__title" data-i18n="kas.reviewEmptyTitle"></p>
+                <p class="empty-state__body" data-i18n="kas.reviewEmptyBody"></p>
+              </div>
+            </div>
+
+            <div id="kas-review-error" hidden>
+              <div class="error-state" role="alert">
+                <p class="error-state__title" data-i18n="kas.reviewErrorTitle"></p>
+                <p class="error-state__body" data-i18n="kas.reviewErrorBody"></p>
+                <p class="error-state__reference"><span data-i18n="common.reference">Rujukan</span>: <code>TRX-000129</code></p>
+              </div>
+            </div>
+
+            <button type="submit" form="kas-form" class="btn btn--primary btn--block" id="kas-submit">
+              <span class="btn__spinner" id="kas-spinner" hidden aria-hidden="true"></span>
+              <span data-i18n="kas.submitDeposit" id="kas-submit-label">Simpan setoran</span>
+            </button>
+
+            <div class="review-panel__demo">
+              <span data-i18n="kas.demoStates">Contoh state panel</span>
+              <div class="segmented segmented--sm">
+                <button type="button" data-kas-review-mode="filled" aria-pressed="true" data-i18n="kas.stateFilled">Terisi</button>
+                <button type="button" data-kas-review-mode="empty" aria-pressed="false" data-i18n="kas.stateEmpty">Kosong</button>
+                <button type="button" data-kas-review-mode="error" aria-pressed="false" data-i18n="kas.stateError">Galat</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+      </main>
+    </div>
+
+    <footer class="settings-bar" aria-label="Pengaturan tampilan" data-i18n-aria-label="common.settings">
+      <div class="settings-group" role="group" aria-labelledby="theme-label">
+        <span class="settings-group__label" id="theme-label" data-i18n="common.theme">Tema</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-theme-set="light" aria-pressed="true" data-i18n="common.themeLight">Terang</button>
+          <button type="button" data-theme-set="dark" aria-pressed="false" data-i18n="common.themeDark">Gelap</button>
+        </div>
+      </div>
+      <div class="settings-group" role="group" aria-labelledby="language-label">
+        <span class="settings-group__label" id="language-label" data-i18n="common.language">Bahasa</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-locale-set="id" aria-pressed="true" data-i18n="common.langId">Indonesia</button>
+          <button type="button" data-locale-set="en" aria-pressed="false" data-i18n="common.langEn">English</button>
+        </div>
+      </div>
+      <span class="settings-bar__note" data-i18n="common.prefNote"></span>
+    </footer>
+
+    <dialog id="close-cash-dialog" aria-labelledby="close-cash-title" aria-describedby="close-cash-body">
+      <div class="dialog__header">
+        <h2 class="dialog__title" id="close-cash-title" data-i18n="kas.confirmCloseTitle">Tutup kas?</h2>
+      </div>
+      <div class="dialog__body">
+        <p id="close-cash-body" data-i18n="kas.confirmCloseBody"></p>
+      </div>
+      <div class="dialog__actions">
+        <button type="button" class="btn" data-dialog-close data-initial-focus data-i18n="common.cancel">Batal</button>
+        <button type="button" class="btn btn--danger-solid" id="close-cash-confirm" data-i18n="kas.confirmCloseOk">Tutup kas</button>
+      </div>
+    </dialog>
+
+    <dialog id="slip-dialog" aria-labelledby="slip-title">
+      <div class="dialog__header">
+        <h2 class="dialog__title" id="slip-title" data-i18n="kas.slipTitle">Slip transaksi tunai</h2>
+      </div>
+      <div class="dialog__body" id="slip-body"></div>
+      <div class="dialog__actions">
+        <button type="button" class="btn" data-dialog-close data-i18n="kas.slipClose">Tutup</button>
+        <button type="button" class="btn btn--primary" id="slip-print">
+          <span data-i18n="kas.slipPrint">Cetak</span>
+        </button>
+      </div>
+    </dialog>
+
+    <dialog id="lock-dialog" data-no-backdrop-close aria-labelledby="lock-title" aria-describedby="lock-body">
+      <div class="dialog__header">
+        <h2 class="dialog__title" id="lock-title" data-i18n="kas.lockTitle">Sesi berakhir</h2>
+      </div>
+      <div class="dialog__body">
+        <p id="lock-body" data-i18n="kas.lockBody"></p>
+        <p class="session-lock__countdown" id="lock-countdown">01:00</p>
+        <p class="note" data-i18n="kas.lockNote"></p>
+      </div>
+      <div class="dialog__actions">
+        <button type="button" class="btn" data-dialog-close data-i18n="kas.lockSignOut">Keluar</button>
+        <button type="button" class="btn btn--primary" id="lock-continue" data-initial-focus data-i18n="kas.lockContinue">Lanjutkan sesi</button>
+      </div>
+    </dialog>
+
+    <section id="print-receipt" class="print-only" aria-hidden="true"></section>
+  </body>
+</html>

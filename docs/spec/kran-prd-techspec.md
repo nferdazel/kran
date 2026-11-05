@@ -1,1277 +1,1000 @@
-# KRAN Indonesia — PRD & Technical Specification
+# KRAN: PRD and Technical Specification
 
-| | |
-|---|---|
-| **Repo** | `kran` (monorepo) |
-| **Status** | Draft v0.1 |
-| **Target segmen** | Koperasi (KSP/USP/KSPPS), BPR, BPRS, BMT |
-| **Stack** | PostgreSQL · Nim (backend) · SvelteKit + TypeScript (frontend) |
-| **Prinsip** | Clean Architecture · DRY · KISS · Reactive |
-| **Pilar non-fungsional** | Modular · Parameter database-driven · Day-close framework · Dark/Light · i18n · a11y · Compliance-by-design |
+Status: product truth after the replan (branch `chore/replan-docs`). This document replaces the
+Fase 0 to 4 specification in full; old section numbers survive only as citations, resolved by
+Appendix A. Owner rulings R-01 to R-30 and the decisions in `docs/DECISIONS.md` bind this text.
+Where this document and the code disagree, the disagreement is a defect: record it in
+`docs/DECISIONS.md` and stop.
 
-> **Catatan jujur soal "full compliance".** Software tidak bisa "menjamin" compliance sendirian. Yang bisa dilakukan sistem: (1) menerjemahkan regulasi menjadi *kontrol yang bisa diaudit* (rule, parameter, laporan, audit trail), (2) menyimpan **Regulatory Register** yang ter-versi dan terhubung ke fitur + test, (3) membuat perubahan regulasi cukup lewat **parameter/regulatory pack**, bukan ubah kode. Daftar regulasi di dokumen ini adalah **hasil analisis awal dari pengetahuan saya dan WAJIB diverifikasi** (nomor, pasal, dan masih berlaku/tidaknya) oleh compliance officer / konsultan hukum sebelum jadi acuan. Setiap item ditandai status verifikasi di §4.
+Product target: a KSP (Koperasi Simpan Pinjam) pilot operated by 3 to 10 staff, with at least two
+operators who have no server access. Membership is a first-class aggregate. Savings return is
+SHU-based, not interest. There are no time deposits. Lending runs on least-privilege maker and
+checker seats. The report pack is RAT grade.
 
----
+**MUST**, **MUST NOT** and **SHOULD** are normative, and every normative statement names an
+enforcement point: a test, a gate command, or a phase exit criterion in `docs/ROADMAP.md`. "Enforced
+today" means a test or gate in the current tree fails when the statement is violated; "enforced at
+Pn" means the statement is the phase exit criterion and has no gate yet. That distinction is
+deliberate: the replan found 15 blocker-level defects behind green gates. Evidence identifiers (`B1`
+to `B13`, `C01` to `C20`) refer to `plan/audit/00-synthesis.md` and are historical. No business value
+is written here; values live in parameter seeds and `docs/PARAMETERS.md`.
 
-## Daftar Isi
-
-1. [Ringkasan & Tujuan](#1-ringkasan--tujuan)
-2. [Scope](#2-scope)
-3. [Persona & Kebutuhan Per Segmen](#3-persona--kebutuhan-per-segmen)
-4. [Regulatory Compliance Analysis](#4-regulatory-compliance-analysis)
-5. [Prinsip Arsitektur](#5-prinsip-arsitektur)
-6. [Arsitektur Sistem](#6-arsitektur-sistem)
-7. [Struktur Monorepo](#7-struktur-monorepo)
-8. [Modul & Bounded Context](#8-modul--bounded-context)
-9. [Fondasi Data (PostgreSQL)](#9-fondasi-data-postgresql)
-10. [Parameter Framework (Database-Driven)](#10-parameter-framework-database-driven)
-11. [Day-Close Framework (EOD/EOM/EOY)](#11-day-close-framework-eodeomeoy)
-12. [Backend Spec (Nim)](#12-backend-spec-nim)
-13. [API Design](#13-api-design)
-14. [Frontend Spec (SvelteKit + TS)](#14-frontend-spec-sveltekit--ts)
-15. [Theming (Dark/Light)](#15-theming-darklight)
-16. [Internationalization (i18n)](#16-internationalization-i18n)
-17. [Accessibility (a11y)](#17-accessibility-a11y)
-18. [Security & Data Protection](#18-security--data-protection)
-19. [Reactive Architecture](#19-reactive-architecture)
-20. [Testing Strategy](#20-testing-strategy)
-21. [CI/CD (Ikuti Pola Existing)](#21-cicd-ikuti-pola-existing)
-22. [Observability & Operasional](#22-observability--operasional)
-23. [Roadmap & Milestone](#23-roadmap--milestone)
-24. [Risiko](#24-risiko)
-25. [ADR (Architecture Decision Records) Awal](#25-adr-awal)
-26. [Open Questions & Asumsi](#26-open-questions--asumsi)
-27. [Lampiran](#27-lampiran)
+**Contents:** [1 Product and scope](#1-product-and-scope) · [2 Domain model](#2-domain-model) ·
+[3 Invariants](#3-invariants) · [4 Parameters](#4-parameters) · [5 Security and data](#5-security-and-data) ·
+[6 UX](#6-ux) · [7 Operations](#7-operations) · [8 Compliance](#8-compliance) ·
+[9 Roadmap and references](#9-roadmap-and-references) · [Appendix A](#appendix-a-legacy-anchor-table).
 
 ---
 
-## 1. Ringkasan & Tujuan
+## 1. Product and scope
 
-### 1.1 Problem
-Lembaga keuangan mikro/kecil di Indonesia (koperasi, BPR/BPRS, BMT) umumnya memakai KRAN yang mahal, kaku, atau aplikasi ad-hoc yang tidak siap audit. Perubahan regulasi (rate, PPAP, pelaporan, perpajakan) sering berarti *patch kode*, bukan konfigurasi.
+### 1.1 Product statement
 
-### 1.2 Tujuan Produk
-Membangun **KRAN standar, modular, open-architecture** yang:
+KRAN is a back-office core banking system for an Indonesian savings-and-loan cooperative. It runs
+the counter, the loan book, the ledger, the member register and the annual close from one system,
+on one server, with one database, for one institution per deployment. It is not a consumer app, not
+a payment switch and not a multi-tenant SaaS. The unit of work is a member at a counter, a loan
+officer in the field, and a manager closing the books.
 
-1. Melayani 3 rumpun institusi (koperasi, BPR/BPRS, BMT) dari **satu codebase** lewat *product & regulatory pack*.
-2. **Compliance-by-design**: kontrol regulasi jadi first-class (parameter, rule, laporan, audit trail, traceability).
-3. **Semua nilai bisnis di database** (rate, limit, fee, kalender, GL mapping, ambang kolektibilitas, dst.) — ditegakkan oleh tooling, bukan sekadar konvensi.
-4. **Day-close framework** (EOD/EOM/EOY) yang idempotent, resumable, bisa disimulasikan, dan extensible per modul.
-5. Mudah dipelajari & di-enhance: modul kecil, batas jelas, template modul, dokumentasi hidup.
-6. UI modern: **dark/light**, **i18n**, **a11y (WCAG 2.2 AA)** sebagai fondasi, bukan afterthought.
+### 1.2 Problem
 
-### 1.3 Non-Goals (v1)
-- Bukan super-app / mobile banking konsumen (disiapkan lewat API & channel adapter).
-- Bukan payment switch. Integrasi BI-FAST/QRIS/switching = adapter fase lanjut.
-- Bukan treasury/trading/valas kompleks.
-- Bukan multi-tenant SaaS pada v1 (lihat ADR-005).
+A 3 to 10 person KSP typically runs on a mix of paper, spreadsheets and an ad-hoc application: cash
+is accepted against a handwritten slip and posted "later" or never; simpanan wajib goes uncollected
+for months while the member still counts for SHU; a wrong posting is deleted instead of reversed,
+so passbook and audit trail diverge; a loan is disbursed to the wrong account because the screen
+asks for a UUID; and the member register, obligations and annual reports live outside the system.
+Each failure becomes a requirement below. The software cannot fix a dishonest operator, but it can
+make the honest path the shortest one (KSP operations memo, section 1).
 
-### 1.4 Success Metrics
-| Metrik | Target awal |
-|---|---|
-| Semua nilai bisnis dari DB | 0 *magic number* bisnis di layer domain (dicek CI) |
-| EOD 100k rekening simpanan + 50k pinjaman | < 30 menit (hardware entry-level, dapat diubah via benchmark) |
-| Perubahan rate/fee/limit | 0 deploy, cukup maker-checker |
-| a11y | 0 pelanggaran axe *serious/critical* di CI; seluruh alur utama bisa keyboard-only |
-| Onboarding developer | Modul baru "hello world" end-to-end < 1 hari dari template |
-| Traceability | 100% requirement regulasi aktif ter-map ke fitur + test |
+### 1.3 Personas and seats
 
----
+Seats, not job titles. In a three-person KSP one login holds several seats, so separation of duty is
+enforced per action by the server (R-17), never by hiding a menu.
 
-## 2. Scope
-
-### 2.1 In-scope v1 (per fase di §23)
-- **Platform**: auth, RBAC + branch scoping, maker-checker, audit, parameter, kalender, workflow, notifikasi, dokumen, i18n catalog.
-- **Party/CIF**: nasabah/anggota perorangan & badan, KYC/CDD/EDD, risk rating, screening.
-- **Product Factory**: katalog produk parametrik (simpanan, deposito, pembiayaan/kredit, syariah).
-- **Deposit**: simpanan pokok/wajib/sukarela (koperasi), tabungan, deposito, wadiah/mudharabah (syariah).
-- **Lending**: kredit & pembiayaan (konvensional + akad syariah), jadwal angsuran, kolektibilitas, PPAP/CKPN, restrukturisasi, hapus buku.
-- **Teller & Cash**: sesi teller, vault, setoran/penarikan/pemindahbukuan, cetak buku tabungan & slip.
-- **General Ledger**: COA, double-entry, posting rule dari event, periode, trial balance, laporan keuangan.
-- **Day-Close Engine**: EOD/EOM/EOQ/EOY.
-- **Compliance & Reporting**: APU-PPT, laporan regulator, pajak, laporan RAT/SHU (koperasi), rasio kesehatan.
-- **Admin & Ops**: konfigurasi, monitoring batch, backup/restore tooling.
-
-### 2.2 Out-of-scope v1 / Adapter fase lanjut
-Mobile/internet banking, ATM/EDC switching, BI-FAST/SNAP, QRIS, e-money, agen (laku pandai), credit scoring ML, SLIK real-time (v1: file/batch export + adapter interface).
-
----
-
-## 3. Persona & Kebutuhan Per Segmen
-
-### 3.1 Persona
-| Persona | Kebutuhan inti |
-|---|---|
-| Teller/Kasir | Transaksi cepat, keyboard-first, cetak buku/slip, tutup kas |
-| CS/Account Officer | Onboarding anggota/nasabah, KYC, pengajuan pembiayaan |
-| Analis/Komite Kredit | Scoring sederhana, workflow approval berjenjang |
-| Supervisor/Kepala Cabang | Maker-checker, override terkontrol, monitoring |
-| Akunting | Jurnal, closing, laporan keuangan |
-| Compliance/APU-PPT Officer | Screening, alert, STR/CTR, evidence |
-| Auditor Internal/Eksternal | Audit trail read-only, jejak perubahan parameter |
-| Pengawas Syariah (DPS) | Mapping produk↔fatwa, review akad & distribusi bagi hasil |
-| Pengurus/Pengawas Koperasi | SHU, RAT, rasio kesehatan |
-| Admin Sistem | Parameter, user, role, monitoring batch |
-
-### 3.2 Perbedaan Per Segmen (dikelola lewat *Segment Pack*)
-| Aspek | Koperasi (KSP/USP) | BPR | BPRS | BMT (umumnya KSPPS) |
-|---|---|---|---|---|
-| Entitas pelanggan | **Anggota** (wajib keanggotaan) | Nasabah | Nasabah | Anggota |
-| Simpanan | Pokok, wajib, sukarela | Tabungan, deposito | Wadiah/mudharabah | Wadiah/mudharabah + pokok/wajib |
-| Pembiayaan | Pinjaman | Kredit | Murabahah, mudharabah, musyarakah, ijarah, qardh | Idem BPRS |
-| Laba | **SHU** + RAT | Laba/rugi bank | Laba/rugi + bagi hasil | SHU + bagi hasil |
-| Regulator utama | Kemenkop UKM & OJK (sesuai ketentuan transisi sektor) | OJK | OJK + DSN-MUI | Kemenkop + DPS/DSN-MUI + OJK (sesuai ketentuan) |
-| Pelaporan | Laporan koperasi, penilaian kesehatan | Laporan bulanan/berkala BPR, tingkat kesehatan | Idem + syariah | Laporan koperasi syariah |
-| Pengawas syariah | — | — | **DPS** wajib | DPS/DPS-setara |
-
----
-
-## 4. Regulatory Compliance Analysis
-
-> **Status verifikasi**: `V?` = perlu verifikasi nomor/pasal/versi terkini · `V!` = sangat sensitif perubahan, wajib cek ke sumber resmi · Tidak ada tanda = relatif stabil tapi tetap diverifikasi saat implementasi. **Semua item ini harus dicek ulang sebelum jadi requirement final.**
-
-### 4.1 Regulatory Register (dikelola di sistem juga — lihat §4.4)
-
-#### A. Lintas segmen
-| ID | Regulasi (analisis awal) | Dampak ke sistem | Status |
+| Seat | Daily work | MUST NOT | Screens |
 |---|---|---|---|
-| REG-001 | **UU 4/2023 tentang Pengembangan dan Penguatan Sektor Keuangan (P2SK)** | Payung baru sektor keuangan, termasuk penguatan pengaturan/pengawasan koperasi simpan pinjam & BPR; masa transisi | V! |
-| REG-002 | **UU 27/2022 Pelindungan Data Pribadi (PDP)** | Consent, hak subjek data, retensi, enkripsi, notifikasi kebocoran (batas waktu 3×24 jam), DPO, data subject request | V? |
-| REG-003 | **UU 8/2010 PP-TPPU** & turunannya | Kontrol APU-PPT, CTR/STR ke PPATK, retensi dokumen | V? |
-| REG-004 | **POJK APU-PPT-PPSPM untuk PJK sektor jasa keuangan** (pengganti POJK 12/2017: **POJK 8/2023**, terverifikasi 2 Nov 2026) | CDD/EDD, PEP, screening DTTOT/DPPSPM, risk rating, pelaporan | V! |
-| REG-005 | **UU ITE (11/2008 jo. perubahannya)** & **PP 71/2019 PSTE** | Tanda tangan/dokumen elektronik, keamanan sistem elektronik | V? |
-| REG-006 | **POJK Pelindungan Konsumen dan Masyarakat di Sektor Jasa Keuangan** (kemungkinan POJK 22/2023) | Transparansi produk, penanganan pengaduan (SLA), disclosure biaya/bunga | V? |
-| REG-007 | **UU 8/1997 Dokumen Perusahaan** | Retensi dokumen keuangan (umumnya 10 tahun) → param retensi + arsip | V? |
-| REG-008 | **Ketentuan perpajakan** (PPh final atas bunga/bagi hasil, PPN atas fee tertentu, bukti potong, AEOI/CRS-FATCA bila relevan) | Perhitungan & bukti potong pajak, laporan | V! |
-| REG-009 | **Ketentuan LPS** (penjaminan simpanan, tingkat bunga penjaminan) & transisi penjaminan koperasi di P2SK | **Koperasi bukan peserta LPS** (riset 2 Nov 2026); rate/flag penjaminan hanya untuk pack BPR; laporan | V! |
-| REG-010 | **Ketentuan Dukcapil** (verifikasi NIK/e-KTP) | Adapter verifikasi identitas | V? |
-| REG-011 | **Standar akuntansi** (SAK EP dan ketentuan akuntansi sektoral; PSAK/SAK Syariah untuk akad syariah) | COA, posting rule, laporan keuangan, pengakuan margin/bagi hasil | V! |
+| Kasir (teller) | open cash, setor, tarik, transfer, loan instalment, reprint, count and close cash | post without an open session; approve a vault top-up; see another branch's cash | K-01, K-08 read, K-14 pay, K-23, K-24 |
+| Petugas pinjaman | survey, application, schedule preview, disbursement, collections | approve an own application; disburse to cash; edit a posted payment | K-06 to K-08, K-11 to K-15, K-24 |
+| Manajer | approvals (loan, parameter, product, vault), arrears, EOD, EOM, EOY, reports | approve an own submission; close without counting cash; run EOY without a signed SHU basis | K-02 to K-04, K-11, K-13 to K-17, K-19, K-20 |
+| Admin / pembukuan | member data, obligations, corrections, user administration, daily recap | delete a posting; create an operator without role and branch; edit a closed period | K-04 to K-10, K-17 to K-21, K-23 |
+| Pengurus | read the RAT pack, member register, close certificates, SHU | post, approve or change any record | K-04, K-06, K-08, K-16 |
 
-#### B. Koperasi (konvensional)
-| ID | Regulasi | Dampak | Status |
+A screen becomes reachable only through the permission code the server checks; role names are
+labels and may drift. Navigation is built from the principal's permissions and does not render a
+group with zero permitted links (`apps/web/src/lib/app/nav.ts`).
+
+### 1.4 MVP scope (KSP vertical slice)
+
+The product scope, in one list: a `coop` membership register with immutable member number, status
+machine, join and exit dates, branch and link to `party`; pokok and wajib obligations per member with
+payment, arrears, approved waiver and refund at exit, realised amounts read from deposit postings;
+sukarela accounts with deposit, withdrawal, dormancy, minimum balance and statement; teller sessions
+with float, setor, tarik, transfer by account or member number, cash count and variance; lending with
+application, maker and checker approval, disbursement to a member account, schedule, allocation,
+penalty, arrears, restructure, write-off and recovery; an immutable ledger with reversal ownership,
+COA, periods, trial balance, statements and EOD, EOM, EOY; nine RAT reports; and governance for
+parameters, users, MFA and the audit viewer. Phases are owned by `docs/ROADMAP.md`; the MVP is
+complete when the twelve scenarios in section 1.7 pass against a synthetic cooperative of 30 business
+days, about 200 members, 50 loans, one EOY and SHU cycle, and zero manual SQL (P8 exit criterion).
+
+### 1.5 Explicit non-goals
+
+Out of MVP, each for a stated reason: time deposits and their ARO, early-withdrawal and accrual
+stack, because R-16 removes them and no path can create one today, so removal at P4 is deletion, not
+hiding; interest-bearing savings, because savings return is SHU under R-16; BPR, BPRS and syariah
+packs, because R-10 defers them while the register keeps their ids; mobile, offline and
+field-collection apps, because the pilot works from one branch on desktop; multi-institution
+tenancy, because one institution owns one deployment and branches are not tenants; payment switch,
+BI-FAST, QRIS, ATM and EDC, which are adapters after the pilot; the tax module and PPh withholding,
+because REG-008 is deferred with no consumer; iuran anggota, dunning and promise-to-pay, which R-10
+does not require and the plan does not cost; automated SHU distribution, because R-27 keeps
+distribution a checked journal; automated off-host audit anchoring, because R-26 keeps a manual
+daily head-hash copy; mandatory MFA, because R-19 and R-29 keep it optional and throttled; and
+health ratios, DPK and branch P&L, which R-28 defers with tags.
+
+### 1.6 Success criteria
+
+The product succeeds when a phase exit demonstrates, with output: the books cannot be corrupted
+silently (owned-journal reversal denied, write-off then EOD completes, allocations sum and reference
+a real instalment); one business date governs posting, parameters, DPD and reports; every account,
+slip, statement and report names a member; two named operators without server access complete
+onboarding, lending, close and reports; nine RAT documents reconcile to `journal_line`; `ci-fast`
+fails on a seeded violation in `apps/api/src` and `apps/web`; every 409 carries a stable
+`params.reason`; every capped list reports a total; and axe is green in two themes, keyboard-only.
+
+### 1.7 MVP acceptance scenarios
+
+Each scenario is a product requirement and an end-to-end acceptance test. `P.*` denotes a parameter
+value, never a literal.
+
+| ID | Scenario | Expected | Evidence |
 |---|---|---|---|
-| REG-101 | **UU 25/1992 Perkoperasian** (diubah via UU Cipta Kerja & turunannya) | Keanggotaan, simpanan pokok/wajib, SHU, RAT, cadangan | V? |
-| REG-102 | **PP tentang kemudahan/pelindungan koperasi & UMKM** (PP 7/2021 dan turunan) | Persyaratan badan hukum & kegiatan | V? |
-| REG-103 | **Permenkop tentang Usaha Simpan Pinjam Koperasi** (**Permenkop 8/2023**, terverifikasi 2 Nov 2026) | Batas kegiatan, rasio, perizinan, pelaporan, BMPP (10% terkait / 15% tidak terkait) | V! |
-| REG-104 | **Permenkop penilaian kesehatan KSP/USP** (Permenkop 9/2020 + Juknis Deputi 15/2021, kerangka terverifikasi 2 Nov 2026) | Perhitungan skor kesehatan (permodalan, aset, manajemen, efisiensi, likuiditas, kemandirian, jatidiri) | V! |
-| REG-105 | **Pengaturan/pengawasan KSP oleh OJK** sesuai P2SK dan ketentuan transisi | Pelaporan ke OJK, kontrol sektor jasa keuangan | V! |
+| S1 | Admit a member and collect pokok | `ACTIVE` with immutable number; equity increases by exactly the parameter; two audit rows; duplicate identity returns 409 with a stable reason | onboarding e2e, `coop` integration |
+| S2 | Monthly wajib with arrears | Two `PAID`, one `ARREARS`; arrears equal unpaid obligations; obligations derived, no second billing ledger | obligations integration |
+| S3 | Sukarela deposit and withdrawal | balance and GL move together; slip carries identity, cashier, time and zone; withdrawal below minimum rejected with a reason | teller e2e, `itapi_teller` |
+| S4 | Loan application with eligibility | blocked on wajib arrears with a specific reason; approver is not the submitter; full trail | lending e2e, `itapi_lending` |
+| S5 | Disburse to a member account | destination by account or member number with holder on review; `lending_maker` completes without `platform_admin`; second disbursement refused | lending e2e as seeded maker |
+| S6 | Instalment with penalty and partial payment | allocations follow product order and sum exactly; schedule and arrears update; receipt shows the split | `itapi_lending` |
+| S7 | Month-end arrears review | DPD, outstanding, last payment, officer and a total row; EOM refuses while unbalanced; no backdated posting after close | arrears e2e, `itdaycloser_gates` |
+| S8 | Cash count and variance | variance equals actual minus expected, posted to the configured account; session closes; EOD proceeds | `itapi_teller_sessions` |
+| S9 | Member exit with an outstanding loan | refused with a specific reason; after settlement the refund equals pokok, wajib and sukarela minus arrears; `EXITED` with `ended_on` | `coop` integration |
+| S10 | Year-end close and SHU proposal | trial balance balanced; second run is a no-op; proposal totals equal the distributable amount; every row shows its basis | `itdaycloser_*`, SHU golden |
+| S11 | RAT approval and distribution | refused without a recorded decision; GL delta equals the allocation sum; replay does not pay twice | distribution integration |
+| S12 | Correct a wrong posting | original row remains; reversal is a new entry with actor and reason; passbook shows both and nets correctly | `itjournal`, `itapi_journal` |
 
-#### C. BPR
-| ID | Regulasi | Dampak | Status |
+### 1.8 Corrected premises
+
+The replan corrected six premises that old reports repeated. They are restated so later work does
+not re-inherit them.
+
+| Premise | Correction | Evidence |
+|---|---|---|
+| The web app is server-rendered | It is a SPA: `ssr=false`, `prerender=false`, static adapter fallback; no server load or hooks | `apps/web/src/routes/+layout.ts` |
+| Clean Architecture is enforced project-wide | Enforced for `modules/*` only; `apps/api/src` joins `archcheck` at P0 with a shrink-only baseline | `tools/archcheck/lib.nim` |
+| Handlers are the application layer | Not ratified. Use cases move into `modules/*/application` per module (R-18, R-24) | P2a, P2b |
+| The error format is custom | It is an RFC 9457 problem document, `application/problem+json`, `type` as a relative `/problems/<kind>` URI, plus `code`, `i18nKey`, `params`, `traceId` | `apps/api/src/problem.nim` |
+| Time deposits are delivered | No request path can create one; the stack is unreachable | `modules/deposit/domain/account.nim`, `handlers_deposit.nim` |
+| Fase 3 delivered EOD, EOM and EOY | EOY is a calendar level with no registered task; it is delivered at P4 | `daycloser_ledger.nim`, `calendar.nim` |
+
+---
+
+## 2. Domain model
+
+### 2.1 Shape
+
+A modular monolith: one Nim binary with roles (`api`, `worker`, `ctl`), one PostgreSQL database with
+one schema per module, and a SvelteKit SPA that talks JSON over HTTPS and WebSocket. `kran-api`
+serves HTTP and the realtime hub and is stateless; `kran-worker` runs the outbox dispatcher, close
+executor and scheduled work, with one active worker per deployment; `kran-ctl` performs migrations,
+first-user bootstrap, anchor export and one-shot repair, never a daily operation the UI must provide.
+
+Rules that are architectural, not stylistic: a module owns its schema and tables and never reads
+another module's tables; cross-module calls go through `<module>/api.nim`, asynchronous reactions
+through events; a module never imports another module's `domain/`, `infrastructure/` or handlers.
+The composition root (`apps/api`) wires modules and may see many `api.nim` surfaces, but it may not
+hold business rules; that is the subject of the P2 extraction. Enforcement is `tools/archcheck` in
+`task check`. It covers `modules/*` today and skips `apps/api/src`; P0 adds a `handlers` category
+with a baseline that may only shrink.
+
+### 2.2 Modules
+
+Modules and their ownership: `platform` owns the audit chain, outbox and inbox, idempotency,
+parameters, calendar and business date, users, roles, permissions, sessions, branches and MFA
+factors, and exposes an `api.nim` slice at P2a. `party` owns the party record, encrypted identity
+documents, KYC profile and re-KYC schedule (P2a). `coop` is the target membership module at P3.
+`product` owns the savings and loan catalogue (P2b). `deposit` owns savings accounts and their
+transactions (P2a). `teller` owns session, float, vault and cash count (P2b). `lending` owns
+application, schedule, disbursement, payments and allocations, penalty, DPD, PPAP, write-off and
+recovery (P2b). `ledger` owns COA, journals, periods, posting rules and statements (P2a). `daycloser`
+owns the task registry, dependency graph, run and chunk state and the seal (P2b). `hello` is a
+template and is deleted at P2b.
+
+No `reporting` module exists by design. Reports read ledger and subledger data through the owning
+module's read API; a report module that owns a second copy of the numbers is forbidden (C18).
+
+### 2.3 Aggregate ownership
+
+Ownership is fixed: `party` owns the party record, identity documents, KYC profile, risk level and
+re-KYC schedule, with a UUID never shown, one document set, parameterised risk and every change
+audited. `coop` owns the member: UUID plus immutable member number, one non-exited membership per
+party, a declared status graph, `joined_on <= ended_on`, and a terminal exit. `deposit` owns savings
+accounts (UUID plus account number) with balances derived from postings, no negative balance unless
+the product allows it, and one journal per cash movement. `lending` owns loans (UUID plus loan
+number) whose schedule comes from the product version, allocations sum to the payment and transitions
+are audited. `ledger` owns journals: balanced, at least two lines, immutable, reversible only with
+known ownership. `daycloser` owns runs: one active run per scope and date, chunk as checkpoint, seal
+over snapshot and task state. `platform` owns users and sessions: permission per request, idle and
+absolute bounds, and no grant exceeding the actor's own.
+
+`coop` owns no money. If it ever holds a balance "for speed", the subledger-to-GL divergence that
+the audit calls the only silent books-corruption path becomes unfixable.
+
+### 2.4 The `coop` aggregate (target)
+
+Minimal member record: identifier, immutable member number, party reference, branch, joined and
+ended business dates, status, status reason, creating and updating actor with timestamps. Lifecycle:
+`PENDING` (candidate, rejectable) to `ACTIVE` (obligations start) to `SUSPENDED` (temporary, no new
+credit) to `EXITED` (terminal, refunds settled), with `REJECTED` from `PENDING`. Status values are a
+closed set in code, not a parameter: a runtime-parameterised state machine cannot validate
+transitions.
+
+Rules: the member number never changes and is never reissued, because it is what a teller types and
+a slip prints; at most one non-exited membership exists per party; every transition records actor,
+reason, timestamp and effective date, and backdated admission requires a reason; pokok and wajib
+obligations reference product and period `YYYY-MM` and realise amounts from deposit postings, so
+`coop` never duplicates money; exit is refused while a loan is outstanding unless the offset
+parameter allows it; `coop` posts no journal and calls `deposit` and `ledger` through their
+`api.nim`. Events `MembershipActivated`, `MembershipChanged` and `MembershipExited` go through the
+outbox in the state-change transaction. Not in `coop`: balances, cash, loan schedules, DPD, PPAP, SHU
+amounts, product rates, GL accounts, KYC documents, teller sessions, report SQL, users and roles.
+
+### 2.5 Ledger ownership and subledger links
+
+Every journal produced by a subledger MUST carry an explicit link from the subledger row to
+`ledger.journal`; ownership is a stored reference, not a guess from `source_event`. Until P1,
+ownership is inferred from five tables and lending, accrual and write-off journals carry no link, so
+their reversal is possible and corrupts the books (B3).
+
+| Journal source | Generic reversal | Correct path |
+|---|---|---|
+| Pure ledger journal | yes | reversal with reason |
+| Deposit transaction or transfer | no | deposit correction, reversing subledger and GL |
+| Teller session, overage, shortage, vault | no | teller correction |
+| Lending disbursement, accrual, payment, write-off, recovery | no | lending correction or compensating entry |
+| Parameter or product change | not a journal | new version with maker-checker |
+
+### 2.6 Data foundation
+
+PostgreSQL, one schema per module, migrations as plain SQL files numbered within a module. The
+runner records each file in `platform.schema_migration` with a checksum and rejects a changed file.
+The full table and trigger inventory is generated into `docs/SCHEMA.md`; this document never
+duplicates it.
+
+| Known gap | Consequence | Owner |
+|---|---|---|
+| no foreign key from allocation to instalment, no sum check | money can be allocated to a non-existent schedule row | P1 |
+| no foreign keys to `platform.branch` | branch isolation is application-only | P1b |
+| append-only depends on runbook grants | a fresh deploy may be trigger-only | P1b |
+| no row-level security | branch scoping is an application rule | accepted limit, revisit with measurement |
+
+Every query that reads or writes branch-owned data MUST apply the principal's branch filter in SQL,
+not after `LIMIT`. The first three gaps above are exit criteria, not backlog wishes.
+
+### 2.7 Module documentation contract
+
+Every module keeps `MODULE.md` with eleven headings that form the contract: purpose and bounded
+context; aggregates and business rules; public API (`api.nim`); published and consumed events with
+versions; parameter keys with sensitivity and regulatory references; tables and schema; registered
+day-close tasks; permissions; i18n namespace; related `REG-xxx` requirements and tests; decisions
+with ADR links. A missing heading means an incomplete module. The file states current behaviour,
+never a plan; plans live in `docs/BACKLOG.md`.
+
+---
+
+## 3. Invariants
+
+These are product invariants. A change that breaks one requires an owner decision, not a review
+comment.
+
+### 3.1 Money
+
+1. Money is a fixed-point integer of minor units (sen) in `int64`, scale 2. There is no `float`,
+   `double` or `Number` on a money path in Nim, SQL or TypeScript. Storage is `numeric(24,2)`; the
+   API transports a decimal string with exactly two decimals; the UI formats with
+   `Intl.NumberFormat` and never parses through `Number`.
+2. Input below one sen is rejected, not rounded. Arithmetic is checked and overflow raises; it is
+   never allowed to wrap.
+3. Rounding is half-to-even, applied once at the point a value becomes money. Intermediate
+   calculations keep full precision.
+4. A money value carries its currency at the boundary; the pilot currency is IDR and the column is
+   explicit, not implied by locale.
+5. Debit and credit are separate columns plus a label. Colour never carries the meaning alone.
+
+Enforced today by `shared/kernel/money.nim`, property tests for sum and rounding, and the frontend
+parser. Every new money use case MUST have a property test and a golden test against a hand-computed
+reference.
+### 3.2 Rates and percentages
+
+Rates are fixed-point integers with six decimal places (micro-units). A percentage is stored as a
+rate, never as a float. Multiplication of money by a rate goes through one kernel operation that
+rounds half-to-even exactly once. Penalty, interest, PPAP and SHU percentages MUST come from
+parameters. A literal percentage in code fails review and, where `lint-nomagic` sees it, the build.
+
+### 3.3 Ledger immutability
+
+1. A posted journal is immutable. `UPDATE` and `DELETE` are denied by trigger and by database
+   privilege for the runtime role.
+2. A journal has at least two lines and sums to zero; the check is deferred to commit. A period
+   accepts no posting after it is closed, and closing or reopening is an explicit audited operation.
+3. Corrections are reversing entries with a reason. There is no edit path and no delete path in any
+   UI or API.
+4. A journal has exactly one reversal. The same idempotency key returns the original result; a
+   different key against an already reversed journal returns 409.
+5. A journal is sealed with the business date and the actor, and the audit chain records who
+   reversed what and why.
+
+Enforced today by `itjournal` (balance triggers, immutability, single reversal) and `itapi_journal`
+(idempotent and race-safe reversal).
+
+### 3.4 Reversal ownership
+
+The generic reversal endpoint MUST refuse a journal whose owning subledger keeps state outside the
+ledger, unless that module exposes a correction that reverses both. Ownership is a stored reference,
+not a guess from `source_event`. A refusal carries a stable reason and names the correct path; "not
+reversible" without a next step is a defect. Enforced at P1: reversal of a lending, accrual or
+write-off journal is denied, and the test fails if denial is removed.
+
+### 3.5 Idempotency
+
+Every financially effective request accepts an `Idempotency-Key` header, scoped per principal; the
+same key with a different payload is a conflict. The key row is written inside the business
+transaction, and a non-2xx response never stores a key. A replay of a completed key returns the
+stored result, not a second posting. The key survives a network failure, a 5xx and a session
+re-authentication, and time to live is a parameter. The UI shows the reference before completion and
+disables the form while the outcome is unknown; "unknown state" never says success.
+
+Enforced today by `itapi_idempotency` on the backend and by one shared client helper after P6. Four
+divergent client implementations are the current state and are a defect (C15).
+
+### 3.6 Outbox, inbox and realtime
+
+1. A state change and its event are written in one transaction. There is no event without a state
+   change and no state change that silently lacks its event.
+2. A writer that emits an outbox event writes the audit row first in the same transaction. This
+   preserves commit order versus `seq` order, and the realtime cursor depends on it.
+3. The dispatcher claims batches with `FOR UPDATE SKIP LOCKED`, never select-then-update. Delivery
+   is at least once; consumers deduplicate through the inbox keyed by event and consumer.
+4. Failed events remain visible with attempts and last error; redrive is an operator action.
+5. Realtime carries a resume token and a reconnect replays from the outbox. A missed event is a
+   defect, not a refresh hint. Topics are authorised; a denied topic surfaces as a warning.
+
+Enforced today by `itposting`, `itoutboxcursor` and `itapi_ws`.
+
+### 3.7 Day-close framework
+
+1. All scheduled institutional work runs through `daycloser`. A module-local cron, batch or
+   one-off loop is forbidden. A task is registered with code, level, criticality and dependencies;
+   the graph is deterministic and validated against the run snapshot.
+2. A run has one active instance per scope and business date; catch-up runs day by day. States are
+   planned, precheck, running, postcheck, completed, with failed and blocked resumable and
+   completed or cancelled terminal.
+3. A succeeded chunk is never re-run on resume; a failed chunk is retried. Parameters are frozen
+   per run, so a change mid-run does not alter that run.
+4. A critical task failure fails the run. A non-critical failure is recorded and does not hold the
+   close. Skip is allowed only for a non-critical, single-chunk task, with a reason stored where
+   the monitor can read it.
+5. The run seals a hash over the parameter snapshot and the task and chunk states. A completed run
+   cannot be deleted.
+6. Closing advances the business date in the same transaction as the seal. A cancelled run returns
+   the date to open; a closed date is never reopened without a policy that does not exist yet.
+   During closing, ordinary writes are rejected with 409 unless the close-policy parameter allows
+   them.
+
+Enforced today by `itapi_dayclose`, `itdaycloser_lifecycle` and `itdaycloser_gates`. EOY is not
+registered today; P4 adds it with the same contract.
+
+### 3.8 Business date
+
+There is one business date per institution, from `platform.business_date`. It is not derived from
+the server clock, the browser clock or UTC. Every dated read passes the resolved date: parameter
+`asOf`, allocation, DPD, report period, schedule due check. A function that defaults to "today" from
+the OS clock is a defect. The institution time zone is a parameter, and a deployment outside the
+seed zone must set it before the first posting. Screens display the business date wherever a dated
+decision is made. A backdated correction is a reversal plus a new entry on the current business
+date, unless an explicit backdating policy exists.
+
+Enforced at P1 by a test that posts at a wall-clock time where UTC and local date differ and asserts
+one date everywhere. Today at least five paths disagree (C04).
+
+### 3.9 Concurrency
+
+Balance changes use atomic conditional updates, never read-modify-write. Lock order is documented
+and stable; a new path that can hold two locks states the order in the module document.
+Transactions that can receive `40001` or `40P01` retry with a bounded, parameterised policy, and a
+silent loop is forbidden. A worker honours termination: finish the current chunk or release the
+lease, never abandon a lease that blocks catch-up. One run per scope and date is enforced by a
+partial unique index plus an advisory lock, not by application hope.
+
+Enforced today by `transaction_repo` and `transfer_repo`; retry is added at P1b with a test that
+injects a serialization failure.
+
+### 3.10 Test strategy
+
+| Level | Scope | Gate |
+|---|---|---|
+| Unit and property | domain rules, Money, Rate, sums, rounding, balance and schedule invariants | `task test` |
+| Golden | interest, penalty, PPAP, SHU and schedule methods against hand-computed fixtures | `task test` |
+| Integration | use case plus real PostgreSQL plus migrations | `task test`, shared test database |
+| Contract | every operation implemented and schema-checked | `task openapi`, `tcontract` |
+| Simulation | months of catch-up, holidays, EOM, EOY, chunk failure | `itdaycloser_sim` |
+| Web, end-to-end, a11y | state machines, money parsing, forms, role-authentic flows, axe in two themes | `vitest` in `ci-fast` after P0, `task e2e`, `task ci` |
+
+A test that cannot fail when the behaviour is removed is not evidence; capability claims point at a
+test that fails when the capability breaks. Tests are never edited to accommodate an extraction:
+characterization tests pin current behaviour first. The shared `kran_test` database makes
+database-touching suites serial by rule. No new test framework, assertion library or DOM
+environment without an ADR. Parameter mutation is covered per key: a seeded change must change
+behaviour, which is how the no-hardcode rule is proved for that key.
+
+---
+
+## 4. Parameters
+
+### 4.1 Policy
+
+No business value lives in code. Rates, limits, fees, thresholds, calendar shape, retention, review
+cadence, penalty basis and close policy are parameter rows with an effective date, a scope, a reason
+and an approver. A parameter is business data, not configuration: versioned, approved and audited.
+
+### 4.2 Definition, seed, generation
+
+Definitions live in `modules/<module>/seeds/params.yaml` with key, module, value type, allowed
+scopes, sensitivity, approval requirement, regulatory references and description key. `paramgen`
+validates the definition, generates typed Nim keys and TypeScript types, and emits the provenance
+report; a key not generated does not exist for code. `paramgen --check` fails when generated
+artifacts differ from seeds. Value types are explicit (integer, decimal, money, rate, date, boolean,
+string, enum, JSON), and coercion happens once in generated code. A deprecated key is removed from
+code first and then marked deprecated; reads fail closed.
+
+### 4.3 Keys in code
+
+Code uses the generated typed constant, for example a generated key for the DPD lower bound, passed
+with an explicit business date and scope. Raw string keys in business code are a defect and are
+caught by `lint-nomagic` where it has coverage. `P_*` naming is a convention inside generated
+artifacts, not a security boundary; the boundary is that unknown keys do not compile.
+
+### 4.4 Scope and resolution order
+
+Scopes are global, institution, branch, product, segment and role, resolved from most specific to
+least specific in that order. Only the scope type the caller explicitly requests participates. An
+empty id is a legitimate root-institution request, not a wildcard. A more general scope never
+silently replaces a requested specific scope. A parameter read states its scope; there is no ambient
+"current scope" that changes meaning between a teller and a manager. A caller outside its branch may
+read a value only with a permission that allows cross-branch read, and the read is audited. An
+author may propose a value only for a scope it may read.
+
+### 4.5 Lifecycle and maker-checker
+
+States are draft, pending, active, superseded and rejected. Exactly one value is active per key,
+scope and date; a new value closes the previous one by setting its end date, never by deleting it.
+Submission requires a reason. Approval requires a different person and the database enforces
+`checker <> maker`. Activation writes an audit row, an outbox event and a notification. A value with
+an end date must have a successor covering the next day; otherwise the gap is refused at submission
+and again at approval. Critical values require an approval role distinct from the authoring role.
+
+### 4.6 No fallback
+
+A missing active value is an error, not a default. The caller raises, the API names the missing key,
+and startup refuses to serve traffic when a required key has no visible value. A default in code
+defeats the framework and is forbidden. Where a fallback is genuinely required for availability, it
+is a parameter of its own with an explicit owner.
+
+### 4.7 Provenance and unverified values
+
+Every value that encodes a regulatory choice carries `NEEDS-COMPLIANCE-REVIEW` until a compliance
+owner signs it, and its submission reason names the source and access date. A value is never
+presented as compliant because it is seeded. `docs/PARAMETERS.md` lists marker and provenance for
+every key; `docs/COMPLIANCE.md` lists the sign-off state.
+
+### 4.8 Enforcement and catalogue
+
+Schema validation at build proves every definition uses a supported type and scope; generated keys
+prove business code cannot use an unregistered key; `lint-nomagic` proves no business literal in
+scanned layers; the startup check proves every required key resolves for the intended scope;
+`itparam` proves no self-approved activation; and `docs/PARAMETERS.md` gives operators and auditors
+the value set. The commands are `task check`, `task paramgen` and `task test`; the generated catalogue
+is compared byte for byte by the docs gate (`docs-check`, DOC-05). Hand-editing a generated catalogue
+is a defect.
+
+`docs/PARAMETERS.md` is generated. `docs/SCHEMA.md` and `docs/CAPABILITIES.md` follow the same rule.
+
+---
+
+## 5. Security and data
+
+### 5.1 Posture and assets
+
+Assets, in order of harm if lost: ledger integrity, member identity and savings balances, audit
+evidence, credentials, operational availability. The posture is defense in depth, least privilege,
+secure by default and auditable by construction; the pilot is single-tenant on a private server, but
+"the network is trusted" is not an assumption the product relies on.
+
+### 5.2 Authentication and session
+
+1. Login is username and password over TLS. The password is verified with a memory-hard KDF, and
+   throttling is applied before the KDF so a failed attempt cannot be a CPU amplifier.
+2. The session token is opaque, generated from a cryptographic source, stored server-side as a
+   SHA-256 digest, and delivered only in a `HttpOnly`, `Secure`, `SameSite=Strict` cookie. No token
+   appears in a response body or a URL.
+3. Session lifetime has two parameterised bounds, idle and absolute. Idle is refreshed on use;
+   absolute is not. Logout revokes server-side; password change and reset revoke other sessions;
+   login failure does not reveal whether the username exists.
+4. A teller terminal locks on the client after 15 minutes of inactivity, warns before the lock, and
+   preserves the draft and its idempotency key across re-authentication (R-21, DD-04). The server
+   idle bound is separate and longer; it does not replace the client lock.
+5. A request in flight completes and reports its result after unlock, and re-authentication returns
+   the user to the same screen and step.
+
+Enforced today by `itapi_auth`, `tlogin_guard`, cookie assertions and session policy tests; the
+client lock is P6, with desktop behaviour tested in e2e.
+
+### 5.3 MFA
+
+MFA is optional (R-19, R-29), a recorded accepted limit, not an accident. The service switch defaults
+to off; when off, MFA routes answer with a stable reason and login is unchanged. When on, enrolment is
+self-service TOTP with the secret encrypted and returned once. When a login requires a factor, the
+session is half-authenticated until the challenge succeeds; only the challenge route and logout
+accept that session. The challenge is throttled per account and per source, and a replayed code is
+refused. The product MUST NOT claim that MFA is required; compensating controls are named in
+`docs/SECURITY.md`: named accounts, least privilege, daily audit review, no shared logins, and no
+operator access to the server. Enrolment, reset and recovery become UI tasks at P7.
+
+### 5.4 Authorization
+
+1. A permission code has the form `module.resource.action` and is checked server-side on every
+   route; hidden navigation is a convenience, never a control. A grant is a role, a permission and
+   a branch scope, where an empty branch means all branches.
+2. Separation of duty is per action: the approver of a submission is never its submitter. The
+   conflict matrix is data, and conflicting role pairs are refused at assignment.
+3. A grant or revocation cannot exceed the actor's own grant; revocation and disable are bounded
+   the same way.
+4. Maker-checker is a platform capability used by parameters, products, vault, lending approvals
+   and SHU distribution. It is not reimplemented per module.
+5. A denied action returns 403 with the missing permission; a denied scope returns a distinct
+   reason. Neither returns 404 to hide existence, because the operator must be able to ask for the
+   right access.
+6. Lending runs with `lending_maker` and `lending_checker` seats that can read what they need to
+   complete the task (R-17). Disbursement must not require `platform_admin`.
+
+Enforced today by `itapi_roles`, `taccess_log` and the authz unit tests; the grant bound and the
+lending read grant are P1b exit criteria.
+
+### 5.5 API surface and error contract
+
+1. The contract is `packages/contracts/openapi/kran-api.yaml`, OpenAPI 3.1. The generated
+   TypeScript client is the only client. An implementation that differs from the contract fails the
+   contract test.
+2. Paths are versioned under `/api/v1`. A breaking change creates a version; a deprecation carries
+   a header and a removal date.
+3. Money is a two-decimal string; dates are `YYYY-MM-DD` business dates; timestamps are ISO 8601
+   with an offset; identifiers are UUID strings.
+4. Errors are RFC 9457 problem documents with `type`, `title`, `status`, `code`, `i18nKey`,
+   `traceId` and optional `detail` and `params`. `type` is a relative `/problems/<kind>` reference.
+   The server never sends a user-facing sentence; the client translates `i18nKey` plus `params`.
+5. Every 409 carries `params.reason` with a stable machine code. Free text in `detail` is for
+   operators and logs, never for branching logic.
+6. Pagination is cursor-based. A capped list returns a total and a next cursor, or states that it
+   is truncated and why.
+7. `Idempotency-Key` is honoured on financially effective POSTs; `ETag` and `If-Match` are used
+   where a lost update is possible. Realtime is a WebSocket at `/api/v1/events/stream` with an
+   authorised topic subscription and a resume token.
+8. Request scope carries actor, branch, trace id and reason into the use case and the audit row.
+
+### 5.6 Audit trail
+
+1. Every state change that matters to money, access or configuration writes an audit row with
+   actor, action, entity, before and after (or a reference), branch, trace id, timestamp, and a
+   reason where the action requires one.
+2. The audit log is append-only. `UPDATE`, `DELETE` and `TRUNCATE` are denied by trigger, and the
+   runtime role lacks the privileges.
+3. Rows form a hash chain computed by the database trigger, not the application. Verification
+   follows `prev_hash` and rejects a fork.
+4. A daily anchor records the head sequence and hash. The copy is made manually once per day and
+   stored off the application host, with a written disclosure that a database administrator can
+   rewrite the tail and that the anchor is the only external witness (R-26).
+5. The audit viewer supports filter by actor, action, entity, date and trace id, with pagination
+   (P5). The current 20-row unfiltered view is not acceptable evidence.
+6. The anchor command exists today and is scheduled in `ops/`; the operator step and the disclosure
+   live in `docs/OPERATIONS.md`.
+
+Retention is defined per record class (R-26): audit, outbox and inbox have parameters and purge
+tasks; financial records and consent evidence keep the period set by the institution, marked
+`NEEDS-COMPLIANCE-REVIEW` until signed. A purge task never runs against a class whose retention is
+not set; it fails closed.
+
+### 5.7 Encryption and keys
+
+TLS terminates at the reverse proxy, and the application trusts a forwarded scheme only from the
+configured proxy. Sensitive fields (identity number, tax number, phone, address) use envelope
+encryption: a key-encryption key from a host file with mode 600 derives per-record data keys;
+AES-256-GCM provides confidentiality and integrity; a blind index supports exact-match search.
+Unmasking requires a permission and a reason and produces an audit row. Logs never contain PII,
+secrets, tokens or unmasked identity data. Key rotation is a tested operational procedure and a key
+is never committed. Backups are encrypted and stored off host; the current same-host unencrypted
+copy is an accepted limit until P7. Detail lives in `docs/adr/017-field-level-encryption.md` and
+`docs/SECURITY.md`.
+
+### 5.8 Privacy controls
+
+The product records a lawful basis for member data, shows the notice version, answers subject access
+and correction requests, and states retention per class. Today consent, subject-request handling and
+a breach runbook do not exist and are not claimed (REG-002 is deferred). Any future implementation
+follows four rules: consent is a record with version, timestamp, channel and evidence, not a
+boolean; a subject request is a case with a due date and outcome, and deletion is bounded by
+financial retention and ledger immutability; a breach has a runbook with a drilled timeline and a
+legal notification window that stays `NEEDS-COMPLIANCE-REVIEW` until verified; analytics and logs
+follow the same retention and access rules as the data they describe.
+
+### 5.9 Threat notes and accepted limits
+
+| Threat | Control | Residual |
+|---|---|---|
+| stolen operator cookie | short idle bound, client lock, revocation, audit | a live session on an unattended terminal is detectable, not prevented, until the client lock ships |
+| insider with database access rewrites the audit tail | trigger chain plus daily off-host anchor | the anchor is manual; disclosure names the gap |
+| self-approval through a second login | SoD per action, distinct approver | shared credentials are a policy violation the system cannot detect |
+| cross-branch read or malicious upload | branch-scoped queries; no upload in MVP | no row-level security; KYC images out of scope |
+| dependency or credential compromise | pinned versions, lockfile, audit at P0, no secrets in repo | no SBOM yet; brute force mitigated, not eliminated |
+| reversal abuse | ownership gate, reason, permission, audit | an authorised user can still reverse a pure ledger journal; intended |
+
+Accepted limits are listed with owner and detection in `docs/ACCEPTED-LIMITS.md`. A limit is not a
+plan; it is a risk the owner accepted.
+
+---
+
+## 6. UX
+
+### 6.1 Design direction
+
+The visual identity is the one decided in D-160 and kept by DD-01: IBM Plex Sans, cool neutral
+surface, one plum accent, tabular numerals, hairline rules, flat cards, elevation only for overlay.
+The replan redesigns structure, flows and component coverage, not identity.
+
+Binding rules: one focus per screen, with the table on a list screen and the form plus amount on a
+transaction screen; tables and numbers are the primary content, with no metric-card strip, decorative
+chart or hero; status is text plus shape plus colour; one modal layer maximum, with inline review for
+routine confirmation; motion is 150 to 200 ms for non-numeric elements and 0 ms for numbers; print
+uses the light theme, repeats table headers, and never splits a total or signature block; and all
+seven interaction states are designed for every screen, because silent emptiness is a false statement
+about the cooperative.
+
+The full token, component and screen specification lives in `DESIGN.md`, `docs/DESIGN-INDEX.md` and
+`docs/design/`.
+
+### 6.2 Operator vocabulary
+
+The UI speaks the operator's language, in Indonesian, with an English locale that is a real
+operating mode (DD-02, DD-03). Kasir, not teller; Kas besar, not vault; Tutup kas, not finalize
+session; Setor (masuk) and Tarik (keluar), not debit and credit; Anggota and nomor anggota, not party
+or UUID; Tunggakan and DPD, not an arrears view or an aging bucket code; Tutup buku, not run, task or
+chunk. `SHU` and `RAT` stay acronyms in both locales with a one-line gloss on first use, never
+"profit sharing" or "annual members meeting". Internal words (`uuid`, task codes, table names, `run`,
+`vault`) never reach the UI. An error names the consequence and the next step: "Kas belum dibuka",
+"Selisih kas 12.000,00", not a stack code.
+
+### 6.3 Interaction rules
+
+Identity before amount: member name and number accompany every amount, and a UUID is never typed or
+shown as the identifier (B1, C14). Review before post happens inline on the same screen, showing
+identity, amount, before and after, cashier and time. One idempotency helper serves every money
+screen and keeps its key on an unknown outcome, which disables the form and offers a status check,
+never a success claim. Every read stamps its load time and every mutation re-reads the mutated
+entity. There is no delete path. The three empty states are distinct, a denied permission renders an
+in-place panel without a redirect loop, keyboard shortcuts cover the counter, and the 15-minute
+client lock warns at 14:00 while preserving draft and key (R-21, DD-04). Screen-level tests prove
+each rule after P6.
+
+### 6.4 Internationalization
+
+Locales are `id` (default) and `en`, both complete; a missing English key is a defect. All UI text
+comes from the catalogue, a hardcoded string fails review, and the server sends `i18nKey` plus
+`params` rather than a user sentence. Numbers, dates and money use `Intl` per locale, with money at
+two decimals and tabular digits. `SHU` and `RAT` remain acronyms with a one-line gloss on first use.
+Plural keys without both forms fail the check.
+
+### 6.5 Accessibility
+
+WCAG 2.2 AA is a release condition. Contrast is verified for every token pair in both themes,
+including text over status tint, and focus is a visible 2 px ring. DOM order equals visual order,
+with no positive `tabindex` and one tab stop per composite widget, one `h1`, complete landmarks and
+a skip link. Tables are semantic with caption and `aria-sort`, and horizontal scroll is a labelled
+keyboard region. Zoom at 200 percent reflows to one column, and ledger, arrears, schedule and report
+tables are never card-ified and never hide a column. Critical flows work keyboard-only. axe runs at
+moderate and above in both themes, and a screen with a spec but no axe assertion is not covered.
+Reduced motion removes transitions while preserving state.
+
+### 6.6 Screens and states
+
+There are 24 target screens, listed with route, actor, permissions and status in
+`docs/DESIGN-INDEX.md` and specified in `docs/design/01-ia-flows.md`; this specification states the
+contract. A screen is reachable only if its route, permission and data contract exist, and a nav
+entry whose screen is missing is not rendered. Every screen implements the seven states and names
+its empty state. The teller screen, not the ledger, is the teller's landing page. Transfer is a mode
+inside Kas, account opening is a section of the member file, close is one console with EOD, EOM and
+EOY tabs, and reports are one family route with nine documents. A screen that depends on a missing
+backend capability ships only when the capability exists.
+
+### 6.7 Print documents
+
+| Document | Must carry | Never |
+|---|---|---|
+| Slip | institution header, member name and number, account number, amount, cashier, reference, timestamp with zone, reprint marker (R-22) | a reprint indistinguishable from the original |
+| Statement | running balance, period, generated time, page x of y | totals presented as a GL reconciliation |
+| Close certificate | business date, totals, variance, actor, signature block | printing while the period is open |
+| Report pack | period, branch, control lines, repeated headers, open-period watermark | an orphaned total row |
+Exact mandatory slip fields are `NEEDS-COMPLIANCE-REVIEW` (R-22); the listed fields are the minimum
+the product prints, and removing one requires an owner decision. No mobile, offline, branch-creation,
+KYC-upload, promise-to-pay or health-ratio surface is in MVP; each either lacks an endpoint or is
+deferred by ruling.
+
+---
+
+## 7. Operations
+
+### 7.1 Deployment topology
+
+One VPS, rootless Podman, Caddy as reverse proxy, GitHub Actions as the verification gate, a webhook
+that runs `ops/scripts/deploy-vps.sh` on push to `main`, and systemd user units for the API, worker
+and scheduled jobs.
+
+Deployment rules (D-178, D-194): push to `main` deploys production, and a manual push to `main` is
+forbidden because release goes through `./task release`; the deploy script accepts only
+`refs/heads/main` and fails closed on an empty or other ref; one deploy runs at a time under a lock;
+the tree is synchronised with fetch and hard reset to `origin/main`; the deploy waits for a green CI
+check run for that commit before building; only current and previous image tags are kept; health is
+polled after restart and a failure restores the previous image; and secrets live only on the server
+in files with mode 600.
+
+### 7.2 Release flow
+
+`./task release` bumps the single version source, updates the changelog, runs the gate, commits,
+tags an annotated version and pushes once. The tag marks the release; it does not trigger a deploy.
+Procedure and rollback are in `docs/RELEASE.md`. `ci-fast` is the daily gate and does not run e2e;
+`ci` adds e2e and must be green before release or merge. A docs-only change does not rebuild the
+image.
+
+### 7.3 Migrations
+
+Migrations are plain SQL, one transaction per file, numbered within a module, recorded with a
+checksum. Expand first: add columns, tables, indexes and grants in a migration that works with the
+previous application version. Contract last: remove or rename only in a file marked
+`-- dbtools:contract <reason>`, applied by an explicit contract run after all expand migrations.
+Destructive DDL requires `-- dbtools:destructive <reason>` even inside a contract file. Indexes on a
+populated table are built concurrently. A migration without a reverse has a written recovery step.
+Grants that enforce append-only are part of the migration (P1b), and a pre-migration backup is
+automatic in production.
+
+### 7.4 Backup and restore
+
+A daily logical backup runs from the database container with a daily, weekly and monthly rotation;
+the audit anchor is exported with it so the chain head travels with the dump; a pre-deploy backup is
+taken before any release with a migration. Backups are encrypted and copied off the application host
+at P7; until then, same-host storage is a recorded limit. A restore drill runs on a schedule and
+produces a record with date, operator, source, duration and verification results, which is evidence
+an auditor can read. Recovery targets are institution values documented in `docs/OPERATIONS.md`,
+not invented here.
+
+### 7.5 Monitoring and health
+
+`/healthz` reports liveness; `/readyz` reports database reachability, migration state, worker
+heartbeat age and dead outbox events. Metrics cover request rate and latency, error rate by code,
+outbox lag, close state and duration, login failures and anchor age. An alert fires on readiness
+failure, stale heartbeat, dead events, failed close, anchor older than a day and disk pressure. Logs
+are structured, carry trace id and actor, and contain no PII or secret. A close failure is visible
+to the manager in the close console, not only in a log.
+
+### 7.6 Day-close operations
+
+The manager opens the close console, reads pre-checks, and runs the level; the console shows
+blockers with links, task progress and the resulting certificate. A failed critical task shows a
+code, a hint and a resume action, and retrying is safe because each task is idempotent per business
+date. During closing, ordinary writes are blocked; the manager can cancel a run, which returns the
+date to open in one transaction. EOD requires teller sessions closed and cash counted; EOM requires
+a balanced trial balance and no pending approvals; EOY requires a signed SHU basis and the parameter
+set. The next business date is opened by the seal, not by a separate command. If the close cannot
+complete, lending stops: that is a business rule, not an operational preference.
+
+### 7.7 Administration, CLI and break-glass
+
+`kran-ctl` exists for bootstrap and repair: create the first user, apply a migration, verify the
+audit chain, export the anchor, recover a stuck lease. Anything an operator does daily must exist in
+the UI (user create, reset, MFA enrolment, arrears, close). A CLI-only daily task is a product gap.
+Break-glass access is documented, time-bound and audited; server access is not part of an operator's
+job. `docs/OPERATIONS.md` is the runbook for deploy, migration, backup and restore, day-close, ops
+CLI, break-glass, key rotation, pilot provisioning, and the development database and web.
+Safety-critical tables are copied verbatim; this specification does not restate procedures.
+
+---
+
+## 8. Compliance
+
+### 8.1 Stance
+
+This section maps obligations to controls. It is not legal advice, and no statement here is a claim
+of compliance.
+
+Two rules are absolute. First, no invented regulation: an article, threshold, deadline or percentage
+not read from a primary source and signed off is marked `NEEDS-COMPLIANCE-REVIEW` everywhere it
+appears. Second, no compliance claim from a green gate: the traceability gate proves a register row
+points at an existing control and test, not that the control is correct or the institution complies.
+
+Marker convention, carried from the old register: `V?` means the number, article or version must be
+verified against a current primary source; `V!` means the item is sensitive to regulatory change and
+MUST be checked before any value is used. Both remain unresolved by definition.
+
+### 8.2 Obligation map
+
+| ID | Obligation | System artefacts | Current state |
 |---|---|---|---|
-| REG-201 | **UU Perbankan (UU 7/1992 jo. 10/1998) & perubahan via P2SK** | Kegiatan usaha, rahasia bank | V? |
-| REG-202 | **POJK terkait BPR/BPRS (kegiatan usaha, kelembagaan, penguatan/konsolidasi)** (mis. POJK 7/2024 – verifikasi) | Batas kegiatan, permodalan | V! |
-| REG-203 | **KPMM/CAR, BMPK (Legal Lending Limit), ATMR** | Kalkulasi rasio, kontrol limit di pemberian kredit | V! |
-| REG-204 | **Kualitas aset & PPAP/CKPN** (kolektibilitas 1–5, ketentuan penyisihan) | Penentuan kolektibilitas, PPAP, parameter persentase | V! |
-| REG-205 | **POJK penyelenggaraan TI oleh BPR/BPRS** (**POJK 34/2025** + PADK 43/PADK.03/2025; koreksi 2 Nov 2026) | DR/BCP, manajemen perubahan, audit trail, vendor mgmt, tata kelola TI | V! |
-| REG-206 | **Tingkat Kesehatan BPR (RBBR)** | Perhitungan profil risiko, GCG, rentabilitas, permodalan | V! |
-| REG-207 | **Pelaporan BPR (LBPR/laporan berkala, SLIK)** (POJK 18/POJK.03/2017 jo. 64/2020 jo. 11/2024) | Laporan terstruktur ke OJK, format & jadwal sebagai parameter | V! |
+| O1 | identify the member before the first transaction: document, risk level, re-KYC schedule, verifier and date | party record, encrypted identity, KYC profile, audit row | backend exists; screen and document storage absent (B7) |
+| O2 | balanced journal per money movement, reversals, attributable change log | immutable journal, triggers, hash chain, daily anchor | strong core; viewer and filters absent |
+| O3 | statements the pengurus signs and the RAT ratifies | balance sheet, income statement, equity, member register, SHU | absent until P4 and P5 |
+| O4 | lawful basis, notice, retention disclosure, subject access, breach handling | consent, notice version, retention per class, export and erase | absent; REG-002 deferred |
+| O5 | cash aggregation per member per day, threshold and suspicion flags, report register | aggregation, threshold parameter, case register | absent |
+| O6 | written retention schedule per record class, enforced by tasks | retention parameters, purge tasks, archive path | undecided; only idempotency keys have a TTL |
+| O7 | least privilege, unique accounts, approved privileged change, restore proof, patched dependencies | grant history, SoD, login and deploy records, restore drill | partial; no dependency scan, grants by runbook |
+| O8 | a member can contest a posting and the cooperative can reconstruct it | complaint case linked to journal and slip | absent; slip identity at P6 |
 
-#### D. BPRS & BMT/KSPPS
-| ID | Regulasi | Dampak | Status |
+Full evidence expectations and gap ownership live in `docs/COMPLIANCE.md`.
+
+### 8.3 Regulatory register
+
+All 28 identifiers are preserved, grouped as before. The stance after each entry is the MVP
+position, not the legal status.
+
+#### Cross-segment
+
+REG-001 (V!) financial sector development and strengthening umbrella, including the KSP supervision
+transition: reference only. REG-002 (V?) personal data protection, covering consent, subject rights,
+retention and breach notice: deferred, no feature and no claim. REG-003 (V?) anti-money-laundering
+and terrorism financing duties and record retention: deferred. REG-004 (V!) AML for financial
+service providers, covering CDD, EDD, PEP, screening and risk rating: partial, risk level and re-KYC
+only. REG-005 (V?) electronic information and transactions, electronic documents and system
+security: reference only. REG-006 (V?) consumer and public protection, covering transparency and
+complaints: deferred, no complaint register. REG-007 (V?) corporate documents and financial record
+retention: deferred, retention undecided. REG-008 (V!) taxation of savings return and fees:
+deferred, no tax module. REG-009 (V!) deposit insurance, where KSP is not a participant: a
+prohibition, never claim insured savings. REG-010 (V?) identity verification against the civil
+registry: adapter absent, document type and length are parameters. REG-011 (V!) accounting standards
+for COA, posting rules and statements: partial, COA and posting rules, statements absent.
+
+#### Koperasi
+
+REG-101 (V?) cooperative law, covering membership, pokok and wajib, SHU, RAT and reserves: partial,
+equity classification only, membership at P3. REG-102 (V?) cooperative and SME enabling regulation:
+reference only. REG-103 (V!) savings and loan cooperative business regulation, covering licensing,
+ratios, reporting and lending limits: no enforcement, limits not implemented. REG-104 (V!)
+cooperative health assessment framework: deferred, no health report. REG-105 (V!) KSP supervision by
+the financial services authority during transition: reference only.
+
+#### BPR
+
+REG-201 (V?) banking law and its amendments: out of scope. REG-202 (V!) BPR and BPRS business and
+institutional regulation: out of scope. REG-203 (V!) capital adequacy, lending limit and
+risk-weighted assets: out of scope, no ratio engine. REG-204 (V!) asset quality and loan loss
+provision, covering grades and allowance rates: parameters exist in `lending`, values unverified.
+REG-205 (V!) IT operation for BPR and BPRS: out of scope and must not be claimed for KSP. REG-206
+(V!) BPR health assessment: out of scope. REG-207 (V!) BPR reporting and credit information
+reporting: out of scope.
+
+#### Syariah and BMT
+
+REG-301 (V?) Islamic banking law: out of scope. REG-302 (V!) sharia council fatwas for contracts,
+penalties and charity funds: out of scope. REG-303 (V!) sharia financing by cooperatives: out of
+scope. REG-304 (V?) sharia supervisory board composition and reports: out of scope. REG-305 (V!)
+profit sharing, non-halal funds and zakat: out of scope.
+
+### 8.4 Obligation to control mapping
+
+| Control | Mechanism | Module | Evidence |
 |---|---|---|---|
-| REG-301 | **UU 21/2008 Perbankan Syariah** | Prinsip syariah, DPS, pemisahan dana | V? |
-| REG-302 | **Fatwa DSN-MUI** (murabahah, mudharabah, musyarakah, ijarah, wadiah, qardh, wakalah, ta'zir/ta'widh, dll.) | Katalog akad, perilaku perhitungan & denda, dana kebajikan | V! |
-| REG-303 | **Peraturan pembiayaan syariah oleh koperasi (KSPPS/USPPS)** (mis. Permenkop 16/2015 dan perubahannya) | Pembiayaan BMT berbasis akad | V! |
-| REG-304 | **Ketentuan DPS** (komposisi, opini, laporan pengawasan) | Modul review DPS, mapping produk↔fatwa | V? |
-| REG-305 | **Distribusi bagi hasil (nisbah, revenue/profit sharing), pengelolaan dana non-halal, zakat/ZIS** | Engine bagi hasil di EOM, laporan sumber/penggunaan dana kebajikan | V! |
+| member identity | onboarding captures document, verifier and date; risk level parameterised; re-KYC scheduled | `party`, `coop` | member file, audit rows |
+| segregation of duties | permission per action, conflicting role pairs, distinct approver | `platform` | grant history, approval trail |
+| immutable bookkeeping | journal triggers, immutability privileges, reversal with reason | `ledger` | trial balance, reversal audit |
+| asset quality and limits | DPD from business date, grade from parameters, allowance journal, exposure check | `lending`, `daycloser` | PPAP run, blocked application |
+| reporting and retention | server-computed documents for closed periods; per-class retention and purge | `ledger`, `coop`, `lending`, `platform` | printed pack, purge log |
+| privacy and audit evidence | field encryption, masking, unmask audit, hash chain, daily anchor, filtered viewer | `party`, `platform` | audit extract, verification output |
 
-### 4.2 Mapping Regulasi → Kontrol Sistem (ringkas)
+Values for REG-204 are seeded for the pilot but are not a compliance claim; the research log records
+that the calculation basis differs from the BPR rule in at least one respect. No threshold in this
+table is normative.
 
-| Domain kontrol | Mekanisme di sistem | Modul |
-|---|---|---|
-| KYC/CDD/EDD | Workflow onboarding + risk rating terparameter + dokumen + re-KYC periodik via day-close | `party`, `compliance` |
-| Screening DTTOT/DPPSPM/PEP | Screening saat onboarding, transaksi, dan batch harian; list dikelola sebagai data | `compliance` |
-| CTR/STR | Rule transaksi tunai/mencurigakan (threshold = parameter), alert queue, case mgmt | `compliance` |
-| Kolektibilitas & PPAP | Task day-close: update DPD → re-grade → hitung PPAP; persentase = parameter | `lending`, `daycloser` |
-| BMPK/BMPP | Check di use-case pemberian pembiayaan; limit = parameter dari modal | `lending`, `compliance` |
-| Pajak bunga/bagi hasil | Posting rule + pajak terparameter (tarif, ambang, NPWP/non-NPWP) | `deposit`, `tax` |
-| Pelaporan regulator | Report definition ter-versi (SQL view + mapping kode laporan) + jadwal | `reporting` |
-| Rahasia bank/data pribadi | Field-level encryption, masking, purpose-based access, audit akses | `platform` |
-| Segregation of Duties | Maker-checker, role conflict matrix, branch scoping | `platform` |
-| Retensi | Policy retensi per tipe data = parameter; arsip partisi | `platform` |
-| Syariah | Contract template per akad, nisbah, pemisahan pendapatan non-halal | `sharia`, `lending`, `deposit` |
-| SHU/RAT (koperasi) | Perhitungan SHU parametrik (jasa simpanan vs jasa usaha) saat EOY | `coop`, `daycloser` |
+### 8.5 Claims the product must not make
 
-### 4.3 Segment & Regulatory Packs
-Setiap segmen dikirim sebagai **pack** berisi *seed data ter-versi*: parameter default, COA template, produk template, definisi laporan, rule compliance, template akad. Pack dipasang via migrasi seed idempotent:
+The product must never say that savings are insured by the deposit insurance agency (KSP is not a
+participant, REG-009); that MFA is required (R-19, R-29); that it is "compliant with" a named
+regulation, because the product supports controls while the institution and its advisor make the
+claim; that time deposits are supported (removed at P4); or that the audit trail is tamper-proof,
+because it is tamper-evident against application users, with a manual off-host anchor and a
+disclosed residual risk. These apply to screens, print, marketing and help text.
 
-```
-packs/
-  base/            # parameter & COA inti, kalender, role template
-  koperasi/        # keanggotaan, simpanan pokok/wajib, SHU, laporan koperasi
-  bpr/             # kolektibilitas, PPAP, BMPK, laporan BPR
-  syariah/         # akad, nisbah, DPS, dana kebajikan
-  bmt/             # gabungan koperasi + syariah
-```
-Pack bisa di-upgrade (mis. regulasi berubah) tanpa menyentuh kode: pack baru = parameter baru dengan `effective_from` baru + maker-checker.
+### 8.6 Traceability and sign-off
 
-### 4.4 Regulatory Register di Dalam Sistem
-Tabel `compliance.regulation` + `compliance.requirement` + `compliance.requirement_control` (link ke parameter key, laporan, test ID, modul). Fungsi:
-- Auditor bisa melihat: *"POJK X pasal Y → dikontrol oleh fitur/parameter/laporan Z, dibuktikan oleh test T"*.
-- CI gagal jika requirement `active` tidak punya `control` atau test (traceability gate).
-
-### 4.5 Rekomendasi Proses (di luar kode)
-1. Tunjuk **Compliance Owner** (internal/konsultan) untuk memvalidasi register ini per segmen.
-2. Siapkan **due diligence vendor TI** — banyak BPR/BPRS wajib menilai penyedia sistem; siapkan dokumen (arsitektur, DR, pen-test, SLA, escrow source code bila diminta).
-3. Rencanakan **UAT bersama pengguna nyata** tiap segmen sebelum klaim "siap".
-4. Pelacakan perubahan regulasi: langganan sumber resmi (OJK, Kemenkop, DSN-MUI, DJP, PPATK).
+The register is machine-read from `docs/compliance/register.yaml`, which maps each requirement to a
+parameter, a module and a test, and `./task traceability` fails when an active row has no control or
+no existing test. The gate checks links, not coverage; a row is active only when a consumer exists
+in code. `register-validation.md` is the research log with source, passage, access date and `VERIFY`
+tag, and it is the only place a quoted passage may live. `NEEDS-COMPLIANCE-REVIEW` is removed per
+institution after the client's compliance owner signs, never globally because one pilot accepted a
+value. A parameter submission that encodes a regulatory value names the source and access date in
+its reason; a value without provenance is treated as unverified. `docs/COMPLIANCE.md` owns the
+obligation narrative, evidence and gap list; this specification owns the identifiers and rules.
 
 ---
 
-## 5. Prinsip Arsitektur
+## 9. Roadmap and references
 
-### 5.1 Clean Architecture (aturan dependensi ke dalam)
-```
-interface (HTTP/CLI/SSE) ─┐
-infrastructure (PG, mail,  ├──► application (use case, port) ──► domain (entity, VO, domain service, event)
-  files, adapters)        ─┘
-```
-- **Domain**: murni, tanpa I/O, tanpa import framework/DB. Waktu & ID di-inject (`Clock`, `IdGen`).
-- **Application**: use case orchestration, mendefinisikan **port** (interface repo, event bus, gateway).
-- **Infrastructure**: implementasi port (Postgres repo, adapter eksternal).
-- **Interface**: HTTP handler, mapper DTO↔use case. Tidak ada business logic.
-- Aturan ditegakkan oleh **`tools/archcheck`** (script graf import) di CI — Nim tidak punya boundary linter bawaan.
+### 9.1 Roadmap
 
-### 5.2 DRY — secara pragmatis
-- Shared kernel **kecil & stabil**: `Money`, `Quantity`, `Rate`, `BusinessDate`, `Result`, `Clock`, `Id`, `AuditContext`. Tidak boleh ada "utils" serbaguna.
-- Duplikasi *kebetulan* (kode mirip tapi alasan berubah beda) **boleh**; duplikasi *pengetahuan* (aturan bisnis sama di dua tempat) **tidak boleh**.
-- Kode generasi untuk hal repetitif: parameter key → konstanta Nim & tipe TS; OpenAPI → client TS; i18n key → tipe TS.
-- Satu sumber kebenaran per hal: **kontrak API = OpenAPI**, **nilai bisnis = DB**, **skema = migrasi SQL**, **teks UI = i18n catalog**.
+The phase sequence, exit criteria, dependencies and serial rules live in `docs/ROADMAP.md`. The
+queue lives in `docs/BACKLOG.md`. This specification deliberately contains no phase table, because a
+second copy would drift.
 
-### 5.3 KISS
-- **Modular monolith**, bukan microservices. Satu proses deploy, satu DB, banyak schema.
-- Antrian & scheduler = **Postgres** (`FOR UPDATE SKIP LOCKED`, `LISTEN/NOTIFY`) — tanpa Kafka/Redis di v1.
-- SQL eksplisit di repository (tanpa ORM berat). Query kompleks = SQL biasa + mapper tipe.
-- Tambah dependensi hanya jika menghemat > ongkos pemeliharaan; catat di ADR.
+The product requires the sequence to respect seven constraints: gates must see the money code and
+the web app before any phase claims completion; financial correctness precedes product features,
+because a ledger that can be stranded cannot carry a cooperative; use cases move into
+`modules/*/application` per module before new MVP features (R-18, R-24); membership precedes SHU,
+which depends on member identity and obligations derived from postings; reporting follows the ledger
+and the year-end, since annual documents need EOY; the UI rebuild consumes shipped contracts, with
+primitives starting earlier; and operator administration plus the synthetic dry run are release
+conditions, not polish.
 
-### 5.4 Reactive
-- **Backend**: event-driven internal (domain event → *transactional outbox* → subscriber), tidak ada side-effect di tengah transaksi.
-- **Realtime ke UI**: WebSocket didorong dari `LISTEN/NOTIFY` + outbox (§19.1).
-- **Frontend**: Svelte 5 runes (`$state`, `$derived`, `$effect`) + server-state cache yang di-invalidasi oleh event.
-- Detail di §19.
+### 9.2 Architecture decision records
 
-### 5.5 Definition of "Modular & Gampang Dipelajari"
-- Tiap modul punya **README + MODULE.md** (tujuan, bounded context, event yang dipublish/dikonsumsi, parameter key, tabel).
-- **Template modul** (`tools/scaffold`) menghasilkan kerangka lengkap (domain/app/infra/iface + migrasi + test + i18n namespace + parameter seed).
-- Modul hanya bicara lewat **public API modul** (`<module>/api.nim`) dan **event kontrak** — tidak boleh import internal modul lain (dicek archcheck).
-- Konvensi nama & struktur identik antar modul (belajar satu = paham semua).
+The ADR register is `docs/DECISIONS.md`; only ADR-017 has a file today, and the rest are recorded
+there as decisions. Adopted: modular monolith with one schema per module (ADR-001); contract-first
+OpenAPI with a generated client (ADR-003); PostgreSQL as queue, event log and scheduler (ADR-004);
+single tenant per deployment with multiple branches (ADR-005); immutable ledger with derived balances
+and reversal (ADR-006); database-driven parameters with layered enforcement (ADR-008); type-safe i18n
+(ADR-009); day-close as an idempotent dependency graph with checkpoints (ADR-010); fixed-point Money
+in code and numeric in storage (ADR-011); SPA with static adapter (ADR-012); CI verifies, VPS builds,
+webhook deploys with health gate and rollback (ADR-014); KRAN replaces the legacy core after pilot
+acceptance (ADR-015); and `paramgen` as a critical build tool (ADR-016). Decided: Mummy with
+WebSocket (ADR-002, D-019); browser print, with a server-side PDF engine left open and not needed for
+MVP (ADR-013, D-127); and field-level envelope encryption with AES-256-GCM and a blind index
+(ADR-017, human review before real data). Not adopted: row-level security for branch scoping
+(ADR-007); branch scoping is an application filter, revisited only with measurement.
 
----
+### 9.3 Open questions
 
-## 6. Arsitektur Sistem
+These remain open and are tracked with owners in `docs/OPEN_ITEMS.md`. They affect product
+behaviour, not the reading of this document: whether a pengurus needs a separate read-only login or
+oversight is a permission on a normal account (O-1, role model and audit attribution); whether the
+close certificate is printable on its own route like a slip (O-2, print surface and evidence
+handling); and the exact retention period per record class (O-3, purge tasks cannot be enabled
+because R-26 decides mechanism only).
 
-### 6.1 Diagram Konteks
-```
- [Browser: SvelteKit SPA/SSR] ──HTTPS/JSON + WS──► [API: Nim modular monolith] ──► [PostgreSQL]
-                                                      │   ├─ module: platform, party, product, deposit, lending, ...
-                                                      │   ├─ daycloser (orchestrator)
-                                                      │   └─ outbox dispatcher / job runner (in-proc worker pool)
-                                                      └──► Adapters (opsional): Dukcapil, SLIK, PPATK goAML, bank/switch, notif WA/SMS/email
-```
+Resolved questions are not repeated. The audit's Q1 to Q8 became rulings: membership is first-class
+(R-15), time deposits are out and savings return is SHU (R-16), lending is maker and checker (R-17),
+use cases move to the application layer (R-18, R-24), MFA stays optional (R-19, R-29), retention is
+per class with a manual anchor (R-20, R-26), the teller terminal locks (R-21), and slips carry
+identity (R-22).
 
-### 6.2 Proses Runtime
-| Proses | Peran | Catatan |
-|---|---|---|
-| `kran-api` | HTTP API + WebSocket | Stateless, bisa >1 instance |
-| `kran-worker` | Job runner, outbox dispatcher, day-close executor | Binary sama, mode berbeda (`--role=worker`) |
-| `postgres` | Sumber kebenaran | Primary + replica/backup (lihat §22) |
-| `web` | SvelteKit (static build disajikan reverse proxy, atau node adapter) | Sesuai pola server existing |
+### 9.4 References
 
-> KISS: satu binary Nim dengan `--role=api|worker|migrate|all` mengurangi variasi deploy.
+`docs/ROADMAP.md` (phases and exit criteria), `docs/BACKLOG.md` (queue), `docs/DECISIONS.md`
+(rulings and active decisions), `docs/OPEN_ITEMS.md` (open and closed-but-cited items),
+`docs/ACCEPTED-LIMITS.md` (accepted risks), `docs/DOMAIN.md` (glossary and ownership),
+`docs/PARAMETERS.md`, `docs/SCHEMA.md` and `docs/CAPABILITIES.md` (generated inventories),
+`docs/SECURITY.md` and `docs/COMPLIANCE.md` (controls and obligation evidence), `docs/OPERATIONS.md`
+and `docs/RELEASE.md` (runbooks and release), `docs/DESIGN-INDEX.md` and `DESIGN.md` (design),
+`docs/compliance/register.yaml` and `register-validation.md` (traceability and research log),
+`docs/adr/017-field-level-encryption.md` (field encryption), and
+`packages/contracts/openapi/kran-api.yaml` (the wire contract).
 
-### 6.3 Modular Monolith: Aturan Batas
-1. Setiap modul memiliki **schema Postgres sendiri** (`deposit.*`, `lending.*`, …). Tidak ada query lintas-schema dari modul lain — pakai public API modul atau read model/view yang sengaja diekspos.
-2. Komunikasi sinkron antar modul: panggil `api.nim` modul tujuan (in-proc, tipe kuat).
-3. Komunikasi asinkron: domain event lewat outbox (kontrak versi di `packages/contracts/events`).
-4. Foreign key lintas schema hanya ke **ID referensi** (`party.party_id`) dan hanya jika disetujui di MODULE.md.
+The old specification is recoverable from git history. Fase 0 to 4
+history is condensed in `docs/history/PHASES.md`; their task files and milestone reports are archived
+outside the repository and remain in git history. Nothing in those documents overrides this one.
 
 ---
 
-## 7. Struktur Monorepo
+## Appendix A. Legacy anchor table
 
-```
-kran/
-├─ apps/
-│  ├─ api/                    # entrypoint Nim (api|worker|migrate|all)
-│  └─ web/                    # SvelteKit app (TS)
-├─ modules/                   # backend modules (Nim) — satu folder = satu bounded context
-│  ├─ platform/               # auth, rbac, audit, param, calendar, workflow, notif, i18n-catalog
-│  ├─ party/
-│  ├─ product/
-│  ├─ deposit/
-│  ├─ lending/
-│  ├─ teller/
-│  ├─ ledger/                 # GL & accounting
-│  ├─ daycloser/              # EOD/EOM/EOY orchestrator
-│  ├─ compliance/             # APU-PPT, screening, regulatory register
-│  ├─ reporting/
-│  ├─ tax/
-│  ├─ coop/                   # SHU, RAT, keanggotaan koperasi
-│  ├─ sharia/                 # akad, nisbah, DPS, dana kebajikan
-│  └─ <module>/
-│     ├─ domain/              # entity, VO, domain service, event (pure)
-│     ├─ application/         # use case, port (interface)
-│     ├─ infrastructure/      # repo PG, adapter
-│     ├─ interface/           # http handler, dto, route registration
-│     ├─ migrations/          # SQL up/down milik modul
-│     ├─ seeds/               # parameter & data default modul
-│     ├─ tests/
-│     ├─ api.nim              # PUBLIC API modul
-│     └─ MODULE.md
-├─ shared/
-│  ├─ kernel/                 # Money, Rate, BusinessDate, Result, Clock, Id (kecil!)
-│  └─ platform-lib/           # http server wrapper, pg pool, logging, config bootstrap
-├─ packages/                  # sisi TS
-│  ├─ contracts/              # OpenAPI (sumber kebenaran), event schema (JSON Schema), error code
-│  ├─ api-client/             # hasil generate dari OpenAPI (jangan edit manual)
-│  ├─ ui/                     # design system Svelte (token, komponen a11y-first)
-│  ├─ i18n/                   # catalog pesan (id, en), tooling
-│  └─ config/                 # eslint, tsconfig, prettier bersama
-├─ packs/                     # segment & regulatory pack (seed ter-versi)
-├─ tools/
-│  ├─ archcheck/              # penegak batas arsitektur (Nim/py/ts, bebas)
-│  ├─ paramgen/               # generate konstanta key param (Nim) & tipe (TS) dari definisi
-│  ├─ lint-nomagic/           # deteksi magic number bisnis di domain
-│  ├─ scaffold/               # template modul
-│  └─ dbtools/                # migrate, seed, snapshot, anonymize
-├─ docs/
-│  ├─ adr/                    # keputusan arsitektur
-│  ├─ regulatory/             # register + catatan analisis
-│  └─ runbooks/               # operasional (EOD gagal, restore, dll.)
-├─ ops/                       # artefak deploy — mengikuti pola existing (§21)
-├─ .github/workflows/ci.yml   # verifikasi saja (pola existing, §21)
-└─ README.md
-```
+The old specification used sections 1 to 27. Code, tests and comments cite `spec §N` in 692 places.
+Each citation resolves through this table. Every old section appears exactly once.
 
-**Tooling workspace**: `nimble` (workspace/task) untuk Nim; `pnpm` workspaces untuk TS; `Taskfile`/`just` sebagai *single entry* (`task check`, `task test`, `task build`) agar developer & CI memakai perintah sama.
-
----
-
-## 8. Modul & Bounded Context
-
-| Modul | Tanggung jawab | Event penting (publish) | Konsumsi |
+| Old section | Title (old) | New part | Where it is covered |
 |---|---|---|---|
-| `platform` | Auth, session, RBAC, maker-checker, audit, **parameter**, kalender/business date, notifikasi, dokumen, outbox | `ParamChanged`, `UserLocked`, `BusinessDateOpened/Closed` | — |
-| `party` | CIF, KYC, relasi, risk rating | `PartyOnboarded`, `PartyRiskChanged` | `ScreeningHit` |
-| `product` | Product factory (parametrik, versi, effective-dated) | `ProductPublished` | `ParamChanged` |
-| `deposit` | Rekening simpanan/deposito, bunga/bagi hasil, hold, dormant | `AccountOpened`, `DepositPosted`, `InterestAccrued` | `PartyOnboarded` |
-| `lending` | Pengajuan, approval, pencairan, jadwal, DPD, kolektibilitas, PPAP, restruk, write-off | `LoanDisbursed`, `InstallmentDue`, `CollectibilityChanged` | `PartyRiskChanged` |
-| `teller` | Sesi teller, vault, cash in/out, cetak | `CashTransactionPosted` | — |
-| `ledger` | COA, jurnal double-entry, posting rule, periode, saldo, TB | `JournalPosted`, `PeriodClosed` | event bisnis (via posting rule) |
-| `daycloser` | Orkestrasi EOD/EOM/EOQ/EOY (§11) | `DayCloseStarted/Completed/Failed` | semua modul mendaftarkan task |
-| `compliance` | Screening, rule APU-PPT, case, STR/CTR, regulatory register | `ScreeningHit`, `CaseOpened` | `CashTransactionPosted`, `DepositPosted` |
-| `reporting` | Definisi laporan, eksekusi, ekspor, jadwal | `ReportGenerated` | `PeriodClosed` |
-| `tax` | Pajak bunga/bagi hasil, bukti potong | `TaxWithheld` | `InterestAccrued` |
-| `coop` | Anggota, simpanan pokok/wajib, SHU, RAT | `SHUProposed`, `MembershipChanged` | `PeriodClosed(year)` |
-| `sharia` | Katalog akad, nisbah, bagi hasil, dana kebajikan, DPS | `ProfitShareDistributed` | `PeriodClosed(month)` |
-
-### 8.1 Pola Posting Otomatis ke GL
-Modul bisnis **tidak** menulis jurnal langsung. Mereka memancarkan **accounting event** (`DepositPosted`, `LoanDisbursed`, `InterestAccrued`, …). `ledger` memiliki **posting rule (tabel, di-parameter-kan)** yang memetakan *event type + product + kondisi* → *template jurnal (debit/kredit via kode GL logis)*. Perubahan COA/mapping = parameter, bukan kode.
-
----
-
-## 9. Fondasi Data (PostgreSQL)
-
-### 9.1 Prinsip
-1. **Versi PG ≥ 16**. Ekstensi: `pgcrypto`, `pg_trgm`, `btree_gist` (untuk exclusion constraint periode), opsional `pg_partman`.
-2. **Uang** disimpan `NUMERIC(24,2)` (sen; D-136, menggantikan 4 desimal). Pembulatan hasil bunga/akrual memakai parameter `rounding_scale`/`rounding_mode` di batas posting — bentuknya dikunci ke `moneyScale`/kernel (D-137), nilainya belum ditetapkan compliance (O-084). Di Nim: tipe `Money` fixed-point integer (skala 10²) — tidak pernah `float`.
-3. **Ledger immutable**: jurnal tidak di-UPDATE/DELETE; koreksi = jurnal pembalik (reversal) + jurnal baru. Dipaksa trigger + privilege.
-4. **Saldo = turunan**: tabel saldo (`balance`) adalah *cache* yang bisa direkonstruksi dari ledger; rekonsiliasi harian jadi task day-close.
-5. **Bitemporal untuk data penting**: `valid_from/valid_to` (efektif bisnis) + `recorded_at` (kapan dicatat). Parameter, produk, rate wajib effective-dated.
-6. **Tiga jenis tanggal** dipisahkan tegas: `business_date` (tanggal buku), `value_date`, `recorded_at` (timestamptz teknis).
-7. **Audit**: perubahan tabel master dan parameter direkam (trigger/aplikasi) ke `platform.audit_log` ber-*hash chain* (tamper-evident).
-8. **ID**: UUIDv7 (terurut waktu) untuk PK internal; **nomor bisnis** (no. rekening, no. anggota) dibuat dari format parameter + sequence (dengan check digit).
-9. **Partisi** tabel besar (`journal_line`, `audit_log`, `batch_*`) berdasarkan `business_date`/bulan.
-10. **Row-Level Security** untuk branch scoping (opsional ketat, lihat §18).
-11. **Migrasi**: SQL murni, *forward-only* + pola **expand/contract** (aman rolling deploy). Rollback = migrasi maju yang memperbaiki, kecuali yang terbukti reversibel.
-
-### 9.2 Schema Awal (ringkas)
-```
-platform.*   : user, role, permission, role_permission, user_role, session, audit_log, outbox, inbox,
-               param_definition, param_value, calendar, holiday, business_date, workflow_*, document, notification
-party.*      : party, party_person, party_org, identity_doc, address, relation, kyc_profile, risk_rating
-product.*    : product, product_version, product_param_binding
-deposit.*    : account, account_balance, hold, interest_accrual, term_deposit
-lending.*    : application, loan, schedule, installment, collateral, dpd_snapshot, collectibility, provision
-teller.*     : teller_session, vault, cash_movement
-ledger.*     : coa_account, posting_rule, journal, journal_line, period, balance_snapshot
-daycloser.*  : batch_run, batch_task, batch_task_chunk, batch_lock, task_registry
-compliance.* : regulation, requirement, requirement_control, screening_list, screening_hit, aml_rule, aml_alert, case
-reporting.*  : report_def, report_run
-coop.* / sharia.* / tax.* : sesuai modul
-```
-
-### 9.3 Contoh DDL Inti (acuan, bukan final)
-
-```sql
--- Business date (per institusi, optional per cabang)
-CREATE TABLE platform.business_date (
-  scope_type   text NOT NULL DEFAULT 'INSTITUTION',   -- INSTITUTION | BRANCH
-  scope_id     uuid,                                  -- null untuk institusi
-  current_date date NOT NULL,
-  state        text NOT NULL CHECK (state IN ('OPEN','CLOSING','CLOSED')),
-  updated_at   timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (scope_type, COALESCE(scope_id,'00000000-0000-0000-0000-000000000000'))
-);
-
--- Jurnal immutable, double-entry
-CREATE TABLE ledger.journal (
-  journal_id   uuid PRIMARY KEY,
-  business_date date NOT NULL,
-  value_date    date NOT NULL,
-  source_event  text NOT NULL,         -- tipe accounting event
-  source_ref    uuid NOT NULL,         -- id transaksi asal
-  idempotency_key text NOT NULL UNIQUE,
-  reversal_of   uuid REFERENCES ledger.journal(journal_id),
-  recorded_at   timestamptz NOT NULL DEFAULT now()
-) PARTITION BY RANGE (business_date);
-
-CREATE TABLE ledger.journal_line (
-  journal_id  uuid NOT NULL,
-  line_no     int  NOT NULL,
-  gl_account  text NOT NULL,
-  branch_id   uuid NOT NULL,
-  debit       numeric(24,2) NOT NULL DEFAULT 0 CHECK (debit  >= 0),
-  credit      numeric(24,2) NOT NULL DEFAULT 0 CHECK (credit >= 0),
-  CHECK ((debit = 0) <> (credit = 0)),
-  PRIMARY KEY (journal_id, line_no)
-);
--- Constraint trigger: SUM(debit) = SUM(credit) per journal (deferred), + larang UPDATE/DELETE.
-```
-
----
-
-## 10. Parameter Framework (Database-Driven)
-
-### 10.1 Aturan Emas
-> **Tidak ada nilai bisnis di dalam kode.** Rate, limit, fee, ambang, tarif pajak, kalender, hari-grace, persentase PPAP, format nomor rekening, mapping GL, template pesan transaksional, dsb. — semuanya berasal dari database dan dapat diubah lewat maker-checker, ter-audit, dan **effective-dated**.
-
-Yang **boleh** di kode: konstanta teknis (timeout, ukuran buffer), invarian matematis (mis. 12 bulan/tahun, urutan hari), dan **default fallback yang terdokumentasi** (lihat 10.6).
-
-### 10.2 Model Data
-
-```sql
-CREATE TABLE platform.param_definition (
-  key            text PRIMARY KEY,                  -- 'lending.ppap.rate.kl' (namespace.modul.kategori.nama)
-  module         text NOT NULL,
-  value_type     text NOT NULL,                     -- integer|decimal|string|bool|json|enum|money|rate|date|duration
-  json_schema    jsonb NOT NULL,                    -- validasi nilai (bentuk, min/max, enum)
-  allowed_scopes text[] NOT NULL,                   -- GLOBAL, INSTITUTION, BRANCH, PRODUCT, SEGMENT, ROLE
-  description_key text NOT NULL,                    -- kunci i18n untuk deskripsi & label
-  regulatory_refs text[] NOT NULL DEFAULT '{}',     -- REG-204, dst
-  sensitivity    text NOT NULL DEFAULT 'NORMAL',    -- NORMAL|CRITICAL (CRITICAL = 4-eyes + approval berjenjang)
-  requires_approval boolean NOT NULL DEFAULT true,
-  change_window  text,                              -- mis. hanya di luar jam batch
-  since_version  text NOT NULL,
-  deprecated     boolean NOT NULL DEFAULT false
-);
-
-CREATE TABLE platform.param_value (
-  param_value_id uuid PRIMARY KEY,
-  key            text NOT NULL REFERENCES platform.param_definition(key),
-  scope_type     text NOT NULL,
-  scope_id       text,                              -- null untuk GLOBAL
-  value          jsonb NOT NULL,
-  effective_from date NOT NULL,
-  effective_to   date,                              -- null = terbuka
-  status         text NOT NULL,                     -- DRAFT|PENDING|ACTIVE|SUPERSEDED|REJECTED
-  maker          uuid NOT NULL,
-  checker        uuid,
-  reason         text NOT NULL,
-  recorded_at    timestamptz NOT NULL DEFAULT now(),
-  EXCLUDE USING gist (key WITH =, scope_type WITH =, COALESCE(scope_id,'') WITH =,
-                      daterange(effective_from, effective_to, '[)') WITH &&)
-         WHERE (status = 'ACTIVE')
-);
-```
-- **Resolusi nilai** (urut spesifik → umum): `PRODUCT` → `BRANCH` → `INSTITUTION` → `SEGMENT` → `GLOBAL`. Pada `as_of` (business date). Aturan resolusi didefinisikan sekali di `platform/param` dan dipakai semua modul.
-- **Snapshot per run**: day-close mengambil *parameter snapshot* di awal run (disimpan referensinya) agar hasil bisa direproduksi walau parameter berubah di tengah.
-
-### 10.3 Akses di Kode (typed & generated)
-
-Definisi param ditulis sebagai file deklaratif di tiap modul (`modules/<m>/seeds/params.yaml`):
-
-```yaml
-- key: lending.collectibility.dpd.kl
-  type: integer
-  scopes: [INSTITUTION, SEGMENT]
-  schema: { minimum: 1, maximum: 365 }
-  sensitivity: CRITICAL
-  regulatory_refs: [REG-204]
-  default_pack: { bpr: 91, koperasi: 91 }   # nilai awal di pack, BUKAN fallback kode
-```
-
-`tools/paramgen` menghasilkan:
-- **Nim**: `const P_lending_collectibility_dpd_kl = ParamKey[int]("lending.collectibility.dpd.kl")` — key bertipe; pemakaian `params.get(P_..., asOf, scope)` mengembalikan `int`.
-- **TS**: tipe + metadata untuk UI Parameter Admin (form otomatis dari JSON Schema).
-- **SQL seed** ke `param_definition`.
-
-```nim
-# application layer (contoh)
-let dpdKl = params.get(P_lending_collectibility_dpd_kl, asOf = bizDate, scope = loanScope)
-```
-Pemakaian string key mentah dilarang (lint).
-
-### 10.4 Penegakan (Enforcement) — bukan sekadar konvensi
-
-| Lapisan | Mekanisme |
-|---|---|
-| **Compile-time** | Hanya key hasil generate yang bisa dipakai (`ParamKey[T]` typed). Key tak terdaftar = error compile. |
-| **Static lint (CI)** | `tools/lint-nomagic` memindai `domain/` & `application/`: literal numerik/ string bisnis (bukan whitelist teknis seperti 0, 1, 12, 100 untuk persen) → gagal. Anotasi eksplisit `# nomagic:ok <alasan>` untuk pengecualian, direview. |
-| **Startup check** | Saat boot, semua key yang dirujuk kode (hasil generate) **harus** ada nilainya aktif utk scope yang wajib; jika tidak → proses menolak start (fail fast), kecuali mode setup awal. |
-| **Schema validation** | Nilai divalidasi JSON Schema saat input, dan lagi saat dibaca (defense in depth). |
-| **Governance** | Param `CRITICAL` = maker-checker + approver berjenjang + change window; semua perubahan masuk audit log + event `ParamChanged`. |
-| **Cache & invalidasi** | Cache in-proc per business date; invalidasi lewat `LISTEN/NOTIFY` pada `ParamChanged`. |
-| **Test** | Property test: perilaku modul berubah sesuai param (bukan nilai hardcode) → *mutation test* sederhana: ubah param di fixture, hasil harus berubah. |
-| **Drift guard** | Job harian membandingkan `param_definition` di DB vs hasil generate (kode); beda → alert. |
-
-### 10.5 Cakupan "Wajib Database-Driven" (checklist minimum)
-- Rate bunga/margin/nisbah/ujrah, metode hitung (flat/efektif/anuitas/sliding), basis hari (act/360, 30/360, act/365), pembulatan.
-- Limit transaksi, saldo minimum/maksimum, biaya (admin, provisi, administrasi, penalti/ta'zir), grace period.
-- Ambang kolektibilitas (DPD), persentase PPAP/CKPN, tarif pajak & ambang, rate penjaminan LPS.
-- Kalender, hari libur, hari kerja, cut-off time, fiscal year start.
-- Format nomor (rekening, anggota, kontrak), check digit.
-- COA & posting rule, kode laporan, mapping regulator.
-- Threshold APU-PPT, scoring risiko, daftar negara risiko tinggi.
-- Retensi, kebijakan password/sesi, parameter keamanan.
-- Workflow approval (limit per level), role conflict matrix.
-- Template notifikasi/cetakan (teks lewat i18n catalog + template).
-
-### 10.6 Fallback
-Tidak ada fallback diam-diam. Jika key tidak ditemukan → **error eksplisit** (`ParamNotFound`) yang menghentikan use case/ task, dengan pesan jelas ke operator. (Fallback hanya untuk konstanta teknis.)
-
-### 10.7 UI Parameter Admin
-Form dibangkitkan dari JSON Schema; tampil riwayat (timeline effective-dated), diff, impact preview ("N produk/rekening terdampak"), simulasi (dry-run pada data sampel), alur approval.
-
----
-
-## 11. Day-Close Framework (EOD/EOM/EOY)
-
-### 11.1 Tujuan
-Satu **kerangka orkestrasi** — modul lain hanya *mendaftarkan task*, tidak membuat batch sendiri. Karakteristik: **idempotent, resumable, DAG-based, observable, simulatable, calendar-aware**.
-
-### 11.2 Konsep
-
-| Konsep | Penjelasan |
-|---|---|
-| **Business Date** | Tanggal buku sistem (`platform.business_date`). Transaksi memakai business date, bukan jam server. |
-| **Day-Close Run** | Satu eksekusi penutupan untuk business date tertentu (institusi atau cabang). |
-| **Close Level** | `EOD` selalu; `EOW` (opsional), `EOM`, `EOQ`, `EOY` ditambahkan otomatis oleh kalender. **Kaskade**: hari kerja terakhir bulan ⇒ EOD + EOM; hari terakhir tahun fiskal ⇒ EOD + EOM + (EOQ) + EOY. |
-| **Task** | Unit kerja milik modul; punya scope level, dependensi, strategi chunking, pre/post-check. |
-| **Chunk** | Potongan task (mis. 1000 rekening) → paralel & resumable. |
-| **Gate** | Pemeriksaan wajib (pre-close/ post-close) yang bisa memblokir. |
-
-### 11.3 State Machine
-
-```
-Business Date:  OPEN ──start──► CLOSING ──all required tasks OK──► CLOSED ──open next──► (date+1) OPEN
-                                   │
-                                   └─ fail ─► CLOSING (blocked, perlu resolusi; tidak lanjut ke tanggal berikut)
-
-Run:   PLANNED → PRECHECK → RUNNING → POSTCHECK → COMPLETED
-                      │         │           └──────► FAILED
-                      └─► BLOCKED (gate gagal)   └─► PAUSED / RESUMED
-Task:  PENDING → READY → RUNNING → SUCCEEDED | FAILED | SKIPPED(by rule) | CANCELED
-Chunk: PENDING → RUNNING → SUCCEEDED | FAILED(retryable)
-```
-
-### 11.4 Kontrak Task (Nim, konseptual)
-
-```nim
-type
-  CloseLevel* = enum clEOD, clEOW, clEOM, clEOQ, clEOY
-  TaskKind* = enum tkPreCheck, tkProcess, tkPostCheck, tkReport
-
-  DayCloseTask* = object
-    id*: TaskId                      # "lending.accrue-interest"
-    module*: string
-    levels*: set[CloseLevel]         # {clEOD} atau {clEOM, clEOY}, dst
-    kind*: TaskKind
-    dependsOn*: seq[TaskId]          # DAG (siklus ditolak saat registrasi)
-    critical*: bool                  # gagal => blok penutupan hari
-    idempotency*: IdempotencyMode    # per (task, businessDate, entity)
-    partition*: PartitionStrategy    # mis. byAccountRange(chunkSize ← param)
-    requiredParams*: seq[ParamKeyRef]
-    run*: proc(ctx: TaskContext, chunk: Chunk): Future[Result[TaskOutput, TaskError]]
-    verify*: proc(ctx: TaskContext): Future[Result[void, TaskError]]   # post-condition/rekonsiliasi
-```
-- **Registrasi**: tiap modul memanggil `daycloser.register(task)` saat boot. Registry diekspor ke tabel `daycloser.task_registry` (untuk UI & audit).
-- **Idempotency**: setiap task bekerja berdasarkan **checkpoint per entitas** (`last_processed_business_date`), sehingga run ulang tidak menggandakan posting, dan **catch-up multi-hari** (mis. setelah libur panjang / sistem mati) bekerja otomatis.
-- **Chunk size, paralelisme, retry/backoff, timeout** semuanya parameter (§10).
-
-### 11.5 Orkestrator
-1. **Plan**: tentukan close level dari kalender (via parameter fiscal year & holiday), kumpulkan task, topological sort → DAG.
-2. **Precheck gates** (contoh): semua sesi teller tutup & kas seimbang; tidak ada transaksi *pending approval*; rekening antar-kantor/suspense = 0 atau tercatat; tidak ada batch lain berjalan (advisory lock); versi parameter ter-snapshot.
-3. **Freeze**: set business date `CLOSING` → transaksi online ditolak/antri sesuai kebijakan param (`daycloser.txn_policy_during_close`).
-4. **Execute**: jalankan task siap secara paralel (worker pool), chunk-level checkpoint, event progress → realtime (WS).
-5. **Postcheck gates**: rekonsiliasi (saldo subledger = GL; TB seimbang; jumlah akrual = jurnal), hasil disimpan sebagai bukti.
-6. **Seal**: snapshot saldo & trial balance harian, hitung hash ringkasan run (tamper-evident).
-7. **Rollover**: business date → hari kerja berikutnya (`OPEN`), publikasi `BusinessDateOpened`.
-
-### 11.6 Katalog Task Standar (awal)
-
-**EOD**
-| Task | Modul | Catatan |
-|---|---|---|
-| Validasi pra-tutup (teller, pending, suspense) | platform/teller | Gate |
-| Akrual bunga/bagi hasil harian simpanan | deposit/sharia | Basis hari & metode dari param |
-| Akrual bunga/margin pembiayaan | lending | Termasuk pengakuan margin syariah |
-| Generasi tagihan jatuh tempo, auto-debit | lending/deposit | |
-| Update DPD & kolektibilitas | lending | Ambang = param |
-| Hitung & posting PPAP/CKPN harian *atau* bulanan | lending/ledger | Frekuensi = param |
-| Jatuh tempo deposito & ARO | deposit | |
-| Deteksi rekening dormant/ tutup otomatis | deposit | |
-| Screening ulang batch (list update) & rule AML harian | compliance | |
-| Rekonsiliasi subledger↔GL, TB check | ledger | Gate pasca |
-| Snapshot saldo & TB harian | ledger | |
-| Rollover business date | platform | |
-
-**EOM (tambahan)**
-| Task | Catatan |
-|---|---|
-| Kapitalisasi/pembayaran bunga simpanan & deposito | Pajak dipotong (tax) |
-| Distribusi bagi hasil (nisbah) syariah | Berdasarkan pendapatan riil/ metode param |
-| Biaya administrasi bulanan | |
-| Pengakuan/ reversal akrual tertentu, amortisasi (provisi/biaya transaksi bila relevan) | |
-| Tutup periode GL, laporan keuangan bulanan | `PeriodClosed(month)` |
-| Generate laporan regulator bulanan (draft) | Reporting |
-| Perhitungan rasio (KPMM, NPL, LDR, BOPO, dll.) | Disimpan sebagai snapshot |
-| Re-KYC jatuh tempo, ringkasan APU-PPT | |
-
-**EOQ / EOY (tambahan)**
-| Task | Catatan |
-|---|---|
-| Penilaian kesehatan (triwulan/tahunan sesuai param) | Koperasi/BPR |
-| Jurnal penutup tahun (laba/rugi → laba ditahan/ SHU belum dibagi) | |
-| **Usulan SHU** (jasa simpanan vs jasa usaha, cadangan, dana-dana) | `coop`, parameter persentase RAT |
-| Laporan tahunan & paket RAT | |
-| Pembekuan tahun fiskal, arsip partisi, retensi | |
-| Bukti potong tahunan & laporan pajak | |
-
-### 11.7 Fitur Operasional
-- **Dry-run / Simulation**: jalankan di transaksi yang di-*rollback* (atau di salinan skema) untuk pratinjau dampak (jurnal, saldo) tanpa commit.
-- **Resume & Retry**: dari chunk gagal, tanpa mengulang yang sukses.
-- **Pause/Cancel** terkontrol (hanya di batas chunk).
-- **Skip by rule**: task tidak relevan untuk segmen/hari tertentu (mis. task syariah di koperasi konvensional) — dinyatakan oleh param/pack, tercatat sebagai `SKIPPED` dengan alasan.
-- **Back-to-back catch-up**: bila beberapa hari terlewat, orchestrator menjalankan hari demi hari berurutan.
-- **Reopen/ Reverse EOD**: **default dilarang**. Jika kebijakan param mengizinkan: hanya periode terbuka, approval berjenjang, otomatis membuat jurnal pembalik, tercatat audit. Koreksi normal = transaksi koreksi di hari berjalan.
-- **Backdated transaction**: kebijakan param (maks mundur N hari, hanya role tertentu, selalu maker-checker).
-- **Lock**: `pg_advisory_lock` per scope agar tak ada dua run bersamaan.
-- **UI Monitor**: DAG, progress per task/chunk, durasi, error, tombol resume; **a11y live region** untuk progres.
-- **Notifikasi**: selesai/gagal ke operator.
-- **Deploy freeze**: `deploy-vps.sh` menolak deploy saat ada run `RUNNING/CLOSING` (§21.4).
-
-### 11.8 Skema Data Day-Close (ringkas)
-```sql
-CREATE TABLE daycloser.batch_run (
-  run_id uuid PRIMARY KEY, scope_type text, scope_id uuid, business_date date,
-  levels text[] NOT NULL, mode text NOT NULL,          -- REAL | SIMULATION
-  state text NOT NULL, param_snapshot_id uuid NOT NULL,
-  started_at timestamptz, finished_at timestamptz,
-  started_by uuid, summary_hash text
-);
-CREATE TABLE daycloser.batch_task (
-  run_id uuid, task_id text, state text, attempt int, started_at timestamptz, finished_at timestamptz,
-  error jsonb, metrics jsonb, PRIMARY KEY (run_id, task_id)
-);
-CREATE TABLE daycloser.batch_task_chunk (
-  run_id uuid, task_id text, chunk_no int, range jsonb, state text, attempt int, error jsonb,
-  PRIMARY KEY (run_id, task_id, chunk_no)
-);
-```
-
----
-
-## 12. Backend Spec (Nim)
-
-### 12.1 Pilihan Teknologi & Risiko
-| Kebutuhan | Rekomendasi awal | Catatan |
-|---|---|---|
-| Versi | **Nim 2.x** (ARC/ORC), `--mm:orc`, `--threads:on` | Jalankan CI dengan sanitizer/valgrind pada test kritis |
-| HTTP server | **Mummy** (multithreaded, sederhana) *atau* Prologue | **Dibungkus di `shared/platform-lib/http`** supaya bisa diganti (ADR-002) |
-| PG driver | `db_connector` (db_postgres) + pool sendiri, atau driver async pilihan | Wajib parameterized query; pool & timeout dibungkus |
-| JSON | `jsony` (cepat) / std `json` | Contract tests menjamin kesesuaian dengan OpenAPI |
-| Migrasi | **SQL file + runner** (`tools/dbtools`) | Tanpa ketergantungan ORM |
-| Logging | Struktur JSON, correlation ID | Tanpa PII (§18) |
-| Test | `unittest2`/std `unittest`, property-based (mis. `testament` + generator sendiri) | |
-| Format uang | Tipe `Money` fixed-point sendiri di `shared/kernel` | Uji properti: asosiatif, pembulatan, no overflow |
-
-> **Risiko ekosistem**: library Nim lebih kecil/lebih sedikit maintainer daripada ekosistem mainstream. Mitigasi: batasi dependensi, vendor-kan yang kritis (pin versi + checksum), bungkus di port, tulis ADR per dependensi.
-
-### 12.2 Struktur Modul & Konvensi
-- Satu file = satu tanggung jawab; maksimal ~300 baris sebagai panduan.
-- `domain/` **tidak boleh** `import` dari `application/`, `infrastructure/`, `interface/`, DB, HTTP.
-- Use case = satu objek/ proc dengan input & output eksplisit:
-
-```nim
-# modules/deposit/application/open_account.nim
-type
-  OpenAccountCmd* = object
-    partyId*: PartyId
-    productId*: ProductId
-    initialDeposit*: Money
-    ctx*: AuditContext
-
-proc openAccount*(deps: Deps, cmd: OpenAccountCmd): Future[Result[AccountOpened, AppError]] {.async.} =
-  # 1. validasi via domain + parameter
-  # 2. transaksi: simpan aggregate + tulis outbox (atomik)
-  # 3. kembalikan hasil
-```
-- **Error**: `Result[T, E]` dengan error terkode (`AppError{code, i18nKey, details}`); exception hanya untuk bug/ kondisi tak terduga, ditangkap di batas interface.
-- **Transaksi**: unit-of-work di application layer; satu use case = satu transaksi DB (kecuali day-close chunk).
-- **Concurrency**: optimistic lock (`version` kolom) pada aggregate; `SELECT … FOR UPDATE` pada saldo rekening untuk posting (urutan lock konsisten untuk hindari deadlock).
-- **Idempotency**: header `Idempotency-Key` untuk POST finansial, disimpan di tabel + unique.
-
-### 12.3 Port & Adapter (contoh)
-```nim
-type
-  AccountRepo* = concept r
-    r.findById(AccountId) is Future[Option[Account]]
-    r.save(Account) is Future[void]
-  EventBus* = concept b
-    b.publish(DomainEvent) is Future[void]   # implementasi: tulis ke outbox dalam transaksi aktif
-  Clock* = concept c
-    c.now() is DateTime
-    c.businessDate(Scope) is BusinessDate
-```
-Implementasi Postgres di `infrastructure/`; fake in-memory untuk unit test.
-
-### 12.4 Outbox & Event
-- Tulis `platform.outbox` dalam transaksi yang sama dengan perubahan state.
-- Dispatcher (worker) membaca batch dengan `SKIP LOCKED`, mengirim ke subscriber in-proc & NOTIFY ke SSE; `inbox` per konsumen untuk de-dup (at-least-once → effectively-once).
-- Event punya **versi skema** (`type`, `v`), didokumentasikan di `packages/contracts/events`.
-
-### 12.5 Konfigurasi
-- **Bootstrap config** (env var/file): hanya koneksi DB, port, secret key ref, mode role — **bukan** nilai bisnis (itu di DB).
-- Secret via mekanisme server existing (§21), tidak di repo.
-
----
-
-## 13. API Design
-
-- **REST/JSON**, kontrak **OpenAPI 3.1** di `packages/contracts/openapi/` = *sumber kebenaran*. Client TS di-generate (`openapi-typescript` + fetch wrapper tipis).
-- **Sisi Nim**: handler ditulis manual mengikuti kontrak; **contract test** (mis. schemathesis/ Dredd-like) di CI memastikan implementasi ≡ OpenAPI.
-- **Versi**: `/api/v1/...`; perubahan breaking → v2; deprecation header.
-- **Konvensi**: resource-oriented; `PATCH` parsial; paginasi cursor; filter/sort terstandar; waktu ISO-8601; tanggal bisnis `YYYY-MM-DD`; uang sebagai **string desimal** (`"1500000.00"`) + `currency`.
-- **Error**: `application/problem+json` (RFC 9457) dengan `code`, `i18nKey`, `params`, `traceId`. Frontend yang menerjemahkan pesan sesuai locale.
-- **Idempotency-Key** untuk transaksi; **ETag/If-Match** untuk update (optimistic lock).
-- **Realtime**: `GET /api/v1/events/stream` (WebSocket; lihat §19.1) dengan topik berotorisasi (mis. `daycloser.run.{id}`, `account.{id}.balance`).
-- **AuthN**: sesi dengan cookie `HttpOnly`+`Secure`+`SameSite=Strict` (BFF-friendly) atau token pendek + refresh; MFA TOTP; parameter kebijakan di DB.
-- **AuthZ**: RBAC (permission granular `modul.resource.action`) + *branch scoping* + atribut (limit nominal) + **maker-checker** sebagai kemampuan platform (`/approvals`).
-- **Rate limiting** & lockout (param).
-- **Audit context** (siapa, cabang, IP, device, alasan) otomatis diteruskan ke use case.
-
----
-
-## 14. Frontend Spec (SvelteKit + TS)
-
-### 14.1 Teknologi
-| Kebutuhan | Pilihan | Alasan |
-|---|---|---|
-| Framework | **SvelteKit** + **Svelte 5 (runes)**, TS `strict` | Reaktif native, ringan |
-| Mode render | **SPA** (`adapter-static`, fallback) untuk back-office; SSR hanya bila perlu | KISS & deploy mudah di server sendiri |
-| Server state | **TanStack Query (Svelte)** + invalidasi oleh event realtime | Cache, retry, dedup |
-| Form | **Superforms/Formsnap** atau util sendiri + validasi dari skema kontrak | Aksesibel, error terasosiasi |
-| Komponen headless a11y | **bits-ui** / Melt UI sebagai dasar, dibungkus di `packages/ui` | Keyboard & ARIA matang |
-| Styling | **CSS variables (design tokens)** + Tailwind (opsional) atau CSS modules | Theming mudah |
-| i18n | **Paraglide JS** (type-safe, tree-shakable) | §16 |
-| Tabel data | Komponen sendiri di `ui` (virtualized, a11y) | Data besar |
-| Tes | Vitest, Testing Library, Playwright + axe-core | |
-
-### 14.2 Struktur `apps/web`
-```
-src/
-  routes/                       # SvelteKit routes (tipis; hanya komposisi)
-  lib/
-    app/                        # shell, layout, nav, guard, error boundary
-    features/
-      deposit/                  # satu folder fitur per modul backend
-        components/  api/  state/  i18n/  routes-meta.ts
-      lending/ party/ teller/ ledger/ daycloser/ compliance/ reporting/ coop/ sharia/ platform-admin/
-    shared/                     # util non-domain
-  app.html  hooks.client.ts
-packages/ui                     # komponen presentasional (tanpa logic domain)
-packages/api-client             # generated
-```
-- **Aturan**: `features/*` boleh pakai `packages/ui` & `api-client`; **tidak boleh** saling import antar-fitur (komunikasi via store/ event / URL). Dicek eslint boundaries.
-- **Mirror backend**: satu fitur frontend ↔ satu modul backend → mudah dipelajari.
-
-### 14.3 UX Back-Office
-- **Keyboard-first**: shortcut teller (F-keys terkonfigurasi), command palette (Ctrl/⌘+K), fokus otomatis logis.
-- **Form panjang** (onboarding, pembiayaan): wizard dengan simpan draf otomatis.
-- **Tabel**: sort/filter/pin kolom, ekspor, virtualisasi, seleksi massal.
-- **Cetak**: buku tabungan (passbook/dot-matrix profile), slip, kuitansi, surat → *print templates* terparameter.
-- **Mode layar**: responsif untuk tablet (AO lapangan); desktop-first.
-- **Indikator business date & mode** (CLOSING/ simulasi) selalu tampak.
-
----
-
-## 15. Theming (Dark/Light)
-
-1. **Design tokens** semantik (bukan warna mentah) di `packages/ui/tokens`: `--color-bg`, `--color-surface`, `--color-text`, `--color-text-muted`, `--color-border`, `--color-primary`, `--color-danger`, `--color-success`, `--color-warning`, `--color-focus-ring`, dll. + token spasi, radius, tipografi, elevasi, motion.
-2. **Tiga mode**: `light`, `dark`, `system` (default `system`). Pilihan disimpan per pengguna (profil di DB; fallback `localStorage`).
-3. Implementasi: atribut `data-theme="light|dark"` di `<html>` + `color-scheme` CSS; token didefinisikan ulang per tema. **Skrip inline kecil di `app.html`** menetapkan tema sebelum render (cegah flash).
-4. **Kontras**: seluruh pasangan token diuji otomatis (skrip hitung rasio) — teks normal ≥ **4.5:1**, teks besar & UI ≥ **3:1** pada **kedua** tema (WCAG 2.2 AA). Status tidak hanya dengan warna (ikon + teks).
-5. Mendukung `prefers-contrast: more` & `forced-colors` (Windows High Contrast).
-6. Cetak selalu mode terang (CSS `@media print`).
-7. Grafik/ visualisasi memakai palet aman buta warna + pola/label.
-8. **Visual regression test** (Playwright screenshot) untuk komponen kunci di kedua tema.
-
----
-
-## 16. Internationalization (i18n)
-
-### 16.1 Cakupan & Locale
-- Locale awal: **`id-ID` (default)**, **`en`**. Arsitektur siap menambah (mis. `ar` untuk istilah syariah, bahasa daerah) tanpa ubah kode.
-- **Backend tidak mengirim kalimat jadi** untuk UI; mengirim **kode + parameter** (`i18nKey`, `params`). Pengecualian: dokumen/ cetakan server-side memakai catalog yang sama.
-
-### 16.2 Mekanisme
-| Hal | Pendekatan |
-|---|---|
-| Katalog pesan | `packages/i18n/messages/{id,en}/<namespace>.json`, namespace = modul. Key hierarkis: `deposit.account.open.title` |
-| Library | Paraglide JS (kunci bertipe, tree-shaking) — ADR-009 |
-| ICU MessageFormat | Plural, select, gender (mis. "1 rekening" / "{n} rekening") |
-| Format angka/tanggal/uang | `Intl.NumberFormat/DateTimeFormat` dengan `id-ID`; uang **2 desimal** di semua tampilan (D-136), simbol mata uang di judul kolom, tanpa singkatan angka |
-| Tanggal Hijriah | Opsi tampilan tambahan untuk segmen syariah (`Intl` calendar `islamic`), tidak mengganti business date Masehi |
-| Zona waktu | Disimpan UTC; tampil WIB/WITA/WIT sesuai cabang (param) |
-| Arah teks | CSS **logical properties** (`margin-inline`, dst.) agar siap RTL |
-| Terminologi | **Glosarium** resmi (`docs/glossary.md`): anggota vs nasabah, SHU, PPAP, DPD, dst. — konsisten antar bahasa |
-| Konten terparameter | Template notifikasi & cetakan di DB berkunci i18n + variabel |
-
-### 16.3 Tata Kelola & Tooling
-- **Larangan string hardcode** di komponen (eslint rule + CI).
-- CI memeriksa: key yang dipakai ada di semua locale; tidak ada key yatim; placeholder konsisten.
-- **Pseudo-locale** (`xx-pseudo`) untuk menemukan teks terpotong/ hardcode; uji ekspansi teks 30–40%.
-- Workflow terjemahan: file JSON di repo (reviewable via PR); opsional integrasi platform terjemahan kemudian.
-
----
-
-## 17. Accessibility (a11y)
-
-**Target**: **WCAG 2.2 level AA** untuk seluruh UI; panduan tambahan **ARIA Authoring Practices**. (Selaraskan dengan standar nasional bila ada persyaratan klien.)
-
-### 17.1 Fondasi di Design System
-- Semua komponen interaktif berbasis elemen semantik (`button`, `a`, `input`, `table`, `dialog`) sebelum ARIA.
-- Dialog/ menu/ combobox/ tabs/ tooltip memakai primitif headless teruji (focus trap, `aria-*`, roving tabindex).
-- **Focus**: indikator fokus selalu terlihat (kontras ≥ 3:1, WCAG 2.4.11/13), urutan logis, fokus dikembalikan setelah dialog/ navigasi.
-- **Target ukuran** minimal 24×24 CSS px (WCAG 2.5.8).
-- **Skip links**, landmark (`header/nav/main/aside/footer`), heading hierarchy, judul halaman unik per route (diumumkan saat navigasi SPA).
-- **Form**: label terasosiasi, hint & error via `aria-describedby`, ringkasan error dengan fokus, validasi tidak hanya warna, `autocomplete` benar, hindari timeout tanpa peringatan (sesi: peringatan sebelum habis + perpanjang).
-- **Tabel data**: `<th scope>`, caption, sortable dengan `aria-sort`, paginasi/ virtualisasi tetap bisa dinavigasi keyboard & diumumkan.
-- **Status dinamis** (hasil transaksi, progres EOD, toast): **live region** (`aria-live` polite/assertive sesuai urgensi).
-- **Gerak**: hormati `prefers-reduced-motion`; tanpa konten berkedip.
-- **Zoom/ reflow**: usable pada zoom 200–400% tanpa scroll dua arah untuk konten utama.
-- **Bahasa**: `lang` pada `<html>` dan fragmen bahasa lain (mis. istilah Arab) dengan `lang` sendiri.
-- **Cetak & dokumen**: PDF yang dihasilkan sistem (laporan) ditargetkan *tagged* bila memungkinkan (open decision).
-
-### 17.2 Proses & Penegakan
-| Tahap | Praktik |
-|---|---|
-| Dev | `eslint-plugin-svelte` a11y rules `error`; storybook/ katalog komponen dengan addon a11y |
-| CI | **axe-core via Playwright** pada rute utama × 2 tema × 2 locale; gagal untuk *serious/critical* |
-| Test | Skenario **keyboard-only** (Playwright) untuk alur kritis: login, buka rekening, setoran, pencairan, monitor EOD |
-| Manual | Uji rutin dengan **NVDA + Firefox/Chrome**, **VoiceOver**; checklist per rilis |
-| Governance | **Definition of Done** fitur UI mencakup a11y checklist; "Accessibility Statement" di dokumentasi |
-
----
-
-## 18. Security & Data Protection
-
-### 18.1 Prinsip
-Defense-in-depth, *least privilege*, *secure by default*, *auditable*.
-
-### 18.2 Kontrol Utama
-| Area | Kontrol |
-|---|---|
-| **Identitas & akses** | MFA (TOTP/ WebAuthn opsional), kebijakan password terparameter, lockout, sesi pendek, deteksi sesi ganda, review akses berkala |
-| **Otorisasi** | RBAC granular + *role conflict matrix* (SoD) + branch scoping + limit nominal + maker-checker |
-| **Data at-rest** | Disk/ volume terenkripsi + **field-level encryption** untuk data sensitif (NIK, NPWP, no. HP, alamat) memakai envelope encryption (KEK dari server/KMS, DEK per tabel/ record), blind index untuk pencarian |
-| **Data in-transit** | TLS 1.2+ (ideal 1.3), HSTS; mTLS untuk adapter kritis |
-| **Masking** | Default masked di UI/ log/ ekspor; *unmask* butuh permission + alasan + audit |
-| **Audit trail** | Append-only, **hash-chain** (setiap entri memuat hash entri sebelumnya) + anchor harian (hash dicatat di tempat terpisah) |
-| **Logging** | Tanpa PII/ secret; correlation ID; retensi sesuai param |
-| **Input** | Parameterized SQL, validasi skema, ukuran upload, antivirus scan pada dokumen |
-| **Web** | CSP ketat, anti-CSRF, SameSite, header keamanan, sanitasi output (Svelte auto-escape; larang `{@html}` tanpa review) |
-| **Supply chain** | Lockfile, pin versi, SBOM (CycloneDX), scan dependensi (OSV), *reproducible build* dilacak |
-| **Secrets** | Tidak di repo; di-inject runtime (§21) |
-| **Backup & DR** | Backup terenkripsi, uji restore terjadwal, RPO/RTO sebagai target terdokumentasi (nilai ditetapkan institusi) |
-| **Retensi & hapus** | Kebijakan retensi (param) + anonimisasi; hak subjek data (akses/koreksi/hapus dengan batasan hukum retensi keuangan) |
-| **Insiden** | Runbook insiden + SLA notifikasi pelanggaran data sesuai UU PDP |
-| **Pen-test** | Sebelum go-live tiap rilis mayor; temuan ditracking |
-
-### 18.3 RLS (opsional tapi disarankan)
-Row-Level Security Postgres untuk branch scoping pada tabel transaksi: aplikasi men-set `SET LOCAL app.user_id/branch_ids` per transaksi; kebijakan RLS menyaring. Trade-off performa diukur (ADR-007).
-
----
-
-## 19. Reactive Architecture
-
-### 19.1 Backend
-```
-Use case ─(1 transaksi)─► state change + outbox row
-                                  │
-                      Dispatcher (SKIP LOCKED)
-                       ├─► subscriber in-proc (ledger posting, compliance, notifikasi, read-model updater)
-                       └─► NOTIFY ► realtime hub ► klien
-```
-- **Read model/ projection** untuk layar berat (dashboard, saldo ringkas) diperbarui oleh event handler; boleh direbuild dari ledger.
-- **Backpressure**: dispatcher batch + limit konkurensi; *dead-letter* tabel untuk event gagal (dengan UI re-drive).
-- **Transport realtime: WebSocket, bukan SSE** (perubahan 2026-10-14, keputusan pemilik atas E-001/ADR-002).
-  Alasan: Mummy (server HTTP terpilih) tidak punya API streaming sehingga SSE tidak dapat
-  diimplementasikan tanpa menulis soket mentah; Mummy mendukung WebSocket first-class. Endpoint
-  tetap `GET /api/v1/events/stream` (upgrade ke WS) dengan *resume token* sebagai pengganti
-  `Last-Event-ID`. Kontrak pesan memakai amplop yang sama (`id`, `topic`, `payload`).
-
-### 19.2 Frontend
-- `$state/$derived/$effect` untuk state lokal; **query cache** untuk server state.
-- Event realtime (WS) → handler mengubah/ meng-*invalidate* query terkait (mis. `account.{id}.balance` → refetch/ patch saldo).
-- Optimistic update hanya untuk operasi non-finansial; operasi finansial menunggu konfirmasi server (korektness > kecepatan).
-- Aksesibilitas reaktif: pembaruan real-time diumumkan via live region secukupnya (hindari kebisingan).
-- Reconnect WS membawa *resume token* (id event terakhir) agar tak kehilangan event; server memutar ulang dari outbox.
-
----
-
-## 20. Testing Strategy
-
-| Level | Cakupan | Alat |
-|---|---|---|
-| **Unit (domain)** | Aturan bisnis, `Money`, perhitungan bunga/ angsuran/ kolektibilitas | Test Nim + **property-based** (invarian: debit=kredit, saldo≥0, pembulatan) |
-| **Golden/ Reference** | Perhitungan akrual, jadwal angsuran (flat/efektif/anuitas, syariah), PPAP, SHU — dibandingkan dengan **kasus referensi tervalidasi** (spreadsheet akunting) | File fixture ter-versi |
-| **Integration** | Use case + Postgres nyata (container) + migrasi | Test runner + DB ephemeral |
-| **Contract** | OpenAPI ↔ implementasi; event schema | schemathesis/ validator JSON Schema |
-| **Day-close simulation** | *Time-travel* dengan `Clock` injeksi: simulasi N bulan/ 1 tahun penuh (termasuk libur, EOM, EOY, catch-up, kegagalan chunk) | Harness sintetik |
-| **Param-driven** | Mutasi parameter → perilaku berubah (anti-hardcode) | Test generik per key |
-| **Performance** | EOD pada volume target; query kritis | Dataset sintetis; budget waktu di CI nightly |
-| **Security** | SAST, dependency scan, authz test matrix, fuzz input | |
-| **Frontend** | Unit (Vitest), komponen, e2e (Playwright), **a11y (axe)**, visual regression 2 tema, i18n (pseudo-locale) | |
-| **Compliance trace** | Setiap `requirement` aktif ↔ ≥1 test tag `@REG-xxx`; gate CI | |
-| **Migration** | Up pada snapshot data realistis; verifikasi ukuran/ waktu | |
-| **UAT** | Skenario bisnis per segmen bersama pengguna nyata | Checklist & sign-off |
-
-**Definition of Done (fitur)**: kode + test + OpenAPI + i18n (id & en) + a11y check + parameter/seed + MODULE.md + audit event + (bila relevan) requirement regulasi ter-link.
-
----
-
-## 21. CI/CD (Ikuti Pola Existing)
-
-> **Prinsip**: KRAN mengikuti pola yang *benar-benar berjalan* di server (hasil audit setup: GitHub Actions = gerbang verifikasi, deploy = webhook → `deploy-vps.sh` di VPS, build di VPS, Caddy, systemd user unit/ quadlet, env file mode 600). Tidak ada tool baru yang diperkenalkan. Yang ditambahkan hanyalah **kontrol khusus KRAN** (deploy-freeze day-close, migrasi aman, backup pra-migrasi, rollback otomatis). Item bertanda *(inferensi)* berasal dari analisis audit, bukan prosedur terdokumentasi.
-
-### 21.1 Ringkasan Pola Existing
-
-| Aspek | Pola existing |
-|---|---|
-| **CI** | GitHub Actions, satu `ci.yml` per repo; trigger `push: [main]` + `pull_request`; `permissions: contents: read`; `concurrency` cancel-in-progress. **Verifikasi saja** — tidak push image/ artifact, tidak memanggil webhook. |
-| **Cetakan terbaik** | **Skyward**: job `db-tests` (`services: postgres:18` + migrasi, serial), gitleaks, binary native diekstrak dari image → `bin/<app>` (systemd user unit), health gate `/readyz` poll 15× + **auto-rollback**, gate migrasi, `.deployed_rev`, skrip self-update. |
-| **Deploy** | GitHub webhook → `webhook.service` (adnanh/webhook, `127.0.0.1:9000`, diekspos Caddy `/hooks/*`) → `/srv/qouver/apps/<app>/scripts/deploy-vps.sh`. |
-| **Kontrak skrip** | `set -euo pipefail` → ref-guard fail-closed (hanya `refs/heads/main`) → `git fetch && reset --hard origin/main` → rebuild selektif (diff `apps/api/` vs `apps/web/`) → `podman build` → `systemctl --user daemon-reload` + restart → `is-active` → log `deploy.log`. |
-| **Artefak** | Image `localhost/<app>:local` (satu tag, ditimpa) **atau** binary native (Skyward); web = folder statis swap `web.new → web`, `web.prev` disimpan. Semua dibangun **di VPS**. |
-| **Proxy/TLS** | Caddy (ACME otomatis), upstream `127.0.0.1`, hanya 22/80/443 publik. Caddyfile *hand-maintained* (belum di version control). |
-| **Secret** | Tanpa secret manager. Runtime: `EnvironmentFile=` → `/srv/qouver/apps/<app>/env/<app>-prod.env` (600). Repo hanya `*.example`. Fetch repo privat via **deploy key SSH per repo**. HMAC webhook di `/srv/qouver/config/webhook.json` (600). |
-| **Rollback** | Hanya Skyward yang otomatis. Lainnya: revert commit lalu push *(inferensi)*. Image `:local` satu tag ⇒ tidak bisa retag. |
-| **DB** | Backup Postgres 02:00 (retensi daily 7 / weekly 28 / monthly 84). **Restore test belum pernah dilakukan.** `scripts/migrate.sh --down` manual & opt-in. |
-
-### 21.2 Keputusan: KRAN = Turunan Pola Skyward
-
-**Alasan**: (1) paling matang & sudah terbukti di server; (2) Nim menghasilkan **binary native** → cocok dengan model Skyward (ekstrak binary dari image, jalan sebagai systemd user unit, tanpa runtime container); (3) konsisten dengan `audit-consistency.sh` yang membandingkan md5 skrip repo vs server.
-
-```
-git push main ──► GitHub Actions (ci.yml: verifikasi saja)           [gerbang kualitas, tanpa deploy]
-        │
-        └──────► GitHub webhook (HMAC sha256) ──► Caddy /hooks/* ──► webhook.service
-                                                                         │
-                                                  /srv/qouver/apps/kran/scripts/deploy-vps.sh  (di VPS)
-                          ref-guard → lock → fetch/reset → FREEZE GATE → pre-migration dump
-                          → build (podman) → ekstrak bin/kran-api → MIGRATION GATE (expand-only)
-                          → swap web → restart units → HEALTH GATE (/readyz ×15) → [auto-rollback] → .deployed_rev
-```
-
-### 21.3 `ci.yml` untuk KRAN (verifikasi saja)
-
-Trigger/ permission/ concurrency **identik** dengan repo lain. Job (paralel bila bisa):
-
-| Job | Isi |
-|---|---|
-| `nim-check` | Pin versi Nim; format check, kompilasi `--mm:orc`, `archcheck`, `lint-nomagic`, `paramgen --check` (kode ≡ definisi), unit + property test |
-| `db-tests` | Cetak Skyward: `services: postgres:18`, jalankan migrasi (up), integration test **serial**, test day-close simulation, param-driven test |
-| `contract` | Lint OpenAPI, contract test implementasi ↔ OpenAPI, validasi event schema |
-| `web` | pnpm install (lockfile frozen), eslint (termasuk a11y rules & no-hardcoded-string), svelte-check/ typecheck, vitest, build, i18n check (key lengkap `id`/`en`, tanpa key yatim) |
-| `e2e-a11y` | Playwright: alur kritis keyboard-only + **axe-core** (rute utama × tema light/dark × locale id/en) + visual regression; gagal bila axe *serious/critical* |
-| `security` | **gitleaks**, dependency scan (OSV), SAST |
-| `traceability` | Setiap requirement regulasi aktif punya kontrol + test (§4.4) |
-
-Secret CI tetap minim: `GITHUB_TOKEN` dan `KRAN_TEST_DATABASE_URL`. **Tidak ada** secret SSH/ deploy di CI.
-
-### 21.4 Webhook & `deploy-vps.sh`
-
-**Hook baru `kran`** di `webhook.json`: `execute-command: /srv/qouver/apps/kran/scripts/deploy-vps.sh`, argumen `repository.name` + `ref`. **Gunakan `payload-hmac-sha256` + `X-Hub-Signature-256`** (4 hook lama masih sha1 — jangan diwariskan).
-
-Langkah skrip (ekstensi kontrak seragam; yang **tebal** = tambahan KRAN):
-
-| # | Langkah | Catatan |
-|---|---|---|
-| 1 | `set -euo pipefail`; ref-guard hanya `refs/heads/main` (fail-closed) | Seragam |
-| 2 | **Lock** (`flock`) agar dua deploy tak berjalan bersamaan | Tambahan |
-| 3 | `git fetch origin main && git reset --hard origin/main` | Seragam |
-| 4 | **FREEZE GATE**: cek state `daycloser` (read-only: `kran-api --role=ctl daycloser-status` atau query). Bila `CLOSING/RUNNING` → exit tanpa mengubah apa pun, tulis log, jadwalkan retry | Tambahan (§11.7) |
-| 5 | Rebuild selektif berdasar diff (`apps/api`, `modules/`, `shared/`, `apps/web`, `migrations/`) | Seragam |
-| 6 | **Pre-migration dump** bila ada migrasi baru: `pg_dump -Fc` → `/srv/qouver/backups/pre-deploy/<sha>.dump`, verifikasi `pg_restore --list` | Tambahan |
-| 7 | Build image `podman build`; **tag `:<sha>` + `:local`; simpan tag sebelumnya sebagai `:prev`**; ekstrak binary → `bin/kran-api` (lama → `bin/kran-api.prev`) — **hanya untuk gate host**, layanan berjalan dari image (D-066) | Pola Skyward; menutup celah "satu tag" |
-| 8 | **MIGRATION GATE**: `kran-api --role=migrate --check` lalu `--up` (**expand-only**). Gagal ⇒ **deploy dibatalkan sebelum binary diganti** | Pola Skyward |
-| 9 | Web: build ke `web.new` → swap → `web.prev` disimpan | Seragam (pola Skyward/Fond) |
-| 10 | `systemctl --user daemon-reload` + restart `kran-api` & `kran-worker` | Seragam |
-| 11 | **HEALTH GATE**: poll `/readyz` ×15 (cek DB, versi migrasi, **startup param check**, drift paramgen). Gagal ⇒ **auto-rollback** (tag image `:prev` → `:local`, unit `.prev`, `bin/kran-api.prev`, `web.prev`), exit 1 | Pola Skyward; **bukan** `is-active` + curl yang diabaikan |
-| 12 | Tulis `.deployed_rev`; log ke `deploy.log` **dan** journal; skrip self-update via `mv` | Pola Skyward |
-| 13 | **Evidence rilis**: simpan SBOM, daftar migrasi, ringkasan test (dari CI), hash binary di `/srv/qouver/apps/kran/releases/<sha>/` | Tambahan (jejak audit; log GitHub Actions hanya ±90 hari) |
-
-> **Amandemen 19 Okt 2026 (D-066):** layanan `--role=api` dan `--role=worker` berjalan sebagai
-> **container quadlet** (`ops/systemd/kran-{api,worker}.container`, image `localhost/kran-api`),
-> dipasang dan di-rollback oleh `deploy-vps.sh`. `bin/kran-api` dipertahankan hanya karena FREEZE
-> dan MIGRATION gate berjalan di host. §21.5 diperbarui; §21.6 menampilkan struktur `ops/` terbaru.
-
-**Aturan migrasi**: hanya **expand** (additive, kompatibel dengan binary lama) yang otomatis. Migrasi **contract** (drop/rename/ketat) ada di `migrations/contract/` dan hanya dijalankan manual via `scripts/migrate.sh --contract --yes` *setelah* rilis berikutnya stabil. Konsekuensi: auto-rollback binary selalu aman terhadap skema. Tidak ada `--down` otomatis; koreksi = migrasi maju, atau restore dari dump pra-migrasi bila terpaksa.
-
-### 21.5 Komponen Runtime KRAN di VPS
-
-| Komponen | Spesifikasi |
-|---|---|
-| Direktori | `/srv/qouver/apps/kran/{scripts,bin,web,env,logs,releases}` |
-| Unit | `kran-api.service` (`--role=api`), `kran-worker.service` (`--role=worker`) — systemd **user** unit, binary `bin/kran-api`. **Digantikan D-066 (19 Okt 2026):** container quadlet `kran-api.container`/`kran-worker.container`, image `localhost/kran-api`; biner host hanya untuk gate deploy |
-| Env | `env/kran-prod.env` (mode 600, owner sachiel) berisi **bootstrap config saja** (DB URL, port, role, referensi kunci) — nilai bisnis tetap di DB (§10) |
-| Port | `127.0.0.1:<port-baru>` selama transisi; 8095 baru dilepas/ diambil alih saat cutover (§21.9) |
-| Caddy | Site/hostname **terpisah** untuk KRAN dengan header keamanan lengkap (CSP, HSTS, X-Content-Type-Options, frame-ancestors, Referrer-Policy). Jangan menumpang `api.qouver.com` yang saat ini tanpa header keamanan |
-| Git | Deploy key SSH per repo (alias `~/.ssh/config`, mis. `github-kran:...`) |
-| Webhook | Hook `kran` (sha256), secret di `webhook.json` (600) |
-| Database | Database & role Postgres khusus KRAN; role terpisah untuk `app`, `migrate`, `readonly/report` (least privilege) |
-
-> **Catatan nama**: KRAN **menggantikan** `cbs-core` (nama transisi `cbs` dibatalkan oleh D-039: produk
-> dan seluruh identifier teknis memakai KRAN). Hook/ image/ unit/ port/ hostname/ direktori milik
-> `cbs-core` yang masih melayani — `cbs-core`, image `localhost/kran-*:local`, route `/cbs/*→8095`,
-> site `cbs`→3005 — **tidak boleh bertabrakan** dengan yang baru (bila `/srv/qouver/apps/kran/` sudah
-> dipakai `cbs-core`, pakai `apps/kran-next/` sementara lalu rename saat cutover). Pengambilalihan nama
-> dilakukan di cutover (§21.9).
-
-### 21.6 Struktur `ops/` di Repo
-
-```
-ops/
-├─ scripts/
-│  ├─ deploy-vps.sh          # kontrak §21.4 (md5 repo == server; masuk audit-consistency.sh)
-│  ├─ migrate.sh             # --up | --check | --contract --yes | --down --yes [N] (manual, opt-in)
-│  ├─ backup-pre-deploy.sh
-│  ├─ rollback.sh            # manual: image :prev -> :local, web.prev, unit .prev (tanpa DB)
-│  └─ smoke.sh               # /healthz, /readyz, versi == .deployed_rev
-├─ systemd/                  # kran-api.container, kran-worker.container (+ superseded/*.service)
-├─ caddy/                    # Caddyfile.kran.example  (+ mulai versi-kan Caddyfile asli)
-├─ webhook/                  # hook.kran.json.example (sha256)
-└─ env/                      # kran-prod.env.example   (*.env di-gitignore)
-```
-
-### 21.7 Penyesuaian terhadap Pola (Deviasi Sadar)
-
-| Kebutuhan KRAN | Pola existing | Keputusan |
-|---|---|---|
-| Artefak yang diuji = yang di-deploy | Build ulang di VPS setelah CI hijau | Diterima. Kompensasi yang **benar-benar ada** (OPS-8/T-131): base image dipin **digest** dan tarball Nim diverifikasi SHA-256 (`apps/api/Dockerfile`), `.deployed_rev`, dan manifest rilis satu baris di `$APP_DIR/releases.txt` (rev, image ID, sha256 biner gate, waktu). Tag `:<sha>` **tidak** dipakai — retensi image hanya `:local`/`:prev` (kontrak emas §3.4); `releases/<sha>/` tidak dibuat karena menggandakan biner per commit. Build **belum** reproducible: `nimble` tanpa lockfile, dicatat di `docs/ACCEPTED-LIMITS.md` |
-| Staging dengan data teranonimisasi | Tidak ada (satu stack prod) | **Usulan**: stack staging di VPS yang sama, port/ DB/ hostname berbeda, di-deploy dari branch `staging` (ref-guard diperluas eksplisit: `main`→prod, `staging`→staging). Data prod tidak pernah disalin mentah (`dbtools anonymize`) |
-| Artefak kepatuhan per rilis | CI tidak upload artifact | Disimpan di server (`releases/<sha>/`), bukan di Actions |
-| Approval manual sebelum prod | Push ke `main` = deploy | Diatur lewat **branch protection** (PR review wajib) + deploy hanya dari `main`. Untuk perubahan kritis tambahkan tag/rilis manual sebagai pemicu (opsional) |
-| Deploy-freeze | Tidak ada | Freeze gate di skrip (§21.4 #4) |
-| Rollback seragam | Hanya Skyward | KRAN punya sejak hari pertama (§21.4 #7, #11) |
-
-### 21.8 Celah Existing yang Wajib Ditutup *Sebelum Data Nasabah Asli*
-
-| Celah (dari audit) | Dampak ke KRAN | Tindakan |
-|---|---|---|
-| **Restore test belum pernah dilakukan** | Backup yang belum teruji = belum punya backup | **Gate go-live**: restore test bulanan + dicatat di `docs/runbooks` |
-| Backup harian (RPO s.d. 24 jam) | Terlalu longgar untuk uang nyata | Tambahkan **WAL archiving/PITR** untuk DB KRAN (§22) |
-| Tanpa secret manager | Kunci enkripsi field (KEK) berisiko | Minimal: KEK di file terpisah (600), **tidak ikut backup DB yang sama**, salinan offline; rencanakan `age`/`sops` kemudian. Dicatat sebagai risiko residual |
-| Caddyfile tanpa version control (±4 `.bak`) | Config proxy KRAN tak teraudit | Versi-kan di `ops/caddy/` (dan repo `vps` bila ada) |
-| 4 hook masih sha1 | Lemah | Hook KRAN sha256; migrasikan hook lain terpisah |
-| Health gate "palsu" di cbs/sds/majadu | Deploy rusak lolos | KRAN memakai gate nyata (§21.4 #11) |
-| `deploy.log` kosong (sds) | Jejak deploy hilang | KRAN menulis ke log **dan** journal |
-| Key CI di `authorized_keys` memberi shell penuh; HMAC dirotasi manual | Risiko pivot | `restrict,from=` untuk key; jadwalkan rotasi HMAC |
-| Semua app berbagi satu VPS | Build Nim & EOD berebut resource dengan app lain; blast radius | Ukur; untuk produksi nyata pertimbangkan VPS/ instance Postgres khusus KRAN |
-
-### 21.9 Cutover & Dekomisioning `cbs-core`
-
-Prinsip: `cbs-core` **tetap melayani sampai `cbs` lulus UAT pilot**; tidak ada big-bang tanpa jalan mundur. `cbs-core` (Go) diperlakukan sebagai **referensi**, bukan basis kode — tidak ada port kode Go → Nim.
-
-| # | Tahap | Isi |
-|---|---|---|
-| 1 | **Inventaris** (Fase 0) | Catat fitur, skema DB, aturan bisnis yang sudah tervalidasi, data uji, bug/ pelajaran di `docs/migration/cbs-core-inventory.md`. Kasus-kasus validnya dijadikan **golden test** `cbs` (§20) |
-| 2 | **Bangun berdampingan** | Nama transisi (§21.5); `cbs-core` tidak disentuh |
-| 3 | **Migrasi data** *(hanya bila `cbs-core` berisi data nyata)* | ETL idempotent di `tools/dbtools` → model baru; **rekonsiliasi** sebelum/ sesudah (jumlah rekening, saldo per produk, trial balance); latihan berulang pada salinan (teranonimisasi bila untuk staging); hasil rekonsiliasi disimpan sebagai evidence rilis |
-| 4 | **Shadow/ paralel** *(opsional, bila ada data nyata)* | Skenario transaksi yang sama dijalankan di keduanya, hasil dibandingkan |
-| 5 | **Cutover** (maintenance window) | Freeze `cbs-core` (read-only) → dump final → ETL final → rekonsiliasi lulus → Caddy `/cbs/*` & site `cbs` diarahkan ke upstream baru → hook `cbs-core` dihapus dari `webhook.json` |
-| 6 | **Masa tenggang** | `cbs-core` tetap hidup read-only; rollback cutover = kembalikan Caddy ke upstream lama |
-| 7 | **Dekomisioning** | Stop+disable unit, hapus image `localhost/kran-*:local` lama, arsipkan repo `cbs-core`, simpan dump final (retensi sesuai kebijakan data keuangan), cabut deploy key, keluarkan dari `audit-consistency.sh`, perbarui `SERVER_STATE.md`, bersihkan `.bak` Caddy terkait |
-
-Bila `cbs-core` ternyata prototipe tanpa data nyata, tahap 3–4 dilewati (cukup arsip dump).
-
----
-
-## 22. Observability & Operasional
-
-- **Logging**: JSON terstruktur, level terkonfigurasi, correlation ID lintas request/ event/ batch.
-- **Metrics**: Prometheus-style endpoint (latensi, error rate, pool PG, antrian outbox, durasi task day-close, jumlah chunk gagal).
-- **Tracing**: OpenTelemetry (opsional fase 2) — minimal propagasi `traceId`.
-- **Health**: `/healthz` (liveness), `/readyz` (DB, migrasi, param check).
-- **Alert** (contoh): outbox lag > X, day-close terlambat/ gagal, TB tidak seimbang, lonjakan login gagal, restore test gagal.
-- **Runbook** (`docs/runbooks`): EOD gagal & resume, TB selisih, restore DB, rotasi kunci, insiden data pribadi, penambahan hari libur darurat.
-- **Operasi data**: backup terenkripsi + PITR (WAL archiving), uji restore berkala, retensi & arsip partisi lama.
-- **Kapasitas**: tuning PG (pool, autovacuum partisi besar), indeks terpantau; budget performa di CI nightly.
-
----
-
-## 23. Roadmap & Milestone
-
-> Skala produk ini **sangat besar** untuk satu developer. Strategi: **vertical slice** — selesaikan satu segmen end-to-end dulu (disarankan **Koperasi Simpan Pinjam**: scope terkecil dengan nilai nyata), lalu tambah pack.
-
-| Fase | Fokus | Deliverable utama | Kriteria selesai |
-|---|---|---|---|
-| **0. Fondasi** | Monorepo, tooling, CI sesuai pola existing, **inventaris `cbs-core`**, `shared/kernel`, `platform` (auth, RBAC, audit, **param framework**, kalender, outbox, i18n, design system dasar + tema), template modul, `archcheck`/`lint-nomagic`/`paramgen` | Skeleton jalan end-to-end (login → ubah param → audit → event realtime WS) | Semua gate CI aktif; hello-module < 1 hari |
-| **1. Core Ledger & Party** | `party` (CIF+KYC dasar), `ledger` (COA, posting rule, periode), `product` factory | Jurnal immutable, TB, produk parametrik | Property test double-entry lulus |
-| **2. Deposit + Teller** | Rekening simpanan (pokok/wajib/sukarela/tabungan), teller session, cetak | Transaksi tunai & PB, saldo realtime | Alur teller keyboard-only lulus a11y |
-| **3. Day-Close Framework** | `daycloser` penuh (EOD/EOM/EOY), task deposit & ledger, simulasi, UI monitor | Simulasi 12 bulan sintetis lulus | EOD target performa tercapai |
-| **4. Lending** | Pengajuan→pencairan→angsuran, DPD, kolektibilitas, PPAP, restruk | Siklus pinjaman penuh + task day-close | Golden test vs spreadsheet akunting |
-| **5. Koperasi Pack** | `coop` (keanggotaan, SHU, RAT), laporan & rasio kesehatan | **MVP Koperasi siap pilot** | UAT koperasi sign-off |
-| **6. Compliance & Reporting** | APU-PPT (screening, rule, case), regulatory register, pelaporan, pajak | Traceability gate aktif | Verifikasi oleh compliance owner |
-| **7. BPR Pack** | KPMM, BMPK, tingkat kesehatan, laporan OJK BPR, TI governance docs | Pilot BPR | UAT BPR |
-| **8. Syariah Pack (BPRS/BMT)** | `sharia`: akad, nisbah, bagi hasil, DPS, dana kebajikan | Pilot BMT/BPRS | Review DPS |
-| **9. Integrasi & Hardening** | Adapter (Dukcapil, SLIK, notif), pen-test, DR drill, perf tuning, **cutover & dekomisioning `cbs-core`** | Rilis 1.0 | Checklist go-live |
-
-Estimasi waktu sengaja tidak dicantumkan sebelum ada keputusan kapasitas tim; tetapkan setelah Fase 0 (ukur *velocity* nyata).
-
----
-
-## 24. Risiko
-
-| Risiko | Dampak | Mitigasi |
-|---|---|---|
-| Scope terlalu besar | Tidak selesai | Vertical slice per segmen, pack bertahap, Non-goals tegas |
-| Ekosistem Nim kecil | Library hilang/ bug | Bungkus lewat port, minim dependensi, pin & vendor, ADR |
-| Salah interpretasi regulasi | Non-compliance | Compliance owner, register ter-versi, verifikasi eksternal, UAT |
-| Regulasi berubah | Rework | Parameter/ pack effective-dated; modul rule data-driven |
-| Kesalahan perhitungan uang | Kerugian/ temuan audit | `Money` fixed-point, property + golden test, rekonsiliasi harian |
-| Day-close gagal di tengah | Operasional terhenti | Idempotent, chunk resume, simulasi, runbook |
-| Kebocoran data pribadi | Sanksi UU PDP | Enkripsi field, masking, audit akses, insiden runbook |
-| Over-engineering | Lambat | KISS gates; ADR wajib untuk tambah kompleksitas |
-| a11y/ i18n jadi beban belakangan | Rework besar | Dimasukkan DoD & CI sejak Fase 0 |
-| Single point of expertise | Bus factor | Dokumentasi, template, ADR, runbook |
-| Pengetahuan/ aturan valid di `cbs-core` hilang saat rewrite | Regresi | Inventaris Fase 0, golden test dari kasus `cbs-core`, shadow run bila ada data nyata |
-
----
-
-## 25. ADR Awal
-
-| ID | Keputusan | Alternatif | Status |
-|---|---|---|---|
-| ADR-001 | **Modular monolith** + schema per modul | Microservices | Diusulkan |
-| ADR-002 | HTTP server Nim dibungkus abstraksi; kandidat **Mummy**/Prologue | Jester, custom | Perlu benchmark |
-| ADR-003 | **Contract-first OpenAPI**; client TS digenerate | tRPC-style / gRPC | Diusulkan |
-| ADR-004 | **Postgres sebagai queue/ event/ scheduler** (outbox, SKIP LOCKED, LISTEN/NOTIFY) | Kafka/Redis/ RabbitMQ | Diusulkan (KISS) |
-| ADR-005 | **Single-tenant per deployment** (satu institusi per DB), multi-cabang didukung | Multi-tenant RLS dari awal | Diusulkan — lihat §26 |
-| ADR-006 | **Ledger immutable + saldo turunan**, reversal untuk koreksi | Mutable balance | Diusulkan |
-| ADR-007 | RLS untuk branch scoping | Filter di aplikasi saja | Perlu ukur performa |
-| ADR-008 | **Parameter DB-driven dengan enforcement bertingkat** (compile, lint, startup, governance) | Config file | Diusulkan (inti) |
-| ADR-009 | **Paraglide JS** untuk i18n | svelte-i18n, i18next | Diusulkan |
-| ADR-010 | Day-close sebagai framework DAG idempotent berbasis checkpoint per entitas | Cron script per modul | Diusulkan (inti) |
-| ADR-011 | Uang `NUMERIC(24,2)` + `Money` fixed-point Nim (D-136) | Float/ Decimal lib | Diputuskan |
-| ADR-012 | SPA `adapter-static` untuk back-office | SSR penuh | Diusulkan |
-| ADR-013 | Mesin PDF/ cetak (HTML→PDF, Typst, dsb.) | — | **Terbuka** — butuh spike |
-| ADR-014 | CI/CD = turunan pola **Skyward** (Actions verifikasi saja → webhook → `deploy-vps.sh`, binary native, health gate + auto-rollback, migrasi expand-only) | Pipeline baru (GHCR/registry, k8s) | Diusulkan (§21) |
-| ADR-015 | KRAN **menggantikan** `cbs-core` lewat cutover bertahap (referensi, bukan port kode; `cbs-core` hidup sampai UAT pilot lulus) | Big-bang; evolusi `cbs-core` (Go) | Diputuskan oleh pemilik |
-| ADR-016 | (kandidat, belum diangkat) `paramgen` sebagai alat kritis | — | Kandidat (lihat `docs/DECISIONS.md` D-014) |
-| ADR-017 | **Enkripsi field-level** (§18.2): envelope KEK→DEK turunan (`HMAC-SHA256`) + AES-256-GCM + blind index; KEK di berkas terpisah mode 600. Detail: `docs/adr/017-field-level-encryption.md` | DEK terbungkus di tabel DB; `pgcrypto`; HKDF penuh; envelope per-record | Diputuskan (desain — `HUMAN-REVIEW-REQUIRED` sebelum data nyata) |
-
-Format ADR: konteks → keputusan → konsekuensi → alternatif → status. Disimpan di `docs/adr/NNN-judul.md`.
-
-> **Catatan 2 Nov 2026.** Kolom **Status** di tabel ini adalah status **saat spec ditulis**, bukan
-> status hari ini; spec sengaja tidak ditulis ulang. Keputusan yang sudah diambil ada di
-> `docs/DECISIONS.md`: ADR-002 → **D-019** (Mummy + WebSocket), ADR-013 dipecah → **D-127**
-> (cetak lewat browser; mesin PDF server tetap terbuka sebagai ADR-013b), ADR-017 → **D-048**
-> (detail di `docs/adr/017-field-level-encryption.md`). Bila keduanya berbeda, `DECISIONS.md`
-> yang berlaku.
-
----
-
-## 26. Open Questions & Asumsi
-
-### 26.1 Asumsi yang saya pakai (silakan veto)
-1. **Single-tenant per deployment**; satu institusi punya banyak cabang. Multi-tenant SaaS = fase lanjut.
-2. **Start dari Koperasi** sebagai vertical slice pertama, bukan paralel ketiga segmen.
-3. **Back-office web saja** pada v1 (tanpa mobile/ internet banking).
-4. **Bahasa UI**: `id` (default) dan `en`.
-5. **Backend satu binary** multi-role (api/worker/migrate).
-6. **Cetak buku tabungan** dianggap kebutuhan nyata (dot-matrix/ printer buku), detail menyusul.
-7. Integrasi eksternal (Dukcapil, SLIK, PPATK goAML, BI-FAST) di fase akhir lewat adapter.
-8. KRAN **menggantikan** `cbs-core` (bukan berdampingan permanen): berjalan dengan nama transisi sampai cutover (§21.9), mengikuti pola Skyward; staging di VPS yang sama dari branch `staging` (§21.7).
-
-### 26.2 Pertanyaan terbuka
-1. Apakah **`cbs-core` berisi data/ pengguna nyata** yang harus dimigrasikan? Menentukan perlu-tidaknya ETL & shadow run (§21.9 tahap 3–4).
-2. Target institusi pertama: apakah ada **calon pengguna/ pilot** (koperasi/ BPR tertentu) yang bisa jadi acuan alur nyata?
-3. Apakah ada akses ke **compliance officer/ konsultan** untuk memvalidasi register §4?
-4. Volume target (jumlah anggota/ rekening/ transaksi per hari) untuk menetapkan budget performa.
-5. Kebutuhan **hosting**: on-premise di institusi vs server pusat Anda (berpengaruh ke data residency, DR, multi-tenant).
-
----
-
-## 27. Lampiran
-
-### A. Konvensi Penamaan
-- Modul: `snake_case` singkat (`deposit`). Schema DB = nama modul.
-- Parameter key: `modul.kategori.nama` (huruf kecil, titik).
-- Event: `PascalCase` lampau (`LoanDisbursed`), versi `v1`.
-- i18n key: `modul.area.elemen.aksi` (mis. `deposit.account.open.submit`).
-- Permission: `modul.resource.action` (mis. `deposit.account.create`).
-- Kode error: `MODUL-NNNN` (mis. `DEP-1001`).
-
-### B. Template `MODULE.md`
-```
-# <modul>
-## Tujuan & Bounded Context
-## Aggregate & Aturan Bisnis Utama
-## Public API (api.nim)
-## Event dipublish / dikonsumsi (versi)
-## Parameter key (+ sensitivitas, regulatory_refs)
-## Tabel & schema
-## Task day-close yang didaftarkan
-## Permission
-## Namespace i18n
-## Requirement regulasi terkait (REG-xxx → test)
-## Keputusan & trade-off (link ADR)
-```
-
-### C. Checklist Review PR
-- [ ] Batas arsitektur terjaga (archcheck hijau)
-- [ ] Tidak ada magic number bisnis; param baru terdaftar + seed + schema
-- [ ] Uang hanya lewat `Money`; tidak ada float
-- [ ] Use case atomik; event lewat outbox
-- [ ] OpenAPI diperbarui; contract test lulus
-- [ ] i18n id+en lengkap; tidak ada string hardcode
-- [ ] a11y: keyboard, fokus, label, kontras 2 tema, axe hijau
-- [ ] Test (unit/ property/ integration) + requirement regulasi ter-tag
-- [ ] Audit & permission tepat; data sensitif ter-mask/ terenkripsi
-- [ ] Migrasi aman (expand/contract), dokumentasi & MODULE.md diperbarui
-
-### D. Glosarium Singkat
-**KRAN** Core Banking System · **CIF** Customer Information File · **KYC/CDD/EDD** Know Your Customer / Customer & Enhanced Due Diligence · **APU-PPT** Anti Pencucian Uang & Pencegahan Pendanaan Terorisme · **DTTOT** Daftar Terduga Teroris dan Organisasi Teroris · **PEP** Politically Exposed Person · **CTR/STR** Cash/ Suspicious Transaction Report · **DPD** Days Past Due · **PPAP/CKPN** Penyisihan Penghapusan Aset Produktif / Cadangan Kerugian Penurunan Nilai · **KPMM** Kewajiban Penyediaan Modal Minimum · **BMPK/BMPP** Batas Maksimum Pemberian Kredit/ Pinjaman · **SHU** Sisa Hasil Usaha · **RAT** Rapat Anggota Tahunan · **KSP/USP/KSPPS/USPPS** Koperasi Simpan Pinjam / Unit Simpan Pinjam / (Pembiayaan) Syariah · **DPS** Dewan Pengawas Syariah · **DSN-MUI** Dewan Syariah Nasional MUI · **EOD/EOM/EOQ/EOY** End of Day/Month/Quarter/Year · **ADR** Architecture Decision Record.
-
-### E. Contoh Posting Rule (data, bukan kode)
-```yaml
-- event: DepositPosted
-  when: { product_type: SAVINGS_COOP_VOLUNTARY }
-  entries:
-    - { side: DEBIT,  gl: CASH_ON_HAND,           amount: "$amount" }
-    - { side: CREDIT, gl: SAVINGS_VOLUNTARY_LIAB, amount: "$amount" }
-- event: LoanDisbursed
-  when: { product_type: LOAN_COOP_STANDARD }
-  entries:
-    - { side: DEBIT,  gl: LOAN_RECEIVABLE,        amount: "$principal" }
-    - { side: CREDIT, gl: CASH_ON_HAND,           amount: "$net_disbursed" }
-    - { side: CREDIT, gl: FEE_INCOME_PROVISION,   amount: "$provision_fee" }
-```
-(`gl` adalah kode logis → dipetakan ke COA konkret oleh parameter/ pack.)
-
----
-*Akhir dokumen. Versi 0.1 — langkah berikutnya: pastikan status data `cbs-core` (§26.2), validasi §4 oleh compliance owner, lalu finalisasi ADR Fase 0.*
+| 1 | Summary and goals | 1 | 1.1, 1.2, 1.6 |
+| 2 | Scope | 1 | 1.4, 1.5 |
+| 3 | Personas and segment needs | 1 | 1.3 |
+| 4 | Regulatory compliance analysis | 8 | 8.1 to 8.6 |
+| 5 | Architecture principles | 3 | 3.1 to 3.9, 2.1, 2.7 |
+| 6 | System architecture | 2 | 2.1 |
+| 7 | Monorepo structure | 2 | 2.1, 2.2 |
+| 8 | Modules and bounded contexts | 2 | 2.2, 2.3 |
+| 9 | Data foundation (PostgreSQL) | 2 | 3.1 (money), 2.6 (schema), 7.3 (migration rules) |
+| 10 | Parameter framework | 4 | 4.1 to 4.8 |
+| 11 | Day-close framework | 3 | 3.7, 7.6 |
+| 12 | Backend specification (Nim) | 3 | 3.1 to 3.9 |
+| 13 | API design | 5 | 5.4, 5.5 |
+| 14 | Frontend specification | 6 | 6.1 to 6.7 |
+| 15 | Theming (dark and light) | 6 | 6.1, 6.5 |
+| 16 | Internationalization | 6 | 6.4 |
+| 17 | Accessibility | 6 | 6.5 |
+| 18 | Security and data protection | 5 | 5.1 to 5.9 |
+| 19 | Reactive architecture | 3 | 3.6 (backend), 6.3 (frontend) |
+| 20 | Testing strategy | 3 | 3.10 |
+| 21 | CI and CD | 7 | 7.1, 7.2, 7.3 |
+| 22 | Observability and operations | 7 | 7.4, 7.5, 7.6, 7.7 |
+| 23 | Roadmap and milestones | 9 | 9.1, pointer only; no phase table |
+| 24 | Risks | 9 | 5.9, 8.2, `docs/ACCEPTED-LIMITS.md` |
+| 25 | Initial ADRs | 9 | 9.2 |
+| 26 | Open questions and assumptions | 9 | 9.3, 1.8 |
+| 27 | Appendix: module document template | 9 | 2.7, 9.4 |
+
+Resolution rule: a comment that cites `spec §N` means the new section shown here. A sub-number such
+as `§9.1(2)` resolves to the subsection in the row that covers its subject, so `§9.1` money goes to
+3.1 while `§9.1(11)` migrations goes to 7.3. Where a row names several subsections, the citation
+subject decides: `§13` auth and error references go to 5.4 and 5.5, `§21` migration references to
+7.3, `§22` silent-deployment references to 7.5. The docs gate (`docs-check`, DOC-05) requires every
+old number 1 to 27 to appear exactly once and rejects a citation outside the range.

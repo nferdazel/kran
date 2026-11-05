@@ -1,254 +1,91 @@
-# Batas yang diterima — Fase 0–4
+# ACCEPTED LIMITS
 
-Dokumen ini adalah **register keputusan**, bukan daftar keinginan. Aturannya satu: setiap batas harus
-punya (a) dampak nyata, (b) cara mendeteksinya, dan (c) pemilik — fase atau task yang menanganinya.
-Kalau salah satu tidak ada, itu bukan batas yang diterima melainkan pekerjaan yang terlupa.
+Register of things this product deliberately does not do. A row exists only if it has (a) a real
+impact, (b) a way to detect that the impact has become a problem, (c) an owner and (d) the decision
+that accepts it. A row without detection is forgotten work, not an accepted limit.
 
-Alasan dokumen ini ada: "Fase 0 tanpa cela" bukan sesuatu yang bisa dibuktikan siapa pun. Yang bisa
-dibuktikan adalah **tidak ada celah yang diketahui pada jalur yang diperiksa**, dan setiap hal yang
-belum ditangani tercatat beserta cara melihatnya. Register ini adalah bagian kedua dari kalimat itu.
+The register is written against the replanned product (R-10, KSP MVP). Time deposits and
+interest-bearing savings are out of MVP scope (R-16); where existing code still implements them, the
+limit says so and names the phase that removes it. Nothing in this file is a claim that a limit is
+fixed.
 
-## 1. Batas yang memang milik fase lain (tidak dipaksakan masuk fase berjalan)
+Owner column: `owner` is the repo owner; `ops` is the person with server access (currently the same
+person); the other values are roles from the plan.
 
-| Batas | Dampak nyata | Cara mendeteksi | Pemilik |
-|---|---|---|---|
-| Metrics/observability belum ada (Prometheus-style: latensi, error rate, pool PG, antrean outbox, durasi task day-close) | Tidak ada pengukuran berkelanjutan; operator hanya punya log terstruktur | `/healthz`, `/readyz`, log JSON, dan kueri SQL manual | Fase 9 (spec §22, §23) |
-| ~~Freeze katalog produk sebelum T-086~~ **DITUTUP (T-086/D-099, 23 Okt 2026)**: maker-checker versi produk aktif, dan contract `product/0006` (T-090/D-119) mencabut jaring rollback lama | Sisa yang nyata: satu akun tidak bisa menyetujui produknya sendiri, jadi pilot wajib punya operator kedua (`product_checker`) | 409 `self_approval` saat akun yang sama mencoba approve | T-086, T-090, D-099, D-119 |
-| ~~Freeze gate day-close~~ **DITUTUP (T-134, 28 Okt 2026)**: `ctl daycloser-status` mengembalikan 0 hanya bila tidak ada run aktif dan business date bukan `CLOSING`; `deploy-vps.sh` memakai kode keluar itu | Sisa yang nyata: gerbang ini hanya **menahan** deploy, bukan menjadwalkan penutupan — jadwal harian dibahas di baris penjadwal (§3) | `ctl daycloser-status; echo $?` — 0 = boleh deploy | T-134, O-094 |
-| Frekuensi uji restore & latihan DR | Backup hanya terbukti bisa dipulihkan pada drill terakhir, bukan terus-menerus | **Drill pertama SELESAI (21 Okt 2026, O-007)**: restore dump harian ke DB latihan, hitungan cocok, rantai audit utuh. Jadwal bulanan ada di `docs/runbooks/restore-drill.md`; kepatuhan jadwal di luar repo | Di luar repo (akses server); O-007, `docs/runbooks/restore-drill.md` |
-| Target performa (spec §1.4: EOD 100k rekening + 50k pinjaman < 30 menit) | **TERUKUR, belum di VPS (T-140 + T-172, 2 Nov 2026)**: 100k rekening **dan** 50k pinjaman selesai satu EOD **245,0 detik** `COMPLETED` di MacBook lokal (Postgres 18, `tools/bench-eod`), jauh di bawah 30 menit — tetapi hardware-nya bukan VPS entry-level, jadi angka ini batas atas optimistis | `./task bench-eod --accounts N [--loans M]`; rincian per komponen di `docs/milestones/M4-report.md` §5 | T-140, T-172, Fase 9 |
-| Multi-instance / HA | Satu proses = satu titik gagal | arsitektur: satu biner, satu pool, satu pump | Fase 9 (cutover §23) |
-| MFA belum **diaktifkan** (kerangka ada) & SoD baru sebatas pasangan tersemai | Kontrol akses harian = kata sandi + RBAC + audit; faktor kedua belum diminta saat login (`mfa.enabled = false`) dan pemisahan tugas hanya efektif bila akun per peran benar-benar dipakai, bukan satu `platform_admin` | `platform.param_value` (`mfa.enabled`), `platform.user_role` (berapa akun memegang `platform_admin`), `platform.role_conflict` (pasangan SoD) | O-015/O-071 (aktivasi MFA), D-113/D-131 (SoD), O-102 |
+---
 
-## 2. Batas teknis yang diterima setelah batch "Fase 0 tahan banting"
+## 1. Product and compliance limits
 
-| Batas | Dampak nyata | Cara mendeteksi | Pemilik |
-|---|---|---|---|
-| Build API belum reproducible: `nimble install -d` tanpa lockfile mengambil versi dependensi saat build | Dua build dari commit yang sama bisa memakai versi pustaka berbeda, jadi biner tidak identik | bandingkan sha256 biner gate di `$APP_DIR/releases.txt` antar-build untuk rev yang sama | T-131 (OPS-8); perlu `kran.lock`/vendor |
-| Delivery webhook bisa diputar ulang (HMAC GitHub menutup body, bukan waktu kirim) | Deploy ulang tidak disengaja; tanpa penjaga, tiap replay membangun + restart layanan | penjaga rev sama di `deploy-vps.sh` (`skip: rev … sudah ter-deploy`); `KRAN_FORCE_DEPLOY=1` hanya untuk deploy ulang yang disengaja | T-131 (OPS-10) |
-| Tidak ada tag image per commit (hanya `:local`/`:prev`) | Artefak per rilis tidak disimpan; hanya satu versi sebelumnya tersedia untuk rollback | `podman images localhost/kran-api`; manifest `$APP_DIR/releases.txt` mencatat rev + image ID + sha256 biner | T-131 (OPS-2/OPS-8), kontrak emas §3.4 |
-| Rollback layanan tidak mengembalikan skema | Binary lama berjalan di atas skema yang sudah maju; contract yang terlanjur jalan tidak bisa dibatalkan oleh `rollback.sh` (hanya image yang kembali) | `--role=migrate --check` setelah rollback; bandingkan `platform.schema_migration` dengan commit yang di-deploy | T-035/T-040, T-090, D-119 |
-| Migrasi **contract** sudah jalan di produksi (`product/0006`, 23 Okt 2026), tetapi **`--down`** belum pernah dilatih pada data nyata | Rollback skema belum pernah diuji di server; pasangan `.down.sql` belum ada untuk migrasi nyata | `--role=migrate --check` setelah rollback; `SELECT filename FROM platform.schema_migration` untuk melihat contract yang terpasang; latihan `--down` = T-013 | T-035, D-040 |
-| Job CI `traceability` belum ada | Matriks requirement ↔ kontrol/test tidak dihasilkan otomatis; ketertelusuran masih manual di `docs/spec` + `docs/compliance` | job `db-tests` **sudah ada** (`postgres:18`, migrasi + `./task test`); `traceability` belum — lihat `docs/ci-jobs.md` | O-027 |
-| Antrean kirim realtime per koneksi tidak dibatasi | Klien lambat menambah pemakaian memori proses | pantau RSS; peristiwa hilang ditutup resume token | O-028 |
-| Peristiwa outbox yang membuat `oldestUndeliveredSeconds` kehilangan kursor (baris kursor dihapus) diperlakukan "dari awal" | Usia lag bisa terbaca besar sesaat walau konsumen sebenarnya tidak tertinggal | baris outbox tidak pernah dihapus jalur produksi; reset kursor hanya di uji | T-041 |
-| Probe migrasi `/readyz` bergantung pada mount `modules/` di container (`--root=/monorepo`); bila mount hilang, probe melaporkan "akar migrasi tidak tersedia" dan **tetap 200** | Skema tidak terverifikasi walau health gate hijau | `checks[]` di `/readyz` memuat `migrations` dengan `detail` "akar migrasi tidak tersedia"; volume di `ops/systemd/kran-api.container` | T-041/O-019; T-067/D-066 |
-| SIGTERM: koneksi yang belum masuk handler tetap terpotong; soket realtime ditutup oleh keluarnya proses | Permintaan yang belum masuk handler bisa gagal saat deploy; klien WS menyambung ulang | log `permintaan berjalan selesai (drain)` / `N permintaan masih berjalan` | T-032, T-042 (diterima; `close()` tidak dipanggil jalur produksi — teardown in-process butuh server dibangun+disajikan di thread yang sama, lihat O-025) |
-| **Proses API bisa mati oleh SIGSEGV di allocator** (3 Nov 2026, CI `2bec65e`, job `web-e2e`): `mummy afterRecvHttp` → `newString` potongan baris permintaan (`system/indices.nim`) → `alloc.nim` `rawAlloc`/`compensateCounters` → "Attempt to read from nil?"; setelah itu 60+ test e2e gagal dengan `ECONNREFUSED 127.0.0.1:8099`; rerun commit yang sama hijau | Satu run gate bisa merah **tanpa** regresi fitur, dan pesan gagalnya menyesatkan (terlihat seperti 60 bug, padahal satu proses mati). Bukan kehabisan memori: RSS API 15–17 MB setelah 1,16 juta permintaan pada dua pola beban, dan Nim melaporkan OOM sebagai `out of memory` + exit 1, bukan SIGSEGV di jalur free-list. Mekanismenya sekelas temuan T-042/O-025 yang sudah deterministik: Mummy 0.4.8 mengalokasikan `Server`/`Request` dengan `allocShared0`, tetapi nilai yang dikelola ORC (closure handler, `uri`/`path`/`headers`/`body` permintaan) dibuat di **thread loop** dan dihancurkan di **thread worker** (`runTask` → `=destroy(task.request[])`); ORC menyimpan pembukuan siklus per-thread dan free-list lintas-thread `compensateCounters` yang jadi korban | traceback `Illegal storage access` dari `kran-api` di `.build/e2e.log`; langkah CI "Klasifikasi kegagalan e2e (crash API vs assertion)" menandainya `::error::` sehingga kejadian berikutnya tidak lagi terbaca sebagai 60 kegagalan; `apps/api/tests/tapi_limits.nim` menjaga batas parser | T-044; perbaikan akar menuntut keputusan hulu (Mummy/Nim) — **belum** ada ADR, jadi diterima dulu |
-| Batas parser API dipin **eksplisit** di kode (8 KiB header / 1 MiB badan / 64 KiB pesan WS), bukan mewarisi bawaan Mummy | Nilai tidak berubah diam-diam saat versi Mummy naik (kelas risiko D-037). Permintaan melebihi batas ditutup parser sebelum handler dipanggil — klien melihat koneksi terputus, **bukan** 413/502 | `apps/api/tests/tapi_limits.nim` (mutasi `apiMaxBodyLen` 1 MiB→4 MiB dan `apiMaxHeadersLen` 8 KiB→16 KiB: test **FAILED**); log `Dropped connection, body too long`. Batas pesan WS (64 KiB) dipin di konstanta tetapi belum diuji perilakunya (butuh klien WS) | T-044 |
-| Tidak ada batas waktu HTTP keep-alive/idle di Mummy 0.4.8 | Klien yang membuka koneksi lalu diam menahan satu soket + buffer terima 4 KiB tanpa batas selama proses hidup (hanya soket WS punya tenggang close-frame 10 s) | bandingkan koneksi `ESTABLISHED` ke port API dengan jumlah klien nyata; tidak ada knob di sisi kita — Mummy tidak mengeksposnya | T-044; di produksi sebagian tertutup Caddy di depan API, di e2e tidak ada proksi |
-| Jendela staleness izin realtime | Setelah izin dicabut, data masih bisa terkirim sampai satu interval pemeriksaan berakhir | konstanta `sessionRecheckSeconds` di `apps/api/src/events.nim` (`defaultSessionRecheckSeconds = 5`, D-030; 0 = setiap putaran pump) — **bukan** parameter DB, jadi mengubahnya = ubah kode | T-030 |
-| Validasi koneksi pool menambah satu perjalanan bolak-balik per peminjaman dari idle | Latensi per permintaan naik sedikit | `KRAN_DB_VALIDATE_ON_ACQUIRE` (matikan = koneksi mati di server tidak diganti otomatis) | T-033 |
-| Deadline DB berlaku per **blok kerja** (default 20 s), bukan per kueri: blok `withTx` dengan banyak statement yang totalnya melebihi anggaran akan gagal (server me-ROLLBACK) | Use case panjang (rekap/import) harus muat dalam anggaran atau menaikkan `KRAN_DB_QUERY_DEADLINE_MS` | `PoolError` "blok kerja DB melewati batas …"; log galat menyebut batas | T-065, D-065 |
-| Jalur `pool.acquire()` langsung (pump `LISTEN` yang hidup selama proses) tidak memakai deadline blok | Bila perantara membeku saat pump menunggu, pump bisa menggantung sampai keepalive | pump tidak mengirim heartbeat; `pumpLastReadyNs` tidak maju, readiness realtime melaporkan degraded | T-065; pump T-029 (desain koneksi panjang) |
-| Batas DB memakai satu koneksi dari pool setiap kali terpicu (dibuat ulang saat dibutuhkan) | Sesaat setelah kejadian, kapasitas pool berkurang satu | `statsOf().created` turun; koneksi baru dibuat pada peminjaman berikutnya | T-065 |
-| Biaya KDF tiruan mengikuti parameter iterasi **saat ini** | Akun lama dengan jumlah iterasi berbeda tidak setara biayanya | bandingkan waktu respons login akun tak dikenal vs akun wajar | T-028 |
-| ~~Percobaan kata sandi lama di `/auth/password` belum dibatasi/diaudit~~ **DITUTUP (T-051/D-057, 21 Okt 2026)**: penghitung gagal yang sama dengan login + audit `user.password_change.failure` (tanpa bahan kata sandi) | Sesi yang sedang berjalan tidak dicabut setelah kata sandi berubah (disengaja, D-057 butir 4) | audit `user.password_change.failure`; akun terkunci → login 403 `locked` | D-057 |
-| PB lintas cabang diatribusikan hanya ke cabang sumber (audit, jurnal, event) | Kedua baris D/K 201 ber-`branch_id` sumber, jadi GL 201 cabang tujuan tidak mencerminkan kredit sementara subledger rekening naik: neraca cabang vs subledger menyimpang sebesar nominal PB | query `deposit.transfer` per `branch_id` kedua akun dibandingkan `journal_line` 201 per cabang; belum ada laporan GL per cabang | Fase 3; T-101 menutup rekonsiliasi cache, bukan GL per pemilik (D-124) |
-| Cache saldo `deposit.account_balance` bisa menyimpang dari baris mutasi (kas + PB) | Saldo teller dari cache; restore parsial atau bug tulis membuat saldo tidak cocok dengan baris sumber. Perbandingan terhadap GL per rekening **tidak mungkin** selama liabilitas dipool di akun `201` (PB net-nol) | **DITUTUP SEBAGIAN (T-101, 24 Okt 2026)**: `ctl reconcile-deposits [--branch]` membandingkan cache dengan `deposit.transaction` + `deposit.transfer` (exit 1 bila ada selisih, termasuk cache hilang). Belum dijadwalkan otomatis. Pembalik jurnal subledger kini **ditolak** 409 `journal_owned_by_subledger` (T-123/D-135), jadi selisih tidak bisa lagi lahir dari koreksi lewat buku besar | Operasional: jalankan `ctl reconcile-deposits` berkala (timer di luar repo); belum ada task backlog untuk penjadwalannya |
-| Jurnal pemindahbukuan (PB, `DepositTransferred`) **net-nol di GL**: kedua sisinya akun `201` yang sama | Buku besar tidak membedakan pemilik rekening; `journal_line` saja tidak cukup merekonstruksi saldo per rekening dari PB, dan GL per pemilik anggota belum ada | perpindahan per rekening ada di `deposit.transfer` (sumber & tujuan); bandingkan saldo `deposit.account`/`account_balance` dengan `deposit.transfer` + jurnal 201 | Fase 3; `modules/deposit/MODULE.md` |
-| Hanya pengenal cabang berbentuk **uuid** yang bisa diatribusi ke `platform.audit_log.branch_id` | Entri audit untuk cabang ber-id teks (id warisan/seeder) tetap `branch_id` NULL, jadi pemisahan audit per cabang tidak berlaku untuknya; pengenalnya tetap utuh di `resource_id`/payload | `SELECT branch_id FROM platform.audit_log WHERE action = 'param.submit' AND resource_id = ...` → NULL; diuji eksplisit di `itapi_auth` (suite scoping cabang, test pengenal non-uuid) | O-017; T-058, D-062 |
-| ~~Topik realtime `param.changed` hanya dibuka untuk grant **tanpa** batas cabang~~ **DITUTUP (O-070/T-154, 31 Okt 2026, D-173)**: gerbang topik memakai `authorizedAnyBranch` (izin dipegang di minimal satu cabang) dan penyaringan dilakukan `EventScope` per langganan (dihitung sekali per `subscribe`, dipakai juga saat replay) — cabang yang tidak dipegang pelanggan tidak menerima peristiwa `BRANCH`, cakupan kosong = gagal-tertutup | Sisa: cakupan hanya dihitung ulang pada `subscribe` berikutnya, jadi perubahan grant tidak langsung menyusutkan langganan yang sudah terbuka | `trealtime` (default gagal-tertutup), `itapi_ws` (dua klien beda cabang), `itapi_auth` | O-070; T-154, D-173 |
-| Penerus yang ditolak **setelah** nilai ber-`effective_to` disetujui meninggalkan celah (tidak ada nilai berlaku setelah tanggal itu) | Aplikasi gagal-cepat saat startup (`missingActiveKeys`); pemulihannya dengan mengajukan + menyetujui penerus baru | pemeriksaan ulang saat persetujuan menutup kasus penerus hilang **sebelum** persetujuan (`itapi_auth`: 409); celah yang lolos tetap terdeteksi startup check O-057 | D-056; O-043/O-065 |
-| Regulasi spec §4 bertanda `V?`/`V!` belum terverifikasi | Pasal/angka bisa berubah; yang bergantung padanya belum final | penanda `NEEDS-COMPLIANCE-REVIEW` di kode/seed/docs | O-001 |
-| Kontrak-fuzzing (`schemathesis`) belum ada (O-026, ditunda D-176 dengan pemicu) | Cakupan uji kontrak lebih sempit daripada rencana spec: validator sendiri hanya mengenal subset JSON Schema (12 kata kunci) | lihat daftar uji; parity kontrak diuji lewat `tcontract`/`itapi`; angkat kembali bila endpoint/klien baru tidak lagi terwakili validator internal | O-026, D-176 |
-| ~~Lint statis generik (ESLint) belum ada~~ **DITUTUP (1 Nov 2026, T-057/D-139)**: `eslint.config.js` (typescript-eslint + aturan `svelte/*` non-a11y) berjalan lewat `./task lint-web`, dan target itu bagian dari `./task ci` (`lint-web` dipanggil di `cmd_ci`) | Sisa: aturan a11y tetap milik `svelte-check --fail-on-warnings`, bukan ESLint (pembagian D-053) | `./task lint-web` keluar 0; `task` baris `lint-web) cmd_lint_web` | O-023, T-057, D-139 |
-| Tag image lama yang masih direferensikan container berhenti tidak bisa dihapus `podman rmi` | Tag itu tetap ada sampai container berhenti dibersihkan; pertumbuhan disk tertahan, bukan nol | baris `WARN: gagal menghapus …` di `deploy.log`; `podman ps -a` | T-069 |
-| ~~`KRAN_KEK_FILE` belum di-mount ke container~~ **DITUTUP (24 Okt 2026)**: produksi me-mount berkas KEK mode 600 (`/run/secrets/kran-kek.key`) untuk `kran-api` dan `kran-worker`; env dan mount didokumentasikan di `ops/systemd/*.container` + `ops/env/kran-prod.env.example` | Sisa: rotasi KEK masih dilarang sampai `ctl reindex-blind-index` ada (D-111) | `podman inspect kran-api --format '{{range .Mounts}}{{.Destination}} {{end}}'` memuat berkas KEK | D-066, D-111, O-071 |
-| ~~Kas teller/vault tanpa jurnal GL~~ **DITUTUP (T-118/D-132/D-134, 24 Okt 2026)**: buka/tutup sesi, selisih kas, top-up vault yang disetujui, dan saldo awal vault (`D 101.1 / K 203`, `ledger/0036`) kini berjurnal | Rekonsiliasi resmi memakai agregat: `teller.vault` = GL `101.1` + GL `101` (legasi 2.700.000, tidak bisa dipindah karena `101` non-postable dan ledger immutable). Yang tersisa hanya batas pemetaan: `101.1`/`101.2`/`101.9`/`203` adalah usulan pilot (`NEEDS-COMPLIANCE-REVIEW`, REG-011), bukan kutipan SAK EP/PSAK | bandingkan `teller.vault` dengan `101.1 + 101` per cabang saat tidak ada sesi OPEN; saldo `101.2`/`101.9` kembali nol setelah semua sesi tutup | T-118; O-097/O-105 (tertutup), REG-011 |
-| ~~Top-up vault tanpa batas nominal~~ **DITUTUP (D-133, 24 Okt 2026)**: plafon per pengajuan = parameter `teller.vault.limit_topup_per_request` (pilot Rp25.000.000); setor/tarik/opening float punya plafon sendiri | Angka plafon adalah kebijakan pilot (`NEEDS-COMPLIANCE-REVIEW`), bukan regulasi, dan belum mencakup akumulasi harian/plafon saldo vault | 409 `topup_exceeds_limit`/`cash_limit_exceeded`; nilai di `platform.param_value` | D-133; O-099 tertutup |
-| Vault harus dibuat lewat seed/runbook sebelum bisa diajukan top-up | Tanpa baris `teller.vault`, pengajuan → 404 `vault_not_configured` (tidak ada pembuatan baris lewat API); operasi awal menyentuh DB langsung | 404 `vault_not_configured` pada `POST /teller/vault/topups`; `SELECT balance FROM teller.vault` | T-107/T-118; `modules/teller/MODULE.md` §Operasional |
-| Rollback binary ke `:prev` setelah T-093b (tanpa gerbang sesi) meninggalkan jendela: transaksi tunai tidak menulis `cash_movement` sementara sesi masih `OPEN` | `expected_cash` saat tutup tidak memuat transaksi jendela rollback → variance rapor palsu | bandingkan `COUNT(teller.cash_movement)` dengan `COUNT(deposit.transaction)` per sesi/business date setelah rollback | T-093 (mitigasi: tutup semua sesi / rekonsiliasi manual sebelum rollback) |
-| `expected_cash` hanya benar bila **setiap** transaksi tunai menulis `teller.cash_movement` | Kalau gerbang sesi (093b) dilewati (mis. binary lama), arus laci tidak lengkap dan variance salah tanpa error | paritas `COUNT(teller.cash_movement)` vs `COUNT(deposit.transaction CASH_*)` per sesi; uji `itapi_teller` (gate) + `itsession` (movement) | T-093; `modules/teller/MODULE.md` |
+| ID | What is not done | Why accepted | How it is detected | Owner | Accepted by |
+|---|---|---|---|---|---|
+| L-01 | MFA is optional. There is no mandatory second factor, and an account without an `ACTIVE` factor still signs in fully, recorded as `mfa_enrolment_missing`. | R-19 and R-29: no recovery or administrative path exists, so enforcing would lock out every account that has not enrolled, including the first admin. | Count of `platform.user_mfa` rows with status `ACTIVE` against `platform.app_user`; audit `auth.login.success` with the missing-enrolment marker. | owner | R-19, R-29, D-063, D-200 |
+| L-02 | MFA compensating controls are procedural, not technical: named accounts per role, daily audit review, no remote administration without network-level MFA, break-glass book and next-day report. | R-29 asks for named compensating controls instead of a false claim of mandatory MFA. | Account roster against `platform.user_role`; break-glass book entries; audit review sign-off; break-glass use count above three per month. | owner | R-29, D-131, D-134 |
+| L-03 | The audit chain anchor stays on the host. There is no automated off-host anchoring; a manual daily head-hash copy plus written disclosure is the minimum. | R-20 and R-26: the automated surface was not costed, and the manual copy closes the disclosure requirement. | Anchor file exists for each business day; `ctl verify-audit` plus a head match; the backup script copies the anchor directory. There is no remote target. | owner | R-26, D-108, D-198 |
+| L-04 | Backups are single-host and not encrypted. There is no off-host copy and no point-in-time recovery, only daily, weekly and monthly dumps on the same host. | D-198 accepts O-124 as a residual pilot risk; the remote and credentials do not exist. | `ls -l` on the dump directory; absence of an `offsite:` remote; the monthly restore drill proves only that a local dump can be restored. | owner, ops | D-198, R-26 |
+| L-05 | Health ratios, DPK and branch P&L reports are not built. | R-28 limits the MVP report pack to the RAT set; these reports need data and definitions that are not in the MVP. | The report route list contains nine RAT keys and none of the deferred keys; the gap is named in `ROADMAP.md`. | product | R-28 |
+| L-06 | Non-member savings are out of scope. Only members hold savings; there is no non-member saver path. | DD-07: KSP practice, and keeping the member aggregate mandatory closes the CIF-versus-member split. The bylaw detail is `NEEDS-COMPLIANCE-REVIEW`. | Account opening requires a member; no non-member party type or route exists. | product | DD-07, R-15 |
+| L-07 | Time deposits are not offered in the MVP. The existing `TIME_DEPOSIT` code, catalogue entries and claims are removed in P4. | R-16: the product is out of scope, and keeping a half-reachable stack invites false claims. | Catalogue and route inventory in P4; the P4 exit criterion requires removal, not hiding. | product | R-16, D-152 |
+| L-08 | Savings do not earn interest. The return is SHU-based. | R-16. | No interest posting rule applies to savings accounts; SHU is the only return path. | product | R-16 |
+| L-09 | SHU distribution is not automated. Calculation is automated; posting is a checker-approved manual journal with a mandatory RAT decision record. | R-27: distribution changes real money a few times a year and needs a recorded decision, not a batch. | RAT decision record exists; the distribution journal has a checker; no distribution task is registered. | finance | R-27 |
+| L-10 | Member dues (`iuran`) are not enforced: no amount, cadence, arrears or exit refund. | R-15 requires the membership aggregate, but there is no national tariff; dues belong to AD/ART and RAT. | No obligation rows for dues; O-100 is still open; the parameter catalogue has no dues amount. | accounting | R-15, O-100 |
+| L-11 | Printed output is browser print only: no server PDF, no stored PDF, no signature, no archive, no institution letterhead. Exact slip fields remain `NEEDS-COMPLIANCE-REVIEW`. | D-127 chose browser print to unblock Fase 2; a PDF engine needs an ADR and a letterhead needs an institution master. | Print routes call the browser; no PDF storage or hash exists; the statement has no running balance. | product | R-22, D-127 |
 
-## 3. Yang **tidak** diklaim
+---
 
-- **Bukan "tanpa bug".** Yang dibuktikan: gate hijau berulang, dan setiap perbaikan penting punya uji
-  yang **gagal** bila perbaikannya dibalik (lihat §4). Itu batas bukti yang jujur.
-- **Stabilitas belum diuji pada beban produksi.** Gate ini menjalankan permintaan serial/rendah;
-  uji paralel yang ada (8 thread pada pool kecil, 8 klien realtime) membuktikan kebenaran, bukan
-  kapasitas.
-- **Rollback belum pernah dilatih di server.** Deploy sudah berjalan berulang di produksi
-  (`deploy.log`, 19 Okt 2026); jalur auto-rollback dan `ops/scripts/rollback.sh` baru dibuktikan
-  lewat harness (T-068), belum pada layanan nyata. Rehearsal-nya pekerjaan tersendiri (T-013).
-- **Gate hijau bukan jaminan bebas flake.** Dua kejadian yang **belum dijelaskan**, dicatat apa adanya di
-  `docs/tasks/T-031.md`: (a) e2e login menggantung — 15 Okt (4 test, 7,5 menit) dan **berulang** 16 Okt
-  (1 test, 9,2 menit), log API bersih; (b) 2 dari 200 iterasi stress pool melempar pengecualian, lalu
-  gate ulang gagal karena **tunnel DB dev mati** (`Connection refused`; tunnel hidup lagi setelah dibuka
-  ulang). Yang dikerjakan: uji stress pool kini mencetak nama+pesan galatnya (tanpa melunakkan hitungan
-  yang diuji), bukan menaikkan batas tunggu atau melewatinya.
-- **Gate lokal lewat tunnel sensitif latensi; gate yang otoritatif adalah CI.** 17 Okt 2026 (saat
-  mengerjakan O-043): `./task test` gagal di `itpool` dan `./task e2e` gagal 2 spec, sementara CI hijau
-  pada commit yang berjalan. Terukur saat itu: RTT ke VPS ~150 ms dan tiap pemanggilan `psql` lewat
-  tunnel ~0,8 s (10 pemanggilan ≈ 8,0 s) — sedangkan `itpool` menunggu koneksi maksimum 15 s dengan
-  8 thread / poolSize 3, dan Playwright menunggu 10–30 s. **Kontrol yang dijalankan**: perubahan O-043
-  di-`git stash`, lalu pada pohon bersih `itpool` **gagal dengan pola sama** dan `e2e` malah **lebih
-  buruk** (4 gagal vs 2) → bukan regresi kode. Karena itu bukti gate penuh diambil dari CI: job
-  `db-tests` dan `web-e2e` memakai Postgres/browser di runner sendiri, bukan tunnel.
-- **Test yang dijalankan di luar gate penuh bisa gagal tanpa ada yang salah pada kode.** Dua contoh nyata
-  (16 Okt, saat mengerjakan T-035): `itapi_roles` butuh nilai parameter yang disemai `itapi_auth` yang
-  berjalan lebih dulu; dan `./task e2e` sendirian menumpuk jejak audit sehingga locator `exact` kena
-  *strict mode* — dalam gate, `itplatform` menjatuhkan schema `platform` lebih dulu sehingga e2e mulai
-  bersih. Jadi sebelum menyebut sesuatu "flake kode": periksa dulu apakah keadaannya disiapkan fase lain.
+## 2. Security and data limits
 
-## 4. Bukti historis (tanggal eksplisit; angka terkini ada di `docs/PROGRESS.md`)
+| ID | What is not done | Why accepted | How it is detected | Owner | Accepted by |
+|---|---|---|---|---|---|
+| L-12 | There is no Nim lockfile. Dependencies are pinned to exact versions in `kran.nimble`, but the git revision of a dependency is not locked. | O-059 records that `nimble lock` broke the build with the local `nimbledeps` layout; exact pins were the working compromise. | Compare the binary sha256 in `releases.txt` for two builds of the same revision; a difference means the resolution drifted. | backend | D-003, O-059 |
+| L-13 | A whole-tail rewrite of the audit chain is not detectable from the host alone. A branched chain is detected, but a complete rewrite that recomputes every hash is only caught by the anchor. | D-006 and D-060: the chain is computed in the database, and the off-host proof is R-26. | `ctl verify-audit` plus a head match against the manual anchor copy; a mismatch means the tail changed. | ops | R-20, D-060, D-061 |
+| L-14 | Audited writes are serialised by an advisory lock held to commit. Throughput has a ceiling. | D-006: serialising the chain is the price of a stable hash order. | `pg_locks` shows advisory waits; audited write latency rises with concurrency. | schema | D-006 |
+| L-15 | `platform.idempotency_key.response_body` may contain PII until the row expires. There is no masking or column encryption. | D-118 accepts it for the pilot; D-175 bounds retention by TTL and a sweep. | `SELECT max(expires_at)`; sweep task status in `daycloser.run_task`; a stopped sweep means retention is not maintained. | backend | D-118, D-175 |
+| L-16 | MFA challenge attempts are not throttled, there are no recovery codes, and an `ACTIVE` factor cannot be removed or replaced through the API. | O-071: the framework was delivered without the recovery path; enforcing before recovery would lock accounts. | No attempt counter exists for the challenge; an `ACTIVE` factor can only be changed by direct database work. | security | R-29, D-063, O-071 |
+| L-17 | `X-Forwarded-For` is trusted only from loopback. A trusted-proxy list is not implemented. | D-142: the API and Caddy run on one host, and trusting the header from anyone would let clients forge audit IPs. | If the API moves to a separate host, every audit IP equals the proxy address. | ops | D-142 |
+| L-18 | Content Security Policy still allows `style-src 'unsafe-inline'`, because Svelte injects styles at runtime. | D-045: script injection is the material risk; hashing runtime styles was not worth the breakage. | Inspect the `meta` policy in the built page; `style-src` contains `unsafe-inline`. | frontend | D-045 |
+| L-19 | Mummy 0.4.8 exposes no HTTP keep-alive or idle timeout. A client can hold a socket and a 4 KiB receive buffer for the process lifetime. | D-037 bounds the version; the framework offers no knob. | Compare `ESTABLISHED` connections to the API with the number of real clients. | backend | D-037 |
+| L-20 | API parser limits are pinned in code (8 KiB headers, 1 MiB body, 64 KiB WebSocket message), not inherited or configurable. An oversized request is dropped before the handler and the client sees a closed connection, not 413. | D-037 and T-044 pin the values so a Mummy upgrade cannot change them silently. | `apps/api/tests/tapi_limits.nim` fails when a limit is changed; the log records `Dropped connection, body too long`. | backend | D-037, D-044 |
+| L-21 | Non-UUID branch identifiers cannot be attributed to `platform.audit_log.branch_id`; those audit rows carry no branch. | D-062 and O-017: forcing a cast would turn a valid request into a 500, and the identifier stays in `resource_id`. | Query audit rows for a known non-UUID branch id; `branch_id` is NULL. | schema | D-062, D-103 |
+| L-22 | The runtime database role has grants for existing tables; a new table does not inherit them. Revocation and grant remain a migration step. | D-110 and O-126: default privileges cannot exclude a table, and the failure has occurred twice. | `has_table_privilege` over every table for `kran_runtime`; a missing grant surfaces as a permission error during a close or first write. | schema | D-110, O-126 |
 
-- `./task ci-repeat 3` (gate kestabilan, T-031): hijau **3 putaran berturut-turut** atas tree final
-  T-037 — 464 `[OK]` per putaran (1392 total) dan 23 uji e2e per putaran. Satu flake e2e sebelumnya
-  (4 test login menggantung; tidak berulang) tercatat jujur di `docs/tasks/T-031.md`.
-- Tujuh perbaikan terbukti **diskriminatif** lewat mutasi (uji gagal saat perbaikan dibalik):
-  1. T-028 — hash tiruan PBKDF2 dimatikan;
-  2. T-029 — penyambungan ulang pump dihapus;
-  3. T-029 — titik mulai (`lastEventId`) di-reset saat menyambung ulang;
-  4. T-030 — penutupan langganan saat izin dicabut dihapus;
-  5. T-032 — drain dimatikan;
-  6. T-033 — validasi nyata koneksi pool dimatikan;
-  7. T-065 — batas blok kerja DB dinaikkan 700 ms → 3000 ms (uji gagal: `elapsed 3,03 s`).
-- Uji yang **bukan** bermutasi dinyatakan apa adanya di task-nya sendiri (T-033 paralel pool,
-  T-034 penjaga regresi Mummy).
+---
 
-## 4a. Simpanan koperasi (T-111) — batas yang disengaja
+## 3. Operations limits
 
-- `product.savings_kind` hanya **klasifikasi** produk/rekening. Aturan iuran pokok/wajib (nominal
-  tetap, sekali/periodik, auto-debit, tunggakan, refund saat keluar anggota) **belum ditegakkan**;
-  itu Fase 5 (coop pack) dan butuh keputusan AD/ART.
-- Setoran POKOK/WAJIB diposting ke akun ekuitas provisoris `301.1`/`301.2`. Nomor akun dan
-  klasifikasi ekuitas vs liabilitas **belum final**; wajib `NEEDS-COMPLIANCE-REVIEW` (REG-101)
-  sebelum laporan/pilot data nyata.
-- Tarik dan PB dari rekening POKOK/WAJIB diblokir 409; PB lintas jenis diblokir 409. Alur keluar
-  anggota/refund belum ada.
-- Produk lama tidak di-backfill: `savings_kind = NULL` berarti belum terklasifikasi dan diperlakukan
-  seperti simpanan generik.
-- **Rollback layanan**: image sebelum T-111 tidak mengirim `savingsKind` dan tidak punya guard PB.
-  Selama rollback, setoran POKOK/WAJIB kembali ke `201` dan PB keluar dari POKOK/WAJIB bisa lolos;
-  migrasi expand tidak membatalkan ini. Jangan rollback melewati rilis T-111 tanpa rekonsiliasi GL.
-- Daftar rekening per party dibatasi **200 baris pertama** (urutan nomor rekening) **sebelum**
-  gerbang cabang; party dengan lebih dari 200 rekening lintas cabang bisa kehilangan rekening
-  berizin yang nomornya lebih besar. Batas wajar untuk pilot; bila perlu, saring cabang di SQL.
+| ID | What is not done | Why accepted | How it is detected | Owner | Accepted by |
+|---|---|---|---|---|---|
+| L-23 | Single host, single API process, single pool, one worker. There is no HA, no second instance and no load balancer failover. | R-10 pilot is one cooperative; multi-instance needs shared session and lock design that is not in scope. | One process and one pool in `podman ps` and `/readyz`; a host loss stops the service. | owner | R-10, P7/P8 |
+| L-24 | Rollback returns the previous image, not the previous schema. A contract migration that already ran is not undone. | D-040 and D-119: schema rollback would need a rehearsed down path for real data. | `kran-api --role=migrate --check` after a rollback; compare `platform.schema_migration` with the deployed revision. | ops | D-040, D-119 |
+| L-25 | `--down` has never been rehearsed against real data; there is no `.down.sql` for the real migrations. | D-040: the mechanism is proven only on synthetic files in the development database. | Absence of paired down files; the only exercise is the T-035 harness. | ops | D-040 |
+| L-26 | The deploy log does not record build steps after the first deploy, so the memory manager and build flags cannot be read from it. | O-129: the log stopped capturing buildkit output; the binary was verified by forensic inspection instead. | `nm`/`objdump` on the deployed binary; `releases.txt` records only revision, image id and sha256. | ops | D-143, O-129 |
+| L-27 | There is no metrics endpoint. Latency, error rate, pool use, outbox age and close duration are not exported. | Audit C19; the pilot is operated with logs, `/readyz` and SQL until P7. | `/metrics` returns 404; an operator must query logs or the database. | ops | audit C19, P7 |
+| L-28 | The performance target is measured on a laptop, not on the VPS. The 100k-account benchmark is an optimistic upper bound. | T-140 and T-172 ran locally; entry-level VPS hardware was not available for the benchmark. | `./task bench-eod --accounts N` on the workstation; there is no production benchmark. | backend | audit C11, T-140 |
+| L-29 | A `SIGTERM` can still truncate connections that were accepted but had not reached the handler; realtime sockets close with the process. | T-032: draining everything needs a listener-level handoff that the framework does not expose. | Log line `permintaan berjalan selesai (drain)` and the count of requests still running at exit. | backend | D-031, O-047 |
+| L-30 | Cyclic garbage can leak under `atomicArc`, and the allocator crash is not proven fixed. | D-201 removed the cross-thread cycle bookkeeping, but there is no reproducer, so the fix is a design change, not a proof. | RSS trend over days; the CI step that classifies an API crash separately from assertion failures. | backend | D-201, O-128 |
+| L-31 | Retention periods per record class are not set. The mechanism exists, but the number of years is undefined, so no purge task can be correct. | R-20 and R-26 define the mechanism; the periods are `NEEDS-COMPLIANCE-REVIEW` and O-130. | Table size growth for audit, outbox and inbox; no purge task runs. | compliance | R-20, R-26, O-130 |
+| L-32 | There is no point-in-time recovery. Only full dumps exist, so the recovery point is the last dump, not the last transaction. | D-198 accepts the single-host backup state; WAL archiving was not built. | Restore drill restores a dump and reports the gap between dump time and the incident time. | ops | D-198, R-26 |
 
-## 4b. Cetak Fase 2 (T-094) — browser print, bukan PDF server
+---
 
-- Slip dan statement dicetak dari browser (`@media print` + `window.print`). **Tidak ada** PDF
-  server, penyimpanan PDF, hash, retensi, atau tanda tangan; ADR-013b (Typst di worker) ditunda.
-- Bukan pengganti buku tabungan dot-matrix/passbook. Layout bisa berbeda antar printer/browser;
-  header/footer browser (URL/ID) tidak bisa dipaksa hilang lewat CSS.
-- Tidak ada audit cetak: klik Cetak bukan bukti tercetak, dan dialog bisa dibatalkan. Tidak ada
-  kop/identitas lembaga (belum ada master cabang/parameter `institution.*`) — slip bersifat internal.
-- Statement adalah **subledger** (transaksi tunai + PB), bukan rekonsiliasi GL, dan **tanpa saldo
-  berjalan per baris**. Batas 500 baris ditolak (bukan dipotong); pemilik bisa mempersempit rentang.
-- PII di kertas/spool di luar kendali sistem: dokumen memuat nomor rekening, nominal, dan narasi
-  apa adanya. Jangan menyimpan hasil cetak sebagai PDF di server.
-- Template cetak ada di kode, bukan DB (deviasi sadar spec §16.2); parameterisasi letterhead = task
-  terpisah.
+## 4. Engineering and test limits
 
-## 4c. Permukaan operator pilot (23 Okt 2026) — batas yang diterima
+| ID | What is not done | Why accepted | How it is detected | Owner | Accepted by |
+|---|---|---|---|---|---|
+| L-33 | `ledger.journal` is not partitioned. | D-072: pilot volume does not need it, and partitions complicate foreign keys and deferred balance triggers. | Table size and query time; a partition conversion is a separate expand/contract migration. | schema | D-072 |
+| L-34 | Trial balance and balance gates read the whole journal history for the period. | Audit C11: the cost is acceptable at pilot size and a snapshot-backed read needs a reconciled close first. | Query duration and `EXPLAIN` on the gate path; the close takes longer as history grows. | backend | D-074, audit C11 |
+| L-35 | Parameters are read from the database per request; there is no cross-process cache. | D-052: a `NOTIFY` cache could serve a stale security value without an error. | `settingsOf` share of p95 database time; more than 50 auth requests per second per process is the stated trigger. | backend | D-052 |
+| L-36 | CI does not build the API container image. | Audit OPS-13: an image-only regression appears at deploy, not in CI. | The deploy health gate and the local `podman build`; there is no CI image job. | ops | audit C19 |
+| L-37 | There is no component test project for the web app; UI state machines are covered by e2e only. | O-135 and experts X8: a DOM test environment needs its own ADR before it is added. | `vitest` runs unit tests only; a broken screen state is caught by e2e or by a user. | frontend | O-135, P6 |
+| L-38 | The test harness duplicates helpers (23 `freePort` copies, 21 `serveInThread` copies). | Audit C07: consolidating them is cheap but touches many files; it is scheduled with the extraction, not before. | `rg -c 'proc freePort'` and the same for the server helper; the count does not fall. | backend | audit C07, P2 |
+| L-39 | Capped list endpoints do not return a total, and some caps are silent (200, 100, 50 rows). | Audit C13: the pilot data fits, and pagination plus totals is a P5 contract change. | Response schema has no total; an operator cannot tell that a row is missing. | API | audit C13, P5 |
+| L-40 | A cross-branch transfer is attributed to the source branch in audit, journal and event. The destination branch's GL does not show a temporary credit. | D-124: one journal per transfer is net zero at GL, and per-account movement lives in `deposit.transfer`. | Compare `deposit.transfer` by branch with `journal_line` account `201` per branch; they differ by the transfer amount. | accounting | D-124 |
 
-Batas berikut **hanya berlaku untuk pilot saat ini** (1 koperasi, 1 cabang, data sintetis; O-004/D-046).
-Ia bukan klaim pekerjaan selesai. **Diperbarui 24 Okt 2026:** permukaan operator yang dulu hanya CLI
-sekarang sudah punya UI (T-115 buka rekening, T-116 administrasi buku besar, T-117 pengguna/peran,
-T-121 top-up vault), jadi batas "tidak ada UI" di bawah sudah tidak berlaku; yang tersisa hanya
-keputusan tata kelola (O-102).
+---
 
-- ~~Tidak ada UI top-up vault (API-nya ada)~~ **DITUTUP (T-121, 24 Okt 2026)**: `/app/vault` mengajukan
-  dan menyetujui top-up; `/app/ledger` menangani akun/COA/periode, `/app/users` menangani pengguna/peran,
-  dan pembukaan rekening ada di `/app/deposit`. Setup awal (akun pertama, reset sandi) tetap lewat
-  `kran-api --role=ctl`. Pemilik: T-115…T-117, T-121.
-- **Top-up vault: maker-checker lewat API dan UI.** `POST /teller/vault/topups` (izin
-  `teller.vault.submit`) hanya membuat pengajuan; `.../{requestId}/approve` (izin
-  `teller.vault.approve`) oleh akun lain menulis saldo + jurnal `D <teller.vault.cash_account> / K
-  <akun sumber>`. UI `/app/vault` memisahkan peran pengaju dan penyetuju, tetapi keduanya tetap harus
-  akun berbeda (409 `self_approval`). Plafon per pengajuan sudah ada (D-133). Cara deteksi: `teller.vault_topup_request`
-  (status + `decided_by`), `platform.audit_log` (`teller.vault.topup.submit`/`.approve`), event
-  `TellerVaultTopUpRequested`/`TellerVaultTopedUp`. Pemilik: O-103/T-121, O-099/T-122.
-- **Risiko tata kelola sampai akun per peran dipakai.** Sejak T-118/D-131 `platform_admin` adalah
-  break-glass: peran sempit (`ops_admin`/`ledger_admin`/`cash_admin`/`product_maker`) dan lima
-  pasangan SoD tersemai. Selama produksi masih memakai satu akun `platform_admin`, pemisahan tugas
-  **belum** efektif — itu keputusan operasional pemilik (K-3), bukan cacat kode. Cara deteksi:
-  `platform.user_role` (berapa akun memegang `platform_admin`), `platform.role_conflict`. Pemilik:
-  O-102 (K-3/K-4).
+## 5. How to use this register
 
-## 4d. Retensi `response_body` idempotensi (31 Okt 2026)
-
-- **Batas:** `platform.idempotency_key.response_body` boleh memuat PII (nama, nomor rekening, saldo)
-  sampai barisnya kedaluwarsa. Retensi = `platform.idempotency.ttl_hours` (default 24 jam), ditegakkan
-  task `platform.idempotency_sweep`; 30 hari adalah batas atas yang tidak boleh dilewati (D-175).
-  **Ketergantungan:** bila sweep dimatikan/`FAILED` berulang, retensi tidak terjaga — baris bertahan
-  sampai task dijalankan lagi. Cara deteksi: `SELECT max(expires_at) FROM platform.idempotency_key`
-  dan status task di `daycloser.run_task`. Pemilik: O-093, D-118.
-
-## 5. Cara memakai dokumen ini
-
-- Menemukan batas baru saat mengerjakan task → tambahkan baris (dampak, cara deteksi, pemilik), jangan
-  simpan di kepala.
-- Sebelum deploy → baca §1 dan §2. Yang paling langsung menyangkut deploy: freeze gate (fase 3),
-  latihan deploy (T-013), prosedur migrasi dua tahap (`docs/runbooks/migrasi.md`), dan jendela drain
-  10 detik (T-032).
-- Batas "tidak ada rollback skema" **dihapus** oleh T-035 (D-040). Yang menggantikannya bukan klaim
-  bebas risiko: rollback tetap butuh berkas pasangan yang sudah di-review, hanya berlaku untuk N
-  migrasi terakhir, dan tidak tahu apa-apa soal data.
-
-## 3. Batas sisa batch audit 24 Okt 2026 (T-133)
-
-Ditambahkan saat menutup T-133. Setiap baris adalah temuan audit yang **tidak** dikerjakan di batch
-itu, dengan alasan, cara mendeteksi, dan pemilik. Detail konteksnya ada di `docs/tasks/T-133.md` §2.
-
-> Catatan (1 Nov 2026): beberapa baris masih menyebut pemilik "Fase 3". Fase 3 ditutup 28 Okt 2026
-> (`docs/milestones/M3-report.md`) **tanpa** penjadwalan operasional, jadi baca rujukan itu sebagai
-> "belum dijadwalkan" — bukan janji fase yang akan datang.
-
-| Batas | Dampak nyata | Cara mendeteksi | Pemilik |
-|---|---|---|---|
-| `GET /audit` tanpa cursor (API-7) | Jejak lebih lama dari 200 baris terakhir hanya bisa ditinjau lewat SQL, bukan API | `GET /api/v1/audit?limit=200`; baris lama lewat kueri SQL langsung | Fase 9 (API lengkap); spec §13 |
-| Upsert PII tanpa `ETag`/`If-Match` (API-8) | Dua editor back-office bisa saling menimpa tanpa peringatan | audit `party.update`/`*.update` menyimpan `before`/`after`; selisih terlihat di jejak, bukan dicegah | Fase 9; spec §13 |
-| Fingerprint idempotensi memakai body apa adanya (API-9) | Retry dengan urutan key berbeda dijawab 409, bukan replay | header `Idempotent-Replayed` tidak muncul; 409 pada retry yang isinya sama tetapi urutannya diubah | T-085/D-098; klien aplikasi membangun body dengan urutan tetap |
-| Penjaga expand-only hanya melihat kata pertama per statement (DB-6) | `UPDATE`/`DELETE` top-level dan DDL di dalam `DO $$ … $$` tidak terdeteksi `dbtools validate` | tinjauan PR migrasi + `./task dbtools validate`; migrasi berbahaya lolos tanpa alarm | Proses review migrasi (AGENTS §6) |
-| Drift checksum terdeteksi di dalam loop apply; `--dry-run` melewati drift (DB-7) | Berkas yang isinya berubah ketahuan setelah berkas sebelumnya ter-commit, jadi DB bisa tertinggal setengah | galat "checksum berbeda" pada `dbtools migrate`; bandingkan `platform.schema_migration.checksum` dengan berkas | T-035/D-040 |
-| Trigger imutabilitas tanpa `BEFORE TRUNCATE` pada beberapa tabel (DB-10) | `TRUNCATE` (superuser/psql) melewati trigger baris dan menghapus riwayat tanpa jejak | tidak ada jalur produksi yang mengeluarkan `TRUNCATE`; `itplatform` membuktikan trigger append-only pada `DELETE`/`TRUNCATE` `audit_log` | Peran DB (`kran_runtime` tanpa `TRUNCATE`, migrasi 0042) |
-| Retensi/partisi `platform.audit_log`, `inbox`, `outbox` belum diputuskan (DB-12) | Tabel tumbuh tanpa batas; vacuum dan backup makin mahal tiap bulan | `pg_total_relation_size('platform.audit_log')`; belum ada job pemangkas | Fase 3/9 (kebijakan retensi, D-072 baru mengatur `journal`) |
-| Orkestrasi use case masih di `apps/api/src` (~6,8k baris), `apps/` di-`catSkip` archcheck (ARC-3) | Batas Clean Architecture tidak ditegakkan untuk lapisan aplikasi; penulisan jurnal terduplikasi di empat tempat | `./task archcheck` hanya memeriksa `modules/`; tinjauan PR | Fase 3 (refactor bertahap, bukan perbaikan) |
-| Belum ada `ctl outbox-redrive` (ARC-5) | Event `DEAD` hanya bisa dipulihkan lewat SQL manual; tidak ada jejak audit untuk pemulihan | `SELECT status, count(*) FROM platform.outbox GROUP BY 1` | Fase 9 (operabilitas); O-013 |
-| Modul membaca tabel modul lain (`JOIN product.product`, ARC-6) | Batas modul dilanggar tanpa alarm: perubahan skema produk bisa mematahkan deposit | `archcheck` belum mendeteksi JOIN lintas skema; grep tinjauan | Fase 3 (port/`api.nim`) |
-| `param_cache` hanya dipakai uji, komentar menunjuk `param_watcher.nim` yang tidak ada (ARC-7) | Kode mati yang membingungkan; tidak ada dampak runtime | `grep -rn param_cache modules apps` → hanya test | Fase 3 (hapus atau pakai) |
-| Worker belum menangani SIGTERM/`pool.close()` (ARC-8) | Batch yang sedang diproses terpotong saat container berhenti; transaksi di-ROLLBACK dan outbox diulang (idempoten) | log worker berhenti di tengah batch; baris `platform.outbox` tetap `PENDING` lalu diproses ulang | Fase 9; O-025 |
-| Pencarian party `ILIKE '%…%'` tanpa index trigram (ARC-9) | Pencarian pemilik rekening memindai seluruh `party.party`; makin lambat seiring data | `EXPLAIN ANALYZE` pada `GET /api/v1/parties?q=` | Fase 3 (data pilot masih kecil; `pg_trgm` sudah terpasang) |
-| Advisory lock trigger audit menyerialkan transaksi teraudit (ARC-10) | Penulisan yang diaudit bergantian, bukan paralel; batas throughput per detik | `pg_locks` (advisory) saat beban; latensi endpoint yang menulis audit | Fase 9 (partisi/rantai per cabang) |
-| Idempotensi kedaluwarsa (TTL) lalu dianggap baru (LED-3) | Operasi tanpa kunci alami (top-up vault, buka rekening) bisa tercatat dua kali bila klien mengulang setelah TTL lewat | dua baris isi sama setelah `platform.idempotency.ttl_hours`; klien mengirim ulang dengan kunci baru | Fase 3 (kunci alami per operasi) |
-| Uji balapan tutup sesi tidak memaksa overlap (LED-4) | Balapan nyata pada penutupan sesi belum dibuktikan test; regresi bisa lolos | suite `itsession`/`itapi_teller_sessions` hijau, tetapi tanpa `pg_blocking_pids` | Fase 3 (mutu uji) |
-| Lockout dibuktikan lewat repo + `/auth/password`, bukan N percobaan `POST /auth/login` (LED-5) | Jalur yang benar-benar dipakai penyerang tidak diuji sampai terkunci | `itapi_users` (429 beruntun) + audit `user.login.failure` | Fase 9 (mutu uji keamanan) |
-| Properti uang memakai satu seed tetap, tanpa shrinking, batas `|v| ≤ 1e12` (LED-6) | Overflow penjumlahan `Money` tidak pernah diuji; kegagalan yang ditemukan tidak menyusut ke kasus minimum | `tprop_money` hijau; tidak ada kegagalan yang dilaporkan | Fase 3 (mutu uji) |
-| Gate lebar 390px hanya di `/app/vault` (LED-7) | Layar lain (teller, ledger, cetak, buka rekening) belum dibuktikan bisa dipakai di ponsel | `vault.spec.ts` (390px) + `zoom-125.spec.ts`; sisanya tinjauan manual | Fase 3 (gate mobile penuh) |
-| Badan permintaan melewati 1 MB dijawab 413 (chunked) atau **502** (ber-`Content-Length`) | Klien menerima status yang menyesatkan untuk kiriman kebesaran (502 terlihat seperti API mati); badan tetap tidak sampai ke API | kirim body > 1 MB: `curl --data-binary` ber-`Content-Length` → 502, `-H "Transfer-Encoding: chunked"` → 413; log Caddy mencatat permintaan itu | T-133/OPS-14; perbaikan butuh batas di aplikasi (mummy membaca body sebelum handler) |
-| Chunk day-close dijalankan **sekuensial**; belum ada `max_parallel` | EOD besar lebih lambat dari yang mungkin dicapai. Benchmark T-140: 100k rekening 133 detik (±1,3 ms/rekening), jadi target 30 menit belum menuntut paralelisme; angkanya bisa berubah di VPS yang lebih lambat | durasi run di `daycloser.run`/`task.metrics`; `./task bench-eod --accounts N` | Fase 4/9 bila target gabungan menuntut |
-| Tidak ada timeout per task day-close | Task yang menggantung menahan run sampai operator `daycloser-cancel`; status tetap `RUNNING` | status `RUNNING` dengan `started_at` lama; batalkan manual | T-140 |
-| `mode=SIMULATION` (dry-run §11.7) = **tingkat rencana**, bukan eksekusi di transaksi ter-rollback | Pratinjau menunjukkan task/chunk yang akan berjalan dan menolak tanggal yang toh akan ditolak, tetapi tidak menjalankan task: kegagalan saat menulis (mis. `DAY-331` konfigurasi produk, `DAY-343` tanpa rekening tujuan) baru terlihat pada run nyata | `ctl daycloser-run --business-date=<d> --mode=SIMULATION` mencetak `"writes": false` dan daftar task; jurnal/saldo tidak berubah (dibuktikan `itdaycloser_lifecycle`) | T-140 (dry-run eksekusi ter-rollback menyusul bila dibutuhkan) |
-| ~~Belum ada penjadwal harian day-close~~ **TERPASANG (2 Nov 2026, T-139b/O-094)**: `ctl daycloser-auto` + parameter `daycloser.auto.*`, dipicu `kran-dayclose.timer` (aktif, tiap 5 menit; unit memakai biner host + `kran-host.env` karena nama service podman tidak bisa di-resolve dari host) | Sisa yang nyata: `daycloser.auto.enabled` masih `false`, jadi timer berjalan tetapi tidak menutup apa pun | `systemctl --user list-timers kran-dayclose.timer`; log `logs/dayclose-auto.log` | O-094, T-139b |
-| `daycloser.run.started_by` kosong untuk `ctl` | Jejak pelaku hanya `device = kran-api ctl` + entri audit, bukan user id. Aksi HTTP juga belum mengisi kolom ini (audit tetap mencatat pelakunya) | `SELECT started_by FROM daycloser.run` | T-139 (isi saat aksi HTTP; butuh kolom + jalur tulis) |
-| Kebijakan `daycloser.txn_policy_during_close` hanya `REJECT`/`ALLOW` | Spec §11.5 menyebut transaksi boleh "antri"; antrean belum punya eksekutor, jadi `QUEUE` ditolak sebagai nilai tidak sah | `ctl`/test: `parseTxnPolicy("QUEUE")` → error | T-139 (antrean + worker) |
-| Penutupan hanya untuk scope `INSTITUTION` lewat `ctl` | Cabang tidak bisa ditutup terpisah; `freeze`/`seal` menolak run cabang, sehingga run itu berakhir `FAILED` | `ctl daycloser-resume` pada run ber-scope BRANCH → kode keluar **1** (run `FAILED`), bukan 3 | T-139 |
-| Gerbang penutupan menambah satu query `platform.business_date` per permintaan tulis | Latensi kecil (indeks `business_date_state_idx`), terukur bersama EOD | benchmark T-140; access log | T-140 |
-| Gerbang penutupan **fail-open** bila query-nya sendiri gagal (DB tak terbaca) | Perubahan bisa lolos hanya bila query gerbang gagal sementara handler berhasil; handler biasanya ikut gagal (503) | log `gerbang penutupan tidak dapat memeriksa basis data` | Operasi (dinilai aman) |
-| Gerbang penutupan adalah **cek-lalu-jalan** (TOCTOU): permintaan yang lolos gerbang sebelum freeze bisa commit setelah tanggal `CLOSING` | Jurnal/persetujuan yang masuk setelah freeze membuat `POSTCHECK` menilai keadaan yang tidak lagi lengkap; bukan kebocoran otorisasi | deteksi: gate `POSTCHECK` membandingkan jurnal bertanggal tutup dengan waktu freeze (`business_date.updated_at`) → T-136; sementara ini terlihat di laporan harian | T-136 (deteksi), Fase 9 (drain) |
-| Gate day-close dihitung **institusi-wide**, bukan per cabang | Run cabang (belum didukung) akan memeriksa seluruh institusi — lebih ketat, bukan lebih longgar | `sessionGate` tanpa filter cabang; `daycloser_gates.nim` | T-139 |
-| Gate saldo membaca `journal_line` kumulatif dari awal | Biaya gate naik seiring riwayat jurnal; pada data pilot tidak terasa | durasi task di `daycloser.task`; `EXPLAIN` gate; benchmark T-140 | T-140 |
-| Pemetaan subledger per **jenis produk** belum ada | Gate membandingkan total; selisih antar produk yang saling menutupi tidak terlihat | parameter `daycloser.postcheck.subledger_gl_accounts` hanya berisi akun kewajiban | T-138 (saat produk berjangka masuk) |
-| Gate subledger tidak memeriksa akun `204 BUNGA AKRUAL` | Bunga yang sudah dijurnal tetapi belum dibayar tidak ikut diuji gate; selisih akrual hanya terlihat dari laporan | saldo subledger tidak punya pasangan `204`; menambahkannya akan membuat gate selalu selisih | D-168, T-148 |
-| Jurnal terlambat (TOCTOU) **dideteksi**, bukan dicegah — dan hanya yang transaksinya **dimulai** setelah freeze | `journal.recorded_at` memakai `now()` (= waktu mulai transaksi), jadi transaksi yang mulai sebelum freeze dan commit sesudahnya lolos dari gate; posting yang lolos tetap tercatat dan run harus dibatalkan & diulang | `DAY-310` + `journalIds` di `task.metrics` | Fase 9 (drain permintaan tulis) |
-| `rebuildSnapshot` menulis ulang seluruh baris `balance_snapshot` untuk satu `as_of` | Satu transaksi DELETE+INSERT untuk semua akun; pada data besar lock lebih lama. Pembaca tetap melihat versi lama (MVCC) | durasi task `ledger.daily_snapshot`; `pg_stat_activity` | T-140 (benchmark) |
-| Periode GL masih dibuat manual lewat API | Bulan baru tanpa periode → `DAY-324` di setiap akhir bulan | kode `DAY-324` pada run | UI T-139 / fase reporting |
-| Penutupan periode oleh sistem butuh migrasi **contract** (`0060`: `DROP CONSTRAINT`) | Deploy yang melewatkan `--contract` akan gagal di gate migrasi (fail-closed), bukan diam-diam menutup dengan skema lama | `migrate --check` melaporkan `contract_pending`; id ada di `ops/migrations/contract-auto.txt` | Operasi (deploy) |
-| Penutupan bulanan hanya menutup periode yang **berakhir di bulan yang sama** dengan tanggal buku | Periode yang berakhir di tengah bulan (mis. 1–15) tidak ikut ditutup oleh EOM; hanya lewat API. Periode tahunan dilaporkan `NOT_DUE` | `metrics.periodId/endsOn/status` pada `daycloser.task` | fase reporting |
-| Penutupan periode tidak bisa dibatalkan (trigger periode) | Salah tutup tidak ada reopen; koreksi lewat jurnal pembalik di periode berjalan | `DAY-321`/`DAY-326` menahan sebelum menutup | sesuai spec §11.7 |
-| `pending_approvals` hanya memeriksa top-up vault | Perubahan parameter/produk berstatus DRAFT bukan transaksi, jadi tidak menahan penutupan | daftar gate di `daycloser_gates.nim` | T-139 (bila ada alur persetujuan transaksi lain) |
-| Replay `Idempotency-Key` saat `CLOSING` dijawab 409, bukan respons tersimpan | Klien yang menganggapnya gagal bisa mengirim ulang setelah buku dibuka; hasil akhirnya tetap satu efek (kunci idempotensi masih menyimpan hasil), tetapi klien melihat galat yang membingungkan | balasan 409 `business_date_closing` untuk permintaan yang sebenarnya sudah pernah sukses | Operasi (dokumentasi), T-139 |
-| ~~Gerbang penutupan memblokir endpoint `dayclose` HTTP~~ **DITUTUP (T-139a, 28 Okt 2026)**: `/api/v1/dayclose/` masuk daftar pengecualian sempit (`closeGuardExemptPrefixes`), jadi resume/pause/cancel tetap bisa dipakai saat `CLOSING` — justru itu gunanya. Otorisasi tidak dilonggarkan: sesi + izin `dayclose.run.manage` + grant tanpa batas cabang tetap wajib | Sisa: pengecualian hanya untuk awalan itu; rute tulis lain tetap ditolak 409 `business_date_closing` | `topenapi` mengunci daftar pengecualian kontrak = runtime; `itapi_dayclose` memanggil pause saat `CLOSING` dan mengharapkan 200 | T-139 |
-| Backup Postgres tidak dienkripsi dan tersimpan di host yang sama (OPS-12) | dump dan DB bisa hilang bersama; isi dump terbaca siapa pun yang memegang berkas | drill restore (`docs/runbooks/restore-drill.md`); `ls -l` di direktori dump | Di luar repo (akses server); O-007 |
-| CI tidak membangun image Docker API (OPS-13) | Regresi khusus image (Dockerfile, dependensi runtime) baru terlihat saat deploy produksi | health gate + pemeriksaan image `:local` di `deploy.log`; build lokal `podman build` | Fase 9 (CI image); T-131 |
-| `HealthCmd` Podman tidak dipasang (OPS-15) | Proses yang menggantung tetapi masih menjawab TCP tidak terlihat oleh systemd (hanya oleh health gate deploy dan `/readyz` eksternal) | `systemctl --user status kran-api`; `/readyz` dari host; `Restart=always` untuk proses mati | Fase 9 (healthcheck butuh klien HTTP di image); T-133 |
-| Action CI dipin ke tag mayor, bukan commit SHA (SEC-6) | Tag bisa dipindahkan pemilik action (supply chain); pin SHA menutup itu dengan biaya pembaruan manual | tinjauan `.github/workflows/*.yml`; pengumuman keamanan GitHub Actions | Pemilik repo (keputusan pemeliharaan) |
-| "Hari ini" di `/app/ledger` masih memakai tanggal peramban, bukan `businessDate` dari sesi (UI-7) | Pemilihan periode awal bisa jatuh ke periode yang salah bila zona perangkat berbeda dari tanggal bisnis cabang; shell sudah menampilkan tanggal bisnis yang benar, jadi dua bagian layar bisa berbeda pendapat | `apps/web/src/routes/app/ledger/+page.svelte` membentuk tanggal dari `new Date()`; bandingkan dengan indikator "Tanggal bisnis" di shell (`SessionInfo.businessDate`, O-116/T-151) | T-151/O-116 (sumber tanggal sudah ada); tinggal memakai di layar — belum ada task backlog |
-| `{#key locale}` me-remount subtree saat bahasa diganti (UI-8) | Input form yang sedang diisi hilang ketika pengguna berganti bahasa | ganti bahasa saat form terisi; fungsi Paraglide bukan store, jadi tanpa remount teks tidak berganti | Fase 3 (i18n reaktif) |
-| `lint-nomagic` hanya memindai `modules/*/{domain,application}` (spec §10.4, `tools/lint-nomagic/lib.nim`) | Angka bisnis di `apps/api/src` (lapisan interface) dan `modules/*/infrastructure` tidak di-gate; `# nomagic:ok` yang ada di sana tidak pernah divalidasi tool, jadi ia hanya dokumentasi | `./task nomagic`; tinjauan PR untuk handler/infrastruktur yang menyentuh nominal, rate, atau ambang | peninjau PR; perluas cakupan hanya lewat keputusan baru (audit angka dulu) |
-| Nomor migrasi boleh kembar antar modul (`0074` deposit+ledger, `0075` deposit+platform) | Urutan apply deterministik `(NNNN, modul, berkas)`, tetapi dua migrasi bernomor sama bisa diam-diam saling mengandalkan; berkas yang sudah pernah diterapkan **tidak boleh** di-rename (checksum drift) | `./task dbtools status`, `kran-api --role=migrate --root=. --check` (`--check` bersih atas **126** berkas migrasi per 2 Nov 2026; angka 105 adalah snapshot 1 Nov 2026); tinjauan PR saat memilih nomor baru | penulis migrasi |
-| CKPN disimpan di akun aset `111` yang dikredit, bukan tipe akun kontra (O-121, D-185) | Neraca neto benar, tetapi saldo `111` tampil negatif dan laporan yang tidak memisahkan bruto/neto bisa membacanya sebagai aset negatif | laporan T-171 menguji pemisahan bruto/neto; tipe akun kontra diputuskan lewat O-075 | T-171 |
-| Restrukturisasi memakai tarif & metode jadwal dari versi produk (D-186) | Restrukturisasi tidak bisa menurunkan/menaikkan bunga; perubahan tarif harus lewat versi produk baru | uji `itapi_lending` memakai tarif produk; bila kebutuhan nyata muncul, tambahkan parameter tarif restrukturisasi | T-168 |
-| Pemulihan pasca hapus buku belum ada (O-122, D-186) | Pembayaran setelah hapus buku tidak tercatat di sistem | status `WRITTEN_OFF` tidak menerima pembayaran (409); alur pemulihan menunggu keputusan | T-168 |
+- A new limit found during a task is added here with all six columns; it is not kept in a task file.
+- Removing a row requires a decision id that changes the acceptance, not an implementation note.
+- A row whose detection can no longer be run is a defect in the register, not a closed limit.
+- This file does not claim the product is bug free, compliant, capacity proven or recoverable beyond
+  the stated drills. Those claims require evidence that does not exist yet.

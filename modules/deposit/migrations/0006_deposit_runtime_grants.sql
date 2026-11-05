@@ -1,6 +1,6 @@
 -- Hak akses role runtime untuk schema `deposit` (T-088b).
 --
--- GRANT di `docs/runbooks/db-roles.md` hanya mencakup schema yang sudah ada saat runbook ditulis
+-- GRANT di `docs/OPERATIONS.md` hanya mencakup schema yang sudah ada saat runbook ditulis
 -- (platform, ledger, party, product). Tanpa grant ini, `kran_runtime` mendapat "permission denied"
 -- pada tabel/sequence `deposit` di produksi walau fitur lolos test (test memakai role migrator).
 --

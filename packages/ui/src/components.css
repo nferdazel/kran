@@ -14,7 +14,7 @@
  *  - Target sentuh minimal 24x24 CSS px (spec §17.1 / WCAG 2.5.8).
  *
  * Komponen headless (bits-ui/Melt) dan komponen kompleks (dialog, combobox, tabel
- * ter-virtualisasi) menyusul; lihat docs/tasks/T-010.md bagian batasan.
+ * ter-virtualisasi) menyusul; lihat T-010 (git history) bagian batasan.
  */
 
 .kran-skip-link {

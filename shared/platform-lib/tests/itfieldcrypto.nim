@@ -1,7 +1,7 @@
 ## Test integrasi enkripsi field-level (T-054): membuktikan mekanisme bisa dipakai end-to-end
 ## pada tabel **sementara** (TEMP TABLE) — enkripsi → simpan → cari lewat blind index → dekripsi.
 ##
-## Butuh `KRAN_DATABASE_URL` (lihat docs/runbooks/dev-db.md); tanpa itu, dilewati.
+## Butuh `KRAN_DATABASE_URL` (lihat docs/OPERATIONS.md); tanpa itu, dilewati.
 ## Tidak ada kolom PII nyata yang dienkripsi: tabel dibuat sementara di dalam test ini.
 
 import std/[base64, os, strutils, tables, unittest]

@@ -6,7 +6,7 @@
 ##
 ## Catatan scope: parameter dibaca dengan lookup yang hanya mengisi id untuk scope pemanggil.
 ## Nilai level INSTITUTION (dengan id konkret) belum ikut terasa dari konteks BRANCH — lihat
-## `docs/tasks/T-007.md` (keterbatasan yang dicatat, bukan bug yang disembunyikan).
+## `T-007 (git history)` (keterbatasan yang dicatat, bukan bug yang disembunyikan).
 
 import std/[json, options]
 

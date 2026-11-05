@@ -137,7 +137,7 @@ try:
   of "migrate", "status", "seed", "reset":
     let envT = envTableFromProcess()
     if not databaseUrlSet(envT):
-      stderr.writeLine("KRAN_DATABASE_URL belum diisi (lihat docs/runbooks/dev-db.md)")
+      stderr.writeLine("KRAN_DATABASE_URL belum diisi (lihat docs/OPERATIONS.md)")
       quit(2)
     let pool = newDbPool(dbConfigFromEnv(envT))
     var code = 0

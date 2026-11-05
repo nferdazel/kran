@@ -44,7 +44,7 @@ pnpm install
 
 `KRAN_DATABASE_URL` is read from `.local/dev.env` (mode 600, gitignored) and points at the dev
 database through the SSH tunnel. Setup and limits are in
-[`docs/runbooks/dev-db.md`](docs/runbooks/dev-db.md); never copy the URL or a password into a
+[`docs/OPERATIONS.md`](docs/OPERATIONS.md); never copy the URL or a password into a
 commit, issue, or PR.
 
 Without `KRAN_DATABASE_URL`, integration tests and database-backed e2e specs **skip themselves**.
@@ -64,7 +64,7 @@ target.
 |---|---|---|
 | while iterating | `./task check-fast` | format check + archcheck + lint-nomagic + `paramgen --check` + i18n + version + shellcheck, without the full `nim check` (D-077) |
 | one module changed | `./task verify <module>` | `check-fast` + openapi + build + tests for the selected modules |
-| before a PR | `./task ci-fast` | `check` (including the full `nim check`), openapi, lint-web, unit/property + integration + contract tests — no e2e (D-194) |
+| before a PR | `./task ci-fast` | `check` (including the full `nim check`), openapi, lint-web, unit/property + integration + contract tests - no e2e (D-194) |
 | before merging | `./task ci` | `ci-fast` + e2e (which builds the binary); also runs inside `./task release` (D-194) |
 | front-end only | `./task lint-web`, `./task e2e` | eslint over `apps/web`/`packages/ui`; token contrast, `svelte-check`, Playwright (axe, keyboard) |
 | formatting | `./task fmt` | rewrites files in place |
@@ -80,19 +80,19 @@ say so in the PR and do not present the result as gate evidence.
 Credentials must never reach the repository, and once a secret is in git history it cannot be
 removed without rewriting every SHA. Three layers guard that:
 
-1. **Local, before the commit** — `./task hooks` sets `core.hooksPath=.githooks`, so
+1. **Local, before the commit** - `./task hooks` sets `core.hooksPath=.githooks`, so
    [`.githooks/pre-commit`](.githooks/pre-commit) rejects staged files that look like keys
    (`*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa*`, `.env*` except `*.example`) and runs
    `gitleaks git --staged` against `.gitleaks.toml`. Install `gitleaks` (>= 8.19) locally to get the
    content scan; without it the hook only checks filenames and prints a warning.
-2. **CI, on every push and PR** — the `security` job in `ci.yml` runs `gitleaks-action` over the
+2. **CI, on every push and PR** - the `security` job in `ci.yml` runs `gitleaks-action` over the
    pushed commits.
-3. **Weekly, whole history** — `secret-scan.yml` scans `--log-opts=--all` so anything that slipped
+3. **Weekly, whole history** - `secret-scan.yml` scans `--log-opts=--all` so anything that slipped
    through earlier shows up within a week.
 
 Do not bypass the hook with `--no-verify`. If gitleaks flags something that is genuinely not a
 credential, extend the narrow `[allowlist]` in `.gitleaks.toml` with the exact phrase **and** an
-entry in `docs/DECISIONS.md` (D-189 is the precedent) — never exclude a directory or a rule.
+entry in `docs/DECISIONS.md` (D-189 is the precedent) - never exclude a directory or a rule.
 
 Rules that are not negotiable:
 

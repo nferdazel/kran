@@ -1,9 +1,9 @@
-# ADR-017 — Enkripsi field-level: envelope KEK→DEK turunan + blind index
+# ADR-017 - Enkripsi field-level: envelope KEK→DEK turunan + blind index
 
 - **ID**: ADR-017
 - **Judul**: Enkripsi field-level (envelope encryption) dengan DEK diturunkan dari KEK
 - **Tanggal**: 16 Okt 2026
-- **Status**: Diputuskan — **HUMAN-REVIEW-REQUIRED** sebelum dipakai untuk data anggota nyata
+- **Status**: Diputuskan - **HUMAN-REVIEW-REQUIRED** sebelum dipakai untuk data anggota nyata
   (area kriptografi, AGENTS.md §8; vektor uji independen sudah ada, tetapi ini fondasi baru)
 
 ## Konteks
@@ -15,7 +15,7 @@ mendaratkan NIK/NPWP/no. HP/alamat; menambahkan enkripsi setelah baris ada berar
 seremoni kunci di bawah tekanan. Pemilik memutuskan ini **bagian fondasi** dan dikerjakan sekarang
 (T-054, menutup O-006).
 
-Fakta saat keputusan diambil: **belum ada mekanisme enkripsi field sama sekali** — tidak ada `.nim`
+Fakta saat keputusan diambil: **belum ada mekanisme enkripsi field sama sekali** - tidak ada `.nim`
 yang menyebut `KRAN_KEK*`/`encryptField`, `KRAN_KEK_FILE` hanya komentar di
 `ops/env/kran-prod.env.example`, dan tidak ada `pgp_sym_encrypt` di migrasi. Jadi ini membangun
 fondasi, bukan memindahkan yang sudah ada.
@@ -39,20 +39,20 @@ Mekanisme di `shared/platform-lib/crypto/fieldcrypto.nim`:
 1. **KEK** di berkas terpisah mode 600 (`KRAN_KEK_FILE`), berisi satu atau beberapa kunci berversi
    (`<kid>:<base64 32 byte>`); **kunci aktif = entri terakhir**, kunci lama tetap dibaca untuk
    dekripsi.
-2. **DEK per tabel diturunkan** dari KEK: `HMAC-SHA256(KEK, "kran:dek:v1:" || tableName)` — bukan
+2. **DEK per tabel diturunkan** dari KEK: `HMAC-SHA256(KEK, "kran:dek:v1:" || tableName)` - bukan
    disimpan terbungkus di DB.
 3. **Cipher self-describing**: `kran:enc:v1:<kid>:<nonce_b64url>:<ciphertext||tag_b64url>`,
    AES-256-GCM, nonce 96-bit acak dari CSPRNG OS (`std/sysrand`), tag 128-bit. **AAD = nama tabel**
    supaya ciphertext tidak bisa dipindahkan antar tabel.
 4. **Blind index**: `HMAC-SHA256(kunci_turunan, nilai)` heksadesimal, dengan
-   `kunci_turunan = HMAC-SHA256(KEK, "kran:bidx:v1:" || tableName)` — **kunci berbeda** dari kunci
+   `kunci_turunan = HMAC-SHA256(KEK, "kran:bidx:v1:" || tableName)` - **kunci berbeda** dari kunci
    enkripsi, ber-domain per tabel. Normalisasi field angka (`normalizeDigits`, digit ASCII saja)
    eksplisit di pemanggil; **tidak** mengarang normalisasi Unicode untuk nama/alamat.
 5. **Aktivasi**: `KRAN_KEK_FILE` kosong → keyring *belum-terkonfigurasi*, aplikasi start apa adanya;
    setiap enkripsi/dekripsi gagal dengan `NotConfiguredError` ("enkripsi field belum
    dikonfigurasi"). Diset → berkas dibaca & divalidasi **saat startup** (hilang/rusak/kid tidak
    sah/mode bukan 600 → `KekError`, tolak start). Tidak ada fallback diam-diam.
-6. Nilai yang gagal dekripsi **selalu** `DecryptError` — tidak pernah mengembalikan plaintext atau
+6. Nilai yang gagal dekripsi **selalu** `DecryptError` - tidak pernah mengembalikan plaintext atau
    string kosong. Pesan galat tidak pernah memuat materi kunci maupun plaintext.
 
 **Lingkup**: mekanisme + uji + kontrak pemakaian. **Belum ada kolom PII yang dienkripsi** (users
@@ -70,7 +70,7 @@ divalidasi saat startup biner `api` dan disimpan di `AppContext`; `KRAN_KEK_FILE
   - Mengubah/blind index: rotasi kunci blind index **membatalkan** indeks lama → perlu reindex.
   - Konvensi "kunci aktif = entri terakhir" berarti urutan baris berkas menentukan kunci aktif;
     salah urut = enkripsi baru memakai kunci lain (kunci lama tetap bisa baca, jadi tidak langsung
-    rusak, tetapi tidak seperti yang diniatkan). Berkas dikelola tangan — lihat runbook.
+    rusak, tetapi tidak seperti yang diniatkan). Berkas dikelola tangan - lihat runbook.
   - **KEK hilang = data tak bisa dibaca** (tidak ada pemulihan). Berkas KEK **tidak** ikut backup DB
     dan harus disimpan terpisah/terenkripsi (inti O-006).
   - Uniknya nonce bergantung CSPRNG (96-bit); peluang tabrakan dapat diabaikan untuk volume kita.
@@ -80,7 +80,7 @@ divalidasi saat startup biner `api` dan disimpan di `AppContext`; `KRAN_KEK_FILE
 ## Alternatif yang ditolak
 
 1. **DEK terbungkus disimpan di tabel registry DB** (envelope per tabel/record, wrapped DEK di DB).
-   *Ditolak*: menaruh materi kunci di dump/backup DB — tepat hal yang harus dihindari; menambah
+   *Ditolak*: menaruh materi kunci di dump/backup DB - tepat hal yang harus dihindari; menambah
    tabel + kopling lintas-modul; role aplikasi toh bisa membuka bungkusnya, jadi tidak ada
    keuntungan nyata dibanding DEK turunan.
 2. **pgcrypto / `pgp_sym_encrypt` di dalam Postgres**. *Ditolak*: kunci melewati SQL/statement log,

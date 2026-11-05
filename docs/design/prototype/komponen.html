@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="id-ID" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Komponen · Prototipe KRAN</title>
+    <script src="assets/theme-init.js"></script>
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/base.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <script src="assets/app.js" defer></script>
+  </head>
+  <body data-title-key="comp.docTitle">
+    <a class="skip-link" href="#main" data-i18n="common.skip">Lewati ke konten utama</a>
+    <p class="synthetic-strip" role="region" aria-label="Prototipe, data sintetis" data-i18n-aria-label="common.prototype" data-i18n="common.prototype">Prototipe, data sintetis</p>
+
+    <header class="app-header">
+      <a class="brand" href="index.html">
+        <span class="brand__name">KRAN</span>
+        <span class="brand__sub" data-i18n="common.appSub">Inti koperasi</span>
+      </a>
+    </header>
+
+    <main id="main" class="page" tabindex="-1">
+      <div class="page-header">
+        <div>
+          <h1 data-i18n="comp.title">Galeri komponen</h1>
+          <p class="page-header__intro" data-i18n="comp.intro"></p>
+        </div>
+      </div>
+
+      <nav aria-labelledby="toc-title" class="stack-sm">
+        <h2 id="toc-title" class="demo-label" data-i18n="comp.sections">Bagian halaman</h2>
+        <ul class="toc">
+          <li><a href="#sec-button">Button</a></li>
+          <li><a href="#sec-input">Input</a></li>
+          <li><a href="#sec-select">Select</a></li>
+          <li><a href="#sec-money-input">MoneyInput</a></li>
+          <li><a href="#sec-money">Money</a></li>
+          <li><a href="#sec-status">StatusBadge</a></li>
+          <li><a href="#sec-alert">Alert</a></li>
+          <li><a href="#sec-empty">EmptyState</a></li>
+          <li><a href="#sec-error">ErrorState</a></li>
+          <li><a href="#sec-loading">LoadingState</a></li>
+          <li><a href="#sec-table">DataTable</a></li>
+          <li><a href="#sec-filter">FilterBar</a></li>
+          <li><a href="#sec-pagination">Pagination</a></li>
+          <li><a href="#sec-review">ReviewPanel</a></li>
+          <li><a href="#sec-dialog">Dialog</a></li>
+          <li><a href="#sec-session">SessionLock</a></li>
+          <li><a href="#sec-page-header">PageHeader</a></li>
+          <li><a href="#sec-toolbar">Toolbar</a></li>
+          <li><a href="#sec-shell">AppShell</a></li>
+        </ul>
+      </nav>
+
+      <div class="gallery">
+        <section class="gallery__section" id="sec-button" aria-labelledby="sec-button-title">
+          <div class="gallery__head">
+            <h2 id="sec-button-title" data-i18n="comp.sec.button">Tombol</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.button"></p>
+          <div class="demo-row">
+            <button type="button" class="btn btn--primary" data-demo-note="comp.button.demoPrimary">
+              <span data-i18n="comp.button.primary">Aksi primer</span>
+            </button>
+            <button type="button" class="btn" data-demo-note="comp.button.demoSecondary">
+              <span data-i18n="comp.button.secondary">Aksi sekunder</span>
+            </button>
+            <button type="button" class="btn btn--ghost" data-demo-note="comp.button.demoGhost">
+              <span data-i18n="comp.button.ghost">Aksi senyap</span>
+            </button>
+            <button type="button" class="btn btn--danger" data-dialog-open="gallery-confirm">
+              <span data-i18n="comp.button.danger">Tutup kas</span>
+            </button>
+            <button type="button" class="btn" disabled>
+              <span data-i18n="comp.button.disabled">Nonaktif</span>
+            </button>
+            <button type="button" class="btn" id="button-loading">
+              <span class="btn__spinner" hidden aria-hidden="true"></span>
+              <span data-i18n="comp.button.loading">Menyimpan</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="gallery__section" id="sec-input" aria-labelledby="sec-input-title">
+          <div class="gallery__head">
+            <h2 id="sec-input-title" data-i18n="comp.sec.input">Input</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.input"></p>
+          <div class="demo-row demo-row--top">
+            <div class="demo-col">
+              <span class="demo-label" data-i18n="comp.state.default">Default</span>
+              <div class="field">
+                <label class="label" for="demo-input-default" data-i18n="comp.input.accountLabel">Nomor rekening</label>
+                <input class="input" id="demo-input-default" value="1000000001" aria-describedby="demo-input-default-hint" />
+                <p class="hint" id="demo-input-default-hint" data-i18n="comp.input.accountHint"></p>
+              </div>
+            </div>
+            <div class="demo-col">
+              <span class="demo-label" data-i18n="comp.state.focus">Fokus</span>
+              <div class="field">
+                <label class="label" for="demo-input-focus" data-i18n="comp.input.accountLabel">Nomor rekening</label>
+                <input class="input input--focus-demo" id="demo-input-focus" value="1000000001" />
+              </div>
+            </div>
+            <div class="demo-col">
+              <span class="demo-label" data-i18n="comp.state.error">Galat</span>
+              <div class="field">
+                <label class="label" for="demo-input-error" data-i18n="comp.input.accountLabel">Nomor rekening</label>
+                <input
+                  class="input"
+                  id="demo-input-error"
+                  value="1001"
+                  aria-invalid="true"
+                  aria-describedby="demo-input-error-message"
+                />
+                <p class="field-error" id="demo-input-error-message" data-i18n="comp.input.error"></p>
+              </div>
+            </div>
+            <div class="demo-col">
+              <span class="demo-label" data-i18n="comp.state.disabled">Nonaktif</span>
+              <div class="field">
+                <label class="label" for="demo-input-disabled" data-i18n="comp.input.disabledLabel">Cabang</label>
+                <input class="input" id="demo-input-disabled" value="[NAMA CABANG]" disabled />
+              </div>
+            </div>
+            <div class="demo-col">
+              <span class="demo-label" data-i18n="comp.state.readonly">Hanya baca</span>
+              <div class="field">
+                <label class="label" for="demo-input-readonly" data-i18n="comp.input.readonlyLabel">Kasir</label>
+                <input class="input" id="demo-input-readonly" value="[NAMA KASIR]" readonly />
+              </div>
+            </div>
+            <div class="demo-col">
+              <span class="demo-label" data-i18n="comp.state.helper">Helper</span>
+              <div class="field">
+                <label class="label" for="demo-input-helper" data-i18n="comp.input.noteLabel">Keterangan</label>
+                <input class="input" id="demo-input-helper" aria-describedby="demo-input-helper-hint" />
+                <p class="hint" id="demo-input-helper-hint" data-i18n="comp.input.noteHint"></p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="gallery__section" id="sec-select" aria-labelledby="sec-select-title">
+          <div class="gallery__head">
+            <h2 id="sec-select-title" data-i18n="comp.sec.select">Select</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.select"></p>
+          <div class="demo-row demo-row--top">
+            <div class="demo-col">
+              <span class="demo-label" data-i18n="comp.state.default">Default</span>
+              <div class="field">
+                <label class="label" for="demo-select" data-i18n="comp.select.label">Jenis simpanan</label>
+                <select class="select" id="demo-select">
+                  <option data-i18n="comp.select.optionVoluntary">Simpanan sukarela</option>
+                  <option data-i18n="comp.select.optionMandatory">Simpanan wajib</option>
+                  <option data-i18n="comp.select.optionPrincipal">Simpanan pokok</option>
+                </select>
+              </div>
+            </div>
+            <div class="demo-col">
+              <span class="demo-label" data-i18n="comp.state.disabled">Nonaktif</span>
+              <div class="field">
+                <label class="label" for="demo-select-disabled" data-i18n="comp.input.disabledLabel">Cabang</label>
+                <select class="select" id="demo-select-disabled" disabled>
+                  <option>[NAMA CABANG]</option>
+                </select>
+              </div>
+            </div>
+            <div class="demo-col">
+              <span class="demo-label" data-i18n="comp.state.error">Galat</span>
+              <div class="field">
+                <label class="label" for="demo-select-error" data-i18n="comp.select.label">Jenis simpanan</label>
+                <select class="select" id="demo-select-error" aria-invalid="true" aria-describedby="demo-select-error-msg">
+                  <option data-i18n="comp.select.optionVoluntary">Simpanan sukarela</option>
+                  <option data-i18n="comp.select.optionMandatory">Simpanan wajib</option>
+                  <option data-i18n="comp.select.optionPrincipal">Simpanan pokok</option>
+                </select>
+                <p class="field-error" id="demo-select-error-msg" data-i18n="comp.select.error"></p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="gallery__section" id="sec-money-input" aria-labelledby="sec-money-input-title">
+          <div class="gallery__head">
+            <h2 id="sec-money-input-title" data-i18n="comp.sec.moneyInput">MoneyInput</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.moneyInput"></p>
+          <div class="demo-row demo-row--top">
+            <div class="demo-col" data-money-input>
+              <span class="demo-label" data-i18n="comp.state.empty">Kosong</span>
+              <div class="field">
+                <label class="label" for="demo-money-empty" data-i18n="kas.amount">Nominal (IDR)</label>
+                <input class="input input--amount" id="demo-money-empty" inputmode="decimal" autocomplete="off" aria-describedby="demo-money-empty-hint demo-money-empty-preview" />
+                <p class="hint" id="demo-money-empty-hint" data-i18n="kas.amountHint"></p>
+                <p class="money-preview" id="demo-money-empty-preview" data-money-preview></p>
+              </div>
+            </div>
+            <div class="demo-col" data-money-input>
+              <span class="demo-label" data-i18n="comp.state.valid">Valid</span>
+              <div class="field">
+                <label class="label" for="demo-money-valid" data-i18n="kas.amount">Nominal (IDR)</label>
+                <input class="input input--amount" id="demo-money-valid" inputmode="decimal" autocomplete="off" value="150000" aria-describedby="demo-money-valid-preview" />
+                <p class="money-preview" id="demo-money-valid-preview" data-money-preview></p>
+              </div>
+            </div>
+            <div class="demo-col" data-money-input>
+              <span class="demo-label" data-i18n="comp.state.error">Galat</span>
+              <div class="field">
+                <label class="label" for="demo-money-error" data-i18n="kas.amount">Nominal (IDR)</label>
+                <input
+                  class="input input--amount"
+                  id="demo-money-error"
+                  inputmode="decimal"
+                  autocomplete="off"
+                  value="0"
+                  aria-invalid="true"
+                  aria-describedby="demo-money-error-msg"
+                />
+                <p class="field-error" id="demo-money-error-msg" data-money-error data-i18n="kas.amountErrorZero"></p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="gallery__section" id="sec-money" aria-labelledby="sec-money-title">
+          <div class="gallery__head">
+            <h2 id="sec-money-title" data-i18n="comp.sec.money">Tampilan uang</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.money"></p>
+          <div class="demo-row demo-row--top">
+            <div class="demo-col">
+              <span class="demo-label" data-i18n="comp.money.cellLabel">Sel tabel</span>
+              <div class="table-wrap">
+                <table>
+                  <caption data-i18n="comp.money.header">Nominal (IDR)</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" data-i18n="comp.money.header">Nominal (IDR)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td class="money-cell"><span class="money" data-money="1250000">1.250.000,00</span></td></tr>
+                    <tr><td class="money-cell"><span class="money" data-money="-300000">-300.000,00</span></td></tr>
+                    <tr><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="demo-col">
+              <span class="demo-label" data-i18n="comp.money.inlineLabel">Dalam kalimat</span>
+              <p>
+                <span data-i18n="comp.money.inlineText">Saldo setelah transaksi</span>
+                <strong class="money" data-money="1250000">1.250.000,00</strong>
+              </p>
+            </div>
+            <div class="demo-col">
+              <span class="demo-label" data-i18n="comp.money.summaryLabel">Ringkasan</span>
+              <dl class="amount-summary">
+                <dt class="amount-summary__label" data-i18n="comp.money.summaryText">Total setoran sesi</dt>
+                <dd class="amount-summary__value" data-money="3075000">3.075.000,00</dd>
+              </dl>
+            </div>
+          </div>
+        </section>
+
+        <section class="gallery__section" id="sec-status" aria-labelledby="sec-status-title">
+          <div class="gallery__head">
+            <h2 id="sec-status-title" data-i18n="comp.sec.status">StatusBadge</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.status"></p>
+          <div class="demo-row">
+            <span class="badge badge--success" data-badge="active">Aktif</span>
+            <span class="badge badge--warning" data-badge="dormant">Dormant</span>
+            <span class="badge" data-badge="closed">Ditutup</span>
+            <span class="badge badge--info" data-badge="pending">Menunggu</span>
+            <span class="badge badge--danger" data-badge="arrears">Tunggakan</span>
+            <span class="badge badge--success" data-badge="approved">Disetujui</span>
+            <span class="badge badge--danger" data-badge="rejected">Ditolak</span>
+          </div>
+          <p class="note" data-i18n="comp.status.note"></p>
+        </section>
+
+        <section class="gallery__section" id="sec-alert" aria-labelledby="sec-alert-title">
+          <div class="gallery__head">
+            <h2 id="sec-alert-title" data-i18n="comp.sec.alert">Alert</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.alert"></p>
+          <div class="stack-sm">
+            <div class="alert alert--info" role="status">
+              <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7h.01"/></svg>
+              <div>
+                <p class="alert__title" data-i18n="comp.alert.infoTitle">Periode berjalan</p>
+                <p class="alert__body" data-i18n="comp.alert.infoBody"></p>
+              </div>
+            </div>
+            <div class="alert alert--success" role="status">
+              <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12 5 5 9-10"/></svg>
+              <div>
+                <p class="alert__title" data-i18n="comp.alert.successTitle">Tersimpan</p>
+                <p class="alert__body" data-i18n="comp.alert.successBody"></p>
+              </div>
+            </div>
+            <div class="alert alert--warning" role="status">
+              <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2Z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+              <div>
+                <p class="alert__title" data-i18n="comp.alert.warningTitle">Kas belum seimbang</p>
+                <p class="alert__body" data-i18n="comp.alert.warningBody"></p>
+              </div>
+            </div>
+            <div class="alert alert--error" role="alert">
+              <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6"/><path d="m15 9-6 6"/></svg>
+              <div>
+                <p class="alert__title" data-i18n="comp.alert.errorTitle">Transaksi gagal</p>
+                <p class="alert__body" data-i18n="comp.alert.errorBody"></p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="gallery__section" id="sec-empty" aria-labelledby="sec-empty-title">
+          <div class="gallery__head">
+            <h2 id="sec-empty-title" data-i18n="comp.sec.empty">EmptyState</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.empty"></p>
+          <div class="demo-row demo-row--top">
+            <div class="demo-col">
+              <span class="demo-label" data-i18n="comp.state.firstRun">Belum ada data</span>
+              <div class="empty-state">
+                <p class="empty-state__title" data-i18n="comp.empty.firstTitle"></p>
+                <p class="empty-state__body" data-i18n="comp.empty.firstBody"></p>
+              </div>
+            </div>
+            <div class="demo-col">
+              <span class="demo-label" data-i18n="comp.state.filtered">Hasil filter kosong</span>
+              <div class="empty-state">
+                <p class="empty-state__title" data-i18n="comp.empty.filteredTitle"></p>
+                <p class="empty-state__body" data-i18n="comp.empty.filteredBody"></p>
+                <div class="empty-state__actions">
+                  <button type="button" class="btn btn--sm" data-clear-gallery data-i18n="common.clearFilters"></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="gallery__section" id="sec-error" aria-labelledby="sec-error-title">
+          <div class="gallery__head">
+            <h2 id="sec-error-title" data-i18n="comp.sec.error">ErrorState</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.error"></p>
+          <div id="gallery-error" class="error-state" role="status">
+            <svg class="icon error-state__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2Z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+            <p class="error-state__title" data-i18n="comp.error.title"></p>
+            <p class="error-state__body" data-i18n="comp.error.body"></p>
+            <p class="error-state__reference">
+              <span data-i18n="common.reference">Rujukan</span>: <code>ERR-0007</code>
+            </p>
+            <div class="error-state__actions">
+              <button type="button" class="btn" id="gallery-error-retry">
+                <span data-i18n="comp.error.retry">Coba lagi</span>
+              </button>
+              <button type="button" class="btn btn--ghost" data-copy-target="#error-ref" data-i18n="common.copyRef"></button>
+              <code id="error-ref" class="sr-only">ERR-0007</code>
+            </div>
+          </div>
+          <div id="gallery-error-success" class="alert alert--success" hidden>
+            <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12 5 5 9-10"/></svg>
+            <p class="alert__body" data-i18n="comp.error.success"></p>
+          </div>
+        </section>
+
+        <section class="gallery__section" id="sec-loading" aria-labelledby="sec-loading-title">
+          <div class="gallery__head">
+            <h2 id="sec-loading-title" data-i18n="comp.sec.loading">LoadingState</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.loading"></p>
+          <div class="loading-state" role="status" aria-busy="true">
+            <span class="loading-state__bar" aria-hidden="true"></span>
+            <span data-i18n="comp.loading.label"></span>
+          </div>
+        </section>
+
+        <section class="gallery__section" id="sec-table" aria-labelledby="sec-table-title">
+          <div class="gallery__head">
+            <h2 id="sec-table-title" data-i18n="comp.sec.table">DataTable</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.table"></p>
+
+          <div class="demo-row demo-row--top">
+            <span class="demo-label" data-i18n="comp.table.density">Kepadatan tabel</span>
+            <div class="segmented segmented--sm" role="group" aria-label="Kepadatan tabel" data-i18n-aria-label="comp.table.density" id="gallery-density">
+              <button type="button" data-density="default" aria-pressed="true" data-i18n="comp.table.default">Default</button>
+              <button type="button" data-density="dense" aria-pressed="false" data-i18n="comp.table.dense">Padat</button>
+            </div>
+          </div>
+
+          <form class="filter-bar" role="search" aria-label="Cari transaksi" data-i18n-aria-label="comp.table.searchLabel" onsubmit="return false">
+            <div class="field">
+              <label class="label" for="gallery-search" data-i18n="comp.table.searchLabel">Cari anggota atau rujukan</label>
+              <input class="input" id="gallery-search" type="search" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label class="label" for="gallery-status" data-i18n="common.status">Status</label>
+              <select class="select" id="gallery-status">
+                <option value="" data-i18n="comp.table.statusAll">Semua status</option>
+                <option value="posted" data-i18n="status.posted">Tersimpan</option>
+                <option value="pending" data-i18n="status.pending">Menunggu</option>
+                <option value="failed" data-i18n="status.failed">Gagal</option>
+              </select>
+            </div>
+            <button type="button" class="btn" id="gallery-clear" data-i18n="common.clearFilters"></button>
+            <p class="filter-bar__count" id="gallery-count" role="status"></p>
+          </form>
+
+          <div class="table-wrap" role="region" tabindex="0" aria-label="Transaksi contoh, 57 baris sintetis" data-i18n-aria-label="comp.table.caption">
+            <table id="gallery-table">
+              <caption data-i18n="comp.table.caption">Transaksi contoh, 57 baris sintetis</caption>
+              <thead>
+                <tr>
+                  <th scope="col" data-column="time" aria-sort="ascending">
+                    <button type="button" class="sort-btn" data-sort="time">
+                      <span data-i18n="comp.table.colTime">Jam</span>
+                      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5v14"/><path d="m5 8 3-3 3 3"/><path d="M16 19V5"/><path d="m13 16 3 3 3-3"/></svg>
+                    </button>
+                  </th>
+                  <th scope="col" data-column="member">
+                    <button type="button" class="sort-btn" data-sort="member">
+                      <span data-i18n="comp.table.colMember">Anggota</span>
+                      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5v14"/><path d="m5 8 3-3 3 3"/><path d="M16 19V5"/><path d="m13 16 3 3 3-3"/></svg>
+                    </button>
+                  </th>
+                  <th scope="col" data-i18n="comp.table.colType">Jenis</th>
+                  <th scope="col" class="money-cell" data-column="amount">
+                    <button type="button" class="sort-btn" data-sort="amount">
+                      <span data-i18n="comp.table.colAmount">Nominal (IDR)</span>
+                      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5v14"/><path d="m5 8 3-3 3 3"/><path d="M16 19V5"/><path d="m13 16 3 3 3-3"/></svg>
+                    </button>
+                  </th>
+                  <th scope="col" data-i18n="comp.table.colStatus">Status</th>
+                  <th scope="col" data-i18n="comp.table.colRef">Rujukan</th>
+                </tr>
+              </thead>
+              <tbody id="gallery-tbody"></tbody>
+              <tfoot>
+                <tr>
+                  <th scope="row" colspan="3" data-i18n="comp.table.total">Total baris terlihat</th>
+                  <td class="money-cell"><span class="money" id="gallery-total">0,00</span></td>
+                  <td colspan="2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div class="pagination">
+            <span class="pagination__range" id="gallery-range"></span>
+            <span class="pagination__range" id="gallery-page"></span>
+            <div class="pagination__pages" id="gallery-pager"></div>
+          </div>
+        </section>
+
+        <section class="gallery__section" id="sec-filter" aria-labelledby="sec-filter-title">
+          <div class="gallery__head">
+            <h2 id="sec-filter-title" data-i18n="comp.sec.filter">FilterBar</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.filter"></p>
+          <form class="filter-bar" id="filter-demo" role="search" aria-label="Cari anggota" data-i18n-aria-label="comp.filter.searchLabel">
+            <div class="field">
+              <label class="label" for="filter-demo-search" data-i18n="comp.filter.searchLabel">Cari anggota</label>
+              <input class="input" id="filter-demo-search" type="search" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label class="label" for="filter-demo-status" data-i18n="comp.filter.statusLabel">Status anggota</label>
+              <select class="select" id="filter-demo-status">
+                <option value="" data-i18n="comp.table.statusAll">Semua status</option>
+                <option value="active" data-i18n="status.active">Aktif</option>
+                <option value="dormant" data-i18n="status.dormant">Dormant</option>
+                <option value="closed" data-i18n="status.closed">Ditutup</option>
+              </select>
+            </div>
+            <p class="filter-bar__count" id="filter-demo-count" role="status"></p>
+          </form>
+          <ul class="list-plain stack-sm" aria-label="Anggota contoh" data-i18n-aria-label="comp.filter.caption">
+            <li data-filter-status="active"><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 01 · <span data-i18n="status.active">Aktif</span></li>
+            <li data-filter-status="active"><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 02 · <span data-i18n="status.active">Aktif</span></li>
+            <li data-filter-status="dormant"><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 03 · <span data-i18n="status.dormant">Dormant</span></li>
+            <li data-filter-status="closed"><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 04 · <span data-i18n="status.closed">Ditutup</span></li>
+            <li data-filter-status="active"><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 05 · <span data-i18n="status.active">Aktif</span></li>
+            <li data-filter-status="dormant"><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 06 · <span data-i18n="status.dormant">Dormant</span></li>
+          </ul>
+        </section>
+
+        <section class="gallery__section" id="sec-pagination" aria-labelledby="sec-pagination-title">
+          <div class="gallery__head">
+            <h2 id="sec-pagination-title" data-i18n="comp.sec.pagination">Pagination</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.pagination"></p>
+          <ul class="list-plain stack-sm" id="pager-list" aria-label="Anggota contoh" data-i18n-aria-label="comp.filter.caption">
+            <li><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 01 · <span data-i18n="ph.memberNo">[NOMOR ANGGOTA]</span> 0001</li>
+            <li><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 02 · <span data-i18n="ph.memberNo">[NOMOR ANGGOTA]</span> 0002</li>
+            <li><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 03 · <span data-i18n="ph.memberNo">[NOMOR ANGGOTA]</span> 0003</li>
+            <li><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 04 · <span data-i18n="ph.memberNo">[NOMOR ANGGOTA]</span> 0004</li>
+            <li><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 05 · <span data-i18n="ph.memberNo">[NOMOR ANGGOTA]</span> 0005</li>
+            <li><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 06 · <span data-i18n="ph.memberNo">[NOMOR ANGGOTA]</span> 0006</li>
+            <li><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 07 · <span data-i18n="ph.memberNo">[NOMOR ANGGOTA]</span> 0007</li>
+            <li><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 08 · <span data-i18n="ph.memberNo">[NOMOR ANGGOTA]</span> 0008</li>
+            <li><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 09 · <span data-i18n="ph.memberNo">[NOMOR ANGGOTA]</span> 0009</li>
+            <li><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 10 · <span data-i18n="ph.memberNo">[NOMOR ANGGOTA]</span> 0010</li>
+            <li><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 11 · <span data-i18n="ph.memberNo">[NOMOR ANGGOTA]</span> 0011</li>
+            <li><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 12 · <span data-i18n="ph.memberNo">[NOMOR ANGGOTA]</span> 0012</li>
+            <li><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 13 · <span data-i18n="ph.memberNo">[NOMOR ANGGOTA]</span> 0013</li>
+          </ul>
+          <nav class="pagination" id="pager-demo" aria-label="Halaman" data-i18n-aria-label="comp.pagination.sample">
+            <span class="pagination__range" id="pager-range"></span>
+            <div class="pagination__pages">
+              <button type="button" class="btn btn--sm" data-page-prev data-i18n="common.prev"></button>
+              <button type="button" class="btn btn--sm" data-page="1">1</button>
+              <button type="button" class="btn btn--sm" data-page="2">2</button>
+              <button type="button" class="btn btn--sm" data-page="3">3</button>
+              <button type="button" class="btn btn--sm" data-page="4">4</button>
+              <button type="button" class="btn btn--sm" data-page-next data-i18n="common.next"></button>
+            </div>
+          </nav>
+        </section>
+
+        <section class="gallery__section" id="sec-review" aria-labelledby="sec-review-title">
+          <div class="gallery__head">
+            <h2 id="sec-review-title" data-i18n="comp.sec.review">ReviewPanel</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.review"></p>
+          <div class="panel review-panel" id="gallery-review">
+            <h3 class="panel__title" data-i18n="comp.review.title">Tinjau setoran</h3>
+
+            <div data-review-filled>
+              <dl class="facts">
+                <dt data-i18n="comp.review.member">Anggota</dt>
+                <dd><span data-i18n="ph.member">[NAMA ANGGOTA]</span> 01</dd>
+                <dt data-i18n="comp.review.account">Rekening</dt>
+                <dd class="num">1000000001</dd>
+                <dt data-i18n="comp.review.kind">Jenis simpanan</dt>
+                <dd data-i18n="comp.review.kindValue">Simpanan sukarela</dd>
+                <dt data-i18n="comp.review.before">Saldo sebelum</dt>
+                <dd class="money" data-money="1000000">1.000.000,00</dd>
+                <dt data-i18n="comp.review.amount">Nominal</dt>
+                <dd class="money" data-money="250000" data-money-sign="+">+ 250.000,00</dd>
+                <dt data-i18n="comp.review.after">Saldo sesudah</dt>
+                <dd class="money" data-money="1250000">1.250.000,00</dd>
+              </dl>
+              <div class="review-panel__ref">
+                <span data-i18n="common.reference">Rujukan</span>
+                <code id="gallery-review-ref">TRX-000128</code>
+                <button type="button" class="btn btn--sm" data-copy-target="#gallery-review-ref" data-i18n="common.copyRef"></button>
+              </div>
+              <button type="button" class="btn btn--primary btn--block" id="gallery-review-submit" data-review-submit>
+                <span data-i18n="comp.review.submit">Simpan setoran</span>
+              </button>
+            </div>
+
+            <div data-review-empty hidden>
+              <div class="empty-state">
+                <p class="empty-state__title" data-i18n="comp.review.emptyTitle"></p>
+                <p class="empty-state__body" data-i18n="comp.review.emptyBody"></p>
+              </div>
+            </div>
+
+            <div data-review-error hidden>
+              <div class="error-state" role="alert">
+                <p class="error-state__title" data-i18n="comp.review.errorTitle"></p>
+                <p class="error-state__body" data-i18n="comp.review.errorBody"></p>
+                <p class="error-state__reference"><span data-i18n="common.reference">Rujukan</span>: <code>TRX-000128</code></p>
+              </div>
+            </div>
+
+            <div class="alert alert--success" id="gallery-review-result" data-review-result hidden>
+              <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12 5 5 9-10"/></svg>
+              <p class="alert__body" data-i18n="comp.review.success"></p>
+            </div>
+
+            <div class="review-panel__demo">
+              <span data-i18n="common.demoState">Contoh state</span>
+              <div class="segmented segmented--sm">
+                <button type="button" data-review-mode="filled" aria-pressed="true" data-i18n="comp.state.filled">Terisi</button>
+                <button type="button" data-review-mode="empty" aria-pressed="false" data-i18n="comp.state.empty">Kosong</button>
+                <button type="button" data-review-mode="error" aria-pressed="false" data-i18n="comp.state.error">Galat</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="gallery__section" id="sec-dialog" aria-labelledby="sec-dialog-title">
+          <div class="gallery__head">
+            <h2 id="sec-dialog-title" data-i18n="comp.sec.dialog">Dialog</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.dialog"></p>
+          <button type="button" class="btn" data-dialog-open="gallery-confirm">
+            <span data-i18n="comp.dialog.open">Buka dialog</span>
+          </button>
+        </section>
+
+        <section class="gallery__section" id="sec-session" aria-labelledby="sec-session-title">
+          <div class="gallery__head">
+            <h2 id="sec-session-title" data-i18n="comp.sec.session">SessionLock</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.session"></p>
+          <div class="session-banner">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+            <span class="session-banner__title" data-i18n="kas.lockTitle">Sesi berakhir</span>
+            <span data-i18n="kas.lockBody"></span>
+            <button type="button" class="btn btn--sm" data-lock-open>
+              <span data-i18n="comp.session.open">Tampilkan kunci sesi</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="gallery__section" id="sec-page-header" aria-labelledby="sec-page-header-title">
+          <div class="gallery__head">
+            <h2 id="sec-page-header-title" data-i18n="comp.sec.pageHeader">PageHeader</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.pageHeader"></p>
+          <div class="demo-frame">
+            <div class="page-header">
+              <div>
+                <p class="sample-h1" data-i18n="comp.pageHeader.title">Anggota</p>
+                <p class="page-header__intro" data-i18n="comp.pageHeader.intro"></p>
+              </div>
+              <div class="page-header__actions">
+                <button type="button" class="btn" data-demo-note="comp.pageHeader.actionMsg">
+                  <span data-i18n="comp.pageHeader.action">Tambah anggota</span>
+                </button>
+              </div>
+            </div>
+            <p class="note" data-i18n="comp.pageHeader.actionNote"></p>
+          </div>
+        </section>
+
+        <section class="gallery__section" id="sec-toolbar" aria-labelledby="sec-toolbar-title">
+          <div class="gallery__head">
+            <h2 id="sec-toolbar-title" data-i18n="comp.sec.toolbar">Toolbar</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.toolbar"></p>
+          <div class="toolbar">
+            <div class="segmented" role="group" aria-label="Jenis transaksi" data-i18n-aria-label="comp.toolbar.mode" data-segment-group>
+              <button type="button" aria-pressed="true" data-i18n="comp.toolbar.deposit">Setor</button>
+              <button type="button" aria-pressed="false" data-i18n="comp.toolbar.withdrawal">Tarik</button>
+            </div>
+            <a class="btn" href="#sec-table" data-i18n="comp.toolbar.search">Cari transaksi</a>
+            <button type="button" class="btn" data-refresh-table data-i18n="comp.toolbar.reload"></button>
+          </div>
+        </section>
+
+        <section class="gallery__section" id="sec-shell" aria-labelledby="sec-shell-title">
+          <div class="gallery__head">
+            <h2 id="sec-shell-title" data-i18n="comp.sec.shell">AppShell nav</h2>
+          </div>
+          <p class="gallery__contract" data-i18n="comp.contract.shell"></p>
+          <nav class="nav-sample" aria-label="Contoh navigasi" data-i18n-aria-label="comp.shell.label">
+            <ul>
+              <li><a href="kas.html" data-i18n="common.kas">Kas</a></li>
+              <li><a href="komponen.html" aria-current="page" data-i18n="common.components">Komponen</a></li>
+              <li><a href="index.html" data-i18n="common.home">Indeks</a></li>
+            </ul>
+          </nav>
+        </section>
+      </div>
+
+      <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+    </main>
+
+    <footer class="settings-bar" aria-label="Pengaturan tampilan" data-i18n-aria-label="common.settings">
+      <div class="settings-group" role="group" aria-labelledby="theme-label">
+        <span class="settings-group__label" id="theme-label" data-i18n="common.theme">Tema</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-theme-set="light" aria-pressed="true" data-i18n="common.themeLight">Terang</button>
+          <button type="button" data-theme-set="dark" aria-pressed="false" data-i18n="common.themeDark">Gelap</button>
+        </div>
+      </div>
+      <div class="settings-group" role="group" aria-labelledby="language-label">
+        <span class="settings-group__label" id="language-label" data-i18n="common.language">Bahasa</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-locale-set="id" aria-pressed="true" data-i18n="common.langId">Indonesia</button>
+          <button type="button" data-locale-set="en" aria-pressed="false" data-i18n="common.langEn">English</button>
+        </div>
+      </div>
+      <span class="settings-bar__note" data-i18n="common.prefNote"></span>
+    </footer>
+
+    <dialog id="gallery-confirm" aria-labelledby="gallery-confirm-title" aria-describedby="gallery-confirm-body">
+      <div class="dialog__header">
+        <h2 class="dialog__title" id="gallery-confirm-title" data-i18n="comp.dialog.title">Tutup kas?</h2>
+      </div>
+      <div class="dialog__body">
+        <p id="gallery-confirm-body" data-i18n="comp.dialog.body"></p>
+        <p class="note" data-i18n="comp.dialog.note"></p>
+      </div>
+      <div class="dialog__actions">
+        <button type="button" class="btn" data-dialog-close data-initial-focus data-i18n="common.cancel">Batal</button>
+        <button type="button" class="btn btn--danger-solid" data-confirm data-i18n="comp.dialog.confirm">Tutup kas</button>
+      </div>
+    </dialog>
+
+    <dialog id="lock-dialog" data-no-backdrop-close aria-labelledby="lock-title" aria-describedby="lock-body">
+      <div class="dialog__header">
+        <h2 class="dialog__title" id="lock-title" data-i18n="kas.lockTitle">Sesi berakhir</h2>
+      </div>
+      <div class="dialog__body">
+        <p id="lock-body" data-i18n="kas.lockBody"></p>
+        <p class="session-lock__countdown" id="lock-countdown">01:00</p>
+        <p class="note" data-i18n="kas.lockNote"></p>
+      </div>
+      <div class="dialog__actions">
+        <button type="button" class="btn" data-dialog-close data-i18n="kas.lockSignOut">Keluar</button>
+        <button type="button" class="btn btn--primary" id="lock-continue" data-initial-focus data-i18n="kas.lockContinue">Lanjutkan sesi</button>
+      </div>
+    </dialog>
+  </body>
+</html>

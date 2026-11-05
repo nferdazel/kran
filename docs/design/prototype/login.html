@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="id-ID" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Masuk · Prototipe KRAN</title>
+    <script src="assets/theme-init.js"></script>
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/base.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <link rel="stylesheet" href="assets/screens-tx.css" />
+    <script src="assets/i18n-tx.js"></script>
+    <script src="assets/app.js" defer></script>
+    <script src="assets/screens-tx.js" defer></script>
+  </head>
+  <body data-title-key="login.docTitle" data-tx-page="login">
+    <a class="skip-link" href="#main" data-i18n="common.skip">Lewati ke konten utama</a>
+    <p class="synthetic-strip" role="region" aria-label="Prototipe, data sintetis" data-i18n-aria-label="common.prototype" data-i18n="common.prototype">Prototipe, data sintetis</p>
+
+    <main id="main" class="tx-login" tabindex="-1">
+      <div class="tx-login__card">
+        <div class="tx-institution">
+          <p class="tx-institution__mark">KRAN</p>
+          <p class="tx-institution__name" data-i18n="login.institution">Koperasi [NAMA KOPERASI]</p>
+        </div>
+
+        <div class="tx-login__head">
+          <h1 data-i18n="login.title">Masuk</h1>
+          <p class="page-header__intro" data-i18n="login.intro">Gunakan akun operator yang diberikan admin koperasi.</p>
+        </div>
+
+        <div class="alert alert--error" id="login-alert" role="alert" hidden>
+          <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2Z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+          <div>
+            <p class="alert__title" id="login-alert-title" data-i18n="login.error.summary">Periksa kolom bertanda.</p>
+            <p class="alert__body" id="login-alert-body"></p>
+          </div>
+        </div>
+
+        <form class="tx-login__form" id="login-form" novalidate>
+          <div class="field">
+            <label class="label" for="login-username" data-i18n="login.username">Nama pengguna</label>
+            <input
+              class="input"
+              id="login-username"
+              name="username"
+              type="text"
+              autocomplete="username"
+              spellcheck="false"
+              placeholder="[NAMA PENGGUNA]"
+              data-i18n-placeholder="ph.username"
+              required
+              aria-describedby="login-username-hint login-username-error"
+            />
+            <p class="hint" id="login-username-hint" data-i18n="login.usernameHint">Nama pengguna, bukan nomor anggota.</p>
+            <p class="field-error" id="login-username-error" hidden></p>
+          </div>
+
+          <div class="field">
+            <label class="label" for="login-password" data-i18n="login.password">Kata sandi</label>
+            <input
+              class="input"
+              id="login-password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+              aria-describedby="login-caps login-password-error"
+            />
+            <p class="field-error" id="login-password-error" hidden></p>
+            <p class="hint" id="login-caps" hidden data-i18n="login.caps">Caps Lock aktif. Kata sandi membedakan huruf besar dan kecil.</p>
+          </div>
+
+          <div class="field">
+            <label class="label" for="login-branch" data-i18n="login.branch">Cabang</label>
+            <select class="select" id="login-branch" name="branch" aria-describedby="login-branch-hint">
+              <option value="001" data-i18n="login.branchOption">[NAMA CABANG] · 001</option>
+            </select>
+            <p class="hint" id="login-branch-hint" data-i18n="login.branchHint">Pilih cabang tempat Anda bertugas.</p>
+          </div>
+
+          <button type="submit" class="btn btn--primary btn--block" id="login-submit">
+            <span class="btn__spinner" id="login-spinner" hidden aria-hidden="true"></span>
+            <span id="login-submit-label" data-i18n="login.action">Masuk</span>
+          </button>
+        </form>
+
+        <p class="note" data-i18n="login.demoNote">Prototipe: tidak ada otentikasi nyata dan isian tidak dikirim ke mana pun.</p>
+        <p class="note"><span data-i18n="login.support">Bantuan akun: admin koperasi.</span></p>
+
+        <div class="tx-preview">
+          <label class="tx-preview__label" for="login-state" data-i18n="tx.preview.label">Pratinjau state</label>
+          <select class="select tx-preview__select" id="login-state" data-tx-state-select>
+            <option value="normal" data-i18n="tx.preview.normal">Normal</option>
+            <option value="loading" data-i18n="tx.preview.loading">Memuat</option>
+            <option value="error" data-i18n="tx.preview.error">Galat</option>
+            <option value="locked" data-i18n="tx.preview.locked">Terkunci</option>
+          </select>
+          <p class="note" data-i18n="tx.preview.hint">Kontrol reviewer, bukan bagian alur operator.</p>
+        </div>
+      </div>
+
+      <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+    </main>
+
+    <footer class="settings-bar" aria-label="Pengaturan tampilan" data-i18n-aria-label="common.settings">
+      <div class="settings-group" role="group" aria-labelledby="theme-label">
+        <span class="settings-group__label" id="theme-label" data-i18n="common.theme">Tema</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-theme-set="light" aria-pressed="true" data-i18n="common.themeLight">Terang</button>
+          <button type="button" data-theme-set="dark" aria-pressed="false" data-i18n="common.themeDark">Gelap</button>
+        </div>
+      </div>
+      <div class="settings-group" role="group" aria-labelledby="language-label">
+        <span class="settings-group__label" id="language-label" data-i18n="common.language">Bahasa</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-locale-set="id" aria-pressed="true" data-i18n="common.langId">Indonesia</button>
+          <button type="button" data-locale-set="en" aria-pressed="false" data-i18n="common.langEn">English</button>
+        </div>
+      </div>
+      <span class="settings-bar__note" data-i18n="common.prefNote">Preferensi tersimpan di peramban ini.</span>
+    </footer>
+  </body>
+</html>

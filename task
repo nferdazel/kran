@@ -199,7 +199,7 @@ cmd_i18n() {
 }
 
 # Local binaries used directly (not via `pnpm run`) to avoid implicit installs;
-# see docs/runbooks/dev-web.md.
+# see docs/OPERATIONS.md.
 web_bin() { # web_bin <name> -> print binary path from workspace root if present
   b="$ROOT/node_modules/.bin/$1"
   [ -x "$b" ] && printf '%s' "$b"

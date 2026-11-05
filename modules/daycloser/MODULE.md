@@ -38,7 +38,7 @@ Tidak ada aggregate bisnis. Invarian yang ditegakkan:
   autentikasi, atau bila `daycloser.txn_policy_during_close = ALLOW`.
 - **Task kritis gagal = run FAILED.** Task non-kritis yang gagal dicatat, run tetap selesai
   (penutupan tidak boleh tertahan oleh pekerjaan opsional).
-- **Skip hanya untuk task non-kritis dan hanya pada task satu-chunk** — task multi-chunk yang
+- **Skip hanya untuk task non-kritis dan hanya pada task satu-chunk** - task multi-chunk yang
   berhenti di tengah meninggalkan pekerjaan separuh yang tak bisa dijelaskan. Task kritis yang
   meminta skip = gagal, dan chunk-nya tidak pernah ditandai sukses. Alasan skip disimpan di
   `daycloser.task.reason` (migrasi `0062`) karena monitor membaca DB, bukan log.
@@ -77,7 +77,7 @@ yang menahan adalah run `BLOCKED` itu sendiri. Kegagalan gate pasca-tutup mening
 `CLOSING` sampai run di-resume atau dibatalkan (D-150).
 
 `resume` mengulang **semua** gate (task dan chunk `SUCCEEDED` dikembalikan ke `PENDING`), karena
-keadaan yang disertifikasi gate pra-tutup bisa berubah selama run berhenti — sertifikat lama tidak
+keadaan yang disertifikasi gate pra-tutup bisa berubah selama run berhenti - sertifikat lama tidak
 boleh dipakai untuk menyegel.
 
 ## Event dipublish / dikonsumsi (versi)
@@ -112,16 +112,16 @@ anjuran). Paralelisme & timeout task belum diparameterkan karena belum ditegakka
 
 Schema `daycloser` (migrasi `0051_daycloser_schema.sql`):
 
-- `run` — satu eksekusi per (scope, business date); `param_snapshot`, `summary_hash`.
-- `task` — state/attempt/error/metrics per task.
-- `chunk` — checkpoint per potongan; FK ke `task`.
-- `task_registry` — salinan registry saat boot untuk UI/audit.
-- `checkpoint` — `last_business_date` per entitas untuk task `PER_ENTITY` (hanya boleh maju).
+- `run` - satu eksekusi per (scope, business date); `param_snapshot`, `summary_hash`.
+- `task` - state/attempt/error/metrics per task.
+- `chunk` - checkpoint per potongan; FK ke `task`.
+- `task_registry` - salinan registry saat boot untuk UI/audit.
+- `checkpoint` - `last_business_date` per entitas untuk task `PER_ENTITY` (hanya boleh maju).
 
 ## Task day-close yang didaftarkan
 
 Registry diisi oleh modul saat start (`apps/api/src/daycloser_{gates,ledger,deposit,tasks}.nim`).
-Level dan `critical` diambil dari definisi task, bukan dari dokumen ini — kalau keduanya berbeda,
+Level dan `critical` diambil dari definisi task, bukan dari dokumen ini - kalau keduanya berbeda,
 kode yang benar.
 
 | Task | Level | Kritis | Catatan |

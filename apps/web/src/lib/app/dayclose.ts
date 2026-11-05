@@ -11,7 +11,7 @@
  *  - Penolakan keadaan datang sebagai `409` dengan sebab mesin di `params.reason`; UI memetakan
  *    kode itu ke katalog, bukan menampilkan `detail` mentah server.
  *  - Kode galat task (`DAY-3xx`) ditampilkan apa adanya. Keterangannya disalin dari runbook
- *    `docs/runbooks/dayclose.md`; kode yang tidak dikenal tidak diberi arti karangan.
+ *    `docs/OPERATIONS.md`; kode yang tidak dikenal tidak diberi arti karangan.
  */
 import type { Problem } from "@kran/api-client";
 import type { components } from "@kran/api-client/schema";

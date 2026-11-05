@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="id-ID" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Laporan · Prototipe KRAN</title>
+    <script src="assets/theme-init.js"></script>
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/base.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <link rel="stylesheet" href="assets/screens-gov.css" />
+  </head>
+  <body data-title-key="reports.docTitle" class="gov-page">
+    <a class="skip-link" href="#main" data-i18n="common.skip">Lewati ke konten utama</a>
+    <p class="synthetic-strip" role="region" aria-label="Prototipe, data sintetis" data-i18n-aria-label="common.prototype" data-i18n="common.prototype">Prototipe, data sintetis</p>
+
+    <header class="app-header">
+      <a class="brand" href="index.html">
+        <span class="brand__name">KRAN</span>
+        <span class="brand__sub" data-i18n="common.appSub">Inti koperasi</span>
+      </a>
+      <p class="header-meta">
+        <span class="header-meta__item">
+          <span data-i18n="gov.businessDate">Tanggal buku</span>
+          <span class="header-meta__value" data-i18n="gov.ph.date">[TANGGAL]</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="reports.branch">Cabang</span>
+          <span class="header-meta__value" data-i18n="gov.branchValue">[NAMA CABANG] · 001</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="gov.role">Peran</span>
+          <span class="header-meta__value" data-i18n="gov.role.board">Pengurus</span>
+        </span>
+      </p>
+    </header>
+
+    <div class="app-shell">
+      <nav class="app-nav" aria-label="Navigasi utama" data-i18n-aria-label="common.navMain">
+        <ul>
+          <li class="app-nav__group-label" data-i18n="common.navWork">Pekerjaan</li>
+          <li><a href="kas.html" data-i18n="common.kas">Kas</a></li>
+          <li><a href="anggota.html" data-i18n="gov.navMembers">Anggota</a></li>
+          <li><a href="laporan.html" aria-current="page" data-i18n="gov.navReports">Laporan</a></li>
+          <li><a href="audit.html" data-i18n="gov.navAudit">Audit</a></li>
+          <li class="app-nav__group-label" data-i18n="common.navPrototype">Prototipe</li>
+          <li><a href="komponen.html" data-i18n="common.components">Komponen</a></li>
+          <li><a href="index.html" data-i18n="common.home">Indeks</a></li>
+        </ul>
+      </nav>
+
+      <main id="main" class="app-main" tabindex="-1">
+        <div class="page-header">
+          <div>
+            <h1 data-i18n="reports.title">Laporan</h1>
+            <p class="page-header__intro" data-i18n="reports.intro"></p>
+          </div>
+        </div>
+
+        <div class="gov-state-demo">
+          <span class="gov-state-demo__label" data-i18n="gov.stateDemo">Pratinjau state</span>
+          <div class="segmented segmented--sm" role="group" aria-label="Pratinjau state" data-i18n-aria-label="gov.stateDemo" id="reports-states">
+            <button type="button" data-gov-state="normal" aria-pressed="true" data-i18n="gov.state.normal">Normal</button>
+            <button type="button" data-gov-state="empty" aria-pressed="false" data-i18n="gov.state.empty">Kosong</button>
+            <button type="button" data-gov-state="loading" aria-pressed="false" data-i18n="gov.state.loading">Memuat</button>
+            <button type="button" data-gov-state="error" aria-pressed="false" data-i18n="gov.state.error">Galat</button>
+            <button type="button" data-gov-state="partial" aria-pressed="false" data-i18n="gov.state.partial">Sebagian</button>
+            <button type="button" data-gov-state="denied" aria-pressed="false" data-i18n="gov.state.denied">Tanpa izin</button>
+          </div>
+        </div>
+
+        <div class="alert alert--warning" id="reports-partial" role="status" hidden>
+          <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2Z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+          <p class="alert__body" data-i18n="reports.partial"></p>
+        </div>
+
+        <div class="alert alert--info" id="reports-empty" role="status" hidden>
+          <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7h.01"/></svg>
+          <div>
+            <p class="alert__title" data-i18n="reports.emptyTitle">Belum ada data untuk [PERIODE].</p>
+            <p class="alert__body" data-i18n="reports.emptyBody"></p>
+          </div>
+        </div>
+
+        <div id="reports-content">
+          <div class="toolbar gov-toolbar">
+            <div class="gov-inline-field">
+              <label class="label" for="reports-branch" data-i18n="reports.branchScope">Cabang paket</label>
+              <select class="select" id="reports-branch">
+                <option value="1" data-i18n="gov.branch.1">[NAMA CABANG] 1</option>
+                <option value="2" data-i18n="gov.branch.2">[NAMA CABANG] 2</option>
+                <option value="3" data-i18n="gov.branch.3">[NAMA CABANG] 3</option>
+              </select>
+            </div>
+            <p class="gov-scope-line" id="reports-scope"></p>
+          </div>
+
+          <p class="note" id="reports-note" data-i18n="reports.note"></p>
+
+          <div class="table-wrap" role="region" tabindex="0" aria-label="Tabel dokumen laporan" data-i18n-aria-label="reports.tableRegion">
+            <table id="reports-table">
+              <caption data-i18n="reports.tableCaption">Dokumen paket laporan</caption>
+              <thead>
+                <tr>
+                  <th scope="col" data-i18n="reports.colDoc">Dokumen</th>
+                  <th scope="col" data-i18n="reports.colPeriod">Periode</th>
+                  <th scope="col" data-i18n="reports.colSource">Sumber</th>
+                  <th scope="col" data-i18n="reports.colComputed">Dihitung</th>
+                  <th scope="col" data-i18n="reports.colStatus">Status</th>
+                  <th scope="col" data-i18n="reports.colAction">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="reports-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <section class="empty-state" id="reports-denied" aria-labelledby="reports-denied-title" hidden>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <p class="empty-state__title" id="reports-denied-title" data-i18n="reports.deniedTitle">Dokumen ini tidak tersedia untuk peran Anda.</p>
+          <p class="empty-state__body" data-i18n="reports.deniedBody"></p>
+          <div class="empty-state__actions">
+            <a class="btn" href="index.html" data-i18n="gov.backToIndex">Kembali ke indeks</a>
+          </div>
+        </section>
+
+        <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+      </main>
+    </div>
+
+    <footer class="settings-bar" aria-label="Pengaturan tampilan" data-i18n-aria-label="common.settings">
+      <div class="settings-group" role="group" aria-labelledby="theme-label">
+        <span class="settings-group__label" id="theme-label" data-i18n="common.theme">Tema</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-theme-set="light" aria-pressed="true" data-i18n="common.themeLight">Terang</button>
+          <button type="button" data-theme-set="dark" aria-pressed="false" data-i18n="common.themeDark">Gelap</button>
+        </div>
+      </div>
+      <div class="settings-group" role="group" aria-labelledby="language-label">
+        <span class="settings-group__label" id="language-label" data-i18n="common.language">Bahasa</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-locale-set="id" aria-pressed="true" data-i18n="common.langId">Indonesia</button>
+          <button type="button" data-locale-set="en" aria-pressed="false" data-i18n="common.langEn">English</button>
+        </div>
+      </div>
+      <span class="settings-bar__note" data-i18n="common.prefNote"></span>
+    </footer>
+
+    <script src="assets/i18n-gov.js"></script>
+    <script src="assets/app.js" defer></script>
+    <script src="assets/screens-gov.js" defer></script>
+  </body>
+</html>

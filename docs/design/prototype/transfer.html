@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="id-ID" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Transfer (PB) · Prototipe KRAN</title>
+    <script src="assets/theme-init.js"></script>
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/base.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <link rel="stylesheet" href="assets/screens-tx.css" />
+    <script src="assets/i18n-tx.js"></script>
+    <script src="assets/app.js" defer></script>
+    <script src="assets/screens-tx.js" defer></script>
+  </head>
+  <body data-title-key="transfer.docTitle" data-tx-page="transfer">
+    <a class="skip-link" href="#main" data-i18n="common.skip">Lewati ke konten utama</a>
+    <p class="synthetic-strip" role="region" aria-label="Prototipe, data sintetis" data-i18n-aria-label="common.prototype" data-i18n="common.prototype">Prototipe, data sintetis</p>
+
+    <header class="app-header">
+      <a class="brand" href="index.html">
+        <span class="brand__name">KRAN</span>
+        <span class="brand__sub" data-i18n="common.appSub">Inti koperasi</span>
+      </a>
+      <p class="header-meta">
+        <span class="header-meta__item">
+          <span data-i18n="kas.businessDate">Tanggal usaha</span>
+          <span class="header-meta__value" data-date="2026-11-05">5 Nov 2026</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="kas.branch">Cabang</span>
+          <span class="header-meta__value" data-i18n="kas.branchValue">[NAMA CABANG] · 001</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="kas.cashier">Kasir</span>
+          <span class="header-meta__value" data-i18n="kas.cashierValue">[NAMA KASIR]</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="common.session">Sesi</span>
+          <span id="session-state" data-i18n="tx.statusActive">Aktif</span>
+        </span>
+      </p>
+    </header>
+
+    <div class="app-shell">
+      <nav class="app-nav" aria-label="Navigasi utama" data-i18n-aria-label="common.navMain">
+        <ul>
+          <li class="app-nav__group-label" data-i18n="common.navWork">Pekerjaan</li>
+          <li><a href="kas.html" data-i18n="common.kas">Kas</a></li>
+          <li><a href="transfer.html" aria-current="page" data-i18n="tx.nav.transfer">Transfer</a></li>
+          <li><a href="tutup-kas.html" data-i18n="tx.nav.close">Tutup buku</a></li>
+          <li><a href="pinjaman-detail.html" data-i18n="tx.nav.loan">Pinjaman</a></li>
+          <li class="app-nav__group-label" data-i18n="common.navPrototype">Prototipe</li>
+          <li><a href="komponen.html" data-i18n="common.components">Komponen</a></li>
+          <li><a href="index.html" data-i18n="common.home">Indeks</a></li>
+        </ul>
+      </nav>
+
+      <main id="main" class="app-main" tabindex="-1">
+        <div class="page-header">
+          <div>
+            <h1 data-i18n="transfer.title">Transfer (PB)</h1>
+            <p class="page-header__intro" data-i18n="transfer.intro">Pemindahbukuan antar rekening anggota. Kas fisik tidak berpindah.</p>
+          </div>
+          <div class="page-header__actions">
+            <a class="btn" href="kas.html" data-i18n="tx.backToKas">Kembali ke Kas</a>
+          </div>
+        </div>
+
+        <div class="tx-preview">
+          <label class="tx-preview__label" for="transfer-state" data-i18n="tx.preview.label">Pratinjau state</label>
+          <select class="select tx-preview__select" id="transfer-state" data-tx-state-select>
+            <option value="normal" data-i18n="tx.preview.normal">Normal</option>
+            <option value="empty" data-i18n="tx.preview.empty">Kosong</option>
+            <option value="loading" data-i18n="tx.preview.loading">Memuat</option>
+            <option value="error" data-i18n="tx.preview.error">Galat</option>
+            <option value="insufficient" data-i18n="tx.preview.insufficient">Saldo kurang</option>
+            <option value="partial" data-i18n="tx.preview.partial">Sebagian</option>
+            <option value="locked" data-i18n="tx.preview.locked">Terkunci</option>
+            <option value="denied" data-i18n="tx.preview.denied">Tanpa izin</option>
+            <option value="duplicate" data-i18n="tx.preview.duplicate">Duplikat</option>
+            <option value="unknown" data-i18n="tx.preview.unknown">Status tidak diketahui</option>
+            <option value="success" data-i18n="tx.preview.success">Berhasil</option>
+          </select>
+          <p class="note" data-i18n="tx.preview.hint">Kontrol reviewer, bukan bagian alur operator.</p>
+          <p class="note" data-i18n="transfer.reviewerDepends">DEPENDS: identitas pemilik rekening tujuan (DEP-5). Prototipe memakai placeholder.</p>
+          <p class="note" data-i18n="transfer.reviewerBalance">Saldo rekening tidak tersedia di prototipe; angka 0,00 adalah placeholder.</p>
+        </div>
+
+        <div class="alert alert--warning" id="transfer-locked-banner" hidden>
+          <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <div>
+            <p class="alert__title" data-i18n="transfer.lockedTitle">Periode ditutup</p>
+            <p class="alert__body" data-i18n="transfer.lockedBody">Periode akuntansi sudah ditutup. Transaksi tidak disimpan. Minta manajer membuka periode berjalan.</p>
+          </div>
+        </div>
+
+        <div class="tx-denied" id="transfer-denied" hidden>
+          <div class="error-state">
+            <p class="error-state__title" data-i18n="transfer.deniedTitle">Tanpa izin transfer</p>
+            <p class="error-state__body" data-i18n="transfer.deniedBody">Panel ini butuh izin transfer. Minta admin menambah izin.</p>
+            <div class="error-state__actions">
+              <a class="btn" href="kas.html" data-i18n="tx.backToKas">Kembali ke Kas</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="work-grid" id="transfer-work">
+          <div class="work-main">
+            <div class="toolbar">
+              <div class="segmented" role="group" aria-label="Jenis transaksi" data-i18n-aria-label="transfer.modeGroup">
+                <button type="button" data-tx-mode="deposit" data-i18n="transfer.modeDeposit">Setor (masuk)</button>
+                <button type="button" data-tx-mode="withdrawal" data-i18n="transfer.modeWithdrawal">Tarik (keluar)</button>
+                <button type="button" data-tx-mode="transfer" aria-pressed="true" data-i18n="transfer.modeTransfer">Transfer (PB)</button>
+              </div>
+            </div>
+
+            <form class="panel" id="transfer-form" novalidate>
+              <div class="panel__header">
+                <h2 class="panel__title" data-i18n="transfer.sourceTitle">Rekening sumber</h2>
+                <span class="note" id="transfer-source-loaded" hidden data-i18n="tx.loadedAt">dimuat 08:14</span>
+              </div>
+
+              <div class="field">
+                <label class="label" for="transfer-source" data-i18n="transfer.accountLabel">Nomor rekening</label>
+                <div class="input-group">
+                  <input
+                    class="input"
+                    id="transfer-source"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="[NOMOR REKENING]"
+                    data-i18n-placeholder="ph.accountNo"
+                    aria-describedby="transfer-source-hint transfer-source-status transfer-source-error"
+                  />
+                  <button type="button" class="btn" id="transfer-source-load">
+                    <span data-i18n="transfer.load">Cari</span>
+                  </button>
+                </div>
+                <p class="hint" id="transfer-source-hint" data-i18n="transfer.sourceHint">Ketik 10 digit, lalu tekan Enter atau Cari.</p>
+                <p class="hint" id="transfer-source-status" aria-live="polite" data-i18n="transfer.sourceStatusEmpty">Rekening sumber belum dicari.</p>
+                <p class="field-error" id="transfer-source-error" hidden></p>
+              </div>
+
+              <div class="identity-grid tx-identity" id="transfer-source-identity" hidden>
+                <div>
+                  <p class="demo-label" data-i18n="transfer.identityHolder">Pemilik</p>
+                  <p id="transfer-source-holder"></p>
+                </div>
+                <div>
+                  <p class="demo-label" data-i18n="transfer.identityMemberNo">Nomor anggota</p>
+                  <p id="transfer-source-member"></p>
+                </div>
+                <div>
+                  <p class="demo-label" data-i18n="transfer.identityAccountNo">Rekening</p>
+                  <p class="num" id="transfer-source-no"></p>
+                </div>
+                <div>
+                  <p class="demo-label" data-i18n="transfer.identityProduct">Jenis simpanan</p>
+                  <p id="transfer-source-product"></p>
+                </div>
+                <div>
+                  <p class="demo-label" data-i18n="transfer.identityBranch">Cabang</p>
+                  <p id="transfer-source-branch"></p>
+                </div>
+                <div>
+                  <p class="demo-label" data-i18n="transfer.identityStatus">Status</p>
+                  <p><span class="badge badge--success" id="transfer-source-badge"></span></p>
+                </div>
+              </div>
+            </form>
+
+            <form class="panel" id="transfer-destination-form" novalidate>
+              <div class="panel__header">
+                <h2 class="panel__title" data-i18n="transfer.destTitle">Rekening tujuan</h2>
+                <span class="badge badge--info" id="transfer-dest-verified" hidden data-i18n="transfer.destVerified">Tujuan terverifikasi</span>
+              </div>
+
+              <div class="field">
+                <label class="label" for="transfer-dest" data-i18n="transfer.accountLabel">Nomor rekening</label>
+                <div class="input-group">
+                  <input
+                    class="input"
+                    id="transfer-dest"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="[NOMOR REKENING]"
+                    data-i18n-placeholder="ph.accountNo"
+                    aria-describedby="transfer-dest-hint transfer-dest-status transfer-dest-error"
+                  />
+                  <button type="button" class="btn" id="transfer-dest-load">
+                    <span data-i18n="transfer.load">Cari</span>
+                  </button>
+                </div>
+                <p class="hint" id="transfer-dest-hint" data-i18n="transfer.destHint">Cari nomor rekening tujuan, bukan nama pemilik.</p>
+                <p class="hint" id="transfer-dest-status" aria-live="polite" data-i18n="transfer.destEmpty">Rekening tujuan belum dicari.</p>
+                <p class="field-error" id="transfer-dest-error" hidden></p>
+              </div>
+
+              <div class="identity-grid tx-identity" id="transfer-dest-identity" hidden>
+                <div>
+                  <p class="demo-label" data-i18n="transfer.identityHolder">Pemilik</p>
+                  <p id="transfer-dest-holder"></p>
+                </div>
+                <div>
+                  <p class="demo-label" data-i18n="transfer.identityMemberNo">Nomor anggota</p>
+                  <p id="transfer-dest-member"></p>
+                </div>
+                <div>
+                  <p class="demo-label" data-i18n="transfer.identityAccountNo">Rekening</p>
+                  <p class="num" id="transfer-dest-no"></p>
+                </div>
+                <div>
+                  <p class="demo-label" data-i18n="transfer.identityProduct">Jenis simpanan</p>
+                  <p id="transfer-dest-product"></p>
+                </div>
+                <div>
+                  <p class="demo-label" data-i18n="transfer.identityBranch">Cabang</p>
+                  <p id="transfer-dest-branch"></p>
+                </div>
+                <div>
+                  <p class="demo-label" data-i18n="transfer.identityStatus">Status</p>
+                  <p><span class="badge badge--success" id="transfer-dest-badge"></span></p>
+                </div>
+              </div>
+            </form>
+
+            <form class="panel" id="transfer-details-form" novalidate>
+              <div class="panel__header">
+                <h2 class="panel__title" data-i18n="transfer.reviewAmount">Nominal transfer</h2>
+              </div>
+
+              <div class="form-grid">
+                <div class="amount-field">
+                  <label class="label" for="transfer-amount" data-i18n="transfer.amount">Nominal (IDR)</label>
+                  <input
+                    class="input input--amount"
+                    id="transfer-amount"
+                    inputmode="decimal"
+                    autocomplete="off"
+                    placeholder="0,00"
+                    aria-describedby="transfer-amount-hint transfer-amount-preview transfer-amount-error"
+                  />
+                  <p class="money-preview" id="transfer-amount-preview"></p>
+                  <p class="hint" id="transfer-amount-hint" data-i18n="transfer.amountHint">Hanya angka dengan satu koma desimal. Contoh: 150000 atau 150000,50.</p>
+                  <p class="field-error" id="transfer-amount-error" hidden></p>
+                </div>
+
+                <div class="field">
+                  <label class="label" for="transfer-reference" data-i18n="transfer.reference">Rujukan</label>
+                  <input class="input num" id="transfer-reference" value="TRX-000130" readonly />
+                </div>
+
+                <div class="field form-grid__wide">
+                  <label class="label" for="transfer-narration" data-i18n="transfer.narration">Keterangan</label>
+                  <input class="input" id="transfer-narration" maxlength="200" autocomplete="off" aria-describedby="transfer-narration-hint" />
+                  <p class="hint" id="transfer-narration-hint" data-i18n="transfer.narrationHint">Tercetak di slip. Maksimal 200 karakter.</p>
+                </div>
+              </div>
+
+              <div class="alert alert--error" id="transfer-summary" role="alert" hidden></div>
+
+              <div class="tx-form-actions">
+                <button type="submit" class="btn btn--primary" id="transfer-review-open">
+                  <span data-i18n="transfer.reviewAction">Tinjau</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <aside class="panel review-panel" aria-labelledby="transfer-review-title">
+            <div class="panel__header">
+              <h2 class="panel__title" id="transfer-review-title" tabindex="-1" data-i18n="transfer.reviewTitle">Periksa kedua rekening</h2>
+              <span class="badge badge--info" data-i18n="transfer.modeTransfer">Transfer (PB)</span>
+            </div>
+
+            <div id="transfer-review-empty">
+              <div class="empty-state">
+                <p class="empty-state__title" data-i18n="transfer.reviewEmptyTitle">Belum ada yang ditinjau</p>
+                <p class="empty-state__body" data-i18n="transfer.reviewEmptyBody">Cari rekening sumber dan tujuan, isi nominal, lalu pilih Tinjau.</p>
+              </div>
+            </div>
+
+            <div id="transfer-review-filled" class="stack-sm" hidden>
+              <section aria-labelledby="transfer-review-from">
+                <h3 id="transfer-review-from" data-i18n="transfer.reviewFrom">Rekening asal</h3>
+                <dl class="facts">
+                  <dt data-i18n="transfer.identityHolder">Pemilik</dt>
+                  <dd id="transfer-review-from-holder"></dd>
+                  <dt data-i18n="transfer.identityAccountNo">Rekening</dt>
+                  <dd class="num" id="transfer-review-from-no"></dd>
+                  <dt data-i18n="transfer.identityMemberNo">Nomor anggota</dt>
+                  <dd id="transfer-review-from-member"></dd>
+                  <dt data-i18n="transfer.identityBranch">Cabang</dt>
+                  <dd id="transfer-review-from-branch"></dd>
+                  <dt data-i18n="transfer.identityProduct">Jenis simpanan</dt>
+                  <dd id="transfer-review-from-product"></dd>
+                  <dt data-i18n="transfer.identityStatus">Status</dt>
+                  <dd id="transfer-review-from-status"></dd>
+                </dl>
+              </section>
+
+              <section aria-labelledby="transfer-review-to">
+                <h3 id="transfer-review-to" data-i18n="transfer.reviewTo">Rekening tujuan</h3>
+                <dl class="facts">
+                  <dt data-i18n="transfer.identityHolder">Pemilik</dt>
+                  <dd id="transfer-review-to-holder"></dd>
+                  <dt data-i18n="transfer.identityAccountNo">Rekening</dt>
+                  <dd class="num" id="transfer-review-to-no"></dd>
+                  <dt data-i18n="transfer.identityMemberNo">Nomor anggota</dt>
+                  <dd id="transfer-review-to-member"></dd>
+                  <dt data-i18n="transfer.identityBranch">Cabang</dt>
+                  <dd id="transfer-review-to-branch"></dd>
+                  <dt data-i18n="transfer.identityProduct">Jenis simpanan</dt>
+                  <dd id="transfer-review-to-product"></dd>
+                  <dt data-i18n="transfer.identityStatus">Status</dt>
+                  <dd id="transfer-review-to-status"></dd>
+                </dl>
+              </section>
+
+              <dl class="amount-summary">
+                <dt class="amount-summary__label" data-i18n="transfer.reviewAmount">Nominal transfer</dt>
+                <dd class="amount-summary__value" id="transfer-review-amount">0,00</dd>
+              </dl>
+
+              <p class="note" data-i18n="transfer.reviewBalanceNote">Saldo sebelum dan sesudah belum tersedia di prototipe. Nominal di atas adalah nilai yang akan dikirim.</p>
+
+              <div class="facts">
+                <dt data-i18n="transfer.reviewNote">Keterangan</dt>
+                <dd id="transfer-review-note"></dd>
+              </div>
+
+              <div class="review-panel__ref">
+                <span data-i18n="transfer.reference">Rujukan</span>
+                <code id="transfer-review-ref">TRX-000130</code>
+                <button type="button" class="btn btn--sm" data-tx-copy="#transfer-review-ref"><span data-i18n="common.copyRef">Salin rujukan</span></button>
+              </div>
+
+              <div class="tx-review-actions">
+                <button type="button" class="btn" id="transfer-review-back" data-i18n="transfer.reviewBack">Kembali</button>
+                <button type="button" class="btn btn--primary" id="transfer-review-submit">
+                  <span class="btn__spinner" id="transfer-submit-spinner" hidden aria-hidden="true"></span>
+                  <span data-i18n="transfer.reviewSubmit">Simpan transfer</span>
+                </button>
+              </div>
+            </div>
+
+            <div id="transfer-review-blocked" hidden>
+              <div class="alert alert--error">
+                <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2Z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+                <div>
+                  <p class="alert__title" data-i18n="transfer.reviewBlockedTitle">Transfer belum bisa disimpan</p>
+                  <p class="alert__body" id="transfer-blocked-reason"></p>
+                </div>
+              </div>
+              <div class="tx-review-actions">
+                <button type="button" class="btn" id="transfer-blocked-back" data-i18n="transfer.reviewBack">Kembali</button>
+              </div>
+            </div>
+
+            <div id="transfer-review-error" hidden>
+              <div class="error-state" role="alert">
+                <p class="error-state__title" id="transfer-error-title"></p>
+                <p class="error-state__body" id="transfer-error-body"></p>
+                <p class="error-state__reference"><span data-i18n="common.reference">Rujukan</span>: <code id="transfer-error-ref"></code></p>
+                <div class="error-state__actions">
+                  <button type="button" class="btn btn--sm" data-tx-copy="#transfer-error-ref"><span data-i18n="common.copyRef">Salin rujukan</span></button>
+                  <button type="button" class="btn btn--sm" id="transfer-check-status" hidden data-i18n="transfer.checkStatus">Cek status</button>
+                  <button type="button" class="btn btn--sm" id="transfer-error-back" data-i18n="transfer.reviewBack">Kembali</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="transfer-review-success" hidden>
+              <div class="alert alert--success">
+                <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12 5 5 9-10"/></svg>
+                <div>
+                  <p class="alert__title" data-i18n="transfer.successTitle">Transfer tersimpan.</p>
+                  <p class="alert__body" id="transfer-success-body"></p>
+                </div>
+              </div>
+              <div class="review-panel__ref">
+                <span data-i18n="transfer.reference">Rujukan</span>
+                <code id="transfer-success-ref"></code>
+                <button type="button" class="btn btn--sm" data-tx-copy="#transfer-success-ref"><span data-i18n="common.copyRef">Salin rujukan</span></button>
+              </div>
+              <div id="transfer-receipt-slot" class="tx-receipt-slot"></div>
+              <div class="tx-review-actions">
+                <button type="button" class="btn" id="transfer-next" data-i18n="transfer.next">Transaksi berikutnya</button>
+                <button type="button" class="btn btn--primary" id="transfer-print" data-i18n="transfer.print">Cetak slip</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+      </main>
+    </div>
+
+    <footer class="settings-bar" aria-label="Pengaturan tampilan" data-i18n-aria-label="common.settings">
+      <div class="settings-group" role="group" aria-labelledby="theme-label">
+        <span class="settings-group__label" id="theme-label" data-i18n="common.theme">Tema</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-theme-set="light" aria-pressed="true" data-i18n="common.themeLight">Terang</button>
+          <button type="button" data-theme-set="dark" aria-pressed="false" data-i18n="common.themeDark">Gelap</button>
+        </div>
+      </div>
+      <div class="settings-group" role="group" aria-labelledby="language-label">
+        <span class="settings-group__label" id="language-label" data-i18n="common.language">Bahasa</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-locale-set="id" aria-pressed="true" data-i18n="common.langId">Indonesia</button>
+          <button type="button" data-locale-set="en" aria-pressed="false" data-i18n="common.langEn">English</button>
+        </div>
+      </div>
+      <span class="settings-bar__note" data-i18n="common.prefNote">Preferensi tersimpan di peramban ini.</span>
+    </footer>
+
+    <section id="print-receipt" class="print-only" aria-hidden="true"></section>
+  </body>
+</html>

@@ -1,4 +1,4 @@
-# Modul `deposit` — rekening simpanan
+# Modul `deposit` - rekening simpanan
 
 Rekening simpanan anggota (spec §9.2, §23 Fase 2). Nomor rekening dibentuk dari sequence; saldo
 disimpan satu baris per rekening sebagai cache untuk operasi teller.
@@ -11,16 +11,16 @@ jatuh tempo/ARO deposito berjangka). UI teller = T-088d.
 
 | Tabel | Isi |
 |---|---|
-| `deposit.account` | Identitas rekening: `account_no` (unik), `party_id`, `product_id`, `product_version_id`, `branch_id`, `account_type` (`SAVINGS`/`TIME_DEPOSIT`), `status` (`ACTIVE`/`CLOSED`/`DORMANT` — `0071`), `opened_on`, plus `maturity_date`/`aro_instruction` untuk deposito berjangka (nullable, T-138b); `last_activity` dibuang `deposit/0075` (D-170). Satu cabang per rekening. |
+| `deposit.account` | Identitas rekening: `account_no` (unik), `party_id`, `product_id`, `product_version_id`, `branch_id`, `account_type` (`SAVINGS`/`TIME_DEPOSIT`), `status` (`ACTIVE`/`CLOSED`/`DORMANT` - `0071`), `opened_on`, plus `maturity_date`/`aro_instruction` untuk deposito berjangka (nullable, T-138b); `last_activity` dibuang `deposit/0075` (D-170). Satu cabang per rekening. |
 | `deposit.account_balance` | Satu baris per rekening: `balance numeric(24,2)` dengan CHECK `balance >= 0`. Cache; sumber kebenaran tetap jurnal ledger (spec §9.1(4)). |
-| `deposit.transaction` | Subledger rekening: `tx_type` (`CASH_DEPOSIT`/`CASH_WITHDRAWAL` dari teller, `MATURITY_OUT`/`MATURITY_IN`/`INTEREST_CREDIT` dari jatuh tempo deposito — `0068`, `INTEREST_PAID_EARLY`/`PENALTY_CHARGE` dari PB pencairan dini — `0074`,
-`LOAN_DISBURSEMENT` dari pencairan pinjaman ke rekening — `0082`, `LOAN_PAYMENT` dari
-pembayaran angsuran — `0086`), `account_id`, `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (FK `ledger.journal`, UNIQUE **`(journal_id, account_id)`**). Satu baris = satu jurnal per rekening; satu jurnal boleh mencatat dua rekening untuk perpindahan jatuh tempo (`NONE`). |
+| `deposit.transaction` | Subledger rekening: `tx_type` (`CASH_DEPOSIT`/`CASH_WITHDRAWAL` dari teller, `MATURITY_OUT`/`MATURITY_IN`/`INTEREST_CREDIT` dari jatuh tempo deposito - `0068`, `INTEREST_PAID_EARLY`/`PENALTY_CHARGE` dari PB pencairan dini - `0074`,
+`LOAN_DISBURSEMENT` dari pencairan pinjaman ke rekening - `0082`, `LOAN_PAYMENT` dari
+pembayaran angsuran - `0086`), `account_id`, `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (FK `ledger.journal`, UNIQUE **`(journal_id, account_id)`**). Satu baris = satu jurnal per rekening; satu jurnal boleh mencatat dua rekening untuk perpindahan jatuh tempo (`NONE`). |
 | `deposit.transfer` | Pemindahbukuan/PB (T-088c): `source_account_id` + `destination_account_id` (FK `deposit.account`, CHECK berbeda), `amount numeric(24,2) > 0`, `business_date`, `narration`, `journal_id` (UNIQUE, FK `ledger.journal`). Satu baris = satu perpindahan = satu jurnal. |
 
 `deposit.account_seq` memberi nomor urut rekening. **Nomor berkas tidak berurutan rapat**: tabel
 akun ada di `0003`, bukan `0002`, karena urutan migrasi global `(seq, modul, berkas)` menjalankan
-`deposit/*` **sebelum** `product/*` pada seq yang sama — sedangkan tabel ini mem-FK
+`deposit/*` **sebelum** `product/*` pada seq yang sama - sedangkan tabel ini mem-FK
 `product.product`/`product.product_version` yang dibuat `product/0002`. `0002` sengaja dilewati
 (diverifikasi `./task dbtools validate`). `deposit.transaction` ada di `0004` dan `deposit.transfer`
 di `0007` karena mem-FK `ledger.journal` yang baru dibuat `ledger/0003` pada seq 3 (dan `deposit/0003`
@@ -29,7 +29,7 @@ berjalan **sebelum** `ledger/0003`). `deposit/0008` menambah grant runtime untuk
 
 ## Invarian
 
-- **Saldo tidak boleh negatif** di DB (`CHECK balance >= 0`) — backstop; operation yang menolak
+- **Saldo tidak boleh negatif** di DB (`CHECK balance >= 0`) - backstop; operation yang menolak
   saldo negatif ada di jalur tulis (T-088b).
 - **Baris transaksi immutable** (`deposit/0005`): UPDATE/DELETE/TRUNCATE ditolak trigger yang
   memakai `ledger.reject_mutation()`; koreksi = jurnal pembalik + baris baru.
@@ -38,7 +38,7 @@ berjalan **sebelum** `ledger/0003`). `deposit/0008` menambah grant runtime untuk
 - **Tanpa kolom `currency`**: asumsi satu mata uang (spec §2.2; T-088 §8 butir 6).
 - **`status` hanya `ACTIVE`/`CLOSED`**: `DORMANT`/`FROZEN` belum punya aturan (T-088 §8 butir 8).
 - **Ordinary FK** ke `party.party`, `product.product`, `product.product_version`; `branch_id` tanpa
-  FK (master cabang hidup di `platform.branch`, D-130) — kesamaan cabang party↔rekening ditegakkan
+  FK (master cabang hidup di `platform.branch`, D-130) - kesamaan cabang party↔rekening ditegakkan
   use case (`branch_mismatch`), bukan DB.
 - **Nomor rekening** (D-130, menggantikan D-123): **kode cabang 3 digit** (`platform.branch.code`) +
   **nomor urut 7 digit** (`deposit.account_seq`, global). Contoh `0010000006` = cabang `001`,
@@ -95,7 +95,7 @@ berjalan **sebelum** `ledger/0003`). `deposit/0008` menambah grant runtime untuk
 
 ## Hitung hari bunga (T-138a, D-152)
 
-`domain/daycount.nim` — murni, tanpa uang dan tanpa I/O:
+`domain/daycount.nim` - murni, tanpa uang dan tanpa I/O:
 
 - `DayCountBasis` (`dcAct365`/`dcAct360`/`dcThirty360`, nilai string sama dengan parameter
   `product.savings.day_count_basis`), `parseDayCountBasis` (tanpa fallback; nilai tak dikenal
@@ -103,7 +103,7 @@ berjalan **sebelum** `ledger/0003`). `deposit/0008` menambah grant runtime untuk
 - `THIRTY_360` memakai konvensi **30/360 US (NASD)** dengan aturan tertulis di docstring; rentang
   pendek di akhir bulan bisa menghasilkan 0 hari (artefak konvensi). `NEEDS-COMPLIANCE-REVIEW`:
   konvensi ini perlu konfirmasi compliance, dan `ACT_365` adalah default institusi (D-152).
-- **Nominal bunga**: `domain/interest.nim` (`interestForRange`, T-138c) — `pokok × rate × hari /
+- **Nominal bunga**: `domain/interest.nim` (`interestForRange`, T-138c) - `pokok × rate × hari /
   basis`, dibulatkan **sekali** ke sen dengan HALF_EVEN. `HUMAN-REVIEW-REQUIRED` (AGENTS.md §8):
   rumus bunga adalah area kritis.
 
@@ -113,13 +113,13 @@ Deposito berjangka adalah **rekening yang sama** dengan `account_type = TIME_DEP
 terpisah. Migrasi `deposit/0064_deposit_time_deposit` (bertanda `-- dbtools:contract` karena
 mengganti CHECK `account_type` bawaan `0003`; `DROP CONSTRAINT` adalah DDL merusak yang dilarang
 jalur expand) menambah `maturity_date`, `aro_instruction`
-(`NONE`/`PRINCIPAL`/`PRINCIPAL_AND_INTEREST`) — semuanya **nullable**, tanpa
+(`NONE`/`PRINCIPAL`/`PRINCIPAL_AND_INTEREST`) - semuanya **nullable**, tanpa
 backfill: rekening tabungan tidak punya jatuh tempo. Domain hanya mengenal tipe barunya
 (`AccountType.atTimeDeposit`); perilaku jatuh tempo/ARO ada di T-138d, akrual di T-138c, dan dormant
 di T-138e (lihat bagian masing-masing).
 
 `status` menerima `DORMANT` sejak `deposit/0071` (contract) bersama aturannya di D-157. Akun/rule GL
-bunga ada di `ledger/0065` dengan **`204` BUNGA AKRUAL** — bukan `203`, yang sudah dipakai
+bunga ada di `ledger/0065` dengan **`204` BUNGA AKRUAL** - bukan `203`, yang sudah dipakai
 `TITIPAN PENGURUS` sejak `ledger/0036` (amendemen D-152). Pokok deposito sendiri masuk
 `202 SIMPANAN BERJANGKA` lewat rule berkondisi `accountType = TIME_DEPOSIT` (`ledger/0067`:
 `DepositPosted` D 101.2/K 202, `DepositWithdrawn` D 202/K 101.2). Jatuh tempo/ARO ada di T-138d.
@@ -136,9 +136,9 @@ tiga hal sekaligus: baris `deposit.interest_accrual`, jurnal `InterestAccrued`, 
 
 | Aspek | Aturan |
 |---|---|
-| Rekening | `account_type = TIME_DEPOSIT` dan `status <> 'CLOSED'` (ACTIVE + DORMANT — dormant membatasi transaksi, bukan perjanjian bunga) |
+| Rekening | `account_type = TIME_DEPOSIT` dan `status <> 'CLOSED'` (ACTIVE + DORMANT - dormant membatasi transaksi, bukan perjanjian bunga) |
 | Atribut | binding versi produk yang dipin rekening: `product.savings.interest_rate`, `day_count_basis`, `rounding_scale`. Tidak ada → **DAY-331**, penutupan ditahan |
-| Rentang | dari `opened_on` (atau hari setelah akrual terakhir) sampai tanggal buku, inklusif — dibatasi `maturity_date − 1` bila rekening punya jatuh tempo (D-155) |
+| Rentang | dari `opened_on` (atau hari setelah akrual terakhir) sampai tanggal buku, inklusif - dibatasi `maturity_date − 1` bila rekening punya jatuh tempo (D-155) |
 | Pembulatan | **sekali per rentang**: `cumulative` = bunga dari `opened_on` dibulatkan ke skala produk; `amount` = `cumulative` − `cumulative` baris terakhir |
 | Jurnal | D `501 BEBAN BUNGA` / K `204 BUNGA AKRUAL`, ditulis **sinkron** di transaksi yang sama; event `InterestAccrued` **tanpa** header `accounting` (jurnal sudah ada) |
 | Nol | pokok/rate nol atau bagian hari itu nol → baris tercatat (`amount = 0.00`, `journal_id` NULL), **tanpa** jurnal nol |
@@ -149,7 +149,7 @@ rentang penuh, jadi tidak ada drift beberapa sen terhadap bunga yang dijanjikan 
 Basis 30/360 bisa menghasilkan 0 hari untuk rentang pendek di akhir bulan; hari itu tidak mencatat
 baris dan ketinggalannya ikut pada hari berikutnya (kumulatif dihitung dari `opened_on`).
 
-Kode kegagalan `DAY-330`…`DAY-337` ada di `docs/runbooks/dayclose.md`; semuanya kritis, jadi run
+Kode kegagalan `DAY-330`…`DAY-337` ada di `docs/OPERATIONS.md`; semuanya kritis, jadi run
 berhenti `FAILED` dan dapat dilanjutkan (`resume`) setelah penyebabnya diperbaiki.
 
 ## Jatuh tempo & ARO (T-138d, D-155)
@@ -175,7 +175,7 @@ Keputusan per `aro_instruction` (D-155):
   jatuh tempo lama (D-165). `maturity_date − opened_on` **tidak** dipakai: setelah satu perpanjangan
   nilainya dua kali tenor semula. Tanpa binding, task menahan chunk dengan `DAY-354`.
 - **Prasyarat**: rekening simpanan `ACTIVE` **atau `DORMANT`** milik party yang sama di cabang yang
-  sama (`activeSavingsAccount`, urut `account_no`), **tanpa** simpanan POKOK/WAJIB — GL-nya ekuitas
+  sama (`activeSavingsAccount`, urut `account_no`), **tanpa** simpanan POKOK/WAJIB - GL-nya ekuitas
   `301.x` sedangkan perpindahan ini mengkredit `201`, dan penarikan POKOK/WAJIB diblokir. Tidak ada
   yang memenuhi → `DAY-343` (pola `DAY-301`), bukan "tidak berlaku". Rekening `DORMANT` direaktivasi
   task `deposit.dormant` pada penutupan yang sama (D-157 amendemen 1). Bila anggota punya beberapa
@@ -192,7 +192,7 @@ Keputusan per `aro_instruction` (D-155):
 - Migrasi tipe baris: `deposit/0068` (contract + destructive, terdaftar di
   `ops/migrations/contract-auto.txt`). Rule GL: `ledger/0069`.
 - **Cache saldo hilang bukan saldo nol**: rekening tanpa baris `deposit.account_balance` menahan
-  task dengan `DAY-348` sebelum ada mutasi — menutup deposito tanpa memindahkan pokok tidak boleh
+  task dengan `DAY-348` sebelum ada mutasi - menutup deposito tanpa memindahkan pokok tidak boleh
   terjadi diam-diam.
 - **Proses terlambat lebih dari satu tenor** menahan task dengan `DAY-349`: tanggal jatuh tempo baru
   sudah lewat lagi, dan melanjutkan berarti membayar bunga siklus yang sama dua kali.
@@ -212,7 +212,7 @@ Keputusan per `aro_instruction` (D-155):
   `LoanDisbursed`. Bukan transaksi tunai: kas laci tidak bergerak, jadi `expected_cash` tidak
   terpengaruh. Uang tunai tetap lewat `CASH_WITHDRAWAL` dari rekening itu.
 - **Pembayaran angsuran** (T-165, D-183): baris `LOAN_PAYMENT` (`−`, `kind: LOAN`, `direction: OUT`)
-  satu per komponen yang dibayar, masing-masing menunjuk jurnalnya sendiri — satu baris
+  satu per komponen yang dibayar, masing-masing menunjuk jurnalnya sendiri - satu baris
   `deposit.transaction` hanya bisa menunjuk satu jurnal, sedangkan pembayaran mengalir ke piutang,
   pendapatan bunga, dan pendapatan denda sekaligus.
 - **Batas yang belum tertutup**: belum ada endpoint untuk membuka deposito berjangka; setoran tunai
@@ -245,7 +245,7 @@ mengembalikan `DORMANT` ke `ACTIVE` begitu ada aktivitas lagi.
 - **Tidak ada uang yang bergerak**: hanya `status`, `updated_by`, dan `updated_at` yang ditulis.
   Keputusan diulang **di dalam** `UPDATE` (`markDormantIfStale`/`reactivateIfActive`), jadi setoran
   yang commit setelah halaman dibaca tidak diabaikan. Audit ditulis **per chunk** (satu entri
-  `deposit.dormant.chunk` berisi daftar `dormant`/`reactivated`, D-170/T-150) — bukan per transisi
+  `deposit.dormant.chunk` berisi daftar `dormant`/`reactivated`, D-170/T-150) - bukan per transisi
   rekening. Penutupan otomatis rekening dormant ada sebagai task terpisah
   `deposit.dormant_close` (hanya `DORMANT` bersaldo nol, aktivitas > 24 bulan; O-114/D-174,
   T-155).
@@ -258,7 +258,7 @@ mengembalikan `DORMANT` ke `ACTIVE` begitu ada aktivitas lagi.
 
 ## Event
 
-- **Buka rekening**: tanpa event outbox — hanya audit `deposit.account.open` (belum ada konsumen,
+- **Buka rekening**: tanpa event outbox - hanya audit `deposit.account.open` (belum ada konsumen,
   prinsip: jangan buat semantik tanpa pemakai).
 - **Transaksi tunai** (T-088b): `CashTransactionPosted` (payload transaksi) + `journal.posted`,
   keduanya **non-akuntansi** (tanpa header `accounting`) agar konsumen `ledger` tidak memposting
@@ -273,7 +273,7 @@ Tidak ada parameter baru di seed/packs untuk T-088b:
   di pack `base`); tidak ada binding → 0.
 - Batas nominal transaksi tunai lewat **parameter teller** (T-093/D-133):
   `teller.cash.limit_deposit`/`limit_withdrawal` dicek di handler teller sebelum mutasi (409
-  `cash_limit_exceeded`); limit harian kumulatif belum ada — **NEEDS-COMPLIANCE-REVIEW**.
+  `cash_limit_exceeded`); limit harian kumulatif belum ada - **NEEDS-COMPLIANCE-REVIEW**.
 - Ambang dormant `deposit.dormant.after_months` (integer, `GLOBAL`/`INSTITUTION`, default pack
   **12**, T-138e/D-152 butir 4). Dibaca task `deposit.dormant` pada tanggal buku; nilai hilang atau
   bukan bulan ≥ 1 = `DAY-351` (fail-closed, bukan tebakan). Nilainya **NEEDS-COMPLIANCE-REVIEW**.
@@ -284,13 +284,13 @@ Tidak ada parameter baru di seed/packs untuk T-088b:
 ## Batas
 
 - PB (pemindahbukuan antar rekening) = T-088c: **stuktur** ada (tabel `deposit.transfer` + endpoint),
-  tetapi **GL per pemilik belum terpisah** — kedua sisi jurnal akun `201` (net-nol); perpindahan
+  tetapi **GL per pemilik belum terpisah** - kedua sisi jurnal akun `201` (net-nol); perpindahan
   per rekening ada di `deposit.transfer`. Pemodelan GL per pemilik tetap terbuka untuk Fase 3 (T-101 hanya menutup rekonsiliasi cache).
 - Nomor rekening: kode cabang + nomor urut (D-130); check digit belum ada, dan modul lain tidak
   boleh mengasumsikan lebar/isi nomor.
 - Satu cabang per rekening; pindah cabang belum dimodelkan.
 - Batas nominal per transaksi tunai sudah ada (parameter teller, D-133); akumulasi/limit harian
-  belum ada — **NEEDS-COMPLIANCE-REVIEW**.
+  belum ada - **NEEDS-COMPLIANCE-REVIEW**.
 
 ## Rekonsiliasi cache (T-101)
 
@@ -305,8 +305,8 @@ Tanda per jenis baris: `CASH_DEPOSIT`/`MATURITY_IN`/`INTEREST_CREDIT`/`INTEREST_
 `LOAN_DISBURSEMENT` menambah saldo; `CASH_WITHDRAWAL`/`MATURITY_OUT`/`PENALTY_CHARGE`/
 `LOAN_PAYMENT`/`LOAN_RECOVERY` mengurangi. Daftar lengkapnya ada di `reconciliationSql`
 (`infrastructure/reconcile_repo.nim`) dan **harus** ikut diperbarui setiap kali `TransactionType`
-bertambah — jenis yang tidak dikenal membuat `expected` kosong (NULL) sehingga rekeningnya
-**dilaporkan** — bukan dihitung sebagai keluar (D-155).
+bertambah - jenis yang tidak dikenal membuat `expected` kosong (NULL) sehingga rekeningnya
+**dilaporkan** - bukan dihitung sebagai keluar (D-155).
 
 Kenapa bukan `journal_line`: kedua kaki PB memakai akun `201` yang sama (net-nol), jadi jurnal tidak
 bisa memisahkan saldo per rekening (D-124). Jurnal simpanan yang dibalik di ledger juga tidak

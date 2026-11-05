@@ -1,11 +1,11 @@
-# DESIGN.md — arah visual & aturan UI KRAN
+# DESIGN.md - arah visual & aturan UI KRAN
 
 Status: **arah v2 ditetapkan 31 Okt 2026 (D-160)**, menggantikan D-075 dan ratifikasi D-115.
 Berlaku untuk setiap layar dan komponen baru sejak sekarang. Implementasi berjalan bertahap
 (§12); layar yang belum dimigrasi masih memakai token v1, dan itu **keadaan transisi yang
 diketahui**, bukan izin menambah penyimpangan baru.
 
-Input: `docs/proposals/design-v2-direction.md` (arah yang dipilih pemilik), `docs/design/SME-NOTES.md`
+Input: `git history` (arah yang dipilih pemilik), `docs/DESIGN-INDEX.md`
 (operasional teller, information design, a11y). Angka kontras di bawah dihitung dengan contrast
 checker, bukan taksiran.
 
@@ -34,7 +34,7 @@ sebagai teks, bukan digambar.
 ## 2. Tipografi
 
 - **Satu keluarga: IBM Plex Sans** (OFL, self-host, tanpa CDN). Alasan: angka tabular tersedia,
-  x-height tinggi, dirancang untuk dokumen — bukan font display, dan bukan pilihan default pasar.
+  x-height tinggi, dirancang untuk dokumen - bukan font display, dan bukan pilihan default pasar.
 - **IBM Plex Mono tidak dipakai lagi**, termasuk untuk uang, kolom jurnal, dan struk. Angka uang
   memakai Plex Sans dengan `font-variant-numeric: tabular-nums slashed-zero`.
 - **Fallback:** `system-ui` hanya sampai font termuat; jangan mengandalkan tabular dari font sistem.
@@ -99,7 +99,7 @@ Aturan yang mengikat:
   kolom pertama 16.
 - Kontrol: **32 px** untuk input/tombol/aksi baris tabel; **44 px** untuk aksi primer (simpan,
   posting, cetak, buka/tutup kas). 24 px hanya bila tiap target berjarak ≥ 8 px.
-- Target utama: **1366×768 pada zoom 100–125%**. Layout maksimum 72rem; di bawah 1100 px panel
+- Target utama: **1366×768 pada zoom 100-125%**. Layout maksimum 72rem; di bawah 1100 px panel
   kanan turun jadi bawah, bukan modal.
 - Tinggi toolbar maksimum 48 px; header lengket 34 px dengan garis bawah saat "stuck".
 
@@ -141,19 +141,19 @@ Aturan yang mengikat:
 - Nomor referensi tampil dan bisa disalin **sebelum** transaksi selesai.
 - Setiap kontrol punya state `:disabled` yang terlihat dan kontrasnya terukur. Tombol yang tampak
   bisa ditekan padahal mati adalah cacat, bukan detail.
-- Aksi tunai punya rancangan "gagal separuh": uang sudah diterima, sistem belum tersimpan —
+- Aksi tunai punya rancangan "gagal separuh": uang sudah diterima, sistem belum tersimpan -
   tampilkan status jelas + langkah rekonsiliasi, bukan toast lalu hilang.
 
 ## 8. Status & motion
 
 - Status = teks + ikon garis + warna, dengan `role="status"`/`aria-live="polite"` untuk "tersimpan"
   dan saldo; `assertive` hanya untuk kegagalan transaksi. Jangan umumkan tiap ketikan.
-- Durasi 150–200 ms untuk elemen non-angka (hover, expand, dialog); **0 ms untuk angka**. Tidak
+- Durasi 150-200 ms untuk elemen non-angka (hover, expand, dialog); **0 ms untuk angka**. Tidak
   ada animasi pada baris/saldo yang berubah, count-up, skeleton yang menggeser layout, atau pulse
   abadi.
 - `prefers-reduced-motion`: semua transisi 0 ms; state akhir tetap terbaca. Satu pengecualian
   teknis: 1 ms (bukan 0) supaya `transitionend`/`animationend` tetap terkirim ke logika yang
-  menunggunya — tidak terlihat, dan tidak mengubah tata letak.
+  menunggunya - tidak terlihat, dan tidak mengubah tata letak.
 - Toast: punya live region + tombol tutup, tidak menutupi tombol simpan/cetak, error tidak
   auto-hilang.
 
@@ -176,7 +176,7 @@ Aturan yang mengikat:
 - Satu `h1` per halaman, landmark lengkap, skip link ke `#main`.
 - Pengaturan tampilan (tema, bahasa) **tidak boleh** menjadi tab-stop sebelum konten.
 - Zoom 200%: shell satu kolom; **tabel ledger tidak boleh diubah jadi kartu** dan kolom tidak
-  disembunyikan — pakai scroll horizontal dalam region berlabel, kolom kode/nominal sticky.
+  disembunyikan - pakai scroll horizontal dalam region berlabel, kolom kode/nominal sticky.
 - Cetak: `@page { margin: 12mm }`, `thead` berulang, `break-inside: avoid` pada blok total/tanda
   tangan, sembunyikan nav/toolbar/toast, status tetap berlabel teks, angka tabular, tema terang.
 - axe wajib hijau di dua tema; alur kritis diuji keyboard-only.

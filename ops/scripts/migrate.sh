@@ -16,7 +16,7 @@
 # expand masih tertunda, `--down N` butuh berkas pasangan `<nama>.down.sql`.
 #
 # Kode keluar biner diteruskan apa adanya: 1 salah data, 2 salah pakai, 3 dikenali tetapi ditolak pada
-# keadaan itu (mis. pasangan rollback tidak ada). Prosedur + peringatannya di docs/runbooks/migrasi.md.
+# keadaan itu (mis. pasangan rollback tidak ada). Prosedur + peringatannya di docs/OPERATIONS.md.
 #
 # BELUM PERNAH DIJALANKAN DI SERVER (T-013/T-026): skrip ini masih berkas repo saja.
 set -euo pipefail

@@ -4,7 +4,7 @@
 
 `ledger` memiliki **buku besar**: Chart of Accounts, periode akuntansi, jurnal double-entry,
 posting rule, saldo, serta trial balance. Modul bisnis **tidak** menulis jurnal
-langsung — mereka memancarkan accounting event dan `ledger` memetakannya lewat posting rule
+langsung - mereka memancarkan accounting event dan `ledger` memetakannya lewat posting rule
 (spec §8.1). Bounded context lain hanya berbicara lewat `api.nim` dan event (spec §6.3).
 
 Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), laporan keuangan
@@ -23,35 +23,35 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
   Penutupan mengisi `closed_at`/`closed_by`; **alasan wajib** dan masuk audit.
 - **Penutupan satu arah** (T-129/DB-4, `0045`): trigger `ledger.period_guard` hanya mengizinkan
   `OPEN → CLOSED`; `CLOSED → OPEN`, perubahan `period_id`/`created_*`, dan perubahan rentang
-  ditolak. Tidak ada reopen — koreksi setelah tutup = jurnal pembalik, bukan membuka periode lagi.
+  ditolak. Tidak ada reopen - koreksi setelah tutup = jurnal pembalik, bukan membuka periode lagi.
 - **Tutup periode menolak sesi kas OPEN** di rentangnya (409 `open_sessions`, T-129/LED-1). Tanpa
   penjagaan itu sesi tersebut tidak akan pernah bisa ditutup: jurnal penutupnya bertanggal sesi dan
   akan ditolak periode yang sudah CLOSED, sementara index "satu sesi OPEN per teller" menghalangi
   sesi baru.
 - Urutan penutupan (tidak menutup periode lebih awal saat sebelumnya masih terbuka) **belum**
-  ditegakkan di sini — itu tugas `daycloser` (Fase 5). Lihat `docs/tasks/T-072.md`.
+  ditegakkan di sini - itu tugas `daycloser` (Fase 5). Lihat `T-072 (git history)`.
 
 ## Jurnal (T-073)
 
-- `ledger.journal` + `ledger.journal_line`: double-entry. **Immutable** — trigger menolak
+- `ledger.journal` + `ledger.journal_line`: double-entry. **Immutable** - trigger menolak
   `UPDATE`/`DELETE`/`TRUNCATE`; koreksi hanya lewat **jurnal pembalik** (`reversal_of`).
 - Keseimbangan `SUM(debit) = SUM(credit)` (minimal 2 baris) ditegakkan **constraint trigger
   deferred** → diperiksa saat `COMMIT`. Karena itu header + baris **wajib satu transaksi**;
   menyisipkan baris dengan autocommit akan ditolak.
 - Tanggal bisnis harus berada di periode **OPEN** (trigger). Belum ada periode = tidak bisa posting.
   Trigger memakai `FOR SHARE` pada baris periode: penutupan periode yang belum `COMMIT` **tidak
-  bisa ditembus** jurnal — insert menunggu lock, lalu melihat status `CLOSED` (O-089/D-091).
+  bisa ditembus** jurnal - insert menunggu lock, lalu melihat status `CLOSED` (O-089/D-091).
 - Akun GL harus `postable` dan `ACTIVE` (trigger).
 - `idempotency_key` unik; endpoint pembalik memakai header `Idempotency-Key` dan **idempoten**
   (permintaan ulang → 200 dengan jurnal yang sama). Jurnal yang sudah dibalik tidak bisa dibalik
   lagi; jurnal pembalik tidak bisa dibalik.
-- Tanpa partisi pada Fase 1 — **D-072**.
+- Tanpa partisi pada Fase 1 - **D-072**.
 - Immutability punya dua lapis: trigger **dan** privilege. Sejak `platform/0042` role runtime
   (`kran_runtime`) kehilangan `UPDATE/DELETE/TRUNCATE` pada `ledger.journal`/`journal_line`
   (T-129/DB-1). Yang masih berlaku: role aplikasi adalah **pemilik** tabel, jadi `kran_app` (dipakai
   migrasi) tetap bisa mengubah jurnal; jaminan ini melindungi jalur runtime, bukan superuser.
 - Pembalik memakai akun dari jurnal asal; bila akun sudah dinonaktifkan, pembalik ditolak
-  (fail-closed) — kebijakan alternatif dicatat **O-079**.
+  (fail-closed) - kebijakan alternatif dicatat **O-079**.
 - **Jurnal milik subledger tidak bisa dibalik** (D-135): bila `deposit.transaction`,
   `deposit.transfer`, `teller.teller_session`, atau `teller.vault_topup_request` menunjuk jurnal
   itu, pembalik ditolak `409 journal_owned_by_subledger` + `params.subledger`. Alasannya: pembalik
@@ -68,7 +68,7 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
   tanpa itu event diabaikan.
 - Idempotensi: `platform.inbox` (`consumer = "ledger-postings"`) + `journal.idempotency_key =
   "outbox:<eventId>"`. Event akuntansi tanpa rule → `markFailed`, setelah batas percobaan `DEAD`
-  dengan `last_error` — tidak ada jurnal kosong.
+  dengan `last_error` - tidak ada jurnal kosong.
 - Worker `role=worker` menjalankan loop konsumen; batas dari parameter
   `ledger.posting.batch_size`, `max_attempts`, `retry_backoff_seconds`, `poll_interval_ms`.
 - Pengelolaan rule lewat migrasi sampai ada API/UI (**O-080**).
@@ -76,10 +76,10 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
   dan `DepositTransferred` (T-088c, `0013` = D 201/K 201 untuk pemindahbukuan/PB). `DepositPosted`
   (D 101.2/K 201) dari `0005` dipakai ulang. **Batas PB:** kedua sisi akun `201` yang sama → jurnal
   net-nol di GL; perpindahan per rekening dicatat di modul `deposit` (`deposit.transfer`), belum ada
-  GL per pemilik — lihat `docs/ACCEPTED-LIMITS.md` dan T-101/Fase 3.
+  GL per pemilik - lihat `docs/ACCEPTED-LIMITS.md` dan T-101/Fase 3.
 - Rule pencairan pinjaman (T-164, D-182): `LoanDisbursed` (`0083`) = D 110 Piutang Pembiayaan /
   K 201 Simpanan Anggota. Akunnya **data** di `posting_rule_line`, bukan konstanta kode, sehingga
-  pemetaan final bisa diganti tanpa deploy — **NEEDS-COMPLIANCE-REVIEW** (COA dasar disusun sebelum
+  pemetaan final bisa diganti tanpa deploy - **NEEDS-COMPLIANCE-REVIEW** (COA dasar disusun sebelum
   modul `lending` ada).
 - Rule hapus buku (T-168, D-186): `LoanWriteOffProvisioned` D 111 / K 110 dan `LoanWriteOffExpense`
   D 504 / K 110 (`0095`), plus akun `504 BEBAN HAPUS BUKU` (**NEEDS-COMPLIANCE-REVIEW**). Dua rule
@@ -91,14 +91,14 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 - Rule pembayaran angsuran (T-165, D-183): `LoanPrincipalPaid` D 201/K 110, `LoanInterestPaid`
   D 201/K 401, `LoanPenaltyPaid` D 201/K 403 (`0087`), plus akun baru `403 PENDAPATAN DENDA`
   (**NEEDS-COMPLIANCE-REVIEW**). Satu rule per komponen karena template jurnal memakai satu nominal
-  per jurnal — laporan pendapatan bunga tidak boleh memuat pokok.
+  per jurnal - laporan pendapatan bunga tidak boleh memuat pokok.
 - Migrasi `0033_ledger_cash_clearing.sql` (T-118) memisahkan kas konter: `101` menjadi induk
   non-postable, `101.2 KAS DI TELLER` menggantikan `101` pada **semua** `posting_rule_line` yang
   sebelumnya menunjuk `101` (5 baris lintas `0005`/`0012`/`0014`). Jurnal historis tetap `101`.
 
 ## Saldo turunan & trial balance (T-075)
 
-- `GET /api/v1/ledger/trial-balance?periodId=` — agregat debit/kredit per akun untuk rentang
+- `GET /api/v1/ledger/trial-balance?periodId=` - agregat debit/kredit per akun untuk rentang
   periode, **dihitung dari `journal_line`**, bukan cache. Total debit = total kredit (invarian DB).
 - `ledger.balance_snapshot` adalah **cache kumulatif** `(account_code, as_of)`: berisi semua jurnal
   dengan `business_date <= as_of`. Satu-satunya penulisnya `ledger.rebuild_balance_snapshot(as_of)`;
@@ -108,7 +108,7 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 
 ## Laporan saldo GL (T-082, D-096)
 
-- `GET /api/v1/ledger/balances?periodId=` — saldo per akun: `opening` (kumulatif sebelum
+- `GET /api/v1/ledger/balances?periodId=` - saldo per akun: `opening` (kumulatif sebelum
   `startsOn`), `period` (mutasi dalam rentang **inklusif**), `closing` (= opening + mutasi),
   debit/kredit **terpisah** (bukan saldo bersih). Angka dari **satu** query agregasi atas
   `journal_line` (sumber kebenaran); `closing` turunan di domain (`report.closingDebit/Credit`).
@@ -120,14 +120,14 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 
 ## Public API (`api.nim`)
 
-- `coa` — `AccountType`, `NormalSide`, `AccountStatus`, `CoaAccount`, `parseAccountType`,
+- `coa` - `AccountType`, `NormalSide`, `AccountStatus`, `CoaAccount`, `parseAccountType`,
   `parseAccountStatus`, `normalSideOf`, `compileCodePattern`, `validateCode`, `validateName`.
-- `period` — `PeriodStatus`, `Period`, `parsePeriodStatus`, `parseIsoDate`, `validateRange`,
+- `period` - `PeriodStatus`, `Period`, `parsePeriodStatus`, `parseIsoDate`, `validateRange`,
   `validateCloseReason`.
-- `report` — `TrialBalance`, `TrialBalanceLine`, `totalDebit`, `totalCredit`, `isBalanced`.
-- `posting` — `PostingRule`, `PostingRuleLine`, `jsonContains`, `selectRule`,
+- `report` - `TrialBalance`, `TrialBalanceLine`, `totalDebit`, `totalCredit`, `isBalanced`.
+- `posting` - `PostingRule`, `PostingRuleLine`, `jsonContains`, `selectRule`,
   `validateTemplate`, `buildLines`.
-- `journal` — `Journal`, `JournalLine`, `totalDebit`, `totalCredit`, `isBalanced`,
+- `journal` - `Journal`, `JournalLine`, `totalDebit`, `totalCredit`, `isBalanced`,
   `validateJournalLines`, `validateIdempotencyKey`, `validateSourceEvent`, `reversalLinesOf`,
   `validateReversalReason`.
 
@@ -149,17 +149,17 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 | `ledger.posting.retry_backoff_seconds` | integer | GLOBAL, INSTITUTION | 30 | NORMAL |
 | `ledger.posting.poll_interval_ms` | integer | GLOBAL, INSTITUTION | 500 | NORMAL |
 
-## Tabel & schema (migrasi `0001`–`0011`)
+## Tabel & schema (migrasi `0001`-`0011`)
 
-- `ledger.coa_account` — kode unik, tipe, sisi normal (CHECK konsisten), `postable`, status.
+- `ledger.coa_account` - kode unik, tipe, sisi normal (CHECK konsisten), `postable`, status.
   Tidak ber-cabang: GL milik institusi (spec §9).
-- `ledger.period` — rentang inklusif, status, `closed_at`/`closed_by`, EXCLUDE tumpang tindih,
+- `ledger.period` - rentang inklusif, status, `closed_at`/`closed_by`, EXCLUDE tumpang tindih,
   trigger penutupan satu arah (`0045`).
-- `ledger.journal` / `ledger.journal_line` — jurnal immutable + pembalik, trigger keseimbangan
+- `ledger.journal` / `ledger.journal_line` - jurnal immutable + pembalik, trigger keseimbangan
   deferred, periode OPEN, akun postable/ACTIVE, dan baris hanya boleh masuk dalam **transaksi yang
   sama** dengan header (lihat bagian Jurnal di atas).
-- `ledger.posting_rule` / `posting_rule_line` — mapping event → template jurnal (T-074).
-- `ledger.balance_snapshot` — cache saldo per `(account_code, as_of)`; sumber kebenaran tetap jurnal
+- `ledger.posting_rule` / `posting_rule_line` - mapping event → template jurnal (T-074).
+- `ledger.balance_snapshot` - cache saldo per `(account_code, as_of)`; sumber kebenaran tetap jurnal
   (T-075).
 - COA awal (`0002_ledger_coa_base.sql`) adalah **contoh struktur** untuk pilot, bertanda
   `NEEDS-COMPLIANCE-REVIEW` (REG-011 `V!`): jangan dijadikan dasar laporan final sebelum review
@@ -172,8 +172,8 @@ Yang **bukan** milik modul ini: perhitungan bunga/PPAP/produk (modul bisnis), la
 
 | Task | Level | Kritis | Catatan |
 |---|---|---|---|
-| `ledger.daily_snapshot` | EOD (fase proses) | ya | Menulis ulang cache `ledger.balance_snapshot` lalu membuktikan cache = jurnal dalam satu transaksi (`DAY-321/322`, bukti `snapshotHash`) — T-137 |
-| `ledger.period_close` | EOM (fase pasca-tutup) | ya | Menutup periode GL yang berakhir di bulan tanggal buku setelah snapshot + 3 gate (`DAY-324/326/328`), audit + event `period.closed` — T-137 |
+| `ledger.daily_snapshot` | EOD (fase proses) | ya | Menulis ulang cache `ledger.balance_snapshot` lalu membuktikan cache = jurnal dalam satu transaksi (`DAY-321/322`, bukti `snapshotHash`) - T-137 |
+| `ledger.period_close` | EOM (fase pasca-tutup) | ya | Menutup periode GL yang berakhir di bulan tanggal buku setelah snapshot + 3 gate (`DAY-324/326/328`), audit + event `period.closed` - T-137 |
 
 Pendaftarannya ada di `apps/api/src/daycloser_ledger.nim`. Penutupan tetap **tidak** memakai
 cron/batch sendiri (AGENTS §1.7); jadwalnya milik framework `daycloser`.
@@ -202,26 +202,26 @@ Belum ada teks UI modul ini; nanti memakai prefix `ledger.`.
 
 ## Requirement regulasi terkait (REG-xxx → test)
 
-REG-011 (standar akuntansi, SAK EP/PSAK) bertanda `V!` — **belum diverifikasi**. COA awal dan
+REG-011 (standar akuntansi, SAK EP/PSAK) bertanda `V!` - **belum diverifikasi**. COA awal dan
 aturan pengakuan belum diklaim patuh; lihat `NEEDS-COMPLIANCE-REVIEW` di migrasi COA.
 
 ## Batas yang belum ditegakkan (disengaja, tercatat)
 
-- Akun kontra (CKPN/akumulasi penyusutan) belum bisa dimodelkan — **O-075**, menunggu keputusan
+- Akun kontra (CKPN/akumulasi penyusutan) belum bisa dimodelkan - **O-075**, menunggu keputusan
   accounting/compliance (REG-011 `V!`).
 - Daftar COA/periode dibatasi 200 baris; paginasi menyusul bila perlu.
 - Penutupan periode bersamaan: `UPDATE` 0 baris → 409 tanpa audit/event kedua.
 
 ## Keputusan & trade-off (link ADR)
 
-- D-070: COA & periode T-072 — format kode = parameter, sisi normal = invarian kode, periode
+- D-070: COA & periode T-072 - format kode = parameter, sisi normal = invarian kode, periode
   inklusif + EXCLUDE, COA awal lewat migrasi idempoten (bukan seed pack dev-only).
 
 ## Menjalankan test
 
-- `./task test tledger` — unit tipe akun, pola kode, rentang periode.
-- `./task test itledger` — seed COA, kode unik, CHECK sisi normal, EXCLUDE tumpang tindih.
-- `./task test itapi_ledger` — jalur HTTP penuh + kontrak + audit/event.
+- `./task test tledger` - unit tipe akun, pola kode, rentang periode.
+- `./task test itledger` - seed COA, kode unik, CHECK sisi normal, EXCLUDE tumpang tindih.
+- `./task test itapi_ledger` - jalur HTTP penuh + kontrak + audit/event.
 
 Catatan kasus vakum: periode CLOSED yang tidak punya jurnal sama sekali dan cache-nya belum
 pernah dibangun akan menjawab `source=snapshot` dengan daftar kosong, karena tidak ada angka yang
@@ -245,11 +245,11 @@ keberadaan baris `balance_snapshot` pada `ends_on`.
   (ASSET/DEBIT/postable) dan memindahkan posting kas konter dari `101` ke `101.2`. `101 KAS` kini
   induk non-postable, jadi posting langsung ke `101` ditolak trigger `postable`.
 - Alasan: satu akun `101` membuat kas di laci dan kas di vault tak terpisah di neraca
-  (memo `docs/proposals/t-118-operator-governance.md` §5 opsi A). Kode akun ini **struktur pilot**,
+  (memo `git history` §5 opsi A). Kode akun ini **struktur pilot**,
   tetap `NEEDS-COMPLIANCE-REVIEW` (REG-011 `V!`).
 - **Berjurnal sejak T-118 (D-132, menutup O-097):** `ledger/0034` menambah posting rule sesi &
-  selisih kas — buka `TellerSessionOpened` (D 101.2/K 101.1), tutup `TellerSessionClosed`
-  (D 101.1/K 101.2), selisih `TellerCashOverage`/`TellerCashShortage` (D/K `101.9`) — dan top-up
+  selisih kas - buka `TellerSessionOpened` (D 101.2/K 101.1), tutup `TellerSessionClosed`
+  (D 101.1/K 101.2), selisih `TellerCashOverage`/`TellerCashShortage` (D/K `101.9`) - dan top-up
   vault dijurnal **eksplisit** di handler approval (D `101.1`/K akun sumber, event
   `TellerVaultTopUp`). Jurnal ditulis sinkron di transaksi yang sama dengan mutasi vault; gate EOD
   tetap menunggu `daycloser` (Fase 3).
@@ -283,7 +283,7 @@ bunga deposito berjangka:
   TIME_DEPOSIT` (`0067`): `DepositPosted` → D 101.2 / K 202 dan `DepositWithdrawn` → D 202 / K 101.2.
   Rule generik `0005`/`0012` tetap untuk tabungan; `specificityOf` memilih yang berkondisi karena
   kondisi menambah kekhususan, dan `postJournalSync` sudah mengirim `accountType` di payload.
-  Penarikan sebelum jatuh tempo belum punya penalti — keputusan produk terbuka (O-108).
+  Penarikan sebelum jatuh tempo belum punya penalti - keputusan produk terbuka (O-108).
 - Jatuh tempo deposito berjangka (`ledger/0069`, T-138d/D-155) menambah dua rule generik:
 
   | Event | Jurnal | Kapan |
@@ -291,7 +291,7 @@ bunga deposito berjangka:
   | `DepositMatured` | **D 202 SIMPANAN BERJANGKA / K 201 SIMPANAN ANGGOTA** | ARO `NONE`: pokok pindah ke rekening simpanan anggota |
   | `InterestCapitalized` | **D 204 BUNGA AKRUAL / K 202 SIMPANAN BERJANGKA** | ARO `PRINCIPAL_AND_INTEREST`: bunga menjadi pokok |
 
-  Bunga yang dibayar ke rekening simpanan memakai `InterestPosted` yang sudah ada (`0065`) — tidak
+  Bunga yang dibayar ke rekening simpanan memakai `InterestPosted` yang sudah ada (`0065`) - tidak
   diduplikasi, karena dua rule untuk event yang sama akan membuat `selectRule` ambigu. Pokok yang
   diperpanjang (ARO `PRINCIPAL`) dan bunga nol tidak dijurnal: saldo tidak berubah dan ledger menolak
   jurnal nol.
@@ -309,4 +309,4 @@ merekam jurnal setelah freeze.
 
 Aturan untuk task penutupan baru: teruskan `ctx.runId` ke `postRuleJournalSync`/
 `postJournalSync`. Parameter itu opsional supaya pemanggil bisnis tidak perlu berubah, jadi
-kelalaian tidak gagal-kompilasi — pastikan lewat test task-nya.
+kelalaian tidak gagal-kompilasi - pastikan lewat test task-nya.

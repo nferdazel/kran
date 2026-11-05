@@ -3,13 +3,13 @@
 > **Modul contoh hasil `./task scaffold hello` (T-011), sengaja minimal dan tidak dipakai
 > produksi.** Isinya hanya untuk membuktikan template `tools/scaffold` menghasilkan modul yang
 > lolos `./task ci` dan archcheck; tidak ada aggregate, tabel, parameter, atau event nyata.
-> Jangan meniru kelengkapan dokumen ini sebagai standar modul sungguhan — bandingkan dengan
+> Jangan meniru kelengkapan dokumen ini sebagai standar modul sungguhan - bandingkan dengan
 > `modules/ledger/MODULE.md`. Teks `TODO` di bawah **adalah placeholder yang disengaja**; jangan
 > diganti dengan klaim palsu, dan jangan hapus modulnya tanpa memutus uji scaffold (T-011).
 
 ## Tujuan & Bounded Context
 
-TODO: satu paragraf — apa yang dimiliki modul ini dan (tak kalah penting) yang bukan.
+TODO: satu paragraf - apa yang dimiliki modul ini dan (tak kalah penting) yang bukan.
 Bounded context lain hanya berbicara lewat `api.nim` dan kontrak event (spec §6.3).
 
 ## Aggregate & Aturan Bisnis Utama
@@ -19,8 +19,8 @@ Bounded context lain hanya berbicara lewat `api.nim` dan kontrak event (spec §6
 
 ## Public API (api.nim)
 
-- `greet(who: string): string` — contoh; ganti dengan permukaan publik sesungguhnya.
-- `greetUser(who: string): string` — contoh use case.
+- `greet(who: string): string` - contoh; ganti dengan permukaan publik sesungguhnya.
+- `greetUser(who: string): string` - contoh use case.
 
 ## Event dipublish / dikonsumsi (versi)
 
@@ -62,6 +62,6 @@ Bounded context lain hanya berbicara lewat `api.nim` dan kontrak event (spec §6
 
 ## Menjalankan test
 
-- `./task test thello` — unit test modul ini (tanpa DB).
-- `./task check` — archcheck + lint-nomagic + paramgen --check.
-- `./task dbtools validate` — validasi migrasi (expand-only).
+- `./task test thello` - unit test modul ini (tanpa DB).
+- `./task check` - archcheck + lint-nomagic + paramgen --check.
+- `./task dbtools validate` - validasi migrasi (expand-only).

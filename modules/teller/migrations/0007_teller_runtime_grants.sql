@@ -1,6 +1,6 @@
 -- Hak akses role runtime untuk schema `teller` (T-093).
 --
--- GRANT di `docs/runbooks/db-roles.md` hanya mencakup schema yang sudah ada saat runbook ditulis
+-- GRANT di `docs/OPERATIONS.md` hanya mencakup schema yang sudah ada saat runbook ditulis
 -- (platform, ledger, party, product, deposit). Tanpa grant ini, `kran_runtime` mendapat
 -- "permission denied" pada tabel/sequence `teller` di produksi walau fitur lolos test (test memakai
 -- role migrator). Pola dan idempotensinya sama dengan `deposit/0006`/`deposit/0008`.

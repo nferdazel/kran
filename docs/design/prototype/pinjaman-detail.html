@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="id-ID" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pinjaman · Prototipe KRAN</title>
+    <script src="assets/theme-init.js"></script>
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/base.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <link rel="stylesheet" href="assets/screens-tx.css" />
+    <script src="assets/i18n-tx.js"></script>
+    <script src="assets/app.js" defer></script>
+    <script src="assets/screens-tx.js" defer></script>
+  </head>
+  <body data-title-key="loan.docTitle" data-tx-page="loan">
+    <a class="skip-link" href="#main" data-i18n="common.skip">Lewati ke konten utama</a>
+    <p class="synthetic-strip" role="region" aria-label="Prototipe, data sintetis" data-i18n-aria-label="common.prototype" data-i18n="common.prototype">Prototipe, data sintetis</p>
+
+    <header class="app-header">
+      <a class="brand" href="index.html">
+        <span class="brand__name">KRAN</span>
+        <span class="brand__sub" data-i18n="common.appSub">Inti koperasi</span>
+      </a>
+      <p class="header-meta">
+        <span class="header-meta__item">
+          <span data-i18n="kas.businessDate">Tanggal usaha</span>
+          <span class="header-meta__value" data-date="2026-11-05">5 Nov 2026</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="kas.branch">Cabang</span>
+          <span class="header-meta__value" data-i18n="kas.branchValue">[NAMA CABANG] · 001</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="kas.cashier">Kasir</span>
+          <span class="header-meta__value" data-i18n="kas.cashierValue">[NAMA KASIR]</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="common.session">Sesi</span>
+          <span id="session-state" data-i18n="tx.statusActive">Aktif</span>
+        </span>
+      </p>
+    </header>
+
+    <div class="app-shell">
+      <nav class="app-nav" aria-label="Navigasi utama" data-i18n-aria-label="common.navMain">
+        <ul>
+          <li class="app-nav__group-label" data-i18n="common.navWork">Pekerjaan</li>
+          <li><a href="kas.html" data-i18n="common.kas">Kas</a></li>
+          <li><a href="transfer.html" data-i18n="tx.nav.transfer">Transfer</a></li>
+          <li><a href="tutup-kas.html" data-i18n="tx.nav.close">Tutup buku</a></li>
+          <li><a href="pinjaman-detail.html" aria-current="page" data-i18n="tx.nav.loan">Pinjaman</a></li>
+          <li class="app-nav__group-label" data-i18n="common.navPrototype">Prototipe</li>
+          <li><a href="komponen.html" data-i18n="common.components">Komponen</a></li>
+          <li><a href="index.html" data-i18n="common.home">Indeks</a></li>
+        </ul>
+      </nav>
+
+      <main id="main" class="app-main" tabindex="-1">
+        <div class="page-header">
+          <div>
+            <h1 data-i18n="loan.title">Berkas pinjaman</h1>
+            <p class="page-header__intro" data-i18n="loan.intro">Ringkasan akad, jadwal angsuran, dan pembayaran.</p>
+          </div>
+          <div class="page-header__actions">
+            <a class="btn" href="kas.html" data-i18n="tx.backToKas">Kembali ke Kas</a>
+          </div>
+        </div>
+
+        <div class="tx-preview">
+          <label class="tx-preview__label" for="loan-state" data-i18n="tx.preview.label">Pratinjau state</label>
+          <select class="select tx-preview__select" id="loan-state" data-tx-state-select>
+            <option value="normal" data-i18n="tx.preview.normal">Normal</option>
+            <option value="empty" data-i18n="tx.preview.empty">Kosong</option>
+            <option value="loading" data-i18n="tx.preview.loading">Memuat</option>
+            <option value="error" data-i18n="tx.preview.error">Galat</option>
+            <option value="partial" data-i18n="tx.preview.partial">Sebagian</option>
+            <option value="locked" data-i18n="tx.preview.locked">Terkunci</option>
+            <option value="denied" data-i18n="tx.preview.denied">Tanpa izin</option>
+            <option value="success" data-i18n="tx.preview.success">Berhasil</option>
+            <option value="unknown" data-i18n="tx.preview.unknown">Status tidak diketahui</option>
+          </select>
+          <p class="note" data-i18n="tx.preview.hint">Kontrol reviewer, bukan bagian alur operator.</p>
+          <p class="note" data-i18n="loan.reviewerDepends">DEPENDS: pembagian pokok, bunga, dan denda dari server. Prototipe tidak menampilkannya.</p>
+          <p class="note" data-i18n="loan.reviewerCollectibility">Kategori kolektibilitas: NEEDS-COMPLIANCE-REVIEW.</p>
+          <p class="note" data-i18n="loan.reviewerLimit">Sisa kewajiban 0,00 adalah placeholder; batas nominal tidak diuji di prototipe.</p>
+        </div>
+
+        <div class="tx-denied" id="loan-denied" hidden>
+          <div class="error-state">
+            <p class="error-state__title" data-i18n="loan.deniedTitle">Tanpa izin</p>
+            <p class="error-state__body" data-i18n="loan.deniedBody">Akun Anda tidak punya izin membuka akad ini.</p>
+            <div class="error-state__actions">
+              <a class="btn" href="kas.html" data-i18n="tx.backToKas">Kembali ke Kas</a>
+            </div>
+          </div>
+        </div>
+
+        <div id="loan-content">
+          <div class="toolbar">
+            <nav class="tx-tabs" aria-label="Bagian berkas" data-i18n-aria-label="loan.tabGroup">
+              <a href="pinjaman-detail.html?tab=jadwal" data-loan-tab="jadwal" data-i18n="loan.tabSchedule">Jadwal</a>
+              <a href="pinjaman-detail.html?tab=pay" data-loan-tab="pay" data-i18n="loan.tabPay">Pembayaran</a>
+              <a href="pinjaman-detail.html?tab=riwayat" data-loan-tab="riwayat" data-i18n="loan.tabHistory">Riwayat</a>
+            </nav>
+            <div class="toolbar__spacer"></div>
+            <span class="note" data-i18n="tx.loadedAt">dimuat 08:14</span>
+          </div>
+
+          <div class="alert alert--warning" id="loan-locked-banner" hidden>
+            <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+            <div>
+              <p class="alert__title" data-i18n="loan.lockedTitle">Akad tidak aktif</p>
+              <p class="alert__body" data-i18n="loan.lockedBody">Akad ini sudah dihapusbukukan atau ditutup. Berkas hanya bisa dibaca.</p>
+            </div>
+          </div>
+
+          <div class="alert alert--warning" id="loan-partial-banner" hidden>
+            <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2Z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+            <div>
+              <p class="alert__title" data-i18n="loan.partialTitle">Jadwal gagal dimuat</p>
+              <p class="alert__body" data-i18n="loan.partialBody">Fakta akad terbaca, tetapi jadwal angsuran gagal. Pembayaran diblokir sampai jadwal terbaca.</p>
+            </div>
+          </div>
+
+          <div class="work-grid">
+            <div class="work-main">
+              <section class="panel" aria-labelledby="loan-summary-title">
+                <div class="panel__header">
+                  <h2 class="panel__title" id="loan-summary-title" data-i18n="loan.summaryTitle">Ringkasan pinjaman</h2>
+                  <span class="badge badge--success" data-i18n="tx.statusActive">Aktif</span>
+                </div>
+
+                <div id="loan-loading" class="loading-state" role="status" aria-live="polite" hidden>
+                  <span class="loading-state__bar" aria-hidden="true"></span>
+                  <span data-i18n="loan.loading">Memuat akad dan jadwal…</span>
+                </div>
+
+                <div id="loan-error-state" class="error-state" role="alert" hidden>
+                  <p class="error-state__title" data-i18n="loan.errorTitle">Berkas pinjaman gagal dimuat</p>
+                  <p class="error-state__body" data-i18n="loan.errorBody">Coba lagi. Jangan menerima pembayaran sebelum berkas terbaca.</p>
+                  <div class="error-state__actions">
+                    <button type="button" class="btn btn--sm" id="loan-retry" data-i18n="tx.retry">Coba lagi</button>
+                  </div>
+                </div>
+
+                <dl class="facts tx-facts" id="loan-summary-facts">
+                  <dt data-i18n="loan.member">Anggota</dt>
+                  <dd><span data-i18n="ph.member">[NAMA ANGGOTA]</span></dd>
+                  <dt data-i18n="loan.memberNo">Nomor anggota</dt>
+                  <dd data-i18n="ph.memberNo">[NOMOR ANGGOTA]</dd>
+                  <dt data-i18n="loan.loanNo">Nomor pinjaman</dt>
+                  <dd data-i18n="ph.loanNo">[NOMOR PINJAMAN]</dd>
+                  <dt data-i18n="loan.product">Produk</dt>
+                  <dd data-i18n="loan.productValue">Pinjaman reguler</dd>
+                  <dt data-i18n="loan.principal">Pokok pinjaman</dt>
+                  <dd class="money" data-money="0">0,00</dd>
+                  <dt data-i18n="loan.outstanding">Sisa pokok</dt>
+                  <dd class="money" data-money="0">0,00</dd>
+                  <dt data-i18n="loan.installment">Angsuran</dt>
+                  <dd class="money" data-money="0">0,00</dd>
+                  <dt data-i18n="loan.dpd">Hari tunggakan</dt>
+                  <dd data-i18n="loan.dpdValue">0 hari</dd>
+                  <dt data-i18n="loan.collectibility">Kolektibilitas</dt>
+                  <dd data-i18n="loan.collectibilityValue">Lancar</dd>
+                  <dt data-i18n="loan.nextDue">Jatuh tempo berikutnya</dt>
+                  <dd><span data-date="2026-12-05">5 Des 2026</span></dd>
+                </dl>
+              </section>
+
+              <section class="panel" id="loan-schedule-panel" aria-labelledby="loan-schedule-title">
+                <div class="panel__header">
+                  <h2 class="panel__title" id="loan-schedule-title" data-i18n="loan.scheduleTitle">Jadwal angsuran</h2>
+                </div>
+
+                <div class="table-wrap" id="loan-schedule-table-wrap" role="region" tabindex="0" aria-label="Jadwal angsuran akad" data-i18n-aria-label="loan.scheduleCaption">
+                  <table>
+                    <caption class="sr-only" data-i18n="loan.scheduleCaption">Jadwal angsuran akad [NOMOR PINJAMAN]</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col" data-i18n="loan.colNo">No</th>
+                        <th scope="col" data-i18n="loan.colDue">Jatuh tempo</th>
+                        <th scope="col" class="money-cell" data-i18n="loan.colPrincipal">Pokok (IDR)</th>
+                        <th scope="col" class="money-cell" data-i18n="loan.colInterest">Bunga (IDR)</th>
+                        <th scope="col" class="money-cell" data-i18n="loan.colPenalty">Denda (IDR)</th>
+                        <th scope="col" class="money-cell" data-i18n="loan.colPaid">Dibayar (IDR)</th>
+                        <th scope="col" data-i18n="loan.colStatus">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <th scope="row">1</th>
+                        <td><span data-date="2026-12-05">5 Des 2026</span></td>
+                        <td class="money-cell" data-money="0">0,00</td>
+                        <td class="money-cell" data-money="0">0,00</td>
+                        <td class="money-cell" data-money="0">0,00</td>
+                        <td class="money-cell" data-money="0">0,00</td>
+                        <td data-i18n="loan.statusUnpaid">Belum dibayar</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">2</th>
+                        <td><span data-date="2027-01-05">5 Jan 2027</span></td>
+                        <td class="money-cell" data-money="0">0,00</td>
+                        <td class="money-cell" data-money="0">0,00</td>
+                        <td class="money-cell" data-money="0">0,00</td>
+                        <td class="money-cell" data-money="0">0,00</td>
+                        <td data-i18n="loan.statusUnpaid">Belum dibayar</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">3</th>
+                        <td><span data-date="2027-02-05">5 Feb 2027</span></td>
+                        <td class="money-cell" data-money="0">0,00</td>
+                        <td class="money-cell" data-money="0">0,00</td>
+                        <td class="money-cell" data-money="0">0,00</td>
+                        <td class="money-cell" data-money="0">0,00</td>
+                        <td data-i18n="loan.statusUnpaid">Belum dibayar</td>
+                      </tr>
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <th scope="row" colspan="2" data-i18n="loan.totalOutstanding">Sisa kewajiban (IDR)</th>
+                        <td class="money-cell" colspan="4" data-money="0">0,00</td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                <div class="empty-state" id="loan-schedule-empty" hidden>
+                  <p class="empty-state__title" data-i18n="loan.scheduleEmptyTitle">Belum ada jadwal angsuran</p>
+                  <p class="empty-state__body" data-i18n="loan.scheduleEmptyBody">Jadwal belum tersedia. Pembayaran tidak bisa diterima sebelum jadwal terbaca.</p>
+                </div>
+              </section>
+
+              <section class="panel" id="loan-history-panel" aria-labelledby="loan-history-title" hidden>
+                <div class="panel__header">
+                  <h2 class="panel__title" id="loan-history-title" data-i18n="loan.historyTitle">Riwayat pembayaran</h2>
+                </div>
+                <div class="empty-state" id="loan-history-empty">
+                  <p class="empty-state__title" data-i18n="loan.historyEmptyTitle">Belum ada pembayaran</p>
+                  <p class="empty-state__body" data-i18n="loan.historyEmptyBody">Pembayaran yang tersimpan akan muncul di sini.</p>
+                </div>
+              </section>
+            </div>
+
+            <aside class="panel review-panel" aria-labelledby="loan-aside-title">
+              <div class="panel__header">
+                <h2 class="panel__title" id="loan-aside-title" tabindex="-1" data-i18n="loan.payTitle">Pembayaran angsuran</h2>
+              </div>
+
+              <div id="loan-aside-info">
+                <div class="empty-state">
+                  <p class="empty-state__title" data-i18n="loan.reviewEmptyTitle">Belum ada yang ditinjau</p>
+                  <p class="empty-state__body" data-i18n="loan.reviewEmptyBody">Pilih sumber dana, isi nominal, lalu pilih Tinjau pembayaran.</p>
+                </div>
+                <a class="btn btn--primary btn--block" href="pinjaman-detail.html?tab=pay" data-i18n="loan.payReview">Tinjau pembayaran</a>
+              </div>
+
+              <form id="loan-pay-form" class="stack-md" novalidate hidden>
+                <div class="field">
+                  <label class="label" for="loan-source" data-i18n="loan.paySource">Sumber dana</label>
+                  <select class="select" id="loan-source" aria-describedby="loan-source-hint loan-source-error">
+                    <option value="acc1" data-i18n="loan.paySourceOption">[NOMOR REKENING] · Simpanan sukarela</option>
+                  </select>
+                  <p class="hint" id="loan-source-hint" data-i18n="loan.paySourceHint">Rekening anggota yang aktif di cabang ini.</p>
+                  <p class="field-error" id="loan-source-error" hidden></p>
+                </div>
+
+                <div class="amount-field">
+                  <label class="label" for="loan-amount" data-i18n="loan.payAmount">Nominal (IDR)</label>
+                  <input
+                    class="input input--amount"
+                    id="loan-amount"
+                    inputmode="decimal"
+                    autocomplete="off"
+                    placeholder="0,00"
+                    aria-describedby="loan-amount-hint loan-preview loan-pay-error"
+                  />
+                  <p class="money-preview" id="loan-preview"></p>
+                  <p class="hint" id="loan-amount-hint" data-i18n="loan.payAmountHint">Hanya angka dengan satu koma desimal.</p>
+                  <p class="field-error" id="loan-pay-error" hidden></p>
+                </div>
+
+                <div class="alert alert--error" id="loan-pay-summary" role="alert" hidden></div>
+
+                <button type="button" class="btn btn--primary btn--block" id="loan-review-open" data-i18n="loan.payReview">Tinjau pembayaran</button>
+              </form>
+
+              <div id="loan-review-filled" class="stack-sm" hidden>
+                <section aria-labelledby="loan-review-title">
+                  <h3 id="loan-review-title" tabindex="-1" data-i18n="loan.reviewTitle">Periksa pembayaran</h3>
+                  <dl class="facts">
+                    <dt data-i18n="loan.reviewBorrower">Peminjam</dt>
+                    <dd data-i18n="ph.member">[NAMA ANGGOTA]</dd>
+                    <dt data-i18n="loan.reviewLoanNo">Nomor pinjaman</dt>
+                    <dd data-i18n="ph.loanNo">[NOMOR PINJAMAN]</dd>
+                    <dt data-i18n="loan.reviewOutstanding">Sisa pokok</dt>
+                    <dd class="money" data-money="0">0,00</dd>
+                    <dt data-i18n="loan.reviewSource">Sumber dana</dt>
+                    <dd id="loan-review-source"></dd>
+                  </dl>
+                </section>
+
+                <dl class="amount-summary">
+                  <dt class="amount-summary__label" data-i18n="loan.reviewAmount">Nominal pembayaran</dt>
+                  <dd class="amount-summary__value" id="loan-review-amount">0,00</dd>
+                </dl>
+
+                <section class="tx-split" aria-labelledby="loan-split-title">
+                  <div class="tx-split__head">
+                    <h3 id="loan-split-title" data-i18n="loan.reviewSplitTitle">Pembagian pembayaran</h3>
+                    <span class="badge badge--warning" data-i18n="loan.reviewSplitUnavailable">Tidak tersedia</span>
+                  </div>
+                  <p class="note" data-i18n="loan.reviewSplitNote">Pembagian pokok, bunga, dan denda dihitung saat disimpan. Prototipe tidak menampilkan angka pembagian.</p>
+                </section>
+
+                <div class="review-panel__ref">
+                  <span data-i18n="loan.reviewKey">Kunci kirim</span>
+                  <code id="loan-review-key">PAY-0001</code>
+                </div>
+                <p class="note" data-i18n="loan.reviewKeyNote">Kunci berubah setelah pembayaran berhasil. Kiriman ulang dengan kunci lama ditolak.</p>
+
+                <div class="tx-review-actions">
+                  <button type="button" class="btn" id="loan-review-back" data-i18n="loan.payBack">Kembali</button>
+                  <button type="button" class="btn btn--primary" id="loan-review-submit">
+                    <span class="btn__spinner" id="loan-submit-spinner" hidden aria-hidden="true"></span>
+                    <span data-i18n="loan.paySubmit">Simpan pembayaran</span>
+                  </button>
+                </div>
+              </div>
+
+              <div id="loan-review-error" hidden>
+                <div class="error-state" role="alert">
+                  <p class="error-state__title" id="loan-error-title"></p>
+                  <p class="error-state__body" id="loan-error-body"></p>
+                  <p class="error-state__reference"><span data-i18n="common.reference">Rujukan</span>: <code id="loan-error-ref"></code></p>
+                  <div class="error-state__actions">
+                    <button type="button" class="btn btn--sm" data-tx-copy="#loan-error-ref"><span data-i18n="common.copyRef">Salin rujukan</span></button>
+                    <button type="button" class="btn btn--sm" id="loan-check-status" hidden data-i18n="loan.checkStatus">Cek status</button>
+                    <button type="button" class="btn btn--sm" id="loan-error-back" data-i18n="loan.payBack">Kembali</button>
+                  </div>
+                </div>
+              </div>
+
+              <div id="loan-success" hidden>
+                <div class="alert alert--success">
+                  <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12 5 5 9-10"/></svg>
+                  <div>
+                    <p class="alert__title" data-i18n="loan.paySuccessTitle">Pembayaran tersimpan.</p>
+                    <p class="alert__body" id="loan-success-body"></p>
+                  </div>
+                </div>
+                <div class="tx-key-line">
+                  <span data-i18n="loan.payKeyLabel">Kunci kirim</span>
+                  <code id="loan-success-key">PAY-0002</code>
+                </div>
+                <div class="review-panel__ref">
+                  <span data-i18n="common.reference">Rujukan</span>
+                  <code id="loan-success-ref">TRX-000140</code>
+                  <button type="button" class="btn btn--sm" data-tx-copy="#loan-success-ref"><span data-i18n="common.copyRef">Salin rujukan</span></button>
+                </div>
+                <p class="note" id="loan-cleared-note" data-i18n="loan.payCleared">Formulir dikosongkan.</p>
+                <div id="loan-receipt-slot" class="tx-receipt-slot"></div>
+                <div class="tx-review-actions">
+                  <button type="button" class="btn" id="loan-next" data-i18n="loan.payNext">Pembayaran berikutnya</button>
+                  <button type="button" class="btn btn--primary" id="loan-print" data-i18n="loan.payPrint">Cetak bukti</button>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+
+        <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+      </main>
+    </div>
+
+    <footer class="settings-bar" aria-label="Pengaturan tampilan" data-i18n-aria-label="common.settings">
+      <div class="settings-group" role="group" aria-labelledby="theme-label">
+        <span class="settings-group__label" id="theme-label" data-i18n="common.theme">Tema</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-theme-set="light" aria-pressed="true" data-i18n="common.themeLight">Terang</button>
+          <button type="button" data-theme-set="dark" aria-pressed="false" data-i18n="common.themeDark">Gelap</button>
+        </div>
+      </div>
+      <div class="settings-group" role="group" aria-labelledby="language-label">
+        <span class="settings-group__label" id="language-label" data-i18n="common.language">Bahasa</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-locale-set="id" aria-pressed="true" data-i18n="common.langId">Indonesia</button>
+          <button type="button" data-locale-set="en" aria-pressed="false" data-i18n="common.langEn">English</button>
+        </div>
+      </div>
+      <span class="settings-bar__note" data-i18n="common.prefNote">Preferensi tersimpan di peramban ini.</span>
+    </footer>
+
+    <section id="print-receipt" class="print-only" aria-hidden="true"></section>
+  </body>
+</html>

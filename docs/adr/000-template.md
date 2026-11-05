@@ -1,7 +1,7 @@
-# ADR-000 — Template
+# ADR-000 - Template
 
 > Format ADR (spec §25): konteks → keputusan → konsekuensi → alternatif → status.
-> Salin berkas ini ke `docs/adr/NNN-judul.md` dengan NNN mengikuti nomor ADR di spec §25
+> Salin berkas ini ke `adr/NNN-title.md` dengan NNN mengikuti nomor ADR di spec §25
 > (`ADR-002` = HTTP server, `ADR-013` = mesin PDF, dst.). Keputusan engineering kecil
 > cukup di `docs/DECISIONS.md`.
 

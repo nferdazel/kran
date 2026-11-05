@@ -5,7 +5,7 @@
 -- Jangan jadikan dasar laporan keuangan final sebelum review itu.
 --
 -- Ditaruh di migrasi (bukan `packs/*/seed/`) karena direktori seed pack hanya diterapkan dengan
--- `--dev`; produksi harus mendapatkannya lewat jalur migrasi (lihat O-066 dan `docs/tasks/T-072.md`).
+-- `--dev`; produksi harus mendapatkannya lewat jalur migrasi (lihat O-066 dan `T-072 (git history)`).
 --
 -- Idempoten: `ON CONFLICT (code) DO NOTHING` — aman bila migrasi dijalankan ulang pada DB uji yang
 -- schema-nya dibuat ulang, dan tidak menimpa akun yang sudah diubah institusi.

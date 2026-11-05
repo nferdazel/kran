@@ -16,7 +16,7 @@
 ## Data **sintetis**: satu cabang, satu anggota, dua rekening tabungan, enam deposito berjangka
 ## dengan tenor dan instruksi ARO berbeda. Tidak ada data nyata.
 ##
-## **Batas yang disengaja** (dicatat di `docs/milestones/M3-report.md`):
+## **Batas yang disengaja** (dicatat di `docs/history/PHASES.md`):
 ##   - siklus ARO kedua/ketiga ikut berjalan; akrualnya tetap memakai model kumulatif D-154, yang
 ##     pada `PRINCIPAL_AND_INTEREST` menilai ulang pokok baru untuk hari-hari sebelumnya (O-109).
 ##     Invarian akuntansi tetap utuh; angka bunganya yang belum benar secara ekonomi.

@@ -1,0 +1,332 @@
+/* Page-specific styles for the transaction screens.
+ * Shared primitives stay in components.css; every value here is a token. */
+
+/* ---------- Login ---------- */
+
+.tx-login {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: var(--space-5);
+}
+
+.tx-login__card {
+  width: 100%;
+  max-width: var(--layout-reading);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-hairline);
+  border-radius: var(--radius-md);
+}
+
+.tx-institution {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding-block-end: var(--space-3);
+  border-block-end: var(--border-width) solid var(--color-hairline);
+}
+
+.tx-institution__mark {
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.tx-institution__name {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.tx-login__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tx-login__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ---------- Reviewer state preview ---------- */
+
+.tx-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-surface-sunken);
+  border: var(--border-width) dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.tx-preview__label {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+}
+
+.tx-preview__select {
+  flex: 1 1 var(--side-panel);
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tx-preview .note {
+  flex-basis: 100%;
+}
+
+/* ---------- Shared screen blocks ---------- */
+
+.tx-denied {
+  margin-block-end: var(--space-4);
+}
+
+.tx-identity {
+  margin-block-start: var(--space-4);
+}
+
+.tx-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-block-start: var(--space-4);
+}
+
+.tx-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
+}
+
+.tx-receipt-slot {
+  margin-block-start: var(--space-3);
+}
+
+.tx-tabs {
+  display: inline-flex;
+  gap: var(--space-05);
+  padding: var(--space-05);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.tx-tabs a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height);
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-chip);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+}
+
+.tx-tabs a:hover {
+  background: var(--color-row-hover);
+  color: var(--color-text);
+}
+
+.tx-tabs a[aria-current="page"] {
+  background: var(--color-selected);
+  color: var(--color-text);
+  box-shadow: inset 0 0 0 var(--border-width) var(--color-border);
+}
+
+/* ---------- Close console ---------- */
+
+.tx-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-4);
+  margin-block-end: var(--space-2);
+}
+
+.tx-count-block {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-4);
+  margin-block: var(--space-4);
+}
+
+.tx-variance {
+  padding: var(--space-3);
+  background: var(--color-surface-sunken);
+  border: var(--border-width) solid var(--color-hairline);
+  border-radius: var(--radius-sm);
+}
+
+.tx-variance__label {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.tx-variance__value {
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.tx-variance__sentence {
+  font-size: var(--text-sm);
+}
+
+.tx-variance--mismatch {
+  border-color: var(--color-danger);
+}
+
+.tx-variance--mismatch .tx-variance__value {
+  color: var(--color-danger);
+}
+
+.tx-variance--match {
+  border-color: var(--color-success);
+}
+
+.tx-checklist,
+.tx-prereq {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.tx-checklist li,
+.tx-prereq li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-block: var(--space-2);
+  border-block-end: var(--border-width) solid var(--color-hairline);
+}
+
+.tx-checklist li:last-child,
+.tx-prereq li:last-child {
+  border-block-end: 0;
+}
+
+.tx-checklist__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-05);
+  min-width: 0;
+}
+
+.tx-checklist__title {
+  font-size: var(--text-sm);
+}
+
+.tx-checklist__fix {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.tx-checklist__action {
+  font-size: var(--text-xs);
+}
+
+.tx-prose {
+  max-width: var(--measure-prose);
+  font-size: var(--text-sm);
+}
+
+.tx-prose + .tx-prose {
+  margin-block-start: var(--space-2);
+}
+
+.tx-run-message {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.tx-certificate {
+  padding-block-start: var(--space-3);
+  border-block-start: var(--border-width) solid var(--color-hairline);
+}
+
+.tx-history-empty {
+  margin-block-start: var(--space-3);
+}
+
+/* ---------- Loan detail ---------- */
+
+.tx-facts {
+  grid-template-columns:
+    minmax(0, auto) minmax(0, 1fr)
+    minmax(0, auto) minmax(0, 1fr);
+  column-gap: var(--space-4);
+}
+
+.tx-split {
+  padding: var(--space-3);
+  background: var(--color-surface-sunken);
+  border: var(--border-width) solid var(--color-hairline);
+  border-radius: var(--radius-sm);
+}
+
+.tx-split__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-block-end: var(--space-1);
+}
+
+.tx-key-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.tx-key-line code {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums slashed-zero;
+  color: var(--color-text);
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 60rem) {
+  .tx-login {
+    padding: var(--space-3);
+    place-items: start center;
+  }
+
+  .tx-login__card {
+    padding: var(--space-4);
+  }
+
+  .tx-summary-grid,
+  .tx-count-block {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tx-facts {
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tx-tabs a {
+    transition: none;
+  }
+}

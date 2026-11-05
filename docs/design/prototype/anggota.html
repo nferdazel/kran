@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="id-ID" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Anggota · Prototipe KRAN</title>
+    <script src="assets/theme-init.js"></script>
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/base.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <link rel="stylesheet" href="assets/screens-gov.css" />
+  </head>
+  <body data-title-key="members.docTitle" class="gov-page">
+    <a class="skip-link" href="#main" data-i18n="common.skip">Lewati ke konten utama</a>
+    <p class="synthetic-strip" role="region" aria-label="Prototipe, data sintetis" data-i18n-aria-label="common.prototype" data-i18n="common.prototype">Prototipe, data sintetis</p>
+
+    <header class="app-header">
+      <a class="brand" href="index.html">
+        <span class="brand__name">KRAN</span>
+        <span class="brand__sub" data-i18n="common.appSub">Inti koperasi</span>
+      </a>
+      <p class="header-meta">
+        <span class="header-meta__item">
+          <span data-i18n="gov.businessDate">Tanggal buku</span>
+          <span class="header-meta__value" data-i18n="gov.ph.date">[TANGGAL]</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="members.branch">Cabang</span>
+          <span class="header-meta__value" data-i18n="gov.branchValue">[NAMA CABANG] · 001</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="gov.role">Peran</span>
+          <span class="header-meta__value" data-i18n="gov.role.admin">Admin</span>
+        </span>
+      </p>
+    </header>
+
+    <div class="app-shell">
+      <nav class="app-nav" aria-label="Navigasi utama" data-i18n-aria-label="common.navMain">
+        <ul>
+          <li class="app-nav__group-label" data-i18n="common.navWork">Pekerjaan</li>
+          <li><a href="kas.html" data-i18n="common.kas">Kas</a></li>
+          <li><a href="anggota.html" aria-current="page" data-i18n="gov.navMembers">Anggota</a></li>
+          <li><a href="laporan.html" data-i18n="gov.navReports">Laporan</a></li>
+          <li><a href="audit.html" data-i18n="gov.navAudit">Audit</a></li>
+          <li class="app-nav__group-label" data-i18n="common.navPrototype">Prototipe</li>
+          <li><a href="komponen.html" data-i18n="common.components">Komponen</a></li>
+          <li><a href="index.html" data-i18n="common.home">Indeks</a></li>
+        </ul>
+      </nav>
+
+      <main id="main" class="app-main" tabindex="-1">
+        <div class="page-header">
+          <div>
+            <h1 data-i18n="members.title">Anggota</h1>
+            <p class="page-header__intro" data-i18n="members.intro"></p>
+          </div>
+          <div class="page-header__actions">
+            <button type="button" class="btn btn--primary" id="members-new" data-dialog-open="members-new-dialog">
+              <span data-i18n="members.actionNew">Anggota baru</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="gov-state-demo">
+          <span class="gov-state-demo__label" data-i18n="gov.stateDemo">Pratinjau state</span>
+          <div class="segmented segmented--sm" role="group" aria-label="Pratinjau state" data-i18n-aria-label="gov.stateDemo" id="members-states">
+            <button type="button" data-gov-state="normal" aria-pressed="true" data-i18n="gov.state.normal">Normal</button>
+            <button type="button" data-gov-state="empty" aria-pressed="false" data-i18n="gov.state.empty">Kosong</button>
+            <button type="button" data-gov-state="loading" aria-pressed="false" data-i18n="gov.state.loading">Memuat</button>
+            <button type="button" data-gov-state="error" aria-pressed="false" data-i18n="gov.state.error">Galat</button>
+            <button type="button" data-gov-state="partial" aria-pressed="false" data-i18n="gov.state.partial">Sebagian</button>
+            <button type="button" data-gov-state="readonly" aria-pressed="false" data-i18n="gov.state.readonly">Hanya baca</button>
+            <button type="button" data-gov-state="denied" aria-pressed="false" data-i18n="gov.state.denied">Tanpa izin</button>
+          </div>
+        </div>
+
+        <div class="alert alert--warning" id="members-readonly" role="status" hidden>
+          <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <div>
+            <p class="alert__title" data-i18n="members.readonlyTitle">Hanya baca</p>
+            <p class="alert__body" data-i18n="members.readonlyBody"></p>
+          </div>
+        </div>
+
+        <div class="alert alert--warning" id="members-partial" role="status" hidden>
+          <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2Z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+          <div>
+            <p class="alert__title" data-i18n="members.partialTitle">Sebagian data gagal dimuat</p>
+            <p class="alert__body" data-i18n="members.partialBody"></p>
+          </div>
+        </div>
+
+        <div id="members-content">
+          <form class="filter-bar" id="members-filter" role="search" aria-label="Filter anggota" data-i18n-aria-label="members.filterLabel" onsubmit="return false">
+            <div class="field">
+              <label class="label" for="members-search" data-i18n="members.search">Cari nama atau nomor</label>
+              <input class="input" id="members-search" type="search" autocomplete="off" aria-describedby="members-search-hint" />
+              <p class="hint" id="members-search-hint" data-i18n="members.searchHint"></p>
+            </div>
+            <div class="field">
+              <label class="label" for="members-status" data-i18n="members.status">Status</label>
+              <select class="select" id="members-status">
+                <option value="" data-i18n="members.statusAll">Semua status</option>
+                <option value="active" data-i18n="gov.status.active">Aktif</option>
+                <option value="dormant" data-i18n="gov.status.dormant">Dormant</option>
+                <option value="arrears" data-i18n="gov.status.arrears">Tunggakan</option>
+                <option value="exited" data-i18n="gov.status.exited">Keluar</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="label" for="members-branch" data-i18n="members.branch">Cabang</label>
+              <select class="select" id="members-branch">
+                <option value="" data-i18n="members.branchAll">Semua cabang</option>
+                <option value="1" data-i18n="gov.branch.1">[NAMA CABANG] 1</option>
+                <option value="2" data-i18n="gov.branch.2">[NAMA CABANG] 2</option>
+                <option value="3" data-i18n="gov.branch.3">[NAMA CABANG] 3</option>
+              </select>
+            </div>
+            <button type="button" class="btn" id="members-clear" data-i18n="gov.clearFilters">Hapus filter</button>
+            <p class="filter-bar__count" id="members-count" role="status"></p>
+          </form>
+
+          <p class="gov-scope-line" id="members-scope"></p>
+
+          <div class="table-wrap" id="members-region" role="region" tabindex="0" aria-label="Tabel anggota" data-i18n-aria-label="members.tableRegion">
+            <table id="members-table">
+              <caption data-i18n="members.tableCaption">Anggota koperasi pada cabang ini</caption>
+              <thead>
+                <tr>
+                  <th scope="col" data-column="number" aria-sort="ascending">
+                    <button type="button" class="sort-btn" data-gov-sort="number">
+                      <span data-i18n="members.colNo">Nomor anggota</span>
+                      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5v14"/><path d="m5 8 3-3 3 3"/><path d="M16 19V5"/><path d="m13 16 3 3 3-3"/></svg>
+                    </button>
+                  </th>
+                  <th scope="col" data-column="name">
+                    <button type="button" class="sort-btn" data-gov-sort="name">
+                      <span data-i18n="members.colName">Nama</span>
+                      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5v14"/><path d="m5 8 3-3 3 3"/><path d="M16 19V5"/><path d="m13 16 3 3 3-3"/></svg>
+                    </button>
+                  </th>
+                  <th scope="col" data-i18n="members.colBranch">Cabang</th>
+                  <th scope="col" data-i18n="members.colStatus">Status</th>
+                  <th scope="col" data-i18n="members.colJoined">Tanggal gabung</th>
+                  <th scope="col" class="money-cell" data-i18n="members.colSavings">Simpanan (IDR)</th>
+                  <th scope="col" class="money-cell" data-i18n="members.colLoans">Pinjaman berjalan (IDR)</th>
+                  <th scope="col" data-i18n="members.colAction">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="members-tbody"></tbody>
+              <tfoot>
+                <tr>
+                  <th scope="row" colspan="5" data-i18n="members.totalVisible">Total baris terlihat (IDR)</th>
+                  <td class="money-cell"><span class="money" id="members-total-savings">0,00</span></td>
+                  <td class="money-cell"><span class="money" id="members-total-loans">0,00</span></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <nav class="pagination gov-pagination" id="members-pager" aria-label="Halaman anggota" data-i18n-aria-label="members.pagerLabel" hidden>
+            <span class="pagination__range" id="members-range"></span>
+            <span class="pagination__range" id="members-page-label"></span>
+            <label class="gov-page-size" for="members-page-size">
+              <span data-i18n="gov.pageSize">Baris per halaman</span>
+              <select class="select" id="members-page-size">
+                <option value="25">25</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+              </select>
+            </label>
+            <div class="pagination__pages">
+              <button type="button" class="btn btn--sm" id="members-prev" data-i18n="gov.prev">Sebelumnya</button>
+              <span class="gov-pages" id="members-pages"></span>
+              <button type="button" class="btn btn--sm" id="members-next" data-i18n="gov.next">Berikutnya</button>
+            </div>
+          </nav>
+        </div>
+
+        <section class="empty-state" id="members-denied" aria-labelledby="members-denied-title" hidden>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <p class="empty-state__title" id="members-denied-title" data-i18n="members.deniedTitle">Tidak berizin membaca data anggota.</p>
+          <p class="empty-state__body" data-i18n="members.deniedBody"></p>
+          <div class="empty-state__actions">
+            <a class="btn" href="index.html" data-i18n="gov.backToIndex">Kembali ke indeks</a>
+          </div>
+        </section>
+
+        <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+      </main>
+    </div>
+
+    <footer class="settings-bar" aria-label="Pengaturan tampilan" data-i18n-aria-label="common.settings">
+      <div class="settings-group" role="group" aria-labelledby="theme-label">
+        <span class="settings-group__label" id="theme-label" data-i18n="common.theme">Tema</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-theme-set="light" aria-pressed="true" data-i18n="common.themeLight">Terang</button>
+          <button type="button" data-theme-set="dark" aria-pressed="false" data-i18n="common.themeDark">Gelap</button>
+        </div>
+      </div>
+      <div class="settings-group" role="group" aria-labelledby="language-label">
+        <span class="settings-group__label" id="language-label" data-i18n="common.language">Bahasa</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-locale-set="id" aria-pressed="true" data-i18n="common.langId">Indonesia</button>
+          <button type="button" data-locale-set="en" aria-pressed="false" data-i18n="common.langEn">English</button>
+        </div>
+      </div>
+      <span class="settings-bar__note" data-i18n="common.prefNote"></span>
+    </footer>
+
+    <dialog id="members-new-dialog" aria-labelledby="members-new-title" aria-describedby="members-new-body">
+      <div class="dialog__header">
+        <h2 class="dialog__title" id="members-new-title" data-i18n="members.newTitle">Anggota baru</h2>
+      </div>
+      <div class="dialog__body">
+        <p id="members-new-body" data-i18n="members.newBody"></p>
+        <p class="note" data-i18n="common.syntheticNote"></p>
+      </div>
+      <div class="dialog__actions">
+        <button type="button" class="btn" data-dialog-close data-initial-focus data-i18n="gov.close">Tutup</button>
+      </div>
+    </dialog>
+
+    <script src="assets/i18n-gov.js"></script>
+    <script src="assets/app.js" defer></script>
+    <script src="assets/screens-gov.js" defer></script>
+  </body>
+</html>

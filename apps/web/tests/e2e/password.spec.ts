@@ -47,7 +47,7 @@ const NEW_PASSWORD = "Kata-Sandi-E2E-Baru-Panjang";
  * di sini 3 derivasi. Sisa suite berjalan paralel di 4 worker terhadap DB yang diakses lewat tunnel
  * SSH, dan biner e2e dibangun **debug** (`./task build`) sehingga kriptonya ~20x lebih lambat
  * daripada produksi (release). Tenggang bawaan 5 detik pernah membuat test ini gagal secara palsu di
- * CI — biaya + anggarannya di `docs/tasks/T-060.md` (T-060/O-068).
+ * CI — biaya + anggarannya di `T-060 (git history)` (T-060/O-068).
  */
 const PASSWORD_TIMEOUT = { timeout: 20_000 } as const;
 

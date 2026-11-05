@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="id-ID" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Berkas anggota · Prototipe KRAN</title>
+    <script src="assets/theme-init.js"></script>
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/base.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <link rel="stylesheet" href="assets/screens-gov.css" />
+  </head>
+  <body data-title-key="member.docTitle" class="gov-page">
+    <a class="skip-link" href="#main" data-i18n="common.skip">Lewati ke konten utama</a>
+    <p class="synthetic-strip" role="region" aria-label="Prototipe, data sintetis" data-i18n-aria-label="common.prototype" data-i18n="common.prototype">Prototipe, data sintetis</p>
+
+    <header class="app-header">
+      <a class="brand" href="index.html">
+        <span class="brand__name">KRAN</span>
+        <span class="brand__sub" data-i18n="common.appSub">Inti koperasi</span>
+      </a>
+      <p class="header-meta">
+        <span class="header-meta__item">
+          <span data-i18n="gov.businessDate">Tanggal buku</span>
+          <span class="header-meta__value" data-i18n="gov.ph.date">[TANGGAL]</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="member.branch">Cabang</span>
+          <span class="header-meta__value" data-i18n="gov.branchValue">[NAMA CABANG] · 001</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="gov.role">Peran</span>
+          <span class="header-meta__value" data-i18n="gov.role.admin">Admin</span>
+        </span>
+      </p>
+    </header>
+
+    <div class="app-shell">
+      <nav class="app-nav" aria-label="Navigasi utama" data-i18n-aria-label="common.navMain">
+        <ul>
+          <li class="app-nav__group-label" data-i18n="common.navWork">Pekerjaan</li>
+          <li><a href="kas.html" data-i18n="common.kas">Kas</a></li>
+          <li><a href="anggota.html" aria-current="page" data-i18n="gov.navMembers">Anggota</a></li>
+          <li><a href="laporan.html" data-i18n="gov.navReports">Laporan</a></li>
+          <li><a href="audit.html" data-i18n="gov.navAudit">Audit</a></li>
+          <li class="app-nav__group-label" data-i18n="common.navPrototype">Prototipe</li>
+          <li><a href="komponen.html" data-i18n="common.components">Komponen</a></li>
+          <li><a href="index.html" data-i18n="common.home">Indeks</a></li>
+        </ul>
+      </nav>
+
+      <main id="main" class="app-main" tabindex="-1">
+        <div class="page-header">
+          <div>
+            <h1 data-i18n="member.title">Berkas anggota</h1>
+            <p class="page-header__intro" data-i18n="member.intro"></p>
+          </div>
+          <div class="page-header__actions">
+            <button type="button" class="btn" id="member-edit" data-dialog-open="member-edit-dialog">
+              <span data-i18n="member.actionEdit">Ubah identitas</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="gov-state-demo">
+          <span class="gov-state-demo__label" data-i18n="gov.stateDemo">Pratinjau state</span>
+          <div class="segmented segmented--sm" role="group" aria-label="Pratinjau state" data-i18n-aria-label="gov.stateDemo" id="member-states">
+            <button type="button" data-gov-state="normal" aria-pressed="true" data-i18n="gov.state.normal">Normal</button>
+            <button type="button" data-gov-state="empty" aria-pressed="false" data-i18n="gov.state.empty">Kosong</button>
+            <button type="button" data-gov-state="loading" aria-pressed="false" data-i18n="gov.state.loading">Memuat</button>
+            <button type="button" data-gov-state="error" aria-pressed="false" data-i18n="gov.state.error">Galat</button>
+            <button type="button" data-gov-state="partial" aria-pressed="false" data-i18n="gov.state.partial">Sebagian</button>
+            <button type="button" data-gov-state="readonly" aria-pressed="false" data-i18n="gov.state.readonly">Hanya baca</button>
+            <button type="button" data-gov-state="exited" aria-pressed="false" data-i18n="gov.state.exited">Keluar</button>
+            <button type="button" data-gov-state="denied" aria-pressed="false" data-i18n="gov.state.denied">Tanpa izin</button>
+            <button type="button" data-gov-state="kyc" aria-pressed="false" data-i18n="gov.state.kyc">Identitas</button>
+            <button type="button" data-gov-state="loan" aria-pressed="false" data-i18n="gov.state.loan">Pinjaman</button>
+          </div>
+        </div>
+
+        <div class="alert alert--warning" id="member-readonly" role="status" hidden>
+          <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <div>
+            <p class="alert__title" data-i18n="member.readonlyTitle">Hanya baca</p>
+            <p class="alert__body" data-i18n="member.readonlyBody"></p>
+          </div>
+        </div>
+
+        <div class="alert alert--warning" id="member-exited" role="status" hidden>
+          <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <div>
+            <p class="alert__title" data-i18n="member.exitedTitle">Anggota keluar</p>
+            <p class="alert__body" data-i18n="member.exitedBody"></p>
+          </div>
+        </div>
+
+        <div class="alert alert--info" id="member-kyc" role="status" hidden>
+          <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7h.01"/></svg>
+          <div>
+            <p class="alert__title" data-i18n="member.kycTitle">Identitas belum lengkap</p>
+            <p class="alert__body" data-i18n="member.kycBody"></p>
+          </div>
+        </div>
+
+        <div class="alert alert--warning" id="member-partial" role="status" hidden>
+          <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2Z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+          <div>
+            <p class="alert__title" data-i18n="member.partialTitle">Sebagian berkas gagal dimuat</p>
+            <p class="alert__body" data-i18n="member.partialBody"></p>
+          </div>
+        </div>
+
+        <div id="member-content">
+          <section class="gov-identity" aria-labelledby="member-identity-title">
+            <h2 class="sr-only" id="member-identity-title" data-i18n="member.identityTitle">Identitas anggota</h2>
+            <div class="gov-identity__photo" role="img" aria-label="Foto anggota belum tersedia" data-i18n-aria-label="member.photoAlt">
+              <span aria-hidden="true" data-i18n="member.photoPlaceholder">[FOTO]</span>
+              <span class="gov-identity__photo-note" data-i18n="member.photoNote">Belum ada foto</span>
+            </div>
+            <div class="gov-identity__body">
+              <p class="gov-identity__name" id="member-name">[NAMA ANGGOTA]</p>
+              <dl class="facts gov-identity__facts">
+                <dt data-i18n="member.no">Nomor anggota</dt>
+                <dd class="num" id="member-number" data-i18n="gov.ph.memberNo">[NOMOR ANGGOTA] 0042</dd>
+                <dt data-i18n="member.status">Status</dt>
+                <dd id="member-status"></dd>
+                <dt data-i18n="member.branch">Cabang</dt>
+                <dd data-i18n="gov.branchValue">[NAMA CABANG] · 001</dd>
+                <dt data-i18n="member.joined">Tanggal gabung</dt>
+                <dd data-i18n="gov.ph.date">[TANGGAL]</dd>
+                <dt data-i18n="member.kycLabel">Status identitas</dt>
+                <dd id="member-kyc-value"></dd>
+              </dl>
+            </div>
+          </section>
+
+          <nav class="gov-tabs" aria-label="Bagian berkas anggota" data-i18n-aria-label="member.tabsLabel" id="member-tabs">
+            <a href="#panel-accounts" id="tab-accounts" data-gov-tab="accounts" aria-current="page" data-i18n="member.tab.accounts">Rekening</a>
+            <a href="#panel-obligations" id="tab-obligations" data-gov-tab="obligations" data-i18n="member.tab.obligations">Kewajiban</a>
+            <a href="#panel-loans" id="tab-loans" data-gov-tab="loans" data-i18n="member.tab.loans">Pinjaman</a>
+            <a href="#panel-history" id="tab-history" data-gov-tab="history" data-i18n="member.tab.history">Riwayat transaksi</a>
+            <a href="#panel-audit" id="tab-audit" data-gov-tab="audit" data-i18n="member.tab.audit">Jejak audit</a>
+          </nav>
+
+          <section class="gov-tabpanel" id="panel-accounts" aria-labelledby="tab-accounts" tabindex="-1">
+            <div class="gov-section-head">
+              <div>
+                <h2 data-i18n="member.accountsTitle">Rekening</h2>
+                <p class="note" data-i18n="member.accountsNote"></p>
+              </div>
+              <button type="button" class="btn" id="account-open" data-dialog-open="account-open-dialog">
+                <span data-i18n="member.accountOpen">Buka rekening</span>
+              </button>
+            </div>
+            <p class="hint" id="account-open-note" hidden></p>
+
+            <div class="table-wrap" role="region" tabindex="0" aria-label="Tabel rekening anggota" data-i18n-aria-label="member.accountsRegion">
+              <table id="accounts-table">
+                <caption class="sr-only" data-i18n="member.accountsCaption">Rekening milik anggota ini</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" data-i18n="member.accountColNo">Nomor rekening</th>
+                    <th scope="col" data-i18n="member.accountColProduct">Produk</th>
+                    <th scope="col" class="money-cell" data-i18n="member.accountColBalance">Saldo (IDR)</th>
+                    <th scope="col" data-i18n="member.accountColStatus">Status</th>
+                    <th scope="col" data-i18n="member.accountColOpened">Dibuka</th>
+                    <th scope="col" data-i18n="member.accountColAction">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="accounts-tbody"></tbody>
+                <tfoot>
+                  <tr>
+                    <th scope="row" colspan="2" data-i18n="member.accountTotal">Total saldo terlihat (IDR)</th>
+                    <td class="money-cell"><span class="money" id="accounts-total">0,00</span></td>
+                    <td colspan="3"></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </section>
+
+          <section class="gov-tabpanel" id="panel-obligations" aria-labelledby="tab-obligations" tabindex="-1" hidden>
+            <div class="gov-section-head">
+              <div>
+                <h2 data-i18n="member.obligationsTitle">Kewajiban pokok dan wajib</h2>
+                <p class="note" data-i18n="member.obligationsNote"></p>
+              </div>
+              <button type="button" class="btn" id="obligation-pay" data-dialog-open="obligation-pay-dialog">
+                <span data-i18n="member.obligationPay">Catat pembayaran</span>
+              </button>
+            </div>
+            <div class="alert alert--warning" id="obligation-blocked" role="status" hidden>
+              <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2Z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+              <p class="alert__body" id="obligation-blocked-body"></p>
+            </div>
+
+            <div class="table-wrap" role="region" tabindex="0" aria-label="Tabel kewajiban anggota" data-i18n-aria-label="member.obligationsRegion">
+              <table id="obligations-table">
+                <caption class="sr-only" data-i18n="member.obligationsCaption">Kewajiban simpanan pokok dan wajib</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" data-i18n="member.obligationColType">Kewajiban</th>
+                    <th scope="col" data-i18n="member.obligationColPeriod">Periode</th>
+                    <th scope="col" class="money-cell" data-i18n="member.obligationColDue">Nominal (IDR)</th>
+                    <th scope="col" class="money-cell" data-i18n="member.obligationColPaid">Dibayar (IDR)</th>
+                    <th scope="col" class="money-cell" data-i18n="member.obligationColRemaining">Sisa (IDR)</th>
+                    <th scope="col" data-i18n="member.obligationColStatus">Status</th>
+                    <th scope="col" data-i18n="member.obligationColNextDue">Jatuh tempo</th>
+                  </tr>
+                </thead>
+                <tbody id="obligations-tbody"></tbody>
+              </table>
+            </div>
+
+            <dl class="facts gov-summary">
+              <dt data-i18n="member.obligationTarget">Target periode (IDR)</dt>
+              <dd class="money" data-money="0">0,00</dd>
+              <dt data-i18n="member.obligationPaidTotal">Dibayar (IDR)</dt>
+              <dd class="money" data-money="0">0,00</dd>
+              <dt data-i18n="member.obligationArrears">Tunggakan (IDR)</dt>
+              <dd class="money" data-money="0">0,00</dd>
+              <dt data-i18n="member.obligationNextDue">Jatuh tempo berikutnya</dt>
+              <dd data-i18n="gov.ph.date">[TANGGAL]</dd>
+            </dl>
+          </section>
+
+          <section class="gov-tabpanel" id="panel-loans" aria-labelledby="tab-loans" tabindex="-1" hidden>
+            <div class="gov-section-head">
+              <div>
+                <h2 data-i18n="member.loansTitle">Pinjaman</h2>
+                <p class="note" data-i18n="member.loansNote"></p>
+              </div>
+            </div>
+
+            <div id="loan-loading" hidden>
+              <div class="loading-state" role="status" aria-busy="true">
+                <span class="loading-state__bar" aria-hidden="true"></span>
+                <span data-i18n="member.loansLoading">Memuat pinjaman…</span>
+              </div>
+            </div>
+
+            <div id="loan-error" hidden></div>
+
+            <div class="empty-state" id="loan-empty">
+              <p class="empty-state__title" data-i18n="member.loanEmptyTitle">Tidak ada pinjaman berjalan.</p>
+              <p class="empty-state__body" data-i18n="member.loanEmptyBody"></p>
+            </div>
+
+            <div id="loan-present" hidden>
+              <dl class="facts">
+                <dt data-i18n="member.loanContract">Akad</dt>
+                <dd class="num" data-i18n="gov.ph.contract">[RUJUKAN AKAD]</dd>
+                <dt data-i18n="member.loanOutstanding">Outstanding (IDR)</dt>
+                <dd class="money" data-i18n="gov.ph.outstanding">[SISA PINJAMAN]</dd>
+                <dt data-i18n="member.loanDpd">DPD</dt>
+                <dd class="num" data-i18n="gov.ph.dpd">[DPD]</dd>
+                <dt data-i18n="member.loanStatus">Status</dt>
+                <dd data-i18n="member.loanStatusActive">Berjalan</dd>
+              </dl>
+              <p class="note" data-i18n="member.loanBlocked"></p>
+            </div>
+          </section>
+
+          <section class="gov-tabpanel" id="panel-history" aria-labelledby="tab-history" tabindex="-1" hidden>
+            <div class="gov-section-head">
+              <div>
+                <h2 data-i18n="member.historyTitle">Riwayat transaksi</h2>
+                <p class="note" data-i18n="member.historyNote"></p>
+              </div>
+            </div>
+            <div class="table-wrap" role="region" tabindex="0" aria-label="Tabel riwayat transaksi" data-i18n-aria-label="member.historyRegion">
+              <table id="history-table">
+                <caption class="sr-only" data-i18n="member.historyCaption">Transaksi terakhir anggota ini</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" data-i18n="member.historyColTime">Waktu</th>
+                    <th scope="col" data-i18n="member.historyColType">Jenis</th>
+                    <th scope="col" class="money-cell" data-i18n="member.historyColAmount">Nominal (IDR)</th>
+                    <th scope="col" data-i18n="member.historyColRef">Rujukan</th>
+                  </tr>
+                </thead>
+                <tbody id="history-tbody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="gov-tabpanel" id="panel-audit" aria-labelledby="tab-audit" tabindex="-1" hidden>
+            <div class="gov-section-head">
+              <div>
+                <h2 data-i18n="member.auditTitle">Jejak audit</h2>
+                <p class="note" data-i18n="member.auditNote"></p>
+              </div>
+              <a class="btn" id="member-audit-link" href="audit.html" data-i18n="member.auditOpen">Buka jejak audit lengkap</a>
+            </div>
+            <div class="table-wrap" role="region" tabindex="0" aria-label="Tabel jejak audit anggota" data-i18n-aria-label="member.auditRegion">
+              <table id="member-audit-table">
+                <caption class="sr-only" data-i18n="member.auditCaption">Aktivitas terakhir pada berkas anggota</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" data-i18n="member.auditColTime">Waktu</th>
+                    <th scope="col" data-i18n="member.auditColActor">Pelaku</th>
+                    <th scope="col" data-i18n="member.auditColAction">Aksi</th>
+                    <th scope="col" data-i18n="member.auditColReason">Alasan</th>
+                  </tr>
+                </thead>
+                <tbody id="member-audit-tbody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="gov-danger-zone" aria-labelledby="member-exit-title">
+            <h2 id="member-exit-title" data-i18n="member.exitTitle">Keluar anggota</h2>
+            <p class="note" data-i18n="member.exitNote"></p>
+            <dl class="facts gov-summary">
+              <dt data-i18n="member.exitLoan">Pinjaman berjalan</dt>
+              <dd id="exit-loan-value" data-i18n="member.exitNone">Tidak ada</dd>
+              <dt data-i18n="member.exitObligations">Kewajiban belum lunas</dt>
+              <dd data-i18n="member.exitNone">Tidak ada</dd>
+              <dt data-i18n="member.exitStatus">Status</dt>
+              <dd id="exit-status-value">Aktif</dd>
+            </dl>
+            <p class="hint" id="exit-blocked" data-i18n="member.exitBlocked" hidden></p>
+            <p class="hint" id="exit-done" data-i18n="member.exitDoneNote" hidden></p>
+            <div class="gov-danger-zone__actions">
+              <button type="button" class="btn btn--danger" id="member-exit" data-dialog-open="member-exit-dialog">
+                <span data-i18n="member.exitAction">Keluar anggota</span>
+              </button>
+            </div>
+          </section>
+        </div>
+
+        <div id="member-error" hidden></div>
+
+        <section class="empty-state" id="member-denied" aria-labelledby="member-denied-title" hidden>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <p class="empty-state__title" id="member-denied-title" data-i18n="member.deniedTitle">Tidak berizin membaca berkas ini.</p>
+          <p class="empty-state__body" data-i18n="member.deniedBody"></p>
+          <div class="empty-state__actions">
+            <a class="btn" href="anggota.html" data-i18n="member.deniedBack">Kembali ke daftar anggota</a>
+          </div>
+        </section>
+
+        <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+      </main>
+    </div>
+
+    <footer class="settings-bar" aria-label="Pengaturan tampilan" data-i18n-aria-label="common.settings">
+      <div class="settings-group" role="group" aria-labelledby="theme-label">
+        <span class="settings-group__label" id="theme-label" data-i18n="common.theme">Tema</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-theme-set="light" aria-pressed="true" data-i18n="common.themeLight">Terang</button>
+          <button type="button" data-theme-set="dark" aria-pressed="false" data-i18n="common.themeDark">Gelap</button>
+        </div>
+      </div>
+      <div class="settings-group" role="group" aria-labelledby="language-label">
+        <span class="settings-group__label" id="language-label" data-i18n="common.language">Bahasa</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-locale-set="id" aria-pressed="true" data-i18n="common.langId">Indonesia</button>
+          <button type="button" data-locale-set="en" aria-pressed="false" data-i18n="common.langEn">English</button>
+        </div>
+      </div>
+      <span class="settings-bar__note" data-i18n="common.prefNote"></span>
+    </footer>
+
+    <dialog id="member-edit-dialog" aria-labelledby="member-edit-title" aria-describedby="member-edit-note">
+      <div class="dialog__header">
+        <h2 class="dialog__title" id="member-edit-title" data-i18n="member.editTitle">Ubah identitas</h2>
+      </div>
+      <div class="dialog__body">
+        <div class="field">
+          <label class="label" for="member-edit-name" data-i18n="member.editName">Nama</label>
+          <input class="input" id="member-edit-name" autocomplete="off" aria-describedby="member-edit-name-error" />
+          <p class="field-error" id="member-edit-name-error" hidden></p>
+        </div>
+        <div class="field">
+          <label class="label" for="member-edit-phone" data-i18n="member.editPhone">Telepon</label>
+          <input class="input" id="member-edit-phone" autocomplete="off" placeholder="[TELEPON]" data-i18n-placeholder="gov.ph.phone" />
+        </div>
+        <div class="field">
+          <label class="label" for="member-edit-branch" data-i18n="member.editBranch">Cabang</label>
+          <select class="select" id="member-edit-branch">
+            <option value="1" data-i18n="gov.branch.1">[NAMA CABANG] 1</option>
+            <option value="2" data-i18n="gov.branch.2">[NAMA CABANG] 2</option>
+            <option value="3" data-i18n="gov.branch.3">[NAMA CABANG] 3</option>
+          </select>
+        </div>
+        <p class="note" id="member-edit-note" data-i18n="member.editNote"></p>
+      </div>
+      <div class="dialog__actions">
+        <button type="button" class="btn" data-dialog-close data-initial-focus data-i18n="gov.cancel">Batal</button>
+        <button type="button" class="btn btn--primary" id="member-edit-save" data-i18n="member.editSave">Simpan perubahan</button>
+      </div>
+    </dialog>
+
+    <dialog id="account-open-dialog" aria-labelledby="account-open-title" aria-describedby="account-open-note-dialog">
+      <div class="dialog__header">
+        <h2 class="dialog__title" id="account-open-title" data-i18n="member.openTitle">Buka rekening</h2>
+      </div>
+      <div class="dialog__body">
+        <div class="field">
+          <label class="label" for="account-open-product" data-i18n="member.openProduct">Produk simpanan</label>
+          <select class="select" id="account-open-product">
+            <option value="voluntary" data-i18n="member.product.voluntary">Simpanan sukarela</option>
+            <option value="mandatory" data-i18n="member.product.mandatory">Simpanan wajib</option>
+            <option value="principal" data-i18n="member.product.principal">Simpanan pokok</option>
+          </select>
+        </div>
+        <div class="field" data-money-input>
+          <label class="label" for="account-open-amount" data-i18n="member.openDeposit">Setoran awal (IDR)</label>
+          <input class="input input--amount" id="account-open-amount" inputmode="decimal" autocomplete="off" aria-describedby="account-open-amount-hint account-open-amount-error account-open-amount-preview" />
+          <p class="hint" id="account-open-amount-hint" data-i18n="member.openDepositHint"></p>
+          <p class="field-error" id="account-open-amount-error" hidden></p>
+          <p class="money-preview" id="account-open-amount-preview" data-money-preview></p>
+        </div>
+        <p class="note" id="account-open-note-dialog" data-i18n="member.openNote"></p>
+      </div>
+      <div class="dialog__actions">
+        <button type="button" class="btn" data-dialog-close data-initial-focus data-i18n="gov.cancel">Batal</button>
+        <button type="button" class="btn btn--primary" id="account-open-save" data-i18n="member.openConfirm">Buka rekening</button>
+      </div>
+    </dialog>
+
+    <dialog id="account-close-dialog" aria-labelledby="account-close-title" aria-describedby="account-close-body">
+      <div class="dialog__header">
+        <h2 class="dialog__title" id="account-close-title" data-i18n="member.closeTitle">Tutup rekening?</h2>
+      </div>
+      <div class="dialog__body">
+        <p id="account-close-body" data-i18n="member.closeBody"></p>
+        <div class="field">
+          <label class="label" for="account-close-reason" data-i18n="member.closeReason">Alasan penutupan</label>
+          <textarea class="input gov-textarea" id="account-close-reason" rows="3" aria-describedby="account-close-reason-hint account-close-reason-error"></textarea>
+          <p class="hint" id="account-close-reason-hint" data-i18n="member.closeReasonHint"></p>
+          <p class="field-error" id="account-close-reason-error" hidden></p>
+        </div>
+      </div>
+      <div class="dialog__actions">
+        <button type="button" class="btn" data-dialog-close data-initial-focus data-i18n="gov.cancel">Batal</button>
+        <button type="button" class="btn btn--danger-solid" id="account-close-confirm" disabled data-i18n="member.closeConfirm">Tutup rekening</button>
+      </div>
+    </dialog>
+
+    <dialog id="obligation-pay-dialog" aria-labelledby="obligation-pay-title" aria-describedby="obligation-pay-body">
+      <div class="dialog__header">
+        <h2 class="dialog__title" id="obligation-pay-title" data-i18n="member.payTitle">Catat pembayaran kewajiban</h2>
+      </div>
+      <div class="dialog__body">
+        <p id="obligation-pay-body" data-i18n="member.payBody"></p>
+        <div class="field">
+          <label class="label" for="obligation-pay-type" data-i18n="member.payType">Kewajiban</label>
+          <select class="select" id="obligation-pay-type">
+            <option value="principal" data-i18n="member.obligationTypePrincipal">Simpanan pokok</option>
+            <option value="mandatory" data-i18n="member.obligationTypeMandatory">Simpanan wajib</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="label" for="obligation-pay-period" data-i18n="member.payPeriod">Periode</label>
+          <input class="input" id="obligation-pay-period" value="[PERIODE]" readonly />
+        </div>
+        <div class="field" data-money-input>
+          <label class="label" for="obligation-pay-amount" data-i18n="member.payAmount">Nominal (IDR)</label>
+          <input class="input input--amount" id="obligation-pay-amount" inputmode="decimal" autocomplete="off" aria-describedby="obligation-pay-amount-hint obligation-pay-amount-error obligation-pay-amount-preview" />
+          <p class="hint" id="obligation-pay-amount-hint" data-i18n="member.payAmountHint"></p>
+          <p class="money-preview" id="obligation-pay-amount-preview" data-money-preview></p>
+          <p class="field-error" id="obligation-pay-amount-error" hidden></p>
+        </div>
+        <div class="field">
+          <label class="label" for="obligation-pay-note" data-i18n="member.payNote">Catatan</label>
+          <input class="input" id="obligation-pay-note" autocomplete="off" />
+        </div>
+      </div>
+      <div class="dialog__actions">
+        <button type="button" class="btn" data-dialog-close data-initial-focus data-i18n="gov.cancel">Batal</button>
+        <button type="button" class="btn btn--primary" id="obligation-pay-confirm" data-i18n="member.payConfirm">Catat pembayaran</button>
+      </div>
+    </dialog>
+
+    <dialog id="member-exit-dialog" aria-labelledby="member-exit-dialog-title" aria-describedby="member-exit-dialog-body">
+      <div class="dialog__header">
+        <h2 class="dialog__title" id="member-exit-dialog-title" data-i18n="member.exitDialogTitle">Keluar anggota?</h2>
+      </div>
+      <div class="dialog__body">
+        <p id="member-exit-dialog-body" data-i18n="member.exitDialogBody"></p>
+        <p class="note" data-i18n="member.exitDialogNote"></p>
+        <div class="field">
+          <label class="label" for="member-exit-reason" data-i18n="member.exitReason">Alasan keluar</label>
+          <textarea class="input gov-textarea" id="member-exit-reason" rows="3" aria-describedby="member-exit-reason-hint member-exit-reason-error"></textarea>
+          <p class="hint" id="member-exit-reason-hint" data-i18n="member.exitReasonHint"></p>
+          <p class="field-error" id="member-exit-reason-error" hidden></p>
+        </div>
+      </div>
+      <div class="dialog__actions">
+        <button type="button" class="btn" data-dialog-close data-initial-focus data-i18n="gov.cancel">Batal</button>
+        <button type="button" class="btn btn--danger-solid" id="member-exit-confirm" disabled data-i18n="member.exitConfirm">Keluar anggota</button>
+      </div>
+    </dialog>
+
+    <script src="assets/i18n-gov.js"></script>
+    <script src="assets/app.js" defer></script>
+    <script src="assets/screens-gov.js" defer></script>
+  </body>
+</html>

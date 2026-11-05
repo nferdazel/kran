@@ -3,7 +3,7 @@ name: CI
 # Gerbang verifikasi saja (spec §21.1): tidak membangun image, tidak memanggil webhook,
 # tidak melakukan deploy. Deploy terjadi di server lewat webhook -> deploy-vps.sh.
 #
-# Job ditambahkan bertahap bersama komponennya (lihat docs/ci-jobs.md): job kosong yang
+# Job ditambahkan bertahap bersama komponennya (lihat docs/OPERATIONS.md): job kosong yang
 # selalu hijau tidak menegakkan apa pun.
 
 on:

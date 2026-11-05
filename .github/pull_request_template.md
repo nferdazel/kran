@@ -39,8 +39,8 @@ $ ./task ci
 
 ## Review note
 
-<!-- Critical areas — interest, accrual, PPAP, tax, reconciliation, encryption/key management,
-     authorization, audit hash chain — must be marked HUMAN-REVIEW-REQUIRED (AGENTS §8).
+<!-- Critical areas - interest, accrual, PPAP, tax, reconciliation, encryption/key management,
+     authorization, audit hash chain - must be marked HUMAN-REVIEW-REQUIRED (AGENTS §8).
      State the reviewer and the review round, or what is still open. -->
 
 Merging to `main` deploys production; only the maintainer merges. Do not push to `main`.

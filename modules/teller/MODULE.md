@@ -1,4 +1,4 @@
-# Modul `teller` — sesi kas teller + vault
+# Modul `teller` - sesi kas teller + vault
 
 Sesi kas teller, vault per cabang, dan arus kas laci (spec §9.2, §11.6, §13, §23 Fase 2). Layar kas
 adalah stasiun kerja (DESIGN §11): sesi dibuka untuk cabang yang dipilih lebih dulu, tanpa menunggu
@@ -20,7 +20,7 @@ Status: **T-093** (skema + API sesi + gerbang transaksi tunai) + **T-107** (top-
 | `teller.vault_topup_request` | Pengajuan top-up (T-118): `amount`, `source_account` (COA ASSET), `note` wajib, `status` `PENDING`/`APPROVED`/`REJECTED`, `requested_by`, `decided_by/at`, `decision_note`, `journal_id`. CHECK menolak self-approval dan mewajibkan `journal_id` hanya saat `APPROVED`. |
 
 **Nomor berkas tidak rapat**: `0001` hanya schema; tabel di `0006` karena mem-FK `platform.app_user`
-(`platform/0006`) dan `deposit.transaction` (`deposit/0004`) — urutan migrasi global `(seq, modul,
+(`platform/0006`) dan `deposit.transaction` (`deposit/0004`) - urutan migrasi global `(seq, modul,
 berkas)` menjalankan `platform` sebelum `teller` pada seq yang sama (D-122). `0007` memberi grant
 runtime (pola `deposit/0006`/`0008`: `ON ALL TABLES` hanya mencakup tabel yang ada saat itu).
 
@@ -44,7 +44,7 @@ runtime (pola `deposit/0006`/`0008`: `ON ALL TABLES` hanya mencakup tabel yang a
 - **Jurnal kas (T-118, D-132)**: buka `D 101.2 KAS DI TELLER / K 101.1 KAS DI VAULT` sebesar float;
   tutup `D 101.1 / K 101.2` sebesar counted; selisih lebih `D 101.2 / K 101.9 SELISIH KAS`, kurang
   `D 101.9 / K 101.2` sebesar |variance|. **Deviasi sadar dari memo T-118 §5**: kaki selisih memakai
-  akun laci (`101.2`), bukan vault — setelah kas kembali ke vault saldo laci = −variance, jadi hanya
+  akun laci (`101.2`), bukan vault - setelah kas kembali ke vault saldo laci = −variance, jadi hanya
   akun laci yang bisa dinolkan jurnal selisih. Nominal nol tidak dijurnal (domain menolak nominal
   nol). Jurnal ditulis **sinkron** di transaksi yang sama dengan mutasi vault, bukan lewat outbox.
 - **Tutup tidak bisa dua kali**: `UPDATE ... WHERE session_id = ? AND status = 'OPEN'`; 0 baris = 409.
@@ -70,7 +70,7 @@ runtime (pola `deposit/0006`/`0008`: `ON ALL TABLES` hanya mencakup tabel yang a
 - `Idempotency-Key` **wajib** pada buka, tutup, dan top-up vault (operasi kas, D-098): retry tidak
   boleh mendebit vault / menutup sesi / menambah vault dua kali. Replay = 200 + `Idempotent-Replayed`;
   isi beda = 409.
-- `GET current` memilih **404** (`params.reason=session_not_open`) alih-alih 200 `{session:null}` —
+- `GET current` memilih **404** (`params.reason=session_not_open`) alih-alih 200 `{session:null}` -
   konsisten dengan konvensi repo (`params.reason` eksplisit).
 - `GET {sessionId}/transactions` membaca `teller.cash_movement` (T-147), jadi `amount` = **kas yang
   bergerak**: pencairan dini deposito menyerahkan `pokok + bunga − penalti` (D-164). Pemindahbukuan
@@ -79,7 +79,7 @@ runtime (pola `deposit/0006`/`0008`: `ON ALL TABLES` hanya mencakup tabel yang a
   `teller.vault.topup.approve`, `teller.vault.topup.reject`. Event outbox (non-akuntansi, tanpa
   header `accounting`): `TellerSessionOpened`, `TellerSessionClosed` (payload memuat variance),
   `TellerVaultTopUpRequested`, `TellerVaultTopedUp` (payload memuat `amount`/`journalId`/
-  `balanceAfter`) — untuk UI realtime 088d & gate EOD Fase 3. Jurnal kas **bukan** event: ditulis
+  `balanceAfter`) - untuk UI realtime 088d & gate EOD Fase 3. Jurnal kas **bukan** event: ditulis
   sinkron agar tidak ada saldo berubah tanpa jurnal.
 
 ## Gerbang transaksi tunai (T-093b)
@@ -99,7 +99,7 @@ runtime (pola `deposit/0006`/`0008`: `ON ALL TABLES` hanya mencakup tabel yang a
 ## Batas (lihat `docs/ACCEPTED-LIMITS.md`)
 
 - **Pemetaan akun kas adalah usulan pilot** (`101.1`/`101.2`/`101.9` + `203 TITIPAN PENGURUS`,
-  `ledger/0033`–`0036`): `NEEDS-COMPLIANCE-REVIEW` (REG-011), bukan kutipan SAK EP/PSAK. Mengubah
+  `ledger/0033`-`0036`): `NEEDS-COMPLIANCE-REVIEW` (REG-011), bukan kutipan SAK EP/PSAK. Mengubah
   pemetaan = migrasi rule baru + uji golden, bukan mengubah handler.
 - **Rekonsiliasi resmi** (`teller.vault` vs GL, D-134): `teller.vault` = GL `101.1` + GL `101`
   (legasi) per cabang saat tidak ada sesi `OPEN`. Saldo `101` lama (2.700.000) tidak bisa dipindah
@@ -114,7 +114,7 @@ runtime (pola `deposit/0006`/`0008`: `ON ALL TABLES` hanya mencakup tabel yang a
   periode OPEN. Sumber dana = titipan pengurus (`NEEDS-COMPLIANCE-REVIEW`); reklasifikasi ke ekuitas
   kelak = jurnal baru, bukan edit baris lama.
 - **Vault harus sudah ada** sebelum top-up: baris hilang bukan dibuat diam-diam (404
-  `vault_not_configured`). Vault kosong juga membuat sesi tidak bisa dibuka — fail-closed, bukan bug.
+  `vault_not_configured`). Vault kosong juga membuat sesi tidak bisa dibuka - fail-closed, bukan bug.
 - **Plafon nominal kas = parameter (D-133, O-099 tertutup)**: `teller.cash.limit_opening_float`
   (pilot 2.000.000), `teller.cash.limit_deposit` (10.000.000), `teller.cash.limit_withdrawal`
   (5.000.000), `teller.vault.limit_topup_per_request` (25.000.000). Dibaca `apps/api/src/cash_limit.nim`
@@ -130,7 +130,7 @@ runtime (pola `deposit/0006`/`0008`: `ON ALL TABLES` hanya mencakup tabel yang a
 **HUMAN-REVIEW-REQUIRED**: mutasi vault (opening float, counted cash, top-up T-118) + variance kas
 + jurnal GL kas (AGENTS.md §8).
 
-## Operasional — saldo awal vault (satu kali, ops)
+## Operasional - saldo awal vault (satu kali, ops)
 
 **Jalur resmi sejak T-129/LED-2** adalah `ctl post-opening-balance`: perintah itu memposting jurnal
 `D 101.1 KAS DI VAULT / K 203 TITIPAN PENGURUS` **dan** menetapkan `teller.vault.balance` sebesar
@@ -148,5 +148,5 @@ jurnalnya sudah ada, perintah tidak mengubah apa pun.
 **T-118** mengganti top-up langsung dengan pengajuan + persetujuan (`POST /api/v1/teller/vault/topups`
 = `teller.vault.submit`; `.../{requestId}/approve` = `teller.vault.approve`). Pengajuan tidak
 membuat baris vault baru (404 `vault_not_configured`), jadi saldo awal harus sudah lewat jalur di
-atas. Tanpa baris vault, sesi tidak bisa dibuka (`vault_not_configured`) — fail-closed, bukan bug.
+atas. Tanpa baris vault, sesi tidak bisa dibuka (`vault_not_configured`) - fail-closed, bukan bug.
 

@@ -1,4 +1,4 @@
-# Modul `lending` — pinjaman anggota
+# Modul `lending` - pinjaman anggota
 
 Pinjaman (spec §9.2, §23 Fase 4): produk pinjaman berversi, akad/fasilitas, jadwal angsuran, lalu
 kolektibilitas/PPAP di fase yang sama. Status: **T-161** (model + skema) + **T-162** (mesin jadwal) + **T-163** (pengajuan &
@@ -7,7 +7,7 @@ persetujuan) + **T-164** (pencairan) + **T-165** (pembayaran angsuran) + **T-166
 (baca & daftar dengan scoping cabang).
 pengajuan/pencairan T-163/T-164; task day-close T-166/T-167; API/UI T-169/T-170.
 
-Keputusan angka & aturan: **D-180**. Rencana fase: `docs/proposals/fase4-lending.md`.
+Keputusan angka & aturan: **D-180**. Rencana fase: `git history`.
 
 ## Batas modul
 
@@ -60,7 +60,7 @@ pencairan berarti mengubah angka yang sudah disepakati anggota, jadi itu bukan o
 | Key | Isi | Status nilai |
 |---|---|---|
 | `lending.allocation_order` | urutan alokasi pembayaran (daftar terurut) | diputuskan pemilik: **parameter**, bukan kode (D-180 butir 4) |
-| `lending.collectibility.dpd_bounds` | batas DPD per golongan 1–5 | `NEEDS-COMPLIANCE-REVIEW` (REG-204 `V!`; D-180 butir 2) |
+| `lending.collectibility.dpd_bounds` | batas DPD per golongan 1-5 | `NEEDS-COMPLIANCE-REVIEW` (REG-204 `V!`; D-180 butir 2) |
 | `lending.ppap.rates` | persentase penyisihan per golongan | `0,5/3/10/50/100` mengadopsi POJK 1/2024 Pasal 19 (D-196); tetap `NEEDS-COMPLIANCE-REVIEW` |
 | `lending.restructure.clean_periods` | periode pembayaran bersih sebelum batas golongan pasca-restrukturisasi dilepas | `NEEDS-COMPLIANCE-REVIEW` (D-197, POJK 1/2024: 3 periode) |
 | `lending.loan.max_principal` | plafon pengajuan pinjaman | `komersial-konservatif` + `NEEDS-COMPLIANCE-REVIEW` (Rp100 juta, T-163) |
@@ -83,7 +83,7 @@ Nilai di atas **bukan** angka final untuk pilot data nyata; lihat O-001.
 - **Balapan** dua penyetuju diselesaikan `SELECT … FOR UPDATE` + `UPDATE … WHERE status='APPLIED'`;
   yang kalah menerima `409 not_applied`.
 - **Belum ada**: penolakan pengajuan (`REJECTED`) dan penomoran pinjaman bisnis. Persetujuan tidak
-  memindahkan uang dan tidak membentuk jadwal — itu pencairan (di bawah).
+  memindahkan uang dan tidak membentuk jadwal - itu pencairan (di bawah).
 
 ## Pencairan (T-164, D-182)
 
@@ -107,7 +107,7 @@ Satu transaksi DB: jadwal angsuran dibentuk dari atribut versi produk (metode/te
 
 - **Uang tunai tidak keluar di sini.** Pencairan mengkredit rekening simpanan; anggota menarik tunai
   lewat teller (`CASH_WITHDRAWAL`) dari rekening itu. Alasannya di D-182: `teller.cash_movement`
-  mewajibkan `deposit.transaction`, dan tabel itu mewajibkan rekening simpanan — jalur tunai khusus
+  mewajibkan `deposit.transaction`, dan tabel itu mewajibkan rekening simpanan - jalur tunai khusus
   akan mengubah invarian `expected_cash` penutupan sesi.
 - **Replay** dengan kunci + isi sama menjawab `200` + `Idempotent-Replayed` dengan isi respons asli;
   tidak ada jadwal/jurnal/transaksi kedua (dibuktikan test).
@@ -122,8 +122,8 @@ Jadwal dibaca `FOR UPDATE` (tertua lebih dulu), nominal dialokasikan menurut par
 `lending.allocation_order`, lalu satu transaksi DB: `paid_*` bertambah, saldo rekening sumber
 berkurang (tanpa menembus saldo minimum produk), **satu jurnal per komponen yang tidak nol**
 (`LoanPrincipalPaid` D 201/K 110, `LoanInterestPaid` D 201/K 401, `LoanPenaltyPaid` D 201/K 403),
-**satu baris subledger `LOAN_PAYMENT` per komponen** — masing-masing menunjuk jurnalnya sendiri,
-karena satu baris `deposit.transaction` hanya bisa menunjuk satu jurnal — cache saldo pinjaman
+**satu baris subledger `LOAN_PAYMENT` per komponen** - masing-masing menunjuk jurnalnya sendiri,
+karena satu baris `deposit.transaction` hanya bisa menunjuk satu jurnal - cache saldo pinjaman
 turun, audit `lending.loan.pay`, event `LoanInstallmentPaid`.
 
 | Ditolak | `params.reason` |
@@ -137,7 +137,7 @@ turun, audit `lending.loan.pay`, event `LoanInstallmentPaid`.
 
 - **Kelebihan bayar ditolak**, tidak dikreditkan ke pokok berikutnya: belum ada keputusan bisnis
   untuk uang muka (D-183).
-- **Pelunasan tidak mengubah status** menjadi `CLOSED` — penutupan akad menyangkut pelepasan
+- **Pelunasan tidak mengubah status** menjadi `CLOSED` - penutupan akad menyangkut pelepasan
   agunan/berkas. `principalOutstanding: "0.00"` adalah tandanya.
 - **Trigger `0079` dilonggarkan `0089`**: baris yang sudah dibayar tetap tidak bisa dihapus dan
   kewajibannya beku, tetapi boleh menerima pembayaran berikutnya (`paid_*` hanya naik).
@@ -150,11 +150,11 @@ Task day-close `lending.dpd_regrade` (`apps/api/src/daycloser_lending.nim`) meni
 - **DPD** = hari sejak tanggal jatuh tempo angsuran **belum lunas tertua** (bukan tanggal cair, bukan
   pembayaran terakhir). Semua angsuran lunas → DPD 0, status tetap `ACTIVE` (D-183).
 - **Golongan** dari ambang parameter `lending.collectibility.dpd_bounds` (seed `[90,120,180]`,
-  `NEEDS-COMPLIANCE-REVIEW`): `0` lancar, `1–90` dalam perhatian khusus, `91–120` kurang lancar,
-  `121–180` diragukan, `>180` macet. Parameter hilang/rusak → task gagal `DAY-372`.
+  `NEEDS-COMPLIANCE-REVIEW`): `0` lancar, `1-90` dalam perhatian khusus, `91-120` kurang lancar,
+  `121-180` diragukan, `>180` macet. Parameter hilang/rusak → task gagal `DAY-372`.
 - **Pasca-restrukturisasi** (O-123, D-197): pinjaman yang punya `grade_cap` tidak dinilai hanya dari
-  DPD jadwal baru. Batasnya dari golongan **sebelum** restrukturisasi — diragukan/macet → paling
-  tinggi kurang lancar, selain itu tidak berubah — dan dilepas setelah
+  DPD jadwal baru. Batasnya dari golongan **sebelum** restrukturisasi - diragukan/macet → paling
+  tinggi kurang lancar, selain itu tidak berubah - dan dilepas setelah
   `lending.restructure.clean_periods` angsuran terakhir yang sudah jatuh tempo dibayar tepat waktu.
   Penurunan tetap boleh; yang ditahan hanya perbaikan.
 - **Snapshot** `lending.collectibility_snapshot` ber-PK `(loan_id, business_date)` = idempotensi;
@@ -171,12 +171,12 @@ Task day-close `lending.ppap_provision`, **kritis** (menulis jurnal beban penyis
 
 - **Dasar** = `lending.loan_balance.principal_outstanding`; **tarif** dari parameter
   `lending.ppap.rates` (seed `["0.5","3","10","50","100"]` persen, urutan = urutan golongan,
-  mengadopsi POJK 1/2024 Pasal 19 — D-196; parameter salah bentuk/jumlah → `DAY-380`, bukan tarif nol).
+  mengadopsi POJK 1/2024 Pasal 19 - D-196; parameter salah bentuk/jumlah → `DAY-380`, bukan tarif nol).
 - **Snapshot** `lending.ppap_snapshot` ber-PK `(loan_id, business_date)` menyimpan `grade`,
   `base_amount`, `rate_micro`, `allowance`. Yang dijurnal adalah **selisih** terhadap penyisihan
   terakhir **sebelum** tanggal buku, bukan angka mutlak.
 - **Jurnal** neto per cabang per chunk: `PpapProvisioned` (D 503 / K 111) bila bertambah,
-  `PpapReleased` (D 111 / K 503) bila berkurang — jurnal pembalik, bukan nominal negatif.
+  `PpapReleased` (D 111 / K 503) bila berkurang - jurnal pembalik, bukan nominal negatif.
 - **Atomik**: snapshot + jurnal dalam satu `withTx`, jadi "Δ subledger == Δ GL" adalah konsekuensi,
   bukan harapan. Run ulang tanggal yang sama → `written: 0`, `skipped: n`, tanpa jurnal kedua.
 - **Fail-closed**: pinjaman `ACTIVE` tanpa penilaian kolektibilitas tanggal itu → `DAY-383`;
@@ -203,7 +203,7 @@ menggantung pada pinjaman tidak aktif, `DAY-385` dasar/penyisihan tersimpan buka
   menjalankan empat aksi tulis dengan pratinjau sebelum uang bergerak: pencairan, pembayaran
   angsuran, restrukturisasi, dan hapus buku. Rekening sumber dipilih dari
   `GET /deposit/accounts?partyId=` (hanya `ACTIVE` yang ditawarkan, server tetap memvalidasi);
-  `Idempotency-Key` dibuat saat dialog konfirmasi dibuka; tidak ada aritmetika uang di peramban —
+  `Idempotency-Key` dibuat saat dialog konfirmasi dibuka; tidak ada aritmetika uang di peramban -
   nominal dikirim apa adanya dan `params.reason` dipetakan ke pesan yang menyebut sebabnya.
 
 ## Laporan (T-171)
@@ -213,7 +213,7 @@ izin `lending.loan.read`.
 
 - **Tunggakan/aging**: potret per tanggal buku dari `lending.installment` jadwal aktif (bukan cache
   `loan_balance`). `items` hanya pinjaman yang punya angsuran lewat jatuh tempo bersisa; `aging`
-  adalah agregatnya per golongan — keranjang aging = golongan karena ambangnya sama (D-180).
+  adalah agregatnya per golongan - keranjang aging = golongan karena ambangnya sama (D-180).
   Golongan diambil dari snapshot tanggal itu; bila regrading belum berjalan, DPD dihitung dengan
   ambang yang berlaku pada `asOf`.
 - **Penyisihan**: `ppap_snapshot` tanggal itu apa adanya; `mixedRates` menandai golongan yang
@@ -236,7 +236,7 @@ Jadwal lama **diarsipkan** (`installment.superseded_on`), jadwal **versi baru** 
 dibuat saat pencairan).
 
 - **Dasar jadwal baru = sisa pokok**; tunggakan bunga/denda jadwal lama **dilepas** (D-186).
-- **Tarif & metode** diambil dari versi produk — restrukturisasi tidak mengubah harga.
+- **Tarif & metode** diambil dari versi produk - restrukturisasi tidak mengubah harga.
 - **Kolektibilitas kembali lancar** karena DPD dibaca dari jadwal aktif (O-123,
   `NEEDS-COMPLIANCE-REVIEW`).
 - Pembayaran setelah restrukturisasi hanya menyentuh baris aktif; baris arsip tidak bisa dibayar
@@ -262,7 +262,7 @@ Dua jurnal karena template memaksa satu debit + satu kredit; bagian nol tidak di
 status `WRITTEN_OFF` + `written_off_on`/`written_off_by`/`written_off_reason` (CHECK DB memaksa
 ketiganya), rincian nilai di `lending.writeoff`, dan `loan_balance` nol.
 
-- **Penyisihan terpakai** — pemeriksaan `DAY-384` membandingkan penyisihan terakhir dengan
+- **Penyisihan terpakai** - pemeriksaan `DAY-384` membandingkan penyisihan terakhir dengan
   `lending.writeoff.allowance_applied`, jadi hapus buku tidak menggagalkan penutupan buku.
 
 ## Pemulihan pasca hapus buku (T-176, D-191)
@@ -286,7 +286,7 @@ diam-diam), permintaan tanpa komponen positif ditolak `400`.
 
 - `lending.recovery` menyimpan satu baris per penerimaan (bisa bertahap) + rekening sumber + alasan.
 - Baris rekening koran memakai `tx_type = LOAN_RECOVERY` (migrasi contract `deposit/0100`).
-- **NEEDS-COMPLIANCE-REVIEW** — akun `409` adalah usulan struktur pilot (REG-011 `V!`);
+- **NEEDS-COMPLIANCE-REVIEW** - akun `409` adalah usulan struktur pilot (REG-011 `V!`);
   **HUMAN-REVIEW-REQUIRED** (AGENTS.md §8).
 - Aksi pemulihan ada di UI detail pinjaman (T-177): panel tiga komponen + rekening sumber +
   alasan, pratinjau dengan total dari `addMoney`, dialog native dengan axe 2 tema × 2 locale.
@@ -324,30 +324,30 @@ T-168, dan dua baca dari T-169.
 
 ## Test
 
-- `./task test tloan` — domain (urutan alokasi, total jadwal, penyelesaian baris).
-- `./task test itapi_lending` — HTTP: pengajuan/persetujuan/pencairan/pembayaran/restrukturisasi/
+- `./task test tloan` - domain (urutan alokasi, total jadwal, penyelesaian baris).
+- `./task test itapi_lending` - HTTP: pengajuan/persetujuan/pencairan/pembayaran/restrukturisasi/
   hapus buku (jadwal & versi, jurnal per komponen dan per bagian hapus buku, subledger, saldo,
   replay idempoten, penolakan rekening bukan milik peminjam, saldo tidak cukup, kelebihan bayar,
   pelunasan, `not_loss`, `not_disbursed`), daftar & detail dengan scoping cabang (`404` untuk
   akad cabang lain), validasi `status`/`limit`.
-- `./task test trestructure` — jadwal versi baru: sisa pokok terurai tepat, nomor angsuran
+- `./task test trestructure` - jadwal versi baru: sisa pokok terurai tepat, nomor angsuran
   berlanjut, jadwal mulai di masa depan, bentuk tidak sah ditolak.
-- `./task test twriteoff` — pembagian penyisihan vs beban, penyisihan melebihi nilai, komponen
+- `./task test twriteoff` - pembagian penyisihan vs beban, penyisihan melebihi nilai, komponen
   negatif/total nol ditolak.
-- `./task test tppap` — tarif parameter (lima golongan, bentuk rusak ditolak), penyisihan
+- `./task test tppap` - tarif parameter (lima golongan, bentuk rusak ditolak), penyisihan
   `dasar × tarif` dengan pembulatan half-to-even, selisih bertanda.
-- `./task test tcollectibility` — hari tunggakan (termasuk lintas bulan/tahun), pemetaan ambang dua
+- `./task test tcollectibility` - hari tunggakan (termasuk lintas bulan/tahun), pemetaan ambang dua
   kebijakan berbeda, ambang tidak sah ditolak.
-- `./task test itdaycloser_lending` — task day-close: DPD dari angsuran tertua, idempotensi run
+- `./task test itdaycloser_lending` - task day-close: DPD dari angsuran tertua, idempotensi run
   ulang, ambang dari parameter, event per perubahan, parameter hilang → `DAY-372`, paginasi chunk,
   PPAP (selisih vs tanggal sebelumnya, jurnal pembalik, Δ snapshot == Δ GL, run ulang, `DAY-380`,
   `DAY-383`), tunggakan jadwal arsip tidak dihitung sebagai DPD, `DAY-384` hilang setelah hapus
   buku.
-- `./task test tpayment` — alokasi: golden dua urutan parameter, denda paling akhir, kelebihan bayar
+- `./task test tpayment` - alokasi: golden dua urutan parameter, denda paling akhir, kelebihan bayar
   ditolak, pelunasan bertahap, property 200 kasus acak (`Σ alokasi == nominal`).
-- `./task test tschedule` — mesin jadwal: golden flat/efektif/anuitas + property (pokok total tepat,
+- `./task test tschedule` - mesin jadwal: golden flat/efektif/anuitas + property (pokok total tepat,
   baris tanpa kewajiban, tanggal monoton) + kasus tepi (rate 0%, tenor 1, akhir bulan).
-- `./task test itlending` — skema + repositori: produk/versi, pinjaman, jadwal, CHECK + trigger
+- `./task test itlending` - skema + repositori: produk/versi, pinjaman, jadwal, CHECK + trigger
   imutabilitas, round-trip `loanById`, approve sekali, approve oleh pengaju ditolak.
-- `./task test itapi_lending` — HTTP: 401/403, pengajuan 201 + audit + event, self-approval 409,
+- `./task test itapi_lending` - HTTP: 401/403, pengajuan 201 + audit + event, self-approval 409,
   approve 200 + audit + event, plafon, versi DRAFT, anggota suspended, 404.

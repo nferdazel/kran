@@ -101,7 +101,7 @@ suite "respons sistem sesuai kontrak OpenAPI":
 
   # Server sengaja tidak ditutup di akhir test. `server.close()` pada Mummy 0.4.8 + ORC men-`destroy`
   # di thread pelayan, sedangkan di harness ini server dibangun di thread test — urutan itu SIGSEGV
-  # (repro + urutan aman ada di T-042 / docs/spikes/O-025-shutdown.md). Suite ini tetap butuh server
+  # (repro + urutan aman ada di T-042 / git history). Suite ini tetap butuh server
   # hidup sepanjang run, dan proses test berakhir sendiri sehingga thread server ikut berakhir.
 
   test "/healthz -> 200 sesuai skema Health":

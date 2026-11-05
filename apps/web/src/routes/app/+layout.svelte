@@ -2,7 +2,7 @@
   /**
    * Command palette untuk seluruh rute `/app/*` (T-110, spec §14.3 "keyboard-first").
    *
-   * Keputusan yang mengikat (lihat `docs/tasks/T-110.md`):
+   * Keputusan yang mengikat (lihat `T-110 (git history)`):
    *  - **Aksi = navigasi**, bersumber dari `nav.ts` yang sama dengan menu; tidak ada perintah yang
    *    mengubah data dan tidak ada aturan izin yang disalin ke UI (spec §13).
    *  - `<dialog>` native + `showModal()`: elemen semantik dulu (spec §17.1), jadi peran `dialog`,

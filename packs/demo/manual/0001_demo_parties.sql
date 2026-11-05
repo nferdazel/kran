@@ -2,7 +2,7 @@
 --
 -- Kenapa di `manual/`, bukan `packs/*/seed/`: `--dev` memuat SEMUA `packs/*/seed/*.sql`, jadi data
 -- demo di sana ikut ter-seed saat test/e2e dan gagal bila belum ada pengguna. Berkas ini hanya
--- diterapkan manual ke database yang sudah punya pengguna; lihat `docs/runbooks/demo-data.md`.
+-- diterapkan manual ke database yang sudah punya pengguna; lihat `docs/OPERATIONS.md`.
 --
 -- Isi: 12 party (11 orang + 1 koperasi) + profil KYC.
 --

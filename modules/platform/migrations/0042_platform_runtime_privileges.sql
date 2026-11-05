@@ -1,6 +1,6 @@
 -- Hak tulis role runtime pada tabel yang harusnya immutable (T-129/DB-1, spec §9.1(3)).
 --
--- **Konteks.** Runbook `docs/runbooks/db-roles.md` memberi `kran_runtime` `SELECT, INSERT, UPDATE,
+-- **Konteks.** Runbook `docs/OPERATIONS.md` memberi `kran_runtime` `SELECT, INSERT, UPDATE,
 -- DELETE` di **semua** tabel, lalu hanya mencabut `UPDATE/DELETE/TRUNCATE` pada `platform.audit_log`.
 -- Akibatnya imutabilitas `ledger.journal`/`journal_line` bergantung pada trigger saja — padahal spec
 -- menulis "trigger **+ privilege**", dan pemilik DB (bukan aplikasi) yang menjalankan

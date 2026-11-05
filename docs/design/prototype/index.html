@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="id-ID" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prototipe KRAN</title>
+    <script src="assets/theme-init.js"></script>
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/base.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <script src="assets/app.js" defer></script>
+  </head>
+  <body data-title-key="index.docTitle">
+    <a class="skip-link" href="#main" data-i18n="common.skip">Lewati ke konten utama</a>
+    <p class="synthetic-strip" role="region" aria-label="Prototipe, data sintetis" data-i18n-aria-label="common.prototype" data-i18n="common.prototype">Prototipe, data sintetis</p>
+
+    <header class="app-header">
+      <a class="brand" href="index.html">
+        <span class="brand__name">KRAN</span>
+        <span class="brand__sub" data-i18n="common.appSub">Inti koperasi</span>
+      </a>
+    </header>
+
+    <main id="main" class="page" tabindex="-1">
+      <div class="page-header">
+        <div>
+          <h1 data-i18n="index.title">Prototipe KRAN</h1>
+          <p class="page-header__intro" data-i18n="index.intro"></p>
+        </div>
+      </div>
+
+      <div class="stack">
+        <section aria-labelledby="notice-title">
+          <h2 id="notice-title" data-i18n="index.noticeTitle">Batasan prototipe</h2>
+          <p class="muted" data-i18n="index.noticeBody"></p>
+          <p class="note" data-i18n="common.syntheticNote"></p>
+        </section>
+
+        <section aria-labelledby="scope-title">
+          <h2 id="scope-title" data-i18n="index.scopeTitle">Yang sudah berjalan</h2>
+          <ul class="list-plain stack-sm">
+            <li data-i18n="index.scope1"></li>
+            <li data-i18n="index.scope2"></li>
+            <li data-i18n="index.scope3"></li>
+            <li data-i18n="index.scope4"></li>
+          </ul>
+        </section>
+
+        <section aria-labelledby="screens-title">
+          <h2 id="screens-title" data-i18n="index.screensTitle">Layar</h2>
+          <div class="table-wrap">
+            <table class="screen-table">
+              <caption class="sr-only" data-i18n="index.tableCaption"></caption>
+              <thead>
+                <tr>
+                  <th scope="col" data-i18n="index.colScreen">Layar</th>
+                  <th scope="col" data-i18n="index.colStatus">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row"><a href="login.html" data-i18n="index.screen.login">Masuk</a></th>
+                  <td data-i18n="common.available">Tersedia</td>
+                </tr>
+                <tr>
+                  <th scope="row"><a href="kas.html" data-i18n="index.screen.kas">Kas</a></th>
+                  <td data-i18n="common.available">Tersedia</td>
+                </tr>
+                <tr>
+                  <th scope="row"><a href="transfer.html" data-i18n="index.screen.transfer">Transfer</a></th>
+                  <td data-i18n="common.available">Tersedia</td>
+                </tr>
+                <tr>
+                  <th scope="row"><a href="tutup-kas.html" data-i18n="index.screen.close">Tutup kas</a></th>
+                  <td data-i18n="common.available">Tersedia</td>
+                </tr>
+                <tr>
+                  <th scope="row"><a href="anggota.html" data-i18n="index.screen.members">Anggota</a></th>
+                  <td data-i18n="common.available">Tersedia</td>
+                </tr>
+                <tr>
+                  <th scope="row"><a href="anggota-detail.html" data-i18n="index.screen.memberDetail">Detail anggota</a></th>
+                  <td data-i18n="common.available">Tersedia</td>
+                </tr>
+                <tr>
+                  <th scope="row"><a href="pinjaman-detail.html" data-i18n="index.screen.loans">Pinjaman</a></th>
+                  <td data-i18n="common.available">Tersedia</td>
+                </tr>
+                <tr>
+                  <th scope="row"><a href="laporan.html" data-i18n="index.screen.reports">Laporan</a></th>
+                  <td data-i18n="common.available">Tersedia</td>
+                </tr>
+                <tr>
+                  <th scope="row"><a href="laporan-neraca.html" data-i18n="index.screen.balanceSheet">Neraca</a></th>
+                  <td data-i18n="common.available">Tersedia</td>
+                </tr>
+                <tr>
+                  <th scope="row"><a href="audit.html" data-i18n="index.screen.audit">Audit</a></th>
+                  <td data-i18n="common.available">Tersedia</td>
+                </tr>
+                <tr>
+                  <th scope="row"><a href="komponen.html" data-i18n="index.screen.components">Komponen</a></th>
+                  <td data-i18n="common.available">Tersedia</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="note" data-i18n="index.screenNote"></p>
+        </section>
+
+        <section aria-labelledby="how-title">
+          <h2 id="how-title" data-i18n="index.howTitle">Cara memakai</h2>
+          <ol class="stack-sm">
+            <li data-i18n="index.how1"></li>
+            <li data-i18n="index.how2"></li>
+            <li data-i18n="index.how3"></li>
+            <li data-i18n="index.how4"></li>
+          </ol>
+        </section>
+
+        <p class="note" data-i18n="index.footer"></p>
+      </div>
+
+      <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+    </main>
+
+    <footer class="settings-bar" aria-label="Pengaturan tampilan" data-i18n-aria-label="common.settings">
+      <div class="settings-group" role="group" aria-labelledby="theme-label">
+        <span class="settings-group__label" id="theme-label" data-i18n="common.theme">Tema</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-theme-set="light" aria-pressed="true" data-i18n="common.themeLight">Terang</button>
+          <button type="button" data-theme-set="dark" aria-pressed="false" data-i18n="common.themeDark">Gelap</button>
+        </div>
+      </div>
+      <div class="settings-group" role="group" aria-labelledby="language-label">
+        <span class="settings-group__label" id="language-label" data-i18n="common.language">Bahasa</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-locale-set="id" aria-pressed="true" data-i18n="common.langId">Indonesia</button>
+          <button type="button" data-locale-set="en" aria-pressed="false" data-i18n="common.langEn">English</button>
+        </div>
+      </div>
+      <span class="settings-bar__note" data-i18n="common.prefNote"></span>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="id-ID" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Neraca · Prototipe KRAN</title>
+    <script src="assets/theme-init.js"></script>
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/base.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <link rel="stylesheet" href="assets/screens-gov.css" />
+  </head>
+  <body data-title-key="report.bs.docTitle" class="gov-page">
+    <a class="skip-link" href="#main" data-i18n="common.skip">Lewati ke konten utama</a>
+    <p class="synthetic-strip" role="region" aria-label="Prototipe, data sintetis" data-i18n-aria-label="common.prototype" data-i18n="common.prototype">Prototipe, data sintetis</p>
+
+    <header class="app-header">
+      <a class="brand" href="index.html">
+        <span class="brand__name">KRAN</span>
+        <span class="brand__sub" data-i18n="common.appSub">Inti koperasi</span>
+      </a>
+      <p class="header-meta">
+        <span class="header-meta__item">
+          <span data-i18n="gov.businessDate">Tanggal buku</span>
+          <span class="header-meta__value" data-i18n="gov.ph.date">[TANGGAL]</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="report.bs.branch">Cabang</span>
+          <span class="header-meta__value" data-i18n="gov.branchValue">[NAMA CABANG] · 001</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="gov.role">Peran</span>
+          <span class="header-meta__value" data-i18n="gov.role.board">Pengurus</span>
+        </span>
+      </p>
+    </header>
+
+    <div class="app-shell">
+      <nav class="app-nav" aria-label="Navigasi utama" data-i18n-aria-label="common.navMain">
+        <ul>
+          <li class="app-nav__group-label" data-i18n="common.navWork">Pekerjaan</li>
+          <li><a href="kas.html" data-i18n="common.kas">Kas</a></li>
+          <li><a href="anggota.html" data-i18n="gov.navMembers">Anggota</a></li>
+          <li><a href="laporan.html" aria-current="page" data-i18n="gov.navReports">Laporan</a></li>
+          <li><a href="audit.html" data-i18n="gov.navAudit">Audit</a></li>
+          <li class="app-nav__group-label" data-i18n="common.navPrototype">Prototipe</li>
+          <li><a href="komponen.html" data-i18n="common.components">Komponen</a></li>
+          <li><a href="index.html" data-i18n="common.home">Indeks</a></li>
+        </ul>
+      </nav>
+
+      <main id="main" class="app-main" tabindex="-1">
+        <div class="page-header">
+          <div>
+            <h1 data-i18n="report.bs.title">Neraca</h1>
+            <p class="page-header__intro" data-i18n="report.bs.intro"></p>
+          </div>
+        </div>
+
+        <div class="gov-state-demo">
+          <span class="gov-state-demo__label" data-i18n="gov.stateDemo">Pratinjau state</span>
+          <div class="segmented segmented--sm" role="group" aria-label="Pratinjau state" data-i18n-aria-label="gov.stateDemo" id="bs-states">
+            <button type="button" data-gov-state="normal" aria-pressed="true" data-i18n="gov.state.normal">Normal</button>
+            <button type="button" data-gov-state="empty" aria-pressed="false" data-i18n="gov.state.empty">Kosong</button>
+            <button type="button" data-gov-state="loading" aria-pressed="false" data-i18n="gov.state.loading">Memuat</button>
+            <button type="button" data-gov-state="error" aria-pressed="false" data-i18n="gov.state.error">Galat</button>
+            <button type="button" data-gov-state="partial" aria-pressed="false" data-i18n="gov.state.partial">Sebagian</button>
+            <button type="button" data-gov-state="unbalanced" aria-pressed="false" data-i18n="gov.state.unbalanced">Tidak seimbang</button>
+            <button type="button" data-gov-state="closed" aria-pressed="false" data-i18n="gov.state.closed">Periode tertutup</button>
+            <button type="button" data-gov-state="denied" aria-pressed="false" data-i18n="gov.state.denied">Tanpa izin</button>
+          </div>
+        </div>
+
+        <div class="gov-doc-actions no-print" id="bs-actions">
+          <a class="btn gov-backlink" href="laporan.html" data-i18n="report.bs.back">Kembali ke daftar laporan</a>
+          <div class="gov-doc-actions__spacer"></div>
+          <button type="button" class="btn" id="bs-print">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 9V3h10v6"/><path d="M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><path d="M7 14h10v7H7Z"/></svg>
+            <span data-i18n="report.bs.print">Cetak</span>
+          </button>
+          <button type="button" class="btn" id="bs-export" disabled aria-describedby="bs-export-reason">
+            <span data-i18n="report.bs.export">Ekspor</span>
+          </button>
+          <p class="hint gov-export-reason" id="bs-export-reason" data-i18n="report.bs.exportReason"></p>
+        </div>
+
+        <div class="alert alert--warning" id="bs-open-note" role="status">
+          <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2Z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+          <p class="alert__body" data-i18n="report.bs.openNote"></p>
+        </div>
+
+        <div class="alert alert--info" id="bs-closed-note" role="status" hidden>
+          <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7h.01"/></svg>
+          <p class="alert__body" data-i18n="report.bs.closedNote"></p>
+        </div>
+
+        <div class="alert alert--error" id="bs-unbalanced-alert" role="alert" hidden>
+          <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6"/><path d="m15 9-6 6"/></svg>
+          <p class="alert__body" data-i18n="report.bs.unbalancedAlert"></p>
+        </div>
+
+        <div class="alert alert--warning" id="bs-partial" role="status" hidden>
+          <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2Z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+          <p class="alert__body" data-i18n="report.bs.partial"></p>
+        </div>
+
+        <article class="gov-document" id="bs-document" aria-labelledby="bs-title">
+          <header class="gov-report-head">
+            <p class="gov-report-head__institution" data-i18n="gov.ph.institution">[NAMA KOPERASI]</p>
+            <h2 class="gov-report-head__title" id="bs-title" data-i18n="report.bs.documentTitle">Neraca</h2>
+            <p class="gov-report-head__branch" data-i18n="gov.branchValue">[NAMA CABANG] · 001</p>
+            <p class="gov-watermark" id="bs-watermark" data-i18n="report.bs.watermark">BELUM DITUTUP</p>
+            <dl class="gov-report-meta">
+              <div>
+                <dt data-i18n="report.bs.period">Periode</dt>
+                <dd data-i18n="gov.ph.period">[PERIODE]</dd>
+              </div>
+              <div>
+                <dt data-i18n="report.bs.businessDate">Tanggal buku</dt>
+                <dd data-i18n="gov.ph.date">[TANGGAL]</dd>
+              </div>
+              <div>
+                <dt data-i18n="report.bs.generated">Dihitung</dt>
+                <dd id="bs-generated" data-i18n="reports.computedAt">[TANGGAL] [WAKTU] WIB</dd>
+              </div>
+              <div>
+                <dt data-i18n="report.bs.source">Sumber</dt>
+                <dd data-i18n="report.bs.sourceValue">Dihitung dari jurnal · [JUMLAH] baris</dd>
+              </div>
+            </dl>
+          </header>
+
+          <p class="gov-report-unit" data-i18n="report.bs.unit">Nilai dalam IDR.</p>
+
+          <div id="bs-table-area">
+            <div id="bs-loading" hidden>
+              <div class="loading-state gov-loading-fixed" role="status" aria-busy="true">
+                <span class="loading-state__bar" aria-hidden="true"></span>
+                <span data-i18n="report.bs.loading">Menghitung neraca…</span>
+              </div>
+            </div>
+
+            <div id="bs-error" hidden></div>
+
+            <div id="bs-empty" hidden>
+              <div class="empty-state">
+                <p class="empty-state__title" data-i18n="report.bs.emptyTitle">Belum ada data untuk [PERIODE].</p>
+                <p class="empty-state__body" data-i18n="report.bs.emptyBody"></p>
+              </div>
+            </div>
+
+            <div id="bs-data">
+              <div class="table-wrap" role="region" tabindex="0" aria-label="Tabel neraca" data-i18n-aria-label="report.bs.tableRegion">
+                <table id="bs-table">
+                  <caption class="sr-only" data-i18n="report.bs.tableCaption">Neraca per [PERIODE], dibandingkan dengan periode lalu</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" data-i18n="report.bs.colItem">Pos</th>
+                      <th scope="col" class="money-cell" data-i18n="report.bs.colCurrent">[PERIODE] ini (IDR)</th>
+                      <th scope="col" class="money-cell" data-i18n="report.bs.colPrevious">[PERIODE] lalu (IDR)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr class="gov-row-section"><th scope="colgroup" colspan="3" data-i18n="report.bs.sectionAssets">Aset</th></tr>
+                    <tr class="gov-row-section gov-row-sub"><th scope="colgroup" colspan="3" class="gov-indent-1" data-i18n="report.bs.sectionCurrentAssets">Aset lancar</th></tr>
+                    <tr><th scope="row" class="gov-indent-2" data-i18n="report.bs.cash">Kas</th><td class="money-cell"><span class="money" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+                    <tr><th scope="row" class="gov-indent-2" data-i18n="report.bs.bank">Bank</th><td class="money-cell"><span class="money" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+                    <tr><th scope="row" class="gov-indent-2" data-i18n="report.bs.loansReceivable">Piutang pinjaman</th><td class="money-cell"><span class="money" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+                    <tr><th scope="row" class="gov-indent-2" data-i18n="report.bs.allowance">Penyisihan piutang</th><td class="money-cell"><span class="money" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+                    <tr class="gov-row-total"><th scope="row" class="gov-indent-1" data-i18n="report.bs.totalAssets">Jumlah aset</th><td class="money-cell"><span class="money" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+
+                    <tr class="gov-row-section"><th scope="colgroup" colspan="3" data-i18n="report.bs.sectionLiabilities">Liabilitas</th></tr>
+                    <tr class="gov-row-section gov-row-sub"><th scope="colgroup" colspan="3" class="gov-indent-1" data-i18n="report.bs.savings">Simpanan anggota</th></tr>
+                    <tr><th scope="row" class="gov-indent-2" data-i18n="report.bs.savingsPrincipal">Simpanan pokok</th><td class="money-cell"><span class="money" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+                    <tr><th scope="row" class="gov-indent-2" data-i18n="report.bs.savingsMandatory">Simpanan wajib</th><td class="money-cell"><span class="money" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+                    <tr><th scope="row" class="gov-indent-2" data-i18n="report.bs.savingsVoluntary">Simpanan sukarela</th><td class="money-cell"><span class="money" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+                    <tr><th scope="row" class="gov-indent-1" data-i18n="report.bs.otherPayables">Utang lain</th><td class="money-cell"><span class="money" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+                    <tr class="gov-row-total"><th scope="row" class="gov-indent-1" data-i18n="report.bs.totalLiabilities">Jumlah liabilitas</th><td class="money-cell"><span class="money" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+
+                    <tr class="gov-row-section"><th scope="colgroup" colspan="3" data-i18n="report.bs.sectionEquity">Ekuitas</th></tr>
+                    <tr><th scope="row" class="gov-indent-1" data-i18n="report.bs.memberCapital">Modal anggota</th><td class="money-cell"><span class="money" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+                    <tr><th scope="row" class="gov-indent-1" data-i18n="report.bs.reserves">Cadangan</th><td class="money-cell"><span class="money" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+                    <tr><th scope="row" class="gov-indent-1" data-i18n="report.bs.retainedShu">SHU belum dibagi</th><td class="money-cell"><span class="money" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+                    <tr class="gov-row-total"><th scope="row" class="gov-indent-1" data-i18n="report.bs.totalEquity">Jumlah ekuitas</th><td class="money-cell"><span class="money" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+                    <tr class="gov-row-total"><th scope="row" data-i18n="report.bs.totalLiabilitiesEquity">Jumlah liabilitas dan ekuitas</th><td class="money-cell"><span class="money" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+                  </tbody>
+                  <tfoot>
+                    <tr><th scope="row" data-i18n="report.bs.controlTotalAssets">Jumlah aset</th><td class="money-cell"><span class="money" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+                    <tr><th scope="row" data-i18n="report.bs.controlTotalLiabilitiesEquity">Jumlah liabilitas dan ekuitas</th><td class="money-cell"><span class="money" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+                    <tr><th scope="row" data-i18n="report.bs.controlDifference">Selisih</th><td class="money-cell"><span class="money" id="bs-difference" data-money="0">0,00</span></td><td class="money-cell"><span class="money" data-money="0">0,00</span></td></tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              <div class="gov-control-lines">
+                <p class="gov-control-label" data-i18n="report.bs.controlLabel">Kontrol</p>
+                <div class="gov-control-line"><span data-i18n="report.bs.controlTotalAssets">Jumlah aset</span><span class="money" data-money="0">0,00</span></div>
+                <div class="gov-control-line"><span data-i18n="report.bs.controlTotalLiabilitiesEquity">Jumlah liabilitas dan ekuitas</span><span class="money" data-money="0">0,00</span></div>
+                <div class="gov-control-line"><span data-i18n="report.bs.controlDifference">Selisih</span><span class="money" data-money="0">0,00</span></div>
+                <p class="gov-control-verdict" id="bs-verdict-ok"><strong data-i18n="report.bs.balanced">Seimbang</strong>. <span data-i18n="report.bs.balancedSentence"></span></p>
+                <p class="gov-control-verdict gov-control-verdict--fail" id="bs-verdict-fail" hidden><strong data-i18n="report.bs.unbalanced">Tidak seimbang: selisih [SELISIH].</strong> <span data-i18n="report.bs.unbalancedSentence"></span></p>
+              </div>
+            </div>
+          </div>
+
+          <div class="gov-signatures" id="bs-signatures">
+            <div class="gov-signature">
+              <span class="gov-signature__role" data-i18n="report.bs.signPrepared">Disusun oleh (Bendahara)</span>
+              <span class="gov-signature__line" data-i18n="gov.ph.name">[NAMA]</span>
+            </div>
+            <div class="gov-signature">
+              <span class="gov-signature__role" data-i18n="report.bs.signChecked">Diperiksa oleh (Pengawas)</span>
+              <span class="gov-signature__line" data-i18n="gov.ph.name">[NAMA]</span>
+            </div>
+            <div class="gov-signature">
+              <span class="gov-signature__role" data-i18n="report.bs.signApproved">Disetujui oleh (Ketua)</span>
+              <span class="gov-signature__line" data-i18n="gov.ph.name">[NAMA]</span>
+            </div>
+          </div>
+
+          <footer class="gov-doc-foot">
+            <span data-i18n="report.bs.footerNote">Dokumen dihitung dari jurnal. Bukan pengganti buku besar.</span>
+            <span data-i18n="report.bs.page">Halaman 1 dari 1</span>
+          </footer>
+        </article>
+
+        <section class="empty-state" id="bs-denied" aria-labelledby="bs-denied-title" hidden>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <p class="empty-state__title" id="bs-denied-title" data-i18n="report.bs.deniedTitle">Dokumen ini tidak tersedia untuk peran Anda.</p>
+          <p class="empty-state__body" data-i18n="report.bs.deniedBody"></p>
+          <div class="empty-state__actions">
+            <a class="btn" href="laporan.html" data-i18n="report.bs.back">Kembali ke daftar laporan</a>
+          </div>
+        </section>
+
+        <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+      </main>
+    </div>
+
+    <footer class="settings-bar" aria-label="Pengaturan tampilan" data-i18n-aria-label="common.settings">
+      <div class="settings-group" role="group" aria-labelledby="theme-label">
+        <span class="settings-group__label" id="theme-label" data-i18n="common.theme">Tema</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-theme-set="light" aria-pressed="true" data-i18n="common.themeLight">Terang</button>
+          <button type="button" data-theme-set="dark" aria-pressed="false" data-i18n="common.themeDark">Gelap</button>
+        </div>
+      </div>
+      <div class="settings-group" role="group" aria-labelledby="language-label">
+        <span class="settings-group__label" id="language-label" data-i18n="common.language">Bahasa</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-locale-set="id" aria-pressed="true" data-i18n="common.langId">Indonesia</button>
+          <button type="button" data-locale-set="en" aria-pressed="false" data-i18n="common.langEn">English</button>
+        </div>
+      </div>
+      <span class="settings-bar__note" data-i18n="common.prefNote"></span>
+    </footer>
+
+    <script src="assets/i18n-gov.js"></script>
+    <script src="assets/app.js" defer></script>
+    <script src="assets/screens-gov.js" defer></script>
+  </body>
+</html>

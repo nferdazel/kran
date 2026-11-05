@@ -1,4 +1,4 @@
-## Test integrasi modul `platform` (butuh `KRAN_DATABASE_URL`, lihat docs/runbooks/dev-db.md).
+## Test integrasi modul `platform` (butuh `KRAN_DATABASE_URL`, lihat docs/OPERATIONS.md).
 ##
 ## Cakupan: migrasi idempotent + atomik + anti-drift, outbox (de-dup, klaim SKIP LOCKED,
 ## backoff, dead-letter, re-drive), inbox (de-dup per konsumen), audit_log (hash chain,

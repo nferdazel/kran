@@ -292,9 +292,9 @@ proc watchStop(app: AppContext) {.thread.} =
   ##
   ## `server.close()` sengaja **tidak** dipakai: berhenti bersih tidak membutuhkannya, dan O-025
   ## mencatat SIGSEGV di jalur teardown itu (probe minimal tidak mereproduksinya — lihat
-  ## `docs/spikes/O-025-shutdown.md`). Batas yang diketahui: koneksi yang sudah diterima tetapi belum
+  ## `git history`). Batas yang diketahui: koneksi yang sudah diterima tetapi belum
   ## sempat masuk ke handler tetap terpotong, dan soket realtime ditutup oleh keluarnya proses
-  ## (klien menyambung ulang) — lihat `docs/tasks/T-032.md`.
+  ## (klien menyambung ulang) — lihat `T-032 (git history)`.
   while not shutdownRequested.load():
     sleep(100)
 

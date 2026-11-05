@@ -1,5 +1,5 @@
 -- Pemisahan kas teller (laci) vs vault lewat sub-akun clearing (T-118, memo
--- `docs/proposals/t-118-operator-governance.md` §5 opsi A yang disetujui pemilik).
+-- `git history` §5 opsi A yang disetujui pemilik).
 --
 -- NEEDS-COMPLIANCE-REVIEW (REG-011, spec §4 `V!`): kode `101.1`/`101.2`/`101.9` adalah **usulan
 -- struktur pilot** dari memo T-118, bukan kutipan SAK EP/PSAK. `101 KAS` tetap **induk** dan menjadi
@@ -10,7 +10,7 @@
 -- menyiapkan akun dan memindahkan arah posting kas di konter; jurnal sesi teller adalah task lanjutan.
 --
 -- Ditaruh di migrasi (bukan `packs/*/seed/`) karena seed pack hanya diterapkan dengan `--dev`;
--- produksi menerima COA lewat jalur migrasi (lihat O-066 dan `docs/tasks/T-072.md`).
+-- produksi menerima COA lewat jalur migrasi (lihat O-066 dan `T-072 (git history)`).
 --
 -- Idempoten: `ON CONFLICT (code) DO NOTHING` untuk akun baru; `postable=false` dan pemindahan
 -- `posting_rule_line` idempoten secara alami (jalankan ulang = 0 baris atau nilai sama).

@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="id-ID" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tutup buku · Prototipe KRAN</title>
+    <script src="assets/theme-init.js"></script>
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/base.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <link rel="stylesheet" href="assets/screens-tx.css" />
+    <script src="assets/i18n-tx.js"></script>
+    <script src="assets/app.js" defer></script>
+    <script src="assets/screens-tx.js" defer></script>
+  </head>
+  <body data-title-key="close.docTitle" data-tx-page="close">
+    <a class="skip-link" href="#main" data-i18n="common.skip">Lewati ke konten utama</a>
+    <p class="synthetic-strip" role="region" aria-label="Prototipe, data sintetis" data-i18n-aria-label="common.prototype" data-i18n="common.prototype">Prototipe, data sintetis</p>
+
+    <header class="app-header">
+      <a class="brand" href="index.html">
+        <span class="brand__name">KRAN</span>
+        <span class="brand__sub" data-i18n="common.appSub">Inti koperasi</span>
+      </a>
+      <p class="header-meta">
+        <span class="header-meta__item">
+          <span data-i18n="kas.businessDate">Tanggal usaha</span>
+          <span class="header-meta__value" data-date="2026-11-05">5 Nov 2026</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="kas.branch">Cabang</span>
+          <span class="header-meta__value" data-i18n="kas.branchValue">[NAMA CABANG] · 001</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="kas.cashier">Kasir</span>
+          <span class="header-meta__value" data-i18n="kas.cashierValue">[NAMA KASIR]</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="common.session">Sesi</span>
+          <span id="session-state" data-i18n="tx.statusActive">Aktif</span>
+        </span>
+      </p>
+    </header>
+
+    <div class="app-shell">
+      <nav class="app-nav" aria-label="Navigasi utama" data-i18n-aria-label="common.navMain">
+        <ul>
+          <li class="app-nav__group-label" data-i18n="common.navWork">Pekerjaan</li>
+          <li><a href="kas.html" data-i18n="common.kas">Kas</a></li>
+          <li><a href="transfer.html" data-i18n="tx.nav.transfer">Transfer</a></li>
+          <li><a href="tutup-kas.html" aria-current="page" data-i18n="tx.nav.close">Tutup buku</a></li>
+          <li><a href="pinjaman-detail.html" data-i18n="tx.nav.loan">Pinjaman</a></li>
+          <li class="app-nav__group-label" data-i18n="common.navPrototype">Prototipe</li>
+          <li><a href="komponen.html" data-i18n="common.components">Komponen</a></li>
+          <li><a href="index.html" data-i18n="common.home">Indeks</a></li>
+        </ul>
+      </nav>
+
+      <main id="main" class="app-main" tabindex="-1">
+        <div class="page-header">
+          <div>
+            <h1 data-i18n="close.title">Tutup buku</h1>
+            <p class="page-header__intro" data-i18n="close.intro">Tutup tanggal buku pada tingkat harian, bulanan, atau tahunan.</p>
+          </div>
+          <div class="page-header__actions">
+            <a class="btn" href="kas.html" data-i18n="tx.backToKas">Kembali ke Kas</a>
+          </div>
+        </div>
+
+        <div class="tx-preview">
+          <label class="tx-preview__label" for="close-state" data-i18n="tx.preview.label">Pratinjau state</label>
+          <select class="select tx-preview__select" id="close-state" data-tx-state-select>
+            <option value="blocked" data-i18n="tx.preview.blocked">Terhalang</option>
+            <option value="ready" data-i18n="tx.preview.ready">Siap dijalankan</option>
+            <option value="empty" data-i18n="tx.preview.empty">Kosong</option>
+            <option value="loading" data-i18n="tx.preview.loading">Memuat</option>
+            <option value="error" data-i18n="tx.preview.error">Galat</option>
+            <option value="partial" data-i18n="tx.preview.partial">Sebagian</option>
+            <option value="locked" data-i18n="tx.preview.locked">Terkunci</option>
+            <option value="denied" data-i18n="tx.preview.denied">Tanpa izin</option>
+            <option value="unknown" data-i18n="tx.preview.unknown">Status tidak diketahui</option>
+            <option value="success" data-i18n="tx.preview.success">Berhasil</option>
+          </select>
+          <p class="note" data-i18n="tx.preview.hint">Kontrol reviewer, bukan bagian alur operator.</p>
+          <p class="note" data-i18n="close.reviewerDepends">DEPENDS: expectedCash pada pembacaan sesi berjalan. Prototipe memakai 0,00.</p>
+          <p class="note" data-i18n="close.reviewerBlocks">Penghalang pada prototipe bersifat sintetis dan tidak dihitung server.</p>
+        </div>
+
+        <div class="tx-denied" id="close-denied" hidden>
+          <div class="error-state">
+            <p class="error-state__title" data-i18n="close.deniedTitle">Tanpa izin tutup buku</p>
+            <p class="error-state__body" data-i18n="close.deniedBody">Hanya manajer yang boleh menutup buku.</p>
+            <div class="error-state__actions">
+              <a class="btn" href="kas.html" data-i18n="tx.backToKas">Kembali ke Kas</a>
+            </div>
+          </div>
+        </div>
+
+        <div id="close-console">
+          <div class="toolbar">
+            <div class="segmented" role="group" aria-label="Tingkat penutupan" data-i18n-aria-label="close.levelGroup">
+              <button type="button" data-close-level="daily" aria-pressed="true" data-i18n="close.levelDaily">Harian (EOD)</button>
+              <button type="button" data-close-level="monthly" aria-pressed="false" data-i18n="close.levelMonthly">Bulanan (EOM)</button>
+              <button type="button" data-close-level="yearly" aria-pressed="false" data-i18n="close.levelYearly">Tahunan (EOY)</button>
+            </div>
+            <div class="toolbar__spacer"></div>
+            <span class="note" id="close-loaded" data-i18n="tx.loadedAt">dimuat 08:14</span>
+          </div>
+
+          <div class="alert alert--warning" id="close-unknown" hidden>
+            <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2Z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+            <div>
+              <p class="alert__title" data-i18n="close.unknownTitle">Status penutupan tidak diketahui</p>
+              <p class="alert__body" data-i18n="close.unknownBody">Status penutupan tidak diketahui. Jangan ulangi; muat ulang status.</p>
+              <div class="alert__actions">
+                <button type="button" class="btn btn--sm" id="close-reload" data-i18n="close.reload">Muat ulang status</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="alert alert--error" id="close-error-banner" hidden>
+            <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2Z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+            <div>
+              <p class="alert__title" data-i18n="close.errorTitle">Pemeriksaan gagal dimuat</p>
+              <p class="alert__body" data-i18n="close.errorBody">Syarat tutup buku gagal dimuat. Coba lagi; jangan menjalankan sebelum daftar terbaca.</p>
+              <div class="alert__actions">
+                <button type="button" class="btn btn--sm" id="close-retry" data-i18n="tx.retry">Coba lagi</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="alert alert--warning" id="close-partial-banner" hidden>
+            <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2Z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+            <div>
+              <p class="alert__title" data-i18n="close.partialTitle">Sebagian pemeriksaan gagal</p>
+              <p class="alert__body" data-i18n="close.partialBody">Sebagian pemeriksaan gagal dimuat. Coba lagi sebelum menjalankan.</p>
+              <div class="alert__actions">
+                <button type="button" class="btn btn--sm" id="close-partial-retry" data-i18n="tx.retry">Coba lagi</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="alert alert--success" id="close-success-banner" hidden>
+            <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12 5 5 9-10"/></svg>
+            <div>
+              <p class="alert__title" data-i18n="close.successTitle">Tutup buku selesai.</p>
+              <p class="alert__body" data-i18n="close.successBody">Bukti penutupan tanggal 5 Nov 2026 tersedia di bawah.</p>
+            </div>
+          </div>
+
+          <div class="work-grid">
+            <div class="work-main">
+              <section class="panel" id="close-daily" aria-labelledby="close-session-title">
+                <div class="panel__header">
+                  <h2 class="panel__title" id="close-session-title" data-i18n="close.sessionTitle">Ringkasan sesi kas</h2>
+                </div>
+
+                <div id="close-loading" class="loading-state" role="status" aria-live="polite" hidden>
+                  <span class="loading-state__bar" aria-hidden="true"></span>
+                  <span data-i18n="close.loading">Memeriksa syarat tutup buku…</span>
+                </div>
+
+                <div id="close-daily-body">
+                  <dl class="tx-summary-grid">
+                    <div class="amount-line">
+                      <dt data-i18n="close.float">Kas awal</dt>
+                      <dd class="money" data-money="0">0,00</dd>
+                    </div>
+                    <div class="amount-line">
+                      <dt data-i18n="close.cashIn">Masuk</dt>
+                      <dd class="money" data-money="0">0,00</dd>
+                    </div>
+                    <div class="amount-line">
+                      <dt data-i18n="close.cashOut">Keluar</dt>
+                      <dd class="money" data-money="0">0,00</dd>
+                    </div>
+                    <div class="amount-line amount-line--total">
+                      <dt data-i18n="close.expected">Kas seharusnya</dt>
+                      <dd class="money" id="close-expected" data-money="0">0,00</dd>
+                    </div>
+                  </dl>
+                  <p class="note" data-i18n="close.expectedHint">Dihitung dari kas awal, masuk, dan keluar.</p>
+
+                  <div class="tx-count-block">
+                    <div class="amount-field">
+                      <label class="label" for="close-count" data-i18n="close.countLabel">Kas fisik dihitung (IDR)</label>
+                      <input
+                        class="input input--amount"
+                        id="close-count"
+                        inputmode="decimal"
+                        autocomplete="off"
+                        placeholder="0,00"
+                        aria-describedby="close-count-hint close-variance close-count-error"
+                      />
+                      <p class="hint" id="close-count-hint" data-i18n="close.countHint">Masukkan total uang fisik setelah dihitung.</p>
+                      <p class="field-error" id="close-count-error" hidden></p>
+                    </div>
+                    <div class="tx-variance" id="close-variance-region">
+                      <p class="tx-variance__label" data-i18n="close.varianceLabel">Selisih</p>
+                      <p class="tx-variance__value money" id="close-variance">0,00</p>
+                      <p class="tx-variance__sentence" id="close-variance-sentence" data-i18n="close.varianceEmpty">Masukkan hasil hitung untuk melihat selisih.</p>
+                    </div>
+                  </div>
+
+                  <div class="field" id="close-note-field">
+                    <label class="label" for="close-note" data-i18n="close.noteLabel">Catatan selisih</label>
+                    <input class="input" id="close-note" maxlength="200" autocomplete="off" aria-describedby="close-note-hint close-note-error" />
+                    <p class="hint" id="close-note-hint" data-i18n="close.noteHint">Wajib diisi saat ada selisih.</p>
+                    <p class="field-error" id="close-note-error" hidden></p>
+                  </div>
+                </div>
+              </section>
+
+              <section class="panel" id="close-checklist-panel" aria-labelledby="close-checklist-title">
+                <div class="panel__header">
+                  <h2 class="panel__title" id="close-checklist-title" data-i18n="close.checklistTitle">Syarat tutup buku</h2>
+                  <span class="badge" id="close-block-count"></span>
+                </div>
+                <p class="hint" id="close-block-summary"></p>
+                <ul class="tx-checklist" id="close-checklist"></ul>
+              </section>
+
+              <section class="panel" id="close-monthly" aria-labelledby="close-monthly-title" hidden>
+                <div class="panel__header">
+                  <h2 class="panel__title" id="close-monthly-title" data-i18n="close.monthTitle">Penutupan bulanan</h2>
+                </div>
+                <p class="tx-prose" data-i18n="close.monthBody">Penutupan bulanan belum tersedia sebagai tugas tutup buku. Yang ada hanya penutupan periode buku besar, dan itu belum cukup untuk menutup bulan.</p>
+                <p class="tx-prose" data-i18n="close.monthGate">Prasyarat: neraca saldo nol dan subledger sama dengan buku besar.</p>
+              </section>
+
+              <section class="panel" id="close-yearly" aria-labelledby="close-yearly-title" hidden>
+                <div class="panel__header">
+                  <h2 class="panel__title" id="close-yearly-title" data-i18n="close.yearTitle">Prasyarat penutupan tahunan</h2>
+                </div>
+                <p class="tx-prose" data-i18n="close.yearBody">Penutupan tahunan belum tersedia. Tugas EOY dan dasar SHU bertanda tangan belum ada.</p>
+                <ul class="tx-prereq">
+                  <li>
+                    <span data-i18n="close.yearShu">Dasar SHU ditandatangani</span>
+                    <span class="badge badge--warning" data-i18n="close.yearPending">Belum</span>
+                  </li>
+                  <li>
+                    <span data-i18n="close.yearParams">Parameter SHU ditetapkan</span>
+                    <span class="badge badge--warning" data-i18n="close.yearPending">Belum</span>
+                  </li>
+                </ul>
+                <p class="tx-prose" data-i18n="close.yearMissing">Belum tersedia: tugas EOY dan dasar SHU bertanda tangan.</p>
+                <p class="note" data-i18n="close.yearNote">Tidak ada tombol jalankan sampai kedua prasyarat terpenuhi.</p>
+              </section>
+
+              <section class="panel" id="close-history-panel" aria-labelledby="close-history-title">
+                <div class="panel__header">
+                  <h2 class="panel__title" id="close-history-title" data-i18n="close.historyTitle">Riwayat penutupan</h2>
+                </div>
+                <div class="table-wrap" role="region" tabindex="0" aria-label="Riwayat penutupan buku" data-i18n-aria-label="close.historyCaption">
+                  <table>
+                    <caption class="sr-only" data-i18n="close.historyCaption">Riwayat penutupan buku</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col" data-i18n="close.colDate">Tanggal</th>
+                        <th scope="col" data-i18n="close.colLevel">Tingkat</th>
+                        <th scope="col" data-i18n="close.colStatus">Status</th>
+                        <th scope="col" data-i18n="close.colStart">Mulai</th>
+                        <th scope="col" data-i18n="close.colEnd">Selesai</th>
+                        <th scope="col" data-i18n="close.colActor">Pelaku</th>
+                      </tr>
+                    </thead>
+                    <tbody id="close-history-body"></tbody>
+                  </table>
+                </div>
+                <div class="empty-state tx-history-empty" id="close-history-empty">
+                  <p class="empty-state__title" data-i18n="close.historyEmpty">Belum ada penutupan untuk tanggal ini.</p>
+                </div>
+              </section>
+            </div>
+
+            <aside class="panel review-panel" aria-labelledby="close-run-title">
+              <div class="panel__header">
+                <h2 class="panel__title" id="close-run-title" data-i18n="close.run">Jalankan tutup buku</h2>
+                <span class="badge" id="close-run-badge"></span>
+              </div>
+
+              <p class="tx-run-message" id="close-run-message"></p>
+
+              <button type="button" class="btn btn--primary btn--block" id="close-run">
+                <span class="btn__spinner" id="close-run-spinner" hidden aria-hidden="true"></span>
+                <span id="close-run-label" data-i18n="close.run">Jalankan tutup buku</span>
+              </button>
+
+              <div class="tx-certificate" id="close-certificate" hidden>
+                <div class="panel__header">
+                  <h2 class="panel__title" data-i18n="close.certificateTitle">Bukti penutupan</h2>
+                </div>
+                <dl class="facts" id="close-certificate-facts">
+                  <dt data-i18n="close.certDate">Tanggal buku</dt>
+                  <dd data-date="2026-11-05">5 Nov 2026</dd>
+                  <dt data-i18n="close.certLevel">Tingkat</dt>
+                  <dd id="close-cert-level" data-i18n="close.levelDaily">Harian (EOD)</dd>
+                  <dt data-i18n="close.certFloat">Kas awal</dt>
+                  <dd class="money" data-money="0">0,00</dd>
+                  <dt data-i18n="close.certIn">Masuk</dt>
+                  <dd class="money" data-money="0">0,00</dd>
+                  <dt data-i18n="close.certOut">Keluar</dt>
+                  <dd class="money" data-money="0">0,00</dd>
+                  <dt data-i18n="close.certExpected">Kas seharusnya</dt>
+                  <dd class="money" id="close-cert-expected">0,00</dd>
+                  <dt data-i18n="close.certCounted">Kas dihitung</dt>
+                  <dd class="money" id="close-cert-counted">0,00</dd>
+                  <dt data-i18n="close.certVariance">Selisih</dt>
+                  <dd class="money" id="close-cert-variance">0,00</dd>
+                  <dt data-i18n="close.certActor">Pelaku</dt>
+                  <dd data-i18n="kas.cashierValue">[NAMA KASIR]</dd>
+                  <dt data-i18n="close.certTime">Waktu</dt>
+                  <dd id="close-cert-time"></dd>
+                  <dt data-i18n="close.certNote">Catatan</dt>
+                  <dd id="close-cert-note"></dd>
+                  <dt data-i18n="close.certSignature">Tanda tangan</dt>
+                  <dd data-i18n="close.certSignatureRole">Manajer cabang</dd>
+                </dl>
+                <p class="note" data-i18n="close.certFooter">Dokumen ini bukti penutupan buku.</p>
+                <button type="button" class="btn btn--block" id="close-print" data-i18n="close.certificateAction">Cetak bukti penutupan</button>
+              </div>
+            </aside>
+          </div>
+        </div>
+
+        <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+      </main>
+    </div>
+
+    <footer class="settings-bar" aria-label="Pengaturan tampilan" data-i18n-aria-label="common.settings">
+      <div class="settings-group" role="group" aria-labelledby="theme-label">
+        <span class="settings-group__label" id="theme-label" data-i18n="common.theme">Tema</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-theme-set="light" aria-pressed="true" data-i18n="common.themeLight">Terang</button>
+          <button type="button" data-theme-set="dark" aria-pressed="false" data-i18n="common.themeDark">Gelap</button>
+        </div>
+      </div>
+      <div class="settings-group" role="group" aria-labelledby="language-label">
+        <span class="settings-group__label" id="language-label" data-i18n="common.language">Bahasa</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-locale-set="id" aria-pressed="true" data-i18n="common.langId">Indonesia</button>
+          <button type="button" data-locale-set="en" aria-pressed="false" data-i18n="common.langEn">English</button>
+        </div>
+      </div>
+      <span class="settings-bar__note" data-i18n="common.prefNote">Preferensi tersimpan di peramban ini.</span>
+    </footer>
+
+    <dialog id="close-dialog" aria-labelledby="close-dialog-title" aria-describedby="close-dialog-body">
+      <div class="dialog__header">
+        <h2 class="dialog__title" id="close-dialog-title" data-i18n="close.dialogTitle">Tutup buku?</h2>
+      </div>
+      <div class="dialog__body">
+        <p id="close-dialog-body" data-i18n="close.dialogBody">Tanggal buku 5 Nov 2026 akan ditutup. Transaksi bertanggal ini tidak bisa diposting lagi.</p>
+      </div>
+      <div class="dialog__actions">
+        <button type="button" class="btn" data-dialog-close data-initial-focus id="close-dialog-cancel" data-i18n="close.dialogCancel">Batal</button>
+        <button type="button" class="btn btn--danger-solid" id="close-dialog-confirm" data-i18n="close.dialogConfirm">Tutup buku</button>
+      </div>
+    </dialog>
+
+    <section id="print-receipt" class="print-only" aria-hidden="true"></section>
+  </body>
+</html>

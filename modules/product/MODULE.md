@@ -1,4 +1,4 @@
-# Module `product` — Product Factory parametrik
+# Module `product` - Product Factory parametrik
 
 Katalog produk untuk koperasi/BPR/BMT (spec §8, §9, §23). Atribut produk **tidak** ditulis di
 kode: setiap nilai adalah binding ke parameter terdaftar, dan perubahan atribut diterbitkan sebagai
@@ -23,7 +23,7 @@ Kolom diturunkan dari spec: spec hanya menyebut nama ketiga tabel + aturan effec
   `DRAFT` → `REJECTED` (reject) yang sah. Reject wajib `reject_reason`. Versi tidak pernah dihapus.
 - **Pemisahan tugas** ditegakkan DB: `checker <> maker` (`product_version_self_approval_chk`); approve
   sendiri → 409 `self_approval`.
-- **Versi ACTIVE tidak tumpang tindih** (DB `EXCLUDE` parsial); draft yang bertumpang tindih sah —
+- **Versi ACTIVE tidak tumpang tindih** (DB `EXCLUDE` parsial); draft yang bertumpang tindih sah -
   tumpang tindih diperiksa saat approve (409 `window_conflict`). Approve menutup versi `ACTIVE`
   sebelumnya sehari sebelum tanggal mulai (`effective_to = tanggalBaru - 1`).
 - **Versi immutable**: koreksi/atribut baru = versi baru; `effective_to` hanya diisi sekali;
@@ -36,7 +36,7 @@ Kolom diturunkan dari spec: spec hanya menyebut nama ketiga tabel + aturan effec
   keamanan/platform).
 - Binding ke parameter tak terdaftar/deprecated/di luar batas = **400**, bukan diabaikan.
 - Batas schema numerik mengikuti satuan nilai: `money`/`decimal` satuan utuh (×10⁴ minor),
-  **`rate` dalam persen** (1% = 10.000 unit) — bukan fraksi 0,01.
+  **`rate` dalam persen** (1% = 10.000 unit) - bukan fraksi 0,01.
 - Binding = **snapshot atribut versi itu**: versi baru boleh tidak menyertakan atribut lama
   (berarti atribut itu tidak berlaku pada versi tersebut).
 
@@ -56,7 +56,7 @@ bercabang → 403 `branch_not_allowed`.
 
 ## Event
 
-- `ProductPublished` (aggregate `product`) diterbitkan **saat approve** — dalam transaksi yang sama
+- `ProductPublished` (aggregate `product`) diterbitkan **saat approve** - dalam transaksi yang sama
   dengan perubahan status + audit `product.approve`. Payload: `productId`, `code`, `productType`,
   `versionNo`, `effectiveFrom`.
 - Submit (`product.draft`) dan reject (`product.reject`) hanya menulis audit, **tanpa** event.
@@ -69,13 +69,13 @@ tidak menagih) dan bertanda `NEEDS-COMPLIANCE-REVIEW` sampai angka final disetuj
 
 Bentuk akrual (O-084/D-094) sudah terdefinisi tetapi **belum bernilai**: `interest_rate` (rate,
 persen), `day_count_basis` (`ACT_365|ACT_360|THIRTY_360`, basis bernama spec §10.5), `rounding_mode`
-(hanya `HALF_EVEN` — kernel hanya mengimplementasikan half-to-even), `rounding_scale` (0–2 =
+(hanya `HALF_EVEN` - kernel hanya mengimplementasikan half-to-even), `rounding_scale` (0-2 =
 `moneyScale`, D-136: penyimpanan uang adalah sen), dan `interest_posting` (domain nilai **sengaja
-dibuka**, bukan enum — spec/D-094 tidak menetapkan waktu posting). Tanpa `default_pack` → binding
+dibuka**, bukan enum - spec/D-094 tidak menetapkan waktu posting). Tanpa `default_pack` → binding
 produk ke kunci ini gagal-cepat sampai nilainya disetujui compliance. Kelimanya kelas
 `regulasi-tidak-disemai` (D-095): nilai rate/basis yang bersifat regulasi tidak disemai.
 
-`product.savings.grace_period_days` **dikeluarkan** dari katalog (T-087, D-095) — tidak ada konsumen
+`product.savings.grace_period_days` **dikeluarkan** dari katalog (T-087, D-095) - tidak ada konsumen
 dan semantiknya tidak boleh dikarang. Baris lama di DB ditandai `deprecated` oleh migrasi expand-only
 `product/0005` supaya binding ke kunci itu ditolak; kode deposit/teller tidak disentuh.
 
@@ -86,7 +86,7 @@ dan semantiknya tidak boleh dikarang. Baris lama di DB ditandai `deprecated` ole
 ## Batas
 
 - Maker-checker versi produk **sudah ada** (T-086). Pilot satu operator akan terblokir sampai ada
-  penyetuju kedua (`checker <> maker`) — konsekuensi kebijakan, bukan bug (D-099, `ACCEPTED-LIMITS.md`).
+  penyetuju kedua (`checker <> maker`) - konsekuensi kebijakan, bukan bug (D-099, `ACCEPTED-LIMITS.md`).
 - `published_at` kini berarti **waktu pencatatan versi** (saat submit), bukan saat terbit; nama
   historis dipertahankan (utang nama, D-119). Waktu terbit yang sebenarnya = `approved_at`.
 - Migrasi dipecah dua tahap: `0003` **expand** (kolom/backfill/CHECK/index/trigger, aman `--up`)
@@ -101,15 +101,15 @@ dan semantiknya tidak boleh dikarang. Baris lama di DB ditandai `deprecated` ole
 - Binding `pvtJson` dibatasi ukuran (16 KiB) **dan** bentuknya: kedalaman maksimum 8, `null` serta
   angka tak hingga ditolak lewat `jsonFormProblem` (`modules/platform/domain/param.nim`), dipakai
   jalur binding produk (`definitionError` di `apps/api/src/handlers_products.nim`) dan `submitValue`
-  — O-087 SELESAI (D-172). Batas schema pecahan tetap **ditolak fail-closed**, bukan diabaikan.
+  - O-087 SELESAI (D-172). Batas schema pecahan tetap **ditolak fail-closed**, bukan diabaikan.
   Plafon teknis teks 200 karakter dan `decimal` mewarisi 2 desimal `moneyFromString`.
 - Migrasi modul ini pernah diubah sebelum deploy (review T-076); DB dev yang dibuat sebelum
   `4930514` harus reset schema `product` + hapus riwayat `product/%` sebelum `dbtools migrate`.
   Jalur DB kosong kini terkunci: `resetTestSchemas` ikut `DROP EXTENSION … CASCADE`
   (`tools/dbtools/lib.nim`), jadi `CREATE EXTENSION` benar-benar dieksekusi di setiap reset
-  lokal — O-088 SELESAI (T-152).
+  lokal - O-088 SELESAI (T-152).
 - UI ada di `/app/products` (daftar versi, approve/reject DRAFT; tombol hanya tampil bila sesi
-  memegang `product.catalog.approve`, server tetap memeriksa) — T-119 PR #5 (`db8122d`).
+  memegang `product.catalog.approve`, server tetap memeriksa) - T-119 PR #5 (`db8122d`).
   Pembuatan versi + binding masih lewat API/`ctl`.
 
 ## Klasifikasi simpanan koperasi (T-111)

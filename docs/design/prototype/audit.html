@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="id-ID" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Audit · Prototipe KRAN</title>
+    <script src="assets/theme-init.js"></script>
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/base.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <link rel="stylesheet" href="assets/screens-gov.css" />
+  </head>
+  <body data-title-key="audit.docTitle" class="gov-page">
+    <a class="skip-link" href="#main" data-i18n="common.skip">Lewati ke konten utama</a>
+    <p class="synthetic-strip" role="region" aria-label="Prototipe, data sintetis" data-i18n-aria-label="common.prototype" data-i18n="common.prototype">Prototipe, data sintetis</p>
+
+    <header class="app-header">
+      <a class="brand" href="index.html">
+        <span class="brand__name">KRAN</span>
+        <span class="brand__sub" data-i18n="common.appSub">Inti koperasi</span>
+      </a>
+      <p class="header-meta">
+        <span class="header-meta__item">
+          <span data-i18n="gov.businessDate">Tanggal buku</span>
+          <span class="header-meta__value" data-i18n="gov.ph.date">[TANGGAL]</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="audit.branch">Cabang</span>
+          <span class="header-meta__value" data-i18n="gov.branchValue">[NAMA CABANG] · 001</span>
+        </span>
+        <span class="header-meta__item">
+          <span data-i18n="gov.role">Peran</span>
+          <span class="header-meta__value" data-i18n="gov.role.board">Pengurus</span>
+        </span>
+      </p>
+    </header>
+
+    <div class="app-shell">
+      <nav class="app-nav" aria-label="Navigasi utama" data-i18n-aria-label="common.navMain">
+        <ul>
+          <li class="app-nav__group-label" data-i18n="common.navWork">Pekerjaan</li>
+          <li><a href="kas.html" data-i18n="common.kas">Kas</a></li>
+          <li><a href="anggota.html" data-i18n="gov.navMembers">Anggota</a></li>
+          <li><a href="laporan.html" data-i18n="gov.navReports">Laporan</a></li>
+          <li><a href="audit.html" aria-current="page" data-i18n="gov.navAudit">Audit</a></li>
+          <li class="app-nav__group-label" data-i18n="common.navPrototype">Prototipe</li>
+          <li><a href="komponen.html" data-i18n="common.components">Komponen</a></li>
+          <li><a href="index.html" data-i18n="common.home">Indeks</a></li>
+        </ul>
+      </nav>
+
+      <main id="main" class="app-main" tabindex="-1">
+        <div class="page-header">
+          <div>
+            <h1 data-i18n="audit.title">Audit</h1>
+            <p class="page-header__intro" data-i18n="audit.intro"></p>
+          </div>
+        </div>
+
+        <div class="gov-state-demo">
+          <span class="gov-state-demo__label" data-i18n="gov.stateDemo">Pratinjau state</span>
+          <div class="segmented segmented--sm" role="group" aria-label="Pratinjau state" data-i18n-aria-label="gov.stateDemo" id="audit-states">
+            <button type="button" data-gov-state="normal" aria-pressed="true" data-i18n="gov.state.normal">Normal</button>
+            <button type="button" data-gov-state="empty" aria-pressed="false" data-i18n="gov.state.empty">Kosong</button>
+            <button type="button" data-gov-state="loading" aria-pressed="false" data-i18n="gov.state.loading">Memuat</button>
+            <button type="button" data-gov-state="error" aria-pressed="false" data-i18n="gov.state.error">Galat</button>
+            <button type="button" data-gov-state="partial" aria-pressed="false" data-i18n="gov.state.partial">Sebagian</button>
+            <button type="button" data-gov-state="denied" aria-pressed="false" data-i18n="gov.state.denied">Tanpa izin</button>
+          </div>
+        </div>
+
+        <div class="alert alert--warning" id="audit-partial" role="status" hidden>
+          <svg class="icon alert__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 22 20H2Z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+          <p class="alert__body" data-i18n="audit.partial"></p>
+        </div>
+
+        <div id="audit-content">
+          <form class="filter-bar" id="audit-filter" role="search" aria-label="Filter jejak audit" data-i18n-aria-label="audit.filterLabel" onsubmit="return false">
+            <div class="field">
+              <label class="label" for="audit-search" data-i18n="audit.search">Objek atau rujukan</label>
+              <input class="input" id="audit-search" type="search" autocomplete="off" aria-describedby="audit-search-hint" />
+              <p class="hint" id="audit-search-hint" data-i18n="audit.searchHint"></p>
+            </div>
+            <div class="field">
+              <label class="label" for="audit-actor" data-i18n="audit.actor">Pelaku</label>
+              <select class="select" id="audit-actor">
+                <option value="" data-i18n="audit.actorAll">Semua pelaku</option>
+                <option value="cashier" data-i18n="audit.actorCashier">[AKTOR] · Kasir</option>
+                <option value="admin" data-i18n="audit.actorAdmin">[AKTOR] · Admin</option>
+                <option value="board" data-i18n="audit.actorBoard">[AKTOR] · Pengurus</option>
+                <option value="supervisor" data-i18n="audit.actorSupervisor">[AKTOR] · Pengawas</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="label" for="audit-action" data-i18n="audit.action">Aksi</label>
+              <select class="select" id="audit-action">
+                <option value="" data-i18n="audit.actionAll">Semua aksi</option>
+                <option value="deposit" data-i18n="audit.actionDeposit">Setor (masuk)</option>
+                <option value="withdrawal" data-i18n="audit.actionWithdrawal">Tarik (keluar)</option>
+                <option value="accountOpen" data-i18n="audit.actionAccountOpen">Buka rekening</option>
+                <option value="accountBlock" data-i18n="audit.actionAccountBlock">Blokir rekening</option>
+                <option value="param" data-i18n="audit.actionParam">Ubah parameter</option>
+                <option value="loanApprove" data-i18n="audit.actionLoanApprove">Setujui pinjaman</option>
+                <option value="close" data-i18n="audit.actionClose">Tutup buku</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="label" for="audit-from" data-i18n="audit.dateFrom">Dari tanggal</label>
+              <input class="input" id="audit-from" type="date" aria-describedby="audit-date-hint" />
+            </div>
+            <div class="field">
+              <label class="label" for="audit-to" data-i18n="audit.dateTo">Sampai tanggal</label>
+              <input class="input" id="audit-to" type="date" />
+            </div>
+            <button type="button" class="btn" id="audit-clear" data-i18n="gov.clearFilters">Hapus filter</button>
+            <p class="filter-bar__count" id="audit-count" role="status"></p>
+            <p class="hint gov-filter-hint" id="audit-date-hint" data-i18n="audit.dateHint"></p>
+          </form>
+
+          <p class="gov-scope-line" id="audit-scope"></p>
+
+          <div class="table-wrap" id="audit-region" role="region" tabindex="0" aria-label="Tabel jejak audit" data-i18n-aria-label="audit.tableRegion">
+            <table id="audit-table">
+              <caption data-i18n="audit.tableCaption">Jejak audit pada rentang ini</caption>
+              <thead>
+                <tr>
+                  <th scope="col" data-column="time" aria-sort="descending">
+                    <button type="button" class="sort-btn" data-gov-sort="time">
+                      <span data-i18n="audit.colTime">Waktu</span>
+                      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5v14"/><path d="m5 8 3-3 3 3"/><path d="M16 19V5"/><path d="m13 16 3 3 3-3"/></svg>
+                    </button>
+                  </th>
+                  <th scope="col" data-i18n="audit.colActor">Pelaku</th>
+                  <th scope="col" data-i18n="audit.colAction">Aksi</th>
+                  <th scope="col" data-i18n="audit.colObject">Objek</th>
+                  <th scope="col" data-i18n="audit.colReason">Alasan</th>
+                  <th scope="col" data-i18n="audit.colRef">Rujukan</th>
+                  <th scope="col" data-i18n="audit.colOpen">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="audit-tbody"></tbody>
+              <tfoot>
+                <tr>
+                  <th scope="row" colspan="6" data-i18n="audit.rowCount">Jumlah baris terlihat</th>
+                  <td class="num" id="audit-total">0</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <nav class="pagination gov-pagination" id="audit-pager" aria-label="Halaman audit" data-i18n-aria-label="audit.pagerLabel" hidden>
+            <span class="pagination__range" id="audit-range"></span>
+            <span class="pagination__range" id="audit-page-label"></span>
+            <label class="gov-page-size" for="audit-page-size">
+              <span data-i18n="gov.pageSize">Baris per halaman</span>
+              <select class="select" id="audit-page-size">
+                <option value="25">25</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+              </select>
+            </label>
+            <div class="pagination__pages">
+              <button type="button" class="btn btn--sm" id="audit-prev" data-i18n="gov.prev">Sebelumnya</button>
+              <span class="gov-pages" id="audit-pages"></span>
+              <button type="button" class="btn btn--sm" id="audit-next" data-i18n="gov.next">Berikutnya</button>
+            </div>
+          </nav>
+        </div>
+
+        <section class="empty-state" id="audit-denied" aria-labelledby="audit-denied-title" hidden>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <p class="empty-state__title" id="audit-denied-title" data-i18n="audit.deniedTitle">Tidak berizin membaca jejak audit.</p>
+          <p class="empty-state__body" data-i18n="audit.deniedBody"></p>
+          <div class="empty-state__actions">
+            <a class="btn" href="index.html" data-i18n="gov.backToIndex">Kembali ke indeks</a>
+          </div>
+        </section>
+
+        <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+      </main>
+    </div>
+
+    <footer class="settings-bar" aria-label="Pengaturan tampilan" data-i18n-aria-label="common.settings">
+      <div class="settings-group" role="group" aria-labelledby="theme-label">
+        <span class="settings-group__label" id="theme-label" data-i18n="common.theme">Tema</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-theme-set="light" aria-pressed="true" data-i18n="common.themeLight">Terang</button>
+          <button type="button" data-theme-set="dark" aria-pressed="false" data-i18n="common.themeDark">Gelap</button>
+        </div>
+      </div>
+      <div class="settings-group" role="group" aria-labelledby="language-label">
+        <span class="settings-group__label" id="language-label" data-i18n="common.language">Bahasa</span>
+        <div class="segmented segmented--sm">
+          <button type="button" data-locale-set="id" aria-pressed="true" data-i18n="common.langId">Indonesia</button>
+          <button type="button" data-locale-set="en" aria-pressed="false" data-i18n="common.langEn">English</button>
+        </div>
+      </div>
+      <span class="settings-bar__note" data-i18n="common.prefNote"></span>
+    </footer>
+
+    <dialog id="audit-detail-dialog" aria-labelledby="audit-detail-title" aria-describedby="audit-detail-summary">
+      <div class="dialog__header">
+        <h2 class="dialog__title" id="audit-detail-title" tabindex="-1" data-i18n="audit.detailTitle">Rincian aktivitas</h2>
+      </div>
+      <div class="dialog__body">
+        <p class="note" id="audit-detail-summary" data-i18n="audit.detailSummary"></p>
+        <div id="audit-detail-body"></div>
+      </div>
+      <div class="dialog__actions">
+        <button type="button" class="btn" data-copy-target="#audit-detail-ref" data-i18n="gov.copyRef">Salin rujukan</button>
+        <button type="button" class="btn" data-dialog-close data-initial-focus data-i18n="gov.close">Tutup</button>
+      </div>
+    </dialog>
+
+    <script src="assets/i18n-gov.js"></script>
+    <script src="assets/app.js" defer></script>
+    <script src="assets/screens-gov.js" defer></script>
+  </body>
+</html>

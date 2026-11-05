@@ -14,43 +14,43 @@ Lintas-modul: audit trail, outbox/inbox, parameter, kalender & business date, us
 | Repo denyut worker | `infrastructure/worker_repo.nim` | `touchWorkerHeartbeat`, `workerHeartbeatAgeSeconds`, `deadEventCount` (O-081) |
 | Repo inbox | `infrastructure/inbox_repo.nim` | `claimInbox` (de-dup per konsumen) |
 | Repo idempotency | `infrastructure/idempotency_repo.nim` | `claimIdempotency`, `completeIdempotency` (T-084) |
-| Migrasi | lihat `modules/platform/migrations/` | daftar lengkap ada di direktori itu; jangan menulis rentang nomor di sini — cepat basi |
+| Migrasi | lihat `modules/platform/migrations/` | daftar lengkap ada di direktori itu; jangan menulis rentang nomor di sini - cepat basi |
 
 `api.nim` (permukaan publik modul) belum dibuat: saat ini belum ada konsumen lintas-modul, jadi
 belum ada yang perlu diekspor.
 
 ## Tabel yang dimiliki
 
-- `platform.schema_migration` — dibuat `tools/dbtools`, bukan migrasi modul.
-- `platform.audit_log` — **append-only** + hash chain.
-- `platform.outbox`, `platform.inbox` — transactional outbox + de-dup.
-- `platform.worker_heartbeat` — denyut worker untuk `/readyz` (teknis, O-081).
-- `platform.param_definition`, `platform.param_value` — parameter framework (T-005).
-- `platform.param_end_request` — pengajuan pengakhiran nilai parameter (O-064): maker-checker
+- `platform.schema_migration` - dibuat `tools/dbtools`, bukan migrasi modul.
+- `platform.audit_log` - **append-only** + hash chain.
+- `platform.outbox`, `platform.inbox` - transactional outbox + de-dup.
+- `platform.worker_heartbeat` - denyut worker untuk `/readyz` (teknis, O-081).
+- `platform.param_definition`, `platform.param_value` - parameter framework (T-005).
+- `platform.param_end_request` - pengajuan pengakhiran nilai parameter (O-064): maker-checker
   dengan alasan wajib; persetujuan memangkas `platform.param_value.effective_to` **tanpa** menuntut
   nilai penerus, dan `NOTIFY` ikut dikirim agar cache in-proc tidak menjawab nilai yang berakhir.
-- `platform.holiday`, `platform.business_date` — kalender & tanggal buku (T-007).
+- `platform.holiday`, `platform.business_date` - kalender & tanggal buku (T-007).
 - `platform.app_user`, `platform.role`, `platform.permission`, `platform.role_permission`,
-  `platform.user_role`, `platform.role_conflict`, `platform.session` — identitas, akses, sesi (T-006).
-- `platform.user_mfa` — faktor kedua per akun (TOTP); rahasia **terenkripsi** (T-046).
-- `platform.branch` — master cabang: kode **3 digit** + nama (D-130). Kode dipakai sebagai prefiks
+  `platform.user_role`, `platform.role_conflict`, `platform.session` - identitas, akses, sesi (T-006).
+- `platform.user_mfa` - faktor kedua per akun (TOTP); rahasia **terenkripsi** (T-046).
+- `platform.branch` - master cabang: kode **3 digit** + nama (D-130). Kode dipakai sebagai prefiks
   nomor rekening; modul lain tetap menyimpan `branch_id` tanpa FK.
-- `platform.idempotency_key` — klaim `Idempotency-Key` per principal (T-084, D-098). Baris hanya
+- `platform.idempotency_key` - klaim `Idempotency-Key` per principal (T-084, D-098). Baris hanya
   ditulis di dalam transaksi bisnis; respons non-2xx tidak pernah disimpan; TTL dari parameter
   `platform.idempotency.ttl_hours`.
 
 ## Invarian yang tidak boleh dilanggar
 
 1. **Audit tidak bisa diubah**: trigger `audit_log_no_change_trg` menolak UPDATE/DELETE,
-   `audit_log_no_purge_trg` menolak TRUNCATE. Hash dihitung trigger `audit_log_chain_trg` —
+   `audit_log_no_purge_trg` menolak TRUNCATE. Hash dihitung trigger `audit_log_chain_trg` -
    jangan pernah menulis `hash`/`prev_hash` dari aplikasi.
 2. **Payload hash harus stabil**: `platform.audit_log_payload()` memakai UTC eksplisit dan
-   teks tanggal ISO. Jangan menambahkan kolom baru ke payload tanpa menyesuaikan fungsi itu —
+   teks tanggal ISO. Jangan menambahkan kolom baru ke payload tanpa menyesuaikan fungsi itu -
    `audit_verify()` akan melaporkan seluruh baris lama sebagai rusak.
 3. **Outbox ditulis satu transaksi** dengan perubahan state; `dedup_key` wajib unik dan
    bermakna (`<event>:<aggregate>:<versi>`).
 4. **Dispatcher memakai `claimBatch`** (`FOR UPDATE SKIP LOCKED`), bukan SELECT lalu UPDATE
-   terpisah — kalau tidak, dua dispatcher bisa mengirim peristiwa yang sama.
+   terpisah - kalau tidak, dua dispatcher bisa mengirim peristiwa yang sama.
 5. **Tidak ada nilai bisnis di kode**: `backoffSeconds`, `maxAttempts`, retensi audit, ukuran
    batch datang dari parameter DB (spec §10.4).
 
@@ -64,12 +64,12 @@ belum ada yang perlu diekspor.
 - Proteksi append-only bersandar pada trigger **dan** privilege: `kran_runtime` tidak punya
   `UPDATE/DELETE/TRUNCATE` pada `ledger.journal`/`journal_line`, `platform.audit_log`, serta
   `DELETE/TRUNCATE` pada `platform.param_value` (migrasi `0042`, O-010/D-110). Tabel immutable
-  **baru** wajib mencabut hak runtime di migrasinya sendiri — `ALTER DEFAULT PRIVILEGES` tidak
+  **baru** wajib mencabut hak runtime di migrasinya sendiri - `ALTER DEFAULT PRIVILEGES` tidak
   bisa mengecualikan tabel.
 - Lock `pg_advisory_xact_lock` pada rantai menyerialkan transaksi yang menulis audit. Aman
   untuk volume Fase 0; bila jadi leher botol, ganti dengan `seq` + retry (ADR kecil).
 - Verifikasi rantai (migrasi `0011`) mengikuti `prev_hash` dan tidak bergantung urutan `seq`, tetapi
-  tetap menolak **cabang** (dua baris menunjuk pendahulu yang sama) — cabang hanya bisa dibuat dengan
+  tetap menolak **cabang** (dua baris menunjuk pendahulu yang sama) - cabang hanya bisa dibuat dengan
   menulis langsung ke tabel tanpa trigger, dan penulis seperti itu sudah bisa menulis ulang ekor
   rantai (batas pertama di atas). Siklus tanpa genesis tidak terdeteksi, tetapi membuatnya butuh titik
   tetap fungsi hash, dan hash yang ditulis tangan tetap ketahuan lewat `row_hash_ok`. D-061 mencatat
@@ -79,7 +79,7 @@ belum ada yang perlu diekspor.
 
 `platform.outbox.seq` dialokasikan saat **INSERT**, sedangkan commit bisa terjadi dengan urutan
 berbeda. Pump realtime membaca tabel dengan kursor `seq` (`eventsAfter`), jadi bila urutan itu
-terbalik, peristiwa yang commit belakangan akan **terlewat** — bukan sekadar tertunda.
+terbalik, peristiwa yang commit belakangan akan **terlewat** - bukan sekadar tertunda.
 
 Aturan penulis: **transaksi yang menulis peristiwa outbox wajib menulis entri audit lebih dulu, di
 transaksi yang sama.** Trigger rantai audit memegang `pg_advisory_xact_lock(hashtext(
@@ -88,7 +88,7 @@ outbox mengikuti urutan `seq` outbox-nya.
 
 **Catatan `seq` audit (O-038, T-052)**: yang dijamin lock ini adalah urutan **commit** antar penulis
 audit, **bukan** urutan `seq` audit. `seq` audit dialokasikan identity sebelum trigger mengambil
-lock, jadi baris ber-`seq` lebih besar bisa commit lebih dulu — rantainya tetap linear, hanya
+lock, jadi baris ber-`seq` lebih besar bisa commit lebih dulu - rantainya tetap linear, hanya
 urutannya tidak mengikuti `seq` (direproduksi deterministik di `tests/itplatform.nim`, suite O-038).
 Karena itu sejak migrasi `0011` verifikasi rantai mengikuti `prev_hash`, bukan
 `lag(hash) OVER (ORDER BY seq)`, dan hasilnya tidak bergantung urutan commit. Untuk outbox tidak ada
@@ -96,14 +96,14 @@ yang berubah: penulis yang menulis audit lebih dulu sudah terserialkan sebelum b
 dialokasikan.
 
 Ini bukan konvensi gaya. Dua test di `tests/itoutboxcursor.nim` menjaga keduanya: (1) penulis kedua
-benar-benar menunggu commit penulis pertama dan `seq`-nya lebih besar — **GAGAL** bila lock audit
+benar-benar menunggu commit penulis pertama dan `seq`-nya lebih besar - **GAGAL** bila lock audit
 dilepas; (2) bila aturan itu dilanggar (event tanpa audit lebih dulu), kursor `seq` memang melewatkan
 peristiwa yang commit belakangan.
 
 ## Menjalankan
 
 ```
-./task devdb up                # tunnel DB dev (lihat docs/runbooks/dev-db.md)
+./task devdb up                # tunnel DB dev (lihat docs/OPERATIONS.md)
 ./task test itplatform         # test integrasi modul ini (butuh KRAN_DATABASE_URL)
 ./task dbtools migrate         # menerapkan migrasi
 ```
@@ -115,53 +115,53 @@ Migrasi ditulis dengan pola **expand-only**; perubahan destruktif butuh header
 
 | Bagian | Berkas |
 |---|---|
-| Domain | `domain/param.nim` — urutan resolusi, validasi schema (subset), konversi bertipe |
-| Repo | `infrastructure/param_repo.nim` — kandidat pada `as_of`, submit/approve/reject, `missingActiveKeys`, `LISTEN/NOTIFY` |
+| Domain | `domain/param.nim` - urutan resolusi, validasi schema (subset), konversi bertipe |
+| Repo | `infrastructure/param_repo.nim` - kandidat pada `as_of`, submit/approve/reject, `missingActiveKeys`, `LISTEN/NOTIFY` |
 | Migrasi | `0004_platform_parameter.sql` |
 
 Invarian tambahan:
 
-6. **Satu nilai berlaku per (key, scope, tanggal)** — EXCLUDE menjangkau `ACTIVE` **dan**
+6. **Satu nilai berlaku per (key, scope, tanggal)** - EXCLUDE menjangkau `ACTIVE` **dan**
    `SUPERSEDED` (D-008). Nilai lama dipangkas (`effective_to`), bukan dihapus.
 7. **Semua aktivasi butuh orang kedua** (`checker <> maker`, ditegakkan skema). Aktivasi menulis
    audit + event `ParamChanged` ke outbox + `NOTIFY platform_param_changed`.
 8. **Tidak ada fallback**: key tanpa nilai berlaku → pemanggil melempar `ParamNotFound`
    (spec §10.6). Jangan menambahkan default di kode. Startup check (`missingActiveKeys`, O-057)
    memakai jalur `resolveCandidate` + `lookupFor` yang **sama** dengan pembacaan runtime, jadi
-   "aktif" di sini berarti "terlihat resolusi" — `GLOBAL` selalu terlihat, tetapi `scopeId` kosong
+   "aktif" di sini berarti "terlihat resolusi" - `GLOBAL` selalu terlihat, tetapi `scopeId` kosong
    bukan wildcard (kandidat ber-id konkret tidak menggantikan).
-9. **Lookup scope bertipe eksplisit** (D-041): `ScopeValueLookup` mengembalikan `Option[string]` —
+9. **Lookup scope bertipe eksplisit** (D-041): `ScopeValueLookup` mengembalikan `Option[string]` -
    `some(id)` berarti tipe itu diminta, dan `some("")` **sah** (institusi akar, `scope_id` NULL);
    `none` berarti tidak diminta. Id kosong bukan wildcard, dan tidak ada fallback antar level.
 10. **Visibilitas daftar mengikuti wewenang baca, dan disaring di query** (D-046 butir 6, D-047/D-055):
    aturan "grant mana menutupi scope mana" hidup satu kali di `domain/authz` (`readableScopeFilter`;
    `mayReadScope` diturunkan dari padanya). `paramValueRows`/`listAudit` hanya menerjemahkannya ke SQL,
-   **bukan** menyaring setelah `LIMIT` — kalau disaring belakangan, baris yang tidak boleh dibaca
+   **bukan** menyaring setelah `LIMIT` - kalau disaring belakangan, baris yang tidak boleh dibaca
    memakan jatah halaman. `GLOBAL` selalu terlihat; `INSTITUTION` hanya untuk grant tanpa batas cabang;
    `BRANCH` per cabang yang ditutup grant; `PRODUCT`/`SEGMENT`/`ROLE` gagal-tertutup (belum ada model
    keanggotaan). Pengajuan nilai memakai predikat yang sama (pengaju tidak boleh mengusulkan lebih dari
    yang ia boleh baca) → `403 scope_not_readable`. Pembacaan cabang di luar cabang tugas menulis
-   `param.read_cross_branch` — satu entri per cabang — dan bila pencatatan itu gagal, permintaannya
+   `param.read_cross_branch` - satu entri per cabang - dan bila pencatatan itu gagal, permintaannya
    ikut gagal (jangan menyajikan tanpa jejak).
-   Gerbang HTTP-nya dua tingkat (T-058, D-062): rute **daftar** memakai `authorizeAnyBranch` — izin
-   cukup dipegang di suatu cabang, penyaringan per baris yang menentukan apa yang terlihat — dan rute
+   Gerbang HTTP-nya dua tingkat (T-058, D-062): rute **daftar** memakai `authorizeAnyBranch` - izin
+   cukup dipegang di suatu cabang, penyaringan per baris yang menentukan apa yang terlihat - dan rute
    yang menyentuh **satu** objek ber-cabang menambah `authorizedAtBranch` dengan cabang objeknya
    (pengajuan: `scopeId` ber-scope `BRANCH`; persetujuan: cabang baris yang diaktifkan, diperiksa
    sebelum alasan 409). `targetBranch = ""` selalu berarti institusi. Atribusi baris audit mengikuti
    **objek** yang disentuh, bukan cabang tugas pelaku, dan hanya terisi bila pengenalnya berbentuk
    uuid (O-017).
 11. **`effectiveTo` hanya sah bila ada penerus** (O-043, D-046 butir 8): nilai ber-`effective_to` tidak
-   boleh diaktifkan kalau tanggal berakhirnya tidak ditutup baris lain pada (key, scope) yang sama —
+   boleh diaktifkan kalau tanggal berakhirnya tidak ditutup baris lain pada (key, scope) yang sama -
    kalau lolos, tanggal setelahnya tidak punya nilai berlaku (aplikasi gagal-cepat, spec §10.6) dan
    pemeriksaan lintas-parameter melewati tanggal itu (temuan review D-029). Vonisnya satu fungsi
    (`effectiveToGapProblem`) dan dipanggil dari **dua** pintu HTTP: pengajuan (400
-   `effective_to_without_successor`) dan persetujuan (409, alasan sama) — persetujuan ikut memeriksa
+   `effective_to_without_successor`) dan persetujuan (409, alasan sama) - persetujuan ikut memeriksa
    karena penerus bisa hilang di antara keduanya. Penerus = baris (key, scope) sama yang berlaku pada
    tanggal `effectiveTo` **dan** mulai pada atau setelah `effective_from` kandidat; batas kedua itu
    yang membuat kasus jahat ketahuan: persetujuan **memangkas** nilai ACTIVE yang mulai lebih awal
    (`supersedePreviousValues`), jadi nilai lama yang masih terbuka bukan penerus. Status yang
    dihitung: `ACTIVE`, `SUPERSEDED` (masih menjawab tanggal di dalam rentangnya, D-008), `PENDING`
-   (saat nilai terbatas diajukan, penerusnya memang masih PENDING — urutan yang sah: ajukan penerus →
+   (saat nilai terbatas diajukan, penerusnya memang masih PENDING - urutan yang sah: ajukan penerus →
    setujui nilai terbatas → setujui penerus; menyetujui penerus lebih dulu memangkas nilai lama sampai
    `effective_from` penerus, sehingga rentang sebelumnya tidak bisa diisi lagi oleh baris baru karena
    bertabrakan dengan riwayat pangkasan itu, EXCLUDE); `DRAFT` tidak.
@@ -176,8 +176,8 @@ Jebakan yang sudah ditemukan (jangan diulang):
 
 | Bagian | Berkas |
 |---|---|
-| Domain | `domain/calendar.nim` — `CalendarShape`, hari kerja, `nextWorkingDay`, `closeLevelsFor`, state + `canTransition` |
-| Repo | `infrastructure/calendar_repo.nim` — bentuk kalender dari param, `platform.holiday`, lifecycle business date (`ensure`/`transition`/`rollover`), `workingDayInfo` |
+| Domain | `domain/calendar.nim` - `CalendarShape`, hari kerja, `nextWorkingDay`, `closeLevelsFor`, state + `canTransition` |
+| Repo | `infrastructure/calendar_repo.nim` - bentuk kalender dari param, `platform.holiday`, lifecycle business date (`ensure`/`transition`/`rollover`), `workingDayInfo` |
 | Migrasi | `0005_platform_calendar.sql` |
 | Parameter | `platform.calendar.weekend_days` (json, nomor hari ISO 1=Senin…7=Minggu), `platform.calendar.fiscal_year_start_month` |
 
@@ -189,7 +189,7 @@ Invarian tambahan:
     `current_business_date` pada baris `CLOSED` (state kembali `OPEN`). Reopen/reverse EOD
     dilarang sampai ada kebijakan approval (§11.7). Transisi dijaga `canTransition` + CAS
     (`UPDATE ... WHERE state = expected`).
-11. **`current_business_date`, bukan `current_date`** — D-011; keunikan scope lewat
+11. **`current_business_date`, bukan `current_date`** - D-011; keunikan scope lewat
     `UNIQUE INDEX (scope_type, COALESCE(scope_id,''))`, karena Postgres menolak ekspresi di PK.
 
 Catatan penempatan: `CloseLevel` hidup di `shared/kernel/dayclose.nim` (D-148). Kalender
@@ -200,11 +200,11 @@ dua modul menembus internal satu sama lain.
 
 | Bagian | Berkas |
 |---|---|
-| Domain otorisasi | `domain/authz.nim` — kode izin `modul.resource.action`, branch scoping, `authorize` (satu cabang) + `authorizeAnyBranch` (set-level, T-058), SoD fail-closed, kebijakan sesi & password |
-| Domain scope | `domain/scope.nim` — `ScopeRef` + konvensi lookup parameter (dipakai kalender & auth) |
-| Hash password | `infrastructure/password_hasher.nim` — PBKDF2-HMAC-SHA256; hash token sesi (SHA-256) |
-| Repo | `infrastructure/auth_repo.nim` — user/lockout, role/permission/SoD, sesi |
-| Alur | `infrastructure/auth_service.nim` — `authenticate`, `sessionFor`, `touch`, `logout`, `logoutAll`, `authorizeUser`, `changePassword`, `bootstrapFirstAdmin`, `createUserWithRole`, `roleAssignmentProblem` |
+| Domain otorisasi | `domain/authz.nim` - kode izin `modul.resource.action`, branch scoping, `authorize` (satu cabang) + `authorizeAnyBranch` (set-level, T-058), SoD fail-closed, kebijakan sesi & password |
+| Domain scope | `domain/scope.nim` - `ScopeRef` + konvensi lookup parameter (dipakai kalender & auth) |
+| Hash password | `infrastructure/password_hasher.nim` - PBKDF2-HMAC-SHA256; hash token sesi (SHA-256) |
+| Repo | `infrastructure/auth_repo.nim` - user/lockout, role/permission/SoD, sesi |
+| Alur | `infrastructure/auth_service.nim` - `authenticate`, `sessionFor`, `touch`, `logout`, `logoutAll`, `authorizeUser`, `changePassword`, `bootstrapFirstAdmin`, `createUserWithRole`, `roleAssignmentProblem` |
 | Migrasi | `0006_platform_auth.sql` (tabel) + `0008_platform_rbac_catalogue.sql` (katalog izin & role sistem) + `0010_platform_password_history.sql` (riwayat hash kata sandi) + `0028_platform_rbac_role_scope.sql` (kolom `role.scope` + izin baca parameter teller) + `0032_platform_rbac_admin_roles.sql` (peran admin sempit + pasangan SoD, T-118) |
 
 Invarian tambahan:
@@ -212,7 +212,7 @@ Invarian tambahan:
 12. **Password tidak pernah disimpan/di-log mentah**: DB hanya menyimpan
     `algo$iterasi$salt$digest`; parameter KDF ikut tersimpan supaya hash lama tetap valid.
 13. **Kebijakan dari parameter** (spec §10.4): panjang minimum password, iterasi PBKDF2, batas
-    gagal login, masa lockout, umur sesi idle/absolut — plus kelas karakter & riwayat kata sandi
+    gagal login, masa lockout, umur sesi idle/absolut - plus kelas karakter & riwayat kata sandi
     (invarian 21). Tidak ada default di kode.
 14. **Token sesi hanya ada di memori/klien**: DB menyimpan hash-nya (`session.token_hash`).
 15. **SoD fail-closed**: penugasan role berkonflik ditolak `grantRole`; bila konflik tetap ada di
@@ -222,10 +222,10 @@ Invarian tambahan:
     **Kata sandi selalu diverifikasi lebih dulu** (O-034): `locked`/`inactive` baru diberitahukan
     setelah kata sandi benar, dan akun tak dikenal mengerjakan PBKDF2 tiruan berbiaya setara
     (`dummyPasswordHash`) supaya waktu respons tidak membedakan. Biaya tiruan mengikuti parameter
-    iterasi saat ini; akun lama yang hash-nya dibuat dengan iterasi berbeda tidak ikut setara —
+    iterasi saat ini; akun lama yang hash-nya dibuat dengan iterasi berbeda tidak ikut setara -
     yang dijaga adalah kesetaraan dengan "akun yang wajar".
 17. **Admin pertama sekali-jalan** (T-027): `bootstrapFirstAdmin` menolak bila username sudah ada
-    atau sudah ada pengguna yang memegang role admin — jadi perintah `ctl bootstrap-admin` tidak
+    atau sudah ada pengguna yang memegang role admin - jadi perintah `ctl bootstrap-admin` tidak
     bisa diam-diam jadi jalur membuat admin kedua. Kata sandi awalnya diacak CSPRNG, dicetak sekali
     ke stdout, hanya hash-nya tersimpan, dan pengguna dibuat `must_change_password = true`.
 18. **Sesi wajib-ganti hanya boleh mengganti kata sandi**: `requirePermission` (satu tempat, di
@@ -237,11 +237,11 @@ Invarian tambahan:
     menerapkan `packs/*/seed/*.sql` dengan `--dev`, sehingga katalog di sana berarti admin pertama di
     produksi dibuat tanpa satu pun izin (`0008_platform_rbac_catalogue.sql`).
 20. **Kata sandi lama yang salah dihitung dan diaudit** (O-050, D-046 butir 8): `changePassword`
-    memakai penghitung gagal yang **sama** dengan login (`recordLoginFailure` — angka dari parameter
+    memakai penghitung gagal yang **sama** dengan login (`recordLoginFailure` - angka dari parameter
     `max_failed_logins`/`lockout_minutes`), jadi tidak ada kebijakan kedua yang harus dijaga selaras;
     login yang berhasil mengosongkannya lagi. Jejaknya `user.password_change.failure` berisi alasan +
     keadaan penghitung, tidak pernah bahan kata sandi. Batasnya berarti: kunci akun berlaku juga
-    untuk login berikutnya (kata sandi benar sekalipun), dan itu disengaja — pelaku yang memegang sesi
+    untuk login berikutnya (kata sandi benar sekalipun), dan itu disengaja - pelaku yang memegang sesi
     sah tidak boleh bisa menebak kata sandi lama tanpa batas.
 21. **Kata sandi baru: panjang + kelas karakter + riwayat; kedaluwarsa tidak ada** (O-052, D-046
     butir 8). `passwordProblems` (`domain/authz.nim`) menilai panjang, keragaman kelas
@@ -250,32 +250,32 @@ Invarian tambahan:
     yang **sedang berlaku** atau salah satu dari N terakhir (`password_history_count`) di
     `platform.user_password_history`. Tabel itu menyimpan hash saja (invarian 12) dan hanya yang
     **sudah digantikan**: hash aktif tetap tunggal di `app_user.password_hash`, dan barisnya
-    dipangkas ke N terakhir di jalur tulis — tidak ada tabel yang tumbuh tanpa batas dan tidak ada
+    dipangkas ke N terakhir di jalur tulis - tidak ada tabel yang tumbuh tanpa batas dan tidak ada
     tugas pembersih terpisah. Yang dijaga adalah **jendela** N terakhir, bukan larangan selamanya.
     **Kedaluwarsa kata sandi tidak dibangun** (D-046 butir 8): tidak ada kolom umur dan tidak ada
-    penolakan karena umur — invarian ini yang menahan penambahannya kembali.
+    penolakan karena umur - invarian ini yang menahan penambahannya kembali.
 22. **Dua tingkat gerbang izin; atribusi cabang mengikuti objek yang disentuh** (T-058, D-062).
     `authorizeAnyBranch` menjawab "izin dipegang di suatu cabang" dan dipakai rute daftar
-    (`GET /api/v1/params`, `GET /api/v1/audit`) yang hasilnya disaring per baris — menuntut satu
+    (`GET /api/v1/params`, `GET /api/v1/audit`) yang hasilnya disaring per baris - menuntut satu
     cabang di situ akan menolak pembacaan yang sah. Aksi atas **satu** objek tetap memakai
     `authorize(targetBranch)` yang dipanggil begitu cabang objeknya diketahui. `targetBranch = ""`
     selalu berarti institusi, jadi grant khusus cabang tidak pernah diam-diam menjadi izin institusi
     (dan sebaliknya, grant institusi tidak menjadi izin cabang). `auditContextFor` mengisi
-    `branchIds` dari objek itu — nilai parameter yang diajukan/disetujui, atau cabang yang dibaca
-    untuk `param.read_cross_branch` — bukan dari cabang tugas pelaku: auditor cabang itu yang perlu
+    `branchIds` dari objek itu - nilai parameter yang diajukan/disetujui, atau cabang yang dibaca
+    untuk `param.read_cross_branch` - bukan dari cabang tugas pelaku: auditor cabang itu yang perlu
     melihat tindakan atas datanya, termasuk pembacaan dari pusat. Pengenal non-uuid membuat barisnya
-    tetap tanpa cabang (kolomnya bertipe uuid, O-017) tanpa cast paksa — cast akan melempar dan
+    tetap tanpa cabang (kolomnya bertipe uuid, O-017) tanpa cast paksa - cast akan melempar dan
     mengubah permintaan sah menjadi 500. Langganan realtime sengaja **tetap** tingkat institusi
     (fail-closed) sampai peristiwanya disaring per cabang (O-070).
 23. **Scope role ditegakkan saat pemberian, bukan ditebak dari cabang** (RBAC hardening).
     `platform.role.scope` bernilai `INSTITUTION` atau `BRANCH` (0028). Role `BRANCH` (hanya
     `teller`) wajib diberi **tepat satu** cabang berbentuk UUID; role `INSTITUTION` wajib
     **tanpa** cabang. `roleAssignmentProblem` memeriksa pasangan itu **sebelum** baris apa pun
-    ditulis, dan `createUserWithRole` mengembalikan `false` bila tidak sah — tanpa itu role
+    ditulis, dan `createUserWithRole` mengembalikan `false` bila tidak sah - tanpa itu role
     bercabang tanpa cabang mendapat grant global (melihat semua cabang), dan role institusi dengan
     cabang menghasilkan akun mati (rute institusi mengotorisasi pada `targetBranch = ""`). Bila
     pemberian role gagal **setelah** pengguna disisipkan, `createUserWithRole` melempar galat
-    (bukan `false`) supaya pembungkus transaksi `withRoleDb` me-rollback baris itu — `withTx`
+    (bukan `false`) supaya pembungkus transaksi `withRoleDb` me-rollback baris itu - `withTx`
     COMMIT begitu `body` kembali normal, jadi `false` akan meng-commit akun setengah jadi.
     Siklus hidup (assign/revoke role, disable/enable/unlock) dilakukan lewat `ctl` dengan audit +
     pencabutan sesi dalam satu transaksi; `revoke-role`/`disable-user` menolak bila operasinya
@@ -288,10 +288,10 @@ Catatan: alur auth tinggal di `infrastructure` (butuh DB). Saat port/use case la
 
 | Bagian | Berkas |
 |---|---|
-| Layanan | `infrastructure/auth_service.nim` — `grantUserRole`, `revokeUserRole`, `disableUserAccount`, `enableUserAccount`, `unlockUserAccount` (+ `locksOutLastAdmin`); aturan siklus hidup **satu definisi**, dipakai `ctl` dan rute HTTP |
-| Repo | `infrastructure/auth_repo.nim` — `listUsers`, `roleGrantsOfUser`, `listRoles`, `countUsersWithRole`, dan (T-118) `roleGrantsPermission`, `userHasPermission`, `userHasPermissionExcludingRole`, `countActiveUsersWithPermission` |
-| HTTP | `apps/api/src/handlers_users.nim` — `GET /api/v1/users`, `GET /api/v1/roles`, `POST /api/v1/users/{userId}/roles`, `DELETE …/roles/{role}`, `POST …/disable|enable|unlock` |
-| Migrasi | `0029_platform_rbac_user_admin.sql` — izin `platform.user.manage` untuk `platform_admin` |
+| Layanan | `infrastructure/auth_service.nim` - `grantUserRole`, `revokeUserRole`, `disableUserAccount`, `enableUserAccount`, `unlockUserAccount` (+ `locksOutLastAdmin`); aturan siklus hidup **satu definisi**, dipakai `ctl` dan rute HTTP |
+| Repo | `infrastructure/auth_repo.nim` - `listUsers`, `roleGrantsOfUser`, `listRoles`, `countUsersWithRole`, dan (T-118) `roleGrantsPermission`, `userHasPermission`, `userHasPermissionExcludingRole`, `countActiveUsersWithPermission` |
+| HTTP | `apps/api/src/handlers_users.nim` - `GET /api/v1/users`, `GET /api/v1/roles`, `POST /api/v1/users/{userId}/roles`, `DELETE …/roles/{role}`, `POST …/disable|enable|unlock` |
+| Migrasi | `0029_platform_rbac_user_admin.sql` - izin `platform.user.manage` untuk `platform_admin` |
 
 Izin `platform.user.manage` adalah aksi **tingkat institusi**: kedua gerbang `requirePermission`
 (izin dipegang) **dan** `authorizedAtBranch(..., "")` (grant tanpa batas cabang) harus lolos. Audit
@@ -315,7 +315,7 @@ peran sempit dan menyemai pasangan konflik antar peran itu:
 
 Pasangan `platform.role_conflict` (kanonik `a < b`): wajib `product_checker`/`product_maker` dan
 `cash_admin`/`ledger_admin`; *nice to have* `ledger_admin`/`ops_admin`, `ledger_admin`/`teller`,
-`cash_admin`/`teller`. **`platform_admin` tetap ada sebagai break-glass** — bukan peran harian, dan
+`cash_admin`/`teller`. **`platform_admin` tetap ada sebagai break-glass** - bukan peran harian, dan
 sengaja tidak dipasangkan konflik agar override darurat tetap bisa dipakai (wajib beralasan + audit +
 laporan ke pengurus; memo T-118 §3).
 
@@ -330,13 +330,13 @@ dan rute HTTP; `reason` stabil `last_admin` (kode keluar 3 / HTTP 409) tidak ber
 
 | Bagian | Berkas |
 |---|---|
-| Migrasi | `0030_platform_branch_master.sql` — tabel `platform.branch` + cabang pilot `001` (`b0000000-…-001`) |
-| Repo | `infrastructure/branch_repo.nim` — `branchById`, `branchByCode`, `insertBranch`, `listBranches`, `validBranchCode` |
-| ctl | `apps/api/src/main.nim` — `create-branch --branch-code=<3 digit> --branch-name=<nama>` (audit `branch.create`, kode keluar 3 untuk kode tidak sah/duplikat) |
+| Migrasi | `0030_platform_branch_master.sql` - tabel `platform.branch` + cabang pilot `001` (`b0000000-…-001`) |
+| Repo | `infrastructure/branch_repo.nim` - `branchById`, `branchByCode`, `insertBranch`, `listBranches`, `validBranchCode` |
+| ctl | `apps/api/src/main.nim` - `create-branch --branch-code=<3 digit> --branch-name=<nama>` (audit `branch.create`, kode keluar 3 untuk kode tidak sah/duplikat) |
 
 Kode cabang **tidak boleh diubah** begitu ada nomor rekening yang memakainya: nomor rekening adalah
 identitas bisnis (D-130). Perbaikan kode hanya lewat migrasi + analisis data. **Baca** cabang lewat
-HTTP sudah ada — `GET /api/v1/branches` (izin `platform.branch.read`, `0037`/T-121); membuat atau
+HTTP sudah ada - `GET /api/v1/branches` (izin `platform.branch.read`, `0037`/T-121); membuat atau
 mengubah cabang tetap lewat `ctl create-branch` (O-101 sebagian selesai).
 
 ## MFA TOTP (T-046, spec §13/§18.2)
@@ -354,14 +354,14 @@ Invarian tambahan:
 15. **Rahasia TOTP tidak pernah disimpan sebagai plaintext** dan tidak pernah bisa dibaca ulang lewat
     API: `encryptField` (AAD = nama tabel `user_mfa`) saat pendaftaran, `decryptField` hanya untuk
     memverifikasi. Tanpa `KRAN_KEK_FILE` rutenya menolak (501) alih-alih menulis apa pun.
-16. **Digit dan periode tersimpan per baris** dan dipakai saat verifikasi — parameter yang berubah
+16. **Digit dan periode tersimpan per baris** dan dipakai saat verifikasi - parameter yang berubah
     hanya memengaruhi pendaftaran **baru**. `drift_steps` tetap parameter: itu toleransi jam, bukan
     bentuk rahasia.
 17. **Enrolment tidak mengganti faktor `ACTIVE`** (409 `mfa_already_active`); hanya `PENDING` yang
-    bisa ditimpa. Faktor yang sudah aktif adalah keadaan yang pemulihannya butuh alur sendiri —
+    bisa ditimpa. Faktor yang sudah aktif adalah keadaan yang pemulihannya butuh alur sendiri -
     lihat O-071.
 18. **`mfa.enabled` default `false`**, dan gerbang itu diputuskan **sebelum** apa pun menyentuh
-    kripto/data: selama mati, rute MFA menjawab 403 `mfa_disabled` dan tidak ada baris yang lahir —
+    kripto/data: selama mati, rute MFA menjawab 403 `mfa_disabled` dan tidak ada baris yang lahir -
     termasuk di instalasi tanpa `KRAN_KEK_FILE` (periksa keyring **setelah** gerbang fitur) maupun di
     instalasi yang nilai `platform.security.mfa.*`-nya belum tersemai (saklar dibaca lewat
     `activeValueOpt`: tidak ada nilai → fitur mati, bukan 500). Pemanggil karena itu tidak bisa
@@ -374,11 +374,11 @@ Invarian tambahan:
     beserta bentuk pendaftaran (status, digit, periode).
 20. **Respons ditulis setelah transaksi selesai**, tidak dari dalam closure `withDbTx`: COMMIT yang
     gagal setelah respons terkirim akan mengirim respons kedua di koneksi yang sama. Respons yang
-    memuat rahasia (201 pendaftaran) memakai `Cache-Control: no-store` — rahasia TOTP adalah
+    memuat rahasia (201 pendaftaran) memakai `Cache-Control: no-store` - rahasia TOTP adalah
     kredensial berumur panjang.
 21. **Kewajiban faktor kedua saat login terpisah dari saklar layanan** (O-071,
     `platform.security.mfa.require_login`, default `false`, dan hanya berlaku bila
-    `mfa.enabled` hidup — tanpa rute verifikasi yang hidup sesi setengah tidak bisa dinaikkan).
+    `mfa.enabled` hidup - tanpa rute verifikasi yang hidup sesi setengah tidak bisa dinaikkan).
     Bila hidup dan akun punya faktor `ACTIVE`, login membuat sesi **setengah**
     (`session.mfa_pending = true`): cookie terbit dan jawabannya 403 `mfa_required`, lalu
     `POST /api/v1/auth/mfa/challenge` memverifikasi kode terhadap faktor yang sudah ada (tanpa
@@ -387,9 +387,9 @@ Invarian tambahan:
     `sessionCanWork` ikut menolaknya untuk realtime. Akun **tanpa** faktor `ACTIVE` tetap mendapat
     sesi penuh (dicatat audit `mfa_enrolment_missing`): menolaknya akan mengunci pengguna yang
     belum mendaftar, sementara rute pendaftaran butuh sesi. Belum ada pembatas percobaan kode, kode
-    pemulihan, atau UI faktor — sisa O-071.
+    pemulihan, atau UI faktor - sisa O-071.
 
-Catatan: tugas wajib-ganti-kata-sandi dan MFA keduanya **tidak** memakai `requirePermission` —
+Catatan: tugas wajib-ganti-kata-sandi dan MFA keduanya **tidak** memakai `requirePermission` -
 alasan yang sama (pengguna harus bisa menyelesaikan keadaan akunnya sendiri, termasuk saat ia belum
 boleh memakai rute ber-izin).
 
@@ -406,7 +406,7 @@ boleh memakai rute ber-izin).
 Invarian tambahan:
 
 9. **NOTIFY bukan pengangkut data**: payload hanya `outbox_id`; isi peristiwa dibaca dari tabel.
-   Kanal dipakai bersama `outbox_listener.nim` (nama konstanta di sana) — jangan mengarang kanal
+   Kanal dipakai bersama `outbox_listener.nim` (nama konstanta di sana) - jangan mengarang kanal
    baru di modul lain.
 10. **Urutan peristiwa memakai `seq`** (`bigint identity`), bukan `occurred_at`; resume token yang
     tidak dikenal diperlakukan sebagai "mulai dari awal", dan klien de-dup berdasarkan `id`.
@@ -414,7 +414,7 @@ Invarian tambahan:
     stream tertutup untuk semua identitas. Uji menyuntikkan kebijakannya sendiri
     (`allowAllPolicy` di transport, uji topik per-izin untuk yang lain).
 12. **Pump menyambung ulang, dan titik mulai hanya ditetapkan pada sambungan pertama** (T-029):
-    putusnya koneksi DB pump tidak mematikan realtime diam-diam — pump menyambung ulang dengan
+    putusnya koneksi DB pump tidak mematikan realtime diam-diam - pump menyambung ulang dengan
     backoff, dan lamanya keadaan itu terbaca lewat `pumpDegradedSeconds`. `lastEventId` **tidak**
     di-reset ke "peristiwa terbaru" saat menyambung ulang: itu akan melewati peristiwa yang terjadi
     selama putus, padahal pembacaannya memang dari tabel lewat token yang sama. Keadaan itu juga
@@ -427,13 +427,13 @@ Invarian tambahan:
 13. **Izin diperiksa ulang per klien, bukan sekali saat handshake** (T-030): `sweepSessions` memeriksa
     tiap klien **paling sering** sekali per `sessionRecheckSeconds` (bukan setiap peristiwa) dan
     menutup langganan yang sesi/izinnya sudah tidak sah. Konsekuensi yang diterima: ada jendela
-    staleness maksimum satu interval — peristiwa masih bisa terkirim antara izin dicabut dan
+    staleness maksimum satu interval - peristiwa masih bisa terkirim antara izin dicabut dan
     pemeriksaan berikutnya (`0` berarti setiap putaran pump). Satu koneksi pump menempati satu koneksi
     pool, jadi jumlahnya ikut menentukan kebutuhan pool.
 14. **Transport bersandar pada dua sifat Mummy yang tidak dijanjikan API publiknya** (T-034, D-037):
-    `send` aman dari thread lain (pump) sambil handler memakai soket yang sama — penjaminnya adalah
+    `send` aman dari thread lain (pump) sambil handler memakai soket yang sama - penjaminnya adalah
     antrean kirim per koneksi; dan `close` aman dari thread lain serta tidak menutup soket klien lain
     setelah `forget`. Bila versi minor mengubahnya **tidak ada** kegagalan kompilasi, hanya pesan yang
-    hilang atau soket yang menggantung saat beban — karena itu `kran.nimble` membatasi
+    hilang atau soket yang menggantung saat beban - karena itu `kran.nimble` membatasi
     `mummy >= 0.4.8 & < 0.5.0` dan ada daftar periksa upgrade di D-037. Antrean kirim keluar masih
     tidak dibatasi (O-028).

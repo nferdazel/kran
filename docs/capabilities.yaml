@@ -1,0 +1,373 @@
+# Capability ledger source. Keep ids and statuses identical to docs/CAPABILITIES.md.
+# status: delivered | partial | missing
+- id: C-01
+  title: "Sign in, keep a session, and change a password"
+  persona: "Kasir, Admin"
+  screen: "/login"
+  endpoint: "login, changePassword"
+  evidence: "apps/web/tests/e2e/flow.spec.ts"
+  status: delivered
+- id: C-02
+  title: "Hold a role and branch scope that the server enforces on every call"
+  persona: "Admin"
+  screen: "every route"
+  endpoint: "authorize"
+  evidence: "apps/api/tests/itapi_roles.nim"
+  status: delivered
+- id: C-03
+  title: "Submit and approve a parameter change as maker and checker"
+  persona: "Manajer, Admin"
+  screen: "/app/params"
+  endpoint: "submitParamChange, approveParamChange"
+  evidence: "modules/platform/tests/itparam.nim"
+  status: delivered
+- id: C-04
+  title: "Read the audit trail for an actor, entity, or date"
+  persona: "Admin, Manajer"
+  screen: "/app/audit"
+  endpoint: "listAudit"
+  evidence: "apps/api/tests/itapi_auth.nim"
+  status: delivered
+- id: C-05
+  title: "Check liveness and readiness of the service"
+  persona: "Operator"
+  screen: null
+  endpoint: "getHealth, getReadiness"
+  evidence: "apps/api/tests/itapi_ws.nim"
+  status: delivered
+- id: C-06
+  title: "Create, search, and read a party with a CIF"
+  persona: "Admin"
+  screen: null
+  endpoint: "searchParties, createParty, getParty"
+  evidence: "apps/api/tests/itapi_party.nim"
+  status: delivered
+- id: C-07
+  title: "Open a period, post a balanced journal, and reverse it with a reason"
+  persona: "Admin"
+  screen: "/app/ledger/admin"
+  endpoint: "listJournals, reverseJournal"
+  evidence: "apps/api/tests/itapi_journal.nim"
+  status: delivered
+- id: C-08
+  title: "Read a trial balance and period balances"
+  persona: "Manajer, Pengurus"
+  screen: "/app/ledger"
+  endpoint: "getTrialBalance, getLedgerBalances"
+  evidence: "apps/api/tests/itapi_ledger.nim"
+  status: delivered
+- id: C-09
+  title: "Create and approve a savings product version"
+  persona: "Admin, Manajer"
+  screen: "/app/products"
+  endpoint: "createProductVersion, approveProductVersion"
+  evidence: "apps/api/tests/itapi_product.nim"
+  status: delivered
+- id: C-10
+  title: "Open, list, and read a savings account"
+  persona: "Admin"
+  screen: null
+  endpoint: "openDepositAccount, getDepositAccount, listDepositAccounts"
+  evidence: "apps/api/tests/itapi_deposit.nim"
+  status: delivered
+- id: C-11
+  title: "Post a cash deposit and a cash withdrawal"
+  persona: "Kasir"
+  screen: "/app/teller"
+  endpoint: "postCashTransaction"
+  evidence: "apps/web/tests/e2e/teller.spec.ts"
+  status: delivered
+- id: C-12
+  title: "Post a transfer between two accounts"
+  persona: "Operator (API)"
+  screen: null
+  endpoint: "postTransfer"
+  evidence: "apps/api/tests/itapi_teller.nim"
+  status: delivered
+- id: C-13
+  title: "Open and close a cash session and approve a vault top-up"
+  persona: "Kasir, Manajer"
+  screen: "/app/teller, /app/vault"
+  endpoint: "openTellerSession, closeTellerSession, approveTellerVaultTopUp"
+  evidence: "apps/api/tests/itapi_teller_sessions.nim"
+  status: delivered
+- id: C-14
+  title: "Submit, approve, and disburse a loan"
+  persona: "Petugas pinjaman, Manajer"
+  screen: "/app/loans/[loanId]"
+  endpoint: "submitLoan, approveLoan, disburseLoan"
+  evidence: "apps/api/tests/itapi_lending.nim"
+  status: delivered
+- id: C-15
+  title: "Record an instalment payment with component allocation"
+  persona: "Kasir"
+  screen: "/app/loans/[loanId]?tab=pay"
+  endpoint: "payLoan"
+  evidence: "apps/api/tests/itapi_lending.nim"
+  status: delivered
+- id: C-16
+  title: "Restructure, write off, and recover a loan"
+  persona: "Manajer"
+  screen: "/app/loans/[loanId]"
+  endpoint: "restructureLoan, writeOffLoan, recoverLoan"
+  evidence: "apps/api/tests/itapi_lending.nim"
+  status: delivered
+- id: C-17
+  title: "Read loan arrears, allowance, and GL reconciliation reports"
+  persona: "Manajer"
+  screen: null
+  endpoint: "loanArrearsReport, loanAllowanceReport, loanReconciliation"
+  evidence: "apps/api/tests/itapi_lending_reports.nim"
+  status: delivered
+- id: C-18
+  title: "Run EOD and resume or cancel a run"
+  persona: "Manajer"
+  screen: "/app/close"
+  endpoint: "startDayClose, resumeDayClose, cancelDayClose"
+  evidence: "apps/api/tests/itdaycloser_lifecycle.nim"
+  status: delivered
+- id: C-19
+  title: "Close an accounting period through EOM"
+  persona: "Manajer"
+  screen: "/app/close"
+  endpoint: "closePeriod"
+  evidence: "apps/api/tests/itdaycloser_ledger.nim"
+  status: delivered
+- id: C-20
+  title: "Reprint a cash slip with its reference"
+  persona: "Kasir"
+  screen: "/app/print/slip/[transactionId]"
+  endpoint: "getCashTransactionSlip"
+  evidence: "apps/web/tests/e2e/print.spec.ts"
+  status: delivered
+- id: C-21
+  title: "Retry a money post without double posting"
+  persona: "Kasir"
+  screen: null
+  endpoint: "postCashTransaction with Idempotency-Key"
+  evidence: "apps/api/tests/itapi_idempotency.nim"
+  status: delivered
+- id: C-22
+  title: "Use a second factor at sign-in"
+  persona: "Kasir, Admin"
+  screen: "/login"
+  endpoint: "startMfaEnrolment, verifyMfaChallenge"
+  evidence: "apps/api/tests/itapi_mfa.nim"
+  status: partial
+  note: "Seeded off; enrolment and recovery codes have no UI until T-246."
+- id: C-23
+  title: "Record and inspect an identity document"
+  persona: "Admin"
+  screen: null
+  endpoint: "addIdentityDoc, getPartyKyc"
+  evidence: "apps/api/tests/itapi_kyc.nim"
+  status: partial
+  note: "Number and metadata only; no file or image storage; 501 without a KEK."
+- id: C-24
+  title: "Print a statement with a running balance"
+  persona: "Kasir"
+  screen: "/app/print/statement/[accountId]"
+  endpoint: "getAccountStatement"
+  evidence: "apps/web/tests/e2e/print.spec.ts"
+  status: partial
+  note: "No running balance; 500-row cap."
+- id: C-25
+  title: "Create and rename a branch without a shell"
+  persona: "Admin"
+  screen: null
+  endpoint: "listBranches"
+  evidence: "apps/api/tests/itapi_users.nim"
+  status: partial
+  note: "Read-only API; writes use ctl create-branch."
+- id: C-26
+  title: "Open a time deposit and run its maturity and early-withdrawal rules"
+  persona: "Admin"
+  screen: null
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "BE-EFF-04; account.nim hardcodes atSavings and the handler rejects non-SAVINGS."
+- id: C-27
+  title: "Pay a return on savings"
+  persona: "Anggota, Admin"
+  screen: null
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "BE-EFF-05; savings earns nothing; R-16 moves return to SHU."
+- id: C-28
+  title: "Recognise loan interest over time"
+  persona: "Manajer"
+  screen: null
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "BE-EFF-08; interest is recognised on a cash basis at payment."
+- id: C-29
+  title: "Assess a late penalty"
+  persona: "Petugas pinjaman"
+  screen: null
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "BE-EFF-08; the schedule always sets penalty due to zero."
+- id: C-30
+  title: "Close the year"
+  persona: "Manajer"
+  screen: "/app/close"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "B8; EOY is a calendar label, not a registered task."
+- id: C-31
+  title: "Register and track a member lifecycle"
+  persona: "Admin"
+  screen: "/app/members"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "B6; no coop module."
+- id: C-32
+  title: "Generate and collect pokok and wajib obligations"
+  persona: "Admin"
+  screen: "/app/savings/obligations"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "B9; savings kind is a label only."
+- id: C-33
+  title: "Calculate and distribute SHU"
+  persona: "Manajer"
+  screen: "/app/reports/shu"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "B8; no SHU code."
+- id: C-34
+  title: "Produce the RAT report pack"
+  persona: "Pengurus"
+  screen: "/app/reports"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "B8, R-28; report queries do not exist."
+- id: C-35
+  title: "Produce balance sheet, income statement, and equity statement"
+  persona: "Pengurus"
+  screen: "/app/reports"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "C18; report.nim has trial balance and balances only."
+- id: C-36
+  title: "Produce regulatory, tax, and APU-PPT reports"
+  persona: "Manajer"
+  screen: null
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "BE-EFF-33; no route."
+- id: C-37
+  title: "Notify an operator of an event"
+  persona: "Admin"
+  screen: null
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "BE-EFF-34; no notifier."
+- id: C-38
+  title: "Onboard a member with a number and KYC references"
+  persona: "Admin"
+  screen: "/app/members/new"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-204, T-205, T-206, T-245."
+- id: C-39
+  title: "Exit a member and compute the refund"
+  persona: "Manajer"
+  screen: "/app/members/[memberId]/exit"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-205, T-245."
+- id: C-40
+  title: "Generate the period obligation list idempotently"
+  persona: "Admin"
+  screen: "/app/savings/obligations"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-208."
+- id: C-41
+  title: "Pay or waive an obligation and see arrears"
+  persona: "Admin"
+  screen: "/app/savings/obligations"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-214."
+- id: C-42
+  title: "Offer pokok, wajib, and sukarela as product kinds with SHU return"
+  persona: "Admin"
+  screen: "/app/products"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-213."
+- id: C-43
+  title: "Sign and compute the SHU basis per member"
+  persona: "Manajer"
+  screen: "/app/reports/shu"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-211, T-216."
+- id: C-44
+  title: "Record the RAT decision before distribution"
+  persona: "Manajer"
+  screen: "/app/reports/shu"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-217."
+- id: C-45
+  title: "Post the SHU distribution with a checker"
+  persona: "Manajer"
+  screen: "/app/reports/shu"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-218."
+- id: C-46
+  title: "Create a user, reset a password, and enrol MFA without a shell"
+  persona: "Admin"
+  screen: "/app/users"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-246."
+- id: C-47
+  title: "Page through every capped list with a total"
+  persona: "all"
+  screen: "list endpoints"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-220."
+- id: C-48
+  title: "See a member register report"
+  persona: "Pengurus"
+  screen: "/app/reports/member-register"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-224."
+- id: C-49
+  title: "See a SHU statement per member"
+  persona: "Pengurus"
+  screen: "/app/reports/shu"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-229."

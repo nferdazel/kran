@@ -16,7 +16,7 @@
 # `|| true` di ExecStart: kegagalan harus terlihat, bukan ditelan.
 [Unit]
 Description=KRAN day-close scheduler (ctl daycloser-auto)
-Documentation=file:/srv/qouver/apps/kran/monorepo/docs/runbooks/dayclose.md
+Documentation=file:/srv/qouver/apps/kran/monorepo/docs/OPERATIONS.md
 After=network-online.target
 Wants=network-online.target
 

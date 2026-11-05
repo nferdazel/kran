@@ -4,7 +4,7 @@
 ## memutus koneksi bila peer TCP berhenti menjawab probe. Bila ada perantara yang tetap meng-ACK
 ## (tunnel SSH hidup tetapi jalur remote mati), kueri pada koneksi yang sudah hidup menggantung
 ## **tanpa batas** — `statement_timeout` juga tidak menolong karena kueri tidak pernah sampai ke
-## server. Terbukti > 30 s pada perantara TCP yang membeku (`docs/tasks/T-065.md`).
+## server. Terbukti > 30 s pada perantara TCP yang membeku (`T-065 (git history)`).
 ##
 ## Cara kerja: satu thread pemantau per proses. Pemanggil mendaftarkan `(fd, batas waktu)`; saat
 ## batas lewat, pemantau memanggil `shutdown(fd, SHUT_RDWR)` sehingga I/O libpq yang sedang menunggu

@@ -1,120 +1,112 @@
-# AGENTS.md — repo kran
+# AGENTS.md - repo kran
 
-Kamu mengembangkan KRAN standar Indonesia (koperasi, BPR/BPRS, BMT). Sumber kebenaran:
-`docs/spec/kran-prd-techspec.md` (PRD/TECHSPEC). Kalau kode dan spec bertentangan, JANGAN
-diam-diam memilih; catat di `docs/DECISIONS.md` dan eskalasi (lihat §8).
+Kamu mengembangkan KRAN untuk **KSP (koperasi simpan pinjam)** sebagai vertical slice pertama.
+Sumber arah kerja: `docs/ROADMAP.md` dan `docs/BACKLOG.md`. Sumber kebenaran produk:
+`docs/spec/kran-prd-techspec.md`. Kalau kode dan spec bertentangan, JANGAN diam-diam memilih;
+catat di `docs/DECISIONS.md` dan eskalasi (§8).
 
 ## 1. Aturan emas (tidak boleh dilanggar)
-1. Clean Architecture (domain → application → infrastructure/interface), modul hanya bicara
-   lewat `api.nim` dan event. Ditegakkan `tools/archcheck`.
-2. **Tidak ada nilai bisnis di kode.** Semua dari parameter DB (spec §10). Key param hanya via
-   hasil `paramgen`. Magic number bisnis = gagal di `lint-nomagic`.
-3. **Uang hanya lewat tipe `Money`.** Tidak ada float untuk uang/rate. Ledger immutable;
-   koreksi = jurnal pembalik.
+1. **Tidak ada nilai bisnis di kode.** Semua dari parameter DB. Key param hanya via hasil
+   `paramgen`. Magic number bisnis = gagal di `lint-nomagic`.
+2. **Uang hanya lewat tipe `Money`.** Tidak ada float untuk uang/rate. Ledger immutable;
+   koreksi = jurnal pembalik, dan hanya untuk jurnal yang kepemilikannya jelas.
+3. **Batas modul.** Modul hanya bicara lewat `api.nim` dan event. Setiap modul baru menaruh use
+   case di `application/` sejak commit pertama; modul lama diekstrak saat disentuh (R-18/R-24).
+   `apps/api/src` diperiksa archcheck setelah P0 dan baseline-nya hanya boleh menyusut.
 4. Semua teks UI lewat i18n (id + en). Tidak ada string hardcode di komponen.
-5. a11y WCAG 2.2 AA + dark/light: komponen baru harus lolos axe di 2 tema, dan alur kritis
-   bisa dipakai keyboard-only.
-6. KISS & DRY pragmatis: jangan tambah dependensi/abstraksi tanpa ADR. Duplikasi kebetulan boleh;
-   duplikasi aturan bisnis tidak.
+5. a11y WCAG 2.2 AA + dark/light: komponen baru harus lolos axe di 2 tema, dan alur kritis bisa
+   dipakai keyboard-only.
+6. KISS & DRY pragmatis: jangan tambah dependensi/abstraksi tanpa ADR.
 7. Day-close (EOD/EOM/EOY) hanya lewat framework `daycloser` (task terdaftar, idempotent).
-   Dilarang bikin batch/cron sendiri di modul.
-8. Jangan mengarang fakta regulasi. Isi §4 spec bertanda V?/V! BELUM terverifikasi: boleh
-   dijadikan struktur/parameter, tapi nilai/pasal pasti harus ditandai `NEEDS-COMPLIANCE-REVIEW`
-   di kode/seed/docs dan dicatat di `docs/OPEN_ITEMS.md`.
+   Dilarang membuat batch/cron sendiri di modul.
+8. Jangan mengarang fakta regulasi. Nilai/pasal yang belum terverifikasi harus ditandai
+   `NEEDS-COMPLIANCE-REVIEW` di kode/seed/docs dan dicatat di `docs/OPEN_ITEMS.md`.
+9. **Jangan melemahkan gate, test, threshold, baseline atau lint** untuk membuat sesuatu hijau.
+   Baseline hanya menyusut. Pengecualian butuh `D-xxx` baru yang disetujui pemilik.
 
 ## 2. Perintah standar (satu pintu)
-`task check`   → format + lint + archcheck + lint-nomagic + paramgen --check + i18n check
-`task check-fast` → seperti `check` tanpa `nim check` penuh (loop harian, D-077)
-`task verify [filter]` → `check-fast` + openapi + build + test modul terpilih (loop harian)
-`task test`    → unit + property + integration (Postgres ephemeral) + contract
-`task e2e`     → Playwright (e2e + axe 2 tema + svelte-check + baseline visual Linux, O-022 selesai)
-`task lint-web` → eslint (typescript-eslint + `svelte/*` non-a11y); butuh `pnpm install`
-`task ci-fast` → `check` + openapi + `lint-web` + `test` **tanpa e2e** — gate loop harian (D-194).
-`task ci`      → `ci-fast` + e2e (harus hijau sebelum rilis/merge; D-194). E2e tidak lagi dijalankan
-                 per task — bukti e2e menumpang di `task ci`/`task release` dan CI.
-`task version` → cetak `VERSION` (satu sumber untuk API, web, `kran.nimble`, `package.json`).
-`task release` → bump + CHANGELOG + gate (`check-fast` + build + **test + e2e**) + commit + tag
-                 anotasi (D-178, D-194, `docs/RELEASE.md`).
-Selama implementasi pakai `task verify <modul>`/`task ci-fast`; e2e sengaja ditumpuk ke `task ci`
-dan `task release` supaya loop harian tidak panas. `nim check` penuh di-shard paralel (D-077).
-Kalau perintah ini belum ada, MEMBUATNYA adalah task pertama (Fase 0, T-001).
+`./task check`      → format + lint + archcheck + lint-nomagic + paramgen --check + i18n check
+`./task check-fast` → seperti `check` tanpa `nim check` penuh (loop harian)
+`./task verify [filter]` → `check-fast` + openapi + build + test modul terpilih
+`./task test`       → unit + property + integration (Postgres ephemeral) + contract
+`./task e2e`        → Playwright (e2e + axe 2 tema + svelte-check + baseline visual)
+`./task lint-web`   → eslint (butuh `pnpm install`)
+`./task ci-fast`    → `check` + openapi + `lint-web` + test + (`svelte-check` + `vitest` web setelah P0)
+`./task ci`         → `ci-fast` + e2e; harus hijau sebelum rilis/merge
+`./task version`    → cetak `VERSION` (satu sumber untuk API, web, `kran.nimble`, `package.json`)
+`./task release`    → bump + CHANGELOG + gate + commit + tag anotasi (D-178, D-194)
+`python3 tools/docsgen/docsgen.py --check` → deteksi drift `PARAMETERS.md`/`SCHEMA.md`
+Selama implementasi pakai `verify <modul>`/`ci-fast`; e2e menumpang di `ci`/`release`.
 
-## 3. Git & rilis — PENTING
-- Push ke `main` = DEPLOY ke produksi (webhook → deploy-vps.sh). Push **hanya** lewat
-  `./task release` (satu push: commit rilis + tag), tidak pernah `git push` manual ke `main`.
-- Repo ini solo: commit boleh langsung di `main` (keputusan pemilik 2 Nov 2026, D-198); branch
-  `feat/<id>-<slug>` + PR tetap dipakai bila suatu perubahan besar butuh review terpisah.
-- Jangan sentuh server/VPS, webhook, Caddy, secret, atau `ops/` produksi kecuali task
-  eksplisit meminta menulis *file* di repo (bukan menjalankan di server).
-- Jangan commit secret/ data nyata. Data uji selalu sintetis.
+## 3. Git & rilis - PENTING
+- Push ke `main` = DEPLOY ke produksi (webhook → `deploy-vps.sh`). Push **hanya** lewat
+  `./task release`, tidak pernah `git push` manual ke `main`.
+- Repo solo: commit boleh di `main` (D-198). Perubahan besar (skema, uang, docs rebuild) kerjakan
+  di branch dan minta review diff sebelum merge.
+- Jangan sentuh server/VPS, webhook, Caddy, secret, atau `ops/` produksi kecuali task meminta
+  menulis *file* di repo.
+- Jangan commit secret atau data nyata. Data uji selalu sintetis dan diberi label.
 - Conventional commits; satu commit = satu perubahan logis.
-- `task release` membuat tag anotasi `vX.Y.Z`. Tag adalah **penanda**, bukan pemicu deploy:
-  deploy tetap dari push ke `main`, dan `deploy-vps.sh` menunggu check-run CI hijau untuk commit
-  itu sebelum membangun apa pun (D-178, `docs/RELEASE.md`).
+- Tag `vX.Y.Z` adalah penanda, bukan pemicu deploy (D-178, `docs/RELEASE.md`).
 
 ## 4. Protokol loop per task (WAJIB)
-Ambil task teratas berstatus `READY` dari `docs/BACKLOG.md`, lalu:
-1. **Plan**: tulis rencana singkat di file task (`docs/tasks/T-xxx.md`): scope, file yang
-   disentuh, bagian spec, kriteria selesai (dari Definition of Done §6).
-2. **Test-first** bila memungkinkan (domain, Money, perhitungan: property + golden test).
-3. **Implement** dalam langkah kecil; jalankan `task check` sering.
-4. **Self-verify**: `task ci-fast` hijau (D-194). Jangan klaim selesai tanpa output yang benar-benar
-   dijalankan.
-5. **Independent review**: panggil reviewer dengan konteks BERSIH (subagent/sesi baru) memakai
-   prompt di `docs/agent/REVIEWER.md`. Reviewer hanya membaca diff + spec, bukan alasanmu.
-6. **Fix**: perbaiki semua temuan `BLOCKER` dan `MAJOR`. `MINOR` boleh ditunda ke backlog
-   (catat). Jangan berdebat dengan reviewer tanpa bukti (test/ referensi spec).
-7. Ulangi 4–6 sampai reviewer menyatakan `APPROVE` (tanpa BLOCKER/MAJOR) dan `task ci-fast` hijau.
-   **Batas**: maksimal 5 putaran review per task. Lewat itu → STOP, tulis ringkasan
-   masalah di `docs/ESCALATIONS.md`, tandai task `BLOCKED`, lanjut ke task independen lain.
-8. **Commit + update state**: `docs/PROGRESS.md` (apa selesai, bukti, sisa), tandai task
-   `DONE`, tambah task turunan ke backlog bila ditemukan.
-9. Lanjut ke task `READY` berikutnya. Berhenti di akhir milestone (§7).
+Ambil task `READY` teratas dari `docs/BACKLOG.md`, lalu:
+1. **DoR**: lengkapi `docs/tasks/T-xxx.md` dari `docs/tasks/_TEMPLATE.md` - anchor bukti, file,
+   key parameter, bentuk migrasi, test, rollback, kelas risiko. Task tanpa DoR kembali ke backlog.
+2. **Test-first** bila memungkinkan (domoney, perhitungan: property + golden test).
+3. **Implement** kecil-kecil; jalankan `./task check-fast` sering.
+4. **Self-verify**: gate yang disebut task benar-benar dijalankan; `./task ci-fast` hijau.
+   Jangan klaim selesai tanpa output nyata.
+5. **Review** sesuai kelas risiko (R-25): `money`, `schema`, `authz`, `audit` wajib reviewer
+   konteks bersih (`docs/agent/REVIEWER.md`), maksimal **2 putaran**. Kelas lain: self-review +
+   gate. Perbaiki semua BLOCKER/MAJOR; MINOR dicatat sebagai open item.
+6. **Evidence block** di file task: perintah, ringkasan output, commit range, hasil migrasi,
+   pengecekan manual untuk UI, status capability.
+7. **Commit**, tandai `DONE`, perbarui `docs/CAPABILITIES.md` bila kapabilitas berubah.
+8. Lanjut task berikutnya. Berhenti di akhir fase (§7).
 
 ## 5. Disiplin anti-halusinasi & anti-"selesai palsu"
-- Setiap klaim "sudah jalan" harus disertai perintah + ringkasan output.
-- Dilarang melemahkan test/ lint/ gate agar hijau (menghapus test, `skip`, longgarkan
-  threshold, menambah `nomagic:ok`/ ignore) tanpa entri di `docs/DECISIONS.md` + alasan,
-  dan itu otomatis dieskalasi.
-- Jangan "mengerjakan sebagian lalu menandai DONE". Sisa pekerjaan = task baru.
+- Setiap klaim "sudah jalan" disertai perintah + ringkasan output.
+- Dilarang melemahkan test/lint/gate agar hijau (hapus test, `skip`, longgarkan threshold,
+  tambah `nomagic:ok`/ignore). Pengecualian butuh `D-xxx` dan dieskalasi.
+- Jangan mengerjakan sebagian lalu menandai DONE. Sisa pekerjaan = task baru.
+- Klaim kapabilitas harus menunjuk test yang akan gagal bila kapabilitas itu rusak.
 - Kalau ragu soal perilaku bisnis/regulasi: tulis asumsi di task + `OPEN_ITEMS.md`, pilih opsi
-  paling konservatif/ paling aman, lanjutkan.
-- Library Nim: cek ketersediaan & versi sebelum dipakai; dependensi baru butuh ADR singkat.
+  paling konservatif, lanjutkan.
+- Library baru: cek versi dan kebutuhan; dependensi baru butuh ADR singkat.
 
-## 6. Definition of Done (task)
-- [ ] Kode + test (unit/ property/ integration sesuai jenisnya) lulus; `task ci-fast` hijau.
-      Perubahan UI juga harus lolos e2e — dijalankan sekali di `task ci`/`task release` (D-194), bukan
-      per iterasi.
-- [ ] Batas arsitektur terjaga; tidak ada magic number bisnis; param baru terdaftar + seed + schema
-- [ ] Uang via `Money`; tidak ada float
-- [ ] Use case atomik; event via outbox; idempotency pada operasi finansial
-- [ ] OpenAPI diperbarui + contract test lulus
-- [ ] i18n id+en lengkap; a11y (axe 2 tema, keyboard) untuk UI
-- [ ] Audit event & permission tepat; data sensitif ter-mask/ terenkripsi
-- [ ] Migrasi aman (expand-only; contract terpisah)
-- [ ] `MODULE.md` + docs diperbarui; requirement regulasi terkait di-tag (`@REG-xxx`)
-- [ ] Reviewer: APPROVE
+## 6. Definition of Done (ringkas)
+- [ ] DoR terpenuhi; acceptance di file task bisa gagal tanpa perubahan ini
+- [ ] Gate yang disebut dijalankan; `./task check-fast` (dan `ci-fast` untuk backend) hijau
+- [ ] Uang via `Money`; tidak ada float; invariant ledger terjaga
+- [ ] Migrasi expand-only (contract terpisah) dan aman dijalankan ulang
+- [ ] OpenAPI + contract test; i18n id+en; a11y (axe 2 tema, keyboard)
+- [ ] Audit event & permission tepat; data sensitif ter-mask/terenkripsi
+- [ ] `MODULE.md`/docs terkait diperbarui; tag `REG-xxx` bila relevan
+- [ ] Evidence block terisi; review (bila wajib) APPROVE
+- [ ] `CAPABILITIES.md` mencerminkan status sebenarnya
 
-## 7. Milestone & berhenti
-Milestone = Fase di spec §23. Setelah semua task fase `DONE`:
-1. Jalankan `task ci` penuh + (bila ada) simulasi day-close + benchmark.
-2. Tulis `docs/milestones/M<fase>-report.md`: yang selesai, bukti, gate, deviasi dari spec,
-   open items, risiko, saran langkah berikut.
-3. **STOP** dan tunggu manusia. Jangan mulai fase berikutnya sendiri.
+## 7. Fase & berhenti
+Fase = P0-P8 di `docs/ROADMAP.md`, bukan nomor Fase lama. Setelah semua task satu fase `DONE`:
+1. Jalankan gate fase (`./task ci-fast`, dan `./task ci` bila fase menyentuh UI/e2e).
+2. Buktikan exit criterion fase dengan output, bukan prosa.
+3. Perbarui `docs/history/PHASES.md` bila fase historis ditutup.
+4. **STOP** dan tunggu manusia; jangan mulai fase berikutnya sendiri.
 
-## 8. STOP & eskalasi ke manusia (jangan lanjut menebak) jika:
-- Butuh keputusan ADR terbuka (mis. ADR-002 HTTP server, ADR-013 mesin PDF) → lakukan spike
-  singkat, tulis perbandingan + rekomendasi, lalu STOP untuk keputusan.
-- Menyentuh area kritis dan hasilnya tidak bisa dibuktikan test: rumus bunga/akrual/PPAP/SHU/
-  pajak, rekonsiliasi, enkripsi/ key management, authz, hash-chain audit.
-  (Boleh diimplementasi, tapi WAJIB ditandai `HUMAN-REVIEW-REQUIRED` di PR.)
-- Pasal/angka regulasi tidak pasti (§1.8).
-- Perubahan yang butuh akses di luar repo (server, secret, registry, DNS).
-- Spec ambigu/ kontradiktif, atau perlu menyimpang dari spec.
-- Terdeteksi test/ gate yang tampak salah (bukan kodenya).
-- Batas 5 putaran review tercapai, atau 3 kali gagal dengan penyebab sama.
+## 8. STOP & eskalasi ke manusia (jangan menebak) jika:
+- Butuh keputusan ADR terbuka → spike singkat, tulis perbandingan + rekomendasi, lalu STOP.
+- Menyentuh area kritis yang tidak bisa dibuktikan test: bunga/akrual/PPAP/SHU/pajak,
+  rekonsiliasi, enkripsi/key management, authz, hash-chain audit.
+  Boleh diimplementasi, tapi WAJIB ditandai `HUMAN-REVIEW-REQUIRED`.
+- Pasal/angka regulasi tidak pasti, atau nilai belum terverifikasi.
+- Perubahan butuh akses di luar repo (server, secret, registry, DNS).
+- Spec ambigu/kontradiktif, atau perlu menyimpang dari spec.
+- Terdeteksi test/gate yang tampak salah (bukan kodenya).
+- Review putaran kedua masih menemukan BLOCKER, atau 3 kali gagal dengan penyebab sama.
 
 ## 9. Gaya kerja
-Bahasa kode/ identifier: Inggris. Dokumentasi & komentar domain: Indonesia boleh.
-Ringkas, konkret, tanpa janji berlebihan. Jangan refactor di luar scope task; catat saja.
-
+- Kode, identifier, komentar kode, commit: **Inggris**.
+- Dokumentasi hidup (`docs/**`) dan dokumen perencanaan: **Inggris** (R-11).
+- Percakapan dengan pemilik: **Indonesia**.
+- `AGENTS.md` ini tetap Indonesia karena dibaca manusia dan agen di repo ini.
+- Ringkas, konkret, tanpa janji berlebihan. Jangan refactor di luar scope task; catat saja.
