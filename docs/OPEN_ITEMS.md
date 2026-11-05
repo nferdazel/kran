@@ -41,6 +41,7 @@ Every item that blocks pilot data stays a `BLOCKER` until closed. No item is clo
 | O-136 | No dependency audit in CI | There is no Dependabot configuration and no `pnpm` or Nimble audit step, so a known-vulnerable dependency does not fail a gate. | Add the audit to P0 and fail closed on a new high finding. | security | audit C06, P0 |
 | O-137 | OpenAPI timestamps are untyped | Timestamp properties are plain strings in the contract, so the generated client cannot enforce a date-time shape. | Type them in the contract during P0 and regenerate the client. | tooling | audit BE-ISO-06, P0 |
 | O-138 | No metrics endpoint | There is no Prometheus-style metrics surface for latency, errors, pool, outbox or close duration; operators have logs, `/readyz` and SQL. | Deliver a minimal `/metrics` and the retention/metrics tasks in P7. | operations | audit C19, P7 |
+| O-139 | Applied migrations keep pre-rebuild doc paths | Seven migrations were deployed on 3 Nov 2026 and are checksummed by `migrate --check`. Their comments still point at task files that the docs rebuild removed; editing them makes the next deploy fail closed with a drift error. | Keep them frozen. New comments go in new migrations, never in an applied file. | operations | `docs/OPERATIONS.md` section 2, deploy log 5 Nov 2026 |
 
 ---
 

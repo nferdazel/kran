@@ -11,7 +11,7 @@
 --     `range_ops` bawaan PostgreSQL (tidak butuh `btree_gist`); ekstensi itu baru diperlukan bila
 --     kelak digabung kolom skalar (mis. `branch_id WITH =`), dan dipasang migrasi platform 0004.
 --   * Urutan penutupan (tidak menutup periode lebih awal saat sebelumnya masih terbuka) **tidak**
---     ditegakkan di sini; itu orkestrasi EOD/EOM (`daycloser`, Fase 5). Lihat `T-072 (git history)`.
+--     ditegakkan di sini; itu orkestrasi EOD/EOM (`daycloser`, Fase 5). Lihat `docs/tasks/T-072.md`.
 
 CREATE SCHEMA IF NOT EXISTS ledger;
 
