@@ -4,6 +4,14 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.1.20] - 2026-11-05
+
+### Changed
+- Rebuild planning corpus around replanned roadmap
+- **fase5:** Usulan breakdown Koperasi Pack sebelum fase dibuka
+- Buktikan biner produksi v0.1.19 ber-atomicArc, catat celah log build (O-129)
+- **open-items:** Catat keputusan pemilik 3 Nov 2026 (MFA ditunda, sign-off O-001 dibiarkan)
+
 ## [0.1.19] - 2026-11-03
 
 ### Changed
