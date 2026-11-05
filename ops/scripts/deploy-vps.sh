@@ -314,7 +314,7 @@ exec 9>"$APP_DIR/.deploy.lock"
 # yang sah saat beberapa push datang beruntun: deploy kedua berhenti, `main` tertinggal, dan tidak
 # ada yang memicu ulang. Karena itu menunggu (default 900 dtk, D-178) lalu gagal dengan pesan yang
 # menyebut commit-nya.
-LOCK_WAIT="${KRAN_DEPLOY_LOCK_WAIT:-900}"
+LOCK_WAIT="${KRAN_DEPLOY_LOCK_WAIT:-1200}"
 if ! flock -w "$LOCK_WAIT" 9; then
   log "==> ERROR: deploy lain masih berjalan setelah ${LOCK_WAIT}s (lock $APP_DIR/.deploy.lock); commit ini TIDAK di-deploy"
   exit 1
