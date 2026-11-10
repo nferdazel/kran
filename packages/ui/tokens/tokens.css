@@ -1,6 +1,11 @@
 /*
  * Design tokens KRAN (spec §15, DESIGN.md v2 / D-160).
  *
+ * Revisi 10 Nov 2026: nilai diselaraskan dengan mockup redesign (axe 0 violation, 9 kombinasi).
+ * Rasio di komentar dihitung ulang dengan `src/contrast.ts`, bukan disalin dari laporan.
+ * Satu nilai mockup sengaja TIDAK dipakai: `--line-strong` #c8cdd3 hanya 1.48:1 di atas kanvas,
+ * jadi tidak memenuhi 3:1 untuk batas kontrol; batas kontrol tetap `--color-border` (3.49:1).
+ *
  * Aturan:
  *  - Token warna SEMANTIK, bukan nama warna mentah (`--color-text`, bukan `--plum`).
  *  - Tema lewat `<html data-theme="light|dark">`; skrip `static/theme.js` memasangnya sebelum
@@ -37,15 +42,16 @@
 }
 
 :root {
-  /* Tipografi (DESIGN §2): 11 / 12 / 13 / 14 / 16 / 20 / 28 px. */
+  /* Tipografi (DESIGN §2 v2): 10 / 11 / 12 / 13 / 14 / 20 / 22 px.
+     Shell & tabel 13 (`--text-base`), login/form panjang/cetak 14 (`--text-md`). */
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-  --text-2xs: 0.6875rem;
-  --text-xs: 0.75rem;
-  --text-sm: 0.8125rem;
-  --text-base: 0.875rem;
-  --text-md: 1rem;
+  --text-2xs: 0.625rem;
+  --text-xs: 0.6875rem;
+  --text-sm: 0.75rem;
+  --text-base: 0.8125rem;
+  --text-md: 0.875rem;
   --text-lg: 1.25rem;
-  --text-xl: 1.75rem;
+  --text-xl: 1.375rem;
   --line-height-tight: 1.2;
   --line-height-base: 1.45;
 
@@ -74,37 +80,53 @@
   --motion-duration-base: 200ms;
   --motion-ease: cubic-bezier(0.2, 0, 0, 1);
 
-  /* Ukuran kontrol & tabel (DESIGN §4). */
+  /* Ukuran kontrol & tabel (DESIGN §4 v2, ADR-2).
+     Aksi toolbar 32 px, field dan tombol primer 40 px, baris tabel 40 px (padat 36). */
   --control-min-size: 1.5rem;
   --control-height: 2rem;
-  --control-height-primary: 2.75rem;
-  --row-height: 2.125rem;
-  --row-height-compact: 2rem;
-  --row-height-two: 2.5rem;
+  --control-height-primary: 2.5rem;
+  --row-height: 2.5rem;
+  --row-height-compact: 2.25rem;
+  --row-height-two: 3.5rem;
   --toolbar-height: 48px;
 
+  /* Shell (DESIGN §5 v2, ADR-3/ADR-4). */
+  --sidebar-width: 15rem;
+  --topbar-height: 3.5rem;
+  --drawer-width: 32.5rem;
+  --content-pad: 22px 28px 36px;
+
   /* Layout */
-  --layout-max-width: 72rem;
+  --layout-max-width: 95rem;
 }
 
 /* ---- Token warna per tema (DESIGN §3) ---- */
 
 [data-theme="light"] {
   color-scheme: light;
-  --color-bg: #f6f7f9;
+  /* Kanvas & permukaan (DESIGN §3 v2). Nama mockup: --canvas / --side / --surface / --surface-2. */
+  --color-bg: #f5f6f7;
+  --color-side: #eff1f3;
   --color-surface: #ffffff;
   --color-surface-raised: #ffffff;
+  --color-surface-2: #fafbfb;
   --color-surface-disabled: #edeff2;
   --color-selected: #edf0f4;
-  --color-text: #14171a;
-  --color-text-muted: #565d66;
-  --color-text-2: #565d66;
+  /* Teks: 17.0:1 di surface-2, 5.5:1 (muted) di surface, 5.1:1 di bg. */
+  --color-text: #17191c;
+  --color-text-2: #3f444b;
+  --color-text-muted: #646a70;
   --color-text-on-primary: #ffffff;
-  --color-hairline: #e3e7ec;
+  /* Garis: hairline hanya pemisah; `--color-border` adalah batas kontrol dan wajib >= 3:1. */
+  --color-hairline: #e2e5e8;
   --color-border: #7c848f;
-  --color-primary: #5b2a5e;
-  --color-primary-hover: #4a214d;
-  --color-accent: #5b2a5e;
+  /* Aksen plum. Chip memakai accent-soft + accent-line; accent-line dekoratif (1.73:1). */
+  --color-primary: #6e2f72;
+  --color-primary-hover: #5c2660;
+  --color-accent: #6e2f72;
+  --color-accent-soft: #f2e8f3;
+  --color-accent-line: #d6bdd8;
+  --color-focus-ring: #6e2f72;
   --color-success: #17603f;
   --color-positive: #17603f;
   --color-danger: #a02b31;
@@ -120,20 +142,28 @@
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --color-bg: #101215;
-  --color-surface: #181b1f;
+  --color-bg: #0e1013;
+  --color-side: #121519;
+  --color-surface: #171a1f;
   --color-surface-raised: #212529;
+  --color-surface-2: #1b1e23;
   --color-surface-disabled: #1c2024;
   --color-selected: #1e2429;
-  --color-text: #e8ecf1;
-  --color-text-muted: #9aa3ae;
-  --color-text-2: #9aa3ae;
-  --color-text-on-primary: #101215;
-  --color-hairline: #272c32;
+  /* Teks: 15.0:1 di surface, 6.6:1 (muted) di surface, 7.2:1 di bg. */
+  --color-text: #edeef0;
+  --color-text-2: #c3c8ce;
+  --color-text-muted: #98a0a8;
+  /* Aksen gelap punya hue sendiri (ADR-5): plum terang di atas kanvas gelap hanya 1.92:1,
+     jadi teks di atas aksen selalu gelap, bukan putih. */
+  --color-text-on-primary: #1e1220;
+  --color-hairline: #282d34;
   --color-border: #6f7883;
-  --color-primary: #d9a0d4;
-  --color-primary-hover: #e4b4df;
-  --color-accent: #d9a0d4;
+  --color-primary: #c292be;
+  --color-primary-hover: #d0a6cc;
+  --color-accent: #c292be;
+  --color-accent-soft: #2a1f2c;
+  --color-accent-line: #57415a;
+  --color-focus-ring: #c292be;
   --color-success: #5fbf8d;
   --color-positive: #5fbf8d;
   --color-danger: #e88b84;
@@ -194,8 +224,10 @@
   [data-theme="dark"] {
     color-scheme: light;
     --color-bg: #ffffff;
+    --color-side: #ffffff;
     --color-surface: #ffffff;
     --color-surface-raised: #ffffff;
+    --color-surface-2: #ffffff;
     --color-surface-disabled: #f2f2f2;
     --color-selected: #f2f2f2;
     --color-text: #000000;
@@ -207,6 +239,8 @@
     --color-primary: #000000;
     --color-primary-hover: #000000;
     --color-accent: #000000;
+    --color-accent-soft: #ffffff;
+    --color-accent-line: #000000;
     --color-success: #000000;
     --color-positive: #000000;
     --color-danger: #000000;
