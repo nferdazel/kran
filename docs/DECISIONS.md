@@ -52,6 +52,20 @@ Binding. Immutable; superseded only by a later ruling.
 | R-28 | 4 Nov 2026 | MVP report pack is the RAT set; health ratios, DPK and branch P&L are deferred with tags. |
 | R-29 | 4 Nov 2026 | MFA stays optional (R-19 upheld); false claims are removed, the challenge is throttled, and compensating controls are named. |
 | R-30 | 4 Nov 2026 | A second worker covers `apps/web`; web work may overlap backend work. Migrations, `kran_test`, gates and parameter seeds stay serial. |
+| R-31 | 5 Nov 2026 | One risk vocabulary: `full` covers money, schema or migration, authz and audit; `standard` covers the rest. The task file names the concrete class. |
+| R-32 | 5 Nov 2026 | A task is `READY` only when its task file exists and every DoR item is filled. The queue never marks a row `READY` from the plan table alone. |
+| R-33 | 5 Nov 2026 | Every phase-exit gate fails when a named check is skipped: missing tooling, missing database, zero tests or an absent axe run is a failure, not a pass. |
+| R-34 | 5 Nov 2026 | Cash instalment is in the MVP: one atomic contract posts the loan payment, the cash movement and the teller session effect. |
+| R-35 | 5 Nov 2026 | SHU distribution posts per member (savings credit or paid receipt) and reconciles to the distribution journal. An aggregate-only journal is not acceptance. |
+| R-36 | 5 Nov 2026 | Write-off allowance base is principal only. Interest and penalty are released by one explicit rule, and the reconciliation identity includes `released`. |
+| R-37 | 5 Nov 2026 | Teller variance: a reason is mandatory, an approval is required above a parameterised tolerance, and EOD proceeds once the variance is posted and explained. |
+| R-38 | 5 Nov 2026 | Restructure requires a checker, records the released arrears, and cannot be self-approved. |
+| R-39 | 5 Nov 2026 | Backups stay local, single-host and unencrypted for the pilot (L-04). T-252 proves a restore from the local dump; an encrypted off-host copy is deferred with a trigger. |
+| R-40 | 5 Nov 2026 | P6 is a serial tail after P5 for planning and dates. A second worker may overlap screens, but the critical path assumes one. |
+| R-41 | 5 Nov 2026 | Design and antislop rules use the `AS-` and `DD-` prefixes. `R-` is reserved for owner rulings. |
+| R-42 | 5 Nov 2026 | Credit origination controls (approval tiers, per-member exposure cap, arrears-at-origination block) are P1 scope, not deferred. |
+| R-43 | 5 Nov 2026 | Membership exit includes refund computation from postings and checker approval in P3. The screen does not ship before the contract exists. |
+| R-44 | 5 Nov 2026 | The RAT pack adds a cash-flow statement and notes, tagged `NEEDS-COMPLIANCE-REVIEW` until accounting sign-off. |
 
 ---
 
@@ -1176,6 +1190,19 @@ only hides the symptom. Reason: ORC is not thread-safe for cycles that cross thr
 requests from the loop thread to worker threads. Consequence: cyclic garbage can leak, measured flat at
 about 24 MB over 20,000 requests; the SIGSEGV is not proven fixed because there is no reproducer.
 
+**D-202 (10 Nov 2026) Design system v2 tokens and shell ratified (ADR-1..ADR-5).** Decision, authorised
+by the owner in the redesign session on 10 Nov 2026: adopt the five open design questions as one
+package. (1) Shell base 13px, login, long forms and print 14px. (2) Table rows 40px, compact 36px;
+field height 40px; toolbar actions stay 32px, so ADR-2 splits into two values instead of one.
+(3) A detail panel is a 520px drawer, never a modal. (4) Below 1024px the sidebar becomes an
+off-canvas panel with a focus trap and Escape, not a top-nav clone. (5) The dark accent becomes
+`#C292BE` and `#D9A0D4` retires. Reason: the mockup measured axe 0 violations across nine
+combinations, `packages/ui/tests/tokens.contrast.test.ts` covers every pair in SPEC 1.1-1.2, and the
+owner asked for implementation to start after two review rounds. Consequence: supersedes the 34px row
+and 32px field values in DESIGN section 4; every screen inherits the new scale; `--line-strong`
+`#c8cdd3` is not adopted because 1.48:1 fails the 3:1 control-boundary minimum, so control borders
+keep `--color-border`; any further change to these values needs a new decision.
+
 ---
 
 ## 3. Archive index
@@ -1208,3 +1235,5 @@ at which point it is copied into section 2 as a new `D-xxx`.
 | P-02 | Cancel the old Fase 5 proposal (archived in git history) as an authoritative plan and fold its content into the new roadmap; supersedes its status in the backlog | Approved in principle by R-13 | Confirm the proposal is archived and its backlog row is closed, with no residual "Fase 5" scope |
 | P-03 | Uphold the D-160 visual direction and redesign structure, flows and component coverage instead of replacing the identity | Proposed; adopted by DD-01, design work proceeding in Wave 3 | Confirm at the design checkpoint that the identity is kept, or name the replacement |
 | P-04 | No proposal text was ever written; the log reserved a fourth row for Wave 3 | Empty slot | Close the slot or provide the proposal text; no decision is pending under this id |
+| P-05 | Defer the privacy, AML and complaint obligations (O4 subject access and breach runbook, O5 PMPJ daily cash aggregation, O8 complaint register) to the first real pilot cohort | Proposed; recorded with triggers in `OPEN_ITEMS.md` and `ACCEPTED-LIMITS.md` | Accept the deferral and its triggers, or schedule one or more of them in P7 |
+| P-06 | Defer the encrypted off-host backup and keep L-04 (local, single-host, unencrypted) for the pilot | Proposed; matches R-39 | Accept the accepted limit, or schedule the encrypted off-host copy before the pilot |
