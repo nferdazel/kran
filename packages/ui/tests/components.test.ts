@@ -476,6 +476,24 @@ const ROWS = [
   { code: "201", name: "Simpanan anggota", balance: null },
 ];
 
+/**
+ * Teks setiap sel uang di HTML apa adanya. Markup bersarang ikut dibaca, bukan dilewati: sel
+ * yang menyembunyikan unit di dalam `<span>` harus sampai ke asersi dan gagal di sana.
+ */
+function moneyCellTexts(html: string): string[] {
+  const cells = html.match(/<td class="kran-num kran-money[^"]*">[\s\S]*?<\/td>/g) ?? [];
+  return cells.map((cell) => cell.replace(/<[^>]+>/g, "").trim());
+}
+
+/** Satu-satunya bentuk sel uang yang boleh tampil: angka tanpa simbol mata uang. */
+function expectAmountOnly(cells: string[]): void {
+  for (const text of cells) {
+    if (text === "") continue;
+    expect(text).toMatch(/^-?\d{1,3}(\.\d{3})*,\d{2}$/);
+    expect(text).not.toMatch(/IDR|Rp/);
+  }
+}
+
 describe("DataTable", () => {
   function table(extra: Record<string, unknown> = {}): string {
     return render(DataTable, {
@@ -532,31 +550,42 @@ describe("DataTable", () => {
 
   it("unit uang hanya di header kolom, tidak pernah di tiap sel", () => {
     const html = table();
-    const cells = html.match(/<td class="kran-num kran-money[^"]*">[^<]*<\/td>/g) ?? [];
 
     expect(html).toContain("Saldo (IDR)");
+    const cells = moneyCellTexts(html);
     expect(cells.length).toBeGreaterThan(0);
-    for (const cell of cells) {
-      const text = cell.replace(/<[^>]+>/g, "").trim();
-      if (text === "") continue;
-      expect(text).toMatch(/^-?\d{1,3}(\.\d{3})*,\d{2}$/);
-      expect(text).not.toMatch(/IDR|Rp/);
-    }
+    expectAmountOnly(cells);
+  });
+
+  it("penjaga sel uang membaca markup bersarang, bukan melewatinya", () => {
+    const fixture =
+      '<td class="kran-num kran-money">1.234,56</td>' +
+      '<td class="kran-num kran-money"><span class="kran-visually-hidden">IDR</span>7.654,32</td>';
+    const cells = moneyCellTexts(fixture);
+
+    expect(cells).toHaveLength(2);
+    expect(cells[1]).toBe("IDR7.654,32");
+    // Asersi yang sama dengan tabel sungguhan harus gagal pada fixture ini.
+    expect(() => expectAmountOnly(cells)).toThrow();
   });
 
   it("nilai negatif memakai minus di depan, tanpa kurung, di ink normal", () => {
     const rows = [{ code: "301", name: "Koreksi", balance: "-1500000.00" }];
-    const expected = formatMoney("-1500000.00");
     const html = table({ rows });
-    const cell = html.match(/<td class="kran-num kran-money[^"]*">[^<]*<\/td>/)?.[0] ?? "";
+    const cell = moneyCellTexts(html).find((text) => text !== "") ?? "";
 
-    expect(cell).toContain(`>${expected}<`);
-    expect(cell).toContain("kran-money");
+    expect(cell).toBe(formatMoney("-1500000.00"));
     expect(cell).not.toMatch(/[()]/);
     expect(html).not.toContain("kran-muted");
+  });
+
+  it("sel uang tidak pernah pecah baris", () => {
     const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
-    // Minus tidak boleh terpisah dari angkanya: sel uang tidak pernah pecah baris.
-    expect(css).toMatch(/\.kran-table \.kran-money\s*\{[^}]*white-space: nowrap/);
+
+    // Minus tidak boleh terpisah dari angkanya.
+    expect(css).toMatch(
+      /@media screen \{[^@]*?\.kran-table \.kran-money \{[^}]*white-space: nowrap/,
+    );
   });
 
   it("kolom uang mencadangkan lebar untuk nilai 3 dan 7 digit", () => {
@@ -571,7 +600,9 @@ describe("DataTable", () => {
     const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
     // Cadangan lebar berlaku di semua sel uang `.kran-table`, jadi tabel tangan seperti
     // `/app/ledger` ikut dapat tanpa kelas tambahan di halaman.
-    expect(css).toMatch(/\.kran-table \.kran-money\s*\{[^}]*min-inline-size:/);
+    expect(css).toMatch(
+      /@media screen \{[^@]*?\.kran-table \.kran-money \{[^}]*min-inline-size: 12ch/,
+    );
   });
 
   it("hanya ada satu formatter uang", () => {
