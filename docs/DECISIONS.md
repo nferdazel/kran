@@ -1203,6 +1203,16 @@ and 32px field values in DESIGN section 4; every screen inherits the new scale; 
 `#c8cdd3` is not adopted because 1.48:1 fails the 3:1 control-boundary minimum, so control borders
 keep `--color-border`; any further change to these values needs a new decision.
 
+**D-203 (10 Nov 2026) The ledger table leaves the ARIA grid; the wrapper is the one tab stop.**
+Decision: `/app/ledger` stops using `role="grid"`, `tabindex`, `aria-activedescendant`, cell ids and
+the Arrow/Home/End handler on the table. `.kran-table-wrap` carries `role="region"`, `tabindex="0"`
+and the accessible name, matching `DataTable`, and the table returns to a plain native table with
+`th scope` and `<caption>`; arrow keys and Home/End scroll the focused region natively. Reason: it is
+the only table in the app that does not use the shared wrapper, the cells are read-only so grid
+semantics buy no operation beyond scrolling, and one model for every table is cheaper to gate.
+Consequence: supersedes D-116 and the `aria-activedescendant` clause for tables in DESIGN section 10;
+T-294 part 2 implements it and updates `DESIGN.md` in the same commit.
+
 ---
 
 ## 3. Archive index
