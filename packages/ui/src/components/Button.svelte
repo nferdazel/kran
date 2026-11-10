@@ -16,11 +16,14 @@
   import type { Snippet } from "svelte";
   import type { HTMLButtonAttributes } from "svelte/elements";
 
-  type ButtonVariant = "primary" | "secondary" | "row" | "destructive";
+  type ButtonVariant = "primary" | "secondary" | "quiet" | "row" | "destructive";
   type ButtonType = "button" | "submit" | "reset";
+  /** `sm` 32 (toolbar, baris tabel), `md` 40 (field dan aksi utama). */
+  type ButtonSize = "sm" | "md";
 
   interface Props extends Omit<HTMLButtonAttributes, "class" | "type" | "disabled" | "children"> {
     variant?: ButtonVariant;
+    size?: ButtonSize;
     type?: ButtonType;
     disabled?: boolean;
     loading?: boolean;
@@ -30,6 +33,7 @@
 
   let {
     variant = "secondary",
+    size,
     type = "button",
     disabled = false,
     loading = false,
@@ -38,15 +42,27 @@
     ...rest
   }: Props = $props();
 
-  /* `secondary` adalah tampilan dasar `.kran-button`; modifier lain menumpuk di atasnya. */
+  /* `secondary` adalah tampilan dasar `.kran-button`; modifier lain menumpuk di atasnya.
+   * Tinggi bawaan 40 px ada di aturan dasar; `--sm`/`--md` hanya menambah kelas saat pemanggil
+   * meminta ukuran eksplisit, supaya kelas yang sudah dipakai layar tidak berubah. */
   const VARIANT_CLASS: Record<ButtonVariant, string> = {
     primary: "kran-button kran-button--primary",
     secondary: "kran-button",
+    quiet: "kran-button kran-button--quiet",
     row: "kran-button kran-button--row",
     destructive: "kran-button kran-button--destructive",
   };
 
-  const buttonClass = $derived([VARIANT_CLASS[variant], extraClass].filter(Boolean).join(" "));
+  const SIZE_CLASS: Record<ButtonSize, string> = {
+    sm: "kran-button--sm",
+    md: "kran-button--md",
+  };
+
+  const buttonClass = $derived(
+    [VARIANT_CLASS[variant], size === undefined ? "" : SIZE_CLASS[size], extraClass]
+      .filter(Boolean)
+      .join(" "),
+  );
 </script>
 
 <button

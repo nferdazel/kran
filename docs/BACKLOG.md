@@ -155,7 +155,7 @@ findings are folded into the rows below and into the task files at DoR time.
 | T-284 | Design tokens v2 + full contrast matrix (D-202) | S | none | standard | DONE |
 | T-285 | App shell: AppShell/Sidebar/Topbar/PageHeader/Toolbar (D-202) | M | T-284 | standard | DONE |
 | T-286 | Form controls v2: Input / Select / Checkbox (Field folded in) | M | T-284 | standard | DONE |
-| T-287 | Button v2: sizes, quiet variant, hover/active rules | S | T-284 | standard | READY |
+| T-287 | Button v2: sizes, quiet variant, hover/active rules | S | T-284 | standard | DONE |
 | T-288 | DataTable v2: density, sticky header, totals, selection | M | T-284 | standard | READY |
 | T-289 | Money inside DataTable: one symbol per column, stable width | S | T-288 | full | READY |
 | T-290 | Drawer 520 with an honest focus trap | M | T-285, T-288 | standard | READY |

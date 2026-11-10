@@ -534,7 +534,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  min-block-size: var(--control-height);
+  min-block-size: var(--control-height-primary);
   padding-block: 0;
   padding-inline: var(--space-3);
   border: 1px solid var(--color-border);
@@ -545,8 +545,19 @@
   cursor: pointer;
 }
 
+/* Ikon selalu 16 px dan tidak ikut menyusut: ukuran kotak bukan urusan pemanggil. */
+.kran-button svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+  flex: none;
+}
+
 .kran-button:hover {
-  background: var(--color-surface);
+  background: var(--color-surface-2);
+}
+
+.kran-button:active {
+  background: var(--color-selected);
 }
 
 .kran-button[aria-pressed="true"] {
@@ -557,8 +568,10 @@
 
 /* Aksi baris tabel: tidak bersaing dengan aksi utama (DESIGN §1, satu titik fokus).
  * Batasnya memakai `--color-border` (3.53:1), bukan hairline: hairline bukan batas kontrol
- * (DESIGN §3), dan tombol tanpa batas terbaca bukan sebagai kontrol. */
+ * (DESIGN §3), dan tombol tanpa batas terbaca bukan sebagai kontrol.
+ * Tinggi dikunci 32 px: baris tabel tetap padat walau tinggi dasar tombol 40. */
 .kran-button--row {
+  min-block-size: var(--control-height);
   padding-inline: var(--space-2);
   border-color: var(--color-border);
   background: transparent;
@@ -566,7 +579,29 @@
 
 .kran-button--row:hover {
   border-color: var(--color-border);
-  background: var(--color-surface);
+  background: var(--color-surface-2);
+}
+
+.kran-button--row:active {
+  background: var(--color-selected);
+}
+
+/* Varian tenang: aksi opsional (lewati, tutup) yang tidak boleh bersaing dengan aksi utama.
+ * Tampil sebagai teks sampai disorot, lalu mendapat latar permukaan sekunder. */
+.kran-button--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.kran-button--quiet:hover {
+  border-color: transparent;
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+
+.kran-button--quiet:active {
+  background: var(--color-selected);
 }
 
 /* Aksi merusak (pembatalan, koreksi): warna danger, bukan lencana. */
@@ -946,8 +981,27 @@
   font-weight: 500;
 }
 
+/* Hover aksi utama hanya menaikkan kecerahan: tidak ada pergeseran warna, tidak ada bayangan
+ * (D-202 menahan set token, jadi tidak ada `--color-primary-hover` baru). */
 .kran-button--primary:hover {
-  background: var(--color-primary-hover);
+  background: var(--color-primary);
+  filter: brightness(1.06);
+}
+
+/* Active satu langkah lebih gelap dari hover, bukan warna baru. */
+.kran-button--primary:active {
+  background: var(--color-primary);
+  filter: brightness(0.98);
+}
+
+/* Ukuran eksplisit. Diletakkan setelah `--row` dan `--primary` supaya `size` menang lewat
+ * urutan sumber ketika pemanggil memberi dua-duanya (tanpa `!important`). */
+.kran-button--sm {
+  min-block-size: var(--control-height);
+}
+
+.kran-button--md {
+  min-block-size: var(--control-height-primary);
 }
 
 /* State `:disabled` (DESIGN §7): kontrol mati harus terlihat mati, tetapi teksnya tetap
@@ -964,6 +1018,12 @@
   color: var(--color-text-muted);
   border-color: var(--color-border);
   cursor: not-allowed;
+}
+
+/* Tombol utama yang mati tidak memakai kursor larangan: aksi yang belum siap bukan kesalahan
+ * pemakaian (butuh `not-allowed`), jadi kursor kembali ke bawaan dan tombol sekadar berhenti. */
+.kran-button--primary:disabled {
+  cursor: default;
 }
 
 /* Checkbox/radio: label pembungkus ikut meredup, kontrol aslinya tetap terbaca. */

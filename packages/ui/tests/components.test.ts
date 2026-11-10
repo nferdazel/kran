@@ -99,6 +99,67 @@ describe("Button", () => {
   it("tanpa loading tidak ada aria-busy", () => {
     expect(render(Button, { props: { children: text("Simpan") } }).body).not.toContain("aria-busy");
   });
+
+  it("variant quiet memakai modifier .kran-button--quiet dan bukan modifier varian lain", () => {
+    const { body: html } = render(Button, {
+      props: { variant: "quiet", children: text("Lewati") },
+    });
+
+    expect(html).toContain('class="kran-button kran-button--quiet"');
+    for (const other of ["--primary", "--row", "--destructive"]) {
+      expect(html).not.toContain(`kran-button${other}`);
+    }
+  });
+
+  it("size sm memakai kelas 32 dan size md kelas 40", () => {
+    expect(
+      render(Button, { props: { size: "sm", children: text("Tutup") } }).body,
+    ).toContain('class="kran-button kran-button--sm"');
+    expect(
+      render(Button, { props: { size: "md", children: text("Simpan") } }).body,
+    ).toContain('class="kran-button kran-button--md"');
+  });
+
+  it("tanpa size tombol tetap 40 (token field), bukan 32", () => {
+    const html = render(Button, { props: { children: text("Simpan") } }).body;
+    const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
+
+    expect(html).not.toContain("kran-button--sm");
+    expect(html).not.toContain("kran-button--md");
+    expect(css).toMatch(/^\.kran-button \{[^}]*min-block-size: var\(--control-height-primary\)/m);
+  });
+
+  it("variant row tanpa size tetap 32 supaya baris tabel tidak berubah", () => {
+    const html = render(Button, { props: { variant: "row", children: text("Buka") } }).body;
+    const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
+
+    expect(html).toContain('class="kran-button kran-button--row"');
+    expect(html).not.toContain("kran-button--md");
+    expect(css).toMatch(/^\.kran-button--row \{[^}]*min-block-size: var\(--control-height\)/m);
+  });
+
+  it("size menang atas row bila keduanya diberikan", () => {
+    const html = render(Button, {
+      props: { variant: "row", size: "md", children: text("Buka") },
+    }).body;
+    const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
+    const sizeRuleAt = css.search(/^\.kran-button--md \{/m);
+    const rowRuleAt = css.search(/^\.kran-button--row \{/m);
+
+    expect(html).toContain("kran-button--md");
+    // Aturan ukuran harus menang lewat urutan sumber, bukan !important.
+    expect(sizeRuleAt).toBeGreaterThan(rowRuleAt);
+    expect(css.match(/^\.kran-button--md \{[^}]*\}/m)?.[0] ?? "").not.toContain("!important");
+  });
+
+  it("loading mempertahankan label di DOM, bukan menggantinya dengan spinner", () => {
+    const { body: html } = render(Button, {
+      props: { loading: true, children: text("Menyimpan") },
+    });
+
+    expect(html).toContain("Menyimpan");
+    expect(html).toContain('aria-busy="true"');
+  });
 });
 
 /** Id kontrol hasil `$props.id()`, diekstrak dari keluaran SSR (nilainya tidak boleh dihardcode). */
