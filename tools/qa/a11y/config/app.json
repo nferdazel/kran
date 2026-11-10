@@ -1,0 +1,51 @@
+{
+  "label": "gate-app",
+  "description": "Gate for the real Svelte app. One entry per K-ID (24). Parameterised routes need a fixture id, otherwise the combo reports BLOCKED and the gate is not green.",
+  "url": "http://127.0.0.1:5173",
+  "out": ".local/qa/results",
+  "modulesDir": "apps/web/node_modules",
+  "locale": "id-ID",
+  "viewport": { "width": 1440, "height": 1000 },
+  "themes": ["light", "dark"],
+  "widths": [1440, 360],
+  "scope": "body",
+  "reportOutOfScope": false,
+  "auth": { "required": true, "redirectPath": "/login" },
+  "fixtures": {
+    "memberId": null,
+    "loanId": null,
+    "reportKey": null,
+    "transactionId": null,
+    "accountId": null
+  },
+  "axes": {
+    "theme": { "mode": "storage", "storageKey": "kran-theme", "attr": "data-theme", "readFrom": "html" },
+    "width": { "mode": "viewport" }
+  },
+  "screens": [
+    { "id": "K-01", "k": ["K-01"], "route": "/app/teller", "expect": { "selector": "main, [role=main]", "min": 1, "visible": "h1" } },
+    { "id": "K-02", "k": ["K-02"], "route": "/app/vault", "expect": { "selector": "main, [role=main]", "min": 1, "visible": "h1" } },
+    { "id": "K-03", "k": ["K-03"], "route": "/app/close", "expect": { "selector": "main, [role=main]", "min": 1, "visible": "h1" } },
+    { "id": "K-04", "k": ["K-04"], "route": "/app/ledger", "expect": { "selector": "table tbody tr", "min": 1, "visible": "h1" } },
+    { "id": "K-05", "k": ["K-05"], "route": "/app/ledger/admin", "expect": { "selector": "main, [role=main]", "min": 1, "visible": "h1" } },
+    { "id": "K-06", "k": ["K-06"], "route": "/app/members", "expect": { "selector": "main, [role=main]", "min": 1, "visible": "h1" } },
+    { "id": "K-07", "k": ["K-07"], "route": "/app/members/new", "expect": { "selector": "form", "min": 1, "visible": "h1" } },
+    { "id": "K-08", "k": ["K-08"], "route": "/app/members/{memberId}", "expect": { "selector": "main, [role=main]", "min": 1, "visible": "h1" } },
+    { "id": "K-09", "k": ["K-09"], "route": "/app/members/{memberId}/exit", "expect": { "selector": "main, [role=main]", "min": 1, "visible": "h1" } },
+    { "id": "K-10", "k": ["K-10"], "route": "/app/savings/obligations", "expect": { "selector": "main, [role=main]", "min": 1, "visible": "h1" } },
+    { "id": "K-11", "k": ["K-11"], "route": "/app/loans", "expect": { "selector": "main, [role=main]", "min": 1, "visible": "h1" } },
+    { "id": "K-12", "k": ["K-12"], "route": "/app/loans/new", "expect": { "selector": "form", "min": 1, "visible": "h1" } },
+    { "id": "K-13", "k": ["K-13"], "route": "/app/loans/approvals", "expect": { "selector": "main, [role=main]", "min": 1, "visible": "h1" } },
+    { "id": "K-14", "k": ["K-14"], "route": "/app/loans/{loanId}", "expect": { "selector": "main, [role=main]", "min": 1, "visible": "h1" } },
+    { "id": "K-15", "k": ["K-15"], "route": "/app/loans/arrears", "expect": { "selector": "main, [role=main]", "min": 1, "visible": "h1" } },
+    { "id": "K-16", "k": ["K-16"], "route": "/app/reports", "expect": { "selector": "main, [role=main]", "min": 1, "visible": "h1" } },
+    { "id": "K-17", "k": ["K-17"], "route": "/app/audit", "expect": { "selector": "main, [role=main]", "min": 1, "visible": "h1" } },
+    { "id": "K-18", "k": ["K-18"], "route": "/app/users", "expect": { "selector": "main, [role=main]", "min": 1, "visible": "h1" } },
+    { "id": "K-19", "k": ["K-19"], "route": "/app/params", "expect": { "selector": "main, [role=main]", "min": 1, "visible": "h1" } },
+    { "id": "K-20", "k": ["K-20"], "route": "/app/products", "expect": { "selector": "main, [role=main]", "min": 1, "visible": "h1" } },
+    { "id": "K-21", "k": ["K-21"], "route": "/app/password", "expect": { "selector": "form", "min": 1, "visible": "h1" } },
+    { "id": "K-22", "k": ["K-22"], "route": "/login", "expect": { "selector": "form input[type=password]", "min": 1, "visible": "form" } },
+    { "id": "K-23", "k": ["K-23"], "route": "/app/print/slip/{transactionId}", "expect": { "selector": "main, [role=main]", "min": 1 } },
+    { "id": "K-24", "k": ["K-24"], "route": "/app/print/statement/{accountId}", "expect": { "selector": "main, [role=main]", "min": 1 } }
+  ]
+}
