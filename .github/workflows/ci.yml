@@ -402,7 +402,12 @@ jobs:
       - name: "Playwright --update-snapshots (visual Linux)"
         # Hanya spec visual: empat baseline (login dan ganti kata sandi, light dan dark). Suite
         # penuh tidak perlu diregenerasi dan tidak dijalankan di sini.
-        run: pnpm --filter @kran/web exec playwright test tests/e2e/visual.spec.ts --update-snapshots
+        #
+        # `=all`, bukan flag telanjang: flag telanjang berarti mode `changed`, jadi Playwright
+        # tidak menulis ulang snapshot selama selisihnya masih di bawah `maxDiffPixelRatio` 0.01.
+        # Regenerasi yang diminta harus selalu menulis, kalau tidak artefak yang diunggah cuma
+        # salinan baseline lama (terjadi di run 42921526674).
+        run: pnpm --filter @kran/web exec playwright test tests/e2e/visual.spec.ts --update-snapshots=all
 
       - name: Upload baseline hasil regenerasi
         uses: actions/upload-artifact@v4
