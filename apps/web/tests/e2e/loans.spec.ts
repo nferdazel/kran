@@ -40,6 +40,9 @@ type Text = {
   open: string;
   back: string;
   scheduleRegion: string;
+  colPrincipal: string;
+  schedulePrincipal: string;
+  detailPrincipal: string;
 };
 
 const T: Record<Locale, Text> = {
@@ -49,6 +52,9 @@ const T: Record<Locale, Text> = {
     open: "Buka",
     back: "Kembali ke daftar pinjaman",
     scheduleRegion: "Tabel: Jadwal aktif",
+    colPrincipal: "Pokok (IDR)",
+    schedulePrincipal: "Pokok (IDR)",
+    detailPrincipal: "Pokok akad (IDR)",
   },
   en: {
     listTitle: "Loans",
@@ -56,6 +62,9 @@ const T: Record<Locale, Text> = {
     open: "Open",
     back: "Back to loan list",
     scheduleRegion: "Table: Active schedule",
+    colPrincipal: "Principal (IDR)",
+    schedulePrincipal: "Principal (IDR)",
+    detailPrincipal: "Agreed principal (IDR)",
   },
 };
 
@@ -201,39 +210,89 @@ test.describe("pinjaman: daftar & detail", () => {
     await expect(page.getByText("Belum ada pinjaman. Ajukan pinjaman pertama.")).toHaveCount(0);
   });
 
-  test("axe: daftar dan detail × 2 tema × 2 locale", async ({ page, request }) => {
-    test.setTimeout(240_000);
+  test("axe: daftar dan detail × 2 tema × 2 locale × 1440/360", async ({ page, request }) => {
+    test.setTimeout(360_000);
     const loan = await createActiveLoan(request);
     await browserLogin(page, await apiLogin(request, LOANS));
 
     for (const locale of LOCALES) {
-      for (const theme of THEMES) {
-        await prepare(page, locale, theme);
+      for (const width of [1440, 360] as const) {
+        for (const theme of THEMES) {
+          await page.setViewportSize({ width, height: 900 });
+          await prepare(page, locale, theme);
 
-        await page.goto("/app/loans");
-        await expect(
-          page.getByRole("heading", { level: 1, name: T[locale].listTitle }),
-        ).toBeVisible();
-        // Baris akad baru harus terlihat: tanpa ini axe boleh hijau pada tabel kosong.
-        await expect(page.getByRole("link", { name: T[locale].open }).first()).toBeVisible();
-        const listResults = await new AxeBuilder({ page }).analyze();
-        const listBlocking = blockingViolations(listResults.violations);
-        expect(
-          listBlocking,
-          `/app/loans ${locale}/${theme}: ${listBlocking.map((violation) => violation.id).join(", ")}`,
-        ).toEqual([]);
+          await page.goto("/app/loans");
+          await expect(
+            page.getByRole("heading", { level: 1, name: T[locale].listTitle }),
+          ).toBeVisible();
+          // Baris akad baru harus terlihat: tanpa ini axe boleh hijau pada tabel kosong.
+          await expect(page.getByRole("link", { name: T[locale].open }).first()).toBeVisible();
+          const listResults = await new AxeBuilder({ page }).analyze();
+          const listBlocking = blockingViolations(listResults.violations);
+          expect(
+            listBlocking,
+            `/app/loans ${locale}/${theme}/${width}: ${listBlocking.map((violation) => violation.id).join(", ")}`,
+          ).toEqual([]);
 
-        await page.goto(`/app/loans/${loan.loanId}`);
-        await expect(
-          page.getByRole("heading", { level: 1, name: T[locale].detailTitle }),
-        ).toBeVisible();
-        await expect(page.getByRole("region", { name: T[locale].scheduleRegion })).toBeVisible();
-        const detailResults = await new AxeBuilder({ page }).analyze();
-        const detailBlocking = blockingViolations(detailResults.violations);
-        expect(
-          detailBlocking,
-          `/app/loans/{loanId} ${locale}/${theme}: ${detailBlocking.map((violation) => violation.id).join(", ")}`,
-        ).toEqual([]);
+          await page.goto(`/app/loans/${loan.loanId}`);
+          await expect(
+            page.getByRole("heading", { level: 1, name: T[locale].detailTitle }),
+          ).toBeVisible();
+          await expect(page.getByRole("region", { name: T[locale].scheduleRegion })).toBeVisible();
+          const detailResults = await new AxeBuilder({ page }).analyze();
+          const detailBlocking = blockingViolations(detailResults.violations);
+          expect(
+            detailBlocking,
+            `/app/loans/{loanId} ${locale}/${theme}/${width}: ${detailBlocking.map((violation) => violation.id).join(", ")}`,
+          ).toEqual([]);
+        }
+      }
+    }
+  });
+
+  test("mata uang: unit sekali di header, sel tanpa unit", async ({ page, request }) => {
+    test.setTimeout(180_000);
+    const loan = await createActiveLoan(request);
+    await browserLogin(page, await apiLogin(request, LOANS));
+
+    for (const locale of LOCALES) {
+      await prepare(page, locale, "light");
+
+      await page.goto("/app/loans");
+      await expect(
+        page.getByRole("columnheader", { name: T[locale].colPrincipal, exact: true }),
+      ).toBeVisible();
+      const listHeaders = await page.locator("thead th").allTextContents();
+      for (const header of listHeaders) {
+        expect(header.match(/IDR/g)?.length ?? 0, `header "${header}"`).toBeLessThanOrEqual(1);
+      }
+      const listCells = await page.locator("td.kran-money").allTextContents();
+      expect(listCells.length, "sel uang pada daftar").toBeGreaterThan(0);
+      for (const cell of listCells) {
+        expect(cell.trim(), `sel daftar "${cell}"`).toMatch(/^[\d.,]+$/);
+      }
+
+      await page.goto(`/app/loans/${loan.loanId}`);
+      const schedule = page.getByRole("region", { name: T[locale].scheduleRegion });
+      await expect(
+        schedule.getByRole("columnheader", { name: T[locale].schedulePrincipal, exact: true }),
+      ).toBeVisible();
+      const scheduleHeaders = await schedule.locator("thead th").allTextContents();
+      expect(
+        scheduleHeaders.filter((header) => header.trim().endsWith(" (IDR)")).length,
+        `header jadwal ber-IDR: ${scheduleHeaders.join(" | ")}`,
+      ).toBe(4);
+
+      await expect(page.locator("dl.kran-facts dt", { hasText: T[locale].detailPrincipal })).toBeVisible();
+      const factLabels = await page.locator("dl.kran-facts dt").allTextContents();
+      expect(
+        factLabels.filter((label) => label.trim().endsWith(" (IDR)")).length,
+        `label fakta ber-IDR: ${factLabels.join(" | ")}`,
+      ).toBeGreaterThanOrEqual(4);
+
+      const moneyCells = await page.locator("dl.kran-facts dd, td.kran-money").allTextContents();
+      for (const cell of moneyCells) {
+        expect(cell, `sel detail "${cell}"`).not.toMatch(/IDR|Rp/);
       }
     }
   });
