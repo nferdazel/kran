@@ -550,7 +550,7 @@
       <section class="kran-section" aria-labelledby="pending-heading">
         <h2 class="kran-section__title" id="pending-heading">{m.params_pending_heading()}</h2>
         {#if pending.length === 0}
-          <EmptyState title={m.params_pending_empty()} />
+          <EmptyState kind="no-data" title={m.params_pending_empty()} />
         {:else}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <div
@@ -605,7 +605,7 @@
           {m.params_end_requests_heading()}
         </h2>
         {#if endRequests.length === 0}
-          <EmptyState title={m.params_end_requests_empty()} />
+          <EmptyState kind="no-data" title={m.params_end_requests_empty()} />
         {:else}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <div
@@ -736,7 +736,7 @@
           />
         </div>
         {#if active.length === 0}
-          <EmptyState title={m.params_active_empty()} />
+          <EmptyState kind="no-data" title={m.params_active_empty()} />
         {:else}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <div
@@ -851,7 +851,7 @@
       <section class="kran-section" aria-labelledby="audit-heading">
         <h2 class="kran-section__title" id="audit-heading">{m.audit_heading()}</h2>
         {#if audit.length === 0}
-          <EmptyState title={m.audit_empty()} />
+          <EmptyState kind="no-data" title={m.audit_empty()} />
         {:else}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <div

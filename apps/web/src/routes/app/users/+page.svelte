@@ -261,7 +261,7 @@
   <section class="kran-section" aria-labelledby="users-heading">
     <h2 class="kran-section__title" id="users-heading">{m.users_title()}</h2>
     {#if users.length === 0}
-      <EmptyState title={m.users_empty()} />
+      <EmptyState kind="no-data" title={m.users_empty()} />
     {:else}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <div

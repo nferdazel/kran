@@ -893,7 +893,7 @@
   <section class="kran-section" aria-labelledby="loans-schedule-heading">
     <h2 class="kran-section__title" id="loans-schedule-heading">{m.loans_detail_schedule()}</h2>
     {#if scheduleRows.length === 0}
-      <EmptyState title={m.loans_detail_schedule_empty()} />
+      <EmptyState kind="no-data" title={m.loans_detail_schedule_empty()} />
     {:else}
       <DataTable
         caption={m.loans_detail_schedule()}
@@ -909,7 +909,7 @@
   <section class="kran-section" aria-labelledby="loans-versions-heading">
     <h2 class="kran-section__title" id="loans-versions-heading">{m.loans_detail_versions()}</h2>
     {#if versionRows.length === 0}
-      <EmptyState title={m.loans_detail_versions_empty()} />
+      <EmptyState kind="no-data" title={m.loans_detail_versions_empty()} />
     {:else}
       <DataTable
         caption={m.loans_detail_versions()}

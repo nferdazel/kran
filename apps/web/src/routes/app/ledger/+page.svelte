@@ -290,9 +290,9 @@
     <Button type="button" onclick={reload}>{m.app_retry()}</Button>
   </Alert>
 {:else if periods.length === 0}
-  <EmptyState title={m.ledger_no_period()} />
+  <EmptyState kind="no-data" title={m.ledger_no_period()} />
 {:else if balances && balances.lines.length === 0}
-  <EmptyState title={m.ledger_empty()} description={m.ledger_empty_hint()} />
+  <EmptyState kind="no-data" title={m.ledger_empty()} />
 {:else if balances}
   <!-- Ringkasan buku besar: tiga fakta yang dibaca auditor dalam satu pandangan. Daftar fakta,
        bukan strip kartu metrik (DESIGN §11/§13). -->
@@ -457,7 +457,7 @@
         {/each}
         {#if filteredLines.length === 0}
           <tr>
-            <td colspan="8" class="kran-muted">{m.ledger_filter_empty()}</td>
+            <td colspan="8" class="kran-muted">{m.ledger_empty_no_match()}</td>
           </tr>
         {/if}
       </tbody>

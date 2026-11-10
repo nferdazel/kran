@@ -590,7 +590,7 @@
       {/if}
 
       {#if runs.length === 0 && !loadingRuns}
-        <EmptyState title={m.dayclose_history_empty()} />
+        <EmptyState kind="no-data" title={m.dayclose_history_empty()} />
       {:else if runs.length > 0}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div

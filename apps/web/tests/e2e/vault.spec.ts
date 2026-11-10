@@ -50,9 +50,9 @@ type Text = {
 
 const T: Record<"id" | "en", Text> = {
   id: {
-    title: "Vault kas",
+    title: "Kas besar",
     branch: "Cabang",
-    balance: "Saldo vault",
+    balance: "Saldo kas besar",
     amount: "Nominal (IDR)",
     source: "Akun sumber (kode COA)",
     note: "Bukti dan tujuan",
@@ -63,7 +63,7 @@ const T: Record<"id" | "en", Text> = {
     submitted: "Pengajuan terkirim dan menunggu keputusan.",
     approve: "Setujui",
     approveConfirm: "Setujui sekarang",
-    approved: "Top-up disetujui. Saldo vault diperbarui.",
+    approved: "Top-up disetujui. Saldo kas besar diperbarui.",
     reject: "Tolak",
     rejectReason: "Alasan penolakan",
     rejectConfirm: "Tolak pengajuan",

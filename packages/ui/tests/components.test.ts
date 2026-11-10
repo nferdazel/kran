@@ -8,7 +8,9 @@ import Button from "../src/components/Button.svelte";
 import Checkbox from "../src/components/Checkbox.svelte";
 import DataTable from "../src/components/DataTable.svelte";
 import EmptyState from "../src/components/EmptyState.svelte";
+import ErrorState from "../src/components/ErrorState.svelte";
 import Input from "../src/components/Input.svelte";
+import LoadingState from "../src/components/LoadingState.svelte";
 import Money from "../src/components/Money.svelte";
 import Select from "../src/components/Select.svelte";
 import StatusBadge from "../src/components/StatusBadge.svelte";
@@ -396,6 +398,7 @@ describe("EmptyState", () => {
   it("judul + penjelasan, tanpa data contoh", () => {
     const { body: html } = render(EmptyState, {
       props: {
+        kind: "no-data",
         title: "Belum ada jurnal bertanggal ini",
         description: "Posting jurnal (F2), atau ubah tanggal.",
       },
@@ -406,19 +409,108 @@ describe("EmptyState", () => {
     expect(html).not.toContain("<table");
   });
 
-  it("aksi hanya dirender bila snippet dikirim", () => {
+  it("kind=no-match merender aksi yang dikirim pemakai", () => {
     const withAction = render(EmptyState, {
       props: {
+        kind: "no-match",
+        title: "Tidak ada pinjaman yang cocok.",
+        action: text('<button type="button" class="kran-button">Hapus filter</button>'),
+      },
+    }).body;
+
+    expect(withAction).toContain('class="kran-empty-state__action"');
+    expect(withAction).toContain("Hapus filter");
+  });
+
+  it("kind=no-data tidak merender aksi meski pemakai mengirimnya", () => {
+    const html = render(EmptyState, {
+      props: {
+        kind: "no-data",
         title: "Belum ada rekening",
         action: text('<button type="button" class="kran-button">Buka rekening</button>'),
       },
     }).body;
 
-    expect(withAction).toContain('class="kran-empty-state__action"');
-    expect(withAction).toContain("Buka rekening");
-    expect(render(EmptyState, { props: { title: "Belum ada rekening" } }).body).not.toContain(
-      "kran-empty-state__action",
-    );
+    expect(html).not.toContain("kran-empty-state__action");
+    expect(html).not.toContain("Buka rekening");
+  });
+
+  it("kind=denied punya kalimatnya sendiri dan tidak membawa live-region role", () => {
+    const html = render(EmptyState, {
+      props: {
+        kind: "denied",
+        title: "Akses terbatas",
+        description: "Anda tidak memiliki izin membaca kas besar.",
+      },
+    }).body;
+
+    expect(html).toContain("Akses terbatas");
+    expect(html).toContain("Anda tidak memiliki izin membaca kas besar.");
+    expect(html).toContain('data-kind="denied"');
+    expect(html).not.toMatch(/role="(status|alert|log)"/);
+  });
+
+  it("tanpa kind = keadaan lain, bukan ketiga jenis itu", () => {
+    const html = render(EmptyState, {
+      props: { title: "Pinjaman tidak ditemukan atau bukan di cabang Anda." },
+    }).body;
+
+    expect(html).toContain("Pinjaman tidak ditemukan");
+    expect(html).not.toMatch(/role="(status|alert|log)"/);
+  });
+});
+
+describe("LoadingState", () => {
+  it("satu-satunya keadaan dengan role=status dan aria-busy", () => {
+    const html = render(LoadingState, { props: { label: "Memuat pinjaman…" } }).body;
+
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain("Memuat pinjaman…");
+  });
+});
+
+describe("ErrorState", () => {
+  it("judul, badan, dan label retry dari pemakai", () => {
+    const html = render(ErrorState, {
+      props: {
+        title: "Pinjaman tidak bisa dimuat.",
+        body: "Periksa koneksi lalu coba lagi.",
+        retryLabel: "Coba lagi",
+      },
+    }).body;
+
+    expect(html).toContain("Pinjaman tidak bisa dimuat.");
+    expect(html).toContain("Periksa koneksi lalu coba lagi.");
+    expect(html).toContain("Coba lagi");
+    expect(html).not.toMatch(/role="(status|alert|log)"/);
+  });
+
+  it("tidak punya label retry bawaan yang tertukar dengan reload", () => {
+    const source = readFileSync(new URL("../src/components/ErrorState.svelte", import.meta.url), "utf8");
+
+    expect(source).not.toContain("Muat ulang");
+  });
+});
+
+describe("Terminologi i18n (T-292)", () => {
+  const read = (locale: string): Record<string, string> =>
+    JSON.parse(
+      readFileSync(new URL(`../../i18n/messages/${locale}.json`, import.meta.url), "utf8"),
+    ) as Record<string, string>;
+
+  it("tidak ada nilai id yang masih menyebut vault atau teller", () => {
+    const offenders = Object.entries(read("id"))
+      .filter(([, value]) => /vault|teller/i.test(value))
+      .map(([key]) => key);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("nilai en tidak diubah: 27 nilai masih memakai istilah itu", () => {
+    const matches = Object.values(read("en")).filter((value) => /vault|teller/i.test(value));
+
+    expect(matches).toHaveLength(27);
   });
 });
 

@@ -46,7 +46,7 @@ const T: Record<"id" | "en", Text> = {
     hint: "Panah atas dan bawah memilih, Enter membuka, Esc menutup.",
     empty: "Tidak ada perintah yang cocok.",
     ledger: "Buku besar",
-    teller: "Teller",
+    teller: "Kasir",
     accounts: "Buka rekening",
     params: "Parameter",
     products: "Produk",

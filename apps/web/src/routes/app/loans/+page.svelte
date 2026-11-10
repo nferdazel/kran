@@ -23,7 +23,7 @@
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
   import { formatDate } from "#lib/app/format.js";
-  import { loanProblemMessage, loanStatusLabel } from "#lib/app/loans.js";
+  import { loanFilterActive, loanProblemMessage, loanStatusLabel } from "#lib/app/loans.js";
   import type { LoanStatus, LoanSummary, SessionInfo } from "#lib/app/types.js";
   import type { PageProps } from "./$types";
 
@@ -90,6 +90,13 @@
 
   function submit(event: SubmitEvent): void {
     event.preventDefault();
+    void load();
+  }
+
+  /** "Hapus filter" pada keadaan no-match: kosongkan kedua kontrol lalu muat ulang. */
+  function clearFilter(): void {
+    partyId = "";
+    status = "";
     void load();
   }
 
@@ -163,6 +170,10 @@
     <a class="kran-link" href={resolve("/app/loans/[loanId]", { loanId })}>{m.loans_open()}</a>
   {/snippet}
 
+  {#snippet clearFilterAction()}
+    <Button type="button" onclick={clearFilter}>{m.common_filter_clear()}</Button>
+  {/snippet}
+
   <section class="kran-section" aria-labelledby="loans-list-heading">
     <h2 class="kran-section__title" id="loans-list-heading">{m.loans_title()}</h2>
     {#if loading}
@@ -171,8 +182,10 @@
       <Alert tone="negative" title={errorMessage}>
         <Button type="button" onclick={() => void load()}>{m.app_retry()}</Button>
       </Alert>
+    {:else if loans.length === 0 && loanFilterActive(partyId, status)}
+      <EmptyState kind="no-match" title={m.loans_empty_no_match()} action={clearFilterAction} />
     {:else if loans.length === 0}
-      <EmptyState title={m.loans_empty()} />
+      <EmptyState kind="no-data" title={m.loans_empty()} />
     {:else}
       <DataTable
         caption={m.loans_title()}

@@ -61,6 +61,8 @@
 
   let requests = $state<TopUpRecord[]>([]);
   let statusFilter = $state<"" | TopUpStatus>("PENDING");
+  /** Label status untuk kalimat no-match; kosong berarti "Semua", yang memakai kalimat no-data. */
+  const requestFilterLabel = $derived(statusFilter === "" ? "" : statusLabel(statusFilter));
 
   // Form pengajuan.
   let amountInput = $state("");
@@ -174,6 +176,12 @@
   async function onFilterChange(): Promise<void> {
     clearOutcome();
     await loadRequests();
+  }
+
+  /** "Hapus filter" pada keadaan no-match: kembali ke "Semua" lalu muat ulang. */
+  function clearStatusFilter(): void {
+    statusFilter = "";
+    void onFilterChange();
   }
 
   async function submit(event: SubmitEvent): Promise<void> {
@@ -414,6 +422,10 @@
     </section>
   {/if}
 
+  {#snippet clearStatusFilterAction()}
+    <Button type="button" onclick={clearStatusFilter}>{m.common_filter_clear()}</Button>
+  {/snippet}
+
   <section class="kran-section" aria-labelledby="vault-requests-heading">
     <div class="kran-toolbar">
       <h2 class="kran-section__title" id="vault-requests-heading">
@@ -433,8 +445,14 @@
 
     {#if loadingRequests}
       <p role="status">{m.vault_requests_loading()}</p>
+    {:else if requests.length === 0 && statusFilter === ""}
+      <EmptyState kind="no-data" title={m.vault_requests_empty()} />
     {:else if requests.length === 0}
-      <EmptyState title={m.vault_requests_empty()} />
+      <EmptyState
+        kind="no-match"
+        title={m.vault_empty_no_match({ status: requestFilterLabel })}
+        action={clearStatusFilterAction}
+      />
     {:else}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <div

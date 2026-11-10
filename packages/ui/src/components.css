@@ -1196,6 +1196,27 @@
   margin-block-start: var(--space-3);
 }
 
+/* Keadaan memuat dan gagal (T-292) berbagi bentuk dengan keadaan kosong: satu blok setebal isi,
+ * bukan kotak penuh layar, supaya tata letak tidak melompat saat keadaan berganti. */
+.kran-loading-state,
+.kran-error-state {
+  padding-block: var(--space-6);
+  padding-inline: var(--space-4);
+  border: 1px dashed var(--color-hairline);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+}
+
+.kran-loading-state p,
+.kran-error-state__title {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.kran-error-state__action {
+  margin-block-start: var(--space-3);
+}
+
 /* Tajuk halaman + aksi (mis. Keluar) sebaris, membungkus di layar sempit. */
 .kran-toolbar {
   display: flex;

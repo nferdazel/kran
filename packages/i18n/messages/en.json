@@ -362,12 +362,11 @@
   "ledger_credit": "Credit",
   "ledger_debit": "Debit",
   "ledger_denied": "This account cannot read journals.",
-  "ledger_empty": "No journals in this period yet.",
-  "ledger_empty_hint": "Post a journal, or choose another period.",
+  "ledger_empty": "No account has a balance in this period.",
   "ledger_error": "Balances failed to load.",
   "ledger_filter_all": "All accounts",
   "ledger_filter_assets": "1 - Assets",
-  "ledger_filter_empty": "No accounts in this category.",
+  "ledger_empty_no_match": "No accounts in this category.",
   "ledger_filter_equity": "3 - Equity",
   "ledger_filter_expense": "5 - Expenses",
   "ledger_filter_liabilities": "2 - Liabilities",
@@ -917,7 +916,7 @@
   "loans_filter_all": "All statuses",
   "loans_filter_submit": "Show",
   "loans_loading": "Loading loans…",
-  "loans_empty": "No matching loans.",
+  "loans_empty": "No loans yet. Submit the first loan.",
   "loans_denied": "You are not allowed to read loans.",
   "loans_error": "Loans could not be loaded.",
   "loans_error_party_invalid": "Member ID must be a valid UUID.",
@@ -1046,5 +1045,8 @@
   "loans_notice_disbursed": "Disbursement recorded: {count} instalments, maturing {date}.",
   "loans_notice_paid": "Payment recorded; outstanding principal {outstanding}.",
   "loans_notice_restructured": "Restructure recorded: {count} instalments, maturing {date}.",
-  "loans_notice_written_off": "Write-off recorded; total {total}."
+  "loans_notice_written_off": "Write-off recorded; total {total}.",
+  "loans_empty_no_match": "No matching loans.",
+  "vault_empty_no_match": "No request has status {status}.",
+  "common_filter_clear": "Clear filter"
 }

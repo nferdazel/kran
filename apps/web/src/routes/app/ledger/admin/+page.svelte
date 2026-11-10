@@ -388,7 +388,7 @@
       <p class="kran-muted">{m.ledger_admin_periods_intro()}</p>
 
       {#if periods.length === 0}
-        <EmptyState title={m.ledger_admin_periods_empty()} />
+        <EmptyState kind="no-data" title={m.ledger_admin_periods_empty()} />
       {:else}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
@@ -544,7 +544,7 @@
       <p class="kran-muted">{m.ledger_admin_coa_intro()}</p>
 
       {#if accounts.length === 0}
-        <EmptyState title={m.ledger_admin_coa_empty()} />
+        <EmptyState kind="no-data" title={m.ledger_admin_coa_empty()} />
       {:else}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div

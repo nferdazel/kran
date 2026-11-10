@@ -176,6 +176,31 @@ async function createActiveLoan(request: APIRequestContext): Promise<Fixture> {
 }
 
 test.describe("pinjaman: daftar & detail", () => {
+  test("kosong: no-data dan no-match memakai kalimat berbeda", async ({ page, request }) => {
+    const cookie = await apiLogin(request, LOANS);
+    await browserLogin(page, cookie);
+    await prepare(page, "id", "light");
+    // Daftar kosong dari server sungguhan tidak bisa dijamin setelah spec lain membuat akad,
+    // jadi respons daftar dipatok kosong; yang diuji adalah cabang tampilan, bukan query API.
+    await page.route("**/api/v1/lending/loans**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ items: [] }),
+      }),
+    );
+
+    await page.goto("/app/loans");
+    await expect(page.getByText("Belum ada pinjaman. Ajukan pinjaman pertama.")).toBeVisible();
+
+    await page.getByLabel("ID anggota").fill("11111111-1111-4111-8111-111111111111");
+    await page.getByRole("button", { name: "Tampilkan" }).click();
+
+    await expect(page.getByText("Tidak ada pinjaman yang cocok.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Hapus filter" })).toBeVisible();
+    await expect(page.getByText("Belum ada pinjaman. Ajukan pinjaman pertama.")).toHaveCount(0);
+  });
+
   test("axe: daftar dan detail × 2 tema × 2 locale", async ({ page, request }) => {
     test.setTimeout(240_000);
     const loan = await createActiveLoan(request);
