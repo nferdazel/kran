@@ -1,20 +1,24 @@
 # T-xxx - <title>
 
-Phase: <P0-P8> · Size: <S/M/L> · Risk: <money|schema|authz|audit|general> · Status: READY
+Phase: <P0-P8> · Size: <S/M/L> · Risk: <full|standard> (<money|schema|authz|audit|general>) · Status: READY
+
+Queue risk `full` means `money`, `schema` or migration, `authz`, or `audit`; `standard` means
+`general`. Name the concrete class in parentheses (R-31). A row becomes `READY` only when this file
+exists with every Definition of Ready item filled (R-32).
 
 ## Definition of Ready
 
-- [ ] Phase exit criterion served: <criterion>
 - [ ] Evidence anchor: <audit id, ruling, or design section>
+- [ ] Phase exit criterion served: <criterion>
+- [ ] Risk class in the header: `full` (<money|schema|authz|audit>) or `standard` (`general`)
+- [ ] Dependencies: <task ids, or none>
 - [ ] Files and modules to touch: <paths>
 - [ ] Parameter keys: <new keys registered, or none>
 - [ ] Migration shape: <none|expand|expand+contract, with contract entry if any>
 - [ ] Tests: <existing tests that protect this>; <new test that proves it>
 - [ ] UI obligations: <i18n id+en keys, a11y impact, states, or not applicable>
-- [ ] Dependencies: <task ids, or none>
 - [ ] Rollback: <how to undo>
 - [ ] Size fits the 2-day cap: <yes, or split plan>
-- [ ] Risk class assigned above
 
 ## Scope
 
@@ -38,13 +42,10 @@ Phase: <P0-P8> · Size: <S/M/L> · Risk: <money|schema|authz|audit|general> · S
 
 ## Review
 
-| Risk class | Requirement |
-|---|---|
-| `money` | Independent reviewer, maximum 2 rounds |
-| `schema` | Independent reviewer, maximum 2 rounds |
-| `authz` | Independent reviewer, maximum 2 rounds |
-| `audit` | Independent reviewer, maximum 2 rounds |
-| `general` | Self-review checklist plus gates |
+| Queue value | Concrete class | Requirement |
+|---|---|---|
+| `full` | `money`, `schema`, `authz`, `audit` | Independent reviewer, maximum 2 rounds |
+| `standard` | `general` | Self-review checklist plus gates |
 
 A second review that still finds a BLOCKER returns the task to `READY` with a rewritten plan.
 There is no third round. `HUMAN-REVIEW-REQUIRED` stays on money math, authorization, crypto, and

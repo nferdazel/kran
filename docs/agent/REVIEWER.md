@@ -7,17 +7,20 @@ plausible.
 
 ## When this review is required
 
-| Risk class | Review |
-|---|---|
-| `money` | Required |
-| `schema` or migration | Required |
-| `authz` or session | Required |
-| `audit` or crypto | Required |
-| `general` | Self-review checklist plus gates; no independent reviewer required |
+| Queue value | Concrete class | Review |
+|---|---|---|
+| `full` | `money`, `schema`, `authz`, `audit` | Required |
+| `standard` | `general` | Self-review checklist plus gates; no independent reviewer required |
+
+Queue risk `full` covers money, schema or migration, authz, and audit; `standard` covers the rest
+(R-31). The task header names the concrete class.
 
 The cap is two rounds. A second round that still finds a BLOCKER returns the task to `READY`
 with a rewritten plan. There is no third round. `HUMAN-REVIEW-REQUIRED` stays on money math,
 authorization, cryptography, and the audit chain; the agent does not sign those itself.
+
+A phase exit fails when a named check was skipped: missing tooling, missing database, zero tests,
+or no axe run is a failure, not a pass (R-33).
 
 ## What to read
 
@@ -75,7 +78,7 @@ State the round number. If this is round two and a BLOCKER remains, say that the
 ```
 Verdict: APPROVE | REQUEST CHANGES
 Round: 1 | 2
-Risk class: <class>
+Risk: <full|standard> (<concrete class>)
 Q1 blast radius: <answer + file:line>
 Q2 failing test: <test path + why it fails before>
 Q3 scope and contract: <answer>

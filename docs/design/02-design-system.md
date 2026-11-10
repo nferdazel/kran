@@ -137,7 +137,7 @@ components support S1-S3 and S5 always; the column lists the rest.
 | ConfirmDialog | one-layer confirmation | routine, destructive, irreversible | S6 S7 | `<dialog>` + `showModal`, `aria-labelledby`/`describedby`, trap, Esc blocked while busy, restore trigger or `#main` | `open, title, body, tone, confirmLabel, requireReason, busy, onconfirm, oncancel` | no (3 hand-rolled traps) |
 | ApprovalPanel | maker/checker decision | approve, reject, read-only | S5 S6 S7, stale | selection is a real button; `aria-live="polite"` on the decision result; reason `fieldset` when rejecting | `items, selected, selfApprovalBlocked, reason, ondecide, busy` | no (buttons on every PENDING row) |
 | IdempotentSubmit | post money once | button + key owner | S6 S7, unknown | same Button contract; `aria-busy`, key preserved visibly across retry | `fingerprint, onSubmit, onUnknown` | no (4 divergent key lifecycles, FE-PRAC-03) |
-| SessionLock | 15-min idle guard (R-21) | warning, expired | S6 S7 | `dialog` + polite warning at 2 min, assertive at expiry; focus moves in; Esc does not dismiss | `expiresAt, warningSeconds, onExtend, onSignOut` | no |
+| SessionLock | 15-min idle guard (R-21) | warning, expired | S6 S7 | `dialog` + polite warning at 14:00 (60 s left, DD-04), assertive at expiry; focus moves in; Esc does not dismiss | `expiresAt, warningSeconds, onExtend, onSignOut` | no |
 | **Feedback** | | | | | | |
 | Alert | message tied to a form or action | 5 tones | S7 | `role="alert"` only for failure, `status` otherwise; title is `<p>` not a heading | `tone, title, reference?, children` | exists - keep |
 | Toast | transient confirmation | success, error | S6 S7 | live region + close button; errors never auto-dismiss; never covers save/print | `tone, message, onclose` | no (no toast today - keep it that way for money) |
@@ -208,11 +208,12 @@ focus returns to the trigger or `#main` if it was removed. ARIA: `aria-labelledb
 akan ditutup; transaksi baru tidak bisa diposting"). Do: cancel/close-cash only. Don't: confirm routine
 saves or stack a second modal.
 
-**SessionLock.** Anatomy: overlay → "Sesi berakhir dalam 04:59" → reason → Lanjutkan (re-auth in place)
-/ Keluar; draft and idempotency key survive. States: idle (>2 min), warning (≤2 min, polite once),
+**SessionLock.** Timing is DD-04: 15 minutes idle, warning at 14:00 (60 s left), one canonical
+sentence. Anatomy: overlay → "Sesi berakhir dalam 01:00" → reason → Lanjutkan (re-auth in place)
+/ Keluar; draft and idempotency key survive. States: idle (>14 min), warning (≤14 min, polite once),
 expired (blocked, assertive), re-authing, failed. Keyboard: focus moves in at warning; Esc does not
 dismiss; the re-auth form is the first tab stop. ARIA: `dialog` with `aria-labelledby`/`describedby`;
-the timer is **not** a per-second live region - 2 min and expiry only. Do: keep
+the timer is **not** a per-second live region - warning and expiry only. Do: keep
 `SessionInfo.expiresAt` in state (FE-ISO-01). Don't: let 401 do `window.location.assign` while a cash
 form is dirty.
 
@@ -278,7 +279,7 @@ grows in PR 1 and never shrinks; `svelte-check --fail-on-warnings` is added to `
 | Unit | contrast for every pair in §3, both themes; token parity between themes; `formatMoney` for `id-ID` and `en-US`; `parseMoneyInput` edge table; alias collapse leaves no duplicate role | `packages/ui/tests` (extend `tokens.contrast.test.ts`, `money.test.ts`) |
 | Component (vitest DOM) | label/hint/error wiring, `aria-sort`, caption, locale, focus move and restore, `aria-busy`, Esc-blocked-while-busy, SessionLock thresholds, self-approval disabled state | new DOM project - needs the ADR in synthesis X8; do not smuggle in tooling |
 | axe | each migrated screen in both themes × both locales, plus a pass on `/app/params` (FE-ISO-14); error/empty/loading states rendered in a harness page so they are analysed too | `apps/web/tests/e2e` |
-| Manual | keyboard-only: teller deposit, vault approve, close-cash; 200 % zoom on the ledger (no card conversion); print preview of slip, statement, certificate; forced-colors; screen-reader pass on ReviewPanel and SessionLock | recorded in the PR, R-35 |
+| Manual | keyboard-only: teller deposit, vault approve, close-cash; 200 % zoom on the ledger (no card conversion); print preview of slip, statement, certificate; forced-colors; screen-reader pass on ReviewPanel and SessionLock | recorded in the PR, AS-35 |
 
 No gate is weakened: thresholds stay 4.5/3, axe stays `moderate+`, `:focus-visible` never removed.
 

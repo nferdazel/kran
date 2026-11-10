@@ -1,5 +1,6 @@
 # Capability ledger source. Keep ids and statuses identical to docs/CAPABILITIES.md.
-# status: delivered | partial | missing
+# Hand-maintained: update this file in the same task that changes a capability.
+# status: delivered | partial | missing | retired
 - id: C-01
   title: "Sign in, keep a session, and change a password"
   persona: "Kasir, Admin"
@@ -185,8 +186,8 @@
   screen: null
   endpoint: null
   evidence: null
-  status: missing
-  note: "BE-EFF-04; account.nim hardcodes atSavings and the handler rejects non-SAVINGS."
+  status: retired
+  note: "T-212 removes time deposits (R-16)."
 - id: C-27
   title: "Pay a return on savings"
   persona: "Anggota, Admin"
@@ -218,7 +219,7 @@
   endpoint: null
   evidence: null
   status: missing
-  note: "B8; EOY is a calendar label, not a registered task."
+  note: "B8; EOY is a calendar label, not a registered task. Owned by T-215."
 - id: C-31
   title: "Register and track a member lifecycle"
   persona: "Admin"
@@ -226,7 +227,7 @@
   endpoint: null
   evidence: null
   status: missing
-  note: "B6; no coop module."
+  note: "B6; no coop module. Owned by T-204/T-205."
 - id: C-32
   title: "Generate and collect pokok and wajib obligations"
   persona: "Admin"
@@ -234,7 +235,7 @@
   endpoint: null
   evidence: null
   status: missing
-  note: "B9; savings kind is a label only."
+  note: "B9; savings kind is a label only. Owned by T-208."
 - id: C-33
   title: "Calculate and distribute SHU"
   persona: "Manajer"
@@ -242,7 +243,7 @@
   endpoint: null
   evidence: null
   status: missing
-  note: "B8; no SHU code."
+  note: "B8; no SHU code. Owned by T-216; distribution T-218/T-275."
 - id: C-34
   title: "Produce the RAT report pack"
   persona: "Pengurus"
@@ -250,7 +251,7 @@
   endpoint: null
   evidence: null
   status: missing
-  note: "B8, R-28; report queries do not exist."
+  note: "B8, R-28; report queries do not exist. Owned by T-224; remaining RAT reports T-225, T-227, T-228, T-276."
 - id: C-35
   title: "Produce balance sheet, income statement, and equity statement"
   persona: "Pengurus"
@@ -258,7 +259,7 @@
   endpoint: null
   evidence: null
   status: missing
-  note: "C18; report.nim has trial balance and balances only."
+  note: "C18; report.nim has trial balance and balances only. Owned by T-221 to T-223."
 - id: C-36
   title: "Produce regulatory, tax, and APU-PPT reports"
   persona: "Manajer"
@@ -371,3 +372,59 @@
   evidence: null
   status: missing
   note: "T-229."
+- id: C-50
+  title: "Exit a member with a checker-approved refund, offset and closure"
+  persona: "Manajer"
+  screen: "/app/members/[memberId]/exit"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-272."
+- id: C-51
+  title: "Distribute SHU per member and reconcile to the distribution journal"
+  persona: "Manajer, Pengurus"
+  screen: "/app/reports/shu"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-275."
+- id: C-52
+  title: "Post a cash loan instalment atomically with the cash movement"
+  persona: "Kasir"
+  screen: "/app/loans/[loanId]?tab=pay"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-274."
+- id: C-53
+  title: "Read savings arrears per member and obligation"
+  persona: "Manajer, Admin"
+  screen: "/app/reports/savings-arrears"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-225."
+- id: C-54
+  title: "Reconcile the cash recap for a business date"
+  persona: "Kasir, Manajer"
+  screen: "/app/reports/cash-recap"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-227."
+- id: C-55
+  title: "Produce a close certificate for a completed close"
+  persona: "Manajer"
+  screen: "/app/close"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-228."
+- id: C-56
+  title: "Produce a cash-flow statement and notes"
+  persona: "Pengurus"
+  screen: "/app/reports"
+  endpoint: null
+  evidence: null
+  status: missing
+  note: "T-276; NEEDS-COMPLIANCE-REVIEW until accounting sign-off (R-44)."

@@ -2,7 +2,7 @@
 
 Status: proposed, Wave 3 (P-03), 5 Nov 2026. Read-only on source; nothing was run.
 Companions: `01-ia-flows.md` (screens, states), `02-design-system.md` (components, tokens),
-`DESIGN.md` §7-§10 and §13 (binding). Every rule below carries a one-line reason (R-31).
+`DESIGN.md` §7-§10 and §13 (binding). Every rule below carries a one-line reason (AS-31).
 Where this file and `02-design-system.md` disagree, the conflict is listed in §11 and not silently resolved.
 
 **What the audits already prove.** The axe gate is real (moderate+, 12 specs) but `/app/params` has no
@@ -317,9 +317,9 @@ Axe stays at moderate+ because the gap is coverage (params, states), not severit
 
 ## 11. Conflicts and open items
 
-1. **Session-lock timing.** 01 §4 warns at 14 min (1 min left); 02 §5 says "polite warning at 2 min"
-   and §6 prints "Sesi berakhir dalam 04:59". Canonical: 15-min idle (R-21), warning at 60 s
-   remaining, extend available for the whole warning. The other two texts are corrected, not both kept.
+1. **Session-lock timing.** Resolved by DD-04 and used everywhere: 15-minute idle (R-21), warning
+   at 14:00 with a 60-second countdown, extend available for the whole warning. The earlier
+   disagreement between 01 and 02 is closed; one threshold remains.
 2. **Two idle timers.** Client lock is 15 min (R-21), server idle 30 min; the client must warn before
    either, or the lock screen promises a session the server already ended. **DataTable keyboard.** 02 §6
    says rows are not focusable while ApprovalPanel says selection is a real row button; §2 resolves it as

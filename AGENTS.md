@@ -50,16 +50,18 @@ Selama implementasi pakai `verify <modul>`/`ci-fast`; e2e menumpang di `ci`/`rel
 - Tag `vX.Y.Z` adalah penanda, bukan pemicu deploy (D-178, `docs/RELEASE.md`).
 
 ## 4. Protokol loop per task (WAJIB)
-Ambil task `READY` teratas dari `docs/BACKLOG.md`, lalu:
-1. **DoR**: lengkapi `docs/tasks/T-xxx.md` dari `docs/tasks/_TEMPLATE.md` - anchor bukti, file,
+Ambil task `READY` teratas dari `docs/BACKLOG.md`. Baris baru berstatus `READY` hanya setelah file
+`docs/tasks/T-<id>.md` ada dan semua item DoR terisi (R-32); plan table saja tidak cukup. Lalu:
+1. **DoR**: lengkapi `docs/tasks/T-<id>.md` dari `docs/tasks/_TEMPLATE.md` - anchor bukti, file,
    key parameter, bentuk migrasi, test, rollback, kelas risiko. Task tanpa DoR kembali ke backlog.
 2. **Test-first** bila memungkinkan (domoney, perhitungan: property + golden test).
 3. **Implement** kecil-kecil; jalankan `./task check-fast` sering.
 4. **Self-verify**: gate yang disebut task benar-benar dijalankan; `./task ci-fast` hijau.
    Jangan klaim selesai tanpa output nyata.
-5. **Review** sesuai kelas risiko (R-25): `money`, `schema`, `authz`, `audit` wajib reviewer
-   konteks bersih (`docs/agent/REVIEWER.md`), maksimal **2 putaran**. Kelas lain: self-review +
-   gate. Perbaiki semua BLOCKER/MAJOR; MINOR dicatat sebagai open item.
+5. **Review** sesuai R-25 dan `docs/agent/REVIEWER.md`. Nilai antrean `full` (kelas konkret
+   `money`, `schema`, `authz`, atau `audit`) wajib reviewer konteks bersih, maksimal
+   **2 putaran**; nilai `standard` (kelas konkret `general`) cukup self-review + gate. Header
+   task menyebut kelas konkretnya. Perbaiki semua BLOCKER/MAJOR; MINOR dicatat sebagai open item.
 6. **Evidence block** di file task: perintah, ringkasan output, commit range, hasil migrasi,
    pengecekan manual untuk UI, status capability.
 7. **Commit**, tandai `DONE`, perbarui `docs/CAPABILITIES.md` bila kapabilitas berubah.
@@ -71,6 +73,8 @@ Ambil task `READY` teratas dari `docs/BACKLOG.md`, lalu:
   tambah `nomagic:ok`/ignore). Pengecualian butuh `D-xxx` dan dieskalasi.
 - Jangan mengerjakan sebagian lalu menandai DONE. Sisa pekerjaan = task baru.
 - Klaim kapabilitas harus menunjuk test yang akan gagal bila kapabilitas itu rusak.
+- Exit fase gagal bila pemeriksaan yang disebut dilewati: tooling tidak ada, database tidak ada,
+  test nol, atau axe tidak dijalankan adalah gagal, bukan lulus (R-33).
 - Kalau ragu soal perilaku bisnis/regulasi: tulis asumsi di task + `OPEN_ITEMS.md`, pilih opsi
   paling konservatif, lanjutkan.
 - Library baru: cek versi dan kebutuhan; dependensi baru butuh ADR singkat.
