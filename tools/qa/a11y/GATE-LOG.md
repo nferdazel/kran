@@ -7,6 +7,85 @@ Prerequisite: `./task devdb up` (tunnel to `kran_dev`). `./task e2e` builds the 
 resets the dev DB, runs expand + contract migrations, seeds, then runs Playwright with the
 minimum-test guard (`KRAN_E2E_MIN_TESTS`, default 40).
 
+Newest entry first.
+
+---
+
+## 2026-11-10 14:39-14:44 WIB - branch `feat/design-system-v2` @ `7ef2c81`
+
+Command: `./task devdb status` -> `./task build` -> `./task e2e` (foreground, run by Sari)
+Result: **PASSED** (`ok: e2e green: 78 test`, exit 0, log `.build/e2e-gate-7ef2c81.log`)
+
+```
+4 skipped
+78 passed (5.0m)
+```
+
+0 failed, 0 did not run, 0 flaky. `devdb status` exit 0 (`kran_dev @ PostgreSQL 18.6`); tunnel
+was already up, no `devdb up` needed. `./task build` -> `ok: .build/bin/kran-api`. The 40-test
+minimum guard was satisfied. Skips are only `visual.spec.ts` (4) - Linux-only baselines, not a
+pass.
+
+`7ef2c81` is the fix unit for the three regressions recorded below (`329416f`): business date
+back in `Topbar.svelte`, `.shell__panel` turned into `<aside aria-label>`, print stylesheet
+hides the new chrome plus scoped print assertions.
+
+### What the green run closes
+
+| Red entry (`329416f`) | Now at `7ef2c81` |
+|---|---|
+| Business date indicator gone (4 failures) | `dayclose.spec.ts:83` axe id/light, id/dark, en/light, en/dark all PASS. The indicator is asserted, not just present: `.kran-business-date` visible, carries the locale label, and matches `/api/v1/dayclose/status` (real year, or "belum tersedia" when the API answers null) |
+| Shell panel outside a landmark - axe `region` (16 failures) | 0 axe violations across the whole suite. `/app/ledger` 4 combos, `password` x2, `screens` x4, `teller`, `vault`, `loans`, `lending-actions`, `dayclose` x4, `/login` x2, `/app` after login x2 - all PASS |
+| Print chrome not hidden (1 failure) | `print.spec.ts:202` slip PASS, `:233` statement PASS (this is one of the two that previously "did not run"), `:264` print axe 2 themes x 2 locales PASS |
+
+### axe - 2 themes x 2 locales
+
+29 axe-labelled tests, all PASS. Violation count 0, so there is no K-ID to report: no `region`,
+no `landmark-unique`, and no other rule fired anywhere in the suite. Locale/theme coverage held:
+where a spec loops both (ledger, dayclose, loans, lending, teller, vault, screens, print,
+palette), both themes x both locales ran and passed; `password`, `/login` and `/app` cover both
+themes in one locale.
+
+### Keyboard (in-suite) - 14 tests, all PASS
+
+`keyboard.spec.ts` x4 (skip link to #main, theme radio arrows, locale radio arrows, tab order
+reaches every control in a logical order), `dayclose` reload + history bounds, `ledger` Tab in /
+arrows + Home/End / Tab out, `loans` list->detail->back, `lending-actions` pay instalment,
+`palette` Ctrl+K open + filter + Enter, `palette` Ctrl+K not stolen while typing in a field,
+`screens` x4 (users role panel, products draft approval, ledger chart-of-accounts form, accounts
+party picker), `teller` open session -> deposit -> close with zero difference.
+
+### Keyboard runner (`keyboard-flows --config keyboard-app`) - still not a pass
+
+```
+keyboard-app: 5 flows -> 0 PASS, 0 FAIL, 5 BLOCKED
+```
+
+Every flow is BLOCKED on unwritten `TODO:` selectors, not skipped by choice:
+`teller-deposit` (K-01), `vault-approve` (K-02), `close-cash` (K-03), `drawer-open-close`,
+`sidebar-offcanvas` (`TODO:menu button in topbar (T-285)`, `TODO:sidebar nav (T-285)`).
+This is the same 5-flow runner as before, and it still proves nothing.
+
+### `/app/*` render
+
+Yes, without redirect. Logged-in sessions reached `/app`, `/app/dayclose`, `/app/ledger`,
+`/app/loans`, `/app/users`, `/app/products`, `/app/ledger/admin`, `/app/accounts/open`,
+`/app/password`, `/app/teller` and `/app/vault` and asserted page content there, not a login
+gate. Also green: `zoom-125.spec.ts` x2 (1366x768 at 125% and at 200%: no horizontal scroll,
+shell one column, table still a table).
+
+### Still not covered here - do not read this green as "everything passes"
+
+1. axe at a real 360px viewport, and the `loading` / `empty` / `no-match` / `error` states -
+   waits on T-292. Nothing above exercises them.
+2. Drawer Escape focus-return and Tab trap (`drawer-focus-return`, `drawer-focus-trap`) - the
+   app has no drawer yet (T-290). Still a hard requirement there.
+3. Off-canvas sidebar trap/Escape/focus-return below 1024px - `AppShell.svelte` implements it
+   (Escape, focus wrap, focus back to the menu button) but no test at any level covers it, and
+   `packages/ui/tests/shell.test.ts` has no such case despite T-285's DoR listing one. T-285's
+   acceptance item 2 therefore stays unproven.
+4. 4 skipped visual regressions carry no signal on this OS.
+
 ---
 
 ## 2026-11-10 - branch `feat/design-system-v2` @ `329416f`
