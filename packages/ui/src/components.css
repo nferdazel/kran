@@ -1252,6 +1252,15 @@
 
 .kran-table thead th {
   border-block-end-color: var(--color-border);
+  /* Header 36px tetap, terlepas dari tinggi baris (DESIGN §6 v2). */
+  block-size: var(--row-height-compact);
+}
+
+.kran-table--sticky thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  background: var(--color-surface);
 }
 
 .kran-table thead tr:first-child th[colspan] {
@@ -1267,7 +1276,7 @@
 }
 
 .kran-table tbody tr:hover {
-  background-color: var(--color-selected);
+  background-color: var(--color-surface-2);
 }
 
 .kran-table tbody tr:last-child td,
@@ -1299,7 +1308,26 @@
 }
 
 .kran-table .kran-table__selected {
-  background: var(--color-selected);
+  background: var(--color-surface-2);
+}
+
+/* Baris terpilih: bilah aksen 2px di kiri, bukan warna saja (DESIGN §6 v2). */
+.kran-table .kran-table__selected > :first-child {
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+/* Baris dua tingkat: baris utama 13/600, baris kedua 11 redup (DESIGN §6 v2). */
+.kran-table__primary {
+  display: block;
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.kran-table__secondary {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--color-text-muted);
 }
 
 /* Tabel padat untuk daftar panjang (32px) dan dua tingkat (40px). */

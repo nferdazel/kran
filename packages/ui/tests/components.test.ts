@@ -553,4 +553,62 @@ describe("DataTable", () => {
   it("tanpa aksi tidak ada kolom tambahan", () => {
     expect(table()).not.toContain("kran-button");
   });
+
+  it("density compact memakai kelas baris 36, bawaan tetap 40", () => {
+    expect(table({ density: "compact" })).toContain("kran-table--compact");
+    expect(table()).not.toContain("kran-table--compact");
+  });
+
+  it("totals dirender di tfoot dengan sel pertama th scope=row", () => {
+    const html = table({ totals: { code: "Total", balance: "1234567.89" } });
+
+    expect(table()).not.toContain("<tfoot");
+    expect(html).toMatch(/<tfoot[^>]*>[\s\S]*<th scope="row">Total<\/th>/);
+    expect(html).toContain('<td class="kran-num kran-money">1.234.567,89</td>');
+  });
+
+  it("selectedKeys menandai tepat satu baris, baris lain false", () => {
+    const html = table({ selectedKeys: ["101"] });
+    const rowTags = html.match(/<tr[^>]*>/g) ?? [];
+
+    expect(rowTags.filter((tag) => tag.includes('aria-selected="true"'))).toHaveLength(1);
+    expect(rowTags.filter((tag) => tag.includes("kran-table__selected"))).toHaveLength(1);
+    expect(rowTags[1]).toContain('aria-selected="true"');
+    expect(rowTags[1]).toContain("kran-table__selected");
+    expect(rowTags[2]).toContain('aria-selected="false"');
+    expect(rowTags[2]).not.toContain("kran-table__selected");
+  });
+
+  it("seleksi mengikuti rowKey saat baris diurutkan ulang", () => {
+    const html = table({ rows: [ROWS[1], ROWS[0]], selectedKeys: ["101"] });
+    const rowTags = html.match(/<tr[^>]*>/g) ?? [];
+
+    expect(rowTags[1]).toContain('aria-selected="false"');
+    expect(rowTags[2]).toContain('aria-selected="true"');
+  });
+
+  it("rowLines merender dua baris hanya saat baris menyediakan baris kedua", () => {
+    const columns = [
+      { key: "code", label: "Kode", rowHeader: true, secondary: "note" },
+      { key: "name", label: "Akun" },
+      { key: "balance", label: "Saldo (IDR)", align: "end" as const, numerics: true },
+    ];
+    const rows = [
+      { code: "101", name: "Kas", balance: "1234567.89", note: "kas kecil" },
+      { code: "201", name: "Simpanan anggota", balance: null },
+    ];
+    const html = table({ columns, rows, rowLines: true });
+
+    expect(html).toContain('<span class="kran-table__primary">101</span>');
+    expect(html).toContain('<span class="kran-table__secondary">kas kecil</span>');
+    expect(html.match(/kran-table__secondary/g) ?? []).toHaveLength(1);
+  });
+
+  it("pembungkus tetap satu tabindex dan satu region meski opsi v2 aktif", () => {
+    const html = table({ density: "compact", stickyHeader: true });
+
+    expect(html).toContain("kran-table--sticky");
+    expect(html.match(/tabindex="0"/g) ?? []).toHaveLength(1);
+    expect(html.match(/role="region"/g) ?? []).toHaveLength(1);
+  });
 });
