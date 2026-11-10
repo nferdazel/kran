@@ -63,8 +63,9 @@ contrast test grows and never shrinks, and the existing i18n keys win over new o
 
 ### T-289 Money inside DataTable (risk `full`)
 - Symbol once per column header, never per cell. Right-aligned, `nowrap`, `tabular-nums
-  slashed-zero`, negatives with a minus that is not a colour-only signal (parentheses or a minus,
-  pick one and use it everywhere).
+  slashed-zero`. Negatives always take a leading minus, never parentheses, and the number stays in
+  normal ink so colour is never the only signal. The unit lives in the column header only
+  (`Saldo (IDR)`); there is no per-cell `currency` prop.
 - Column width must not jump when a value goes from 3 to 7 digits: reserve the max width of the
   column.
 
