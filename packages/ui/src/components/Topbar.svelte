@@ -20,6 +20,12 @@
     menuOpen: boolean;
     sidebarId: string;
     onMenuToggle: () => void;
+    /**
+     * Business date (spec section 14.3), already resolved and formatted by the app:
+     * `undefined` = value unknown (indicator hidden), `string` = date or "not available" text.
+     */
+    businessDate?: string;
+    businessDateLabel?: string;
     actions?: Snippet;
   }
 
@@ -30,6 +36,8 @@
     menuOpen,
     sidebarId,
     onMenuToggle,
+    businessDate,
+    businessDateLabel = "",
     actions,
   }: Props = $props();
 </script>
@@ -66,8 +74,19 @@
     </ol>
   </nav>
 
-  {#if actions}
-    <div class="topbar__actions">{@render actions()}</div>
+  {#if businessDate !== undefined || actions}
+    <div class="topbar__meta">
+      {#if businessDate !== undefined}
+        <p class="kran-business-date">
+          <span class="kran-status-dot" aria-hidden="true"></span>
+          <span class="kran-muted">{businessDateLabel}:</span>
+          <span class="kran-num">{businessDate}</span>
+        </p>
+      {/if}
+      {#if actions}
+        <div class="topbar__actions">{@render actions()}</div>
+      {/if}
+    </div>
   {/if}
 </header>
 
@@ -135,10 +154,16 @@
     color: var(--color-text-muted);
   }
 
+  .topbar__meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-inline-start: auto;
+  }
+
   .topbar__actions {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    margin-inline-start: auto;
   }
 </style>

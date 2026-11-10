@@ -82,6 +82,7 @@
   "common_nav_teller": "Teller",
   "common_nav_users": "Users",
   "common_nav_vault": "Cash vault",
+  "common_sidebar_label": "Workspace panel",
   "common_skip_to_content": "Skip to main content",
   "common_table_region": "Table: {name}",
   "common_theme_changed": "Theme changed to {theme}.",

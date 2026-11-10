@@ -20,6 +20,7 @@
 
   import * as m from "#lib/paraglide/messages.js";
   import { currentLocale, supportedLocales } from "#lib/app/i18n.js";
+  import { formatDate } from "#lib/app/format.js";
   import {
     appNavLinks,
     groupVisibleLinks,
@@ -66,6 +67,19 @@
 
   const sessionName = $derived(
     (page.data.session as { fullName?: string } | undefined)?.fullName ?? "",
+  );
+
+  /**
+   * Business date indicator (spec section 14.3). Three honest states, kept from the pre-v2 shell:
+   * `undefined` = read failed (render nothing), `null` = institution has no business date row yet,
+   * `string` = a real date. The value is formatted here so `@kran/ui` stays locale-free.
+   */
+  const businessDateText = $derived(
+    (() => {
+      const value = page.data.businessDate as string | null | undefined;
+      if (value === undefined) return undefined;
+      return value === null ? m.common_business_date_unknown() : formatDate(value);
+    })(),
   );
 
   async function logout(): Promise<void> {
@@ -218,7 +232,7 @@
 
 <svelte:window onkeydown={onWindowKeydown} />
 
-<AppShell skipLabel={m.common_skip_to_content()}>
+<AppShell skipLabel={m.common_skip_to_content()} panelLabel={m.common_sidebar_label()}>
   {#snippet sidebar({ close })}
     <Sidebar
       groups={sidebarGroups}
@@ -242,6 +256,8 @@
       breadcrumb={breadcrumb}
       menuLabel={m.common_menu_toggle()}
       breadcrumbLabel={m.common_breadcrumb_label()}
+      businessDate={businessDateText}
+      businessDateLabel={m.common_business_date_label()}
       {menuOpen}
       {sidebarId}
       onMenuToggle={toggleMenu}

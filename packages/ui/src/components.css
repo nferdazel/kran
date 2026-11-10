@@ -1329,8 +1329,22 @@
   .kran-skip-link,
   .kran-print-toolbar,
   .kran-form,
-  .kran-alert {
+  .kran-alert,
+  .shell-skip,
+  .shell__panel,
+  .shell__scrim,
+  .topbar {
     display: none !important;
+  }
+  /* The v2 shell is a grid; printing keeps only `main`, so drop the columns and padding. */
+  .shell {
+    display: block;
+    min-block-size: 0;
+  }
+  .shell__main {
+    max-inline-size: none;
+    padding-block: 0;
+    padding-inline: 0;
   }
   .kran-main {
     max-inline-size: none;

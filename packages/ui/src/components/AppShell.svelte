@@ -24,13 +24,22 @@
 
   interface Props {
     skipLabel: string;
+    /** Accessible name for the sidebar panel landmark (T-285 gate fix). */
+    panelLabel?: string;
     sidebarId?: string;
     sidebar: Snippet<[PanelApi]>;
     topbar: Snippet<[TopbarApi]>;
     children: Snippet;
   }
 
-  let { skipLabel, sidebarId = "app-sidebar", sidebar, topbar, children }: Props = $props();
+  let {
+    skipLabel,
+    panelLabel,
+    sidebarId = "app-sidebar",
+    sidebar,
+    topbar,
+    children,
+  }: Props = $props();
 
   let menuOpen = $state(false);
   let isMobile = $state(false);
@@ -109,9 +118,9 @@
 <a class="shell-skip" href="#main">{skipLabel}</a>
 
 <div class="shell" class:shell--menu-open={menuOpen}>
-  <div class="shell__panel" id={sidebarId}>
+  <aside class="shell__panel" id={sidebarId} aria-label={panelLabel}>
     {@render sidebar({ close: closeMenu })}
-  </div>
+  </aside>
 
   {#if menuOpen && isMobile}
     <div class="shell__scrim" aria-hidden="true"></div>

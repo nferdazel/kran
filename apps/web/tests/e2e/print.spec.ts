@@ -220,7 +220,9 @@ test.describe.serial("cetak: slip & statement", () => {
     await expect.poll(() => page.evaluate(() => window.__printCount ?? 0)).toBe(1);
 
     await page.emulateMedia({ media: "print" });
-    await expect(page.locator("nav")).toBeHidden();
+    // Scoped: the v2 shell has two nav landmarks (sidebar + breadcrumb); both must leave print.
+    await expect(page.locator("nav.sidebar__nav")).toBeHidden();
+    await expect(page.locator("nav.topbar__crumbs")).toBeHidden();
     await expect(page.locator(".kran-print-toolbar")).toBeHidden();
     await expect(
       page.getByRole("heading", { level: 1, name: T.id.slipHeading }),
@@ -251,7 +253,9 @@ test.describe.serial("cetak: slip & statement", () => {
     await expect.poll(() => page.evaluate(() => window.__printCount ?? 0)).toBe(1);
 
     await page.emulateMedia({ media: "print" });
-    await expect(page.locator("nav")).toBeHidden();
+    // Scoped: the v2 shell has two nav landmarks (sidebar + breadcrumb); both must leave print.
+    await expect(page.locator("nav.sidebar__nav")).toBeHidden();
+    await expect(page.locator("nav.topbar__crumbs")).toBeHidden();
     await expect(page.locator(".kran-print-toolbar")).toBeHidden();
     await expect(page.locator(".kran-form")).toBeHidden();
     await expect(page.locator("table tbody tr")).toHaveCount(1);
