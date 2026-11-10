@@ -1134,6 +1134,41 @@ suite "lending: baca & daftar pinjaman (T-169)":
       allIds.add item["loanId"].getStr()
     check allIds.contains(branchBLoan)
 
+  test "partyName hanya di daftar; detail dan hasil aksi tidak":
+    let created = postJson(LoansPath, loanBody(PartyId, versionActive, "1000000.00"), makerToken)
+    check created.code == 201
+    checkJson(LoansPath, "POST", "201", created.body)
+    check not created.body.hasKey("partyName")
+    let loanId = created.body["loanId"].getStr()
+
+    let approved = postJson(fill(ApprovePath, loanId), %*{}, approverToken)
+    check approved.code == 200
+    checkJson(ApprovePath, "POST", "200", approved.body)
+    check not approved.body.hasKey("partyName")
+
+    let disbursed = postJson(fill(DisbursePath, loanId), %*{"accountId": accountId},
+      makerToken, "itapi-lending-disburse-" & loanId)
+    check disbursed.code == 200
+    checkJson(DisbursePath, "POST", "200", disbursed.body)
+    check not disbursed.body["loan"].hasKey("partyName")
+
+    let detail = getJson(fill(DetailPath, loanId), readerToken)
+    check detail.code == 200
+    checkJson(DetailPath, "GET", "200", detail.body)
+    check not detail.body.hasKey("partyName")
+
+    let listed = getJson(LoansPath & "?partyId=" & PartyId, readerToken)
+    check listed.code == 200
+    checkJson(LoansPath, "GET", "200", listed.body)
+    var found = false
+    for item in listed.body["items"]:
+      check item.hasKey("partyName")
+      check item["partyName"].getStr().len > 0
+      if item["loanId"].getStr() == loanId:
+        found = true
+        check item["partyName"].getStr() == "Siti Aminah"
+    check found
+
   test "detail cabang lain 404, bukan 403":
     check getJson(fill(DetailPath, branchBLoan), readerToken).code == 404
     check getJson(fill(DetailPath, branchBLoan), makerToken).code == 200

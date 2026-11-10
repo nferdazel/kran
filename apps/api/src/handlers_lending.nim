@@ -11,7 +11,7 @@
 ## dengan alasan yang bisa dibaca operator), dan CHECK DB (`approved_by <> applied_by`). Yang di DB
 ## itu jaring terakhir, bukan satu-satunya.
 
-import std/[json, options, strutils]
+import std/[json, options, strutils, tables]
 
 import mummy
 import db_connector/db_postgres
@@ -72,6 +72,12 @@ proc loanJson(loan: Loan): JsonNode =
     "status": $loan.status,
     "disbursedOn": (if loan.disbursedOn.len == 0: newJNull() else: %loan.disbursedOn),
   }
+
+proc loanListItemJson(loan: Loan, partyName: string): JsonNode =
+  ## Item daftar menambah nama anggota; `loanJson` tetap bentuk yang dipakai detail dan aksi,
+  ## jadi `LoanDetail` dan hasil tulis tidak ikut berubah.
+  result = loanJson(loan)
+  result["partyName"] = %partyName
 
 proc maxPrincipalOf(db: DbConn, asOf: string): Money =
   ## Plafon pengajuan dari parameter. Hilang atau rusak = galat konfigurasi, **bukan** plafon tak
@@ -1536,11 +1542,20 @@ proc handleListLoans*(app: AppContext, req: Request) {.gcsafe.} =
     withDbConn(app.pool, proc(db: DbConn) {.gcsafe.} =
       dbCalls:
         let authz = loadBranchAuthz(db, principal)
+        var visible: seq[Loan]
         for loan in loansPage(db, partyId, statusRaw, limit):
-          if items.len >= limit:
+          if visible.len >= limit:
             break
           if authz.allowedAt($loan.branchId, permissionLendingRead):
-            items.add loanJson(loan))
+            visible.add loan
+
+        # Satu lookup untuk seluruh halaman, di luar loop: N+1 di sini berarti 50 query nama.
+        var partyIds: seq[Id]
+        for loan in visible:
+          partyIds.add loan.partyId
+        let names = partyNames(db, partyIds)
+        for loan in visible:
+          items.add loanListItemJson(loan, names.getOrDefault($loan.partyId, "")))
   except DbError:
     req.respondProblem(pkInternal, "Internal Server Error", "pinjaman gagal dibaca")
     return

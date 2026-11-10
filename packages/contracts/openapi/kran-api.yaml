@@ -5028,7 +5028,8 @@ components:
     LoanSummary:
       type: object
       additionalProperties: false
-      required: [loanId, partyId, productVersionId, branchId, principal, status, disbursedOn]
+      required: [loanId, partyId, partyName, productVersionId, branchId, principal, status,
+                 disbursedOn]
       properties:
         loanId:
           type: string
@@ -5036,6 +5037,10 @@ components:
         partyId:
           type: string
           format: uuid
+        partyName:
+          type: string
+          minLength: 1
+          description: Nama tampil anggota (`party.party.display_name`), satu lookup per halaman.
         productVersionId:
           type: string
           format: uuid
