@@ -11,6 +11,96 @@ Newest entry first.
 
 ---
 
+## 2026-11-10 14:56-15:01 WIB - branch `feat/design-system-v2` @ `e93aa70`
+
+Command: `./task devdb status` -> `./task build` -> `./task e2e` (foreground, run by Sari)
+Result: **PASSED** (`ok: e2e green: 79 test`, exit 0, log `.build/e2e-gate-e93aa70.log`)
+
+```
+4 skipped
+79 passed (4.7m)
+```
+
+0 failed, 0 did not run, 0 flaky. `devdb status` exit 0 (`kran_dev @ PostgreSQL 18.6`); the
+tunnel was already up, no `devdb up` needed. `./task build` -> `ok: .build/bin/kran-api`. The
+40-test minimum guard was satisfied. Skips are only `visual.spec.ts` (4, Linux-only baselines).
+
+`e93aa70` adds one file on top of `7ef2c81`/`4db4090`: `apps/web/tests/e2e/shell-panel.spec.ts`,
+the browser proof for T-285 acceptance item 2. 78 -> 79 passed is exactly that test.
+
+### The new test
+
+`apps/web/tests/e2e/shell-panel.spec.ts:86` - "panel off-canvas <1024px: trap Tab, Shift+Tab dan
+Escape" - **PASS (980ms)**, inside `./task e2e` (not a side runner), viewport 390x844, real
+logged-in session. Five assertions, all behaviour-bound:
+
+1. load: `.shell__panel` hidden (visibility, so its links are not phantom tab stops),
+   `[data-shell-menu-button]` visible with `aria-expanded="false"` and a non-empty accessible
+   name, no scrim in DOM;
+2. open: panel + scrim visible, `aria-expanded="true"`, `document.activeElement` is the panel's
+   first focusable element;
+3. Tab `N` times (N = panel focusable count): focus never leaves the panel on any step, and the
+   last Tab wraps back to the first element;
+4. Shift+Tab from the first element wraps to the last;
+5. Escape: panel hidden, `aria-expanded="false"`, scrim gone, `document.activeElement` is
+   exactly the menu button (`toBeFocused`).
+
+Read line by line by Sari: no `skip`, no `.only`, no axe rule disabled, no threshold moved. If
+the trap in `AppShell.svelte` is removed the spec goes red at step 3 (focus escapes the panel)
+and step 5 (focus does not return to the button). Nadia reported a mutation check on her own
+tree (handler removed -> 1 failed, then restored, `git diff packages/ui` empty); that check is
+her evidence, not re-run by me here - this assignment forbids editing `packages/`/`apps/`.
+
+### axe - 2 themes x 2 locales
+
+29 axe-labelled tests, all PASS, **0 violations** - nothing to report as a K-ID. No `region`,
+no `landmark-unique`, no other rule fired anywhere in the suite. Coverage held: `ledger`,
+`dayclose`, `loans`, `lending-actions`, `teller`, `vault`, `screens`, `print`, `palette` loop
+both themes x both locales; `password`, `/login` and `/app` cover both themes in one locale.
+
+### Keyboard
+
+In-suite: 14 keyboard tests PASS (`keyboard.spec.ts` x4, `dayclose` reload + history bounds,
+`ledger` Tab in / arrows + Home/End / Tab out, `loans` list->detail->back, `lending-actions` pay
+instalment, `palette` Ctrl+K open + Ctrl+K not stolen while typing, `screens` x4, `teller` open
+session -> deposit -> close with zero difference), plus the new `shell-panel` trap test = 15.
+
+Print: all three PASS - `print.spec.ts:202` slip, `:233` statement, `:264` print axe 2 themes x
+2 locales.
+
+### Keyboard runner (`keyboard-flows --config keyboard-app`) - still not a pass
+
+```
+gate-e93aa70: 5 flows -> 0 PASS, 0 FAIL, 5 BLOCKED
+```
+
+Unchanged and still proving nothing: every flow is BLOCKED on unwritten `TODO:` selectors
+(`teller-deposit` K-01, `vault-approve` K-02, `close-cash` K-03, `drawer-open-close`,
+`sidebar-offcanvas` - the last still lists `TODO:menu button in topbar (T-285)` even though the
+in-suite Playwright spec above now covers that behaviour). It is a separate runner with its own
+config, so this green run does not fill it in. Results: `.local/qa/results/gate-e93aa70.{json,md}`.
+
+### `/app/*` render
+
+Yes, without redirect. Logged-in sessions reached `/app`, `/app/dayclose`, `/app/ledger`,
+`/app/loans`, `/app/users`, `/app/products`, `/app/ledger/admin`, `/app/accounts/open`,
+`/app/password`, `/app/teller`, `/app/vault` and asserted page content there, not a login gate.
+Also green: `zoom-125.spec.ts` x2 (1366x768 at 125% and 200%: no horizontal scroll, shell one
+column, table still a table).
+
+### Still not covered here - do not read this green as "everything passes"
+
+1. axe at a real 360px viewport, and the `loading` / `empty` / `no-match` / `error` states -
+   waits on T-292. Nothing above exercises them.
+2. Drawer Escape focus-return and Tab trap (`drawer-focus-return`, `drawer-focus-trap`) - the
+   app has no drawer yet (T-290). Still a hard requirement there.
+3. axe with the off-canvas panel **open** - deliberately not added to keep runtime down, not
+   weakened. The panel is a landmark and its content passed axe closed; the open state is not
+   separately scanned.
+4. 4 skipped visual regressions carry no signal on this OS.
+
+---
+
 ## 2026-11-10 14:39-14:44 WIB - branch `feat/design-system-v2` @ `7ef2c81`
 
 Command: `./task devdb status` -> `./task build` -> `./task e2e` (foreground, run by Sari)

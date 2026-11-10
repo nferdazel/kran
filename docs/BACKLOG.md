@@ -152,8 +152,8 @@ findings are folded into the rows below and into the task files at DoR time.
 | T-238 | Component: ReviewPanel / ApprovalPanel | M | T-235 | standard | TODO |
 | T-239 | Component: Dialog / Confirm | S | T-235 | standard | TODO |
 | T-240 | Component: Empty / Error / Loading states | S | T-235 | standard | TODO |
-| T-284 | Design tokens v2 + full contrast matrix (D-202) | S | none | standard | READY |
-| T-285 | App shell: AppShell/Sidebar/Topbar/PageHeader/Toolbar (D-202) | M | T-284 | standard | READY |
+| T-284 | Design tokens v2 + full contrast matrix (D-202) | S | none | standard | DONE |
+| T-285 | App shell: AppShell/Sidebar/Topbar/PageHeader/Toolbar (D-202) | M | T-284 | standard | DONE |
 | T-286 | Form controls v2: Input / Select / Checkbox (Field folded in) | M | T-284 | standard | READY |
 | T-287 | Button v2: sizes, quiet variant, hover/active rules | S | T-284 | standard | READY |
 | T-288 | DataTable v2: density, sticky header, totals, selection | M | T-284 | standard | READY |
