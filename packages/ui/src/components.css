@@ -1296,6 +1296,17 @@
   padding-inline-end: calc(var(--space-3) + 4px);
 }
 
+/* Cadangkan lebar nilai terpanjang (7 digit + pemisah + 2 desimal) supaya kolom tetangga
+ * tidak bergeser saat angka tumbuh dari 3 ke 7 digit (T-289). Berlaku untuk semua sel uang di
+ * `.kran-table`, termasuk tabel tangan seperti `/app/ledger` yang tidak lewat `DataTable`.
+ * Hanya layar: tata letak cetak punya batas halaman sendiri dan tidak punya angka yang tumbuh. */
+@media screen {
+  .kran-table .kran-money {
+    min-inline-size: 12ch;
+    white-space: nowrap;
+  }
+}
+
 /* Baris total: menempel di bawah region, hairline 2px di atas, latar surface. */
 .kran-table tfoot td,
 .kran-table tfoot th {

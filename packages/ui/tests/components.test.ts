@@ -13,6 +13,7 @@ import Money from "../src/components/Money.svelte";
 import Select from "../src/components/Select.svelte";
 import StatusBadge from "../src/components/StatusBadge.svelte";
 import Textarea from "../src/components/Textarea.svelte";
+import { formatMoney } from "../src/money.js";
 import DoubleInput from "./fixtures/double-input.svelte";
 
 /**
@@ -438,13 +439,15 @@ describe("Money", () => {
     expect(render(Money, { props: { value: "-12.5" } }).body).toContain("-12,50");
   });
 
-  it("currency hanya diumumkan, bukan diulang di tiap sel", () => {
-    const { body: html } = render(Money, { props: { value: "250000", currency: "IDR" } });
+  it("merender keluaran identik untuk setiap pemanggil (tidak ada prop currency)", () => {
+    const plain = render(Money, { props: { value: "250000" } }).body;
+    const withExCurrency = render(Money, {
+      props: { value: "250000", currency: "IDR" } as never,
+    }).body;
 
-    expect(html).toContain('class="kran-money"');
-    expect(html).not.toContain("kran-muted");
-    expect(html).toMatch(/<span class="kran-visually-hidden">\sIDR<\/span>/);
-    expect(html).not.toContain(">250.000,00 IDR<");
+    expect(withExCurrency).toBe(plain);
+    expect(plain).not.toContain("kran-visually-hidden");
+    expect(plain).not.toContain("IDR");
   });
 
   it("locale diteruskan: en-US memakai pemisah Inggris", () => {
@@ -525,6 +528,56 @@ describe("DataTable", () => {
     expect(table({ locale: "en-US" })).toContain(
       '<td class="kran-num kran-money">1,234,567.89</td>',
     );
+  });
+
+  it("unit uang hanya di header kolom, tidak pernah di tiap sel", () => {
+    const html = table();
+    const cells = html.match(/<td class="kran-num kran-money[^"]*">[^<]*<\/td>/g) ?? [];
+
+    expect(html).toContain("Saldo (IDR)");
+    expect(cells.length).toBeGreaterThan(0);
+    for (const cell of cells) {
+      const text = cell.replace(/<[^>]+>/g, "").trim();
+      if (text === "") continue;
+      expect(text).toMatch(/^-?\d{1,3}(\.\d{3})*,\d{2}$/);
+      expect(text).not.toMatch(/IDR|Rp/);
+    }
+  });
+
+  it("nilai negatif memakai minus di depan, tanpa kurung, di ink normal", () => {
+    const rows = [{ code: "301", name: "Koreksi", balance: "-1500000.00" }];
+    const expected = formatMoney("-1500000.00");
+    const html = table({ rows });
+    const cell = html.match(/<td class="kran-num kran-money[^"]*">[^<]*<\/td>/)?.[0] ?? "";
+
+    expect(cell).toContain(`>${expected}<`);
+    expect(cell).toContain("kran-money");
+    expect(cell).not.toMatch(/[()]/);
+    expect(html).not.toContain("kran-muted");
+    const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
+    // Minus tidak boleh terpisah dari angkanya: sel uang tidak pernah pecah baris.
+    expect(css).toMatch(/\.kran-table \.kran-money\s*\{[^}]*white-space: nowrap/);
+  });
+
+  it("kolom uang mencadangkan lebar untuk nilai 3 dan 7 digit", () => {
+    const rows = [
+      { code: "101", name: "Kas", balance: "999.00" },
+      { code: "102", name: "Bank", balance: "1234567.00" },
+    ];
+    const html = table({ rows });
+    const cells = html.match(/<td class="kran-num kran-money">/g) ?? [];
+
+    expect(cells).toHaveLength(2);
+    const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
+    // Cadangan lebar berlaku di semua sel uang `.kran-table`, jadi tabel tangan seperti
+    // `/app/ledger` ikut dapat tanpa kelas tambahan di halaman.
+    expect(css).toMatch(/\.kran-table \.kran-money\s*\{[^}]*min-inline-size:/);
+  });
+
+  it("hanya ada satu formatter uang", () => {
+    const source = readFileSync(new URL("../src/money.ts", import.meta.url), "utf8");
+
+    expect(source.match(/export function format/g) ?? []).toHaveLength(1);
   });
 
   it("nilai kosong tidak diganti nol karangan", () => {
