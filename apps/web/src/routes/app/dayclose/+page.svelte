@@ -26,6 +26,7 @@
   import Alert from "@kran/ui/components/Alert.svelte";
   import Button from "@kran/ui/components/Button.svelte";
   import EmptyState from "@kran/ui/components/EmptyState.svelte";
+  import Select from "@kran/ui/components/Select.svelte";
   import StatusBadge from "@kran/ui/components/StatusBadge.svelte";
 
   import * as m from "#lib/paraglide/messages.js";
@@ -573,19 +574,15 @@
           </h2>
           <p class="kran-muted">{m.dayclose_history_intro()}</p>
         </div>
-        <div class="kran-field">
-          <label class="kran-label" for="dayclose-limit">{m.dayclose_limit_label()}</label>
-          <select
-            class="kran-select"
-            id="dayclose-limit"
-            bind:value={limit}
-            onchange={() => void onLimitChange()}
-          >
-            {#each RUN_LIMITS as value (value)}
-              <option {value}>{value}</option>
-            {/each}
-          </select>
-        </div>
+        <Select
+          label={m.dayclose_limit_label()}
+          bind:value={limit}
+          onchange={() => void onLimitChange()}
+        >
+          {#each RUN_LIMITS as value (value)}
+            <option {value}>{value}</option>
+          {/each}
+        </Select>
       </div>
 
       {#if loadingRuns}

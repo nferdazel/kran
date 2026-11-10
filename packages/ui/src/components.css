@@ -1002,6 +1002,75 @@
   font: inherit;
 }
 
+/* Penanda wajib: jarak dari label lewat margin, bukan karakter spasi yang dipangkas kompilator. */
+.kran-required {
+  margin-inline-start: var(--space-1);
+}
+
+/* Kontrol form v2 (T-286, D-202 ADR-2): field 40 px, 32 px hanya di dalam toolbar.
+ * Batas kontrol memakai `--color-border` (3.49:1), bukan hairline; cincin fokus memakai
+ * `:focus` supaya tetikus dan papan ketik melihat penanda yang sama persis. */
+.kran-control {
+  min-block-size: var(--control-height-primary);
+  padding-block: 0;
+  padding-inline: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.kran-toolbar .kran-control {
+  min-block-size: var(--control-height);
+}
+
+.kran-control:hover:not(:disabled) {
+  border-color: var(--color-text-muted);
+}
+
+.kran-control:focus {
+  border-color: var(--color-focus-ring);
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
+.kran-control:disabled {
+  background: var(--color-surface-disabled);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  cursor: not-allowed;
+}
+
+/* Readonly terbaca sebagai teks yang bisa dibaca, bukan kotak yang bisa diketik. */
+.kran-control[readonly] {
+  background: var(--color-surface);
+}
+
+.kran-control[aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+
+/* Kotak centang: kotak 16 px, area barisnya 40 px supaya tetap target sentuh yang layak. */
+.kran-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--control-height-primary);
+}
+
+.kran-checkbox__box {
+  inline-size: 1rem;
+  block-size: 1rem;
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+
+.kran-checkbox__box:focus {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
 /* Pesan galat: teks + warna danger (bukan warna saja) dan `role="alert"` di komponen.
  * Tanpa modifier = danger, supaya markup lama tetap bermakna. Tone lain memakai modifier. */
 .kran-alert {

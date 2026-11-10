@@ -18,6 +18,7 @@
   import Button from "@kran/ui/components/Button.svelte";
   import DataTable, { type DataColumn, type DataRow } from "@kran/ui/components/DataTable.svelte";
   import EmptyState from "@kran/ui/components/EmptyState.svelte";
+  import Select from "@kran/ui/components/Select.svelte";
 
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
@@ -145,15 +146,12 @@
         />
         <span class="kran-muted" id="loans-party-hint">{m.loans_filter_party_hint()}</span>
       </label>
-      <label class="kran-field">
-        <span class="kran-field__label">{m.loans_filter_status()}</span>
-        <select class="kran-input" bind:value={status}>
-          <option value="">{m.loans_filter_all()}</option>
-          {#each STATUSES as item (item)}
-            <option value={item}>{loanStatusLabel(item)}</option>
-          {/each}
-        </select>
-      </label>
+      <Select label={m.loans_filter_status()} bind:value={status}>
+        <option value="">{m.loans_filter_all()}</option>
+        {#each STATUSES as item (item)}
+          <option value={item}>{loanStatusLabel(item)}</option>
+        {/each}
+      </Select>
       <Button variant="primary" type="submit" disabled={loading}>
         {m.loans_filter_submit()}
       </Button>

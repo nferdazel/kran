@@ -1,14 +1,19 @@
+import { readFileSync } from "node:fs";
 import { createRawSnippet } from "svelte";
 import { render } from "svelte/server";
 import { describe, expect, it } from "vitest";
 
 import Alert from "../src/components/Alert.svelte";
 import Button from "../src/components/Button.svelte";
+import Checkbox from "../src/components/Checkbox.svelte";
 import DataTable from "../src/components/DataTable.svelte";
 import EmptyState from "../src/components/EmptyState.svelte";
-import Field from "../src/components/Field.svelte";
+import Input from "../src/components/Input.svelte";
 import Money from "../src/components/Money.svelte";
+import Select from "../src/components/Select.svelte";
 import StatusBadge from "../src/components/StatusBadge.svelte";
+import Textarea from "../src/components/Textarea.svelte";
+import DoubleInput from "./fixtures/double-input.svelte";
 
 /**
  * Lapisan komponen `packages/ui` (DESIGN §12 fase 1).
@@ -96,83 +101,160 @@ describe("Button", () => {
   });
 });
 
-type FieldParams = {
-  id: string;
-  describedby: string | undefined;
-  invalid: boolean | undefined;
-  required: boolean;
-};
+/** Id kontrol hasil `$props.id()`, diekstrak dari keluaran SSR (nilainya tidak boleh dihardcode). */
+function controlId(html: string, tag: "input" | "select" | "textarea"): string {
+  const match = html.match(new RegExp(`<${tag}[^>]*\\sid="([^"]+)"`));
+  expect(match, `tidak ada <${tag}> ber-id di keluaran: ${html}`).not.toBeNull();
+  return match![1];
+}
 
-/* Kontrol tiruan: memasang nilai yang diterima dari `Field` seperti yang wajib dilakukan pemakai. */
-const control = createRawSnippet((field: () => FieldParams) => ({
-  render: () => {
-    const value = field();
-    const describedby =
-      value.describedby === undefined ? "" : ` aria-describedby="${value.describedby}"`;
-    const invalid = value.invalid === undefined ? "" : ` aria-invalid="${value.invalid}"`;
-    const required = value.required ? " required" : "";
-    return `<input id="${value.id}"${describedby}${invalid}${required} />`;
-  },
-}));
+describe("Input", () => {
+  it("label permanen terhubung ke kontrol lewat id yang dibuat kontrol itu sendiri", () => {
+    const { body: html } = render(Input, { props: { label: "Nominal setor" } });
+    const id = controlId(html, "input");
 
-describe("Field", () => {
-  it("label permanen terhubung ke kontrol lewat for/id", () => {
-    const { body: html } = render(Field, {
-      props: { label: "Nominal setor", id: "amount", children: control },
-    });
-
-    expect(html).toContain('<label class="kran-label" for="amount">');
+    expect(html).toContain(`<label class="kran-label" for="${id}">`);
     expect(html).toContain("Nominal setor");
-    expect(html).toContain('<input id="amount"');
+    expect(html).toContain('class="kran-control"');
   });
 
-  it("hint masuk aria-describedby dengan id turunan", () => {
-    const { body: html } = render(Field, {
-      props: {
-        label: "Nominal setor",
-        id: "amount",
-        hint: "Digit saja, maksimum 2 desimal.",
-        children: control,
-      },
-    });
+  it("dua kontrol berlabel sama tidak berbagi id", () => {
+    const { body: html } = render(DoubleInput, {});
+    const ids = [...html.matchAll(/<input[^>]*\sid="([^"]+)"/g)].map((match) => match[1]);
 
-    expect(html).toContain('id="amount-hint"');
-    expect(html).toContain('aria-describedby="amount-hint"');
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+    for (const id of ids) {
+      expect(html).toContain(`for="${id}"`);
+    }
+  });
+
+  it("hint saja: aria-describedby hanya berisi id hint, tanpa aria-invalid", () => {
+    const { body: html } = render(Input, {
+      props: { label: "Nominal setor", hint: "Digit saja." },
+    });
+    const id = controlId(html, "input");
+
+    expect(html).toContain(`id="${id}-hint"`);
+    expect(html).toContain(`aria-describedby="${id}-hint"`);
     expect(html).not.toContain("aria-invalid");
   });
 
-  it("galat: aria-invalid=true dan aria-describedby memuat hint lalu galat", () => {
-    const { body: html } = render(Field, {
-      props: {
-        label: "Nominal setor",
-        id: "amount",
-        hint: "Digit saja.",
-        error: "Nominal harus lebih dari 0,00.",
-        children: control,
-      },
+  it("galat saja: satu id galat, aria-invalid=true, dan teks galat dirender", () => {
+    const { body: html } = render(Input, {
+      props: { label: "Nominal setor", error: "Wajib diisi." },
     });
+    const id = controlId(html, "input");
+
+    expect(html).toContain(`aria-describedby="${id}-error"`);
+    expect(html).toContain('aria-invalid="true"');
+    expect(html).toContain(`<p class="kran-alert" id="${id}-error">`);
+    expect(html).toContain("Wajib diisi.");
+  });
+
+  it("hint dan galat: urutannya hint lalu galat", () => {
+    const { body: html } = render(Input, {
+      props: { label: "Nominal setor", hint: "Digit saja.", error: "Wajib diisi." },
+    });
+    const id = controlId(html, "input");
+
+    expect(html).toContain(`aria-describedby="${id}-hint ${id}-error"`);
+  });
+
+  it("tanpa hint dan galat tidak ada rujukan deskripsi yang menggantung", () => {
+    const { body: html } = render(Input, { props: { label: "Nominal setor" } });
+
+    expect(html).not.toContain("aria-describedby");
+    expect(html).not.toContain("-hint");
+    expect(html).not.toContain("-error");
+  });
+
+  it("required menandai kontrol dan label tanpa membocorkan tanda dekoratif ke pembaca layar", () => {
+    const { body: html } = render(Input, { props: { label: "Nominal setor", required: true } });
+
+    expect(html).toMatch(/<input[^>]*\srequired/);
+    expect(html).toContain('<span class="kran-required" aria-hidden="true">*</span>');
+  });
+});
+
+describe("Textarea", () => {
+  it("memakai elemen textarea asli dengan label terhubung", () => {
+    const { body: html } = render(Textarea, {
+      props: { label: "Alasan", hint: "Maksimum 200 karakter.", rows: 3 },
+    });
+    const id = controlId(html, "textarea");
+
+    expect(html).toContain(`<label class="kran-label" for="${id}">`);
+    expect(html).toContain('class="kran-control"');
+    expect(html).toContain(`aria-describedby="${id}-hint"`);
+  });
+});
+
+describe("Select", () => {
+  const options = createRawSnippet(() => ({
+    render: () => '<option value="">Pilih</option><option value="A">Aktif</option>',
+  }));
+
+  it("tetap elemen select native dengan label terhubung", () => {
+    const { body: html } = render(Select, {
+      props: { label: "Status", children: options },
+    });
+    const id = controlId(html, "select");
+
+    expect(html).toContain(`<label class="kran-label" for="${id}">`);
+    expect(html).not.toContain('role="listbox"');
+    expect(html).toContain('<option value="A">Aktif</option>');
+    expect(html).toContain('class="kran-control"');
+  });
+
+  it("galat memindahkan aria-invalid dan deskripsi ke elemen select", () => {
+    const { body: html } = render(Select, {
+      props: { label: "Status", error: "Pilih salah satu.", children: options },
+    });
+    const id = controlId(html, "select");
 
     expect(html).toContain('aria-invalid="true"');
-    expect(html).toContain('aria-describedby="amount-hint amount-error"');
-    expect(html).toContain('<p class="kran-alert" id="amount-error">');
-    expect(html).toContain("Nominal harus lebih dari 0,00.");
+    expect(html).toContain(`aria-describedby="${id}-error"`);
+  });
+});
+
+describe("Checkbox", () => {
+  it("tetap input type=checkbox asli, bukan peran buatan", () => {
+    const { body: html } = render(Checkbox, { props: { label: "Bisa diposting" } });
+    const id = controlId(html, "input");
+
+    expect(html).toContain('type="checkbox"');
+    expect(html).toContain('class="kran-checkbox__box"');
+    expect(html).not.toContain('role="checkbox"');
+    expect(html).toContain(`<label class="kran-label" for="${id}">`);
   });
 
-  it("galat tanpa hint hanya merujuk id galat", () => {
-    const { body: html } = render(Field, {
-      props: { label: "Nominal setor", id: "amount", error: "Wajib diisi.", children: control },
+  it("hint tetap terhubung lewat aria-describedby", () => {
+    const { body: html } = render(Checkbox, {
+      props: { label: "Bisa diposting", hint: "Hanya akun tipe aset." },
     });
+    const id = controlId(html, "input");
 
-    expect(html).toContain('aria-describedby="amount-error"');
+    expect(html).toContain(`id="${id}-hint"`);
+    expect(html).toContain(`aria-describedby="${id}-hint"`);
+  });
+});
+
+describe("Kontrol form v2", () => {
+  it("tiga kontrol inti tidak membawa warna hex mentah", () => {
+    const files = ["Input", "Select", "Checkbox"].map((name) =>
+      readFileSync(new URL(`../src/components/${name}.svelte`, import.meta.url), "utf8"),
+    );
+
+    for (const source of files) {
+      expect(source).not.toMatch(/#[0-9a-fA-F]{3,6}/);
+    }
   });
 
-  it("required menandai kontrol dan label, tanpa membocorkan teks dekoratif ke pembaca layar", () => {
-    const { body: html } = render(Field, {
-      props: { label: "Nominal setor", id: "amount", required: true, children: control },
-    });
-
-    expect(html).toContain(" required />");
-    expect(html).toMatch(/<span aria-hidden="true">\s\*<\/span>/);
+  it("Field sudah tidak ada: satu cara membangun kontrol", () => {
+    expect(() =>
+      readFileSync(new URL("../src/components/Field.svelte", import.meta.url), "utf8"),
+    ).toThrow();
   });
 });
 

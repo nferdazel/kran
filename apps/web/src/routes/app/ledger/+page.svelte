@@ -16,6 +16,7 @@
   import Alert from "@kran/ui/components/Alert.svelte";
   import Button from "@kran/ui/components/Button.svelte";
   import EmptyState from "@kran/ui/components/EmptyState.svelte";
+  import Select from "@kran/ui/components/Select.svelte";
   import StatusBadge from "@kran/ui/components/StatusBadge.svelte";
 
   import * as m from "#lib/paraglide/messages.js";
@@ -262,22 +263,18 @@
        kontrol ini saat dicetak lewat aturan cetak bersama. -->
   <div class="kran-toolbar">
     <div class="kran-actions">
-      <div class="kran-field">
-        <label class="kran-label" for="ledger-period">{m.ledger_period_label()}</label>
-        <select
-          class="kran-select"
-          id="ledger-period"
-          bind:value={selectedId}
-          onchange={onPeriodChange}
-          disabled={periods.length === 0}
-        >
-          {#each periods as period (period.periodId)}
-            <option value={period.periodId}>
-              {formatDate(period.startsOn)} – {formatDate(period.endsOn)}
-            </option>
-          {/each}
-        </select>
-      </div>
+      <Select
+        label={m.ledger_period_label()}
+        bind:value={selectedId}
+        onchange={onPeriodChange}
+        disabled={periods.length === 0}
+      >
+        {#each periods as period (period.periodId)}
+          <option value={period.periodId}>
+            {formatDate(period.startsOn)} – {formatDate(period.endsOn)}
+          </option>
+        {/each}
+      </Select>
       <Button type="button" onclick={reload} disabled={loading}>{m.ledger_reload()}</Button>
       <Button type="button" onclick={printPage} disabled={!balances}>{m.ledger_print()}</Button>
     </div>

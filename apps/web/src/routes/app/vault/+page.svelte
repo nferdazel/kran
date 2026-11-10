@@ -15,6 +15,7 @@
   import Alert from "@kran/ui/components/Alert.svelte";
   import Button from "@kran/ui/components/Button.svelte";
   import EmptyState from "@kran/ui/components/EmptyState.svelte";
+  import Select from "@kran/ui/components/Select.svelte";
   import StatusBadge from "@kran/ui/components/StatusBadge.svelte";
 
   import * as m from "#lib/paraglide/messages.js";
@@ -296,20 +297,16 @@
     <p class="kran-page-header__intro">{m.vault_intro()}</p>
   </div>
   {#if canRead && branches.length > 1}
-    <div class="kran-field">
-      <label class="kran-label" for="vault-branch">{m.vault_branch_label()}</label>
-      <select
-        class="kran-select"
-        id="vault-branch"
-        bind:value={branchId}
-        onchange={() => void onBranchChange()}
-      >
-        <option value="">{m.vault_branch_choose()}</option>
-        {#each branches as branch (branch.branchId)}
-          <option value={branch.branchId}>{branch.code} · {branch.name}</option>
-        {/each}
-      </select>
-    </div>
+    <Select
+      label={m.vault_branch_label()}
+      bind:value={branchId}
+      onchange={() => void onBranchChange()}
+    >
+      <option value="">{m.vault_branch_choose()}</option>
+      {#each branches as branch (branch.branchId)}
+        <option value={branch.branchId}>{branch.code} · {branch.name}</option>
+      {/each}
+    </Select>
   {/if}
 </div>
 
@@ -422,20 +419,16 @@
       <h2 class="kran-section__title" id="vault-requests-heading">
         {m.vault_requests_title()}
       </h2>
-      <div class="kran-field">
-        <label class="kran-label" for="vault-filter">{m.vault_filter_label()}</label>
-        <select
-          class="kran-select"
-          id="vault-filter"
-          bind:value={statusFilter}
-          onchange={() => void onFilterChange()}
-        >
-          <option value="">{m.vault_filter_all()}</option>
-          {#each STATUSES as status (status)}
-            <option value={status}>{statusLabel(status)}</option>
-          {/each}
-        </select>
-      </div>
+      <Select
+        label={m.vault_filter_label()}
+        bind:value={statusFilter}
+        onchange={() => void onFilterChange()}
+      >
+        <option value="">{m.vault_filter_all()}</option>
+        {#each STATUSES as status (status)}
+          <option value={status}>{statusLabel(status)}</option>
+        {/each}
+      </Select>
     </div>
 
     {#if loadingRequests}

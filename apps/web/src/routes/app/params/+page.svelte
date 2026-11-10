@@ -18,6 +18,7 @@
   import Alert from "@kran/ui/components/Alert.svelte";
   import Button from "@kran/ui/components/Button.svelte";
   import EmptyState from "@kran/ui/components/EmptyState.svelte";
+  import Select from "@kran/ui/components/Select.svelte";
   import StatusBadge from "@kran/ui/components/StatusBadge.svelte";
 
   import { goto } from "$app/navigation";
@@ -498,14 +499,11 @@
           <p class="kran-muted">{m.params_submit_effective_from_hint()}</p>
 
           <form class="kran-form" onsubmit={submitChange} novalidate>
-            <div class="kran-field">
-              <label class="kran-label" for="param-key">{m.params_submit_key_label()}</label>
-              <select class="kran-select" id="param-key" bind:value={formKey}>
-                {#each selectableKeys as key (key)}
-                  <option value={key}>{key}</option>
-                {/each}
-              </select>
-            </div>
+            <Select label={m.params_submit_key_label()} bind:value={formKey}>
+              {#each selectableKeys as key (key)}
+                <option value={key}>{key}</option>
+              {/each}
+            </Select>
 
             <div class="kran-field">
               <label class="kran-label" for="param-value">{m.params_submit_value_label()}</label>

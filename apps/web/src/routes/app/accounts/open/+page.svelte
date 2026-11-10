@@ -22,6 +22,7 @@
 
   import Alert from "@kran/ui/components/Alert.svelte";
   import Button from "@kran/ui/components/Button.svelte";
+  import Select from "@kran/ui/components/Select.svelte";
 
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
@@ -346,24 +347,20 @@
     {:else if productOptions.length === 0}
       <p class="kran-muted">{m.accounts_product_empty()}</p>
     {:else}
-      <div class="kran-field">
-        <label class="kran-label" for="accounts-product">{m.accounts_product_label()}</label>
-        <select
-          class="kran-select"
-          id="accounts-product"
-          bind:this={productSelectEl}
-          bind:value={productCode}
-        >
-          <option value="">{m.accounts_product_placeholder()}</option>
-          {#each productOptions as product (product.productId)}
-            <option value={product.code}>
-              {product.code} — {product.name}{product.savingsKind
-                ? ` (${savingsKindLabel(product.savingsKind)})`
-                : ""}
-            </option>
-          {/each}
-        </select>
-      </div>
+      <Select
+        label={m.accounts_product_label()}
+        bind:element={productSelectEl}
+        bind:value={productCode}
+      >
+        <option value="">{m.accounts_product_placeholder()}</option>
+        {#each productOptions as product (product.productId)}
+          <option value={product.code}>
+            {product.code} — {product.name}{product.savingsKind
+              ? ` (${savingsKindLabel(product.savingsKind)})`
+              : ""}
+          </option>
+        {/each}
+      </Select>
     {/if}
   </section>
 
