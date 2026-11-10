@@ -147,7 +147,7 @@ findings are folded into the rows below and into the task files at DoR time.
 
 | ID | Title | Size | Deps | Risk | Status |
 |---|---|---|---|---|---|
-| T-236 | Component: MoneyInput (Input/Select delivered by T-286) | S | T-235 | full | TODO (DoR written, one open decision: see `docs/tasks/T-236.md`) |
+| T-236 | Component: MoneyInput (Input/Select delivered by T-286) | S | T-235 | full | READY |
 | T-237 | Component: DataTable on `T-279` (extend, not recreate) | M | T-235, T-279 | standard | TODO |
 | T-238 | Component: ReviewPanel / ApprovalPanel | M | T-235 | standard | TODO |
 | T-239 | Component: Dialog / Confirm | S | T-235 | standard | TODO |
@@ -161,10 +161,10 @@ findings are folded into the rows below and into the task files at DoR time.
 | T-290 | Drawer 520 with an honest focus trap | M | T-285, T-288 | standard | READY |
 | T-291 | Report and print: no chrome, token colours, number rules | S | T-288, T-289 | standard | READY |
 | T-292 | State sweep: three empties, loading/error components, terminology | M | T-284, T-285 | standard | DONE |
-| T-293 | Loans list density: one-line dates, member name over ID, 40px rows | M | T-284, T-288 | standard | READY |
+| T-293 | Loans list density: one-line dates, member name over ID, 40px rows | M | T-284, T-288 | standard | DONE |
 | T-294 | Shell reflow at 360 and 200%, one ledger tab stop | M | T-284, T-285, T-288 | standard | READY |
-| T-295 | Loans money columns state their unit in the header | S | T-289, T-293 | standard | READY |
-| T-296 | Visual baselines ignore the build version | S | T-289 | standard | READY |
+| T-295 | Loans money columns state their unit in the header | S | T-289, T-293 | standard | DONE |
+| T-296 | Visual baselines ignore the build version | S | T-289 | standard | DONE |
 | T-234 | AppShell + navigation | M | T-232, T-233, T-279 | standard | SUPERSEDED by T-285 |
 | T-237 | Component: DataTable on `T-279` (extend, not recreate) | M | T-235, T-279 | standard | SUPERSEDED by T-288 |
 | T-240 | Component: Empty / Error / Loading states | S | T-235 | standard | SUPERSEDED by T-292 |
