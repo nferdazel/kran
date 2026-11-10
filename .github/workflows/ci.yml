@@ -388,13 +388,16 @@ jobs:
         run: pnpm --filter @kran/web run i18n:compile
 
       - name: Siapkan DB dev (reset + migrasi + contract + seed)
-        # Urutan dan alasan sama dengan `cmd_e2e` di `./task`: reset supaya deterministik, migrasi
-        # expand, lalu contract supaya skema final (sesuai sesudah deploy), lalu seed dev.
+        # Lewat `./task dbtools`: `./task build` hanya mengompilasi kran-api, tidak pernah membuat
+        # `.build/bin/dbtools` (dibangun `build_tool` di dalam `./task dbtools`). Run 42851540106
+        # mati di sini dengan exit 127 karena memanggil biner yang belum ada.
+        # Urutan dan alasan sama dengan `cmd_e2e`: reset supaya deterministik, migrasi expand, lalu
+        # contract supaya skema final (sesuai sesudah deploy), lalu seed dev.
         run: |
-          .build/bin/dbtools --root "$PWD" reset
-          .build/bin/dbtools --root "$PWD" migrate
+          ./task dbtools reset
+          ./task dbtools migrate
           .build/bin/kran-api --role=migrate --contract --root="$PWD"
-          .build/bin/dbtools --root "$PWD" seed --dev
+          ./task dbtools seed --dev
 
       - name: "Playwright --update-snapshots (visual Linux)"
         # Hanya spec visual: empat baseline (login dan ganti kata sandi, light dan dark). Suite
