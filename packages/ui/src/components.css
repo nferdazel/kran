@@ -1348,18 +1348,38 @@
   box-shadow: inset 2px 0 0 var(--color-accent);
 }
 
-/* Baris dua tingkat: baris utama 13/600, baris kedua 11 redup (DESIGN §6 v2). */
-.kran-table__primary {
+/* Nilai yang tidak boleh pecah baris (mis. tanggal "10 November 2026" di kolom sempit). */
+.kran-table .kran-nowrap {
+  white-space: nowrap;
+}
+
+/* Baris dua tingkat: baris utama 13/600, baris kedua 11 redup (DESIGN §6 v2). Keduanya satu
+ * baris dengan elipsis; nilai panjang memotong, bukan menambah tinggi baris 40px. */
+.kran-table__primary,
+.kran-table__secondary {
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kran-table__primary {
   font-size: var(--text-base);
   font-weight: 600;
 }
 
 .kran-table__secondary {
-  display: block;
   font-size: var(--text-xs);
   font-weight: 400;
   color: var(--color-text-muted);
+}
+
+/* Kolom yang punya baris kedua mengambil sisa lebar tabel alih-alih melebar mengikuti isinya:
+ * tanpa batas ini nama panjang melebarkan kolomnya sendiri dan elipsis tidak pernah terjadi.
+ * Lantai 18ch menjaga nama tetap terbaca saat tabel sempit. */
+.kran-table--two-line .kran-table__secondary-cell {
+  max-inline-size: 0;
+  min-inline-size: 18ch;
 }
 
 /* Tabel padat untuk daftar panjang (32px) dan dua tingkat (40px). */

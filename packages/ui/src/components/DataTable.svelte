@@ -22,6 +22,11 @@
      * baris tanpa field itu tetap satu baris, tanpa baris kedua kosong.
      */
     secondary?: string;
+    /**
+     * Nilai sel tidak boleh pecah baris (mis. tanggal "10 November 2026" yang akan menjadi tiga
+     * baris di kolom sempit). Dirender sebagai `kran-nowrap` pada `th`/`td` kolom ini.
+     */
+    nowrap?: boolean;
   }
 
   /** Baris tabel: record apa adanya dari pemanggil, tanpa menyalin/mengarang field. */
@@ -138,12 +143,19 @@
   }
 
   function headerClass(column: DataColumn): string | undefined {
-    return column.align === "end" || column.numerics === true ? "kran-num" : undefined;
+    const classes: string[] = [];
+    if (column.align === "end" || column.numerics === true) classes.push("kran-num");
+    if (column.nowrap === true) classes.push("kran-nowrap");
+    return classes.length === 0 ? undefined : classes.join(" ");
   }
 
   function cellClass(column: DataColumn): string | undefined {
-    if (column.numerics === true) return "kran-num kran-money";
-    return column.align === "end" ? "kran-num" : undefined;
+    const classes: string[] = [];
+    if (column.numerics === true) classes.push("kran-num", "kran-money");
+    else if (column.align === "end") classes.push("kran-num");
+    if (column.nowrap === true) classes.push("kran-nowrap");
+    if (rowLines && column.secondary !== undefined) classes.push("kran-table__secondary-cell");
+    return classes.length === 0 ? undefined : classes.join(" ");
   }
 
   function ariaSort(column: DataColumn): "ascending" | "descending" | undefined {

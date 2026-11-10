@@ -103,15 +103,17 @@
   const columns: DataColumn[] = $derived([
     // Nomor akad menamai baris: pembaca layar membacakannya bersama tiap sel lain.
     { key: "loanId", label: m.loans_col_loan(), rowHeader: true },
-    { key: "partyId", label: m.loans_col_party() },
+    // Nama anggota di baris utama, UUID di baris kedua; saringan tetap memakai partyId.
+    { key: "partyName", label: m.loans_col_party(), secondary: "partyId" },
     { key: "principal", label: m.loans_col_principal(), numerics: true, align: "end" },
     { key: "status", label: m.loans_col_status() },
-    { key: "disbursedOn", label: m.loans_col_disbursed() },
+    { key: "disbursedOn", label: m.loans_col_disbursed(), nowrap: true },
   ]);
 
   const rows: DataRow[] = $derived(
     loans.map((loan) => ({
       loanId: loan.loanId,
+      partyName: loan.partyName,
       partyId: loan.partyId,
       principal: loan.principal,
       status: loanStatusLabel(loan.status),
@@ -194,6 +196,7 @@
         {columns}
         {rows}
         rowKey="loanId"
+        rowLines
         actions={{ label: m.loans_open(), cell: rowActions }}
       />
     {/if}

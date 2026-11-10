@@ -777,7 +777,34 @@ describe("DataTable", () => {
 
     expect(html).toContain('<span class="kran-table__primary">101</span>');
     expect(html).toContain('<span class="kran-table__secondary">kas kecil</span>');
-    expect(html.match(/kran-table__secondary/g) ?? []).toHaveLength(1);
+    expect(html.match(/<span class="kran-table__secondary">/g) ?? []).toHaveLength(1);
+  });
+
+  it("nowrap menambahkan kran-nowrap hanya pada kolom itu, header dan sel", () => {
+    const columns = [
+      { key: "code", label: "Kode" },
+      { key: "disbursedOn", label: "Cair", nowrap: true },
+    ];
+    const rows = [{ code: "101", disbursedOn: "10 November 2026" }];
+    const html = table({ columns, rows });
+
+    expect(html).toContain('<th scope="col" class="kran-nowrap">Cair</th>');
+    expect(html).toContain('<td class="kran-nowrap">10 November 2026</td>');
+    expect(html.match(/kran-nowrap/g) ?? []).toHaveLength(2);
+  });
+
+  it("kolom berbaris kedua dibatasi lebarnya, kolom biasa tidak", () => {
+    const columns = [
+      { key: "code", label: "Kode" },
+      { key: "name", label: "Anggota", secondary: "id" },
+    ];
+    const rows = [{ code: "101", name: "Kas", id: "e2e00000-0000-4000-8000-000000000001" }];
+    const html = table({ columns, rows, rowLines: true });
+
+    expect(html).toMatch(
+      /<td class="kran-table__secondary-cell"><span class="kran-table__primary">Kas<\/span>/,
+    );
+    expect(html.match(/kran-table__secondary-cell/g) ?? []).toHaveLength(1);
   });
 
   it("pembungkus tetap satu tabindex dan satu region meski opsi v2 aktif", () => {
