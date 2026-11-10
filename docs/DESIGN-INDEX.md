@@ -100,3 +100,14 @@ Three components survive unchanged, three change their API, and `Field` is retir
 
 The prototype proves design behaviour only. It does not prove backend money, permissions, or
 audit behaviour; those are proved by the tests named in `CAPABILITIES.md`.
+
+## Design system v2 (in progress)
+
+- Handoff: `docs/design/design-system-v2-handoff.md` — per-ticket scope, interaction rules from QA,
+  terminology rulings, and the "Where things live" block.
+- Copy audit behind the terminology rulings: `docs/design/design-system-v2-copy-audit.md`.
+- Tickets: `docs/tasks/T-286.md` … `T-292.md` (T-284 tokens and T-285 shell are done). Implementation
+  is on branch `feat/design-system-v2`; nothing here is on `main`.
+- Gate scripts and exit criteria: `tools/qa/a11y/` (`a11y-matrix.mjs`, `keyboard-flows.mjs`,
+  `EXIT-CRITERIA.md`, `MANUAL-CHECKLIST.md`). Run output stays in `.local/qa/results/` (gitignored).
+  Browser-level gates are still open until a test session with seed fixtures exists.
