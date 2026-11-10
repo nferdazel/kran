@@ -147,14 +147,14 @@ findings are folded into the rows below and into the task files at DoR time.
 
 | ID | Title | Size | Deps | Risk | Status |
 |---|---|---|---|---|---|
-| T-236 | Component: Input / Select / MoneyInput | S | T-235 | standard | TODO |
+| T-236 | Component: MoneyInput (Input/Select delivered by T-286) | S | T-235 | full | TODO (DoR written, one open decision: see `docs/tasks/T-236.md`) |
 | T-237 | Component: DataTable on `T-279` (extend, not recreate) | M | T-235, T-279 | standard | TODO |
 | T-238 | Component: ReviewPanel / ApprovalPanel | M | T-235 | standard | TODO |
 | T-239 | Component: Dialog / Confirm | S | T-235 | standard | TODO |
 | T-240 | Component: Empty / Error / Loading states | S | T-235 | standard | TODO |
 | T-284 | Design tokens v2 + full contrast matrix (D-202) | S | none | standard | DONE |
 | T-285 | App shell: AppShell/Sidebar/Topbar/PageHeader/Toolbar (D-202) | M | T-284 | standard | DONE |
-| T-286 | Form controls v2: Input / Select / Checkbox (Field folded in) | M | T-284 | standard | READY |
+| T-286 | Form controls v2: Input / Select / Checkbox (Field folded in) | M | T-284 | standard | DONE |
 | T-287 | Button v2: sizes, quiet variant, hover/active rules | S | T-284 | standard | READY |
 | T-288 | DataTable v2: density, sticky header, totals, selection | M | T-284 | standard | READY |
 | T-289 | Money inside DataTable: one symbol per column, stable width | S | T-288 | full | READY |
@@ -162,7 +162,6 @@ findings are folded into the rows below and into the task files at DoR time.
 | T-291 | Report and print: no chrome, token colours, number rules | S | T-288, T-289 | standard | READY |
 | T-292 | State sweep: three empties, loading/error components, terminology | M | T-284, T-285 | standard | READY |
 | T-234 | AppShell + navigation | M | T-232, T-233, T-279 | standard | SUPERSEDED by T-285 |
-| T-236 | Component: Input / Select / MoneyInput | S | T-235 | standard | TODO (Input/Select superseded by T-286; MoneyInput still open) |
 | T-237 | Component: DataTable on `T-279` (extend, not recreate) | M | T-235, T-279 | standard | SUPERSEDED by T-288 |
 | T-240 | Component: Empty / Error / Loading states | S | T-235 | standard | SUPERSEDED by T-292 |
 | T-241 | Repair screens: vault, ledger, params, password, login (5 subtasks) | M | T-234 | standard | TODO |
