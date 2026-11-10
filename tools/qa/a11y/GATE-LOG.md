@@ -11,6 +11,89 @@ Newest entry first.
 
 ---
 
+## 2026-11-10 15:37-15:42 WIB - branch `feat/design-system-v2` @ `0c706e1`
+
+Command: `./task devdb status` -> `./task build` -> `./task e2e` (foreground, run by Sari)
+Result: **PASSED** (`ok: e2e green: 80 test`, exit 0, log `.build/e2e-gate-0c706e1.log`)
+
+```
+4 skipped
+80 passed (4.4m)
+```
+
+0 failed, 0 did not run, 0 flaky. `devdb status` exit 0 (`kran_dev @ PostgreSQL 18.6`); the
+tunnel was already up, no `devdb up` needed. `./task build` -> `ok: .build/bin/kran-api`. The
+40-test minimum guard was satisfied. Skips are only `visual.spec.ts` (4, Linux-only baselines).
+
+`0c706e1` (T-286) adds the v2 form controls (input/select/checkbox/textarea), deletes `Field`,
+migrates 5 `Field` sites and 12 native selects, and adds one e2e case. 79 -> 80 passed is
+exactly that case.
+
+### The new test
+
+`apps/web/tests/e2e/screens.spec.ts:252` - "keyboard-only > buku besar: galat tipe akun
+memindahkan fokus ke select" - **PASS (878ms)**, inside `./task e2e`. It submits the COA form
+with a valid code and name but an empty account type, then asserts the error text is visible,
+`document.activeElement` is the account-type `<select>`, `aria-invalid="true"` is set and
+`aria-describedby` points at a single id that really exists. This is the regression Raka held
+the commit for: `focusField("ledger-coa-type")` pointed at an id the component no longer
+renders. Read line by line by Sari: no `skip`, no `.only`, no axe rule disabled.
+
+### axe - 2 themes x 2 locales
+
+29 axe-labelled tests, all PASS, **0 violations** - no K-ID to report. No `region`, no
+`landmark-unique`, no label/description rule, nothing fired anywhere in the suite. Coverage:
+`ledger`, `dayclose`, `loans`, `lending-actions`, `teller`, `vault`, `screens`, `print`,
+`palette` loop both themes x both locales; `password`, `/login` and `/app` cover both themes in
+one locale.
+
+The migrated form controls carry their own label and description wiring, and the four screens
+where they land are axe-clean in all four combinations each: `/app/users` (2.5s), `/app/products`
+(5.0s), `/app/ledger/admin` (2.8s, 2 selects + checkbox + COA select), `/app/accounts/open`
+(4.3s). No new label or description violation appeared.
+
+### Keyboard
+
+19 keyboard-behaviour tests PASS, all in-suite (`./task e2e`), not a side runner: `keyboard.spec`
+x4 (skip link, theme, language, tab order), `dayclose` reload + history bounds, `ledger` Tab in /
+arrows + Home/End / Tab out, `loans` list->detail->back, `lending-actions` pay instalment and
+focus recovery without an account, `palette` Esc focus-return + Tab trap + Ctrl+K not stolen,
+`screens` x5 (role panel, product approval, COA form, **COA invalid-focus**, party search),
+`shell-panel` off-canvas trap, `teller` open -> deposit -> close with zero difference.
+
+### Print
+
+All three PASS - `print.spec.ts:202` slip, `:233` statement, `:264` print axe 2 themes x 2
+locales.
+
+### Keyboard runner (`keyboard-flows --config keyboard-app`) - still not a pass
+
+```
+gate-0c706e1: 5 flows -> 0 PASS, 0 FAIL, 5 BLOCKED
+```
+
+Unchanged: every flow is BLOCKED on unwritten `TODO:` selectors (`teller-deposit` K-01,
+`vault-approve` K-02, `close-cash` K-03, `drawer-open-close`, `sidebar-offcanvas`). It is a
+separate runner with its own config, so this green e2e run does not fill it in.
+
+### `/app/*` render
+
+Yes, without redirect, with real logged-in sessions: `/app`, `/app/dayclose`, `/app/ledger`,
+`/app/loans`, `/app/users`, `/app/products`, `/app/ledger/admin`, `/app/accounts/open`,
+`/app/password`, `/app/teller`, `/app/vault` asserted page content there, not a login gate.
+Also green: `zoom-125.spec.ts` x2 (1366x768 at 125% and 200%).
+
+### Still not covered here - do not read this green as "everything passes"
+
+1. axe at a real 360px viewport, and the `loading` / `empty` / `no-match` / `error` states -
+   waits on T-292.
+2. Drawer Escape focus-return and Tab trap - the app has no drawer yet (T-290); the 5
+   `keyboard-flows` `TODO:` selectors are that ticket's test burst.
+3. axe with the off-canvas panel **open** - deliberately not added, not weakened.
+4. 4 skipped visual regressions carry no signal on this OS.
+
+---
+
 ## 2026-11-10 14:56-15:01 WIB - branch `feat/design-system-v2` @ `e93aa70`
 
 Command: `./task devdb status` -> `./task build` -> `./task e2e` (foreground, run by Sari)
