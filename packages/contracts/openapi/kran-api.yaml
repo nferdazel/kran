@@ -11,7 +11,9 @@ info:
 
     Konvensi (spec §13):
     - Endpoint bisnis di bawah `/api/v1`; health/readiness di akar (dipakai gate deploy).
-    - Uang dikirim sebagai **string desimal** (`"1500000.00"`) + `currency`, bukan number.
+    - Uang dikirim sebagai **string desimal** (`"1500000.00"`), bukan number. Institusi hanya punya
+      satu mata uang (IDR), jadi payload **tidak** membawa field `currency`: mata uang disebut
+      sekali di judul kolom/laporan ("Saldo (IDR)"), tidak diulang per baris (D-136, DESIGN §6).
     - Tanggal bisnis `YYYY-MM-DD`; waktu ISO-8601 UTC.
     - Error memakai `application/problem+json` (RFC 9457) dengan `code`, `i18nKey`, `params`,
       `traceId`; pesan manusia diterjemahkan frontend dari `i18nKey`.
@@ -5026,7 +5028,8 @@ components:
     LoanSummary:
       type: object
       additionalProperties: false
-      required: [loanId, partyId, productVersionId, branchId, principal, status, disbursedOn]
+      required: [loanId, partyId, partyName, productVersionId, branchId, principal, status,
+                 disbursedOn]
       properties:
         loanId:
           type: string
@@ -5034,6 +5037,10 @@ components:
         partyId:
           type: string
           format: uuid
+        partyName:
+          type: string
+          minLength: 1
+          description: Nama tampil anggota (`party.party.display_name`), satu lookup per halaman.
         productVersionId:
           type: string
           format: uuid

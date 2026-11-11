@@ -18,11 +18,12 @@
   import Button from "@kran/ui/components/Button.svelte";
   import DataTable, { type DataColumn, type DataRow } from "@kran/ui/components/DataTable.svelte";
   import EmptyState from "@kran/ui/components/EmptyState.svelte";
+  import Select from "@kran/ui/components/Select.svelte";
 
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
   import { formatDate } from "#lib/app/format.js";
-  import { loanProblemMessage, loanStatusLabel } from "#lib/app/loans.js";
+  import { loanFilterActive, loanProblemMessage, loanStatusLabel } from "#lib/app/loans.js";
   import type { LoanStatus, LoanSummary, SessionInfo } from "#lib/app/types.js";
   import type { PageProps } from "./$types";
 
@@ -92,18 +93,27 @@
     void load();
   }
 
+  /** "Hapus filter" pada keadaan no-match: kosongkan kedua kontrol lalu muat ulang. */
+  function clearFilter(): void {
+    partyId = "";
+    status = "";
+    void load();
+  }
+
   const columns: DataColumn[] = $derived([
     // Nomor akad menamai baris: pembaca layar membacakannya bersama tiap sel lain.
     { key: "loanId", label: m.loans_col_loan(), rowHeader: true },
-    { key: "partyId", label: m.loans_col_party() },
+    // Nama anggota di baris utama, UUID di baris kedua; saringan tetap memakai partyId.
+    { key: "partyName", label: m.loans_col_party(), secondary: "partyId" },
     { key: "principal", label: m.loans_col_principal(), numerics: true, align: "end" },
     { key: "status", label: m.loans_col_status() },
-    { key: "disbursedOn", label: m.loans_col_disbursed() },
+    { key: "disbursedOn", label: m.loans_col_disbursed(), nowrap: true },
   ]);
 
   const rows: DataRow[] = $derived(
     loans.map((loan) => ({
       loanId: loan.loanId,
+      partyName: loan.partyName,
       partyId: loan.partyId,
       principal: loan.principal,
       status: loanStatusLabel(loan.status),
@@ -145,15 +155,12 @@
         />
         <span class="kran-muted" id="loans-party-hint">{m.loans_filter_party_hint()}</span>
       </label>
-      <label class="kran-field">
-        <span class="kran-field__label">{m.loans_filter_status()}</span>
-        <select class="kran-input" bind:value={status}>
-          <option value="">{m.loans_filter_all()}</option>
-          {#each STATUSES as item (item)}
-            <option value={item}>{loanStatusLabel(item)}</option>
-          {/each}
-        </select>
-      </label>
+      <Select label={m.loans_filter_status()} bind:value={status}>
+        <option value="">{m.loans_filter_all()}</option>
+        {#each STATUSES as item (item)}
+          <option value={item}>{loanStatusLabel(item)}</option>
+        {/each}
+      </Select>
       <Button variant="primary" type="submit" disabled={loading}>
         {m.loans_filter_submit()}
       </Button>
@@ -165,6 +172,10 @@
     <a class="kran-link" href={resolve("/app/loans/[loanId]", { loanId })}>{m.loans_open()}</a>
   {/snippet}
 
+  {#snippet clearFilterAction()}
+    <Button type="button" onclick={clearFilter}>{m.common_filter_clear()}</Button>
+  {/snippet}
+
   <section class="kran-section" aria-labelledby="loans-list-heading">
     <h2 class="kran-section__title" id="loans-list-heading">{m.loans_title()}</h2>
     {#if loading}
@@ -173,8 +184,10 @@
       <Alert tone="negative" title={errorMessage}>
         <Button type="button" onclick={() => void load()}>{m.app_retry()}</Button>
       </Alert>
+    {:else if loans.length === 0 && loanFilterActive(partyId, status)}
+      <EmptyState kind="no-match" title={m.loans_empty_no_match()} action={clearFilterAction} />
     {:else if loans.length === 0}
-      <EmptyState title={m.loans_empty()} />
+      <EmptyState kind="no-data" title={m.loans_empty()} />
     {:else}
       <DataTable
         caption={m.loans_title()}
@@ -183,6 +196,7 @@
         {columns}
         {rows}
         rowKey="loanId"
+        rowLines
         actions={{ label: m.loans_open(), cell: rowActions }}
       />
     {/if}

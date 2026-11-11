@@ -30,7 +30,9 @@
   import Button from "@kran/ui/components/Button.svelte";
   import DataTable, { type DataColumn, type DataRow } from "@kran/ui/components/DataTable.svelte";
   import EmptyState from "@kran/ui/components/EmptyState.svelte";
-  import Field from "@kran/ui/components/Field.svelte";
+  import Input from "@kran/ui/components/Input.svelte";
+  import Select from "@kran/ui/components/Select.svelte";
+  import Textarea from "@kran/ui/components/Textarea.svelte";
 
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
@@ -158,25 +160,35 @@
     return `${loanId}|write-off|${value.reason}`;
   }
 
+  /** Elemen kontrol untuk memindahkan fokus ke galat pertama; id-nya milik komponen, bukan halaman. */
+  let accountEl = $state<HTMLSelectElement | null>(null);
+  let amountEl = $state<HTMLInputElement | null>(null);
+  let tenorEl = $state<HTMLInputElement | null>(null);
+  let reasonEl = $state<HTMLTextAreaElement | null>(null);
+  const recoveryEls = $state<Record<"principal" | "interest" | "penalty", HTMLInputElement | null>>({
+    principal: null,
+    interest: null,
+    penalty: null,
+  });
+
   /**
-   * Fokus ke kontrol tidak sah pertama. `Field` hanya mengaitkan galat lewat `aria-describedby`,
-   * jadi tanpa ini pengguna keyboard tidak tahu apa yang menahan pratinjau (spec §17.1).
+   * Fokus ke kontrol tidak sah pertama. Galat hanya dikaitkan lewat `aria-describedby`, jadi tanpa
+   * ini pengguna keyboard tidak tahu apa yang menahan pratinjau (spec §17.1).
    */
   function focusFirstError(): void {
-    const entries: Array<[string, string]> = [
-      [accountError, "loans-action-account"],
-      [amountError, "loans-action-amount"],
-      [recoveryError.principal, "loans-action-recovery-principal"],
-      [recoveryError.interest, "loans-action-recovery-interest"],
-      [recoveryError.penalty, "loans-action-recovery-penalty"],
+    const entries: Array<[string, HTMLElement | null]> = [
+      [accountError, accountEl],
+      [amountError, amountEl],
+      [recoveryError.principal, recoveryEls.principal],
+      [recoveryError.interest, recoveryEls.interest],
+      [recoveryError.penalty, recoveryEls.penalty],
       // Galat "total" tidak punya field sendiri; fokus ke komponen pertama.
-      [recoveryError.total, "loans-action-recovery-principal"],
-      [tenorError, "loans-action-tenor"],
-      [reasonError, "loans-action-reason"],
+      [recoveryError.total, recoveryEls.principal],
+      [tenorError, tenorEl],
+      [reasonError, reasonEl],
     ];
     const hit = entries.find(([message]) => message !== "");
-    if (hit === undefined) return;
-    document.getElementById(hit[1])?.focus();
+    hit?.[1]?.focus();
   }
 
   const FEEDBACK_FOCUSABLE =
@@ -772,30 +784,20 @@
             {:else if accountsError !== ""}
               <Alert tone="negative" title={accountsError} />
             {:else}
-              <Field
+              <Select
                 label={m.loans_field_source_account()}
-                id="loans-action-account"
+                bind:value={selectedAccountId}
+                bind:element={accountEl}
                 error={accountError}
                 hint={m.loans_field_source_account_hint()}
                 required
+                onchange={() => (accountError = "")}
               >
-                {#snippet children(control)}
-                  <select
-                    class="kran-select"
-                    id={control.id}
-                    aria-describedby={control.describedby}
-                    aria-invalid={control.invalid}
-                    required={control.required}
-                    bind:value={selectedAccountId}
-                    onchange={() => (accountError = "")}
-                  >
-                    <option value="">{m.loans_field_source_account_choose()}</option>
-                    {#each activeAccounts as account (account.accountId)}
-                      <option value={account.accountId}>{account.accountNo}</option>
-                    {/each}
-                  </select>
-                {/snippet}
-              </Field>
+                <option value="">{m.loans_field_source_account_choose()}</option>
+                {#each activeAccounts as account (account.accountId)}
+                  <option value={account.accountId}>{account.accountNo}</option>
+                {/each}
+              </Select>
               {#if activeAccounts.length === 0}
                 <p class="kran-muted">{m.loans_field_source_account_empty()}</p>
               {/if}
@@ -803,27 +805,17 @@
           {/if}
 
           {#if panel === "payment"}
-            <Field
+            <Input
               label={m.loans_field_amount()}
-              id="loans-action-amount"
+              bind:value={amountRaw}
+              bind:element={amountEl}
               error={amountError}
               hint={m.loans_field_amount_hint()}
               required
-            >
-              {#snippet children(control)}
-                <input
-                  class="kran-input"
-                  id={control.id}
-                  aria-describedby={control.describedby}
-                  aria-invalid={control.invalid}
-                  required={control.required}
-                  inputmode="decimal"
-                  autocomplete="off"
-                  bind:value={amountRaw}
-                  oninput={() => (amountError = "")}
-                />
-              {/snippet}
-            </Field>
+              inputmode="decimal"
+              autocomplete="off"
+              oninput={() => (amountError = "")}
+            />
             {#if amountPreview !== ""}
               <p class="kran-muted">
                 <span class="kran-num">{formatMoney(amountPreview)}</span>
@@ -834,31 +826,22 @@
           {#if panel === "recovery"}
             <p class="kran-muted">{m.loans_field_recovery_hint()}</p>
             {#each [
-              { key: "principal", label: m.loans_field_recovery_principal(), id: "loans-action-recovery-principal" },
-              { key: "interest", label: m.loans_field_recovery_interest(), id: "loans-action-recovery-interest" },
-              { key: "penalty", label: m.loans_field_recovery_penalty(), id: "loans-action-recovery-penalty" },
+              { key: "principal", label: m.loans_field_recovery_principal() },
+              { key: "interest", label: m.loans_field_recovery_interest() },
+              { key: "penalty", label: m.loans_field_recovery_penalty() },
             ] as field (field.key)}
-              <Field
+              <Input
                 label={field.label}
-                id={field.id}
+                bind:value={recoveryRaw[field.key as "principal" | "interest" | "penalty"]}
+                bind:element={recoveryEls[field.key as "principal" | "interest" | "penalty"]}
                 error={recoveryError[field.key as "principal" | "interest" | "penalty"]}
-              >
-                {#snippet children(control)}
-                  <input
-                    class="kran-input"
-                    id={control.id}
-                    aria-describedby={control.describedby}
-                    aria-invalid={control.invalid}
-                    inputmode="decimal"
-                    autocomplete="off"
-                    bind:value={recoveryRaw[field.key as "principal" | "interest" | "penalty"]}
-                    oninput={() => {
-                      recoveryError[field.key as "principal" | "interest" | "penalty"] = "";
-                      recoveryError.total = "";
-                    }}
-                  />
-                {/snippet}
-              </Field>
+                inputmode="decimal"
+                autocomplete="off"
+                oninput={() => {
+                  recoveryError[field.key as "principal" | "interest" | "penalty"] = "";
+                  recoveryError.total = "";
+                }}
+              />
             {/each}
             {#if recoveryError.total !== ""}
               <p class="kran-field__error" role="alert">{recoveryError.total}</p>
@@ -866,50 +849,30 @@
           {/if}
 
           {#if panel === "restructure"}
-            <Field
+            <Input
               label={m.loans_field_tenor()}
-              id="loans-action-tenor"
+              bind:value={tenorRaw}
+              bind:element={tenorEl}
               error={tenorError}
               required
-            >
-              {#snippet children(control)}
-                <input
-                  class="kran-input"
-                  id={control.id}
-                  aria-describedby={control.describedby}
-                  aria-invalid={control.invalid}
-                  required={control.required}
-                  inputmode="numeric"
-                  autocomplete="off"
-                  bind:value={tenorRaw}
-                  oninput={() => (tenorError = "")}
-                />
-              {/snippet}
-            </Field>
+              inputmode="numeric"
+              autocomplete="off"
+              oninput={() => (tenorError = "")}
+            />
           {/if}
 
           {#if panel === "restructure" || panel === "write-off" || panel === "recovery"}
-            <Field
+            <Textarea
               label={m.loans_field_reason()}
-              id="loans-action-reason"
+              bind:value={reasonRaw}
+              bind:element={reasonEl}
               error={reasonError}
               hint={m.loans_field_reason_hint()}
               required
-            >
-              {#snippet children(control)}
-                <textarea
-                  class="kran-input"
-                  id={control.id}
-                  aria-describedby={control.describedby}
-                  aria-invalid={control.invalid}
-                  required={control.required}
-                  rows="3"
-                  maxlength={LOAN_REASON_MAX_LENGTH}
-                  bind:value={reasonRaw}
-                  oninput={() => (reasonError = "")}
-                ></textarea>
-              {/snippet}
-            </Field>
+              rows={3}
+              maxlength={LOAN_REASON_MAX_LENGTH}
+              oninput={() => (reasonError = "")}
+            />
           {/if}
 
           <div class="kran-actions">
@@ -930,7 +893,7 @@
   <section class="kran-section" aria-labelledby="loans-schedule-heading">
     <h2 class="kran-section__title" id="loans-schedule-heading">{m.loans_detail_schedule()}</h2>
     {#if scheduleRows.length === 0}
-      <EmptyState title={m.loans_detail_schedule_empty()} />
+      <EmptyState kind="no-data" title={m.loans_detail_schedule_empty()} />
     {:else}
       <DataTable
         caption={m.loans_detail_schedule()}
@@ -946,7 +909,7 @@
   <section class="kran-section" aria-labelledby="loans-versions-heading">
     <h2 class="kran-section__title" id="loans-versions-heading">{m.loans_detail_versions()}</h2>
     {#if versionRows.length === 0}
-      <EmptyState title={m.loans_detail_versions_empty()} />
+      <EmptyState kind="no-data" title={m.loans_detail_versions_empty()} />
     {:else}
       <DataTable
         caption={m.loans_detail_versions()}

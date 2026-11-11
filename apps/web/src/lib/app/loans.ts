@@ -264,3 +264,12 @@ export function loanActionProblemMessage(problem: Problem): string {
   if (problem.status === 404) return m.loans_detail_not_found();
   return problemMessage(problem);
 }
+
+/**
+ * Filter daftar pinjaman dianggap aktif bila anggota atau status diisi (T-292). Keduanya kosong
+ * secara bawaan, jadi turunannya tidak ambigu: hasil kosong dengan filter aktif berarti no-match,
+ * tanpa filter berarti belum ada pinjaman sama sekali.
+ */
+export function loanFilterActive(partyId: string, status: string): boolean {
+  return partyId.trim() !== "" || status !== "";
+}

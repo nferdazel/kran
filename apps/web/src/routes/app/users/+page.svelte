@@ -20,6 +20,7 @@
   import Alert from "@kran/ui/components/Alert.svelte";
   import Button from "@kran/ui/components/Button.svelte";
   import EmptyState from "@kran/ui/components/EmptyState.svelte";
+  import Select from "@kran/ui/components/Select.svelte";
   import StatusBadge from "@kran/ui/components/StatusBadge.svelte";
 
   import * as m from "#lib/paraglide/messages.js";
@@ -260,7 +261,7 @@
   <section class="kran-section" aria-labelledby="users-heading">
     <h2 class="kran-section__title" id="users-heading">{m.users_title()}</h2>
     {#if users.length === 0}
-      <EmptyState title={m.users_empty()} />
+      <EmptyState kind="no-data" title={m.users_empty()} />
     {:else}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <div
@@ -390,23 +391,14 @@
                           onsubmit={(event) => void assign(event, user)}
                           novalidate
                         >
-                          <div class="kran-field">
-                            <label class="kran-label" for={`users-role-${user.userId}`}>
-                              {m.users_assign_role_label()}
-                            </label>
-                            <select
-                              class="kran-input"
-                              id={`users-role-${user.userId}`}
-                              bind:value={selectedRoleCode}
-                            >
-                              <option value="">—</option>
-                              {#each roles as role (role.code)}
-                                <option value={role.code}>
-                                  {roleLabel(role.code)} ({scopeLabel(role.scope)})
-                                </option>
-                              {/each}
-                            </select>
-                          </div>
+                          <Select label={m.users_assign_role_label()} bind:value={selectedRoleCode}>
+                            <option value="">—</option>
+                            {#each roles as role (role.code)}
+                              <option value={role.code}>
+                                {roleLabel(role.code)} ({scopeLabel(role.scope)})
+                              </option>
+                            {/each}
+                          </Select>
                           {#if selectedRole?.scope === "BRANCH"}
                             <div class="kran-field">
                               <label class="kran-label" for={`users-branch-${user.userId}`}>

@@ -19,7 +19,9 @@
 
   import Alert from "@kran/ui/components/Alert.svelte";
   import Button from "@kran/ui/components/Button.svelte";
+  import Checkbox from "@kran/ui/components/Checkbox.svelte";
   import EmptyState from "@kran/ui/components/EmptyState.svelte";
+  import Select from "@kran/ui/components/Select.svelte";
   import StatusBadge from "@kran/ui/components/StatusBadge.svelte";
 
   import * as m from "#lib/paraglide/messages.js";
@@ -85,6 +87,8 @@
   let coaPostable = $state(true);
   let coaError = $state<FormError<CoaField> | null>(null);
   let creating = $state(false);
+  /** `Select` membuat id-nya sendiri, so focus-to-error holds the element instead of an id. */
+  let coaTypeEl = $state<HTMLSelectElement | null>(null);
 
   // Jurnal pembalik
   let reverseJournalId = $state("");
@@ -260,13 +264,11 @@
     });
     if (!result.ok) {
       coaError = result.error;
-      const id =
-        result.error.field === "code"
-          ? "ledger-coa-code"
-          : result.error.field === "name"
-            ? "ledger-coa-name"
-            : "ledger-coa-type";
-      focusField(id);
+      if (result.error.field === "accountType") {
+        coaTypeEl?.focus();
+      } else {
+        focusField(result.error.field === "code" ? "ledger-coa-code" : "ledger-coa-name");
+      }
       return;
     }
     coaError = null;
@@ -386,7 +388,7 @@
       <p class="kran-muted">{m.ledger_admin_periods_intro()}</p>
 
       {#if periods.length === 0}
-        <EmptyState title={m.ledger_admin_periods_empty()} />
+        <EmptyState kind="no-data" title={m.ledger_admin_periods_empty()} />
       {:else}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
@@ -542,7 +544,7 @@
       <p class="kran-muted">{m.ledger_admin_coa_intro()}</p>
 
       {#if accounts.length === 0}
-        <EmptyState title={m.ledger_admin_coa_empty()} />
+        <EmptyState kind="no-data" title={m.ledger_admin_coa_empty()} />
       {:else}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
@@ -622,43 +624,22 @@
             </p>
           {/if}
         </div>
-        <div class="kran-field">
-          <label class="kran-label" for="ledger-coa-type">{m.ledger_admin_coa_type_label()}</label>
-          <select
-            class="kran-select"
-            id="ledger-coa-type"
-            bind:value={coaType}
-            aria-invalid={coaError?.field === "accountType" ? "true" : undefined}
-            aria-describedby={coaError?.field === "accountType" ? "ledger-coa-type-error" : undefined}
-          >
-            <option value="">{m.ledger_admin_coa_type_placeholder()}</option>
-            {#each ACCOUNT_TYPES as type (type)}
-              <option value={type}>{coaAccountTypeLabel(type)}</option>
-            {/each}
-          </select>
-          {#if coaError?.field === "accountType"}
-            <p class="kran-alert" id="ledger-coa-type-error" role="alert">
-              {coaError.message}
-            </p>
-          {/if}
-        </div>
-        <div class="kran-field">
-          <div class="kran-actions">
-            <input
-              class="ledger-admin-checkbox"
-              id="ledger-coa-postable"
-              type="checkbox"
-              bind:checked={coaPostable}
-              aria-describedby="ledger-coa-postable-hint"
-            />
-            <label class="kran-label" for="ledger-coa-postable">
-              {m.ledger_admin_coa_postable_label()}
-            </label>
-          </div>
-          <p class="kran-muted" id="ledger-coa-postable-hint">
-            {m.ledger_admin_coa_postable_hint()}
-          </p>
-        </div>
+        <Select
+          label={m.ledger_admin_coa_type_label()}
+          bind:value={coaType}
+          bind:element={coaTypeEl}
+          error={coaError?.field === "accountType" ? coaError.message : ""}
+        >
+          <option value="">{m.ledger_admin_coa_type_placeholder()}</option>
+          {#each ACCOUNT_TYPES as type (type)}
+            <option value={type}>{coaAccountTypeLabel(type)}</option>
+          {/each}
+        </Select>
+        <Checkbox
+          label={m.ledger_admin_coa_postable_label()}
+          bind:checked={coaPostable}
+          hint={m.ledger_admin_coa_postable_hint()}
+        />
         <div class="kran-actions">
           <Button variant="primary" type="submit" disabled={creating}>
             {creating ? m.ledger_admin_coa_creating() : m.ledger_admin_coa_submit()}
@@ -705,24 +686,18 @@
           {#if journals.length === 0}
             <p class="kran-muted">{m.ledger_admin_reverse_empty()}</p>
           {:else}
-            <div class="kran-field">
-              <label class="kran-label" for="ledger-reverse-pick">
-                {m.ledger_admin_reverse_pick_label()}
-              </label>
-              <select
-                class="kran-select"
-                id="ledger-reverse-pick"
-                value={reverseJournalId}
-                onchange={(event) => pickJournal(event.currentTarget.value)}
-              >
-                <option value="">{m.ledger_admin_reverse_pick_placeholder()}</option>
-                {#each journals as journal (journal.journalId)}
-                  <option value={journal.journalId}>
-                    {formatDate(journal.businessDate)} · {journal.sourceEvent} · {journal.journalId}
-                  </option>
-                {/each}
-              </select>
-            </div>
+            <Select
+              label={m.ledger_admin_reverse_pick_label()}
+              value={reverseJournalId}
+              onchange={(event) => pickJournal(event.currentTarget.value)}
+            >
+              <option value="">{m.ledger_admin_reverse_pick_placeholder()}</option>
+              {#each journals as journal (journal.journalId)}
+                <option value={journal.journalId}>
+                  {formatDate(journal.businessDate)} · {journal.sourceEvent} · {journal.journalId}
+                </option>
+              {/each}
+            </Select>
           {/if}
         {/if}
 
@@ -758,14 +733,9 @@
 {/if}
 
 <style>
-  /* Layar-saja: kolom kode memakai digit tetap agar kode akun sejajar, dan target checkbox
-   * minimal 24 px (DESIGN §4). Aturan visual lain milik lapisan bersama. */
+  /* Layar-saja: kolom kode memakai digit tetap agar kode akun sejajar. Aturan visual lain milik
+   * lapisan bersama. */
   .ledger-admin-id {
     font-variant-numeric: tabular-nums slashed-zero;
-  }
-
-  .ledger-admin-checkbox {
-    inline-size: var(--control-min-size);
-    block-size: var(--control-min-size);
   }
 </style>

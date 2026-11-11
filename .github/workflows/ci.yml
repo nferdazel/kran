@@ -26,7 +26,16 @@ on:
   # Jalan manual di `main`. Dipakai saat event `push` tidak menghasilkan run sama sekali
   # (terjadi 2 Nov 2026 setelah riwayat ditulis ulang: push dan tag sama-sama tidak memicu
   # workflow, sehingga gerbang CI di `deploy-vps.sh` menunggu 30 menit lalu gagal).
+  #
+  # `update_snapshots=true` menjalankan job `visual-update`: baseline visual Linux di-generate
+  # ulang di runner dan diunggah sebagai artifact. Job itu TIDAK meng-commit apa pun, jadi
+  # baseline tetap masuk repo lewat review manusia (visual.spec.ts, O-022/D-176).
   workflow_dispatch:
+    inputs:
+      update_snapshots:
+        description: "Generate Linux visual baselines (--update-snapshots) and upload them as an artifact"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -284,6 +293,129 @@ jobs:
           else
             echo "::notice::tidak ada SIGSEGV API di log e2e - kegagalan tampak seperti regresi biasa (periksa assertion pertama)"
           fi
+
+      - name: "Upload artefak Playwright (test-results, report, log)"
+        # Tanpa langkah ini kegagalan visual/e2e tidak meninggalkan bukti apa pun di run: diff
+        # `toHaveScreenshot` hanya ditulis ke `test-results/`, dan `./task e2e` menyalurkan
+        # keluaran Playwright ke `.build/e2e.log` alih-alih stdout. Diambil hanya saat gagal
+        # supaya run hijau tidak menumpuk artifact. `if-no-files-found: ignore` karena
+        # `playwright-report/` memang tidak ada selama reporter masih `list`.
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-${{ github.run_id }}
+          path: |
+            apps/web/test-results/
+            apps/web/playwright-report/
+            .build/e2e.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  visual-update:
+    name: Visual baselines (update-snapshots, Linux)
+    # Hanya saat diminta. Job terpisah, bukan langkah tambahan di `web-e2e`: regenerasi baseline
+    # butuh build + reset DB + seed penuh, dan menumpangkannya ke job gerbang membuat job 15 menit
+    # itu melewati batasnya. Job ini tidak menggantikan gerbang; `web-e2e` tetap satu-satunya
+    # penentu lulus/gagal PR.
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.update_snapshots == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: kran
+          POSTGRES_PASSWORD: kran
+          POSTGRES_DB: kran_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kran -d kran_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      KRAN_DATABASE_URL: postgres://kran:kran@127.0.0.1:5432/kran_test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache browser Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install browser Playwright
+        run: pnpm --filter @kran/web exec playwright install chromium
+
+      - name: Setup Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: '2.4.0'
+
+      - name: Cache nimble
+        uses: actions/cache@v4
+        with:
+          path: ~/.nimble
+          key: nimble-${{ runner.os }}-2.4.0-${{ hashFiles('kran.nimble') }}
+
+      - name: Install Nim dependencies
+        run: nimble install -d -y
+
+      - name: Runtime libs (libpcre3)
+        run: sudo apt-get update -qq && sudo apt-get install -y libpcre3
+
+      - name: ./task build
+        # Biner API yang dijalankan `webServer` Playwright, sama seperti jalur `./task e2e`.
+        run: ./task build
+
+      - name: i18n compile (Paraglide)
+        # `apps/web/src/lib/paraglide/` gitignored; `vite build` di webServer Playwright gagal
+        # tanpanya.
+        run: pnpm --filter @kran/web run i18n:compile
+
+      - name: Siapkan DB dev (reset + migrasi + contract + seed)
+        # Lewat `./task dbtools`: `./task build` hanya mengompilasi kran-api, tidak pernah membuat
+        # `.build/bin/dbtools` (dibangun `build_tool` di dalam `./task dbtools`). Run 42851540106
+        # mati di sini dengan exit 127 karena memanggil biner yang belum ada.
+        # Urutan dan alasan sama dengan `cmd_e2e`: reset supaya deterministik, migrasi expand, lalu
+        # contract supaya skema final (sesuai sesudah deploy), lalu seed dev.
+        run: |
+          ./task dbtools reset
+          ./task dbtools migrate
+          .build/bin/kran-api --role=migrate --contract --root="$PWD"
+          ./task dbtools seed --dev
+
+      - name: "Playwright --update-snapshots (visual Linux)"
+        # Hanya spec visual: empat baseline (login dan ganti kata sandi, light dan dark). Suite
+        # penuh tidak perlu diregenerasi dan tidak dijalankan di sini.
+        #
+        # `=all`, bukan flag telanjang: flag telanjang berarti mode `changed`, jadi Playwright
+        # tidak menulis ulang snapshot selama selisihnya masih di bawah `maxDiffPixelRatio` 0.01.
+        # Regenerasi yang diminta harus selalu menulis, kalau tidak artefak yang diunggah cuma
+        # salinan baseline lama (terjadi di run 42921526674).
+        run: pnpm --filter @kran/web exec playwright test tests/e2e/visual.spec.ts --update-snapshots=all
+
+      - name: Upload baseline hasil regenerasi
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-snapshots-${{ github.run_id }}
+          path: apps/web/tests/e2e/visual.spec.ts-snapshots/
+          if-no-files-found: error
+          retention-days: 7
 
   security:
     name: Security (gitleaks)

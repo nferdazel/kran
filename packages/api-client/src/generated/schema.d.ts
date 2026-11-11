@@ -2324,6 +2324,8 @@ export interface components {
             loanId: string;
             /** Format: uuid */
             partyId: string;
+            /** @description Nama tampil anggota (`party.party.display_name`), satu lookup per halaman. */
+            partyName: string;
             /** Format: uuid */
             productVersionId: string;
             /** Format: uuid */

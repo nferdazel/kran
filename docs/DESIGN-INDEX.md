@@ -32,14 +32,15 @@ Sources: `DESIGN.md` (direction and token rules), `docs/design/00-decisions.md` 
 | DD-05 | One close console at `/app/close` with EOD, EOM, and EOY levels; EOY adds a prerequisites panel |
 | DD-06 | Account opening is merged into member detail K-08; the standalone opening route is deleted |
 | DD-07 | MVP assumes members only hold savings; non-member savings are out of scope and recorded as an assumption |
-| DD-08 | Reports use two routes and nine documents: balance sheet, income statement, equity, member register, savings arrears, loan exposure and arrears, cash recap, close certificate, SHU per member |
+| DD-08 | Reports use two routes and one report family of eight documents: balance sheet, income statement, equity, member register, arrears, cash recap, close certificate, SHU per member |
 | DD-09 | Transaction search stays as a lightweight Cari transaksi panel in the Kas header, not a nav destination |
 | DD-10 | Transfer is a mode inside Kas, not a nav item, and gains its own permission when the endpoint does |
 | DD-11 | Loan payment keeps the stable deep link `?tab=pay` |
 | DD-12 | Prototype data is labelled synthetic; no realistic-looking personal names |
 
 Rejected alternatives and reasons are in `docs/design/00-decisions.md`. Open design questions
-O-1 to O-3 are there too.
+O-1 to O-3 are there too. Rules prefixed `AS-xx` in `docs/design/` are design-wave rules, not
+owner rulings; owner rulings use `R-xx` (R-41).
 
 ## The 24-screen map
 
@@ -65,7 +66,7 @@ per-screen specs are in `docs/design/03-screen-specs-transactions.md` and
 | K-13 | `/app/loans/approvals` | Pinjaman | new |
 | K-14 | `/app/loans/[loanId]` | Pinjaman | rebuild |
 | K-15 | `/app/loans/arrears` | Pinjaman | new |
-| K-16 | `/app/reports`, `/app/reports/[reportKey]` | Laporan | new, nine documents |
+| K-16 | `/app/reports`, `/app/reports/[reportKey]` | Laporan | new, eight documents |
 | K-17 | `/app/audit` | Pengaturan | new |
 | K-18 | `/app/users` | Pengaturan | rebuild |
 | K-19 | `/app/params` | Pengaturan | repair |
@@ -91,11 +92,22 @@ Three components survive unchanged, three change their API, and `Field` is retir
 
 - Prototype: `docs/design/prototype/` (12 pages, including `komponen.html`). The verification
   screenshots are kept with the local working archive.
-- Verification report: `docs/design/05-verification.md`.
-- Verification report: `docs/design/05-verification.md` (axe, contrast, interaction and overflow results).
+- Verification report: `docs/design/05-verification.md` (axe, contrast, interaction and overflow
+  results).
 - Recorded result: 0 axe violations on 12 pages in light/id, dark/id, and dark/en; 227 enabled
   buttons clicked with 0 failures; 0 dead internal links; 0 px horizontal overflow at 1366 and
   480.
 
 The prototype proves design behaviour only. It does not prove backend money, permissions, or
 audit behaviour; those are proved by the tests named in `CAPABILITIES.md`.
+
+## Design system v2 (in progress)
+
+- Handoff: `docs/design/design-system-v2-handoff.md` — per-ticket scope, interaction rules from QA,
+  terminology rulings, and the "Where things live" block.
+- Copy audit behind the terminology rulings: `docs/design/design-system-v2-copy-audit.md`.
+- Tickets: `docs/tasks/T-286.md` … `T-292.md` (T-284 tokens and T-285 shell are done). Implementation
+  is on branch `feat/design-system-v2`; nothing here is on `main`.
+- Gate scripts and exit criteria: `tools/qa/a11y/` (`a11y-matrix.mjs`, `keyboard-flows.mjs`,
+  `EXIT-CRITERIA.md`, `MANUAL-CHECKLIST.md`). Run output stays in `.local/qa/results/` (gitignored).
+  Browser-level gates are still open until a test session with seed fixtures exists.

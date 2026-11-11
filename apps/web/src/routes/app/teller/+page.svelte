@@ -34,6 +34,7 @@
     type DataColumn,
     type DataRow,
   } from "@kran/ui/components/DataTable.svelte";
+  import Select from "@kran/ui/components/Select.svelte";
 
   import * as m from "#lib/paraglide/messages.js";
   import { api } from "#lib/app/api.js";
@@ -1099,22 +1100,16 @@
         {:else if branches.length === 0}
           <p class="kran-muted">{m.teller_session_branches_empty()}</p>
         {:else}
-          <div class="kran-field">
-            <label class="kran-label" for="teller-session-branch">
-              {m.teller_session_branch_label()}
-            </label>
-            <select
-              class="kran-select"
-              id="teller-session-branch"
-              value={sessionBranchId}
-              onchange={(event) => chooseSessionBranch(event.currentTarget.value)}
-            >
-              <option value="">{m.teller_session_branch_placeholder()}</option>
-              {#each branches as branch (branch.branchId)}
-                <option value={branch.branchId}>{branch.code} · {branch.name}</option>
-              {/each}
-            </select>
-          </div>
+          <Select
+            label={m.teller_session_branch_label()}
+            value={sessionBranchId}
+            onchange={(event) => chooseSessionBranch(event.currentTarget.value)}
+          >
+            <option value="">{m.teller_session_branch_placeholder()}</option>
+            {#each branches as branch (branch.branchId)}
+              <option value={branch.branchId}>{branch.code} · {branch.name}</option>
+            {/each}
+          </Select>
         {/if}
 
         {#if branchId === ""}

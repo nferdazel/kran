@@ -9,8 +9,9 @@ table and no second inventory.
   the behaviour it describes.
 - History is frozen. `history/PHASES.md` records closed phases and is not rewritten when a
   later phase changes the product.
-- Generated files (`PARAMETERS.md`, `SCHEMA.md`, `CAPABILITIES.md`) are read-only in review;
-  they are regenerated from their source, never hand-edited.
+- Generated files (`PARAMETERS.md`, `SCHEMA.md`) are read-only in review; they are regenerated
+  from their source, never hand-edited. `CAPABILITIES.md` is hand-maintained, and
+  `capabilities.yaml` is its machine-readable source.
 - A statement without a code path, a test, or a decision id is a defect in the document, not
   a fact about the product.
 
@@ -28,7 +29,7 @@ and never quietly pick the convenient one.
 | `spec/kran-prd-techspec.md` | Product scope, domain model, invariants, security, UX, operations, compliance, references |
 | `ROADMAP.md` | Phase order P0-P8, exit criteria, serial and parallel rules |
 | `BACKLOG.md` | The task queue: id, phase, size, risk class, dependency, capability, status |
-| `CAPABILITIES.md` | The capability ledger: can persona X do Y today, and which test proves it |
+| `CAPABILITIES.md` | Hand-maintained capability ledger: can persona X do Y today, and which test proves it |
 | `capabilities.yaml` | Machine-readable source for the ledger; same ids as the markdown table |
 | `DOMAIN.md` | Glossary, aggregate ownership, Indonesian operator terms with English gloss |
 | `DESIGN-INDEX.md` | Design direction, dials, the 12 design decisions, the 24-screen map, prototype pointers |
@@ -54,20 +55,22 @@ no prose API document that could drift from it.
 
 ## Starting a task
 
-1. Take the top `READY` row from `BACKLOG.md`.
+1. Take the top `READY` row from `BACKLOG.md`. A row becomes `READY` only when its task file
+   exists with every DoR item filled (R-32).
 2. Copy `tasks/_TEMPLATE.md` to a new task file in `tasks/`.
 3. Fill the Definition of Ready. If any item is false, the task goes back to the backlog, not
    into the code.
 4. Implement test-first where the task touches money, a calculation, or a state machine.
 5. Run the gate named in the task, then `./task check-fast` and `./task ci-fast` for backend or
    schema work.
-6. Append the evidence block, update the capability row, and request review when the risk class
-   requires it (`money`, `schema`, `authz`, `audit`).
+6. Append the evidence block, update the capability row, and request review when the queue value
+   is `full` (`money`, `schema`, `authz`, `audit`). A `standard` task (`general`) uses self-review
+   plus gates (R-31, R-25).
 7. Mark the task `DONE` only after the evidence exists. A partial result is a new task.
 
 ## Archive
 
 The old corpus (229 files, including the 166 task files and the five milestone reports) is kept in a local
-planning archive outside git (not in this repository). Historical `T-xxx` ids resolve
-through `history/PHASES.md` and the old task files in git history; they are not paths in the
-current tree.
+planning archive outside git (not in this repository). Historical `T-xxx` ids are not paths in the
+current tree; only git history resolves them. `history/PHASES.md` covers phases only and has no
+per-id index.

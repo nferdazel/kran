@@ -59,9 +59,25 @@ async function login(page: Page): Promise<void> {
 /**
  * Tanggal buku mengikuti jam sistem, jadi di-mask. Sisanya statis: layar ini tidak menampilkan data
  * yang ditulis spec lain.
+ *
+ * Versi build **tidak** ikut di sini meskipun juga berubah: kotak mask Playwright berukuran bounding
+ * box elemen, dan lebar elemen versi di footer mengikuti panjang teksnya. Begitu nomor versi berubah
+ * panjang (mis. patch dua digit menjadi tiga), kotak mask-nya ikut berubah lebar dan perbedaan ukuran
+ * kotak itu sendiri menjadi diff. `hideBuildVersion()` memakai `visibility: hidden` supaya ruangnya
+ * tetap, jadi geometri footer sama untuk panjang versi apa pun.
  */
 function dynamicMasks(page: Page) {
   return [page.locator(".kran-business-date")];
+}
+
+/**
+ * Versi build dicetak di footer, jadi ia masuk ke screenshot dan membuat keempat baseline merah
+ * setiap `./task release` menaikkan VERSION — bukan karena perubahan desain. Aturan ini hanya hidup
+ * di browser test: tidak ada CSS produksi yang berubah, dan `visibility: hidden` tidak menggeser
+ * layout karena ruang elemennya tetap.
+ */
+async function hideBuildVersion(page: Page): Promise<void> {
+  await page.addStyleTag({ content: ".kran-footer__version { visibility: hidden; }" });
 }
 
 test.describe("visual regression (baseline Linux)", () => {
@@ -75,6 +91,7 @@ test.describe("visual regression (baseline Linux)", () => {
       await expect(page.getByRole("heading", { level: 1, name: TEXT.loginTitle })).toBeVisible();
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
 
+      await hideBuildVersion(page);
       await expect(page).toHaveScreenshot(`login-${theme}.png`, {
         animations: "disabled",
         caret: "hide",
@@ -88,6 +105,7 @@ test.describe("visual regression (baseline Linux)", () => {
       await login(page);
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
 
+      await hideBuildVersion(page);
       await expect(page).toHaveScreenshot(`password-${theme}.png`, {
         animations: "disabled",
         caret: "hide",

@@ -1,0 +1,40 @@
+{
+  "label": "baseline-mockup",
+  "description": "Baseline gate against the approved round-2 mockup (file://, self-contained). Screen chrome is scoped to each .stage so the mockup's own notes/captions cannot mask or pollute results.",
+  "url": "file:///Users/sachiel/Projects/cbs/.local/redesign/mockup/index.html",
+  "out": ".local/qa/results",
+  "modulesDir": "apps/web/node_modules",
+  "viewport": { "width": 1440, "height": 1000 },
+  "themes": ["light", "dark"],
+  "widths": [1440, 360],
+  "scope": "[data-screen]",
+  "reportOutOfScope": true,
+  "axes": {
+    "theme": { "mode": "control", "control": "[data-theme-btn=\"{theme}\"]", "attr": "data-theme" },
+    "width": { "mode": "control", "control": "[data-w-btn=\"{width}\"]", "attr": "data-w" }
+  },
+  "screens": [
+    {
+      "id": "ledger",
+      "k": ["K-04"],
+      "controlScope": ".screen:has([data-screen=\"ledger\"])",
+      "scope": "[data-screen=\"ledger\"]",
+      "expect": { "selector": "[data-screen=\"ledger\"] tbody tr", "min": 2, "visible": "[data-screen=\"ledger\"] table" }
+    },
+    {
+      "id": "ledger-drawer",
+      "k": ["K-04"],
+      "controlScope": ".screen:has([data-screen=\"ledger\"])",
+      "scope": "[data-screen=\"ledger\"]",
+      "setup": [{ "click": "[data-drawer-btn=\"open\"]", "wait": 220 }],
+      "expect": { "selector": "[data-screen=\"ledger\"] .drawer tbody tr", "min": 1, "visible": "[data-screen=\"ledger\"] .drawer" }
+    },
+    {
+      "id": "login",
+      "k": ["K-22"],
+      "controlScope": ".screen:has([data-screen=\"login\"])",
+      "scope": "[data-screen=\"login\"]",
+      "expect": { "selector": "[data-screen=\"login\"] input[type=\"password\"]", "min": 1, "visible": "[data-screen=\"login\"] form" }
+    }
+  ]
+}

@@ -46,8 +46,8 @@ export type LedgerAdminAction =
   | "create_coa"
   | "reverse_journal";
 
-export interface FormError<Field extends string> {
-  readonly field: Field;
+export interface FormError<FieldName extends string> {
+  readonly field: FieldName;
   readonly message: string;
 }
 

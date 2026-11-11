@@ -1,14 +1,23 @@
+import { readFileSync } from "node:fs";
 import { createRawSnippet } from "svelte";
 import { render } from "svelte/server";
 import { describe, expect, it } from "vitest";
 
 import Alert from "../src/components/Alert.svelte";
 import Button from "../src/components/Button.svelte";
+import Checkbox from "../src/components/Checkbox.svelte";
 import DataTable from "../src/components/DataTable.svelte";
+import Drawer, { restoreFocusTarget, wrapTabTarget } from "../src/components/Drawer.svelte";
 import EmptyState from "../src/components/EmptyState.svelte";
-import Field from "../src/components/Field.svelte";
+import ErrorState from "../src/components/ErrorState.svelte";
+import Input from "../src/components/Input.svelte";
+import LoadingState from "../src/components/LoadingState.svelte";
 import Money from "../src/components/Money.svelte";
+import Select from "../src/components/Select.svelte";
 import StatusBadge from "../src/components/StatusBadge.svelte";
+import Textarea from "../src/components/Textarea.svelte";
+import { formatMoney } from "../src/money.js";
+import DoubleInput from "./fixtures/double-input.svelte";
 
 /**
  * Lapisan komponen `packages/ui` (DESIGN §12 fase 1).
@@ -94,85 +103,223 @@ describe("Button", () => {
   it("tanpa loading tidak ada aria-busy", () => {
     expect(render(Button, { props: { children: text("Simpan") } }).body).not.toContain("aria-busy");
   });
-});
 
-type FieldParams = {
-  id: string;
-  describedby: string | undefined;
-  invalid: boolean | undefined;
-  required: boolean;
-};
-
-/* Kontrol tiruan: memasang nilai yang diterima dari `Field` seperti yang wajib dilakukan pemakai. */
-const control = createRawSnippet((field: () => FieldParams) => ({
-  render: () => {
-    const value = field();
-    const describedby =
-      value.describedby === undefined ? "" : ` aria-describedby="${value.describedby}"`;
-    const invalid = value.invalid === undefined ? "" : ` aria-invalid="${value.invalid}"`;
-    const required = value.required ? " required" : "";
-    return `<input id="${value.id}"${describedby}${invalid}${required} />`;
-  },
-}));
-
-describe("Field", () => {
-  it("label permanen terhubung ke kontrol lewat for/id", () => {
-    const { body: html } = render(Field, {
-      props: { label: "Nominal setor", id: "amount", children: control },
+  it("variant quiet memakai modifier .kran-button--quiet dan bukan modifier varian lain", () => {
+    const { body: html } = render(Button, {
+      props: { variant: "quiet", children: text("Lewati") },
     });
 
-    expect(html).toContain('<label class="kran-label" for="amount">');
-    expect(html).toContain("Nominal setor");
-    expect(html).toContain('<input id="amount"');
+    expect(html).toContain('class="kran-button kran-button--quiet"');
+    for (const other of ["--primary", "--row", "--destructive"]) {
+      expect(html).not.toContain(`kran-button${other}`);
+    }
   });
 
-  it("hint masuk aria-describedby dengan id turunan", () => {
-    const { body: html } = render(Field, {
-      props: {
-        label: "Nominal setor",
-        id: "amount",
-        hint: "Digit saja, maksimum 2 desimal.",
-        children: control,
-      },
+  it("size sm memakai kelas 32 dan size md kelas 40", () => {
+    expect(
+      render(Button, { props: { size: "sm", children: text("Tutup") } }).body,
+    ).toContain('class="kran-button kran-button--sm"');
+    expect(
+      render(Button, { props: { size: "md", children: text("Simpan") } }).body,
+    ).toContain('class="kran-button kran-button--md"');
+  });
+
+  it("tanpa size tombol tetap 40 (token field), bukan 32", () => {
+    const html = render(Button, { props: { children: text("Simpan") } }).body;
+    const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
+
+    expect(html).not.toContain("kran-button--sm");
+    expect(html).not.toContain("kran-button--md");
+    expect(css).toMatch(/^\.kran-button \{[^}]*min-block-size: var\(--control-height-primary\)/m);
+  });
+
+  it("variant row tanpa size tetap 32 supaya baris tabel tidak berubah", () => {
+    const html = render(Button, { props: { variant: "row", children: text("Buka") } }).body;
+    const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
+
+    expect(html).toContain('class="kran-button kran-button--row"');
+    expect(html).not.toContain("kran-button--md");
+    expect(css).toMatch(/^\.kran-button--row \{[^}]*min-block-size: var\(--control-height\)/m);
+  });
+
+  it("size menang atas row bila keduanya diberikan", () => {
+    const html = render(Button, {
+      props: { variant: "row", size: "md", children: text("Buka") },
+    }).body;
+    const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
+    const sizeRuleAt = css.search(/^\.kran-button--md \{/m);
+    const rowRuleAt = css.search(/^\.kran-button--row \{/m);
+
+    expect(html).toContain("kran-button--md");
+    // Aturan ukuran harus menang lewat urutan sumber, bukan !important.
+    expect(sizeRuleAt).toBeGreaterThan(rowRuleAt);
+    expect(css.match(/^\.kran-button--md \{[^}]*\}/m)?.[0] ?? "").not.toContain("!important");
+  });
+
+  it("loading mempertahankan label di DOM, bukan menggantinya dengan spinner", () => {
+    const { body: html } = render(Button, {
+      props: { loading: true, children: text("Menyimpan") },
     });
 
-    expect(html).toContain('id="amount-hint"');
-    expect(html).toContain('aria-describedby="amount-hint"');
+    expect(html).toContain("Menyimpan");
+    expect(html).toContain('aria-busy="true"');
+  });
+});
+
+/** Id kontrol hasil `$props.id()`, diekstrak dari keluaran SSR (nilainya tidak boleh dihardcode). */
+function controlId(html: string, tag: "input" | "select" | "textarea"): string {
+  const match = html.match(new RegExp(`<${tag}[^>]*\\sid="([^"]+)"`));
+  expect(match, `tidak ada <${tag}> ber-id di keluaran: ${html}`).not.toBeNull();
+  return match![1];
+}
+
+describe("Input", () => {
+  it("label permanen terhubung ke kontrol lewat id yang dibuat kontrol itu sendiri", () => {
+    const { body: html } = render(Input, { props: { label: "Nominal setor" } });
+    const id = controlId(html, "input");
+
+    expect(html).toContain(`<label class="kran-label" for="${id}">`);
+    expect(html).toContain("Nominal setor");
+    expect(html).toContain('class="kran-control"');
+  });
+
+  it("dua kontrol berlabel sama tidak berbagi id", () => {
+    const { body: html } = render(DoubleInput, {});
+    const ids = [...html.matchAll(/<input[^>]*\sid="([^"]+)"/g)].map((match) => match[1]);
+
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+    for (const id of ids) {
+      expect(html).toContain(`for="${id}"`);
+    }
+  });
+
+  it("hint saja: aria-describedby hanya berisi id hint, tanpa aria-invalid", () => {
+    const { body: html } = render(Input, {
+      props: { label: "Nominal setor", hint: "Digit saja." },
+    });
+    const id = controlId(html, "input");
+
+    expect(html).toContain(`id="${id}-hint"`);
+    expect(html).toContain(`aria-describedby="${id}-hint"`);
     expect(html).not.toContain("aria-invalid");
   });
 
-  it("galat: aria-invalid=true dan aria-describedby memuat hint lalu galat", () => {
-    const { body: html } = render(Field, {
-      props: {
-        label: "Nominal setor",
-        id: "amount",
-        hint: "Digit saja.",
-        error: "Nominal harus lebih dari 0,00.",
-        children: control,
-      },
+  it("galat saja: satu id galat, aria-invalid=true, dan teks galat dirender", () => {
+    const { body: html } = render(Input, {
+      props: { label: "Nominal setor", error: "Wajib diisi." },
     });
+    const id = controlId(html, "input");
+
+    expect(html).toContain(`aria-describedby="${id}-error"`);
+    expect(html).toContain('aria-invalid="true"');
+    expect(html).toContain(`<p class="kran-alert" id="${id}-error">`);
+    expect(html).toContain("Wajib diisi.");
+  });
+
+  it("hint dan galat: urutannya hint lalu galat", () => {
+    const { body: html } = render(Input, {
+      props: { label: "Nominal setor", hint: "Digit saja.", error: "Wajib diisi." },
+    });
+    const id = controlId(html, "input");
+
+    expect(html).toContain(`aria-describedby="${id}-hint ${id}-error"`);
+  });
+
+  it("tanpa hint dan galat tidak ada rujukan deskripsi yang menggantung", () => {
+    const { body: html } = render(Input, { props: { label: "Nominal setor" } });
+
+    expect(html).not.toContain("aria-describedby");
+    expect(html).not.toContain("-hint");
+    expect(html).not.toContain("-error");
+  });
+
+  it("required menandai kontrol dan label tanpa membocorkan tanda dekoratif ke pembaca layar", () => {
+    const { body: html } = render(Input, { props: { label: "Nominal setor", required: true } });
+
+    expect(html).toMatch(/<input[^>]*\srequired/);
+    expect(html).toContain('<span class="kran-required" aria-hidden="true">*</span>');
+  });
+});
+
+describe("Textarea", () => {
+  it("memakai elemen textarea asli dengan label terhubung", () => {
+    const { body: html } = render(Textarea, {
+      props: { label: "Alasan", hint: "Maksimum 200 karakter.", rows: 3 },
+    });
+    const id = controlId(html, "textarea");
+
+    expect(html).toContain(`<label class="kran-label" for="${id}">`);
+    expect(html).toContain('class="kran-control"');
+    expect(html).toContain(`aria-describedby="${id}-hint"`);
+  });
+});
+
+describe("Select", () => {
+  const options = createRawSnippet(() => ({
+    render: () => '<option value="">Pilih</option><option value="A">Aktif</option>',
+  }));
+
+  it("tetap elemen select native dengan label terhubung", () => {
+    const { body: html } = render(Select, {
+      props: { label: "Status", children: options },
+    });
+    const id = controlId(html, "select");
+
+    expect(html).toContain(`<label class="kran-label" for="${id}">`);
+    expect(html).not.toContain('role="listbox"');
+    expect(html).toContain('<option value="A">Aktif</option>');
+    expect(html).toContain('class="kran-control"');
+  });
+
+  it("galat memindahkan aria-invalid dan deskripsi ke elemen select", () => {
+    const { body: html } = render(Select, {
+      props: { label: "Status", error: "Pilih salah satu.", children: options },
+    });
+    const id = controlId(html, "select");
 
     expect(html).toContain('aria-invalid="true"');
-    expect(html).toContain('aria-describedby="amount-hint amount-error"');
-    expect(html).toContain('<p class="kran-alert" id="amount-error">');
-    expect(html).toContain("Nominal harus lebih dari 0,00.");
+    expect(html).toContain(`aria-describedby="${id}-error"`);
+  });
+});
+
+describe("Checkbox", () => {
+  it("tetap input type=checkbox asli, bukan peran buatan", () => {
+    const { body: html } = render(Checkbox, { props: { label: "Bisa diposting" } });
+    const id = controlId(html, "input");
+
+    expect(html).toContain('type="checkbox"');
+    expect(html).toContain('class="kran-checkbox__box"');
+    expect(html).not.toContain('role="checkbox"');
+    expect(html).toContain(`<label class="kran-label" for="${id}">`);
   });
 
-  it("galat tanpa hint hanya merujuk id galat", () => {
-    const { body: html } = render(Field, {
-      props: { label: "Nominal setor", id: "amount", error: "Wajib diisi.", children: control },
+  it("hint tetap terhubung lewat aria-describedby", () => {
+    const { body: html } = render(Checkbox, {
+      props: { label: "Bisa diposting", hint: "Hanya akun tipe aset." },
     });
+    const id = controlId(html, "input");
 
-    expect(html).toContain('aria-describedby="amount-error"');
+    expect(html).toContain(`id="${id}-hint"`);
+    expect(html).toContain(`aria-describedby="${id}-hint"`);
+  });
+});
+
+describe("Kontrol form v2", () => {
+  it("tiga kontrol inti tidak membawa warna hex mentah", () => {
+    const files = ["Input", "Select", "Checkbox"].map((name) =>
+      readFileSync(new URL(`../src/components/${name}.svelte`, import.meta.url), "utf8"),
+    );
+
+    for (const source of files) {
+      expect(source).not.toMatch(/#[0-9a-fA-F]{3,6}/);
+    }
   });
 
-  it("required menandai kontrol dan label, tanpa membocorkan teks dekoratif ke pembaca layar", () => {
-    const { body: html } = render(Field, {
-      props: { label: "Nominal setor", id: "amount", required: true, children: control },
-    });
-
-    expect(html).toContain(" required />");
-    expect(html).toMatch(/<span aria-hidden="true">\s\*<\/span>/);
+  it("Field sudah tidak ada: satu cara membangun kontrol", () => {
+    expect(() =>
+      readFileSync(new URL("../src/components/Field.svelte", import.meta.url), "utf8"),
+    ).toThrow();
   });
 });
 
@@ -252,6 +399,7 @@ describe("EmptyState", () => {
   it("judul + penjelasan, tanpa data contoh", () => {
     const { body: html } = render(EmptyState, {
       props: {
+        kind: "no-data",
         title: "Belum ada jurnal bertanggal ini",
         description: "Posting jurnal (F2), atau ubah tanggal.",
       },
@@ -262,19 +410,108 @@ describe("EmptyState", () => {
     expect(html).not.toContain("<table");
   });
 
-  it("aksi hanya dirender bila snippet dikirim", () => {
+  it("kind=no-match merender aksi yang dikirim pemakai", () => {
     const withAction = render(EmptyState, {
       props: {
+        kind: "no-match",
+        title: "Tidak ada pinjaman yang cocok.",
+        action: text('<button type="button" class="kran-button">Hapus filter</button>'),
+      },
+    }).body;
+
+    expect(withAction).toContain('class="kran-empty-state__action"');
+    expect(withAction).toContain("Hapus filter");
+  });
+
+  it("kind=no-data tidak merender aksi meski pemakai mengirimnya", () => {
+    const html = render(EmptyState, {
+      props: {
+        kind: "no-data",
         title: "Belum ada rekening",
         action: text('<button type="button" class="kran-button">Buka rekening</button>'),
       },
     }).body;
 
-    expect(withAction).toContain('class="kran-empty-state__action"');
-    expect(withAction).toContain("Buka rekening");
-    expect(render(EmptyState, { props: { title: "Belum ada rekening" } }).body).not.toContain(
-      "kran-empty-state__action",
-    );
+    expect(html).not.toContain("kran-empty-state__action");
+    expect(html).not.toContain("Buka rekening");
+  });
+
+  it("kind=denied punya kalimatnya sendiri dan tidak membawa live-region role", () => {
+    const html = render(EmptyState, {
+      props: {
+        kind: "denied",
+        title: "Akses terbatas",
+        description: "Anda tidak memiliki izin membaca kas besar.",
+      },
+    }).body;
+
+    expect(html).toContain("Akses terbatas");
+    expect(html).toContain("Anda tidak memiliki izin membaca kas besar.");
+    expect(html).toContain('data-kind="denied"');
+    expect(html).not.toMatch(/role="(status|alert|log)"/);
+  });
+
+  it("tanpa kind = keadaan lain, bukan ketiga jenis itu", () => {
+    const html = render(EmptyState, {
+      props: { title: "Pinjaman tidak ditemukan atau bukan di cabang Anda." },
+    }).body;
+
+    expect(html).toContain("Pinjaman tidak ditemukan");
+    expect(html).not.toMatch(/role="(status|alert|log)"/);
+  });
+});
+
+describe("LoadingState", () => {
+  it("satu-satunya keadaan dengan role=status dan aria-busy", () => {
+    const html = render(LoadingState, { props: { label: "Memuat pinjaman…" } }).body;
+
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain("Memuat pinjaman…");
+  });
+});
+
+describe("ErrorState", () => {
+  it("judul, badan, dan label retry dari pemakai", () => {
+    const html = render(ErrorState, {
+      props: {
+        title: "Pinjaman tidak bisa dimuat.",
+        body: "Periksa koneksi lalu coba lagi.",
+        retryLabel: "Coba lagi",
+      },
+    }).body;
+
+    expect(html).toContain("Pinjaman tidak bisa dimuat.");
+    expect(html).toContain("Periksa koneksi lalu coba lagi.");
+    expect(html).toContain("Coba lagi");
+    expect(html).not.toMatch(/role="(status|alert|log)"/);
+  });
+
+  it("tidak punya label retry bawaan yang tertukar dengan reload", () => {
+    const source = readFileSync(new URL("../src/components/ErrorState.svelte", import.meta.url), "utf8");
+
+    expect(source).not.toContain("Muat ulang");
+  });
+});
+
+describe("Terminologi i18n (T-292)", () => {
+  const read = (locale: string): Record<string, string> =>
+    JSON.parse(
+      readFileSync(new URL(`../../i18n/messages/${locale}.json`, import.meta.url), "utf8"),
+    ) as Record<string, string>;
+
+  it("tidak ada nilai id yang masih menyebut vault atau teller", () => {
+    const offenders = Object.entries(read("id"))
+      .filter(([, value]) => /vault|teller/i.test(value))
+      .map(([key]) => key);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("nilai en tidak diubah: 27 nilai masih memakai istilah itu", () => {
+    const matches = Object.values(read("en")).filter((value) => /vault|teller/i.test(value));
+
+    expect(matches).toHaveLength(27);
   });
 });
 
@@ -295,13 +532,15 @@ describe("Money", () => {
     expect(render(Money, { props: { value: "-12.5" } }).body).toContain("-12,50");
   });
 
-  it("currency hanya diumumkan, bukan diulang di tiap sel", () => {
-    const { body: html } = render(Money, { props: { value: "250000", currency: "IDR" } });
+  it("merender keluaran identik untuk setiap pemanggil (tidak ada prop currency)", () => {
+    const plain = render(Money, { props: { value: "250000" } }).body;
+    const withExCurrency = render(Money, {
+      props: { value: "250000", currency: "IDR" } as never,
+    }).body;
 
-    expect(html).toContain('class="kran-money"');
-    expect(html).not.toContain("kran-muted");
-    expect(html).toMatch(/<span class="kran-visually-hidden">\sIDR<\/span>/);
-    expect(html).not.toContain(">250.000,00 IDR<");
+    expect(withExCurrency).toBe(plain);
+    expect(plain).not.toContain("kran-visually-hidden");
+    expect(plain).not.toContain("IDR");
   });
 
   it("locale diteruskan: en-US memakai pemisah Inggris", () => {
@@ -329,6 +568,24 @@ const ROWS = [
   { code: "101", name: "Kas", balance: "1234567.89" },
   { code: "201", name: "Simpanan anggota", balance: null },
 ];
+
+/**
+ * Teks setiap sel uang di HTML apa adanya. Markup bersarang ikut dibaca, bukan dilewati: sel
+ * yang menyembunyikan unit di dalam `<span>` harus sampai ke asersi dan gagal di sana.
+ */
+function moneyCellTexts(html: string): string[] {
+  const cells = html.match(/<td class="kran-num kran-money[^"]*">[\s\S]*?<\/td>/g) ?? [];
+  return cells.map((cell) => cell.replace(/<[^>]+>/g, "").trim());
+}
+
+/** Satu-satunya bentuk sel uang yang boleh tampil: angka tanpa simbol mata uang. */
+function expectAmountOnly(cells: string[]): void {
+  for (const text of cells) {
+    if (text === "") continue;
+    expect(text).toMatch(/^-?\d{1,3}(\.\d{3})*,\d{2}$/);
+    expect(text).not.toMatch(/IDR|Rp/);
+  }
+}
 
 describe("DataTable", () => {
   function table(extra: Record<string, unknown> = {}): string {
@@ -384,6 +641,69 @@ describe("DataTable", () => {
     );
   });
 
+  it("unit uang hanya di header kolom, tidak pernah di tiap sel", () => {
+    const html = table();
+
+    expect(html).toContain("Saldo (IDR)");
+    const cells = moneyCellTexts(html);
+    expect(cells.length).toBeGreaterThan(0);
+    expectAmountOnly(cells);
+  });
+
+  it("penjaga sel uang membaca markup bersarang, bukan melewatinya", () => {
+    const fixture =
+      '<td class="kran-num kran-money">1.234,56</td>' +
+      '<td class="kran-num kran-money"><span class="kran-visually-hidden">IDR</span>7.654,32</td>';
+    const cells = moneyCellTexts(fixture);
+
+    expect(cells).toHaveLength(2);
+    expect(cells[1]).toBe("IDR7.654,32");
+    // Asersi yang sama dengan tabel sungguhan harus gagal pada fixture ini.
+    expect(() => expectAmountOnly(cells)).toThrow();
+  });
+
+  it("nilai negatif memakai minus di depan, tanpa kurung, di ink normal", () => {
+    const rows = [{ code: "301", name: "Koreksi", balance: "-1500000.00" }];
+    const html = table({ rows });
+    const cell = moneyCellTexts(html).find((text) => text !== "") ?? "";
+
+    expect(cell).toBe(formatMoney("-1500000.00"));
+    expect(cell).not.toMatch(/[()]/);
+    expect(html).not.toContain("kran-muted");
+  });
+
+  it("sel uang tidak pernah pecah baris", () => {
+    const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
+
+    // Minus tidak boleh terpisah dari angkanya.
+    expect(css).toMatch(
+      /@media screen \{[^@]*?\.kran-table \.kran-money \{[^}]*white-space: nowrap/,
+    );
+  });
+
+  it("kolom uang mencadangkan lebar untuk nilai 3 dan 7 digit", () => {
+    const rows = [
+      { code: "101", name: "Kas", balance: "999.00" },
+      { code: "102", name: "Bank", balance: "1234567.00" },
+    ];
+    const html = table({ rows });
+    const cells = html.match(/<td class="kran-num kran-money">/g) ?? [];
+
+    expect(cells).toHaveLength(2);
+    const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
+    // Cadangan lebar berlaku di semua sel uang `.kran-table`, jadi tabel tangan seperti
+    // `/app/ledger` ikut dapat tanpa kelas tambahan di halaman.
+    expect(css).toMatch(
+      /@media screen \{[^@]*?\.kran-table \.kran-money \{[^}]*min-inline-size: 12ch/,
+    );
+  });
+
+  it("hanya ada satu formatter uang", () => {
+    const source = readFileSync(new URL("../src/money.ts", import.meta.url), "utf8");
+
+    expect(source.match(/export function format/g) ?? []).toHaveLength(1);
+  });
+
   it("nilai kosong tidak diganti nol karangan", () => {
     expect(table()).toContain('<td class="kran-num kran-money"></td>');
   });
@@ -409,5 +729,285 @@ describe("DataTable", () => {
 
   it("tanpa aksi tidak ada kolom tambahan", () => {
     expect(table()).not.toContain("kran-button");
+  });
+
+  it("density compact memakai kelas baris 36, bawaan tetap 40", () => {
+    expect(table({ density: "compact" })).toContain("kran-table--compact");
+    expect(table()).not.toContain("kran-table--compact");
+  });
+
+  it("totals dirender di tfoot dengan sel pertama th scope=row", () => {
+    const html = table({ totals: { code: "Total", balance: "1234567.89" } });
+
+    expect(table()).not.toContain("<tfoot");
+    expect(html).toMatch(/<tfoot[^>]*>[\s\S]*<th scope="row">Total<\/th>/);
+    expect(html).toContain('<td class="kran-num kran-money">1.234.567,89</td>');
+  });
+
+  it("selectedKeys menandai tepat satu baris, baris lain false", () => {
+    const html = table({ selectedKeys: ["101"] });
+    const rowTags = html.match(/<tr[^>]*>/g) ?? [];
+
+    expect(rowTags.filter((tag) => tag.includes('aria-selected="true"'))).toHaveLength(1);
+    expect(rowTags.filter((tag) => tag.includes("kran-table__selected"))).toHaveLength(1);
+    expect(rowTags[1]).toContain('aria-selected="true"');
+    expect(rowTags[1]).toContain("kran-table__selected");
+    expect(rowTags[2]).toContain('aria-selected="false"');
+    expect(rowTags[2]).not.toContain("kran-table__selected");
+  });
+
+  it("seleksi mengikuti rowKey saat baris diurutkan ulang", () => {
+    const html = table({ rows: [ROWS[1], ROWS[0]], selectedKeys: ["101"] });
+    const rowTags = html.match(/<tr[^>]*>/g) ?? [];
+
+    expect(rowTags[1]).toContain('aria-selected="false"');
+    expect(rowTags[2]).toContain('aria-selected="true"');
+  });
+
+  it("rowLines merender dua baris hanya saat baris menyediakan baris kedua", () => {
+    const columns = [
+      { key: "code", label: "Kode", rowHeader: true, secondary: "note" },
+      { key: "name", label: "Akun" },
+      { key: "balance", label: "Saldo (IDR)", align: "end" as const, numerics: true },
+    ];
+    const rows = [
+      { code: "101", name: "Kas", balance: "1234567.89", note: "kas kecil" },
+      { code: "201", name: "Simpanan anggota", balance: null },
+    ];
+    const html = table({ columns, rows, rowLines: true });
+
+    expect(html).toContain('<span class="kran-table__primary">101</span>');
+    expect(html).toContain('<span class="kran-table__secondary">kas kecil</span>');
+    expect(html.match(/<span class="kran-table__secondary">/g) ?? []).toHaveLength(1);
+  });
+
+  it("nowrap menambahkan kran-nowrap hanya pada kolom itu, header dan sel", () => {
+    const columns = [
+      { key: "code", label: "Kode" },
+      { key: "disbursedOn", label: "Cair", nowrap: true },
+    ];
+    const rows = [{ code: "101", disbursedOn: "10 November 2026" }];
+    const html = table({ columns, rows });
+
+    expect(html).toContain('<th scope="col" class="kran-nowrap">Cair</th>');
+    expect(html).toContain('<td class="kran-nowrap">10 November 2026</td>');
+    expect(html.match(/kran-nowrap/g) ?? []).toHaveLength(2);
+  });
+
+  it("kolom berbaris kedua dibatasi lebarnya, kolom biasa tidak", () => {
+    const columns = [
+      { key: "code", label: "Kode" },
+      { key: "name", label: "Anggota", secondary: "id" },
+    ];
+    const rows = [{ code: "101", name: "Kas", id: "e2e00000-0000-4000-8000-000000000001" }];
+    const html = table({ columns, rows, rowLines: true });
+
+    expect(html).toMatch(
+      /<td class="kran-table__secondary-cell"><span class="kran-table__primary">Kas<\/span>/,
+    );
+    expect(html.match(/kran-table__secondary-cell/g) ?? []).toHaveLength(1);
+  });
+
+  it("pembungkus tetap satu tabindex dan satu region meski opsi v2 aktif", () => {
+    const html = table({ density: "compact", stickyHeader: true });
+
+    expect(html).toContain("kran-table--sticky");
+    expect(html.match(/tabindex="0"/g) ?? []).toHaveLength(1);
+    expect(html.match(/role="region"/g) ?? []).toHaveLength(1);
+  });
+});
+
+describe("Drawer", () => {
+  function drawer(props: Record<string, unknown> = {}) {
+    return render(Drawer, {
+      props: {
+        open: true,
+        title: "Detail run",
+        closeLabel: "Tutup",
+        onclose: () => {},
+        ...props,
+      },
+    }).body;
+  }
+
+  it("panel modal menamai dirinya dengan heading dan heading itu bisa menerima fokus", () => {
+    const html = drawer({ children: text("<p>isi</p>") });
+    const labelledby = html.match(/aria-labelledby="([^"]+)"/)?.[1] ?? "";
+
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(labelledby).not.toBe("");
+    // Nama panel dan target fokus pembuka adalah elemen yang sama: pembaca layar menyebut
+    // konteksnya begitu panel terbuka, bukan "dialog" tanpa nama.
+    expect(html).toMatch(new RegExp(`<h2[^>]*id="${labelledby}"[^>]*tabindex="-1"`));
+    expect(html).toContain(">Detail run</h2>");
+  });
+
+  it("label tutup datang dari pemakai, bukan teks bawaan komponen", () => {
+    const html = drawer({ closeLabel: "Tutup panel" });
+
+    expect(html).toMatch(/<button[^>]*kran-button--quiet[^>]*type="button"[^>]*>[\s\S]*Tutup panel[\s\S]*<\/button>/);
+  });
+
+  it("tertutup tidak merender panel maupun scrim", () => {
+    const html = drawer({ open: false, children: text("<p>isi</p>") });
+
+    expect(html).not.toContain("kran-drawer");
+    expect(html).not.toContain("kran-drawer-scrim");
+  });
+
+  it("scrim tidak masuk pohon aksesibilitas", () => {
+    expect(drawer()).toContain('<div class="kran-drawer-scrim" aria-hidden="true">');
+  });
+
+  it("Tab membungkus di kedua arah; di tengah dibiarkan ke peramban", () => {
+    const items = ["kembali", "simpan", "batal"];
+
+    expect(wrapTabTarget(items, "batal", false)).toBe("kembali");
+    expect(wrapTabTarget(items, "kembali", true)).toBe("batal");
+    expect(wrapTabTarget(items, "simpan", false)).toBeNull();
+    expect(wrapTabTarget(items, "simpan", true)).toBeNull();
+  });
+
+  it("fokus di luar daftar masuk ke ujung yang benar, daftar kosong tidak menahan Tab", () => {
+    const items = ["kembali", "simpan", "batal"];
+
+    expect(wrapTabTarget(items, null, false)).toBe("kembali");
+    expect(wrapTabTarget(items, null, true)).toBe("batal");
+    expect(wrapTabTarget(items, "di-luar", false)).toBe("kembali");
+    expect(wrapTabTarget([], "kembali", false)).toBeNull();
+  });
+
+  it("fokus kembali ke elemen pemicu yang persis, bukan ke body", () => {
+    const trigger = { isConnected: true, disabled: false };
+    const fallback = { isConnected: true, disabled: false };
+
+    expect(restoreFocusTarget(trigger, fallback)).toBe(trigger);
+  });
+
+  it("pemicu yang lepas atau nonaktif jatuh ke cadangan; tanpa keduanya tidak ada target", () => {
+    const detached = { isConnected: false };
+    const disabled = { isConnected: true, disabled: true };
+    const fallback = { isConnected: true };
+
+    expect(restoreFocusTarget(detached, fallback)).toBe(fallback);
+    expect(restoreFocusTarget(disabled, fallback)).toBe(fallback);
+    expect(restoreFocusTarget(null, fallback)).toBe(fallback);
+    expect(restoreFocusTarget(null, null)).toBeNull();
+  });
+
+  it("memuat memakai satu-satunya live region, galat membawa label coba lagi", () => {
+    const loading = drawer({ loading: true, loadingLabel: "Memuat detail run…", retryLabel: "Coba lagi" });
+
+    expect(loading).toContain('role="status"');
+    expect(loading).toContain("Memuat detail run…");
+    expect(loading).not.toContain(">Tutup</button>");
+
+    const failed = drawer({ error: "Detail gagal dimuat", retryLabel: "Coba lagi" });
+
+    expect(failed).toContain("Detail gagal dimuat");
+    expect(failed).toContain("Coba lagi");
+    expect(failed).not.toContain('role="status"');
+  });
+
+  it("panel 520 dan cabang lebar penuh membawa kelasnya masing-masing", () => {
+    const html = drawer();
+
+    expect(html).toContain("kran-drawer kran-drawer--full");
+
+    const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
+
+    expect(css).toMatch(/\.kran-drawer \{[^}]*inline-size: 520px/);
+    expect(css).toMatch(
+      /@media \(max-width: 639\.98px\) \{\s*\.kran-drawer--full \{\s*inline-size: 100%;/,
+    );
+    // Scrim 0.32 terang dan 0.56 gelap, turunan kanvas gelap tanpa token baru.
+    expect(css).toContain("rgb(14 16 19 / 0.32)");
+    expect(css).toContain("rgb(14 16 19 / 0.56)");
+  });
+
+  it("Escape, batas Tab dan konfirmasi tutup disambungkan di komponen, bukan hanya di CSS", () => {
+    const source = readFileSync(new URL("../src/components/Drawer.svelte", import.meta.url), "utf8");
+
+    // Handler menempel di window selama panel terbuka: klik scrim memindahkan fokus ke body dan
+    // handler yang hanya ada di panel akan ikut mati padahal `aria-modal` masih menyala.
+    // Svelte 5 menolak `<svelte:window>` di dalam blok (`svelte_meta_invalid_placement`), jadi
+    // binding-nya di top level dan guard `open` ada di handler-nya.
+    const windowBinding = source.match(/<svelte:window[^>]*onkeydown=\{onWindowKeydown\}[^>]*\/>/)?.[0] ?? "";
+    expect(windowBinding).not.toBe("");
+    expect(source.indexOf(windowBinding)).toBeLessThan(source.indexOf("{#if open}"));
+    expect(source).toMatch(/function onWindowKeydown\([\s\S]*?if \(!open\) return;/);
+
+    // Tag dialog yang tepat, bukan div scrim yang juga berawalan `kran-drawer`.
+    const panelTag = source.match(/<div\s+class="kran-drawer kran-drawer--full"[\s\S]*?>/)?.[0] ?? "";
+    expect(panelTag).not.toBe("");
+    expect(panelTag).toContain('role="dialog"');
+    expect(panelTag).not.toContain("onkeydown");
+
+    expect(source).toContain('event.key === "Escape"');
+    expect(source).toContain("wrapTabTarget(");
+    expect(source).toContain("restoreFocusTarget(trigger");
+    expect(source).toContain("dirty && !confirming");
+  });
+});
+
+/** Isi satu blok `@media print { … }` dengan pencocokan kurung, bukan regex malas. */
+function cssBlock(css: string, header: string): string {
+  const start = css.indexOf(header);
+  if (start === -1) return "";
+  const open = css.indexOf("{", start);
+  if (open === -1) return "";
+  let depth = 0;
+  for (let i = open; i < css.length; i += 1) {
+    if (css[i] === "{") depth += 1;
+    if (css[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return css.slice(start, i + 1);
+    }
+  }
+  return "";
+}
+
+describe("Print block (T-291)", () => {
+  const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
+  const print = cssBlock(css, "@media print {");
+
+  it("blok cetak ada dan memuat aturan yang dijanjikan", () => {
+    // Kalau bloknya dihapus, seluruh aturan cetak hilang dan test ini gagal lebih dulu.
+    expect(print).not.toBe("");
+    expect(print).toContain("display: table-header-group");
+    expect(print).toMatch(/\.kran-print-doc--slip \{\s*page: slip;/);
+    expect(css).toMatch(/@page slip \{\s*size: A5;\s*margin: 12mm 11mm;/);
+    // Halaman tanpa nama tetap A4: statement tidak ikut mengecil.
+    expect(css).toMatch(/@page \{\s*size: A4;\s*margin: 12mm;/);
+  });
+
+  it("tidak ada bayangan dan tidak ada warna mentah di blok cetak", () => {
+    expect(print.toLowerCase()).not.toContain("box-shadow");
+    expect(print).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    // Warna cetak tidak ditulis di sini sama sekali: satu-satunya sumbernya token,
+    // dan `packages/ui/tokens/tokens.css` memaksa mode terang untuk `@media print`.
+    expect(print).not.toMatch(/\b(?:color|background(?:-color)?):/);
+  });
+});
+
+describe("Sign-in frame (T-241)", () => {
+  const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
+
+  it("shell publik mendefinisikan tiga baris, bukan empat", () => {
+    const publicShell = cssBlock(css, ".kran-shell--public {");
+    // Tiga anak: header, main, footer. Baris keempat membuat `1fr` jatuh ke footer dan
+    // meregangkannya (cacat yang ditutup T-241).
+    expect(publicShell).toMatch(/grid-template-rows:\s*auto 1fr auto;/);
+  });
+
+  it("bidang masuk memakai token, tanpa bayangan dan tanpa warna mentah", () => {
+    const plane = cssBlock(css, ".kran-signin__plane {");
+    expect(plane).not.toBe("");
+    expect(plane).toContain("var(--color-surface-raised)");
+    expect(plane).toContain("1px solid var(--color-hairline)");
+    expect(plane).toContain("var(--radius-md)");
+    expect(plane.toLowerCase()).not.toContain("box-shadow");
+    expect(plane).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
   });
 });

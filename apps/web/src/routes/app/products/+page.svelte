@@ -304,7 +304,7 @@
         {m.products_drafts_heading()}
       </h2>
       {#if drafts.length === 0}
-        <EmptyState title={m.products_drafts_empty()} />
+        <EmptyState kind="no-data" title={m.products_drafts_empty()} />
       {:else}
         <DataTable
           caption={m.products_drafts_caption()}
@@ -322,7 +322,7 @@
   <section class="kran-section" aria-labelledby="products-heading">
     <h2 class="kran-section__title" id="products-heading">{m.products_catalogue_heading()}</h2>
     {#if products.length === 0}
-      <EmptyState title={m.products_empty()} />
+      <EmptyState kind="no-data" title={m.products_empty()} />
     {:else}
       <DataTable
         caption={m.products_caption()}

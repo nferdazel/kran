@@ -1,0 +1,64 @@
+{
+  "label": "keyboard-mockup",
+  "description": "Keyboard checks the mockup can actually answer: drawer open/close from a row, focus return, focus trap, and login tab order. Flows that need the real shell live in keyboard-app.json.",
+  "url": "file:///Users/sachiel/Projects/cbs/.local/redesign/mockup/index.html",
+  "out": ".local/qa/results",
+  "modulesDir": "apps/web/node_modules",
+  "viewport": { "width": 1440, "height": 1000 },
+  "settle": 150,
+  "flows": [
+    {
+      "id": "drawer-open-escape",
+      "name": "Drawer opens from a row with Enter and closes with Escape",
+      "k": ["K-04"],
+      "steps": [
+        { "focus": "[data-open-drawer]", "note": "row action for 101.2" },
+        { "press": "Enter" },
+        { "expectVisible": ".stage[data-screen=\"ledger\"] .drawer" },
+        { "expectAttr": { "selector": ".stage[data-screen=\"ledger\"] .drawer", "name": "role", "value": "dialog" } },
+        { "expectFocusIn": ".stage[data-screen=\"ledger\"] .drawer" },
+        { "press": "Escape" },
+        { "expectHidden": ".stage[data-screen=\"ledger\"] .drawer" },
+        { "expectAttr": { "selector": ".stage[data-screen=\"ledger\"]", "name": "data-drawer", "value": "closed" } }
+      ]
+    },
+    {
+      "id": "drawer-focus-return",
+      "name": "Closing the drawer returns focus to the row action",
+      "k": ["K-04"],
+      "steps": [
+        { "focus": "[data-open-drawer]" },
+        { "press": "Enter" },
+        { "expectVisible": ".stage[data-screen=\"ledger\"] .drawer" },
+        { "press": "Escape" },
+        { "wait": 300 },
+        { "expectFocus": "[data-open-drawer]", "note": "DESIGN: closing restores focus, never drops it to body" }
+      ]
+    },
+    {
+      "id": "drawer-focus-trap",
+      "name": "Tab stays inside the open drawer (aria-modal honesty)",
+      "k": ["K-04"],
+      "steps": [
+        { "focus": "[data-open-drawer]" },
+        { "press": "Enter" },
+        { "expectVisible": ".stage[data-screen=\"ledger\"] .drawer" },
+        { "expectNoFocusEscape": { "container": ".stage[data-screen=\"ledger\"] .drawer", "maxTabs": 20 } }
+      ]
+    },
+    {
+      "id": "login-tab-order",
+      "name": "Login: username -> password -> submit, focus ring visible",
+      "k": ["K-22"],
+      "steps": [
+        { "focus": "#u1" },
+        { "expectFocusRingOnActive": { "minWidth": 1 }, "note": "mockup stages render at CSS zoom ~0.97, so the 2px token cannot be read 1:1 here; the app gate keeps minWidth 2" },
+        { "press": "Tab" },
+        { "expectFocus": "#p1" },
+        { "press": "Tab" },
+        { "expectFocus": "button[type=\"submit\"]" },
+        { "expectFocusRingOnActive": { "minWidth": 1 } }
+      ]
+    }
+  ]
+}

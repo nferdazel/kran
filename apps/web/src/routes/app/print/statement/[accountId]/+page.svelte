@@ -156,23 +156,37 @@
 {:else if statement !== null}
   {@const doc = statement}
   <article class="kran-print-doc" aria-labelledby="statement-heading">
-    <h1 id="statement-heading" class="kran-print-title">{m.statement_heading()}</h1>
-
-    <dl class="kran-print-meta">
-      <dt>{m.statement_account_no()}</dt>
-      <dd class="kran-print-ref">{doc.accountNo}</dd>
-      <dt>{m.statement_status()}</dt>
-      <dd>{statementStatusLabel(doc.status)}</dd>
-      <dt>{m.statement_branch()}</dt>
-      <dd class="kran-print-ref">{doc.branchId}</dd>
-      <dt>{m.statement_period_label()}</dt>
-      <dd>{m.statement_period({ from: formatDate(doc.from), to: formatDate(doc.to) })}</dd>
-    </dl>
-
-    <div class="kran-table-wrap">
+    <!-- Region bergulir harus bisa difokus (T-291 review): di 360 tabel melebar dan axe
+         menandai `scrollable-region-focusable` bila wadahnya tidak masuk urutan Tab. -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div
+      class="kran-table-wrap"
+      role="region"
+      tabindex="0"
+      aria-label={m.common_table_region({ name: m.statement_heading() })}
+    >
       <table class="kran-table">
         <caption class="kran-visually-hidden">{m.statement_heading()}</caption>
         <thead>
+          <!-- Judul dan meta tinggal di `<thead>` (T-291): Chromium hanya mengulang header group
+               di halaman berikutnya, dan header yang hanya muncul di halaman 1 membuat statement
+               dua halaman tidak terbaca halaman keduanya. -->
+          <tr class="kran-print-head">
+            <td colspan="6">
+              <h1 id="statement-heading" class="kran-print-title">{m.statement_heading()}</h1>
+
+              <dl class="kran-print-meta">
+                <dt>{m.statement_account_no()}</dt>
+                <dd class="kran-print-ref">{doc.accountNo}</dd>
+                <dt>{m.statement_status()}</dt>
+                <dd>{statementStatusLabel(doc.status)}</dd>
+                <dt>{m.statement_branch()}</dt>
+                <dd class="kran-print-ref">{doc.branchId}</dd>
+                <dt>{m.statement_period_label()}</dt>
+                <dd>{m.statement_period({ from: formatDate(doc.from), to: formatDate(doc.to) })}</dd>
+              </dl>
+            </td>
+          </tr>
           <tr>
             <th scope="col">{m.statement_col_date()}</th>
             <th scope="col">{m.statement_col_kind()}</th>

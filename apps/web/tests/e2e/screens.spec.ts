@@ -249,6 +249,32 @@ test.describe("keyboard-only", () => {
     await expect(submit).toBeEnabled();
   });
 
+  test("buku besar: galat tipe akun memindahkan fokus ke select", async ({ page, request }) => {
+    const console = await apiLogin(request, CONSOLE);
+    await prepare(page, "id", "light");
+    await browserLogin(page, console);
+    await openScreen(page, "/app/ledger/admin", T.id.ledger.title);
+
+    // Kode + nama valid, tipe akun sengaja kosong: submit invalid tidak menulis akun baru.
+    await page.getByLabel("Kode akun", { exact: true }).fill("198");
+    await page.getByLabel("Nama akun", { exact: true }).fill("AKUN UJI FOKUS GALAT");
+    const type = page.getByLabel("Tipe akun", { exact: true });
+    await expect(type).toHaveValue("");
+
+    await page.getByRole("button", { name: T.id.ledger.action, exact: true }).click();
+
+    // `Select` membuat id-nya sendiri, jadi fokus ke galat tidak boleh bergantung pada id hardcode.
+    await expect(type).toBeFocused();
+    await expect(type).toHaveAttribute("aria-invalid", "true");
+
+    const describedby = (await type.getAttribute("aria-describedby")) ?? "";
+    const ids = describedby.trim().split(/\s+/).filter(Boolean);
+    expect(ids, "aria-describedby menunjuk satu teks galat").toHaveLength(1);
+    const error = page.locator(`#${ids[0]}`);
+    await expect(error).toBeVisible();
+    await expect(error).toContainText(/\S/);
+  });
+
   test("rekening: pencarian party dipilih lewat Tab dan Enter", async ({ page, request }) => {
     const suffix = `${Date.now()}`.slice(-9);
     const name = await createParty(request, suffix);

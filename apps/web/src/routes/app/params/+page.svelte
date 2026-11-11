@@ -18,6 +18,7 @@
   import Alert from "@kran/ui/components/Alert.svelte";
   import Button from "@kran/ui/components/Button.svelte";
   import EmptyState from "@kran/ui/components/EmptyState.svelte";
+  import Select from "@kran/ui/components/Select.svelte";
   import StatusBadge from "@kran/ui/components/StatusBadge.svelte";
 
   import { goto } from "$app/navigation";
@@ -498,14 +499,11 @@
           <p class="kran-muted">{m.params_submit_effective_from_hint()}</p>
 
           <form class="kran-form" onsubmit={submitChange} novalidate>
-            <div class="kran-field">
-              <label class="kran-label" for="param-key">{m.params_submit_key_label()}</label>
-              <select class="kran-select" id="param-key" bind:value={formKey}>
-                {#each selectableKeys as key (key)}
-                  <option value={key}>{key}</option>
-                {/each}
-              </select>
-            </div>
+            <Select label={m.params_submit_key_label()} bind:value={formKey}>
+              {#each selectableKeys as key (key)}
+                <option value={key}>{key}</option>
+              {/each}
+            </Select>
 
             <div class="kran-field">
               <label class="kran-label" for="param-value">{m.params_submit_value_label()}</label>
@@ -552,7 +550,7 @@
       <section class="kran-section" aria-labelledby="pending-heading">
         <h2 class="kran-section__title" id="pending-heading">{m.params_pending_heading()}</h2>
         {#if pending.length === 0}
-          <EmptyState title={m.params_pending_empty()} />
+          <EmptyState kind="no-data" title={m.params_pending_empty()} />
         {:else}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <div
@@ -607,7 +605,7 @@
           {m.params_end_requests_heading()}
         </h2>
         {#if endRequests.length === 0}
-          <EmptyState title={m.params_end_requests_empty()} />
+          <EmptyState kind="no-data" title={m.params_end_requests_empty()} />
         {:else}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <div
@@ -738,7 +736,7 @@
           />
         </div>
         {#if active.length === 0}
-          <EmptyState title={m.params_active_empty()} />
+          <EmptyState kind="no-data" title={m.params_active_empty()} />
         {:else}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <div
@@ -853,7 +851,7 @@
       <section class="kran-section" aria-labelledby="audit-heading">
         <h2 class="kran-section__title" id="audit-heading">{m.audit_heading()}</h2>
         {#if audit.length === 0}
-          <EmptyState title={m.audit_empty()} />
+          <EmptyState kind="no-data" title={m.audit_empty()} />
         {:else}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <div

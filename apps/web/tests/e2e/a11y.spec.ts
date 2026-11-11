@@ -85,8 +85,45 @@ for (const locale of LOCALES) {
   }
 }
 
-test("struktur shell: landmark, judul halaman, dan indikator business date", async ({ page }) => {
-  await gotoApp(page, "id");
+/**
+ * T-241 acceptance 11: the sign-in screen at both target widths, named explicitly. The chromium
+ * project has no viewport of its own, so without `setViewportSize` the run happens at the Desktop
+ * Chrome default 1280x720 — the same gap T-291 closed in the print spec.
+ */
+const LOGIN_VIEWPORTS = [
+  { width: 1440, height: 900 },
+  { width: 360, height: 800 },
+] as const;
+
+for (const viewport of LOGIN_VIEWPORTS) {
+  for (const theme of THEMES) {
+    for (const locale of LOCALES) {
+      test(`axe /login ${viewport.width}x${viewport.height}: locale ${locale}, tema ${theme}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize(viewport);
+        await gotoApp(page, locale, theme);
+
+        // `/` mengalihkan tanpa sesi; yang diaudit harus benar-benar layar masuk.
+        await expect(page).toHaveURL(/\/login$/);
+        await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+        await expect(page.locator("html")).toHaveAttribute("lang", locale);
+
+        const results = await new AxeBuilder({ page }).analyze();
+        const blocking = blockingViolations(results.violations);
+        expect(
+          blocking.map((v) => ({
+            id: v.id,
+            impact: v.impact,
+            nodes: v.nodes.map((n) => n.target.join(" ")),
+          })),
+        ).toEqual([]);
+      });
+    }
+  }
+}
+
+test("struktur shell: landmark, judul halaman, dan indikator business date", async ({ page }) => {  await gotoApp(page, "id");
 
   await expect(page.locator("header")).toBeVisible();
   // Halaman publik sengaja tidak menampilkan menu tujuan area kerja; nav hanya ada di `/app`.

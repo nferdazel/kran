@@ -2,8 +2,12 @@
 
 Derived from the replanning audit (backend capability map and screen inventory) and re-checked
 against the tree. The old product has 21 delivered,
-4 partial, and 12 missing capabilities. The coop and pilot capabilities that P3-P7 will add are
-listed as missing until their tasks land.
+4 partial, 11 missing, and 1 retired capability. The coop and pilot capabilities that P3-P7 will add
+are listed as missing until their tasks land.
+
+This file is hand-maintained. It is updated in the same task that changes a capability; a task
+that changes behaviour without updating the ledger is incomplete. O-132 tracks the missing
+generator and drift check.
 
 How to read a row:
 
@@ -12,6 +16,8 @@ How to read a row:
   through the current web UI.
 - `partial` means a real path exists but a material part is missing. The note names the limit.
 - `missing` means no path exists. The note names the audit finding or the task that will create it.
+- `retired` means the capability was removed from the product on purpose. The note names the task
+  and the decision that removed it.
 - A row may cite an operation id instead of a screen when the capability is API-only today.
 
 | ID | Capability (can the persona do this today?) | Persona | Screen or endpoint | Evidence | Status |
@@ -41,16 +47,16 @@ How to read a row:
 | C-23 | Record and inspect an identity document | Admin | `addIdentityDoc`, `getPartyKyc` | `apps/api/tests/itapi_kyc.nim`; limit: number and metadata only, no file or image storage (DEP-2), 501 without a KEK | partial |
 | C-24 | Print a statement with a running balance | Kasir | `/app/print/statement/[accountId]`, `getAccountStatement` | `apps/web/tests/e2e/print.spec.ts`; `apps/api/tests/itapi_deposit.nim`; limit: no running balance, 500-row cap | partial |
 | C-25 | Create and rename a branch without a shell | Admin | `/api/v1/branches`, `listBranches` | `apps/api/tests/itapi_users.nim`; limit: read-only API, writes use `ctl create-branch` | partial |
-| C-26 | Open a time deposit and run its maturity and early-withdrawal rules | Admin | none | `missing: BE-EFF-04, account.nim:131; no create path` | missing |
+| C-26 | Open a time deposit and run its maturity and early-withdrawal rules | Admin | none | `retired: T-212 removes time deposits (R-16)` | retired |
 | C-27 | Pay a return on savings | Anggota, Admin | none | `missing: BE-EFF-05; savings earns no interest; R-16 moves return to SHU` | missing |
 | C-28 | Recognise loan interest over time | Manajer | none | `missing: BE-EFF-08; cash-basis on payment` | missing |
 | C-29 | Assess a late penalty | Petugas pinjaman | none | `missing: BE-EFF-08; schedule always sets penalty due to zero` | missing |
-| C-30 | Close the year | Manajer | `/app/close` | `missing: B8, calendar.nim:109; EOY is a label, not a task` | missing |
-| C-31 | Register and track a member lifecycle | Admin | `/app/members` | `missing: B6; no coop module` | missing |
-| C-32 | Generate and collect pokok and wajib obligations | Admin | `/app/savings/obligations` | `missing: B9; savings kind is a label only` | missing |
-| C-33 | Calculate and distribute SHU | Manajer | `/app/reports/shu` | `missing: B8; no SHU code` | missing |
-| C-34 | Produce the RAT report pack | Pengurus | `/app/reports` | `missing: B8, R-28; no report queries` | missing |
-| C-35 | Produce balance sheet, income statement, and equity statement | Pengurus | `/app/reports` | `missing: C18; report.nim has trial balance and balances only` | missing |
+| C-30 | Close the year | Manajer | `/app/close` | `missing: B8, calendar.nim:109; EOY is a label, not a task; owned by T-215` | missing |
+| C-31 | Register and track a member lifecycle | Admin | `/app/members` | `missing: B6; no coop module; owned by T-204/T-205` | missing |
+| C-32 | Generate and collect pokok and wajib obligations | Admin | `/app/savings/obligations` | `missing: B9; savings kind is a label only; owned by T-208` | missing |
+| C-33 | Calculate and distribute SHU | Manajer | `/app/reports/shu` | `missing: B8; no SHU code; owned by T-216, distribution T-218/T-275` | missing |
+| C-34 | Produce the RAT report pack | Pengurus | `/app/reports` | `missing: B8, R-28; no report queries; owned by T-224, remaining RAT reports T-225, T-227, T-228, T-276` | missing |
+| C-35 | Produce balance sheet, income statement, and equity statement | Pengurus | `/app/reports` | `missing: C18; report.nim has trial balance and balances only; owned by T-221 to T-223` | missing |
 | C-36 | Produce regulatory, tax, and APU-PPT reports | Manajer | none | `missing: BE-EFF-33; no route` | missing |
 | C-37 | Notify an operator of an event | Admin | none | `missing: BE-EFF-34; no notifier` | missing |
 | C-38 | Onboard a member with a number and KYC references | Admin | `/app/members/new` | `missing: T-204, T-205, T-206, T-245` | missing |
@@ -65,6 +71,13 @@ How to read a row:
 | C-47 | Page through every capped list with a total | all | list endpoints | `missing: T-220` | missing |
 | C-48 | See a member register report | Pengurus | `/app/reports/member-register` | `missing: T-224` | missing |
 | C-49 | See a SHU statement per member | Pengurus | `/app/reports/shu` | `missing: T-229` | missing |
+| C-50 | Exit a member with a checker-approved refund, offset and closure | Manajer | `/app/members/[memberId]/exit` | `missing: T-272` | missing |
+| C-51 | Distribute SHU per member and reconcile to the distribution journal | Manajer, Pengurus | `/app/reports/shu` | `missing: T-275` | missing |
+| C-52 | Post a cash loan instalment atomically with the cash movement | Kasir | `/app/loans/[loanId]?tab=pay` | `missing: T-274` | missing |
+| C-53 | Read savings arrears per member and obligation | Manajer, Admin | `/app/reports/savings-arrears` | `missing: T-225` | missing |
+| C-54 | Reconcile the cash recap for a business date | Kasir, Manajer | `/app/reports/cash-recap` | `missing: T-227` | missing |
+| C-55 | Produce a close certificate for a completed close | Manajer | `/app/close` | `missing: T-228` | missing |
+| C-56 | Produce a cash-flow statement and notes | Pengurus | `/app/reports` | `missing: T-276; NEEDS-COMPLIANCE-REVIEW until accounting sign-off (R-44)` | missing |
 
 ## Counts
 
@@ -72,4 +85,6 @@ How to read a row:
 |---|---:|---:|---:|
 | delivered | 21 | 0 | 21 |
 | partial | 4 | 0 | 4 |
-| missing | 12 | 12 | 24 |
+| missing | 11 | 19 | 30 |
+| retired | 1 | 0 | 1 |
+| total | 37 | 19 | 56 |

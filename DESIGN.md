@@ -9,6 +9,11 @@ Input: `git history` (arah yang dipilih pemilik), `docs/DESIGN-INDEX.md`
 (operasional teller, information design, a11y). Angka kontras di bawah dihitung dengan contrast
 checker, bukan taksiran.
 
+Revisi 10 Nov 2026: token warna, skala tipe, density, bentuk, dan struktur shell diselaraskan dengan
+mockup redesign yang lolos axe 0 violation. Nilainya sudah diratifikasi lewat **D-202**
+(`docs/DECISIONS.md`) dan sudah terpasang di `packages/ui/tokens/tokens.css`; perubahan berikutnya
+butuh keputusan baru.
+
 Reading this as: back-office core banking untuk staf koperasi/BPR non-teknis, bahasa visual
 netral-dingin dengan satu aksen, dial **ENERGY 2 / RHYTHM 2 / MOTION 2**.
 
@@ -17,6 +22,9 @@ netral-dingin dengan satu aksen, dial **ENERGY 2 / RHYTHM 2 / MOTION 2**.
 Basis datanya **netral dan dingin**: permukaan bersih, garis rambut, angka tabular, bidang datar.
 Satu aksen **plum** dipakai hemat, hanya di titik yang butuh perhatian. Karakternya datang dari
 ketenangan dan ketepatan, bukan dari ornamen.
+
+Satu produk, bukan kumpulan layar: setiap halaman `/app` duduk di shell yang sama (sidebar bergrup
+240 px, topbar 56 px, konten), dan detail dibaca di drawer, bukan modal.
 
 | Diterima | Ditolak |
 |---|---|
@@ -38,47 +46,53 @@ sebagai teks, bukan digambar.
 - **IBM Plex Mono tidak dipakai lagi**, termasuk untuk uang, kolom jurnal, dan struk. Angka uang
   memakai Plex Sans dengan `font-variant-numeric: tabular-nums slashed-zero`.
 - **Fallback:** `system-ui` hanya sampai font termuat; jangan mengandalkan tabular dari font sistem.
-- Skala: `11 / 12 / 13 / 14 (base) / 16 / 20 / 28 px`; line-height 1.45 teks, 1.2 judul.
+- Skala: `10 / 11 / 12 / 13 / 14 (base form & cetak) / 20 / 22 px`; line-height 1.45 teks, 1.2 judul.
+- Shell dan tabel memakai **13 px**; login, form panjang, dan cetak 14 px. 20 px hanya nilai stat
+  strip, 22 px hanya `h1` halaman. 10 px hanya label grup navigasi dan eyebrow tabel.
 - Bobot: 400 teks, 500 label, 600 angka yang mengubah saldo. Tidak ada 800/900, tidak ada uppercase
   ber-letter-spacing.
 
 ## 3. Warna
 
-Token semantik, bukan nama warna. Nilai dan bukti (dihitung 31 Okt 2026):
+Token semantik, bukan nama warna. Nilai dan bukti (dihitung ulang 10 Nov 2026 dari mockup):
 
 ### Terang
 
 | Peran | Nilai | Bukti |
 |---|---|---|
-| canvas | `#F6F7F9` | teks 16.78:1 |
-| surface (panel/tabel) | `#FFFFFF` | teks 17.99:1 |
-| teks | `#14171A` | 17.99:1 di surface |
-| teks-2 | `#565D66` | 6.66:1 di surface, 6.21:1 di canvas |
-| hairline | `#E3E7EC` | pemisah, bukan teks |
-| border kontrol | `#7C848F` | 3.53:1 di canvas (non-teks ≥3:1) |
-| aksen / focus ring | `#5B2A5E` | 10.84:1 di surface |
-| positif (kredit) | `#17603F` | 7.55:1 |
-| negatif (debet) | `#A02B31` | 7.28:1 |
-| peringatan | `#8A5A00` | 5.93:1 |
-| info | `#23557F` | 7.84:1 |
-| baris terpilih | `#EDF0F4` | teks 15.74:1, teks-2 5.83:1 |
+| canvas | `#F5F6F7` | - |
+| sidebar | `#EFF1F3` | - |
+| surface (panel/tabel) | `#FFFFFF` | teks 17.61:1 |
+| surface-2 (hover) | `#FAFBFB` | - |
+| hairline | `#E2E5E8` | pemisah, bukan teks |
+| border kontrol | `#7C848F` | 3.49:1 di kanvas (non-teks ≥3:1); `#C8CDD3` ditolak di 1.48:1 |
+| teks | `#17191C` | 17.61:1 di surface |
+| teks-2 | `#3F444B` | 9.81:1 di surface, 9.07:1 di canvas |
+| muted | `#646A70` | 5.47:1 di surface, 5.06:1 di canvas |
+| aksen / focus ring | `#6E2F72` | 9.08:1 di surface |
+| teks di aksen | `#FFFFFF` | 9.08:1 |
+| aksen lembut / garis | `#F2E8F3` / `#D6BDD8` | isi chip dan bordernya, bukan teks di canvas |
+| positif (kredit) | `#1E5B31` di `#E9F1EA` | 7.02:1, garis `#BCD5C2` |
+| baris terpilih | `#FAFBFB` + bar aksen 2 px | teks 16.99:1 |
 
 ### Gelap
 
 | Peran | Nilai | Bukti |
 |---|---|---|
-| canvas | `#101215` | teks 15.81:1 |
-| surface | `#181B1F` | teks 14.56:1 |
-| teks | `#E8ECF1` | 14.56:1 di surface |
-| teks-2 | `#9AA3AE` | 6.77:1 di surface |
-| hairline | `#272C32` | pemisah, bukan teks |
-| border kontrol | `#6F7883` | 4.19:1 di canvas (non-teks) |
-| aksen / focus ring | `#D9A0D4` | 8.17:1 di surface, 8.87:1 di canvas |
-| positif | `#5FBF8D` | 7.67:1 |
-| negatif | `#E88B84` | 6.96:1 |
-| peringatan | `#D9A84E` | 7.95:1 |
-| info | `#8FB3E8` | 8.05:1 |
-| baris terpilih | `#1E2429` | teks 13.21:1, teks-2 6.14:1 |
+| canvas | `#0E1013` | - |
+| sidebar | `#121519` | - |
+| surface | `#171A1F` | teks 15.02:1 |
+| surface-2 | `#1B1E23` | - |
+| hairline | `#282D34` | pemisah, bukan teks |
+| border kontrol | `#3C424A` | non-teks |
+| teks | `#EDEEF0` | 15.02:1 di surface |
+| teks-2 | `#C3C8CE` | 10.36:1 di surface |
+| muted | `#98A0A8` | 6.59:1 di surface, 7.19:1 di canvas |
+| aksen / focus ring | `#C292BE` | 6.77:1 di surface, 7.39:1 di canvas |
+| teks di aksen | `#1E1220` | 7.01:1 |
+| aksen lembut / garis | `#2A1F2C` / `#57415A` | isi chip dan bordernya |
+| positif | `#A5DCB6` di `#17301F` | 9.14:1, garis `#2F5539` |
+| baris terpilih | `#1B1E23` + bar aksen 2 px | teks 14.4:1 |
 
 Aturan yang mengikat:
 
@@ -91,23 +105,28 @@ Aturan yang mengikat:
 - Pasangan di atas **wajib masuk matriks uji kontras** (termasuk status di atas tint status dan
   `surface` raised) sebelum token dipakai; menambah token tanpa uji = gagal review.
 - Dark mode: jangan pakai teks-2 untuk angka uang; angka memakai `teks`.
+- Tombol aksen di tema gelap wajib `#C292BE` dengan teks `#1E1220`. Plum terang `#6E2F72` sebagai
+  bidang tombol di atas canvas gelap hanya 1.92:1 terhadap sekitarnya (minimum non-teks 3:1), jadi
+  dilarang.
 
 ## 4. Spasi, density, kontrol
 
 - Grid 4px. Skala: 4 / 8 / 12 / 16 / 24 / 32 / 48.
-- Baris tabel: 32 px (padat), **34 px default**, 40 px untuk baris dua tingkat. Padding sel 8×12,
-  kolom pertama 16.
-- Kontrol: **32 px** untuk input/tombol/aksi baris tabel; **44 px** untuk aksi primer (simpan,
-  posting, cetak, buka/tutup kas). 24 px hanya bila tiap target berjarak ≥ 8 px.
-- Target utama: **1366×768 pada zoom 100-125%**. Layout maksimum 72rem; di bawah 1100 px panel
-  kanan turun jadi bawah, bukan modal.
-- Tinggi toolbar maksimum 48 px; header lengket 34 px dengan garis bawah saat "stuck".
+- Baris tabel: 36 px (padat), **40 px default**, baris dua tingkat 40 px dengan baris kedua 12 px
+  muted. Padding sel 8×12, kolom pertama 16.
+- Kontrol: **40 px** untuk field dan aksi primer; **32 px** untuk aksi toolbar dan baris tabel.
+  Target sentuh minimum 40 px; 24 px hanya bila tiap target berjarak ≥ 8 px.
+- Shell: sidebar 240 px, topbar 56 px, drawer 520 px, padding konten `22px 28px 36px`.
+- Target utama: **1366×768 pada zoom 100-125%**. Layout maksimum 72rem; di bawah 1100 px panel kanan
+  turun jadi bawah, bukan modal; di bawah 1024 px sidebar jadi off-canvas.
+- Tinggi toolbar maksimum 48 px.
 
 ## 5. Bentuk
 
 - Radius: 2 chip, 4 kontrol, 6 kartu, 8 dialog. Tidak ada pill.
 - Pemisah: hairline. Shadow hanya untuk overlay: dropdown `0 2px 4px rgb(20 23 26 / .10)`,
   dialog `0 8px 24px rgb(20 23 26 / .16)`. **Kartu flat.**
+- Scrim drawer: `rgb(14 16 19 / 0.32)` terang, `0.56` gelap. Drawer 520 px memakai `shadow-2`.
 - Permukaan dipakai untuk bidang kerja (tabel, form, panel), bukan untuk membungkus setiap
   kelompok. Tabel: radius kiri-kanan `4`, tanpa shadow, tanpa zebra.
 
@@ -185,6 +204,12 @@ Aturan yang mengikat:
 
 - **Satu titik fokus per layar.** Di layar transaksi titik fokusnya form dan angkanya; di layar
   daftar, tabelnya. Tidak ada strip kartu metrik.
+- Shell: sidebar 240 px bergrup (`MAIN MENU`, `FUNCTIONS`), topbar 56 px dengan breadcrumb, satu
+  `h1` di area konten. Item aktif = chip terisi + `aria-current="page"`, bukan teks berwarna.
+  Login, cetak, dan halaman galat berdiri di luar shell. Di bawah 1024 px sidebar jadi panel
+  off-canvas dengan focus trap dan Esc; navigasi tidak boleh hilang tanpa pengganti.
+- Detail dibaca di drawer 520 px dari baris tabel, bukan modal. Fokus pindah ke judul drawer,
+  Esc menutup, fokus kembali ke baris asal.
 - Navigasi dikelompokkan menurut pekerjaan (mis. Kas, Anggota, Simpanan, Buku besar, Pengaturan),
   bukan daftar datar. Setiap item menuju layar yang benar-benar ada.
 - Layar kas adalah **stasiun kerja**: membuka kas tidak bergantung pada memuat rekening anggota,

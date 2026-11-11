@@ -51,6 +51,12 @@
   line-height: var(--line-height-base);
 }
 
+/* Public frame renders three children (header, main, footer), not four: without its own rows the
+   `1fr` track lands on the footer and stretches it, gluing the page under the header (T-241). */
+.kran-shell--public {
+  grid-template-rows: auto 1fr auto;
+}
+
 /* Shell Workstation Modern (/app/*): Sidebar Kiri + Header Atas + Kanvas Kerja Lapang */
 @media (min-width: 1024px) {
   .kran-shell--app {
@@ -403,6 +409,57 @@
   font-size: var(--text-sm);
 }
 
+/* Sign-in screen (T-241 §Composition): the title sits on the canvas, the plane holds only what
+   the operator types into. `min-block-size: 100%` + `safe center` centres the column while it
+   fits and falls back to the top when it does not (short viewport, 200% zoom). */
+.kran-signin {
+  display: grid;
+  gap: var(--space-5);
+  align-content: safe center;
+  min-block-size: 100%;
+  inline-size: 100%;
+  max-inline-size: 25rem;
+  margin-inline: auto;
+}
+
+.kran-signin__head {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.kran-signin__plane {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  font-size: var(--text-md);
+}
+
+.kran-signin__actions {
+  border-block-start: 1px solid var(--color-hairline);
+  padding-block-start: var(--space-4);
+}
+
+.kran-signin__actions .kran-button {
+  inline-size: 100%;
+}
+
+/* Phone: the plane sits flush on the canvas, 16 px screen inset comes from `.kran-main`. */
+@media (width <= 639.98px) {
+  .kran-signin {
+    align-content: start;
+    padding-block-start: var(--space-6);
+  }
+
+  .kran-signin__plane {
+    border: 0;
+    border-radius: 0;
+    padding: var(--space-4);
+  }
+}
+
 /* Satu bidang kerja per bagian. Bukan kartu: DESIGN §5/§13 menolak setiap kelompok dibungkus
    kartu. Pemisahnya jarak + judul bagian, bukan bingkai. */
 .kran-section {
@@ -534,7 +591,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  min-block-size: var(--control-height);
+  min-block-size: var(--control-height-primary);
   padding-block: 0;
   padding-inline: var(--space-3);
   border: 1px solid var(--color-border);
@@ -545,8 +602,19 @@
   cursor: pointer;
 }
 
+/* Ikon selalu 16 px dan tidak ikut menyusut: ukuran kotak bukan urusan pemanggil. */
+.kran-button svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+  flex: none;
+}
+
 .kran-button:hover {
-  background: var(--color-surface);
+  background: var(--color-surface-2);
+}
+
+.kran-button:active {
+  background: var(--color-selected);
 }
 
 .kran-button[aria-pressed="true"] {
@@ -557,8 +625,10 @@
 
 /* Aksi baris tabel: tidak bersaing dengan aksi utama (DESIGN §1, satu titik fokus).
  * Batasnya memakai `--color-border` (3.53:1), bukan hairline: hairline bukan batas kontrol
- * (DESIGN §3), dan tombol tanpa batas terbaca bukan sebagai kontrol. */
+ * (DESIGN §3), dan tombol tanpa batas terbaca bukan sebagai kontrol.
+ * Tinggi dikunci 32 px: baris tabel tetap padat walau tinggi dasar tombol 40. */
 .kran-button--row {
+  min-block-size: var(--control-height);
   padding-inline: var(--space-2);
   border-color: var(--color-border);
   background: transparent;
@@ -566,7 +636,29 @@
 
 .kran-button--row:hover {
   border-color: var(--color-border);
-  background: var(--color-surface);
+  background: var(--color-surface-2);
+}
+
+.kran-button--row:active {
+  background: var(--color-selected);
+}
+
+/* Varian tenang: aksi opsional (lewati, tutup) yang tidak boleh bersaing dengan aksi utama.
+ * Tampil sebagai teks sampai disorot, lalu mendapat latar permukaan sekunder. */
+.kran-button--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.kran-button--quiet:hover {
+  border-color: transparent;
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+
+.kran-button--quiet:active {
+  background: var(--color-selected);
 }
 
 /* Aksi merusak (pembatalan, koreksi): warna danger, bukan lencana. */
@@ -946,8 +1038,27 @@
   font-weight: 500;
 }
 
+/* Hover aksi utama hanya menaikkan kecerahan: tidak ada pergeseran warna, tidak ada bayangan
+ * (D-202 menahan set token, jadi tidak ada `--color-primary-hover` baru). */
 .kran-button--primary:hover {
-  background: var(--color-primary-hover);
+  background: var(--color-primary);
+  filter: brightness(1.06);
+}
+
+/* Active satu langkah lebih gelap dari hover, bukan warna baru. */
+.kran-button--primary:active {
+  background: var(--color-primary);
+  filter: brightness(0.98);
+}
+
+/* Ukuran eksplisit. Diletakkan setelah `--row` dan `--primary` supaya `size` menang lewat
+ * urutan sumber ketika pemanggil memberi dua-duanya (tanpa `!important`). */
+.kran-button--sm {
+  min-block-size: var(--control-height);
+}
+
+.kran-button--md {
+  min-block-size: var(--control-height-primary);
 }
 
 /* State `:disabled` (DESIGN §7): kontrol mati harus terlihat mati, tetapi teksnya tetap
@@ -964,6 +1075,12 @@
   color: var(--color-text-muted);
   border-color: var(--color-border);
   cursor: not-allowed;
+}
+
+/* Tombol utama yang mati tidak memakai kursor larangan: aksi yang belum siap bukan kesalahan
+ * pemakaian (butuh `not-allowed`), jadi kursor kembali ke bawaan dan tombol sekadar berhenti. */
+.kran-button--primary:disabled {
+  cursor: default;
 }
 
 /* Checkbox/radio: label pembungkus ikut meredup, kontrol aslinya tetap terbaca. */
@@ -1000,6 +1117,75 @@
   background: var(--color-surface-raised);
   color: var(--color-text);
   font: inherit;
+}
+
+/* Penanda wajib: jarak dari label lewat margin, bukan karakter spasi yang dipangkas kompilator. */
+.kran-required {
+  margin-inline-start: var(--space-1);
+}
+
+/* Kontrol form v2 (T-286, D-202 ADR-2): field 40 px, 32 px hanya di dalam toolbar.
+ * Batas kontrol memakai `--color-border` (3.49:1), bukan hairline; cincin fokus memakai
+ * `:focus` supaya tetikus dan papan ketik melihat penanda yang sama persis. */
+.kran-control {
+  min-block-size: var(--control-height-primary);
+  padding-block: 0;
+  padding-inline: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.kran-toolbar .kran-control {
+  min-block-size: var(--control-height);
+}
+
+.kran-control:hover:not(:disabled) {
+  border-color: var(--color-text-muted);
+}
+
+.kran-control:focus {
+  border-color: var(--color-focus-ring);
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
+.kran-control:disabled {
+  background: var(--color-surface-disabled);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  cursor: not-allowed;
+}
+
+/* Readonly terbaca sebagai teks yang bisa dibaca, bukan kotak yang bisa diketik. */
+.kran-control[readonly] {
+  background: var(--color-surface);
+}
+
+.kran-control[aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+
+/* Kotak centang: kotak 16 px, area barisnya 40 px supaya tetap target sentuh yang layak. */
+.kran-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--control-height-primary);
+}
+
+.kran-checkbox__box {
+  inline-size: 1rem;
+  block-size: 1rem;
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+
+.kran-checkbox__box:focus {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
 }
 
 /* Pesan galat: teks + warna danger (bukan warna saja) dan `role="alert"` di komponen.
@@ -1067,6 +1253,27 @@
   margin-block-start: var(--space-3);
 }
 
+/* Keadaan memuat dan gagal (T-292) berbagi bentuk dengan keadaan kosong: satu blok setebal isi,
+ * bukan kotak penuh layar, supaya tata letak tidak melompat saat keadaan berganti. */
+.kran-loading-state,
+.kran-error-state {
+  padding-block: var(--space-6);
+  padding-inline: var(--space-4);
+  border: 1px dashed var(--color-hairline);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+}
+
+.kran-loading-state p,
+.kran-error-state__title {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.kran-error-state__action {
+  margin-block-start: var(--space-3);
+}
+
 /* Tajuk halaman + aksi (mis. Keluar) sebaris, membungkus di layar sempit. */
 .kran-toolbar {
   display: flex;
@@ -1123,6 +1330,15 @@
 
 .kran-table thead th {
   border-block-end-color: var(--color-border);
+  /* Header 36px tetap, terlepas dari tinggi baris (DESIGN §6 v2). */
+  block-size: var(--row-height-compact);
+}
+
+.kran-table--sticky thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  background: var(--color-surface);
 }
 
 .kran-table thead tr:first-child th[colspan] {
@@ -1138,7 +1354,7 @@
 }
 
 .kran-table tbody tr:hover {
-  background-color: var(--color-selected);
+  background-color: var(--color-surface-2);
 }
 
 .kran-table tbody tr:last-child td,
@@ -1158,6 +1374,17 @@
   padding-inline-end: calc(var(--space-3) + 4px);
 }
 
+/* Cadangkan lebar nilai terpanjang (7 digit + pemisah + 2 desimal) supaya kolom tetangga
+ * tidak bergeser saat angka tumbuh dari 3 ke 7 digit (T-289). Berlaku untuk semua sel uang di
+ * `.kran-table`, termasuk tabel tangan seperti `/app/ledger` yang tidak lewat `DataTable`.
+ * Hanya layar: tata letak cetak punya batas halaman sendiri dan tidak punya angka yang tumbuh. */
+@media screen {
+  .kran-table .kran-money {
+    min-inline-size: 12ch;
+    white-space: nowrap;
+  }
+}
+
 /* Baris total: menempel di bawah region, hairline 2px di atas, latar surface. */
 .kran-table tfoot td,
 .kran-table tfoot th {
@@ -1170,7 +1397,46 @@
 }
 
 .kran-table .kran-table__selected {
-  background: var(--color-selected);
+  background: var(--color-surface-2);
+}
+
+/* Baris terpilih: bilah aksen 2px di kiri, bukan warna saja (DESIGN §6 v2). */
+.kran-table .kran-table__selected > :first-child {
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+/* Nilai yang tidak boleh pecah baris (mis. tanggal "10 November 2026" di kolom sempit). */
+.kran-table .kran-nowrap {
+  white-space: nowrap;
+}
+
+/* Baris dua tingkat: baris utama 13/600, baris kedua 11 redup (DESIGN §6 v2). Keduanya satu
+ * baris dengan elipsis; nilai panjang memotong, bukan menambah tinggi baris 40px. */
+.kran-table__primary,
+.kran-table__secondary {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kran-table__primary {
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.kran-table__secondary {
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+/* Kolom yang punya baris kedua mengambil sisa lebar tabel alih-alih melebar mengikuti isinya:
+ * tanpa batas ini nama panjang melebarkan kolomnya sendiri dan elipsis tidak pernah terjadi.
+ * Lantai 18ch menjaga nama tetap terbaca saat tabel sempit. */
+.kran-table--two-line .kran-table__secondary-cell {
+  max-inline-size: 0;
+  min-inline-size: 18ch;
 }
 
 /* Tabel padat untuk daftar panjang (32px) dan dua tingkat (40px). */
@@ -1321,6 +1587,13 @@
   margin: 12mm;
 }
 
+/* Slip A5 (T-291): satu stylesheet, dua ukuran. Halaman bernama dipilih oleh elemen dokumen
+ * lewat `page: slip`; halaman tanpa nama tetap A4 untuk statement. */
+@page slip {
+  size: A5;
+  margin: 12mm 11mm;
+}
+
 @media print {
   .kran-nav,
   .kran-header,
@@ -1329,8 +1602,22 @@
   .kran-skip-link,
   .kran-print-toolbar,
   .kran-form,
-  .kran-alert {
+  .kran-alert,
+  .shell-skip,
+  .shell__panel,
+  .shell__scrim,
+  .topbar {
     display: none !important;
+  }
+  /* The v2 shell is a grid; printing keeps only `main`, so drop the columns and padding. */
+  .shell {
+    display: block;
+    min-block-size: 0;
+  }
+  .shell__main {
+    max-inline-size: none;
+    padding-block: 0;
+    padding-inline: 0;
   }
   .kran-main {
     max-inline-size: none;
@@ -1342,6 +1629,10 @@
     border-radius: 0;
     padding-block: 0;
     padding-inline: 0;
+  }
+  /* Slip memilih halaman bernama A5; statement tetap memakai `@page` tanpa nama. */
+  .kran-print-doc--slip {
+    page: slip;
   }
   .kran-table thead {
     display: table-header-group;
@@ -1381,4 +1672,93 @@
     transition-duration: 1ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Drawer (T-290): panel samping 520 px untuk detail baris daftar. Scrim memisahkan panel dari
+ * layar yang tetap terlihat; warnanya turunan kanvas gelap, bukan token baru. Di bawah 640 px
+ * panel mengambil lebar penuh, dan kelasnya selalu ada supaya cabang sempit bisa dibuktikan dari
+ * markup tanpa mengukur media query. */
+.kran-drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgb(14 16 19 / 0.32);
+}
+
+[data-theme="dark"] .kran-drawer-scrim {
+  background: rgb(14 16 19 / 0.56);
+}
+
+.kran-drawer {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-end: 0;
+  z-index: 121;
+  display: flex;
+  flex-direction: column;
+  inline-size: 520px;
+  max-inline-size: 100vw;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+}
+
+@media (max-width: 639.98px) {
+  .kran-drawer--full {
+    inline-size: 100%;
+  }
+}
+
+.kran-drawer__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-block: var(--space-4);
+  padding-inline: var(--space-4);
+  border-block-end: 1px solid var(--color-hairline);
+}
+
+.kran-drawer__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.kran-drawer__title:focus {
+  outline: none;
+}
+
+.kran-drawer__title:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.kran-drawer__body {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  padding-block: var(--space-4);
+  padding-inline: var(--space-4);
+}
+
+.kran-drawer__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.kran-drawer__confirm-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.kran-drawer__confirm:focus {
+  outline: none;
+}
+
+.kran-drawer__confirm:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
 }

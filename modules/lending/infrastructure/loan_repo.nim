@@ -3,7 +3,7 @@
 ## Modul ini sengaja tidak mengimpor internal `platform` (archcheck rule C): audit dan outbox
 ## ditulis pemanggil (composition root `apps/api`) dalam transaksi yang sama.
 
-import std/[options, strutils]
+import std/[json, options, strutils, tables]
 
 import db_connector/db_postgres
 
@@ -114,6 +114,24 @@ proc loansPage*(db: DbConn; partyId: Option[Id]; status: string; limit: int): se
      ORDER BY created_at DESC, loan_id
      LIMIT ?"""), partyText, partyText, status, status, limit):
     result.add loanOf(row)
+
+proc partyNames*(db: DbConn, partyIds: seq[Id]): Table[string, string] =
+  ## Nama tampil anggota untuk satu halaman pinjaman: **satu** query untuk semua id, bukan satu
+  ## per baris. `party.party.display_name` adalah sumber yang sama dengan `handleListParties`;
+  ## tidak ada data identitas lain yang dibaca di sini.
+  result = initTable[string, string]()
+  if partyIds.len == 0:
+    return
+  var ids: seq[string]
+  for partyId in partyIds:
+    ids.add $partyId
+  let payload = $ %* ids
+  for row in db.getAllRows(sql"""
+    SELECT party_id::text, display_name
+      FROM party.party
+     WHERE party_id IN (SELECT value::uuid FROM jsonb_array_elements_text(?::jsonb))""",
+      payload):
+    result[row[0]] = row[1]
 
 proc approveLoan*(db: DbConn, loanId: Id; approver: Id): bool =
   ## `false` = pengajuan sudah diputuskan pihak lain (balapan), bukan galat. Penyetuju disimpan

@@ -17,7 +17,7 @@ const LOCALES = ["id", "en"] as const;
 /** Sumber tiruan: memisahkan perilaku pencarian dari isi katalog pesan. */
 const SOURCES: readonly PaletteSource[] = [
   { href: "/app/ledger", label: (locale) => (locale === "en" ? "Ledger" : "Buku besar") },
-  { href: "/app/teller", label: () => "Teller" },
+  { href: "/app/teller", label: (locale) => (locale === "en" ? "Teller" : "Kasir") },
 ];
 
 describe("paletteActions", () => {
@@ -30,7 +30,7 @@ describe("paletteActions", () => {
 
   it("menghapus kata kunci kembar", () => {
     const actions = paletteActions([SOURCES[1] as PaletteSource], "id", LOCALES);
-    expect(actions[0]?.keywords).toEqual(["/app/teller", "teller"]);
+    expect(actions[0]?.keywords).toEqual(["/app/teller", "kasir", "teller"]);
   });
 });
 

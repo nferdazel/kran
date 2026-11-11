@@ -95,7 +95,9 @@ jobs:
         # di-commit — bukti bahwa runner yang sama menghasilkan piksel yang sama.
         run: |
           if [ "$UPDATE_BASELINE" = "true" ]; then
-            pnpm --filter @kran/web exec playwright test visual.spec.ts --update-snapshots
+            # `=all`: flag telanjang berarti mode `changed` dan tidak menulis ulang snapshot yang
+            # selisihnya masih di bawah `maxDiffPixelRatio`; regenerasi harus selalu menulis.
+            pnpm --filter @kran/web exec playwright test visual.spec.ts --update-snapshots=all
           else
             pnpm --filter @kran/web exec playwright test visual.spec.ts
           fi

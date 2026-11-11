@@ -2,7 +2,7 @@
 
 Status: product truth after the replan (branch `chore/replan-docs`). This document replaces the
 Fase 0 to 4 specification in full; old section numbers survive only as citations, resolved by
-Appendix A. Owner rulings R-01 to R-30 and the decisions in `docs/DECISIONS.md` bind this text.
+Appendix A. Owner rulings R-01 to R-44 and the decisions in `docs/DECISIONS.md` bind this text.
 Where this document and the code disagree, the disagreement is a defect: record it in
 `docs/DECISIONS.md` and stop.
 
@@ -53,7 +53,7 @@ enforced per action by the server (R-17), never by hiding a menu.
 
 | Seat | Daily work | MUST NOT | Screens |
 |---|---|---|---|
-| Kasir (teller) | open cash, setor, tarik, transfer, loan instalment, reprint, count and close cash | post without an open session; approve a vault top-up; see another branch's cash | K-01, K-08 read, K-14 pay, K-23, K-24 |
+| Kasir (teller) | open cash, setor, tarik, transfer, cash loan instalment (T-274), reprint, count and close cash | post without an open session; approve a vault top-up; see another branch's cash | K-01, K-08 read, K-14 pay, K-23, K-24 |
 | Petugas pinjaman | survey, application, schedule preview, disbursement, collections | approve an own application; disburse to cash; edit a posted payment | K-06 to K-08, K-11 to K-15, K-24 |
 | Manajer | approvals (loan, parameter, product, vault), arrears, EOD, EOM, EOY, reports | approve an own submission; close without counting cash; run EOY without a signed SHU basis | K-02 to K-04, K-11, K-13 to K-17, K-19, K-20 |
 | Admin / pembukuan | member data, obligations, corrections, user administration, daily recap | delete a posting; create an operator without role and branch; edit a closed period | K-04 to K-10, K-17 to K-21, K-23 |
@@ -67,13 +67,16 @@ group with zero permitted links (`apps/web/src/lib/app/nav.ts`).
 
 The product scope, in one list: a `coop` membership register with immutable member number, status
 machine, join and exit dates, branch and link to `party`; pokok and wajib obligations per member with
-payment, arrears, approved waiver and refund at exit, realised amounts read from deposit postings;
-sukarela accounts with deposit, withdrawal, dormancy, minimum balance and statement; teller sessions
-with float, setor, tarik, transfer by account or member number, cash count and variance; lending with
-application, maker and checker approval, disbursement to a member account, schedule, allocation,
-penalty, arrears, restructure, write-off and recovery; an immutable ledger with reversal ownership,
-COA, periods, trial balance, statements and EOD, EOM, EOY; nine RAT reports; and governance for
-parameters, users, MFA and the audit viewer. Phases are owned by `docs/ROADMAP.md`; the MVP is
+payment, arrears, approved waiver and refund at exit computed from postings with a checker (R-43,
+T-272), realised amounts read from deposit postings; sukarela accounts with deposit, withdrawal,
+dormancy, minimum balance and statement; teller sessions with float, setor, tarik, transfer by
+account or member number, cash count and variance, and a cash loan instalment that posts the loan
+payment, the cash movement and the teller session effect in one transaction (R-34, T-274); lending
+with application, maker and checker approval, disbursement to a member account, schedule, allocation,
+penalty assessment from parameters with a checker-approved waiver (T-270), arrears, restructure,
+write-off and recovery; an immutable ledger with reversal ownership, COA, periods, trial balance,
+statements and EOD, EOM, EOY; ten RAT reports including a cash-flow statement and notes (R-44); and
+governance for parameters, users, MFA and the audit viewer. Phases are owned by `docs/ROADMAP.md`; the MVP is
 complete when the twelve scenarios in section 1.7 pass against a synthetic cooperative of 30 business
 days, about 200 members, 50 loans, one EOY and SHU cycle, and zero manual SQL (P8 exit criterion).
 
@@ -98,7 +101,7 @@ The product succeeds when a phase exit demonstrates, with output: the books cann
 silently (owned-journal reversal denied, write-off then EOD completes, allocations sum and reference
 a real instalment); one business date governs posting, parameters, DPD and reports; every account,
 slip, statement and report names a member; two named operators without server access complete
-onboarding, lending, close and reports; nine RAT documents reconcile to `journal_line`; `ci-fast`
+onboarding, lending, close and reports; ten RAT documents reconcile to `journal_line`; `ci-fast`
 fails on a seeded violation in `apps/api/src` and `apps/web`; every 409 carries a stable
 `params.reason`; every capped list reports a total; and axe is green in two themes, keyboard-only.
 
@@ -114,10 +117,10 @@ value, never a literal.
 | S3 | Sukarela deposit and withdrawal | balance and GL move together; slip carries identity, cashier, time and zone; withdrawal below minimum rejected with a reason | teller e2e, `itapi_teller` |
 | S4 | Loan application with eligibility | blocked on wajib arrears with a specific reason; approver is not the submitter; full trail | lending e2e, `itapi_lending` |
 | S5 | Disburse to a member account | destination by account or member number with holder on review; `lending_maker` completes without `platform_admin`; second disbursement refused | lending e2e as seeded maker |
-| S6 | Instalment with penalty and partial payment | allocations follow product order and sum exactly; schedule and arrears update; receipt shows the split | `itapi_lending` |
-| S7 | Month-end arrears review | DPD, outstanding, last payment, officer and a total row; EOM refuses while unbalanced; no backdated posting after close | arrears e2e, `itdaycloser_gates` |
-| S8 | Cash count and variance | variance equals actual minus expected, posted to the configured account; session closes; EOD proceeds | `itapi_teller_sessions` |
-| S9 | Member exit with an outstanding loan | refused with a specific reason; after settlement the refund equals pokok, wajib and sukarela minus arrears; `EXITED` with `ended_on` | `coop` integration |
+| S6 | Instalment with penalty and partial payment | allocations follow product order and sum exactly; penalty is assessed from parameters and a waiver needs a checker; schedule and arrears update; receipt shows the split | `itapi_lending` |
+| S7 | Month-end arrears review | DPD, outstanding (principal, interest and penalty), last payment, officer and a total row; EOM refuses while unbalanced; no backdated posting after close | arrears e2e, `itdaycloser_gates` |
+| S8 | Cash count and variance | variance equals actual minus expected, posted to the configured account; the reason is mandatory and an approval is required above the parameterised tolerance (R-37); session closes; EOD proceeds | `itapi_teller_sessions` |
+| S9 | Member exit with an outstanding loan | refused with a specific reason; after settlement the refund is computed from postings, equals pokok, wajib and sukarela minus arrears, closes savings accounts, posts with a checker and sets `EXITED` with `ended_on` (T-272) | `coop` integration |
 | S10 | Year-end close and SHU proposal | trial balance balanced; second run is a no-op; proposal totals equal the distributable amount; every row shows its basis | `itdaycloser_*`, SHU golden |
 | S11 | RAT approval and distribution | refused without a recorded decision; GL delta equals the allocation sum; replay does not pay twice | distribution integration |
 | S12 | Correct a wrong posting | original row remains; reversal is a new entry with actor and reason; passbook shows both and nets correctly | `itjournal`, `itapi_journal` |
@@ -169,6 +172,10 @@ recovery (P2b). `ledger` owns COA, journals, periods, posting rules and statemen
 owns the task registry, dependency graph, run and chunk state and the seal (P2b). `hello` is a
 template and is deleted at P2b.
 
+A cash loan instalment is one atomic use case: the lending payment, the cash movement and the teller
+session effect commit or fail together (R-34, T-274). A success that posts the payment without the
+cash movement is a defect, not a retry to schedule.
+
 No `reporting` module exists by design. Reports read ledger and subledger data through the owning
 module's read API; a report module that owns a second copy of the numbers is forbidden (C18).
 
@@ -202,18 +209,22 @@ Rules: the member number never changes and is never reissued, because it is what
 a slip prints; at most one non-exited membership exists per party; every transition records actor,
 reason, timestamp and effective date, and backdated admission requires a reason; pokok and wajib
 obligations reference product and period `YYYY-MM` and realise amounts from deposit postings, so
-`coop` never duplicates money; exit is refused while a loan is outstanding unless the offset
-parameter allows it; `coop` posts no journal and calls `deposit` and `ledger` through their
+`coop` never duplicates money; exit is refused while a loan is outstanding, computes the refund from
+postings, offsets arrears, closes savings accounts and posts the refund with a checker (R-43,
+T-272); `coop` posts no journal and calls `deposit` and `ledger` through their
 `api.nim`. Events `MembershipActivated`, `MembershipChanged` and `MembershipExited` go through the
 outbox in the state-change transaction. Not in `coop`: balances, cash, loan schedules, DPD, PPAP, SHU
 amounts, product rates, GL accounts, KYC documents, teller sessions, report SQL, users and roles.
 
 ### 2.5 Ledger ownership and subledger links
 
-Every journal produced by a subledger MUST carry an explicit link from the subledger row to
-`ledger.journal`; ownership is a stored reference, not a guess from `source_event`. Until P1,
-ownership is inferred from five tables and lending, accrual and write-off journals carry no link, so
-their reversal is possible and corrupts the books (B3).
+A subledger journal MUST carry an explicit link from its subledger row to `ledger.journal` when the
+owning table stores a link column; ownership is then a stored reference, not a guess from
+`source_event`. The teller and vault paths store no link and derive ownership from `source_ref`, and
+they are corrected through the teller correction rather than a generic reversal. Until P1, ownership
+is inferred from five tables and lending, accrual and write-off journals carry no link, so their
+reversal is possible and corrupts the books (B3). T-180 adds the link rows for the lending paths and
+keeps the teller derivation rule.
 
 | Journal source | Generic reversal | Correct path |
 |---|---|---|
@@ -299,10 +310,11 @@ Enforced today by `itjournal` (balance triggers, immutability, single reversal) 
 ### 3.4 Reversal ownership
 
 The generic reversal endpoint MUST refuse a journal whose owning subledger keeps state outside the
-ledger, unless that module exposes a correction that reverses both. Ownership is a stored reference,
-not a guess from `source_event`. A refusal carries a stable reason and names the correct path; "not
-reversible" without a next step is a defect. Enforced at P1: reversal of a lending, accrual or
-write-off journal is denied, and the test fails if denial is removed.
+ledger, unless that module exposes a correction that reverses both. Where the owning table stores a
+link, ownership is that stored reference; teller and vault journals derive it from `source_ref`;
+neither is a guess from `source_event`. A refusal carries a stable reason and names the correct
+path; "not reversible" without a next step is a defect. Enforced at P1: reversal of a lending,
+accrual or write-off journal is denied, and the test fails if denial is removed.
 
 ### 3.5 Idempotency
 
@@ -310,7 +322,12 @@ Every financially effective request accepts an `Idempotency-Key` header, scoped 
 same key with a different payload is a conflict. The key row is written inside the business
 transaction, and a non-2xx response never stores a key. A replay of a completed key returns the
 stored result, not a second posting. The key survives a network failure, a 5xx and a session
-re-authentication, and time to live is a parameter. The UI shows the reference before completion and
+re-authentication, and time to live is a parameter. A lending payment key MUST be permanent or
+natural, derived from the loan, instalment and amount, so that no time-to-live sweep can turn a
+retry into a second debit; enforced at P1 by a retry test that sweeps the key between attempts and
+asserts one debit. For the other financially effective paths the time-to-live key is a named
+accepted limit in `docs/ACCEPTED-LIMITS.md`, and that limit does not extend to lending payments.
+The UI shows the reference before completion and
 disables the form while the outcome is unknown; "unknown state" never says success.
 
 Enforced today by `itapi_idempotency` on the backend and by one shared client helper after P6. Four
@@ -395,6 +412,14 @@ characterization tests pin current behaviour first. The shared `kran_test` datab
 database-touching suites serial by rule. No new test framework, assertion library or DOM
 environment without an ADR. Parameter mutation is covered per key: a seeded change must change
 behaviour, which is how the no-hardcode rule is proved for that key.
+
+### 3.11 Write-off allowance
+
+The write-off allowance base is principal only (R-36). Interest and penalty are not in the base; they
+leave the book by one explicit release rule, never by a second decomposition of the same loan. The
+reconciliation identity is `allowance - applied - released`, and a balance that fails it aborts the
+close visibly rather than passing a lower gate. One reconciliation test proves the identity (T-186),
+and no report may present a second definition.
 
 ---
 
@@ -580,9 +605,9 @@ encryption: a key-encryption key from a host file with mode 600 derives per-reco
 AES-256-GCM provides confidentiality and integrity; a blind index supports exact-match search.
 Unmasking requires a permission and a reason and produces an audit row. Logs never contain PII,
 secrets, tokens or unmasked identity data. Key rotation is a tested operational procedure and a key
-is never committed. Backups are encrypted and stored off host; the current same-host unencrypted
-copy is an accepted limit until P7. Detail lives in `docs/adr/017-field-level-encryption.md` and
-`docs/SECURITY.md`.
+is never committed. Backups are local, single-host and unencrypted for the pilot (R-39, L-04); an
+encrypted off-host copy is deferred with a trigger and is not an existing capability. Detail lives in
+`docs/adr/017-field-level-encryption.md` and `docs/SECURITY.md`.
 
 ### 5.8 Privacy controls
 
@@ -680,7 +705,8 @@ contract. A screen is reachable only if its route, permission and data contract 
 entry whose screen is missing is not rendered. Every screen implements the seven states and names
 its empty state. The teller screen, not the ledger, is the teller's landing page. Transfer is a mode
 inside Kas, account opening is a section of the member file, close is one console with EOD, EOM and
-EOY tabs, and reports are one family route with nine documents. A screen that depends on a missing
+EOY tabs, and reports are one family route with ten documents, including a cash-flow statement and
+notes to the financial statements (R-44). A screen that depends on a missing
 backend capability ships only when the capability exists.
 
 ### 6.7 Print documents
@@ -737,11 +763,11 @@ automatic in production.
 
 A daily logical backup runs from the database container with a daily, weekly and monthly rotation;
 the audit anchor is exported with it so the chain head travels with the dump; a pre-deploy backup is
-taken before any release with a migration. Backups are encrypted and copied off the application host
-at P7; until then, same-host storage is a recorded limit. A restore drill runs on a schedule and
-produces a record with date, operator, source, duration and verification results, which is evidence
-an auditor can read. Recovery targets are institution values documented in `docs/OPERATIONS.md`,
-not invented here.
+taken before any release with a migration. Backups stay local, single-host and unencrypted for the
+pilot (R-39, L-04); an encrypted off-host copy is deferred with a trigger and is not an existing
+capability. The restore drill restores the local dump and produces a record with date, operator,
+source, duration and verification results, which is evidence an auditor can read (T-252). Recovery
+targets are institution values documented in `docs/OPERATIONS.md`, not invented here.
 
 ### 7.5 Monitoring and health
 
@@ -758,7 +784,9 @@ The manager opens the close console, reads pre-checks, and runs the level; the c
 blockers with links, task progress and the resulting certificate. A failed critical task shows a
 code, a hint and a resume action, and retrying is safe because each task is idempotent per business
 date. During closing, ordinary writes are blocked; the manager can cancel a run, which returns the
-date to open in one transaction. EOD requires teller sessions closed and cash counted; EOM requires
+date to open in one transaction. EOD requires teller sessions closed and cash counted; a variance
+does not block the close, but its reason is mandatory, an approval is required above the
+parameterised tolerance, and the day proceeds once the variance is posted (R-37). EOM requires
 a balanced trial balance and no pending approvals; EOY requires a signed SHU basis and the parameter
 set. The next business date is opened by the seal, not by a separate command. If the close cannot
 complete, lending stops: that is a business rule, not an operational preference.

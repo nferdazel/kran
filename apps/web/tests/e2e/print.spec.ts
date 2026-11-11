@@ -12,7 +12,7 @@ import { requireDatabase } from "./db.js";
  *  - tombol Cetak memanggil `window.print` (di-stub: tidak ada dialog printer di CI);
  *  - dengan `emulateMedia({ media: "print" })` nav, toolbar, form, dan alert hilang, sedangkan
  *    isi dokumen tetap terlihat (bukti aturan `@media print` di `packages/ui`);
- *  - axe (mode **layar**) pada kedua halaman × 2 tema × 2 locale.
+ *  - axe (mode **layar**) pada kedua halaman × 2 lebar (1440/360) × 2 tema × 2 locale.
  *
  * Batas yang tidak diklaim: bukan bukti layout printer tertentu, bukan PDF resmi/arsip/tagged,
  * bukan audit cetak, bukan kop lembaga. `page.pdf()` tidak dipakai (bukan bukti layout).
@@ -33,6 +33,11 @@ const MAKER = { username: "dev.maker", password: "rahasia-panjang-123" };
 const CHECKER = { username: "dev.checker", password: "rahasia-panjang-123" };
 const LOCALES = ["id", "en"] as const;
 const THEMES = ["light", "dark"] as const;
+/** Lebar yang diuji a11y-nya; chromium project tidak menyetel viewport, jadi disetel di sini. */
+const VIEWPORTS = [
+  { width: 1440, height: 900 },
+  { width: 360, height: 800 },
+] as const;
 // Rentang lebar: rekening fixture baru, jadi barisnya hanya milik run ini.
 const RANGE = { from: "2000-01-01", to: "2099-12-31" };
 
@@ -167,6 +172,21 @@ async function createCashFixture(request: APIRequestContext): Promise<Fixture> {
   };
 }
 
+/** Setoran tunai tambahan pada rekening fixture (sesi kas dari fixture masih OPEN). */
+async function depositCash(
+  request: APIRequestContext,
+  cookie: string,
+  accountId: string,
+  amount: string,
+  tag: string,
+): Promise<void> {
+  const response = await request.post(`${API}/api/v1/teller/cash-transactions`, {
+    headers: { Cookie: cookie, "Idempotency-Key": `e2e-print-${tag}-${Date.now()}` },
+    data: { accountId, direction: "DEPOSIT", amount, narration: `cetak ${tag}` },
+  });
+  expect(response.status(), `setor ${tag}: ${await response.text()}`).toBe(201);
+}
+
 /** Tempel cookie sesi hasil login API ke konteks browser (tanpa mengulang alur login UI). */
 async function grantSession(page: Page, cookie: string): Promise<void> {
   const value = cookie.slice(cookie.indexOf("=") + 1);
@@ -220,8 +240,15 @@ test.describe.serial("cetak: slip & statement", () => {
     await expect.poll(() => page.evaluate(() => window.__printCount ?? 0)).toBe(1);
 
     await page.emulateMedia({ media: "print" });
-    await expect(page.locator("nav")).toBeHidden();
+    // Scoped: the v2 shell has two nav landmarks (sidebar + breadcrumb); both must leave print.
+    await expect(page.locator("nav.sidebar__nav")).toBeHidden();
+    await expect(page.locator("nav.topbar__crumbs")).toBeHidden();
     await expect(page.locator(".kran-print-toolbar")).toBeHidden();
+    // T-291 acceptance 1/3: shell dan kontrol tidak sekadar `display:none` per kelas yang diingat,
+    // tapi tidak ada satu pun tombol atau toolbar yang terlihat di media cetak.
+    expect(await page.locator("button:visible").count()).toBe(0);
+    expect(await page.locator(".kran-button:visible, .kran-toolbar:visible").count()).toBe(0);
+    expect(await page.locator(".topbar:visible, .sidebar__nav:visible").count()).toBe(0);
     await expect(
       page.getByRole("heading", { level: 1, name: T.id.slipHeading }),
     ).toBeVisible();
@@ -251,41 +278,93 @@ test.describe.serial("cetak: slip & statement", () => {
     await expect.poll(() => page.evaluate(() => window.__printCount ?? 0)).toBe(1);
 
     await page.emulateMedia({ media: "print" });
-    await expect(page.locator("nav")).toBeHidden();
+    // Scoped: the v2 shell has two nav landmarks (sidebar + breadcrumb); both must leave print.
+    await expect(page.locator("nav.sidebar__nav")).toBeHidden();
+    await expect(page.locator("nav.topbar__crumbs")).toBeHidden();
     await expect(page.locator(".kran-print-toolbar")).toBeHidden();
     await expect(page.locator(".kran-form")).toBeHidden();
     await expect(page.locator("table tbody tr")).toHaveCount(1);
+    // T-291 acceptance 1/3: tidak ada tombol/form/toolbar/shell yang terlihat saat dicetak.
+    expect(await page.locator("button:visible").count()).toBe(0);
+    expect(await page.locator(".kran-button:visible, .kran-toolbar:visible").count()).toBe(0);
+    expect(await page.locator(".topbar:visible, .sidebar__nav:visible").count()).toBe(0);
   });
 
-  test("axe: slip + statement × 2 tema × 2 locale (mode layar)", async ({ page, request }) => {
+  test("statement: nominal 3 digit dan 7 digit, unit sekali di header kolom", async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000);
+    const fixture = await createCashFixture(request);
+    // Dua nominal ekstra pada rekening yang sama: 999,00 dan 1.234.567,00 (lebar kolom uang).
+    await depositCash(request, fixture.cookie, fixture.accountId, "999.00", "t291-3d");
+    await depositCash(request, fixture.cookie, fixture.accountId, "1234567.00", "t291-7d");
+    await grantSession(page, fixture.cookie);
+    await prepare(page, "id", "light");
+
+    await page.goto(
+      `/app/print/statement/${fixture.accountId}?from=${RANGE.from}&to=${RANGE.to}`,
+    );
+    await expect(
+      page.getByRole("heading", { level: 1, name: T.id.statementHeading }),
+    ).toBeVisible();
+
+    // T-291 acceptance 4: unit hanya di header kolom, dan hanya sekali di seluruh tabel.
+    const amountHeader = page.getByRole("columnheader", { name: /IDR/ });
+    await expect(amountHeader).toHaveCount(1);
+    await expect(amountHeader).toHaveText("Nominal (IDR)");
+    expect(await page.locator("table").innerText()).not.toContain("Rp");
+
+    const cells = page.locator("table tbody td.kran-money");
+    await expect(cells).toHaveCount(3);
+    const texts = (await cells.allInnerTexts()).map((text) => text.trim());
+    for (const text of texts) {
+      expect(text, `sel uang tanpa unit: ${text}`).toMatch(/^[+-][\d.,]+$/);
+      expect(text).not.toContain("IDR");
+    }
+    expect(texts.some((text) => text.includes("999,00"))).toBe(true);
+    expect(texts.some((text) => text.includes("1.234.567,00"))).toBe(true);
+    // Header grup (judul + meta) ada di dalam `<thead>`, jadi Chromium ikut mengulangnya di
+    // halaman 2; markup-nya satu-satunya cara yang jujur untuk membuktikannya tanpa PDF.
+    await expect(page.locator("table thead tr.kran-print-head h1#statement-heading")).toHaveCount(1);
+  });
+
+  test("axe: slip + statement × 2 lebar × 2 tema × 2 locale (mode layar)", async ({
+    page,
+    request,
+  }) => {
     test.setTimeout(300_000);
     const fixture = await createCashFixture(request);
     await grantSession(page, fixture.cookie);
     await stubPrint(page);
 
-    for (const locale of LOCALES) {
-      for (const theme of THEMES) {
-        await prepare(page, locale, theme);
+    for (const viewport of VIEWPORTS) {
+      await page.setViewportSize(viewport);
+      for (const locale of LOCALES) {
+        for (const theme of THEMES) {
+          await prepare(page, locale, theme);
+          const label = `${viewport.width}/${locale}/${theme}`;
 
-        await page.goto(`/app/print/slip/${fixture.transactionId}`);
-        await expect(
-          page.getByRole("heading", { level: 1, name: T[locale].slipHeading }),
-        ).toBeVisible();
-        const slipResults = await new AxeBuilder({ page }).analyze();
-        expect(blocking(slipResults), `${locale}/${theme} slip: ${blocking(slipResults).join(", ")}`)
-          .toEqual([]);
+          await page.goto(`/app/print/slip/${fixture.transactionId}`);
+          await expect(
+            page.getByRole("heading", { level: 1, name: T[locale].slipHeading }),
+          ).toBeVisible();
+          const slipResults = await new AxeBuilder({ page }).analyze();
+          expect(blocking(slipResults), `${label} slip: ${blocking(slipResults).join(", ")}`)
+            .toEqual([]);
 
-        await page.goto(
-          `/app/print/statement/${fixture.accountId}?from=${RANGE.from}&to=${RANGE.to}`,
-        );
-        await expect(
-          page.getByRole("heading", { level: 1, name: T[locale].statementHeading }),
-        ).toBeVisible();
-        const statementResults = await new AxeBuilder({ page }).analyze();
-        expect(
-          blocking(statementResults),
-          `${locale}/${theme} statement: ${blocking(statementResults).join(", ")}`,
-        ).toEqual([]);
+          await page.goto(
+            `/app/print/statement/${fixture.accountId}?from=${RANGE.from}&to=${RANGE.to}`,
+          );
+          await expect(
+            page.getByRole("heading", { level: 1, name: T[locale].statementHeading }),
+          ).toBeVisible();
+          const statementResults = await new AxeBuilder({ page }).analyze();
+          expect(
+            blocking(statementResults),
+            `${label} statement: ${blocking(statementResults).join(", ")}`,
+          ).toEqual([]);
+        }
       }
     }
   });

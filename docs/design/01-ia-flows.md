@@ -33,7 +33,7 @@ code the server checks. Reason: role names drift, codes are tested.
 ## 3. Screen inventory (target)
 
 24 target screens. The 15 existing ones: **5 repair · 9 rebuild · 1 merge (route deleted)**; plus **10 new**. One "screen" (K-16) is a report family
-of eight documents; counted as one apparatus, not eight, because they share period/branch/print and
+of ten documents; counted as one apparatus, not ten, because they share period/branch/print and
 differ only in columns.
 States column order: **E**mpty · **L**oading · error(**X**) · **P**artial · **S**tale · **R**ead-only/locked ·
 **N**o-permission.
@@ -55,7 +55,7 @@ States column order: **E**mpty · **L**oading · error(**X**) · **P**artial · 
 | K-13 | `/app/loans/approvals` | Pinjaman | Checker queue with approve/reject reason | Do I approve someone else's application? | M | E L X S R N | `lending.loan.approve` | new |
 | K-14 | `/app/loans/[loanId]` | Pinjaman | Loan file: schedule, payments, disburse, restructure, write-off | Post this movement against this akad? | L,T,M | E L X P S R N | `lending.loan.read/disburse/pay/restructure/write_off/recovery` | exists-rebuild |
 | K-15 | `/app/loans/arrears` | Pinjaman | Collections list by DPD/officer/product, printable | Who do we contact today? | L,M | E L X S R N | `lending.loan.read` | new |
-| K-16 | `/app/reports/[reportKey]` | Laporan | Report family: BS, IS, equity, member register, arrears, cash recap, certificate, SHU | Is this period's pack complete and signed? | M,P,A | E L X P S R N | `report.*` [DEP-3] | new (8 documents) |
+| K-16 | `/app/reports/[reportKey]` | Laporan | Report family: BS, IS, equity, cash-flow with notes, member register, arrears, cash recap, certificate, SHU | Is this period's pack complete and signed? | M,P,A | E L X P S R N | `report.*` [DEP-3] | new (10 documents) |
 | K-17 | `/app/audit` | Pengaturan | Audit viewer: actor, action, entity, date, trace | Who did this, and when? | A,M,P | E L X S R N | `platform.audit.read` | new |
 | K-18 | `/app/users` | Pengaturan | Create user, role+branch, reset, unlock, disable | Does this person get access, and to what? | A | E L X P R N | `platform.user.manage`, `platform.branch.read` [DEP-4] | exists-rebuild |
 | K-19 | `/app/params` | Pengaturan | Typed parameter authoring, maker/checker | What value does the business run on? | M,A | E L X S R N | `platform.param.read/submit/approve` | exists-repair |
@@ -75,7 +75,7 @@ it both promises membership the product lacks and hides the member it needs (FE-
 |---|---|---|---|
 | DEP-1 | `coop` module: member register, immutable number, status machine, obligation generation [R-15] | K-06-K-10, K-16 (member register, SHU), K-03 (EOY) | no module; `modules/` list |
 | DEP-2 | KYC document **storage** - `identity-docs` stores encrypted number + metadata only; no file upload | K-07 photo/signature fields | OpenAPI `addIdentityDoc` (501 without KEK) |
-| DEP-3 | Report queries. Only `trial-balance`, `balances`, `lending/reports/{arrears,allowance,reconciliation}` exist; BS/IS/equity/cash recap/certificate/SHU do not | K-16 documents appear one by one, never as fake numbers | OpenAPI path list |
+| DEP-3 | Report queries. Only `trial-balance`, `balances`, `lending/reports/{arrears,allowance,reconciliation}` exist; BS/IS/equity/cash-flow/cash recap/certificate/SHU do not | K-16 documents appear one by one, never as fake numbers | OpenAPI path list |
 | DEP-4 | User create/reset/MFA enrolment are `ctl` only; `/users` is GET-only | K-18 create/reset half | FE-EFF-06 |
 | DEP-5 | Holder name on an account read model (`DepositAccount` exposes `partyId`, no name) | K-01 review, K-23, K-24, K-08 | FE-EFF-07 |
 | DEP-6 | Realtime topics for maker/checker queues (only `param.changed` is scoped) | K-13, K-02, K-15 "stale" cells | FE-LOGIC-10 |
@@ -96,7 +96,7 @@ Anggota      Daftar anggota (K-06) A/L/T · Anggota baru (K-07) A · [member] (K
 Simpanan     Kewajiban pokok & wajib (K-10) A
 Pinjaman     Pinjaman (K-11) L/M · Pengajuan (K-12) L · Persetujuan (K-13) M · Tunggakan (K-15) L/M
 Buku besar   Neraca saldo (K-04) A/M/P · Jurnal & COA (K-05) A · Tutup buku (K-03) M
-Laporan      Laporan (K-16: 8 dokumen) M/P/A
+Laporan      Laporan (K-16: 10 dokumen) M/P/A
 Pengaturan   Pengguna (K-18) A · Parameter (K-19) M/A · Produk (K-20) A/M · Audit (K-17) A/M/P
 Akun         Ganti sandi (K-21) · Keluar            ← account menu, not a group
 ```
@@ -239,7 +239,8 @@ list: membership, origination, approvals, arrears and reports are named BLOCKER/
 - Mobile app, offline mode, field-collection app. Reason: the pilot works from one branch on desktop.
 - Time deposits and their catalogue entries (R-16); remove, do not hide.
 - BPR/BPRS/syariah products, multi-koperasi, iuran anggota.
-- Health ratios, DPK, branch P&L, cash-flow reports (R-28: deferred with tags).
+- Health ratios, DPK, branch P&L (R-28: deferred with tags); the cash-flow statement and notes are
+  added to the RAT pack by R-44.
 - Promise-to-pay/contact log and dunning engine. Reason: beyond R-10 MVP; arrears is a list plus payment.
 - Mandatory MFA (R-19/R-29); optional and throttled only.
 - Automated off-host audit anchor (R-26); manual daily head-hash copy.

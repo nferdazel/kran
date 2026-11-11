@@ -15,13 +15,10 @@
   import "@kran/ui/components.css";
 
   import { onMount } from "svelte";
-  import { goto } from "$app/navigation";
-  import { resolve } from "$app/paths";
   import { page } from "$app/state";
 
   import * as m from "#lib/paraglide/messages.js";
   import { APP_VERSION } from "#lib/version.js";
-  import { api } from "#lib/app/api.js";
   import { formatDate } from "#lib/app/format.js";
   import {
     applyTheme,
@@ -37,50 +34,23 @@
     syncDocumentLanguage,
     type AppLocale,
   } from "#lib/app/i18n.js";
-  import {
-    appNavLinks,
-    groupVisibleLinks,
-    isActiveHref,
-    sessionPermissions,
-    visibleNavLinks,
-  } from "#lib/app/nav.js";
-
   let { children } = $props();
 
   /**
-   * Menu disaring per izin (spec §13). `page.data` adalah gabungan data seluruh `load` rute ini,
-   * jadi `session` dari `routes/app/+layout.ts` tersedia di sini; selama belum termuat, izin
-   * dianggap kosong (tautan berizin disembunyikan, bukan ditampilkan lalu ditolak server).
+   * `/app/*` chrome lives in `AppShell` (T-285). This layout only keeps the public frame (brand
+   * header, skip link, `#main`) and the global footer, so the workspace never renders two
+   * landmines worth of duplicate landmarks, skip links or `<main>` elements.
    */
-  const navLinks = $derived(visibleNavLinks(appNavLinks, sessionPermissions(page.data.session)));
-  const navGroups = $derived(groupVisibleLinks(navLinks));
+  const isApp = $derived(page.url.pathname.startsWith("/app"));
 
   /**
    * Tanggal bisnis institusi (spec §14.3). `routes/app/+layout.ts` mengirim `undefined` bila
    * nilainya tidak diketahui (izin tidak ada atau permintaan gagal) dan `null` bila institusi
    * memang belum punya baris tanggal buku. Indikator hanya dirender pada dua kasus yang jujur itu:
    * tanggal nyata, atau "belum tersedia" yang memang keadaannya — tidak pernah tanggal karangan.
+   * For `/app/*` the value is still exposed to pages through `page.data`.
    */
   const businessDate = $derived(page.data.businessDate as string | null | undefined);
-
-  /**
-   * Identitas pemegang sesi untuk shell (T-132/UI-3). Sebelumnya logout hanya ada di `/app` dan
-   * `/app/password`; teller di terminal bersama tidak bisa mengakhiri sesi dari layar kerjanya.
-   * Shell adalah tempatnya: satu tombol, tersedia di setiap rute `/app`.
-   */
-  const sessionName = $derived(
-    (page.data.session as { fullName?: string } | undefined)?.fullName ?? "",
-  );
-
-  async function logout(): Promise<void> {
-    try {
-      await api.POST("/api/v1/auth/logout");
-    } catch {
-      // Sesi yang sudah tidak sah tetap harus membawa pengguna keluar dari layar ini: kegagalan
-      // jaringan tidak boleh membuat tombol "Keluar" tampak tidak bekerja.
-    }
-    await goto(resolve("/login"));
-  }
 
   const themeChoices: readonly ThemeChoice[] = ["system", "light", "dark"];
 
@@ -122,86 +92,48 @@
   }
 </script>
 
-<a class="kran-skip-link" href="#main">{m.common_skip_to_content()}</a>
+<!-- `/app/*` gets its skip link from `AppShell`; rendering this one too would give two. -->
+{#if !isApp}
+  <a class="kran-skip-link" href="#main">{m.common_skip_to_content()}</a>
+{/if}
 
-<div class="kran-shell {page.url.pathname.startsWith('/app') ? 'kran-shell--app' : 'kran-shell--public'}" data-resolved-theme={resolved}>
-  <header class="kran-header">
-    <div class="kran-header__brand">
-      <p class="kran-header__title">
-        <span>{m.common_app_title()}</span>
-      </p>
-    </div>
-
-    {#if businessDate !== undefined}
-      <div class="kran-header__meta">
-        <!-- Indikator business date (spec §14.3): nilainya dari API, bukan placeholder. -->
-        <p class="kran-business-date">
-          <span class="kran-status-dot" aria-hidden="true"></span>
-          <span class="kran-muted">{m.common_business_date_label()}:</span>
-          <span class="kran-num"
-            >{businessDate === null
-              ? m.common_business_date_unknown()
-              : formatDate(businessDate)}</span
-          >
-        </p>
-      </div>
-    {/if}
-  </header>
-
-  <!-- App navigation belongs to the workspace only. Public pages (login) must not advertise
-       destinations that require a session; theme/language live in the footer for every page. -->
-  {#if page.url.pathname.startsWith("/app")}
-    <nav class="kran-nav" aria-label={m.common_nav_label()}>
-      <div class="kran-nav__inner">
-        <div class="kran-sidebar-brand">
-          <div>
-            <strong class="kran-sidebar-title">{m.common_brand_short()}</strong>
-            <span class="kran-sidebar-subtitle">{m.app_sidebar_subtitle()}</span>
-          </div>
-        </div>
-
-        {#each navGroups as group (group.id)}
-          <div class="kran-nav__group">
-            <!-- Label kelompok, bukan heading: nav muncul sebelum `<h1>` halaman dan heading
-                 tingkat 2 di depannya membuat urutan heading dimulai dari level 2. -->
-            <p class="kran-nav__group-title" id="nav-group-{group.id}">{group.label()}</p>
-            <ul aria-labelledby="nav-group-{group.id}">
-              {#each group.links as link (link.href)}
-                <li>
-                  <a
-                    class="kran-link"
-                    href={link.href}
-                    aria-current={isActiveHref(page.url.pathname, link.href) ? "page" : undefined}
-                  >
-                    {link.label()}
-                  </a>
-                </li>
-              {/each}
-            </ul>
-          </div>
-        {/each}
-
-        <div class="kran-nav__shortcut" aria-hidden="true">
-          <span class="kran-muted">{m.palette_heading()}</span>
-          <span class="kran-kbd">Ctrl K</span>
-        </div>
-
-        {#if sessionName !== ""}
-          <div class="kran-nav__session">
-            <p class="kran-nav__who">{m.app_signed_in_as({ name: sessionName })}</p>
-            <a class="kran-button" href={resolve("/app/password")}>{m.app_change_password()}</a>
-            <button class="kran-button" type="button" onclick={logout}>{m.app_logout()}</button>
-          </div>
-        {/if}
-      </div>
-    </nav>
-  {/if}
-
-  <main id="main" class="kran-main" tabindex="-1">
+<div class="kran-shell {isApp ? 'kran-shell--host' : 'kran-shell--public'}" data-resolved-theme={resolved}>
+  {#if isApp}
+    <!-- `AppShell` in `routes/app/+layout.svelte` owns the skip link, sidebar, topbar and `#main`
+         for the workspace; rendering the public frame here would duplicate those landmarks. -->
     {#key locale}
       {@render children()}
     {/key}
-  </main>
+  {:else}
+    <header class="kran-header">
+      <div class="kran-header__brand">
+        <p class="kran-header__title">
+          <span>{m.common_app_title()}</span>
+        </p>
+      </div>
+
+      {#if businessDate !== undefined}
+        <div class="kran-header__meta">
+          <!-- Indikator business date (spec §14.3): nilainya dari API, bukan placeholder. -->
+          <p class="kran-business-date">
+            <span class="kran-status-dot" aria-hidden="true"></span>
+            <span class="kran-muted">{m.common_business_date_label()}:</span>
+            <span class="kran-num"
+              >{businessDate === null
+                ? m.common_business_date_unknown()
+                : formatDate(businessDate)}</span
+            >
+          </p>
+        </div>
+      {/if}
+    </header>
+
+    <main id="main" class="kran-main" tabindex="-1">
+      {#key locale}
+        {@render children()}
+      {/key}
+    </main>
+  {/if}
 
   <footer class="kran-footer">
     <div class="kran-footer__inner">

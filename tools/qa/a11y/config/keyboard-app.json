@@ -1,0 +1,107 @@
+{
+  "label": "keyboard-app",
+  "description": "The five keyboard flows the design system gate requires. Every selector here must be checked against the live app before the gate counts as run: an unwritten selector reports BLOCKED, never PASS.",
+  "url": "http://127.0.0.1:5173",
+  "out": ".local/qa/results",
+  "modulesDir": "apps/web/node_modules",
+  "locale": "id-ID",
+  "viewport": { "width": 1440, "height": 900 },
+  "settle": 300,
+  "flows": [
+    {
+      "id": "teller-deposit",
+      "name": "Deposit: search account, enter amount, review, post, all without a mouse",
+      "k": ["K-01"],
+      "preconditions": [
+        "authenticated session with role T (teller), cash session open",
+        "one member with an active savings account available as a fixture"
+      ],
+      "steps": [
+        { "focus": "TODO:account search input (K-01, F2 target)", "note": "F2 must move focus to this field" },
+        { "press": "F2" },
+        { "expectFocus": "TODO:account search input (K-01, F2 target)" },
+        { "press": "Tab" },
+        { "expectFocus": "TODO:first result row action" },
+        { "press": "Enter" },
+        { "expectVisible": "TODO:review panel (K-01, 22rem right column)" },
+        { "press": "Tab" },
+        { "expectFocus": "TODO:amount input" },
+        { "press": "Tab" },
+        { "expectFocus": "TODO:primary submit button (Setor)" },
+        { "expectFocusRingOnActive": { "minWidth": 2 } },
+        { "press": "Enter" },
+        { "expectVisible": "TODO:confirmation state", "timeout": 8000 },
+        { "expectFocusIn": "TODO:confirmation region", "note": "focus must not fall back to body after posting" }
+      ]
+    },
+    {
+      "id": "vault-approve",
+      "name": "Vault approve: select pending movement, approve, reason if required",
+      "k": ["K-02"],
+      "preconditions": [
+        "authenticated session with teller.vault.approve",
+        "one pending cash movement created by another user (maker != checker)"
+      ],
+      "steps": [
+        { "focus": "TODO:pending movement row action" },
+        { "press": "Enter" },
+        { "expectVisible": "TODO:ApprovalPanel (K-02)" },
+        { "press": "Tab" },
+        { "expectFocus": "TODO:approve button" },
+        { "expectFocusRingOnActive": { "minWidth": 2 } },
+        { "press": "Enter" },
+        { "expectVisible": "TODO:approval confirmation or reason field", "timeout": 8000 }
+      ]
+    },
+    {
+      "id": "close-cash",
+      "name": "Close cash: reach the close action, confirm, and land on the certificate",
+      "k": ["K-03"],
+      "preconditions": ["authenticated session with dayclose.run.manage", "business date open, no blocking task"],
+      "steps": [
+        { "focus": "TODO:close day action (K-03)" },
+        { "press": "Enter" },
+        { "expectVisible": "TODO:confirm dialog" },
+        { "expectFocusIn": "TODO:confirm dialog" },
+        { "press": "Escape" },
+        { "expectHidden": "TODO:confirm dialog" },
+        { "expectFocus": "TODO:close day action", "note": "Escape must restore focus to the trigger" }
+      ]
+    },
+    {
+      "id": "drawer-open-close",
+      "name": "Ledger drawer: open from a row, trap focus, close with Escape, focus returns",
+      "k": ["K-04"],
+      "preconditions": ["authenticated session with ledger.journal.read", "ledger with at least one account"],
+      "steps": [
+        { "focus": "TODO:ledger row action" },
+        { "press": "Enter" },
+        { "expectVisible": "TODO:drawer (role=dialog)" },
+        { "expectFocusIn": "TODO:drawer (role=dialog)" },
+        { "expectNoFocusEscape": { "container": "TODO:drawer (role=dialog)", "maxTabs": 25 } },
+        { "press": "Escape" },
+        { "expectHidden": "TODO:drawer (role=dialog)" },
+        { "expectFocus": "TODO:ledger row action" }
+      ]
+    },
+    {
+      "id": "sidebar-offcanvas",
+      "name": "Below 1024: open the sidebar with the menu button, trap focus, close with Escape",
+      "k": ["K-05", "K-04"],
+      "preconditions": ["authenticated session", "viewport width 900"],
+      "viewport": 900,
+      "steps": [
+        { "expectVisible": "TODO:menu button in topbar (T-285)" },
+        { "expectAttr": { "selector": "TODO:menu button in topbar (T-285)", "name": "aria-expanded", "value": "false" } },
+        { "focus": "TODO:menu button in topbar (T-285)" },
+        { "press": "Enter" },
+        { "expectAttr": { "selector": "TODO:menu button in topbar (T-285)", "name": "aria-expanded", "value": "true" } },
+        { "expectFocusIn": "TODO:sidebar nav (T-285)" },
+        { "expectNoFocusEscape": { "container": "TODO:sidebar nav (T-285)", "maxTabs": 25 } },
+        { "press": "Escape" },
+        { "expectAttr": { "selector": "TODO:menu button in topbar (T-285)", "name": "aria-expanded", "value": "false" } },
+        { "expectFocus": "TODO:menu button in topbar (T-285)" }
+      ]
+    }
+  ]
+}
