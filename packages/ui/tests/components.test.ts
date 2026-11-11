@@ -990,3 +990,24 @@ describe("Print block (T-291)", () => {
     expect(print).not.toMatch(/\b(?:color|background(?:-color)?):/);
   });
 });
+
+describe("Sign-in frame (T-241)", () => {
+  const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
+
+  it("shell publik mendefinisikan tiga baris, bukan empat", () => {
+    const publicShell = cssBlock(css, ".kran-shell--public {");
+    // Tiga anak: header, main, footer. Baris keempat membuat `1fr` jatuh ke footer dan
+    // meregangkannya (cacat yang ditutup T-241).
+    expect(publicShell).toMatch(/grid-template-rows:\s*auto 1fr auto;/);
+  });
+
+  it("bidang masuk memakai token, tanpa bayangan dan tanpa warna mentah", () => {
+    const plane = cssBlock(css, ".kran-signin__plane {");
+    expect(plane).not.toBe("");
+    expect(plane).toContain("var(--color-surface-raised)");
+    expect(plane).toContain("1px solid var(--color-hairline)");
+    expect(plane).toContain("var(--radius-md)");
+    expect(plane.toLowerCase()).not.toContain("box-shadow");
+    expect(plane).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+  });
+});

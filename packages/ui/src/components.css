@@ -51,6 +51,12 @@
   line-height: var(--line-height-base);
 }
 
+/* Public frame renders three children (header, main, footer), not four: without its own rows the
+   `1fr` track lands on the footer and stretches it, gluing the page under the header (T-241). */
+.kran-shell--public {
+  grid-template-rows: auto 1fr auto;
+}
+
 /* Shell Workstation Modern (/app/*): Sidebar Kiri + Header Atas + Kanvas Kerja Lapang */
 @media (min-width: 1024px) {
   .kran-shell--app {
@@ -401,6 +407,57 @@
   max-inline-size: 60ch;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
+}
+
+/* Sign-in screen (T-241 §Composition): the title sits on the canvas, the plane holds only what
+   the operator types into. `min-block-size: 100%` + `safe center` centres the column while it
+   fits and falls back to the top when it does not (short viewport, 200% zoom). */
+.kran-signin {
+  display: grid;
+  gap: var(--space-5);
+  align-content: safe center;
+  min-block-size: 100%;
+  inline-size: 100%;
+  max-inline-size: 25rem;
+  margin-inline: auto;
+}
+
+.kran-signin__head {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.kran-signin__plane {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  font-size: var(--text-md);
+}
+
+.kran-signin__actions {
+  border-block-start: 1px solid var(--color-hairline);
+  padding-block-start: var(--space-4);
+}
+
+.kran-signin__actions .kran-button {
+  inline-size: 100%;
+}
+
+/* Phone: the plane sits flush on the canvas, 16 px screen inset comes from `.kran-main`. */
+@media (width <= 639.98px) {
+  .kran-signin {
+    align-content: start;
+    padding-block-start: var(--space-6);
+  }
+
+  .kran-signin__plane {
+    border: 0;
+    border-radius: 0;
+    padding: var(--space-4);
+  }
 }
 
 /* Satu bidang kerja per bagian. Bukan kartu: DESIGN §5/§13 menolak setiap kelompok dibungkus

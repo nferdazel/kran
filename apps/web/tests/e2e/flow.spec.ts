@@ -44,6 +44,13 @@ const TEXT = {
   approve: "Setujui",
   logout: "Keluar",
   reason: "e2e: alur Fase 0 (pengajuan uji)",
+  loginError: "Tidak dapat masuk dengan akun ini.",
+  loginLocked: "Akun terkunci sementara. Coba lagi nanti atau hubungi admin.",
+  loginUnreachable: "Server KRAN tidak menjawab. Periksa jaringan kantor, lalu coba lagi.",
+  loginMfaCodeLabel: "Kode autentikasi",
+  loginMfaInvalid:
+    "Kode itu tidak berlaku. Periksa jam perangkat Anda, lalu coba kode berikutnya.",
+  loginMfaSubmit: "Verifikasi kode",
 } as const;
 
 const THEMES = ["light", "dark"] as const;
@@ -329,13 +336,140 @@ test("kredensial salah: pesan generik, tidak ada sesi", async ({ page }) => {
   await expect(alert).toBeVisible();
   // Pesan tidak boleh membocorkan apakah akunnya ada (spec §13/§18.2).
   await expect(alert).not.toContainText("dev.maker");
+  await expect(alert).toHaveText(TEXT.loginError);
+
+  // T-241 acceptance 6: galat hidup di dalam bidang, fokus pindah ke kata sandi, nama pengguna
+  // tetap terisi supaya salah ketik bisa diperbaiki tanpa mengetik ulang.
+  await expect(page.locator(".kran-signin__plane [role='alert']")).toBeVisible();
+  await expect(field(page, TEXT.password)).toBeFocused();
+  await expect(field(page, TEXT.username)).toHaveValue("dev.maker");
 
   await page.goto("/app");
   await expect(page).toHaveURL(/\/login$/);
 });
 
-test("/app mengantar ke tujuan yang sama dengan pendaratan setelah masuk", async ({ page }) => {
+/**
+ * Amplop problem yang benar-benar dikirim API (spec §13). 403 terkunci/inaktif dan MFA, serta 400
+ * kode salah, baru mungkin datang **setelah** kata sandi diverifikasi; kontrak itu dibuktikan
+ * `itapi_auth` dan `itapi_mfa`, jadi di sini jawabannya di-stub dan yang diuji tampilan serta fokus.
+ */
+function problemResponse(status: number, reason: string) {
+  return {
+    status,
+    contentType: "application/problem+json",
+    body: JSON.stringify({
+      type: "about:blank",
+      title: "stub",
+      status,
+      code: `stub_${reason}`,
+      i18nKey: "error_forbidden",
+      params: { reason },
+      traceId: "00000000-0000-4000-8000-00000000c0de",
+    }),
+  };
+}
+
+async function openLogin(page: Page): Promise<void> {
   await prepare(page);
+  await page.goto("/login");
+  await expect(page.getByRole("heading", { level: 1, name: TEXT.loginTitle })).toBeVisible();
+}
+
+test("akun terkunci: pesan login_locked, fokus tidak berpindah", async ({ page }) => {
+  await page.route("**/api/v1/auth/login", (route) =>
+    route.fulfill(problemResponse(403, "locked")),
+  );
+  await openLogin(page);
+
+  await field(page, TEXT.username).fill("dev.maker");
+  await field(page, TEXT.password).fill(MAKER.password);
+  const submit = page.getByRole("button", { name: TEXT.loginTitle });
+  await submit.click();
+
+  await expect(page.getByRole("alert")).toHaveText(TEXT.loginLocked);
+  // 403 tidak menyisakan field yang bisa diperbaiki, jadi fokus tidak dipindah ke kata sandi.
+  // Tombol submit dinonaktifkan selama permintaan, jadi fokus jatuh ke body — perilaku yang sama
+  // pada semua form di repo ini, bukan efek perubahan T-241.
+  await expect(field(page, TEXT.password)).not.toBeFocused();
+  await expect(submit).toBeEnabled();
+});
+
+test("MFA: satu field kode di bidang yang sama, fokus pindah, judul tetap", async ({ page }) => {
+  await page.route("**/api/v1/auth/login", (route) =>
+    route.fulfill(problemResponse(403, "mfa_required")),
+  );
+  await openLogin(page);
+
+  const plane = page.locator(".kran-signin__plane");
+  const h1 = page.getByRole("heading", { level: 1 });
+  const widthBefore = (await plane.boundingBox())?.width ?? 0;
+  const titleBefore = await h1.textContent();
+
+  await field(page, TEXT.username).fill(MAKER.username);
+  await field(page, TEXT.password).fill(MAKER.password);
+  await page.getByRole("button", { name: TEXT.loginTitle }).click();
+
+  const codeField = field(page, TEXT.loginMfaCodeLabel);
+  await expect(codeField).toBeVisible();
+  await expect(codeField).toBeFocused();
+  // Dua field lama hilang, bukan ditumpuk: bidang yang sama, satu isian.
+  await expect(field(page, TEXT.password)).toHaveCount(0);
+  await expect(field(page, TEXT.username)).toHaveCount(0);
+  await expect(h1).toHaveText(titleBefore ?? TEXT.loginTitle);
+
+  const widthAfter = (await plane.boundingBox())?.width ?? 0;
+  expect(Math.abs(widthAfter - widthBefore)).toBeLessThan(4);
+});
+
+test("kode MFA salah: pesan mfa_invalid, nilai terpilih, fokus tetap", async ({ page }) => {
+  await page.route("**/api/v1/auth/login", (route) =>
+    route.fulfill(problemResponse(403, "mfa_required")),
+  );
+  await page.route("**/api/v1/auth/mfa/challenge", (route) =>
+    route.fulfill(problemResponse(400, "mfa_code_invalid")),
+  );
+  await openLogin(page);
+
+  await field(page, TEXT.username).fill(MAKER.username);
+  await field(page, TEXT.password).fill(MAKER.password);
+  await page.getByRole("button", { name: TEXT.loginTitle }).click();
+
+  const codeField = field(page, TEXT.loginMfaCodeLabel);
+  await codeField.fill("123456");
+  await page.getByRole("button", { name: TEXT.loginMfaSubmit }).click();
+
+  await expect(page.getByRole("alert")).toHaveText(TEXT.loginMfaInvalid);
+  await expect(codeField).toBeFocused();
+
+  // Nilai lama tetap terpilih: ketikan berikutnya menimpa, bukan menempel di belakangnya.
+  const selection = await codeField.evaluate((element) => {
+    const input = element as HTMLInputElement;
+    return {
+      value: input.value,
+      selected: input.value.slice(input.selectionStart ?? 0, input.selectionEnd ?? 0),
+    };
+  });
+  expect(selection).toEqual({ value: "123456", selected: "123456" });
+});
+
+test("server tidak menjawab: pesan unreachable, isian utuh, tombol aktif", async ({ page }) => {
+  await page.route("**/api/v1/auth/login", (route) => route.abort());
+  await openLogin(page);
+
+  await field(page, TEXT.username).fill(MAKER.username);
+  await field(page, TEXT.password).fill(MAKER.password);
+  await page.getByRole("button", { name: TEXT.loginTitle }).click();
+
+  await expect(page.getByRole("alert")).toHaveText(TEXT.loginUnreachable);
+  await expect(field(page, TEXT.username)).toHaveValue(MAKER.username);
+  await expect(field(page, TEXT.password)).toHaveValue(MAKER.password);
+  const submit = page.getByRole("button", { name: TEXT.loginTitle });
+  await expect(submit).toBeEnabled();
+  // Tidak ada keadaan "sedang mencoba" yang tertinggal: label kembali ke aksi aslinya.
+  await expect(submit).toHaveText(TEXT.loginTitle);
+});
+
+test("/app mengantar ke tujuan yang sama dengan pendaratan setelah masuk", async ({ page }) => {  await prepare(page);
   await page.goto("/login");
   await field(page, TEXT.username).focus();
   await page.keyboard.type(MAKER.username);

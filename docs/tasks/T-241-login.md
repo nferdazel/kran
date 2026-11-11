@@ -1,6 +1,6 @@
 # T-241-login - Sign-in screen: design direction
 
-Phase: P6 · Size: S · Risk: full (authz) · Status: APPROVED (direction accepted 2026-11-11; implementation not started)
+Phase: P6 · Size: S · Risk: full (authz) · Status: IMPLEMENTED (awaiting Galih checklist and Raka push; see Evidence)
 
 Carved out of T-241 on 2026-11-11 by Raka: this file covers the sign-in screen only. The other
 repair screens stay in T-241. No implementation starts until the direction below is approved.
@@ -462,3 +462,104 @@ Open items:
 - **OPEN-4 (a11y coverage).** `apps/web/tests/e2e/a11y.spec.ts` reaches the public screens through
   `/`, not by naming `/login`, and sets no viewport. Item 11 fixes both; until it lands, the sign-in
   screen has axe coverage only at the desktop default.
+
+## Evidence (implementation, 2026-11-11)
+
+Commit: the single `feat(web): rebuild sign-in screen per approved direction (T-241)` commit; its
+hash is in the room handoff because a file cannot name the commit it is part of. Parent `4a2f0f0`.
+Not pushed. Files: `apps/web/src/routes/login/+page.svelte`, `packages/ui/src/components.css`,
+`packages/i18n/messages/{id,en}.json`, `packages/ui/tests/components.test.ts`,
+`apps/web/tests/e2e/a11y.spec.ts`, `apps/web/tests/e2e/flow.spec.ts`, this file.
+
+### Gates (logs in `.local/qa/results/`)
+
+| Gate | Result | Log |
+|---|---|---|
+| `./task check-fast` | EXIT=0, i18n 1051 key/locale, no findings, `login_subtitle` gone, `login_error_unreachable` present in both | `T-241-check-fast.log` |
+| `pnpm --filter @kran/ui test` | **255 passed**, 4 files (253 before: two new cases) | `T-241-ui-test.log` |
+| svelte-check `packages/ui` | 0 errors, 0 warnings | `T-241-svelte-check-ui.log` |
+| svelte-check `apps/web` | 0 errors, 0 warnings | `T-241-svelte-check-web.log` |
+| `./task e2e` | EXIT=0, **98 passed**, 0 failed, 0 flaky (90 before the viewport/state cases) | `T-241-e2e.log` |
+| axe `/login` | 8 analyses green: 1440x900 and 360x800 × light/dark × id/en, widths set by `page.setViewportSize` | `T-241-e2e.log` lines with `axe /login` |
+
+### Frame, measured (parent proof for acceptance 1)
+
+`T-241-parent-footer.log` (parent `4a2f0f0`) vs `T-241-manual-r35.log` (this build), same 1440x900
+page and method:
+
+| | footer height | `main` height |
+|---|---|---|
+| 1440x900 before | **474.66 px** | 373.34 px |
+| 1440x900 after | **55 px** | 793 px |
+| 1366x768 before | **342.66 px** | 373.34 px |
+| 1366x768 after | **55 px** | 661 px |
+
+The shared `--public` fix also repairs `+error.svelte`: footer 55 px, `main` 793 px, no horizontal
+scroll (`T-241-error-page.log`, `T-241-error-page.png`).
+
+### Contrast (measured, not assumed)
+
+`--color-text-muted` on `--color-surface-raised`: dark `#98a0a8` on `#212529` = **5.82:1**;
+light `#646a70` on `#ffffff` = **5.47:1**. Both pass 4.5:1 for normal text.
+
+### Acceptance
+
+1. **Frame.** Footer 55 px at 1440x900 and 1366x768 (was 474.66 / 342.66), `main` takes the rest:
+   793 / 661 px. Measured in `T-241-manual-r35.log`.
+2. **Composition.** Plane 400 px wide at left 520 of 1440 and 483 of 1366, i.e. centred to the pixel.
+   Column box 279.72–617.28 inside `main` 76–821: 203.72 px above and 203.72 px below, difference 0.
+   At 360: border-width 0, radius 0, left 16, `scrollWidth == clientWidth == 360`.
+3. **One h1, no duplicated brand.** `h1Count` 1; `brand` probe (the old subtitle text) false;
+   `login_subtitle` removed from both catalogs and `check-fast` i18n passes.
+4. **Nothing local.** `grep -c "<style" apps/web/src/routes/login/+page.svelte` = 0; every rule used
+   is `.kran-signin*`, `.kran-page-header__*` or a component class from `packages/ui`.
+5. **Keyboard-only.** `keyboard.spec.ts` tab order skip link → username → password → submit is green
+   in `T-241-e2e.log`, and `flow.spec.ts` logs in with focus + typing + Enter only.
+6. **401.** Real 401 from the API: alert text is exactly `login_error`, `document.activeElement`
+   is the password input, username `dev.maker` kept (`T-241-manual-r35.log`, `T-241-login-401.png`).
+7. **403.** Stubbed `reason=locked`: alert inside the plane, password not focused, button enabled.
+   The server contract (403 only after a verified password) stays proven by `itapi_auth`.
+8. **MFA.** Stubbed `reason=mfa_required`: one code field, h1 unchanged, focus on `code`, plane
+   width 400 → 400 (`T-241-manual-r35.log`, `T-241-login-mfa.png`).
+9. **MFA invalid.** Stubbed `reason=mfa_code_invalid`: alert text, focus stays in the code field,
+   value `123456` fully selected (`flow.spec.ts`).
+10. **Dependency down.** Route aborted: alert is `login_error_unreachable`, button enabled, username
+    and password intact, label back to `login_submit`.
+11. **axe.** 0 blocking violations, 8 analyses at 1440x900 and 360x800, both themes and locales
+    (`a11y.spec.ts`, explicit `page.setViewportSize`).
+12. **Print and zoom.** Not a print surface; no `@media print` rule touches `.kran-signin`. At 360
+    the column is a single column with `scrollWidth == clientWidth`.
+
+### Visual baseline
+
+`visual.spec.ts` and `login-{light,dark}-chromium-linux.png` are **untouched**: the baseline only
+regenerates on Linux (O-022), Raka dispatches `visual-baseline.yml` with update=true after the push.
+Screenshots for the manual read (not snapshots): `T-241-login-1440-light.png`,
+`T-241-login-1440-dark.png`, `T-241-login-360-light.png`, `T-241-login-360-dark.png`,
+`T-241-login-401.png`, `T-241-login-mfa.png`.
+
+### Deviations, and why
+
+- **No `autofocus`.** The direction allowed it, but `keyboard.spec.ts` asserts the first Tab stop is
+  the skip link; autofocus moved it into the password field and turned that gate red. The direction
+  says "acceptable", not required, so the existing gate wins.
+- **No `required` on the fields.** `<Input>` renders the required marker as part of the label text
+  ("Nama pengguna\*"), which breaks the exact-label lookups that `flow.spec.ts`, `ledger.spec.ts`,
+  `visual.spec.ts`, `shell-panel.spec.ts` and `zoom-125.spec.ts` all use, and the approved sketch
+  draws plain labels. `novalidate` already made the attribute inert.
+- **401 copy now comes from `login_error`, not the envelope's `error_unauthorized`.** The envelope
+  produced "Nama pengguna atau kata sandi salah." — a second wording for the same state, and
+  acceptance 6 names `login_error`. Both are generic, so nothing is revealed.
+- **Focus after a 403 lands on `body`, not on the submit button.** The button is natively
+  `disabled` while the request runs (state 3), so it cannot keep focus across the submit. This is
+  the pre-existing behaviour of every form in the repo; the test asserts only that focus does not
+  move to the password field.
+- **State cases live in `flow.spec.ts`**, next to the existing 401 case and the login flow, instead
+  of `screens.spec.ts` (whose subject is the four admin screens). The task's Scope allowed either.
+
+### Unverified
+
+- Visual baseline regeneration (needs the Linux workflow).
+- CI for this commit (not pushed).
+- "No element animates" in acceptance 10 is not asserted by a test; the block defines no animation
+  or transition of its own, and the button keeps the repo-wide `.kran-button` transition.
