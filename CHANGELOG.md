@@ -4,6 +4,34 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.2.0] - 2026-11-11
+
+### Added
+- Rebuild sign-in screen per approved direction (T-241)
+- Drawer 520 with an honest focus trap (T-290)
+- State IDR once in loans money headers (T-295)
+- Tighten loans list density (T-293)
+- Sweep list states and vault terminology (T-292)
+- **lending:** Add partyName to the loans list item
+- State money once per column and reserve cell width (T-289)
+- Add DataTable density, totals, selection and two-line rows (T-288)
+- Add button sizes and the quiet variant (T-287)
+- Add v2 form controls and migrate app forms (T-286)
+- Adopt design system v2 tokens
+- Render the workspace shell from shared ui components
+
+### Fixed
+- Axe print routes at 1440 and 360 with a focusable statement region (T-291)
+- Print routes use token colours, page sizes and header repeat (T-291)
+- Keep drawer keys on window so scrim clicks cannot escape (T-290)
+- Restore business date, panel landmark and print chrome in v2 shell
+- **deploy:** Wait for the deploy lock instead of failing fast
+
+### Operations
+- **visual:** Always rewrite snapshots on regeneration
+- Build dbtools through ./task in the visual baseline job
+- Upload Playwright failure artifacts and add a visual baseline update job
+
 ## [0.1.21] - 2026-11-05
 
 ### Fixed
