@@ -156,7 +156,15 @@
 {:else if statement !== null}
   {@const doc = statement}
   <article class="kran-print-doc" aria-labelledby="statement-heading">
-    <div class="kran-table-wrap">
+    <!-- Region bergulir harus bisa difokus (T-291 review): di 360 tabel melebar dan axe
+         menandai `scrollable-region-focusable` bila wadahnya tidak masuk urutan Tab. -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div
+      class="kran-table-wrap"
+      role="region"
+      tabindex="0"
+      aria-label={m.common_table_region({ name: m.statement_heading() })}
+    >
       <table class="kran-table">
         <caption class="kran-visually-hidden">{m.statement_heading()}</caption>
         <thead>

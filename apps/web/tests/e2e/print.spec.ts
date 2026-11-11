@@ -12,7 +12,7 @@ import { requireDatabase } from "./db.js";
  *  - tombol Cetak memanggil `window.print` (di-stub: tidak ada dialog printer di CI);
  *  - dengan `emulateMedia({ media: "print" })` nav, toolbar, form, dan alert hilang, sedangkan
  *    isi dokumen tetap terlihat (bukti aturan `@media print` di `packages/ui`);
- *  - axe (mode **layar**) pada kedua halaman × 2 tema × 2 locale.
+ *  - axe (mode **layar**) pada kedua halaman × 2 lebar (1440/360) × 2 tema × 2 locale.
  *
  * Batas yang tidak diklaim: bukan bukti layout printer tertentu, bukan PDF resmi/arsip/tagged,
  * bukan audit cetak, bukan kop lembaga. `page.pdf()` tidak dipakai (bukan bukti layout).
@@ -33,6 +33,11 @@ const MAKER = { username: "dev.maker", password: "rahasia-panjang-123" };
 const CHECKER = { username: "dev.checker", password: "rahasia-panjang-123" };
 const LOCALES = ["id", "en"] as const;
 const THEMES = ["light", "dark"] as const;
+/** Lebar yang diuji a11y-nya; chromium project tidak menyetel viewport, jadi disetel di sini. */
+const VIEWPORTS = [
+  { width: 1440, height: 900 },
+  { width: 360, height: 800 },
+] as const;
 // Rentang lebar: rekening fixture baru, jadi barisnya hanya milik run ini.
 const RANGE = { from: "2000-01-01", to: "2099-12-31" };
 
@@ -324,35 +329,42 @@ test.describe.serial("cetak: slip & statement", () => {
     await expect(page.locator("table thead tr.kran-print-head h1#statement-heading")).toHaveCount(1);
   });
 
-  test("axe: slip + statement × 2 tema × 2 locale (mode layar)", async ({ page, request }) => {
+  test("axe: slip + statement × 2 lebar × 2 tema × 2 locale (mode layar)", async ({
+    page,
+    request,
+  }) => {
     test.setTimeout(300_000);
     const fixture = await createCashFixture(request);
     await grantSession(page, fixture.cookie);
     await stubPrint(page);
 
-    for (const locale of LOCALES) {
-      for (const theme of THEMES) {
-        await prepare(page, locale, theme);
+    for (const viewport of VIEWPORTS) {
+      await page.setViewportSize(viewport);
+      for (const locale of LOCALES) {
+        for (const theme of THEMES) {
+          await prepare(page, locale, theme);
+          const label = `${viewport.width}/${locale}/${theme}`;
 
-        await page.goto(`/app/print/slip/${fixture.transactionId}`);
-        await expect(
-          page.getByRole("heading", { level: 1, name: T[locale].slipHeading }),
-        ).toBeVisible();
-        const slipResults = await new AxeBuilder({ page }).analyze();
-        expect(blocking(slipResults), `${locale}/${theme} slip: ${blocking(slipResults).join(", ")}`)
-          .toEqual([]);
+          await page.goto(`/app/print/slip/${fixture.transactionId}`);
+          await expect(
+            page.getByRole("heading", { level: 1, name: T[locale].slipHeading }),
+          ).toBeVisible();
+          const slipResults = await new AxeBuilder({ page }).analyze();
+          expect(blocking(slipResults), `${label} slip: ${blocking(slipResults).join(", ")}`)
+            .toEqual([]);
 
-        await page.goto(
-          `/app/print/statement/${fixture.accountId}?from=${RANGE.from}&to=${RANGE.to}`,
-        );
-        await expect(
-          page.getByRole("heading", { level: 1, name: T[locale].statementHeading }),
-        ).toBeVisible();
-        const statementResults = await new AxeBuilder({ page }).analyze();
-        expect(
-          blocking(statementResults),
-          `${locale}/${theme} statement: ${blocking(statementResults).join(", ")}`,
-        ).toEqual([]);
+          await page.goto(
+            `/app/print/statement/${fixture.accountId}?from=${RANGE.from}&to=${RANGE.to}`,
+          );
+          await expect(
+            page.getByRole("heading", { level: 1, name: T[locale].statementHeading }),
+          ).toBeVisible();
+          const statementResults = await new AxeBuilder({ page }).analyze();
+          expect(
+            blocking(statementResults),
+            `${label} statement: ${blocking(statementResults).join(", ")}`,
+          ).toEqual([]);
+        }
       }
     }
   });
