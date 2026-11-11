@@ -179,7 +179,19 @@
     event.preventDefault();
     target.focus();
   }
+
+  /**
+   * Handler menempel di window, bukan di panel: klik scrim memindahkan fokus ke `body`, dan
+   * handler yang hanya ada di panel akan ikut mati padahal `aria-modal` masih menyala. Svelte 5
+   * melarang `<svelte:window>` di dalam blok, jadi guard `open` ada di sini.
+   */
+  function onWindowKeydown(event: KeyboardEvent): void {
+    if (!open) return;
+    onKeydown(event);
+  }
 </script>
+
+<svelte:window onkeydown={onWindowKeydown} />
 
 {#if open}
   <div class="kran-drawer-scrim" aria-hidden="true"></div>
@@ -191,7 +203,6 @@
     aria-labelledby={headingId}
     tabindex="-1"
     bind:this={panel}
-    onkeydown={onKeydown}
   >
     <div class="kran-drawer__head">
       <h2 class="kran-drawer__title" id={headingId} tabindex="-1" bind:this={headingElement}>

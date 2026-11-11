@@ -166,3 +166,55 @@ test("keyboard: muat ulang dan batas riwayat bisa dipakai tanpa tetikus", async 
   await expect(limit).toHaveValue("50");
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
+
+test("keyboard: klik scrim tidak melepas trap, Escape menutup dan fokus kembali ke baris pemicu", async ({
+  page,
+  request,
+}) => {
+  const session = await apiLogin(request);
+  await prepare(page, "id", "light");
+  await browserLogin(page, session);
+
+  // Riwayat disintesis lewat route: yang diuji di sini perilaku fokus drawer, bukan pembacaan DB.
+  const run = {
+    runId: "11111111-1111-4111-8111-111111111111",
+    businessDate: "2026-11-10",
+    scopeType: "INSTITUTION",
+    levels: ["EOD"],
+    state: "COMPLETED",
+    startedAt: "2026-11-10T01:00:00Z",
+    finishedAt: "2026-11-10T01:05:00Z",
+    summaryHash: null,
+    taskCounts: { ok: 1, failed: 0, skipped: 0, total: 1 },
+  };
+  await page.route("**/api/v1/dayclose/runs/*", (route) =>
+    route.fulfill({ json: { ...run, tasks: [] } }),
+  );
+  await page.route(/\/api\/v1\/dayclose\/runs(\?.*)?$/, (route) =>
+    route.fulfill({ json: { runs: [run] } }),
+  );
+
+  await page.goto("/app/dayclose");
+  await expect(page.getByRole("heading", { level: 1, name: T.id.title })).toBeVisible();
+
+  const rowButton = page.getByRole("button", { name: /Lihat detail run/ }).first();
+  await expect(rowButton).toBeVisible();
+  await rowButton.focus();
+  await rowButton.press("Enter");
+
+  const drawer = page.getByRole("dialog");
+  await expect(drawer).toBeVisible();
+  await expect(page.locator(".kran-drawer__title")).toBeFocused();
+
+  // Scrim bukan elemen fokus: klik di luar panel memindahkan fokus keluar drawer, dan handler
+  // yang hanya menempel di panel akan mati di titik itu padahal `aria-modal` masih menyala.
+  await page.locator(".kran-drawer-scrim").click({ position: { x: 40, y: 40 } });
+  expect(
+    await page.evaluate(() => document.activeElement?.closest(".kran-drawer") === null),
+    "fokus keluar dari panel setelah klik scrim",
+  ).toBe(true);
+
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
+  await expect(rowButton).toBeFocused();
+});

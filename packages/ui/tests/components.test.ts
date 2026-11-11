@@ -929,8 +929,22 @@ describe("Drawer", () => {
   it("Escape, batas Tab dan konfirmasi tutup disambungkan di komponen, bukan hanya di CSS", () => {
     const source = readFileSync(new URL("../src/components/Drawer.svelte", import.meta.url), "utf8");
 
+    // Handler menempel di window selama panel terbuka: klik scrim memindahkan fokus ke body dan
+    // handler yang hanya ada di panel akan ikut mati padahal `aria-modal` masih menyala.
+    // Svelte 5 menolak `<svelte:window>` di dalam blok (`svelte_meta_invalid_placement`), jadi
+    // binding-nya di top level dan guard `open` ada di handler-nya.
+    const windowBinding = source.match(/<svelte:window[^>]*onkeydown=\{onWindowKeydown\}[^>]*\/>/)?.[0] ?? "";
+    expect(windowBinding).not.toBe("");
+    expect(source.indexOf(windowBinding)).toBeLessThan(source.indexOf("{#if open}"));
+    expect(source).toMatch(/function onWindowKeydown\([\s\S]*?if \(!open\) return;/);
+
+    // Tag dialog yang tepat, bukan div scrim yang juga berawalan `kran-drawer`.
+    const panelTag = source.match(/<div\s+class="kran-drawer kran-drawer--full"[\s\S]*?>/)?.[0] ?? "";
+    expect(panelTag).not.toBe("");
+    expect(panelTag).toContain('role="dialog"');
+    expect(panelTag).not.toContain("onkeydown");
+
     expect(source).toContain('event.key === "Escape"');
-    expect(source).toContain("onkeydown={onKeydown}");
     expect(source).toContain("wrapTabTarget(");
     expect(source).toContain("restoreFocusTarget(trigger");
     expect(source).toContain("dirty && !confirming");
