@@ -158,7 +158,7 @@ findings are folded into the rows below and into the task files at DoR time.
 | T-287 | Button v2: sizes, quiet variant, hover/active rules | S | T-284 | standard | DONE |
 | T-288 | DataTable v2: density, sticky header, totals, selection | M | T-284 | standard | DONE |
 | T-289 | Money inside DataTable: one symbol per column, stable width | S | T-288 | full | DONE |
-| T-290 | Drawer 520 with an honest focus trap | M | T-285, T-288 | standard | READY |
+| T-290 | Drawer 520 with an honest focus trap | M | T-285, T-288 | standard | DONE |
 | T-291 | Report and print: no chrome, token colours, number rules | S | T-288, T-289 | standard | READY |
 | T-292 | State sweep: three empties, loading/error components, terminology | M | T-284, T-285 | standard | DONE |
 | T-293 | Loans list density: one-line dates, member name over ID, 40px rows | M | T-284, T-288 | standard | DONE |
