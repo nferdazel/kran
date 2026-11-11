@@ -25,6 +25,7 @@
 
   import Alert from "@kran/ui/components/Alert.svelte";
   import Button from "@kran/ui/components/Button.svelte";
+  import Drawer from "@kran/ui/components/Drawer.svelte";
   import EmptyState from "@kran/ui/components/EmptyState.svelte";
   import Select from "@kran/ui/components/Select.svelte";
   import StatusBadge from "@kran/ui/components/StatusBadge.svelte";
@@ -77,6 +78,8 @@
   let detail = $state<DayCloseRunDetail | null>(null);
   let limit = $state(DEFAULT_RUN_LIMIT);
   let selectedRunId = $state("");
+  /** Drawer detail: dibuka dari tombol baris riwayat, bukan dirender di badan layar. */
+  let detailOpen = $state(false);
 
   let loading = $state(true);
   let loadingRuns = $state(false);
@@ -319,9 +322,10 @@
   }
 
   function selectRun(runId: string): void {
-    if (selectedRunId === runId) return;
+    const changed = selectedRunId !== runId;
     selectedRunId = runId;
-    void loadDetail(runId);
+    detailOpen = true;
+    if (changed) void loadDetail(runId);
   }
 
   async function onLimitChange(): Promise<void> {
@@ -656,11 +660,11 @@
                       variant="row"
                       type="button"
                       onclick={() => selectRun(run.runId)}
-                      aria-label={m.dayclose_open_detail_aria({
+                      aria-label={m.dayclose_detail_open_aria({
                         date: formatDate(run.businessDate),
                       })}
                     >
-                      {m.dayclose_open_detail()}
+                      {m.common_open_detail()}
                     </Button>
                   </td>
                 </tr>
@@ -671,185 +675,182 @@
       {/if}
     </section>
 
-    {#if effectiveRunId !== ""}
-      <section class="kran-section" aria-labelledby="dayclose-detail-heading">
-        <div class="kran-toolbar">
-          <h2 class="kran-section__title" id="dayclose-detail-heading">
-            {m.dayclose_detail_heading()}
-          </h2>
-          <div class="kran-actions" aria-busy={busyAction !== ""}>
-            {#each actionButtons as button (button.action)}
-              <Button
-                variant={button.variant}
-                type="button"
-                onclick={() =>
-                  button.action === "cancel"
-                    ? void openConfirm("cancel", currentRun?.runId ?? "")
-                    : void performAction(button.action, currentRun?.runId ?? "")}
-                disabled={busyAction !== "" || currentRun === null}
-              >
-                {busyAction === button.action
-                  ? m.dayclose_action_running_label()
-                  : button.label}
-              </Button>
-            {/each}
-          </div>
-        </div>
-
-        {#if loadingDetail}
-          <p role="status">{m.dayclose_detail_loading()}</p>
-        {:else if detailError}
-          <Alert tone="negative" title={detailError}>
-            <Button type="button" onclick={() => void loadDetail(effectiveRunId)}>
-              {m.app_retry()}
-            </Button>
-          </Alert>
-        {:else if detail === null || detail.runId !== effectiveRunId}
-          <p class="kran-muted">{m.dayclose_detail_empty()}</p>
-        {:else}
-          <dl class="kran-facts">
-            <dt class="kran-muted">{m.dayclose_detail_run_id()}</dt>
-            <dd><code>{detail.runId}</code></dd>
-
-            <dt class="kran-muted">{m.dayclose_business_date_label()}</dt>
-            <dd>{formatDate(detail.businessDate)}</dd>
-
-            <dt class="kran-muted">{m.dayclose_col_levels()}</dt>
-            <dd>{detail.levels.join(" · ")}</dd>
-
-            <dt class="kran-muted">{m.dayclose_col_state()}</dt>
-            <dd>
-              {@render stateBadge(
-                runStateTone(detail.state),
-                runStateLabel(detail.state),
-              )}
-            </dd>
-
-            <dt class="kran-muted">{m.dayclose_col_started()}</dt>
-            <dd>{formatDateTime(detail.startedAt)}</dd>
-
-            <dt class="kran-muted">{m.dayclose_col_finished()}</dt>
-            <dd>
-              {#if detail.finishedAt === null}
-                <span class="kran-muted">—</span>
-              {:else}
-                {formatDateTime(detail.finishedAt)}
-              {/if}
-            </dd>
-
-            <dt class="kran-muted">{m.dayclose_col_ok()}</dt>
-            <dd>{detail.taskCounts.ok}</dd>
-
-            <dt class="kran-muted">{m.dayclose_col_failed()}</dt>
-            <dd>{detail.taskCounts.failed}</dd>
-
-            <dt class="kran-muted">{m.dayclose_col_skipped()}</dt>
-            <dd>{detail.taskCounts.skipped}</dd>
-
-            <dt class="kran-muted">{m.dayclose_col_total()}</dt>
-            <dd>{detail.taskCounts.total}</dd>
-
-            <dt class="kran-muted">{m.dayclose_col_seal()}</dt>
-            <dd>
-              {#if detail.summaryHash === null}
-                <span class="kran-muted">—</span>
-              {:else}
-                <code>{detail.summaryHash}</code>
-              {/if}
-            </dd>
-          </dl>
-
-          <h3 class="kran-section__title">{m.dayclose_detail_tasks_heading()}</h3>
-
-          {#if detail.tasks.length === 0}
-            <p class="kran-muted">{m.dayclose_tasks_empty()}</p>
-          {:else}
-            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-            <div
-              class="kran-table-wrap"
-              role="region"
-              tabindex="0"
-              aria-label={m.common_table_region({ name: m.dayclose_detail_tasks_heading() })}
+    <Drawer
+      open={detailOpen}
+      title={m.dayclose_detail_heading()}
+      closeLabel={m.common_close()}
+      loading={loadingDetail}
+      loadingLabel={m.dayclose_detail_loading()}
+      error={detailError}
+      retryLabel={m.app_retry()}
+      onretry={() => void loadDetail(effectiveRunId)}
+      onclose={() => (detailOpen = false)}
+    >
+      <div class="kran-toolbar">
+        <div class="kran-actions" aria-busy={busyAction !== ""}>
+          {#each actionButtons as button (button.action)}
+            <Button
+              variant={button.variant}
+              type="button"
+              onclick={() =>
+                button.action === "cancel"
+                  ? void openConfirm("cancel", currentRun?.runId ?? "")
+                  : void performAction(button.action, currentRun?.runId ?? "")}
+              disabled={busyAction !== "" || currentRun === null}
             >
-              <table class="kran-table">
-                <caption class="kran-visually-hidden">{m.dayclose_detail_tasks_caption()}</caption>
-                <thead>
+              {busyAction === button.action
+                ? m.dayclose_action_running_label()
+                : button.label}
+            </Button>
+          {/each}
+        </div>
+      </div>
+
+      {#if detail === null || detail.runId !== effectiveRunId}
+        <p class="kran-muted">{m.dayclose_detail_empty()}</p>
+      {:else}
+        <dl class="kran-facts">
+          <dt class="kran-muted">{m.dayclose_detail_run_id()}</dt>
+          <dd><code>{detail.runId}</code></dd>
+
+          <dt class="kran-muted">{m.dayclose_business_date_label()}</dt>
+          <dd>{formatDate(detail.businessDate)}</dd>
+
+          <dt class="kran-muted">{m.dayclose_col_levels()}</dt>
+          <dd>{detail.levels.join(" · ")}</dd>
+
+          <dt class="kran-muted">{m.dayclose_col_state()}</dt>
+          <dd>
+            {@render stateBadge(
+              runStateTone(detail.state),
+              runStateLabel(detail.state),
+            )}
+          </dd>
+
+          <dt class="kran-muted">{m.dayclose_col_started()}</dt>
+          <dd>{formatDateTime(detail.startedAt)}</dd>
+
+          <dt class="kran-muted">{m.dayclose_col_finished()}</dt>
+          <dd>
+            {#if detail.finishedAt === null}
+              <span class="kran-muted">—</span>
+            {:else}
+              {formatDateTime(detail.finishedAt)}
+            {/if}
+          </dd>
+
+          <dt class="kran-muted">{m.dayclose_col_ok()}</dt>
+          <dd>{detail.taskCounts.ok}</dd>
+
+          <dt class="kran-muted">{m.dayclose_col_failed()}</dt>
+          <dd>{detail.taskCounts.failed}</dd>
+
+          <dt class="kran-muted">{m.dayclose_col_skipped()}</dt>
+          <dd>{detail.taskCounts.skipped}</dd>
+
+          <dt class="kran-muted">{m.dayclose_col_total()}</dt>
+          <dd>{detail.taskCounts.total}</dd>
+
+          <dt class="kran-muted">{m.dayclose_col_seal()}</dt>
+          <dd>
+            {#if detail.summaryHash === null}
+              <span class="kran-muted">—</span>
+            {:else}
+              <code>{detail.summaryHash}</code>
+            {/if}
+          </dd>
+        </dl>
+
+        <h3 class="kran-section__title">{m.dayclose_detail_tasks_heading()}</h3>
+
+        {#if detail.tasks.length === 0}
+          <p class="kran-muted">{m.dayclose_tasks_empty()}</p>
+        {:else}
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <div
+            class="kran-table-wrap"
+            role="region"
+            tabindex="0"
+            aria-label={m.common_table_region({ name: m.dayclose_detail_tasks_heading() })}
+          >
+            <table class="kran-table">
+              <caption class="kran-visually-hidden">{m.dayclose_detail_tasks_caption()}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">{m.dayclose_col_task()}</th>
+                  <th scope="col">{m.dayclose_col_state()}</th>
+                  <th scope="col">{m.dayclose_col_kind()}</th>
+                  <th scope="col">{m.dayclose_col_critical()}</th>
+                  <th scope="col" class="kran-num">{m.dayclose_col_attempt()}</th>
+                  <th scope="col">{m.dayclose_col_error()}</th>
+                  <th scope="col">{m.dayclose_col_reason()}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each detail.tasks as task (task.taskId)}
                   <tr>
-                    <th scope="col">{m.dayclose_col_task()}</th>
-                    <th scope="col">{m.dayclose_col_state()}</th>
-                    <th scope="col">{m.dayclose_col_kind()}</th>
-                    <th scope="col">{m.dayclose_col_critical()}</th>
-                    <th scope="col" class="kran-num">{m.dayclose_col_attempt()}</th>
-                    <th scope="col">{m.dayclose_col_error()}</th>
-                    <th scope="col">{m.dayclose_col_reason()}</th>
+                    <th scope="row"><code>{task.taskId}</code></th>
+                    <td>
+                      {@render stateBadge(
+                        taskStateTone(task.state),
+                        taskStateLabel(task.state),
+                      )}
+                    </td>
+                    <td>{taskKindLabel(task.kind)}</td>
+                    <td>{task.critical ? m.dayclose_yes() : m.dayclose_no()}</td>
+                    <td class="kran-num">{task.attempt}</td>
+                    <td>
+                      {#if task.errorCode === null}
+                        <span class="kran-muted">—</span>
+                      {:else}
+                        <code>{task.errorCode}</code>
+                        {#if errorCodeHint(task.errorCode) !== ""}
+                          <span class="kran-muted">{errorCodeHint(task.errorCode)}</span>
+                        {/if}
+                      {/if}
+                    </td>
+                    <td>
+                      {#if task.reason === null || task.reason === ""}
+                        <span class="kran-muted">—</span>
+                      {:else}
+                        {task.reason}
+                      {/if}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {#each detail.tasks as task (task.taskId)}
-                    <tr>
-                      <th scope="row"><code>{task.taskId}</code></th>
-                      <td>
-                        {@render stateBadge(
-                          taskStateTone(task.state),
-                          taskStateLabel(task.state),
-                        )}
-                      </td>
-                      <td>{taskKindLabel(task.kind)}</td>
-                      <td>{task.critical ? m.dayclose_yes() : m.dayclose_no()}</td>
-                      <td class="kran-num">{task.attempt}</td>
-                      <td>
-                        {#if task.errorCode === null}
-                          <span class="kran-muted">—</span>
-                        {:else}
-                          <code>{task.errorCode}</code>
-                          {#if errorCodeHint(task.errorCode) !== ""}
-                            <span class="kran-muted">{errorCodeHint(task.errorCode)}</span>
-                          {/if}
-                        {/if}
-                      </td>
-                      <td>
-                        {#if task.reason === null || task.reason === ""}
-                          <span class="kran-muted">—</span>
-                        {:else}
-                          {task.reason}
-                        {/if}
+                  {#if task.chunks.length > 0}
+                    <tr class="kran-table__selected">
+                      <td colspan="7">
+                        <p class="kran-muted">{m.dayclose_chunks_label()}</p>
+                        <ul class="kran-list-plain" aria-label={m.dayclose_chunks_label()}>
+                          {#each task.chunks as chunk (chunk.chunkNo)}
+                            <li>
+                              <span>{m.dayclose_chunk_no({ no: chunk.chunkNo })}</span>
+                              <span aria-hidden="true">·</span>
+                              {@render stateBadge(
+                                chunkStateTone(chunk.state),
+                                chunkStateLabel(chunk.state),
+                              )}
+                              <span aria-hidden="true">·</span>
+                              <span class="kran-muted"
+                                >{m.dayclose_col_attempt()}: {chunk.attempt}</span
+                              >
+                              {#if chunk.errorCode !== null}
+                                <span aria-hidden="true">·</span>
+                                <code>{chunk.errorCode}</code>
+                              {/if}
+                            </li>
+                          {/each}
+                        </ul>
                       </td>
                     </tr>
-                    {#if task.chunks.length > 0}
-                      <tr class="kran-table__selected">
-                        <td colspan="7">
-                          <p class="kran-muted">{m.dayclose_chunks_label()}</p>
-                          <ul class="kran-list-plain" aria-label={m.dayclose_chunks_label()}>
-                            {#each task.chunks as chunk (chunk.chunkNo)}
-                              <li>
-                                <span>{m.dayclose_chunk_no({ no: chunk.chunkNo })}</span>
-                                <span aria-hidden="true">·</span>
-                                {@render stateBadge(
-                                  chunkStateTone(chunk.state),
-                                  chunkStateLabel(chunk.state),
-                                )}
-                                <span aria-hidden="true">·</span>
-                                <span class="kran-muted"
-                                  >{m.dayclose_col_attempt()}: {chunk.attempt}</span
-                                >
-                                {#if chunk.errorCode !== null}
-                                  <span aria-hidden="true">·</span>
-                                  <code>{chunk.errorCode}</code>
-                                {/if}
-                              </li>
-                            {/each}
-                          </ul>
-                        </td>
-                      </tr>
-                    {/if}
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          {/if}
+                  {/if}
+                {/each}
+              </tbody>
+            </table>
+          </div>
         {/if}
-      </section>
-    {/if}
+      {/if}
+    </Drawer>
   {/if}
 {/if}
 

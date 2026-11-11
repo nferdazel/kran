@@ -7,6 +7,7 @@ import Alert from "../src/components/Alert.svelte";
 import Button from "../src/components/Button.svelte";
 import Checkbox from "../src/components/Checkbox.svelte";
 import DataTable from "../src/components/DataTable.svelte";
+import Drawer, { restoreFocusTarget, wrapTabTarget } from "../src/components/Drawer.svelte";
 import EmptyState from "../src/components/EmptyState.svelte";
 import ErrorState from "../src/components/ErrorState.svelte";
 import Input from "../src/components/Input.svelte";
@@ -813,5 +814,125 @@ describe("DataTable", () => {
     expect(html).toContain("kran-table--sticky");
     expect(html.match(/tabindex="0"/g) ?? []).toHaveLength(1);
     expect(html.match(/role="region"/g) ?? []).toHaveLength(1);
+  });
+});
+
+describe("Drawer", () => {
+  function drawer(props: Record<string, unknown> = {}) {
+    return render(Drawer, {
+      props: {
+        open: true,
+        title: "Detail run",
+        closeLabel: "Tutup",
+        onclose: () => {},
+        ...props,
+      },
+    }).body;
+  }
+
+  it("panel modal menamai dirinya dengan heading dan heading itu bisa menerima fokus", () => {
+    const html = drawer({ children: text("<p>isi</p>") });
+    const labelledby = html.match(/aria-labelledby="([^"]+)"/)?.[1] ?? "";
+
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(labelledby).not.toBe("");
+    // Nama panel dan target fokus pembuka adalah elemen yang sama: pembaca layar menyebut
+    // konteksnya begitu panel terbuka, bukan "dialog" tanpa nama.
+    expect(html).toMatch(new RegExp(`<h2[^>]*id="${labelledby}"[^>]*tabindex="-1"`));
+    expect(html).toContain(">Detail run</h2>");
+  });
+
+  it("label tutup datang dari pemakai, bukan teks bawaan komponen", () => {
+    const html = drawer({ closeLabel: "Tutup panel" });
+
+    expect(html).toMatch(/<button[^>]*kran-button--quiet[^>]*type="button"[^>]*>[\s\S]*Tutup panel[\s\S]*<\/button>/);
+  });
+
+  it("tertutup tidak merender panel maupun scrim", () => {
+    const html = drawer({ open: false, children: text("<p>isi</p>") });
+
+    expect(html).not.toContain("kran-drawer");
+    expect(html).not.toContain("kran-drawer-scrim");
+  });
+
+  it("scrim tidak masuk pohon aksesibilitas", () => {
+    expect(drawer()).toContain('<div class="kran-drawer-scrim" aria-hidden="true">');
+  });
+
+  it("Tab membungkus di kedua arah; di tengah dibiarkan ke peramban", () => {
+    const items = ["kembali", "simpan", "batal"];
+
+    expect(wrapTabTarget(items, "batal", false)).toBe("kembali");
+    expect(wrapTabTarget(items, "kembali", true)).toBe("batal");
+    expect(wrapTabTarget(items, "simpan", false)).toBeNull();
+    expect(wrapTabTarget(items, "simpan", true)).toBeNull();
+  });
+
+  it("fokus di luar daftar masuk ke ujung yang benar, daftar kosong tidak menahan Tab", () => {
+    const items = ["kembali", "simpan", "batal"];
+
+    expect(wrapTabTarget(items, null, false)).toBe("kembali");
+    expect(wrapTabTarget(items, null, true)).toBe("batal");
+    expect(wrapTabTarget(items, "di-luar", false)).toBe("kembali");
+    expect(wrapTabTarget([], "kembali", false)).toBeNull();
+  });
+
+  it("fokus kembali ke elemen pemicu yang persis, bukan ke body", () => {
+    const trigger = { isConnected: true, disabled: false };
+    const fallback = { isConnected: true, disabled: false };
+
+    expect(restoreFocusTarget(trigger, fallback)).toBe(trigger);
+  });
+
+  it("pemicu yang lepas atau nonaktif jatuh ke cadangan; tanpa keduanya tidak ada target", () => {
+    const detached = { isConnected: false };
+    const disabled = { isConnected: true, disabled: true };
+    const fallback = { isConnected: true };
+
+    expect(restoreFocusTarget(detached, fallback)).toBe(fallback);
+    expect(restoreFocusTarget(disabled, fallback)).toBe(fallback);
+    expect(restoreFocusTarget(null, fallback)).toBe(fallback);
+    expect(restoreFocusTarget(null, null)).toBeNull();
+  });
+
+  it("memuat memakai satu-satunya live region, galat membawa label coba lagi", () => {
+    const loading = drawer({ loading: true, loadingLabel: "Memuat detail run…", retryLabel: "Coba lagi" });
+
+    expect(loading).toContain('role="status"');
+    expect(loading).toContain("Memuat detail run…");
+    expect(loading).not.toContain(">Tutup</button>");
+
+    const failed = drawer({ error: "Detail gagal dimuat", retryLabel: "Coba lagi" });
+
+    expect(failed).toContain("Detail gagal dimuat");
+    expect(failed).toContain("Coba lagi");
+    expect(failed).not.toContain('role="status"');
+  });
+
+  it("panel 520 dan cabang lebar penuh membawa kelasnya masing-masing", () => {
+    const html = drawer();
+
+    expect(html).toContain("kran-drawer kran-drawer--full");
+
+    const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
+
+    expect(css).toMatch(/\.kran-drawer \{[^}]*inline-size: 520px/);
+    expect(css).toMatch(
+      /@media \(max-width: 639\.98px\) \{\s*\.kran-drawer--full \{\s*inline-size: 100%;/,
+    );
+    // Scrim 0.32 terang dan 0.56 gelap, turunan kanvas gelap tanpa token baru.
+    expect(css).toContain("rgb(14 16 19 / 0.32)");
+    expect(css).toContain("rgb(14 16 19 / 0.56)");
+  });
+
+  it("Escape, batas Tab dan konfirmasi tutup disambungkan di komponen, bukan hanya di CSS", () => {
+    const source = readFileSync(new URL("../src/components/Drawer.svelte", import.meta.url), "utf8");
+
+    expect(source).toContain('event.key === "Escape"');
+    expect(source).toContain("onkeydown={onKeydown}");
+    expect(source).toContain("wrapTabTarget(");
+    expect(source).toContain("restoreFocusTarget(trigger");
+    expect(source).toContain("dirty && !confirming");
   });
 });
