@@ -538,6 +538,26 @@ Screenshots for the manual read (not snapshots): `T-241-login-1440-light.png`,
 `T-241-login-1440-dark.png`, `T-241-login-360-light.png`, `T-241-login-360-dark.png`,
 `T-241-login-401.png`, `T-241-login-mfa.png`.
 
+### Linux baseline and CI (close-out, 2026-11-11)
+
+`e9141b2` was pushed to `feat/design-system-v2` only: no merge to `main`, no deploy.
+`Visual baseline (Linux)` run `42984136953` (update=true) returned an artifact whose only changed
+files were `login-light-chromium-linux.png` and `login-dark-chromium-linux.png`; every
+`password-*` snapshot was byte-identical. Those two files, and nothing else, became commit
+`e8bc6a4`, pushed on the same branch.
+
+The new baselines are proven by a fail-closed comparison, not by the update run: CI run
+`42986811102` at `e8bc6a4` executes `visual.spec.ts` on Linux against the committed PNGs and the Web
+job passed. After one rerun of the DB job (see below) all five jobs are green.
+
+Flake note, recorded so it is not re-diagnosed: the first DB attempt failed in
+`itapi_mfa.nim:698` ("kode yang sudah dipakai tidak bisa membuka sesi kedua (anti-replay)"), 403
+expected, 204 returned at 08:29:00.018Z. The case recomputes `codeFor(..., offset 0)` instead of
+reusing the literal string from the previous case, so a run that crosses a TOTP step boundary posts
+a code for a newer step, and `itapi_mfa.nim:539` states that newer steps are accepted by design.
+Test-timing defect, not an auth defect, and this diff touches no API code. Deterministic fix is to
+post the same captured string; not done here, outside T-241 scope.
+
 ### Deviations, and why
 
 - **No `autofocus`.** The direction allowed it, but `keyboard.spec.ts` asserts the first Tab stop is
@@ -559,7 +579,7 @@ Screenshots for the manual read (not snapshots): `T-241-login-1440-light.png`,
 
 ### Unverified
 
-- Visual baseline regeneration (needs the Linux workflow).
-- CI for this commit (not pushed).
+- Merge to `main` has not happened, so nothing ran against a production build; the baseline
+  comparison above ran on the branch only.
 - "No element animates" in acceptance 10 is not asserted by a test; the block defines no animation
   or transition of its own, and the button keeps the repo-wide `.kran-button` transition.
