@@ -89,7 +89,7 @@
   </p>
 {:else if slip !== null}
   {@const doc = slip}
-  <article class="kran-print-doc" aria-labelledby="slip-heading">
+  <article class="kran-print-doc kran-print-doc--slip" aria-labelledby="slip-heading">
     <h1 id="slip-heading" class="kran-print-title">{m.slip_heading()}</h1>
 
     <dl class="kran-print-meta">

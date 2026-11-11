@@ -167,6 +167,21 @@ async function createCashFixture(request: APIRequestContext): Promise<Fixture> {
   };
 }
 
+/** Setoran tunai tambahan pada rekening fixture (sesi kas dari fixture masih OPEN). */
+async function depositCash(
+  request: APIRequestContext,
+  cookie: string,
+  accountId: string,
+  amount: string,
+  tag: string,
+): Promise<void> {
+  const response = await request.post(`${API}/api/v1/teller/cash-transactions`, {
+    headers: { Cookie: cookie, "Idempotency-Key": `e2e-print-${tag}-${Date.now()}` },
+    data: { accountId, direction: "DEPOSIT", amount, narration: `cetak ${tag}` },
+  });
+  expect(response.status(), `setor ${tag}: ${await response.text()}`).toBe(201);
+}
+
 /** Tempel cookie sesi hasil login API ke konteks browser (tanpa mengulang alur login UI). */
 async function grantSession(page: Page, cookie: string): Promise<void> {
   const value = cookie.slice(cookie.indexOf("=") + 1);
@@ -224,6 +239,11 @@ test.describe.serial("cetak: slip & statement", () => {
     await expect(page.locator("nav.sidebar__nav")).toBeHidden();
     await expect(page.locator("nav.topbar__crumbs")).toBeHidden();
     await expect(page.locator(".kran-print-toolbar")).toBeHidden();
+    // T-291 acceptance 1/3: shell dan kontrol tidak sekadar `display:none` per kelas yang diingat,
+    // tapi tidak ada satu pun tombol atau toolbar yang terlihat di media cetak.
+    expect(await page.locator("button:visible").count()).toBe(0);
+    expect(await page.locator(".kran-button:visible, .kran-toolbar:visible").count()).toBe(0);
+    expect(await page.locator(".topbar:visible, .sidebar__nav:visible").count()).toBe(0);
     await expect(
       page.getByRole("heading", { level: 1, name: T.id.slipHeading }),
     ).toBeVisible();
@@ -259,6 +279,49 @@ test.describe.serial("cetak: slip & statement", () => {
     await expect(page.locator(".kran-print-toolbar")).toBeHidden();
     await expect(page.locator(".kran-form")).toBeHidden();
     await expect(page.locator("table tbody tr")).toHaveCount(1);
+    // T-291 acceptance 1/3: tidak ada tombol/form/toolbar/shell yang terlihat saat dicetak.
+    expect(await page.locator("button:visible").count()).toBe(0);
+    expect(await page.locator(".kran-button:visible, .kran-toolbar:visible").count()).toBe(0);
+    expect(await page.locator(".topbar:visible, .sidebar__nav:visible").count()).toBe(0);
+  });
+
+  test("statement: nominal 3 digit dan 7 digit, unit sekali di header kolom", async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000);
+    const fixture = await createCashFixture(request);
+    // Dua nominal ekstra pada rekening yang sama: 999,00 dan 1.234.567,00 (lebar kolom uang).
+    await depositCash(request, fixture.cookie, fixture.accountId, "999.00", "t291-3d");
+    await depositCash(request, fixture.cookie, fixture.accountId, "1234567.00", "t291-7d");
+    await grantSession(page, fixture.cookie);
+    await prepare(page, "id", "light");
+
+    await page.goto(
+      `/app/print/statement/${fixture.accountId}?from=${RANGE.from}&to=${RANGE.to}`,
+    );
+    await expect(
+      page.getByRole("heading", { level: 1, name: T.id.statementHeading }),
+    ).toBeVisible();
+
+    // T-291 acceptance 4: unit hanya di header kolom, dan hanya sekali di seluruh tabel.
+    const amountHeader = page.getByRole("columnheader", { name: /IDR/ });
+    await expect(amountHeader).toHaveCount(1);
+    await expect(amountHeader).toHaveText("Nominal (IDR)");
+    expect(await page.locator("table").innerText()).not.toContain("Rp");
+
+    const cells = page.locator("table tbody td.kran-money");
+    await expect(cells).toHaveCount(3);
+    const texts = (await cells.allInnerTexts()).map((text) => text.trim());
+    for (const text of texts) {
+      expect(text, `sel uang tanpa unit: ${text}`).toMatch(/^[+-][\d.,]+$/);
+      expect(text).not.toContain("IDR");
+    }
+    expect(texts.some((text) => text.includes("999,00"))).toBe(true);
+    expect(texts.some((text) => text.includes("1.234.567,00"))).toBe(true);
+    // Header grup (judul + meta) ada di dalam `<thead>`, jadi Chromium ikut mengulangnya di
+    // halaman 2; markup-nya satu-satunya cara yang jujur untuk membuktikannya tanpa PDF.
+    await expect(page.locator("table thead tr.kran-print-head h1#statement-heading")).toHaveCount(1);
   });
 
   test("axe: slip + statement × 2 tema × 2 locale (mode layar)", async ({ page, request }) => {

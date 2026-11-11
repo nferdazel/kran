@@ -1530,6 +1530,13 @@
   margin: 12mm;
 }
 
+/* Slip A5 (T-291): satu stylesheet, dua ukuran. Halaman bernama dipilih oleh elemen dokumen
+ * lewat `page: slip`; halaman tanpa nama tetap A4 untuk statement. */
+@page slip {
+  size: A5;
+  margin: 12mm 11mm;
+}
+
 @media print {
   .kran-nav,
   .kran-header,
@@ -1565,6 +1572,10 @@
     border-radius: 0;
     padding-block: 0;
     padding-inline: 0;
+  }
+  /* Slip memilih halaman bernama A5; statement tetap memakai `@page` tanpa nama. */
+  .kran-print-doc--slip {
+    page: slip;
   }
   .kran-table thead {
     display: table-header-group;

@@ -950,3 +950,43 @@ describe("Drawer", () => {
     expect(source).toContain("dirty && !confirming");
   });
 });
+
+/** Isi satu blok `@media print { … }` dengan pencocokan kurung, bukan regex malas. */
+function cssBlock(css: string, header: string): string {
+  const start = css.indexOf(header);
+  if (start === -1) return "";
+  const open = css.indexOf("{", start);
+  if (open === -1) return "";
+  let depth = 0;
+  for (let i = open; i < css.length; i += 1) {
+    if (css[i] === "{") depth += 1;
+    if (css[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return css.slice(start, i + 1);
+    }
+  }
+  return "";
+}
+
+describe("Print block (T-291)", () => {
+  const css = readFileSync(new URL("../src/components.css", import.meta.url), "utf8");
+  const print = cssBlock(css, "@media print {");
+
+  it("blok cetak ada dan memuat aturan yang dijanjikan", () => {
+    // Kalau bloknya dihapus, seluruh aturan cetak hilang dan test ini gagal lebih dulu.
+    expect(print).not.toBe("");
+    expect(print).toContain("display: table-header-group");
+    expect(print).toMatch(/\.kran-print-doc--slip \{\s*page: slip;/);
+    expect(css).toMatch(/@page slip \{\s*size: A5;\s*margin: 12mm 11mm;/);
+    // Halaman tanpa nama tetap A4: statement tidak ikut mengecil.
+    expect(css).toMatch(/@page \{\s*size: A4;\s*margin: 12mm;/);
+  });
+
+  it("tidak ada bayangan dan tidak ada warna mentah di blok cetak", () => {
+    expect(print.toLowerCase()).not.toContain("box-shadow");
+    expect(print).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    // Warna cetak tidak ditulis di sini sama sekali: satu-satunya sumbernya token,
+    // dan `packages/ui/tokens/tokens.css` memaksa mode terang untuk `@media print`.
+    expect(print).not.toMatch(/\b(?:color|background(?:-color)?):/);
+  });
+});
