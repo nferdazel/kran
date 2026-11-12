@@ -815,6 +815,7 @@
   "users_unlock_done": "Account unlocked.",
   "users_working": "Working…",
   "vault_amount_label": "Amount (IDR)",
+  "vault_amount_hint": "Digits only, no thousands separator. Example: 150000 or 150000.00.",
   "vault_approve_action": "Approve",
   "vault_approve_confirm": "Approve the top-up of {amount}? The vault balance rises and the cash journal is posted.",
   "vault_approve_confirm_action": "Approve now",

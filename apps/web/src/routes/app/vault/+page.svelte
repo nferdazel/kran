@@ -10,11 +10,12 @@
    *  - Konfirmasi = satu lapisan inline (DESIGN §7), bukan `window.confirm` dan bukan modal.
    *  - Bukti top-up mengikuti format K-4 (D-134); UI hanya menyebut formatnya, tidak memeriksa isi.
    */
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
 
   import Alert from "@kran/ui/components/Alert.svelte";
   import Button from "@kran/ui/components/Button.svelte";
   import EmptyState from "@kran/ui/components/EmptyState.svelte";
+  import MoneyInput from "@kran/ui/components/MoneyInput.svelte";
   import Select from "@kran/ui/components/Select.svelte";
   import StatusBadge from "@kran/ui/components/StatusBadge.svelte";
 
@@ -36,6 +37,7 @@
     topUpIdentity,
     validateTopUp,
     vaultProblemMessage,
+    type TopUpField,
     type TopUpRecord,
     type TopUpStatus,
   } from "#lib/app/vault.js";
@@ -69,6 +71,9 @@
   let sourceInput = $state("");
   let noteInput = $state("");
   let formError = $state("");
+  /** Field yang memicu `formError`; galat nominal tampil di kontrolnya, bukan di Alert. */
+  let formErrorField = $state<TopUpField | null>(null);
+  let amountEl = $state<HTMLInputElement | null>(null);
   let submitting = $state(false);
   let formKey = $state(newIdempotencyKey());
   let formIdentity = $state("");
@@ -158,6 +163,7 @@
     notice = "";
     actionError = "";
     formError = "";
+    formErrorField = null;
     decisionError = "";
     deciding = null;
     rejectReason = "";
@@ -194,6 +200,11 @@
     });
     if (!checked.ok) {
       formError = checked.error.message;
+      formErrorField = checked.error.field;
+      if (checked.error.field === "amount") {
+        await tick();
+        amountEl?.focus();
+      }
       return;
     }
     const body = { branchId, ...checked.value };
@@ -371,18 +382,15 @@
       <h2 class="kran-section__title" id="vault-submit-heading">{m.vault_submit_title()}</h2>
       <p class="kran-muted">{m.vault_submit_intro()}</p>
       <form class="kran-form" onsubmit={submit}>
-        <div class="kran-field">
-          <label class="kran-label" for="vault-amount">{m.vault_amount_label()}</label>
-          <input
-            class="kran-input"
-            id="vault-amount"
-            name="amount"
-            inputmode="decimal"
-            autocomplete="off"
-            bind:value={amountInput}
-            required
-          />
-        </div>
+        <MoneyInput
+          label={m.vault_amount_label()}
+          name="amount"
+          hint={m.vault_amount_hint()}
+          error={formErrorField === "amount" ? formError : ""}
+          bind:element={amountEl}
+          bind:value={amountInput}
+          required
+        />
         <div class="kran-field">
           <label class="kran-label" for="vault-source">{m.vault_source_label()}</label>
           <input
@@ -410,7 +418,7 @@
           ></textarea>
           <p class="kran-muted" id="vault-note-hint">{m.vault_note_hint()}</p>
         </div>
-        {#if formError}
+        {#if formError && formErrorField !== "amount"}
           <Alert tone="negative" title={formError} />
         {/if}
         <div class="kran-actions">

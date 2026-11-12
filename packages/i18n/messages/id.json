@@ -815,6 +815,7 @@
   "users_unlock_done": "Kunci akun dibuka.",
   "users_working": "Memproses…",
   "vault_amount_label": "Nominal (IDR)",
+  "vault_amount_hint": "Angka saja, tanpa pemisah ribuan. Contoh: 150000 atau 150000,00.",
   "vault_approve_action": "Setujui",
   "vault_approve_confirm": "Setujui top-up {amount}? Saldo kas besar bertambah dan jurnal kas diposting.",
   "vault_approve_confirm_action": "Setujui sekarang",

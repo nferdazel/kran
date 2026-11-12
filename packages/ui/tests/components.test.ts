@@ -13,6 +13,7 @@ import ErrorState from "../src/components/ErrorState.svelte";
 import Input from "../src/components/Input.svelte";
 import LoadingState from "../src/components/LoadingState.svelte";
 import Money from "../src/components/Money.svelte";
+import MoneyInput from "../src/components/MoneyInput.svelte";
 import Select from "../src/components/Select.svelte";
 import StatusBadge from "../src/components/StatusBadge.svelte";
 import Textarea from "../src/components/Textarea.svelte";
@@ -239,6 +240,55 @@ describe("Input", () => {
 
     expect(html).toMatch(/<input[^>]*\srequired/);
     expect(html).toContain('<span class="kran-required" aria-hidden="true">*</span>');
+  });
+});
+
+describe("MoneyInput", () => {
+  it("label menyebut mata uang sekali dan kontrol memakai papan ketik desimal", () => {
+    const { body: html } = render(MoneyInput, { props: { label: "Nominal (IDR)" } });
+    const id = controlId(html, "input");
+
+    expect(html).toMatch(new RegExp(`<label class="kran-label" for="${id}">Nominal \\(IDR\\)`));
+    expect((html.match(/IDR/g) ?? []).length, html).toBe(1);
+    expect(html).toContain('inputmode="decimal"');
+    expect(html).toContain('type="text"');
+    // Tinggi 40 px datang dari `.kran-control` (D-202), bukan dari token baru.
+    expect(html).toContain('class="kran-control"');
+  });
+
+  it("satu pemisah diterima: nilai mentah dirender apa adanya, tanpa pemisah ribuan", () => {
+    const { body: html } = render(MoneyInput, {
+      props: { label: "Nominal (IDR)", value: "150000,25" },
+    });
+
+    expect(html).toContain('value="150000,25"');
+    expect(html).not.toContain("150.000");
+  });
+
+  it("idle: tanpa aria-invalid dan tanpa rujukan galat yang menggantung", () => {
+    const { body: html } = render(MoneyInput, { props: { label: "Nominal (IDR)" } });
+
+    expect(html).not.toContain("aria-invalid");
+    expect(html).not.toContain("-error");
+  });
+
+  it("submit buruk: aria-describedby menunjuk id galat yang benar-benar ada di DOM", () => {
+    const { body: html } = render(MoneyInput, {
+      props: { label: "Nominal (IDR)", hint: "Tanpa pemisah ribuan.", error: "Nominal tidak sah." },
+    });
+    const id = controlId(html, "input");
+
+    expect(html).toContain(`aria-describedby="${id}-hint ${id}-error"`);
+    expect(html).toContain('aria-invalid="true"');
+    expect(html).toContain(`<p class="kran-alert" id="${id}-error">Nominal tidak sah.</p>`);
+  });
+
+  it("tidak ada pengumuman per ketukan: tanpa aria-live dan tanpa peran live", () => {
+    const { body: html } = render(MoneyInput, { props: { label: "Nominal (IDR)" } });
+
+    expect(html).not.toContain("aria-live");
+    expect(html).not.toContain('role="status"');
+    expect(html).not.toContain('role="alert"');
   });
 });
 

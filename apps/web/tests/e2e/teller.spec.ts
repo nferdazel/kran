@@ -370,3 +370,48 @@ test.describe.serial("teller: sesi kas, setor, tutup", () => {
     }
   });
 });
+
+/**
+ * T-236: satu jalur negatif pada layar pertama yang memakai `MoneyInput`. Submitting an empty amount
+ * must leave the parse error visible on the control itself (`aria-describedby` -> the rendered error)
+ * and move focus back to it, so the message is read instead of silently rendered.
+ */
+test("MoneyInput: nominal kosong menampilkan galat dan memindahkan fokus (T-236)", async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(180_000);
+  const fixture = await createAccountFixture(request);
+  const text = T.id;
+
+  await prepare(page, "id", "light");
+  await login(page, text);
+  await loadAccount(page, text, fixture.accountNo);
+
+  // Form transaksi hanya terbuka dengan sesi kas; buka satu sesi (nilai = float, tanpa transaksi).
+  await page.getByRole("button", { name: text.sessionOpen }).first().click();
+  await page.getByLabel(text.floatLabel, { exact: true }).fill("1000");
+  await page.getByRole("button", { name: text.review }).last().click();
+  await page.getByRole("button", { name: text.sessionOpen }).last().click();
+
+  const amount = page.getByLabel(text.amountLabel, { exact: true });
+  await expect(amount).toBeVisible();
+  await expect(amount).not.toHaveAttribute("aria-invalid", "true");
+
+  await page.getByRole("button", { name: text.review }).last().click();
+
+  await expect(amount).toHaveAttribute("aria-invalid", "true");
+  await expect(amount).toBeFocused();
+  const describedBy = (await amount.getAttribute("aria-describedby")) ?? "";
+  const errorId = describedBy.split(" ").find((id) => id.endsWith("-error"));
+  expect(errorId, `aria-describedby: ${describedBy}`).toBeDefined();
+  await expect(page.locator(`#${errorId}`)).toHaveText("Nominal wajib diisi.");
+
+  // Tutup sesi lagi supaya spec lain menerima keadaan bersih.
+  const panel = page.getByRole("region", { name: "Sesi kas" });
+  await panel.getByRole("button", { name: text.sessionClose }).click();
+  await page.getByLabel(text.countedLabel, { exact: true }).fill("1000");
+  await panel.getByRole("button", { name: text.review }).click();
+  await panel.getByRole("button", { name: text.sessionClose }).click();
+  await expect(page.getByRole("heading", { name: text.closed })).toBeVisible();
+});
