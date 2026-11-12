@@ -56,7 +56,21 @@ cbs.qouver.com {
 			}
 		}
 	}
+	# Kebijakan cache. Aset `/_app/*` ber-hash isi, jadi aman di-cache selamanya — dan yang
+	# PENTING: permintaan ke hash yang sudah tidak ada harus 404, bukan jatuh ke `try_files`
+	# di blok berikutnya dan dapat `index.html`. Kalau itu terjadi, browser mem-parse HTML
+	# sebagai JavaScript (`text/html` vs module script) dan halaman jadi putih sampai
+	# hard reload. Blok ini sengaja tanpa fallback supaya file yang hilang benar-benar 404.
+	handle /_app/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Semua dokumen lain (rute SPA + index.html) wajib revalidasi tiap kali: tanpa
+	# `Cache-Control`, browser boleh memakai cache heuristik dan menyajikan HTML build lama
+	# yang menunjuk aset yang sudah diganti deploy.
 	handle {
+		header Cache-Control "no-cache"
 		try_files {path} /index.html
 		file_server
 	}
