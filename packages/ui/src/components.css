@@ -518,7 +518,10 @@
    kartu. Dipakai ringkasan buku besar dan status penutupan. */
 .kran-facts {
   display: grid;
-  grid-template-columns: max-content 1fr;
+  /* T-294: the label column may shrink and wrap. `max-content` kept the longest label ("Mutasi
+   * Kredit (IDR)") plus its value at ~235px, which overflowed a 124px page column at 200% zoom.
+   * Nothing changes while there is room, so the desktop screenshots do not move. */
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   gap: var(--space-1) var(--space-4);
   align-items: baseline;
 }
@@ -538,6 +541,20 @@
 .kran-facts .kran-num {
   white-space: nowrap;
   font-variant-numeric: tabular-nums slashed-zero;
+}
+
+/* T-294: below 320px the label and an unbreakable money value no longer fit side by side
+ * ("Mutasi Kredit (IDR)" plus "2.400.010,00" needs ~207px, the column has 124px at 200% zoom).
+ * Stack them: label on one line, value under it. A 360px phone keeps the two-column layout. */
+@media (max-width: 20rem) {
+  .kran-facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+
+  .kran-facts dd {
+    margin-block-end: var(--space-2);
+  }
 }
 
 /* Dialog native (mis. konfirmasi penutupan buku): satu lapisan modal, ukuran baca, latar overlay.
@@ -945,8 +962,14 @@
 
 .kran-business-date {
   display: inline-flex;
+  /* T-294: at 200% zoom the badge is wider than the topbar. It may wrap onto a second line, but it
+   * must stay inside its box: the value is the point of the badge, hiding or clipping it is not an
+   * option. */
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1) var(--space-2);
+  min-inline-size: 0;
+  max-inline-size: 100%;
   padding-block: 2px;
   padding-inline: var(--space-2);
   border: 1px solid var(--color-hairline);
@@ -1281,6 +1304,30 @@
   gap: var(--space-3);
   align-items: center;
   justify-content: space-between;
+}
+
+/* T-294: a toolbar row must shrink before it overflows. The period select is as wide as its
+ * longest option ("1 Januari 2026 - 31 Desember 2026"), which gives the row a ~250px min-content
+ * width at a 124px page column; without `min-inline-size: 0` the row keeps that width and pushes
+ * the whole document sideways. Controls give way, then the action group wraps under them. */
+.kran-toolbar > * {
+  min-inline-size: 0;
+}
+
+.kran-toolbar .kran-actions {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.kran-toolbar .kran-field {
+  min-inline-size: 0;
+}
+
+/* The control gives way last: a native select is as wide as its longest option unless told it may
+ * shrink. Scoped to the toolbar so no other screen's field width changes. */
+.kran-toolbar .kran-control {
+  min-inline-size: 0;
+  max-inline-size: 100%;
 }
 
 /* Tabel data (DESIGN §6): semantik, garis rambut, angka rata kanan + tabular.
