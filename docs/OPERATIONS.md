@@ -869,16 +869,37 @@ Exit codes: 0 created, 3 refused because an admin already exists (or the user na
 
 ### 5.3 Reset a password
 
-**UNVERIFIED ON SERVER** as written below; the path was added after a lost initial password
-incident. Rehearse it against a non-production database first.
+**EXERCISED ON SERVER** (12 Nov 2026, user `admin`, release `d0404e0`). The path below was run
+against production and the resulting login was proven end-to-end. Two corrections from that run:
+
+- Run the command **inside the API container** on `d0404e0`. The host binary at
+  `/srv/qouver/apps/kran/bin/kran-api` is the gate build and links against the vendored
+  `libpq`; it works, but the container is the same binary the service uses and needs no
+  `LD_LIBRARY_PATH` juggling.
+- Do **not** rewrite `@qouver-postgres:` to `@127.0.0.1:`. `qouver-postgres` is a podman
+  network alias, and it resolves from inside the container; on the host that replacement
+  points at a port with no listener.
 
 ```bash
-cd /srv/qouver/apps/kran/monorepo
-KRAN_DATABASE_URL="$(grep '^KRAN_DATABASE_URL=' /srv/qouver/apps/kran/env/kran-prod.env | cut -d= -f2-)"
-KRAN_DATABASE_URL="${KRAN_DATABASE_URL//@qouver-postgres:/@127.0.0.1:}"
-KRAN_DATABASE_URL="$KRAN_DATABASE_URL" LD_LIBRARY_PATH=/srv/qouver/apps/kran/lib \
-  /srv/qouver/apps/kran/bin/kran-api --role=ctl reset-password --username=admin
+# Inside the API container (production iteration parameters, random password printed once).
+umask 077
+podman exec kran-api /usr/local/bin/kran-api --role=ctl reset-password --username=admin \
+  > /srv/qouver/apps/kran/private/admin-reset-$(date +%Y%m%d).txt 2>&1
 ```
+
+Verify with the same call the browser makes, using the printed password straight from the file,
+so the secret never lands in shell history or chat:
+
+```bash
+pw=$(sed -n '2p' /srv/qouver/apps/kran/private/admin-reset-$(date +%Y%m%d).txt)
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://cbs.qouver.com/api/v1/auth/login \
+  -H 'content-type: application/json' --data-raw "{\"username\":\"admin\",\"password\":\"$pw\"}"
+# 200 = the new password works through the public entry point.
+```
+
+Recorded run (12 Nov 2026): reset 01:57:19Z, `auth.login.success` 01:58:50Z (container) and
+02:00:06Z (public), `failed_attempts` back to 0, `must_change_password = true`,
+`user.password_reset` in the audit chain with `sessions_revoked: 1`.
 
 The random password is printed **once**; the hash uses production iteration parameters;
 `must_change_password = true`; a `LOCKED` account returns to `ACTIVE` (an `INACTIVE` or
