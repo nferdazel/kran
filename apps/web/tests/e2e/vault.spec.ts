@@ -173,7 +173,7 @@ async function openVault(page: Page, text: Text): Promise<void> {
 
 /** Isi form pengajuan dan kirim dengan keyboard (fokus + Enter), bukan klik tetikus. */
 async function submitTopUp(page: Page, text: Text, amount: string, note: string): Promise<void> {
-  await page.getByLabel(text.amount, { exact: true }).fill(amount);
+  await page.getByRole("textbox", { name: text.amount, exact: true }).fill(amount);
   await page.getByLabel(text.source, { exact: true }).fill(SOURCE_ACCOUNT);
   await page.getByLabel(text.note, { exact: true }).fill(note);
   const button = page.getByRole("button", { name: text.submit, exact: true });
@@ -199,7 +199,7 @@ test.describe.serial("vault: pengajuan dan keputusan top-up", () => {
     // 0. Validasi klien: nominal tidak sah tidak dikirim dan pesannya tampil di form.
     await page.getByLabel(text.source, { exact: true }).fill(SOURCE_ACCOUNT);
     await page.getByLabel(text.note, { exact: true }).fill(`[E2E] invalid e2e-${suffix} | uji`);
-    await page.getByLabel(text.amount, { exact: true }).fill("abc");
+    await page.getByRole("textbox", { name: text.amount, exact: true }).fill("abc");
     const invalidSubmit = page.getByRole("button", { name: text.submit, exact: true });
     await invalidSubmit.focus();
     await page.keyboard.press("Enter");
@@ -284,7 +284,7 @@ test.describe.serial("vault: pengajuan dan keputusan top-up", () => {
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
     expect(overflow, "scrollWidth - clientWidth").toBeLessThanOrEqual(0);
-    await expect(page.getByLabel(T.id.amount, { exact: true })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: T.id.amount, exact: true })).toBeVisible();
 
     // Riwayat (bukan hanya PENDING) supaya tabel benar-benar berisi pada viewport sempit.
     const filtered = page.waitForResponse(

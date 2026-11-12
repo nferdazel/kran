@@ -17,7 +17,7 @@ import MoneyInput from "../src/components/MoneyInput.svelte";
 import Select from "../src/components/Select.svelte";
 import StatusBadge from "../src/components/StatusBadge.svelte";
 import Textarea from "../src/components/Textarea.svelte";
-import { formatMoney } from "../src/money.js";
+import { formatMoney, parseMoneyInput } from "../src/money.js";
 import DoubleInput from "./fixtures/double-input.svelte";
 
 /**
@@ -214,7 +214,7 @@ describe("Input", () => {
 
     expect(html).toContain(`aria-describedby="${id}-error"`);
     expect(html).toContain('aria-invalid="true"');
-    expect(html).toContain(`<p class="kran-alert" id="${id}-error">`);
+    expect(html).toContain(`<p class="kran-alert" id="${id}-error" role="alert">`);
     expect(html).toContain("Wajib diisi.");
   });
 
@@ -280,15 +280,37 @@ describe("MoneyInput", () => {
 
     expect(html).toContain(`aria-describedby="${id}-hint ${id}-error"`);
     expect(html).toContain('aria-invalid="true"');
-    expect(html).toContain(`<p class="kran-alert" id="${id}-error">Nominal tidak sah.</p>`);
+    expect(html).toContain(`<p class="kran-alert" id="${id}-error" role="alert">Nominal tidak sah.</p>`);
   });
 
-  it("tidak ada pengumuman per ketukan: tanpa aria-live dan tanpa peran live", () => {
+  it("idle: tanpa peran live dan tanpa live region", () => {
     const { body: html } = render(MoneyInput, { props: { label: "Nominal (IDR)" } });
 
     expect(html).not.toContain("aria-live");
     expect(html).not.toContain('role="status"');
     expect(html).not.toContain('role="alert"');
+  });
+
+  it("submit buruk: tepat satu role=alert berisi pesan parse, tanpa live region tambahan", () => {
+    const { body: html } = render(MoneyInput, {
+      props: { label: "Nominal (IDR)", error: "Nominal tidak sah." },
+    });
+
+    expect((html.match(/role="alert"/g) ?? []).length, html).toBe(1);
+    expect(html).toContain('<p class="kran-alert"');
+    expect(html).toContain("Nominal tidak sah.");
+  });
+
+  it("input berkelompok ditolak: 1.234.567,89 menghasilkan parse error dan aria-invalid", () => {
+    expect(parseMoneyInput("1.234.567,89")).toEqual({ ok: false, error: "invalid_format" });
+
+    const { body: html } = render(MoneyInput, {
+      props: { label: "Nominal (IDR)", value: "1.234.567,89", error: "Nominal tidak sah." },
+    });
+
+    expect(html).toContain('value="1.234.567,89"');
+    expect(html).toContain('aria-invalid="true"');
+    expect(html).toContain('role="alert"');
   });
 });
 
