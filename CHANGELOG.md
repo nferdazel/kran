@@ -4,6 +4,17 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.3.0] - 2026-11-12
+
+### Added
+- Add shared MoneyInput and migrate the amount fields
+
+### Fixed
+- Announce field errors and tighten MoneyInput e2e selectors
+- **i18n:** State IDR once on the loan amount label
+- Stop the shell scrolling sideways at 200% zoom (T-294 part 1)
+- **ops:** Stop the SPA fallback from answering missing hashed assets with HTML
+
 ## [0.2.0] - 2026-11-11
 
 ### Added
