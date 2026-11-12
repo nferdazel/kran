@@ -356,6 +356,10 @@ REVID="${NEW_REV:0:12}"
 [ -n "$REVID" ] || REVID="unknown"
 # ID image yang kehilangan tag `:prev` pada deploy ini; diisi saat build (lihat di bawah).
 OLD_PREV_IMAGE_ID=""
+# 1 bila host ini sudah punya image `:local` sebelum build, jadi `:prev` wajib ada dan berbeda
+# sebagai target rollback setelah deploy. Host baru (belum pernah build) tidak punya apa pun
+# untuk di-rollback, jadi syarat ini tidak berlaku di sana.
+PREV_TARGET_REQUIRED=0
 
 # OPS-10 (T-131): HMAC GitHub menutup **body**, bukan waktu kirim, jadi satu delivery sah bisa
 # diputar ulang. Pertahanannya bukan di webhook melainkan di sini: rev yang sama dengan yang sudah
@@ -493,13 +497,30 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|tools/|kran\.
   # layanan, hanya supaya gate (FREEZE/MIGRATION) bisa menjalankan versi yang baru dibangun.
   # Image yang sekarang memegang `:prev` akan kehilangan tag setelah rotasi di bawah (rotasi
   # memindahkan `:prev` ke image `:local` saat ini). Dicatat untuk dipangkas setelah gate sukses.
+  local_before="$(podman image inspect --format '{{.Id}}' localhost/kran-api:local 2>/dev/null || true)"
   if podman image exists localhost/kran-api:prev; then
     OLD_PREV_IMAGE_ID="$(podman image inspect --format '{{.Id}}' localhost/kran-api:prev 2>/dev/null || true)"
   fi
-  if podman image exists localhost/kran-api:local; then
+  if [ -n "$local_before" ]; then
     podman tag localhost/kran-api:local localhost/kran-api:prev 2>/dev/null || true
+    # `:local` dan `:prev` bisa menunjuk image yang **sama**: deploy sukses sebelumnya, atau
+    # rollback yang baru saja men-tag `:prev` -> `:local`. Rotasi di atas jadi no-op — dan itu
+    # benar, `:prev` tetap image lama sementara build memindahkan `:local` ke image baru. Yang
+    # salah adalah mencatat image itu untuk dipangkas: `:prev` satu-satunya pemegangnya, prune
+    # menghapusnya setelah gate, dan `:prev` ikut mati (deploy v0.3.0, 12 Nov 2026 — rollback.sh
+    # lalu gagal di baris 31). Tidak ada image lebih tua untuk dipangkas di kasus ini.
+    if [ "${OLD_PREV_IMAGE_ID:-}" = "$local_before" ]; then
+      OLD_PREV_IMAGE_ID=""
+    fi
   fi
   podman build -f apps/api/Dockerfile -t localhost/kran-api:local .
+  # Syarat target rollback hanya berlaku bila build benar-benar memindahkan `:local`. Build yang
+  # menghasilkan ID sama (mis. konteks tidak berubah) tidak meninggalkan versi lain untuk kembali,
+  # dan memaksakan `:prev` di situ akan menggagalkan deploy yang isinya cuma ops/docs.
+  local_after="$(podman image inspect --format '{{.Id}}' localhost/kran-api:local 2>/dev/null || true)"
+  if [ -n "$local_before" ] && [ -n "$local_after" ] && [ "$local_after" != "$local_before" ]; then
+    PREV_TARGET_REQUIRED=1
+  fi
   mkdir -p "$APP_DIR/bin"
   build_cid="$(podman create localhost/kran-api:local)"
   podman cp "$build_cid:/usr/local/bin/kran-api" "$BIN_NEW"
@@ -700,6 +721,22 @@ if [ "$healthy" -eq 1 ]; then
     log "==> WARN: tidak bisa membandingkan image container dengan :local (podman inspect kosong)"
   else
     log "==> revisi yang melayani = image ${local_image:0:19} (:local)"
+  fi
+
+  # Target rollback adalah bagian dari arti "deploy sukses": health gate yang hijau tanpa `:prev`
+  # berarti deploy berikutnya tidak punya tempat kembali, dan rollback.sh berhenti di baris 31
+  # sebelum sempat memulihkan web/biner (deploy v0.3.0, 12 Nov 2026).
+  if [ "$healthy" -eq 1 ] && [ "$PREV_TARGET_REQUIRED" -eq 1 ]; then
+    prev_image="$(podman image inspect --format '{{.Id}}' localhost/kran-api:prev 2>/dev/null || echo '')"
+    if [ -z "$prev_image" ]; then
+      log "==> ERROR: localhost/kran-api:prev tidak ada; target rollback hilang"
+      healthy=0
+    elif [ "$prev_image" = "$local_image" ]; then
+      log "==> ERROR: :prev dan :local menunjuk image yang sama (${prev_image:0:19}); target rollback hilang"
+      healthy=0
+    else
+      log "==> target rollback = image ${prev_image:0:19} (:prev)"
+    fi
   fi
 fi
 

@@ -13,6 +13,8 @@
 Description=KRAN Worker (Nim, --role=worker)
 After=network-online.target
 Wants=network-online.target
+# Lihat catatan di kran-api.container: `alert@.service` milik host, bukan repo ini.
+OnFailure=alert@%N.service
 
 [Container]
 Image=localhost/kran-api:local
@@ -28,6 +30,11 @@ Volume=/srv/qouver/apps/kran/monorepo/modules:/monorepo/modules:z,ro
 Exec=--role=worker --root=/monorepo
 NoNewPrivileges=true
 DropCapability=ALL
+# Hardening yang sama dengan kran-api.container (aktif di qouver1 sejak 12 Nov 2026, dipindah ke
+# repo supaya `sync_units` tidak menghapusnya). Worker hanya menulis ke DB dan stdout.
+PidsLimit=256
+ReadOnly=true
+Tmpfs=/tmp:size=64m
 
 [Install]
 WantedBy=default.target

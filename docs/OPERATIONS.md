@@ -115,13 +115,20 @@ A push to `main` is a production deploy. The webhook calls `ops/scripts/deploy-v
 7. **Pre-migration dump**: `backup-pre-deploy.sh` runs and must pass. Without a usable dump the
    deploy stops; there is no "continue without backup".
 8. **Build**: image `localhost/kran-api:local` is built; the old tag is moved to `:prev` first,
-   so exactly one rollback image exists.
+   so exactly one rollback image exists. When `:local` and `:prev` already point at the same
+   image (a previous successful deploy, or a rollback that just retagged `:prev` as `:local`),
+   the rotation is a no-op and that image is **not** queued for pruning: it stays as `:prev`
+   after the build moves `:local` to the new image.
 9. **Migration gate**: `--role=migrate --check`, then `--up`, then the contract step described
    in section 2.
 10. **Swap and restart**: web directory swap, `sync_units` copies `ops/systemd/*.container` and
     keeps `.prev` copies, then `systemctl --user restart kran-api` and `kran-worker`.
 11. **Health gate**: polls `/readyz` for 60 s. On failure the script restores the previous
-    image, web directory and units (`restore_units`), restarts, and exits non-zero.
+    image, web directory and units (`restore_units`), restarts, and exits non-zero. A build
+    deploy also verifies that the rollback target exists and differs from `:local`
+    (`podman image exists localhost/kran-api:prev`, image IDs compared); a host that never built
+    before has nothing to roll back to and is exempt. A green `/readyz` with a missing `:prev`
+    is a failed deploy, not a success without a backup.
 12. **Record**: `.deployed_rev`, `releases.txt`, `deploy.log`.
 
 The web and API are served from one origin: Caddy serves the SPA from `$APP_DIR/web` and
@@ -277,6 +284,22 @@ Limits, stated plainly:
 - Rollback does **not** touch the database. If data is wrong, rollback is not the tool; use the
   documented correction path (reversing journal, cancel/re-run close).
 - There is exactly one previous image. Two consecutive bad deploys consume it.
+
+### 1.6 Quadlet unit hardening
+
+`ops/systemd/*.container` is the source of truth: `sync_units` copies these files over the live
+units on every deploy, so a setting present only on the host is lost on the next deploy. Both
+units carry, and must keep:
+
+| Setting | Section | Why |
+|---|---|---|
+| `OnFailure=alert@%N.service` | `[Unit]` | Fires the host alert template on a failed start. The template and `/usr/local/sbin/alert-notify.sh` live on the host, not in this repo; a host without them logs a missing-unit warning and still starts. |
+| `PidsLimit=256` | `[Container]` | Caps fork/PID growth inside the container. |
+| `ReadOnly=true` | `[Container]` | The app writes only to the DB and stdout; an accidental rootfs write fails at start instead of piling up in the container layer. |
+| `Tmpfs=/tmp:size=64m` | `[Container]` | Writable `/tmp` that disappears with the container. |
+
+These were installed directly on qouver1 on 12 Nov 2026 and moved into the repo the same day;
+before that, the next deploy would have silently stripped them.
 
 ---
 

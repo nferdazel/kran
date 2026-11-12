@@ -29,6 +29,10 @@
 Description=KRAN API (Nim, --role=api)
 After=network-online.target
 Wants=network-online.target
+# alert@.service adalah unit host (template + /usr/local/sbin/alert-notify.sh di qouver1), bukan
+# bagian repo ini. Referensi ini gagal senyap bila host belum punya template-nya, jadi host baru
+# tetap start; pasang template-nya dari baseline host sebelum mengharapkan alert.
+OnFailure=alert@%N.service
 
 [Container]
 Image=localhost/kran-api:local
@@ -44,6 +48,15 @@ Volume=/srv/qouver/apps/kran/monorepo/modules:/monorepo/modules:z,ro
 Exec=--role=api --port=8095 --address=0.0.0.0 --root=/monorepo
 NoNewPrivileges=true
 DropCapability=ALL
+# Hardening yang sudah aktif di qouver1 sejak 12 Nov 2026 (dipasang di host, lalu hilang bila
+# deploy menimpa unit). Dipindah ke repo supaya `sync_units` tidak menghapusnya.
+# Root filesystem read-only: aplikasi hanya menulis ke DB dan stdout, plus /tmp (tmpfs di bawah).
+# Guard ini menangkap penulisan tak sengaja ke rootfs sebagai kegagalan start, bukan tumpukan
+# berkas di layer container. Naikkan batas PID di sini bila pool koneksi/thread bertambah.
+PidsLimit=256
+ReadOnly=true
+# /tmp di dalam container; `PrivateTmp=true` di [Service] tetap berlaku untuk namespace unit.
+Tmpfs=/tmp:size=64m
 # T-133/OPS-15: **tidak ada** `HealthCmd=` di sini meski audit memintanya. Healthcheck Podman
 # berjalan *di dalam* container, dan image runtime sengaja hanya berisi `kran-api` (tanpa curl/wget)
 # — perintah yang menguji HTTP tidak tersedia. Kesehatan yang sebenarnya dijaga di dua tempat:
