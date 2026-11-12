@@ -34,6 +34,7 @@
     type DataColumn,
     type DataRow,
   } from "@kran/ui/components/DataTable.svelte";
+  import MoneyInput from "@kran/ui/components/MoneyInput.svelte";
   import Select from "@kran/ui/components/Select.svelte";
 
   import * as m from "#lib/paraglide/messages.js";
@@ -201,7 +202,7 @@
 
   let accountInputEl = $state<HTMLInputElement | undefined>(undefined);
   let destinationEl = $state<HTMLInputElement | undefined>(undefined);
-  let amountEl = $state<HTMLInputElement | undefined>(undefined);
+  let amountEl = $state<HTMLInputElement | null>(null);
   let narrationEl = $state<HTMLInputElement | undefined>(undefined);
   let reviewHeadingEl = $state<HTMLHeadingElement | undefined>(undefined);
   let successHeadingEl = $state<HTMLHeadingElement | undefined>(undefined);
@@ -210,8 +211,8 @@
   let sessionFormHeadingEl = $state<HTMLHeadingElement | undefined>(undefined);
   let sessionReviewHeadingEl = $state<HTMLHeadingElement | undefined>(undefined);
   let sessionClosedHeadingEl = $state<HTMLHeadingElement | undefined>(undefined);
-  let sessionFloatEl = $state<HTMLInputElement | undefined>(undefined);
-  let sessionCountedEl = $state<HTMLInputElement | undefined>(undefined);
+  let sessionFloatEl = $state<HTMLInputElement | null>(null);
+  let sessionCountedEl = $state<HTMLInputElement | null>(null);
   let sessionNoteEl = $state<HTMLInputElement | undefined>(undefined);
   let sessionAlertEl = $state<HTMLParagraphElement | undefined>(undefined);
 
@@ -1317,7 +1318,7 @@
             {m.teller_session_open_heading()}
           </h3>
 
-          {#if sessionFormError !== null}
+          {#if sessionFormError !== null && sessionFormError.field === "sessionNote"}
             <p class="kran-alert" id="teller-session-open-error" role="alert">
               {sessionFormError.message}
             </p>
@@ -1330,25 +1331,15 @@
           {/if}
 
           <form class="kran-form" onsubmit={(event) => void reviewSessionOpen(event)} novalidate>
-            <div class="kran-field">
-              <label class="kran-label" for="teller-session-float">{m.teller_session_opening_float()}</label>
-              <input
-                class="kran-input teller-money-input"
-                id="teller-session-float"
-                name="openingFloat"
-                inputmode="decimal"
-                bind:this={sessionFloatEl}
-                bind:value={openingFloatRaw}
-                autocomplete="off"
-                aria-invalid={sessionFormError?.field === "openingFloat" ? "true" : undefined}
-                aria-describedby={sessionFormError?.field === "openingFloat"
-                  ? "teller-session-float-hint teller-session-open-error"
-                  : "teller-session-float-hint"}
-              />
-              <p class="kran-muted" id="teller-session-float-hint">
-                {m.teller_session_opening_float_hint()}
-              </p>
-            </div>
+            <MoneyInput
+              label={m.teller_session_opening_float()}
+              name="openingFloat"
+              hint={m.teller_session_opening_float_hint()}
+              class="teller-money-input"
+              error={sessionFormError?.field === "openingFloat" ? sessionFormError.message : ""}
+              bind:element={sessionFloatEl}
+              bind:value={openingFloatRaw}
+            />
             <div class="kran-field">
               <label class="kran-label" for="teller-session-open-note">{m.teller_session_note()}</label>
               <input
@@ -1382,7 +1373,7 @@
             {m.teller_session_close_heading()}
           </h3>
 
-          {#if sessionFormError !== null}
+          {#if sessionFormError !== null && sessionFormError.field === "sessionNote"}
             <p class="kran-alert" id="teller-session-close-error" role="alert">
               {sessionFormError.message}
             </p>
@@ -1395,25 +1386,15 @@
           {/if}
 
           <form class="kran-form" onsubmit={(event) => void reviewSessionClose(event)} novalidate>
-            <div class="kran-field">
-              <label class="kran-label" for="teller-session-counted">{m.teller_session_counted_cash()}</label>
-              <input
-                class="kran-input teller-money-input"
-                id="teller-session-counted"
-                name="countedCash"
-                inputmode="decimal"
-                bind:this={sessionCountedEl}
-                bind:value={countedCashRaw}
-                autocomplete="off"
-                aria-invalid={sessionFormError?.field === "countedCash" ? "true" : undefined}
-                aria-describedby={sessionFormError?.field === "countedCash"
-                  ? "teller-session-counted-hint teller-session-close-error"
-                  : "teller-session-counted-hint"}
-              />
-              <p class="kran-muted" id="teller-session-counted-hint">
-                {m.teller_session_counted_cash_hint()}
-              </p>
-            </div>
+            <MoneyInput
+              label={m.teller_session_counted_cash()}
+              name="countedCash"
+              hint={m.teller_session_counted_cash_hint()}
+              class="teller-money-input"
+              error={sessionFormError?.field === "countedCash" ? sessionFormError.message : ""}
+              bind:element={sessionCountedEl}
+              bind:value={countedCashRaw}
+            />
             <div class="kran-field">
               <label class="kran-label" for="teller-session-close-note">{m.teller_session_note()}</label>
               <input
@@ -1787,7 +1768,7 @@
             </p>
           {/if}
 
-          {#if fieldError !== null}
+          {#if fieldError !== null && fieldError.field !== "amount"}
             <p class="kran-alert" id="teller-field-error" role="alert">{fieldError.message}</p>
           {/if}
 
@@ -1839,27 +1820,19 @@
                 </div>
               {/if}
 
-              <div class="kran-field">
-                <label class="kran-label" for="teller-amount">{m.teller_amount_label()}</label>
-                <input
-                  class="kran-input teller-money-input"
-                  id="teller-amount"
-                  name="amount"
-                  disabled={postingBlocked}
-                  inputmode="decimal"
-                  bind:this={amountEl}
-                  bind:value={amountRaw}
-                  autocomplete="off"
-                  aria-invalid={fieldError?.field === "amount" ? "true" : undefined}
-                  aria-describedby={fieldError?.field === "amount"
-                    ? "teller-amount-hint teller-field-error"
-                    : "teller-amount-hint"}
-                />
-                <p class="kran-muted" id="teller-amount-hint">{m.teller_amount_hint()}</p>
-                {#if amountPreviewText !== ""}
-                  <p class="teller-preview">{m.teller_amount_preview({ amount: amountPreviewText })}</p>
-                {/if}
-              </div>
+              <MoneyInput
+                label={m.teller_amount_label()}
+                name="amount"
+                disabled={postingBlocked}
+                hint={m.teller_amount_hint()}
+                class="teller-money-input"
+                error={fieldError?.field === "amount" ? fieldError.message : ""}
+                bind:element={amountEl}
+                bind:value={amountRaw}
+              />
+              {#if amountPreviewText !== ""}
+                <p class="teller-preview">{m.teller_amount_preview({ amount: amountPreviewText })}</p>
+              {/if}
 
               <div class="kran-field">
                 <label class="kran-label" for="teller-narration">{m.teller_narration_label()}</label>
@@ -1950,7 +1923,8 @@
     overflow-wrap: anywhere;
   }
 
-  .teller-money-input {
+  /* Kelas diteruskan ke kontrol bersama lewat prop `class`, jadi tidak ikut hash scope Svelte. */
+  :global(.teller-money-input) {
     font-variant-numeric: tabular-nums slashed-zero;
   }
 

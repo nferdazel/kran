@@ -68,6 +68,7 @@
   />
 
   {#if error !== ""}
-    <p class="kran-alert" id={wiring.errorId}>{error}</p>
+    <!-- role="alert" hanya ada saat galat tampil, jadi tidak ada pengumuman per ketukan. -->
+    <p class="kran-alert" id={wiring.errorId} role="alert">{error}</p>
   {/if}
 </div>

@@ -31,6 +31,7 @@
   import DataTable, { type DataColumn, type DataRow } from "@kran/ui/components/DataTable.svelte";
   import EmptyState from "@kran/ui/components/EmptyState.svelte";
   import Input from "@kran/ui/components/Input.svelte";
+  import MoneyInput from "@kran/ui/components/MoneyInput.svelte";
   import Select from "@kran/ui/components/Select.svelte";
   import Textarea from "@kran/ui/components/Textarea.svelte";
 
@@ -805,15 +806,13 @@
           {/if}
 
           {#if panel === "payment"}
-            <Input
+            <MoneyInput
               label={m.loans_field_amount()}
               bind:value={amountRaw}
               bind:element={amountEl}
               error={amountError}
               hint={m.loans_field_amount_hint()}
               required
-              inputmode="decimal"
-              autocomplete="off"
               oninput={() => (amountError = "")}
             />
             {#if amountPreview !== ""}
@@ -830,13 +829,11 @@
               { key: "interest", label: m.loans_field_recovery_interest() },
               { key: "penalty", label: m.loans_field_recovery_penalty() },
             ] as field (field.key)}
-              <Input
+              <MoneyInput
                 label={field.label}
                 bind:value={recoveryRaw[field.key as "principal" | "interest" | "penalty"]}
                 bind:element={recoveryEls[field.key as "principal" | "interest" | "penalty"]}
                 error={recoveryError[field.key as "principal" | "interest" | "penalty"]}
-                inputmode="decimal"
-                autocomplete="off"
                 oninput={() => {
                   recoveryError[field.key as "principal" | "interest" | "penalty"] = "";
                   recoveryError.total = "";

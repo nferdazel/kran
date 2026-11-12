@@ -370,3 +370,54 @@ test.describe.serial("teller: sesi kas, setor, tutup", () => {
     }
   });
 });
+
+/**
+ * T-236: satu jalur negatif pada layar pertama yang memakai `MoneyInput`. Submitting an empty amount
+ * must leave the parse error visible on the control itself (`aria-describedby` -> the rendered error)
+ * and move focus back to it, so the message is read instead of silently rendered.
+ */
+test("MoneyInput: nominal kosong menampilkan galat dan memindahkan fokus (T-236)", async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(180_000);
+  const fixture = await createAccountFixture(request);
+  const text = T.id;
+
+  await prepare(page, "id", "light");
+  await login(page, text);
+  await loadAccount(page, text, fixture.accountNo);
+
+  // Form transaksi hanya terbuka dengan sesi kas; buka satu sesi (nilai = float, tanpa transaksi).
+  // Semua interaksi sesi di-scope ke region "Sesi kas": tombol "Tinjau" di form transaksi punya
+  // nama yang sama, jadi `.last()` dulu mengenai tombol yang salah.
+  const session = page.getByRole("region", { name: "Sesi kas" });
+  await session.getByRole("button", { name: text.sessionOpen }).click();
+  await session.getByLabel(text.floatLabel, { exact: true }).fill("1000");
+  await session.getByRole("button", { name: text.review }).click();
+  await session.getByRole("button", { name: text.sessionOpen }).click();
+
+  const transaction = page.getByRole("region", { name: "Transaksi", exact: true });
+  const amount = transaction.getByLabel(text.amountLabel, { exact: true });
+  await expect(amount).toBeVisible();
+  await expect(amount).not.toHaveAttribute("aria-invalid", "true");
+  // T-236 memindahkan kontrol dari type=number ke kontrol teks dengan inputmode desimal.
+  await expect(amount).toHaveAttribute("type", "text");
+
+  await transaction.getByRole("button", { name: text.review }).click();
+
+  await expect(amount).toHaveAttribute("aria-invalid", "true");
+  await expect(amount).toBeFocused();
+  const describedBy = (await amount.getAttribute("aria-describedby")) ?? "";
+  const errorId = describedBy.split(" ").find((id) => id.endsWith("-error"));
+  expect(errorId, `aria-describedby: ${describedBy}`).toBeDefined();
+  await expect(page.locator(`#${errorId}`)).toHaveText("Nominal wajib diisi.");
+
+  // Tutup sesi lagi supaya spec lain menerima keadaan bersih.
+  const panel = page.getByRole("region", { name: "Sesi kas" });
+  await panel.getByRole("button", { name: text.sessionClose }).click();
+  await page.getByLabel(text.countedLabel, { exact: true }).fill("1000");
+  await panel.getByRole("button", { name: text.review }).click();
+  await panel.getByRole("button", { name: text.sessionClose }).click();
+  await expect(page.getByRole("heading", { name: text.closed })).toBeVisible();
+});
