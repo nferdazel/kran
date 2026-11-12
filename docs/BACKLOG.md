@@ -17,12 +17,12 @@ findings are folded into the rows below and into the task files at DoR time.
 
 | ID | Title | Size | Deps | Risk | Status |
 |---|---|---|---|---|---|
-| T-173 | `archcheck` handlers and tests categories + shrink-only baselines | M | - | standard | READY |
-| T-174 | `lint-nomagic` covers `apps/api/src` + baseline | M | T-173 | standard | READY |
-| T-175 | `nim check` warnings fatal or shrink-only | S | - | standard | READY |
-| T-176 | `ci-fast` web arm fail-closed + `packages/ui` tests | S | - | standard | READY |
-| T-177 | Dependency and lockfile audit | S | T-176 | standard | READY |
-| T-178 | `fmt-check` dispatch arm (Nim only) | S | - | standard | READY |
+| T-173 | `archcheck` handlers and tests categories + shrink-only baselines | M | - | standard | TODO (no `docs/tasks/T-173.md`; R-32) |
+| T-174 | `lint-nomagic` covers `apps/api/src` + baseline | M | T-173 | standard | TODO (no `docs/tasks/T-174.md`; R-32) |
+| T-175 | `nim check` warnings fatal or shrink-only | S | - | standard | TODO (no `docs/tasks/T-175.md`; R-32) |
+| T-176 | `ci-fast` web arm fail-closed + `packages/ui` tests | S | - | standard | TODO (no `docs/tasks/T-176.md`; R-32) |
+| T-177 | Dependency and lockfile audit | S | T-176 | standard | TODO (no `docs/tasks/T-177.md`; R-32) |
+| T-178 | `fmt-check` dispatch arm (Nim only) | S | - | standard | TODO (no `docs/tasks/T-178.md`; R-32) |
 | T-281 | Typed OpenAPI timestamps | S | T-178 | standard | TODO |
 | T-278 | Role-authentic test fixtures (kasir, maker, checker) | S | T-173 | standard | TODO |
 | T-179 | Baseline documentation + frozen green record | S | T-173, T-174, T-175, T-176, T-177, T-178, T-281, T-278 | standard | TODO |
@@ -147,11 +147,9 @@ findings are folded into the rows below and into the task files at DoR time.
 
 | ID | Title | Size | Deps | Risk | Status |
 |---|---|---|---|---|---|
-| T-236 | Component: MoneyInput (Input/Select delivered by T-286) | S | T-235 | full | READY |
-| T-237 | Component: DataTable on `T-279` (extend, not recreate) | M | T-235, T-279 | standard | TODO |
+| T-236 | Component: MoneyInput (Input/Select delivered by T-286) | S | T-235 | full | IN_PROGRESS |
 | T-238 | Component: ReviewPanel / ApprovalPanel | M | T-235 | standard | TODO |
 | T-239 | Component: Dialog / Confirm | S | T-235 | standard | TODO |
-| T-240 | Component: Empty / Error / Loading states | S | T-235 | standard | TODO |
 | T-284 | Design tokens v2 + full contrast matrix (D-202) | S | none | standard | DONE |
 | T-285 | App shell: AppShell/Sidebar/Topbar/PageHeader/Toolbar (D-202) | M | T-284 | standard | DONE |
 | T-286 | Form controls v2: Input / Select / Checkbox (Field folded in) | M | T-284 | standard | DONE |
@@ -162,7 +160,7 @@ findings are folded into the rows below and into the task files at DoR time.
 | T-291 | Report and print: no chrome, token colours, number rules | S | T-288, T-289 | standard | DONE |
 | T-292 | State sweep: three empties, loading/error components, terminology | M | T-284, T-285 | standard | DONE |
 | T-293 | Loans list density: one-line dates, member name over ID, 40px rows | M | T-284, T-288 | standard | DONE |
-| T-294 | Shell reflow at 360 and 200%, one ledger tab stop | M | T-284, T-285, T-288 | standard | READY |
+| T-294 | Shell reflow at 360 and 200%, one ledger tab stop | M | T-284, T-285, T-288 | standard | IN_PROGRESS |
 | T-295 | Loans money columns state their unit in the header | S | T-289, T-293 | standard | DONE |
 | T-296 | Visual baselines ignore the build version | S | T-289 | standard | DONE |
 | T-234 | AppShell + navigation | M | T-232, T-233, T-279 | standard | SUPERSEDED by T-285 |
