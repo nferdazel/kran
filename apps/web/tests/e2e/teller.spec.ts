@@ -401,7 +401,8 @@ test("MoneyInput: nominal kosong menampilkan galat dan memindahkan fokus (T-236)
   const amount = transaction.getByLabel(text.amountLabel, { exact: true });
   await expect(amount).toBeVisible();
   await expect(amount).not.toHaveAttribute("aria-invalid", "true");
-  // T-236 memindahkan kontrol dari type=number ke kontrol teks dengan inputmode desimal.
+  // T-236 mengganti kontrol nominal ke `<input type="text" inputmode="decimal">` yang eksplisit;
+  // di 4f64630 atribut `type` tidak ada sama sekali, jadi asersi ini merah di parent.
   await expect(amount).toHaveAttribute("type", "text");
 
   await transaction.getByRole("button", { name: text.review }).click();

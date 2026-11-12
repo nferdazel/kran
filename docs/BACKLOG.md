@@ -147,7 +147,7 @@ findings are folded into the rows below and into the task files at DoR time.
 
 | ID | Title | Size | Deps | Risk | Status |
 |---|---|---|---|---|---|
-| T-236 | Component: MoneyInput (Input/Select delivered by T-286) | S | T-235 | full | IN_PROGRESS |
+| T-236 | Component: MoneyInput (Input/Select delivered by T-286) | S | T-235 | full | DONE |
 | T-238 | Component: ReviewPanel / ApprovalPanel | M | T-235 | standard | TODO |
 | T-239 | Component: Dialog / Confirm | S | T-235 | standard | TODO |
 | T-284 | Design tokens v2 + full contrast matrix (D-202) | S | none | standard | DONE |
