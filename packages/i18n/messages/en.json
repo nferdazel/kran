@@ -978,7 +978,7 @@
   "loans_field_source_account_hint": "Only active accounts owned by this agreement's member; balances are shown as the server returns them.",
   "loans_field_source_account_choose": "Choose an account",
   "loans_field_source_account_empty": "This member has no active account in the agreement's branch.",
-  "loans_field_amount": "Amount",
+  "loans_field_amount": "Amount (IDR)",
   "loans_field_amount_hint": "Amount debited from the source account; allocation to instalments is computed by the server.",
   "loans_field_tenor": "New tenor (months)",
   "loans_field_reason": "Reason",
