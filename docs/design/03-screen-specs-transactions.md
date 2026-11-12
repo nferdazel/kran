@@ -126,7 +126,7 @@ save. Reason: a modal hides the facts it asks the operator to check.
 Sesi ini: 08:12 IN 0,00 · 08:14 IN 0,00 …                        1-50 dari [N]
 ```
 
-3. **Hierarchy**: focal = the amount + review pair (`AmountSummary` 20/600, `MoneyInput` 44 px); secondary = member and account facts (`text`, 13 px, `Money` 13/600 only for the balance that changes); muted = timestamps, helpers, session ledger (`text-muted`, `text-xs`). The accent appears only on the primary action and focus ring.
+3. **Hierarchy**: focal = the amount + review pair (`AmountSummary` 20/600, `MoneyInput` 40 px); secondary = member and account facts (`text`, 13 px, `Money` 13/600 only for the balance that changes); muted = timestamps, helpers, session ledger (`text-muted`, `text-xs`). The accent appears only on the primary action and focus ring.
 4. **Content - Setor / Tarik**
 
 | Label (key) | Type | Source | Req | Format / placeholder | Helper |

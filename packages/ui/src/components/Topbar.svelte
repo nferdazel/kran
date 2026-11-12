@@ -93,8 +93,12 @@
 <style>
   .topbar {
     display: flex;
+    /* T-294: a breadcrumb plus a business-date badge do not fit in 180 CSS px. The bar may grow to
+     * a second row instead of pushing the document sideways; at desktop widths it still lays out on
+     * one line, so the desktop screenshots do not move. */
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-3);
+    gap: var(--space-2) var(--space-3);
     min-block-size: var(--topbar-height);
     padding-inline: var(--space-4);
     background: var(--color-surface);
@@ -125,10 +129,15 @@
     }
   }
 
+  .topbar__crumbs {
+    min-inline-size: 0;
+  }
+
   .topbar__crumbs ol {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-2);
+    gap: var(--space-1) var(--space-2);
     margin: 0;
     padding: 0;
     list-style: none;
@@ -156,8 +165,11 @@
 
   .topbar__meta {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-3);
+    gap: var(--space-1) var(--space-3);
+    min-inline-size: 0;
+    max-inline-size: 100%;
     margin-inline-start: auto;
   }
 
