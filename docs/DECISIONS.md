@@ -1213,6 +1213,23 @@ semantics buy no operation beyond scrolling, and one model for every table is ch
 Consequence: supersedes D-116 and the `aria-activedescendant` clause for tables in DESIGN section 10;
 T-294 part 2 implements it and updates `DESIGN.md` in the same commit.
 
+**D-204 (13 Nov 2026) Passwords the repo publishes are denied, and the audit IP comes from a trusted proxy range.**
+Decision: `passwordProblems` rejects any password that matches an entry in
+`modules/platform/domain/password_denylist.txt` (case-insensitive), which holds every password the
+repo publishes in `packs/base/seed/*.sql` plus a short common-password list; the list is data in its
+own file, not a Nim literal. Separately, `identity.clientIpFrom` trusts `X-Forwarded-For` from
+loopback plus any CIDR in `KRAN_TRUSTED_PROXY_CIDRS`, defaulting to the rootless podman bridges
+`10.88.0.0/16 10.89.0.0/16 10.90.0.0/16`, and reads the chain right to left, taking the rightmost
+entry that is not itself a trusted proxy. Reason: a credential published in the seed passed the
+policy and reached production through the normal change-password route (K-01, 13 Nov 2026), and the
+loopback-only rule made every request behind Caddy plus podman arrive as the bridge gateway, so the
+login limiter was one shared bucket and the audit `inet` column identified nobody. Consequence:
+supersedes L-17 in `ACCEPTED-LIMITS.md` and narrows D-142 to "loopback plus configured ranges";
+seeds are unaffected because they write hashes directly, and `tauthz` reads the seed file at compile
+time so renaming the seed password without updating the denylist breaks the build. T-298 implements
+it; `KRAN_TRUSTED_PROXY_CIDRS` in `ops/env/kran-prod.env.example` is the override for a different
+container network.
+
 ---
 
 ## 3. Archive index

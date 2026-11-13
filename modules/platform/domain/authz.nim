@@ -44,12 +44,18 @@ type
     ppHasSpaces = "HAS_SPACES"
     ppTooSimple = "TOO_SIMPLE" ## kelas karakter kurang beragam (`password_min_classes`)
     ppReused = "REUSED"        ## sama dengan kata sandi yang berlaku atau N sebelumnya (O-052)
+    ppTooCommon = "TOO_COMMON" ## ada di denylist: nilai seed yang terbuka di repo atau kata sandi umum
 
 const
   permissionSegments* = 3  # nomagic:ok invarian format `modul.resource.action` (spec §13)
   ## Batas atas panjang password: menahan biaya PBKDF2 (teknis, bukan kebijakan).
   maxPasswordLength* = 128 # nomagic:ok batas teknis
   secondsPerMinute* = 60
+
+  ## Kata sandi yang tidak boleh dipakai akun mana pun. Daftarnya **data**, bukan kode
+  ## (`password_denylist.txt`): satu sumber untuk nilai seed yang terbuka di repo ini dan daftar
+  ## pendek kata sandi umum, tanpa menyebar nilai ke cabang aturan. Perbandingan case-insensitive.
+  passwordDenylistText = staticRead("password_denylist.txt")
 
 proc allowed*(reason = arAllowed): AuthzDecision =
   AuthzDecision(allowed: true, reason: reason)
@@ -244,9 +250,21 @@ proc passwordClasses*(plaintext: string): int =
       other = true
   ord(lower) + ord(upper) + ord(digit) + ord(other)
 
+proc isDeniedPassword*(plaintext: string): bool =
+  ## Case-insensitive: `Password` dan `PASSWORD` sama-sama ditolak. Satu entri per baris di
+  ## `password_denylist.txt`; baris kosong dan baris komentar diabaikan.
+  let normalized = plaintext.toLowerAscii()
+  for raw in passwordDenylistText.splitLines():
+    let entry = raw.strip()
+    if entry.len == 0 or entry.startsWith("#"):
+      continue
+    if entry == normalized:
+      return true
+
 proc passwordProblems*(minLength, minClasses: int, username,
                        plaintext: string): seq[PasswordProblem] =
-  ## Kebijakan kata sandi baru (spec §10.4): panjang, keragaman kelas, dan bukan username/spasi.
+  ## Kebijakan kata sandi baru (spec §10.4): panjang, keragaman kelas, bukan username/spasi, dan
+  ## bukan kata sandi yang sudah terbuka/umum.
   ## Semua angkanya dari parameter — tidak ada default di sini. Semua pelanggaran dikumpulkan,
   ## bukan berhenti di yang pertama: pemanggil menampilkan daftarnya.
   if plaintext.len < minLength:
@@ -259,3 +277,5 @@ proc passwordProblems*(minLength, minClasses: int, username,
     result.add ppHasSpaces
   if minClasses > 0 and passwordClasses(plaintext) < minClasses:
     result.add ppTooSimple
+  if isDeniedPassword(plaintext):
+    result.add ppTooCommon

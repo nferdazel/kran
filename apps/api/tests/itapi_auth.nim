@@ -913,6 +913,38 @@ suite "ganti kata sandi lewat HTTP":
     # Kata sandi lama tetap berlaku setelah percobaan yang gagal.
     check login(MakerUser, DevPassword).code == 200
 
+  test "kata sandi seed yang terbit di repo ditolak untuk akun biasa (denylist)":
+    # Jalur manusia yang dipakai insiden K-01: akun sungguhan (bukan akun dev), kata sandi diganti
+    # lewat HTTP dengan nilai yang diterbitkan `packs/base/seed/0001_dev_users.sql`. Nilainya lolos
+    # panjang dan kelas karakter, jadi hanya denylist yang menahannya.
+    let uid = $newId(systemClock())
+    let sandi = "Kata-Sandi-Awal-Denylist"
+    let db = dbPool.acquire()
+    try:
+      doAssert insertUser(db, NewUser(userId: uid, username: "itapi-denylist",
+        fullName: "Uji Denylist", passwordHash: $hashPassword(sandi, 1000)))
+    finally:
+      dbPool.release(db)
+
+    let sesi = login("itapi-denylist", sandi)
+    check sesi.code == 200
+    let token = tokenOf(sesi)
+
+    for percobaan in [DevPassword, DevPassword.toUpperAscii()]:
+      let reply = postJson(PasswordPath, %*{"oldPassword": sandi, "newPassword": percobaan}, token)
+      check reply.code == 400
+      check reply.body["params"]["reason"].getStr() == "password_policy"
+      checkProblem(PasswordPath, "POST", "400", reply.body)
+
+    # Kata sandi lama tetap berlaku: penolakan tidak mengubah apa pun.
+    check login("itapi-denylist", sandi).code == 200
+
+    # Kontrol: kata sandi baru yang wajar tetap diterima — 400 di atas bukan karena tidak ada yang
+    # bisa lolos.
+    check postJson(PasswordPath,
+      %*{"oldPassword": sandi, "newPassword": "Kata-Sandi-Kelima-Panjang"}, token).code == 204
+    check login("itapi-denylist", "Kata-Sandi-Kelima-Panjang").code == 200
+
   test "wajib ganti: rute ber-izin ditolak, sesi & alur ganti tetap terbuka":
     let pertama = login(FirstLoginUser)
     check pertama.code == 200

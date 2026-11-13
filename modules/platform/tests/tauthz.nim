@@ -226,3 +226,21 @@ suite "kebijakan password":
     check passwordProblems(8, 1, "budi", "katasandipanjang").len == 0
     # Pelanggaran dikumpulkan, bukan berhenti di yang pertama.
     check passwordProblems(12, 4, "budi", "pendek") == @[ppTooShort, ppTooSimple]
+
+  test "kata sandi dev yang diterbitkan repo ditolak untuk akun biasa":
+    # `packs/base/seed/0001_dev_users.sql` menerbitkan satu kata sandi dev secara terbuka. Nilainya
+    # lolos panjang dan keragaman kelas (19 karakter, 3 kelas), jadi tanpa denylist ia sah juga
+    # untuk akun produksi — persis celah yang dipakai sebelum temuan 13 Nov 2026.
+    const seedPassword = "rahasia-panjang-123"
+    check passwordProblems(12, 1, "budi", seedPassword).contains(ppTooCommon)
+    # Kapitalisasi bukan entropi: varian huruf besar pun ditolak.
+    check passwordProblems(12, 1, "budi", seedPassword.toUpperAscii()).contains(ppTooCommon)
+    # Bila kata sandi seed diganti, denylist harus ikut diperbarui — berkas seed dibaca di sini.
+    const seedSql = staticRead("../../../packs/base/seed/0001_dev_users.sql")
+    check seedPassword in seedSql
+
+  test "kata sandi umum dari daftar pendek ditolak":
+    for p in ["password", "P@ssw0rd", "1234567890", "qwerty", "changeme"]:
+      check isDeniedPassword(p)
+    # Kekhususan: kata sandi panjang yang bukan di daftar tetap lolos.
+    check not isDeniedPassword("cukup-panjang-123")

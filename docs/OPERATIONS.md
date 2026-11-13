@@ -930,7 +930,30 @@ The random password is printed **once**; the hash uses production iteration para
 cannot be reused; all sessions are revoked; audit `user.password_reset` is written in the same
 transaction. The next login is forced to change the password.
 
-### 5.4 Audit anchor
+### 5.4 Password policy: what a new password is rejected for
+
+`modules/platform/domain/authz.nim` (`passwordProblems`) rejects a new password for: being shorter
+than `platform.security.password_min_length`, longer than 128 characters, equal to the username,
+carrying leading or trailing whitespace, having fewer character classes than
+`password_min_classes`, matching the current or one of the last `password_history_count` hashes,
+or **appearing in `modules/platform/domain/password_denylist.txt`**. The last rule is new on
+13 Nov 2026 (D-204) and exists because the password published in `packs/base/seed/0001_dev_users.sql`
+satisfied every other rule, so it could be typed into a real account through `/app/password`.
+
+The denylist holds every password this repository publishes in `packs/base/seed/*.sql` plus a short
+list of common passwords, compared case-insensitively. Consequences for operators:
+
+- A new password of `rahasia-panjang-123` (or any capitalisation) is refused with the generic
+  "does not meet policy" message. That is intended, not a bug.
+- Seed accounts still log in: `./task dbtools seed --dev` writes the hash directly and never runs
+  the policy. Only **setting** a password through the API or `reset-password` goes through it.
+- `reset-password` and `bootstrap-admin` generate a random password, so the denylist never blocks
+  them; they still check the generated value and refuse to start if it somehow matches.
+- To change a published seed password, edit the seed and `password_denylist.txt` in the same commit.
+  `tauthz` reads the seed file at compile time, so a mismatch fails the build instead of silently
+  reopening the hole.
+
+### 5.5 Audit anchor
 
 The daily timer below is **EXERCISED** (installed 2 Nov 2026). The `podman run` form is
 **UNVERIFIED ON SERVER**: it is the container-shaped alternative, while the timer uses the host
@@ -962,7 +985,7 @@ Like `kran-dayclose.service`, the unit uses the host binary plus `kran-host.env`
 file still **must** be copied off the server; the timer only removes the manual step, it does
 not create the off-host copy. See `SECURITY.md` for what the chain does and does not prove.
 
-### 5.5 Alerts
+### 5.6 Alerts
 
 `kran-alert.timer` (user systemd, every two minutes) runs `ops/scripts/kran-alert.sh`:
 
@@ -984,7 +1007,7 @@ outbox lag, worker heartbeat, and drain state. The `outbox-dead` count appears i
 does not fail readiness. A worker that has never reported is failed after a 180 s startup
 grace; a stale heartbeat fails immediately.
 
-### 5.6 Break-glass `platform_admin`
+### 5.7 Break-glass `platform_admin`
 
 `platform_admin` is an **emergency** account, not a daily one. This procedure is mandatory
 every time it is used. The numbers and format below are owner decisions, not quotations from
