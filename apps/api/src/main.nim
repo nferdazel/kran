@@ -51,6 +51,7 @@ import ./deposit_posting
 import ./drain
 import ./events
 import ./health
+import ./identity
 import ./login_guard
 import ./posting
 import ./readiness
@@ -1174,6 +1175,13 @@ proc main() =
   if pool.isNil:
     discard logger.warn("KRAN_DATABASE_URL kosong: basis data & realtime tidak aktif", [])
   else:
+    # D-204/K-02: tanpa rentang proxy tepercaya, IP audit berisi alamat gateway podman dan pembatas
+    # login menjadi satu ember untuk semua klien. Kode sengaja tidak punya default — keadaan ini
+    # aman tetapi buta, jadi harus terlihat di log saat start, bukan ditemukan saat insiden.
+    if processTrustedProxies.len == 0:
+      discard logger.warn("KRAN_TRUSTED_PROXY_CIDRS kosong: IP audit = alamat gateway, " &
+        "pembatas login satu ember", [("trustedProxies", "0")])
+
     # Batas langganan realtime dari parameter (O-030): dibaca di konteks institusi akar, sama
     # seperti pembacaan parameter wajib lain. Gagal-cepat bila parameter belum tersemai — lebih
     # baik menolak start daripada memakai angka yang bukan konfigurasi institusi.

@@ -252,13 +252,14 @@ proc passwordClasses*(plaintext: string): int =
 
 proc isDeniedPassword*(plaintext: string): bool =
   ## Case-insensitive: `Password` dan `PASSWORD` sama-sama ditolak. Satu entri per baris di
-  ## `password_denylist.txt`; baris kosong dan baris komentar diabaikan.
+  ## `password_denylist.txt`; baris kosong dan baris komentar diabaikan. Entri dinormalkan juga,
+  ## supaya entri berhuruf besar di masa depan tidak diam-diam tidak pernah cocok.
   let normalized = plaintext.toLowerAscii()
   for raw in passwordDenylistText.splitLines():
     let entry = raw.strip()
     if entry.len == 0 or entry.startsWith("#"):
       continue
-    if entry == normalized:
+    if entry.toLowerAscii() == normalized:
       return true
 
 proc passwordProblems*(minLength, minClasses: int, username,

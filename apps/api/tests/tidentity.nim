@@ -40,6 +40,22 @@ suite "peer tepercaya dari rentang CIDR (KRAN_TRUSTED_PROXY_CIDRS)":
     # bridge. Tanpa rentang tepercaya, header tidak dibaca dan SEMUA klien tampak satu IP.
     check clientIpFrom("10.89.0.1:41234", "198.51.100.7") == "10.89.0.1"
 
+  test "default bawaan tidak mempercayai jaringan bersama (K-02)":
+    # Jaringan `qouver` dipakai bersama sds-api dan majadu-api: tetangga bisa menghubungi IP
+    # container ini langsung, jadi mempercayai seluruh 10.88/10.89/10.90 berarti tetangga boleh
+    # memalsukan IP audit dan merotasi kunci pembatas login. Default kosong = gagal tertutup.
+    const tanpaEnv = TrustedProxySet()
+    for peer in ["10.88.0.9:1234", "10.89.0.9:1234", "10.90.0.9:1234"]:
+      check clientIpFrom(peer, "198.51.100.7", tanpaEnv) == withoutPort(peer)
+      check not isTrustedPeer(withoutPort(peer), tanpaEnv)
+
+  test "satu gateway /32 adalah bentuk yang dianjurkan: tetangga tidak ikut tepercaya":
+    let gateway = initTrustedProxies("10.89.0.1/32")
+    check gateway.len == 1
+    check clientIpFrom("10.89.0.1:41234", "198.51.100.7", gateway) == "198.51.100.7"
+    # Tetangga di jaringan yang sama tetap ditolak: yang tepercaya adalah proxy, bukan subnet.
+    check clientIpFrom("10.89.0.9:41234", "198.51.100.7", gateway) == "10.89.0.9"
+
   test "dengan rentang, peer gateway boleh dipercaya":
     check clientIpFrom("10.89.0.1:41234", "198.51.100.7", bridge) == "198.51.100.7"
     # Di luar rentang tetap tidak dipercaya: rentang yang salah tidak melebarkan kepercayaan.

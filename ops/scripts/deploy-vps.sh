@@ -251,6 +251,15 @@ if [ -f "$ENV_FILE" ]; then
   log "==> env aplikasi dimuat: $ENV_FILE (mode $env_mode, owner ${env_owner:-?})"
 fi
 
+# D-204/K-02: kode sengaja **tidak** punya default rentang proxy. Tanpa `KRAN_TRUSTED_PROXY_CIDRS`
+# API gagal-tertutup: header `X-Forwarded-For` diabaikan, kolom `inet` audit berisi alamat gateway,
+# dan pembatas login menjadi satu ember untuk semua klien. Itu aman tetapi buta, dan buta pada IP
+# audit adalah persis yang membuat K-01 sulit ditelusuri — jadi keadaan itu harus berisik.
+if [ -z "${KRAN_TRUSTED_PROXY_CIDRS:-}" ]; then
+  log "==> WARN: KRAN_TRUSTED_PROXY_CIDRS kosong — IP audit akan berisi alamat gateway podman dan" \
+      "pembatas login menjadi satu ember. Isi dengan gateway bridge, mis. 10.89.0.1/32"
+fi
+
 # Container dijalankan quadlet `kran-api.container`, dan di sana `--port`/`--address`/`--root`
 # ditulis eksplisit (quadlet tidak melakukan interpolasi env yang bisa diandalkan). Karena itu
 # KRAN_PORT/KRAN_BIND_HOST tidak lagi diteruskan unit — dulu baris ini memvalidasinya supaya

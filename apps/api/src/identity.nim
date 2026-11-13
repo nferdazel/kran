@@ -125,16 +125,9 @@ proc parseCidrList*(spec: string): seq[Cidr] =
 const trustedProxyEnv* = "KRAN_TRUSTED_PROXY_CIDRS"
   ## Rentang peer yang boleh dipercaya mengirim `X-Forwarded-For`, selain loopback yang selalu
   ## dipercaya. Di qouver, API berjalan di container podman dan Caddy di host: peer-nya alamat
-  ## gateway bridge (10.89.0.x), bukan loopback. Variabel ini **menimpa** default di bawah; untuk
-  ## mempersempit ke satu rentang, isi dengan rentang yang benar.
-
-const defaultTrustedProxyCidrs = "10.88.0.0/16, 10.89.0.0/16, 10.90.0.0/16"
-  ## Default bentuk deployment kita: jaringan rootless podman menempati 10.88/10.89/10.90
-  ## (`kran-api.container` menyebut 10.89.0.x), dan port API di-publish hanya ke 127.0.0.1 di
-  ## host — tidak ada jalan bagi klien internet menjadi peer di rentang ini. Tanpa default ini,
-  ## API di container melihat **satu** peer untuk semua klien: kolom `inet` audit tidak berguna
-  ## dan pembatas login menjadi satu ember 10 percobaan/menit untuk seluruh institusi. Ini bentuk
-  ## jaringan, bukan nilai bisnis.
+  ## gateway bridge, bukan loopback. **Kosong = tidak ada peer tambahan yang dipercaya** (gagal
+  ## tertutup): header diabaikan, IP audit berisi alamat gateway, dan pembatas login kembali
+  ## menjadi satu ember — keadaan yang aman tetapi tidak berguna, bukan keadaan yang bisa dipalsukan.
 
 const maxTrustedProxies = 8 # nomagic:ok batas teknis jumlah rentang proxy per deployment
 
@@ -164,8 +157,12 @@ proc toSeq*(set: TrustedProxySet): seq[Cidr] =
 proc trustedProxyCidrsFromEnv*(): TrustedProxySet =
   ## Dibaca dari lingkungan. Sengaja bukan parameter DB: ini bentuk deployment (alamat jaringan
   ## container), bukan kebijakan institusi, dan harus diketahui sebelum koneksi DB pertama.
-  let spec = getEnv(trustedProxyEnv).strip()
-  initTrustedProxies(if spec.len > 0: spec else: defaultTrustedProxyCidrs)
+  ##
+  ## Tidak ada default yang lebar dengan sengaja. Jaringan `qouver` dipakai bersama container lain
+  ## (sds-api, majadu-api), jadi "apa pun yang ada di 10.89/16" bukan "proxy kami": tetangga di
+  ## jaringan yang sama bisa menghubungi IP container ini langsung dan memalsukan header. Rentang
+  ## harus disebut di `/srv/qouver/apps/kran/env/kran-prod.env` dan idealnya satu `/32` gateway.
+  initTrustedProxies(getEnv(trustedProxyEnv).strip())
 
 let processTrustedProxies* = trustedProxyCidrsFromEnv()
   ## Dibaca sekali saat modul dimuat (sebelum thread HTTP lahir), jadi setiap permintaan tidak

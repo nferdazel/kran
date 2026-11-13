@@ -941,7 +941,8 @@ or **appearing in `modules/platform/domain/password_denylist.txt`**. The last ru
 satisfied every other rule, so it could be typed into a real account through `/app/password`.
 
 The denylist holds every password this repository publishes in `packs/base/seed/*.sql` plus a short
-list of common passwords, compared case-insensitively. Consequences for operators:
+list of common passwords, compared case-insensitively (both the input and the stored entry are
+lowercased, so a future mixed-case entry still matches). Consequences for operators:
 
 - A new password of `rahasia-panjang-123` (or any capitalisation) is refused with the generic
   "does not meet policy" message. That is intended, not a bug.
@@ -949,9 +950,8 @@ list of common passwords, compared case-insensitively. Consequences for operator
   the policy. Only **setting** a password through the API or `reset-password` goes through it.
 - `reset-password` and `bootstrap-admin` generate a random password, so the denylist never blocks
   them; they still check the generated value and refuse to start if it somehow matches.
-- To change a published seed password, edit the seed and `password_denylist.txt` in the same commit.
-  `tauthz` reads the seed file at compile time, so a mismatch fails the build instead of silently
-  reopening the hole.
+- A new seed file that creates an account makes `tauthz` fail until it is added to that test's known
+  list, so a new published password cannot slip past the denylist silently.
 
 ### 5.5 Audit anchor
 

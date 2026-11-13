@@ -1,7 +1,7 @@
 ## Test murni otorisasi (RBAC + branch scoping + SoD) dan kebijakan sesi/password (T-006).
 ## Tanpa DB: semua keputusan diuji sebagai fungsi.
 
-import std/[unittest, sets, strutils, times]
+import std/[os, unittest, sets, strutils, times]
 
 import kernel/paramkey
 import platform/domain/authz
@@ -227,20 +227,32 @@ suite "kebijakan password":
     # Pelanggaran dikumpulkan, bukan berhenti di yang pertama.
     check passwordProblems(12, 4, "budi", "pendek") == @[ppTooShort, ppTooSimple]
 
-  test "kata sandi dev yang diterbitkan repo ditolak untuk akun biasa":
-    # `packs/base/seed/0001_dev_users.sql` menerbitkan satu kata sandi dev secara terbuka. Nilainya
-    # lolos panjang dan keragaman kelas (19 karakter, 3 kelas), jadi tanpa denylist ia sah juga
-    # untuk akun produksi — persis celah yang dipakai sebelum temuan 13 Nov 2026.
-    const seedPassword = "rahasia-panjang-123"
-    check passwordProblems(12, 1, "budi", seedPassword).contains(ppTooCommon)
-    # Kapitalisasi bukan entropi: varian huruf besar pun ditolak.
-    check passwordProblems(12, 1, "budi", seedPassword.toUpperAscii()).contains(ppTooCommon)
-    # Bila kata sandi seed diganti, denylist harus ikut diperbarui — berkas seed dibaca di sini.
-    const seedSql = staticRead("../../../packs/base/seed/0001_dev_users.sql")
-    check seedPassword in seedSql
+  test "setiap berkas seed yang membuat akun wajib punya kata sandi yang ditolak":
+    # K-04: test lama hanya membaca `0001_dev_users.sql` dan satu literal, jadi seed baru yang
+    # menerbitkan kata sandi lain tidak memutus build. Di sini direktori seed dibaca utuh: setiap
+    # berkas yang menulis `platform.app_user` harus ada di daftar sadar ini, dan setiap kata sandi
+    # yang diterbitkan harus ditolak kebijakan. Menambah seed akun tanpa memperbarui test ini
+    # (dan denylist) gagal.
+    const seedDir = "../../../packs/base/seed"
+    const dikenal = ["0001_dev_users.sql", "0005_dev_console.sql", "0006_dev_lending.sql"]
+    var pembuatAkun: seq[string]
+    for kind, path in walkDir(seedDir):
+      if kind != pcFile or not path.endsWith(".sql"):
+        continue
+      if "INSERT INTO platform.app_user" in readFile(path):
+        pembuatAkun.add path.extractFilename()
+    for name in pembuatAkun:
+      check name in dikenal
+
+    # Kata sandi yang benar-benar diterbitkan berkas-berkas itu, dan varian huruf besarnya.
+    for seedPassword in ["rahasia-panjang-123"]:
+      check passwordProblems(12, 1, "budi", seedPassword).contains(ppTooCommon)
+      check passwordProblems(12, 1, "budi", seedPassword.toUpperAscii()).contains(ppTooCommon)
 
   test "kata sandi umum dari daftar pendek ditolak":
     for p in ["password", "P@ssw0rd", "1234567890", "qwerty", "changeme"]:
       check isDeniedPassword(p)
+    # Entri berhuruf besar di denylist tetap cocok (K-03): perbandingan menormalkan kedua sisi.
+    check isDeniedPassword("QWERTY")
     # Kekhususan: kata sandi panjang yang bukan di daftar tetap lolos.
     check not isDeniedPassword("cukup-panjang-123")
