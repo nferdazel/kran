@@ -33,6 +33,7 @@ const
   LoginPath = "/api/v1/auth/login"
   MakerUser = "dev.maker"
   OtherTellerUser = "dev.teller2"
+  PeerTellerUser = "dev.teller3"
   BranchMakerUser = "dev.branchmaker"
   DevPassword = "rahasia-panjang-123"
   BusinessDate = "2026-10-22"
@@ -93,6 +94,25 @@ block:
     SELECT u.user_id, r.role_id, '""" & OtherBranch & """'
       FROM platform.app_user u, platform.role r
      WHERE u.username = 'dev.branchmaker' AND r.code = 'platform_admin'
+    ON CONFLICT DO NOTHING
+  """)
+
+  # C-02: teller sungguhan (peran `teller`, bukan `platform_admin`) di BranchA. Pemegang
+  # `teller.session.read` di cabang itu, tanpa izin lintas-teller — dialah "teller lain di cabang
+  # yang sama" yang tidak boleh membaca sesi rekannya.
+  execScript(db, """
+    INSERT INTO platform.app_user (user_id, username, full_name, password_algo, password_hash,
+                                   must_change_password)
+    SELECT gen_random_uuid(), '""" & PeerTellerUser & """', 'Dev Peer Teller', password_algo,
+           password_hash, false
+      FROM platform.app_user WHERE username = 'dev.maker'
+  """)
+  execScript(db, """
+    INSERT INTO platform.user_role (user_id, role_id, branch_id)
+    SELECT u.user_id, r.role_id, '""" & BranchA &
+      """'
+      FROM platform.app_user u, platform.role r
+     WHERE u.username = '""" & PeerTellerUser & """' AND r.code = 'teller'
     ON CONFLICT DO NOTHING
   """)
 
@@ -506,6 +526,60 @@ suite "sessions: kepemilikan":
     # Pemiliknya tetap bisa menutup (bukti 409 tadi bukan karena sesi rusak).
     let mine = closeSession(maker, sessionId, "0.00")
     check mine.code == 200
+
+  test "C-02: arus kas sesi hanya untuk pemilik, atau izin read_all":
+    ## Pentest ronde 2: teller lain di cabang yang sama bisa membaca seluruh transaksi laci
+    ## rekannya. Sekarang kepemilikan diperiksa, dan akses supervisor lewat izin terpisah.
+    let maker = tokenOf(login(MakerUser))
+    let open = openSession(maker, BranchA, "0.00", "sess-c02-" & $epochTime())
+    check open.code == 201
+    let sessionId = open.body["sessionId"].getStr()
+    let listPath = SessionsPath & "/" & sessionId & "/transactions"
+
+    # Pemilik sesi: 200.
+    let mine = call("GET", listPath, "", maker)
+    check mine.code == 200
+    check mine.body["sessionId"].getStr() == sessionId
+
+    # Teller lain di cabang yang sama (peran `teller`, memegang `teller.session.read` di BranchA):
+    # 403 session_not_owned, bukan 200.
+    let peer = tokenOf(login(PeerTellerUser))
+    let denied = call("GET", listPath, "", peer)
+    check denied.code == 403
+    checkProblem(
+      "/api/v1/teller/sessions/{sessionId}/transactions", "GET", "403", denied.body)
+    check denied.body["params"]["reason"].getStr() == "session_not_owned"
+
+    # Supervisor (`platform_admin` memegang `teller.session.read_all`): 200, sesi yang sama.
+    let supervisor = tokenOf(login(OtherTellerUser))
+    let allowed = call("GET", listPath, "", supervisor)
+    check allowed.code == 200
+    check allowed.body["sessionId"].getStr() == sessionId
+
+    # read_all tetap terikat cabang: pemegangnya di cabang lain tidak boleh membaca sesi BranchA.
+    let elsewhere = tokenOf(login(BranchMakerUser))
+    let outOfBranch = call("GET", listPath, "", elsewhere)
+    check outOfBranch.code == 403
+    check outOfBranch.body["params"]["reason"].getStr() == "session_not_owned"
+
+    check closeSession(maker, sessionId, "0.00").code == 200
+
+  test "C-02: migrasi memberi read_all ke cash_admin dan platform_admin, bukan teller":
+    let db = dbPool.acquire()
+    try:
+      check db.getValue(sql"""
+        SELECT count(*) FROM platform.role_permission rp
+          JOIN platform.role r ON r.role_id = rp.role_id
+          JOIN platform.permission p ON p.permission_id = rp.permission_id
+         WHERE p.code = 'teller.session.read_all'
+           AND r.code IN ('cash_admin', 'platform_admin')""") == "2"
+      check db.getValue(sql"""
+        SELECT count(*) FROM platform.role_permission rp
+          JOIN platform.role r ON r.role_id = rp.role_id
+          JOIN platform.permission p ON p.permission_id = rp.permission_id
+         WHERE p.code = 'teller.session.read_all' AND r.code = 'teller'""") == "0"
+    finally:
+      dbPool.release(db)
 
 var closeCodes: array[2, int]
 

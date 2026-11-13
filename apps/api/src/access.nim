@@ -5,7 +5,7 @@
 ## SoD) — berkas ini tidak menambah aturan izin baru, hanya menyesuaikan bentuk permintaan HTTP
 ## (cookie) ke bentuk domain.
 
-import std/[options]
+import std/[options, strutils]
 
 import mummy
 import db_connector/db_postgres
@@ -227,15 +227,12 @@ proc requirePrincipal*(ctx: AppContext, req: Request,
     return none(Principal)
   principal
 
-proc requirePermission*(ctx: AppContext, req: Request, principal: Principal,
-                        permission: string): bool =
-  ## Penjaga izin tingkat rute: membalas 403 dan mengembalikan `false` bila permintaan tidak boleh
-  ## lanjut.
-  ##
-  ## Gerbangnya **tanpa dimensi cabang** (T-058, D-062): permintaan daftar tidak punya satu cabang
-  ## target (hasilnya disaring per baris), dan permintaan yang menyentuh satu objek ber-cabang belum
-  ## tahu cabangnya di titik ini. Karena itu 403 di sini berarti "izin tidak dipegang di cabang mana
-  ## pun"; cabang objek diperiksa `authorizedAtBranch` begitu objeknya dibaca.
+proc requireAnyPermission*(ctx: AppContext, req: Request, principal: Principal,
+                           permissions: openArray[string]): bool =
+  ## Gerbang izin yang menerima **salah satu** dari beberapa kode (C-02: pemilik sesi kas memakai
+  ## `teller.session.read`, supervisor `teller.session.read_all`). Gerbang sisanya — basis data,
+  ## wajib-ganti-kata-sandi — sama persis dengan `requirePermission`, supaya rute yang memakai
+  ## varian ini tidak kehilangan satu pun penjagaan itu.
   if ctx.pool.isNil:
     req.respondProblem(pkNotImplemented, "Not Implemented",
       "layanan basis data tidak dikonfigurasi")
@@ -249,12 +246,32 @@ proc requirePermission*(ctx: AppContext, req: Request, principal: Principal,
       "kata sandi harus diganti lebih dulu",
       traceId = traceIdFrom(req), params = @[("reason", "password_change_required")]))
     return false
+  let codes = @permissions
+  if codes.len == 0:
+    # Daftar kosong = salah pakai pemanggil, bukan permintaan yang ditolak: gagal keras di sini
+    # (400 akan menyamarkannya sebagai kesalahan klien).
+    raise newException(ValueError, "requireAnyPermission butuh minimal satu kode izin")
   let allowed = withDbConn(ctx.pool, proc(db: DbConn): bool {.gcsafe.} =
-    authorizedAnyBranch(db, principal, permission))
+    for code in codes:
+      if authorizedAnyBranch(db, principal, code):
+        return true
+    false)
   if not allowed:
-    req.respondProblem(newProblem(pkForbidden, "Forbidden", "tidak punya izin " & permission,
-      traceId = traceIdFrom(req), params = @[("permission", permission)]))
+    req.respondProblem(newProblem(pkForbidden, "Forbidden",
+      "tidak punya izin " & codes.join(" atau "),
+      traceId = traceIdFrom(req), params = @[("permission", codes[0])]))
   allowed
+
+proc requirePermission*(ctx: AppContext, req: Request, principal: Principal,
+                        permission: string): bool =
+  ## Penjaga izin tingkat rute: membalas 403 dan mengembalikan `false` bila permintaan tidak boleh
+  ## lanjut.
+  ##
+  ## Gerbangnya **tanpa dimensi cabang** (T-058, D-062): permintaan daftar tidak punya satu cabang
+  ## target (hasilnya disaring per baris), dan permintaan yang menyentuh satu objek ber-cabang belum
+  ## tahu cabangnya di titik ini. Karena itu 403 di sini berarti "izin tidak dipegang di cabang mana
+  ## pun"; cabang objek diperiksa `authorizedAtBranch` begitu objeknya dibaca.
+  requireAnyPermission(ctx, req, principal, @[permission])
 
 proc sessionCanWork*(ctx: AppContext, identity: string): bool {.gcsafe.} =
   ## Sesi yang boleh **bekerja**: ada, sah, tidak sedang wajib ganti kata sandi (T-027), dan

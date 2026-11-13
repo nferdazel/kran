@@ -40,6 +40,7 @@ const
   permissionTellerSessionOpen* = "teller.session.open"
   permissionTellerSessionClose* = "teller.session.close"
   permissionTellerSessionRead* = "teller.session.read"
+  permissionTellerSessionReadAll* = "teller.session.read_all"
   operationIdSessionOpen = "teller.session.open"
   operationIdSessionClose = "teller.session.close"
 
@@ -484,11 +485,18 @@ proc handleListSessionTransactions*(app: AppContext, req: Request) {.gcsafe.} =
   ##
   ## Izin `teller.session.read` di cabang sesi — sama dengan `GET current`, supaya layar tidak butuh
   ## izin tambahan hanya untuk menampilkan isi sesinya sendiri.
+  ##
+  ## C-02: hanya untuk sesi **milik pemanggil**. Sesi teller lain menuntut izin terpisah
+  ## `teller.session.read_all` (supervisor) di cabang yang sama; tanpa itu 403 `session_not_owned`.
+  ## Karena itu gerbang rutenya menerima salah satu dari kedua kode — kalau hanya `read` yang
+  ## diterima di sini, supervisor yang memegang `read_all` saja sudah ditolak sebelum kepemilikan
+  ## sesi sempat dinilai.
   let principalOpt = requirePrincipal(app, req)
   if principalOpt.isNone:
     return
   let principal = principalOpt.get()
-  if not requirePermission(app, req, principal, permissionTellerSessionRead):
+  if not requireAnyPermission(app, req, principal,
+      [permissionTellerSessionRead, permissionTellerSessionReadAll]):
     return
 
   let sessionId = parseId(pathParam(req, "sessionId"))
@@ -534,9 +542,26 @@ proc handleListSessionTransactions*(app: AppContext, req: Request) {.gcsafe.} =
           problem = "sesi kas tidak dikenal"
           return
         let session = sessionOpt.get()
-        if not authorizedAtBranch(db, principal, $session.branchId, permissionTellerSessionRead):
-          status = 403
-          problem = "izin " & permissionTellerSessionRead & " tidak dipegang di cabang sesi ini"
+        # C-02 (pentest ronde 2): sesi kas adalah milik **satu** teller. Teller lain di cabang yang
+        # sama tidak boleh membaca arus kas laci orang lain; dulu handler ini hanya memeriksa
+        # cabang, sehingga siapa pun yang memegang `teller.session.read` di cabang itu bisa membaca
+        # nomor rekening, nominal, arah, narasi, dan id jurnal transaksi rekannya. Akses lintas
+        # teller tetap mungkin lewat izin terpisah `teller.session.read_all` (supervisor), bukan
+        # lewat `teller.session.read` yang juga dipegang setiap teller.
+        let isOwner = $session.tellerUserId == principal.user.userId
+        let requiredPermission =
+          if isOwner: permissionTellerSessionRead
+          else: permissionTellerSessionReadAll
+        if not authorizedAtBranch(db, principal, $session.branchId, requiredPermission):
+          if isOwner:
+            status = 403
+            reason = "branch_not_allowed"
+            problem = "izin " & permissionTellerSessionRead & " tidak dipegang di cabang sesi ini"
+          else:
+            status = 403
+            reason = "session_not_owned"
+            problem = "sesi kas ini milik teller lain; izin " & permissionTellerSessionReadAll &
+              " tidak dipegang"
           return
         let items = sessionTransactions(db, session.sessionId, limit, offset)
         status = 200
@@ -557,7 +582,7 @@ proc handleListSessionTransactions*(app: AppContext, req: Request) {.gcsafe.} =
   case status
   of 200: req.respondJson(200, payload)
   of 403: req.respondProblem(newProblem(pkForbidden, "Forbidden", problem,
-      traceId = traceIdFrom(req), params = @[("reason", "branch_not_allowed")]))
+      traceId = traceIdFrom(req), params = @[("reason", reason)]))
   of 404: req.respondProblem(newProblem(pkNotFound, "Not Found", problem,
       traceId = traceIdFrom(req), params = @[("reason", reason)]))
   else: req.respondProblem(pkInternal, "Internal Server Error", problem)

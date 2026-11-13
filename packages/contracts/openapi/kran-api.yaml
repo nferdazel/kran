@@ -3413,9 +3413,12 @@ paths:
         `direction` relatif laci: `IN` = uang masuk (`CASH_IN`), `OUT` = uang keluar (`CASH_OUT`).
         Pemindahbukuan antar rekening **tidak** muncul di sini karena tidak menyentuh laci.
 
-        Izin `teller.session.read` harus dipegang di cabang sesi. Sesi tidak dikenal → 404
-        (`params.reason=session_not_found`); cabang lain → 403. Paginasi `limit` 1..100 (default 50)
-        dan `offset` ≥ 0; `total` adalah jumlah seluruh baris sesi, bukan jumlah di halaman ini.
+        Izin `teller.session.read` di cabang sesi, **untuk sesi milik pemanggil sendiri**. Sesi
+        teller lain menuntut izin terpisah `teller.session.read_all` di cabang yang sama; tanpa itu
+        balasannya 403 dengan `params.reason=session_not_owned` (C-02). Sesi tidak dikenal → 404
+        (`params.reason=session_not_found`); cabang lain untuk sesi sendiri → 403
+        (`params.reason=branch_not_allowed`). Paginasi `limit` 1..100 (default 50) dan `offset` ≥ 0;
+        `total` adalah jumlah seluruh baris sesi, bukan jumlah di halaman ini.
       security:
         - sessionCookie: []
       parameters:
