@@ -95,7 +95,9 @@ proc readBody(socket: Socket, handshake: var WsHandshake, timeoutMs: int) =
 proc randomKey(): string =
   var key: array[16, char]
   for i in 0 ..< key.len:
-    key[i] = chr(rand(256))
+    # `rand(max)` inklusif 0..max (std/random): `rand(256)` bisa 256 dan `chr()` melempar
+    # RangeDefect (flaky ±6% per koneksi sejak lama). Satu byte acak cukup; 255 tetap tercapai.
+    key[i] = chr(rand(255))
   base64.encode(key)
 
 proc buildRequest(host: string, port: int, path, key: string,

@@ -15,6 +15,7 @@ import std/[json, sets]
 
 import kernel/paramkey
 import kernel/result
+import platform/domain/authz
 
 const
   WildcardTopic* = "*"
@@ -41,12 +42,15 @@ type
     message*: OutboundMessage
 
   EventScope* = object
-    ## Cakupan peristiwa yang boleh diterima satu langganan (O-070, keputusan pemilik 31 Okt 2026).
+    ## Cakupan peristiwa yang boleh diterima satu langganan (O-070, keputusan pemilik 31 Okt 2026;
+    ## diperluas C-01, pentest ronde 2).
     ##
-    ## Hanya peristiwa yang **memang milik satu cabang** yang disaring: `param.changed` dengan
-    ## `scope_type = BRANCH`. Peristiwa lain tidak punya dimensi cabang, jadi tetap disaring topiknya
-    ## saja. Default kosong = tidak ada cabang yang boleh, jadi lupa mengisi cakupan menutup
-    ## peristiwa ber-cabang (gagal-tertutup), bukan membocorkannya.
+    ## Semua peristiwa `param.changed` disaring dengan aturan baca yang sama seperti
+    ## `GET /api/v1/params`: `institutionWide` = grant baca tanpa batas cabang, `branchIds` =
+    ## cabang tempat grant baca dipegang. `scopeAllows` menerjemahkan keduanya ke `ScopeFilter` dan
+    ## menyerahkan keputusan ke `mayReadScope`, jadi INSTITUTION/PRODUCT/SEGMENT/ROLE tidak lagi
+    ## lolos hanya karena bukan BRANCH. Peristiwa lain tidak punya dimensi scope, jadi disaring
+    ## topiknya saja. Default kosong = tidak ada cakupan baca, jadi gagal-tertutup.
     institutionWide*: bool
     branchIds*: seq[string]
 
@@ -140,18 +144,35 @@ proc outbound*(event: RealtimeEvent): OutboundMessage =
   )
 
 proc scopeAllows*(scope: EventScope; event: RealtimeEvent): bool =
-  ## Apakah peristiwa ini boleh sampai ke langganan dengan cakupan `scope` (O-070). Aturannya
-  ## searah dengan otorisasi baca: peristiwa ber-scope `BRANCH` hanya untuk pemegang izin cabang
-  ## itu (atau pemegang izin tanpa batas cabang); peristiwa lain lolos karena tidak spesifik.
+  ## Apakah peristiwa ini boleh sampai ke langganan dengan cakupan `scope` (O-070, C-01).
+  ##
+  ## Aturannya **sama persis** dengan jalur baca HTTP: `scope` diterjemahkan menjadi `ScopeFilter`
+  ## lalu diserahkan ke `mayReadScope`, bukan disalin. Sebelumnya fungsi ini hanya mengenal `BRANCH`
+  ## dan meloloskan semua jenis scope lain, sehingga teller ber-scope cabang menerima perubahan
+  ## `INSTITUTION` (termasuk nilai `PENDING`) yang ditolak `GET /api/v1/params`.
+  ##
+  ## Konsekuensinya mengikuti aturan itu: `INSTITUTION` hanya untuk pemegang izin tanpa batas cabang,
+  ## `BRANCH` hanya untuk cabang yang ditutup grant, `PRODUCT`/`SEGMENT`/`ROLE` gagal-tertutup, dan
+  ## `GLOBAL` butuh minimal satu grant baca. Peristiwa selain `param.changed` tidak punya dimensi
+  ## scope, jadi tetap disaring topiknya saja.
   if event.topic != "param.changed" or event.payload.isNil or
       event.payload.kind != JObject:
     return true
-  if event.payload{"scope_type"}.getStr("") != $pstBranch:
-    return true
-  if scope.institutionWide:
-    return true
-  let branchId = event.payload{"scope_id"}.getStr("")
-  branchId.len > 0 and branchId in scope.branchIds
+  var scopeType = pstGlobal
+  var known = false
+  let rawScopeType = event.payload{"scope_type"}.getStr("")
+  for candidate in ParamScopeType:
+    if $candidate == rawScopeType:
+      scopeType = candidate
+      known = true
+      break
+  if not known:
+    # Peristiwa dengan `scope_type` yang tidak dikenal tidak bisa dievaluasi: tutup.
+    return false
+  var filter = ScopeFilter(allBranches: scope.institutionWide)
+  for branchId in scope.branchIds:
+    filter.branches.incl branchId
+  mayReadScope(filter, scopeType, event.payload{"scope_id"}.getStr(""))
 
 proc fanout*(hub: var Hub, events: seq[RealtimeEvent]): seq[Delivery] =
   ## Sebar peristiwa ke langganan yang topiknya cocok (urutan peristiwa dipertahankan).

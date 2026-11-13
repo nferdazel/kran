@@ -118,16 +118,19 @@ proc readableScopeFilter*(grants: openArray[Grant], permission: string): ScopeFi
     else:
       result.branches.incl g.branchId
 
-proc mayReadScope*(grants: openArray[Grant], permission: string,
-                   scopeType: ParamScopeType, scopeId: string): bool =
-  ## Visibilitas nilai ber-scope bagi pemegang `permission` (D-046 butir 6, D-055).
+proc mayReadScope*(filter: ScopeFilter, scopeType: ParamScopeType, scopeId: string): bool =
+  ## Visibilitas nilai ber-scope untuk satu himpunan scope baca (D-046 butir 6, D-055).
   ##
   ## GLOBAL terlihat oleh siapa pun yang memegang izin bacanya: nilai itu dipakai semua orang dan
   ## menyembunyikannya tidak melindungi apa pun. INSTITUTION hanya untuk grant tanpa batas cabang,
   ## BRANCH hanya bila grant menutupi cabang itu. PRODUCT/SEGMENT/ROLE **fail-closed**: belum ada
   ## model keanggotaan untuk ketiganya di mana pun (`Grant` hanya mengenal cabang), jadi menampilkan
   ## nilai yang keanggotaannya tidak bisa dievaluasi sama dengan membocorkannya.
-  let filter = readableScopeFilter(grants, permission)
+  ##
+  ## Aturannya ada di satu tempat ini. Pemanggil yang hanya punya ringkasan grant (`ScopeFilter`,
+  ## mis. penyaring peristiwa realtime yang menyimpan cakupan satu langganan) memakai overload ini
+  ## alih-alih menulis ulang `case`-nya — dua salinan aturan inilah yang dulu membuat jalur baca HTTP
+  ## dan jalur realtime berbeda pendapat (C-01).
   case scopeType
   of pstGlobal:
     filter.allBranches or filter.branches.len > 0
@@ -137,6 +140,12 @@ proc mayReadScope*(grants: openArray[Grant], permission: string,
     filter.allBranches or scopeId in filter.branches
   of pstProduct, pstSegment, pstRole:
     false
+
+proc mayReadScope*(grants: openArray[Grant], permission: string,
+                   scopeType: ParamScopeType, scopeId: string): bool =
+  ## Kemudahan untuk pemanggil yang masih memegang daftar grant: ringkas izinnya dulu, lalu
+  ## tanyakan aturan yang sama.
+  mayReadScope(readableScopeFilter(grants, permission), scopeType, scopeId)
 
 proc auditScopeFilter*(grants: openArray[Grant], permission: string): ScopeFilter =
   ## Deret audit: aksi tanpa cabang (tingkat institusi) selalu terlihat — sama alasannya dengan

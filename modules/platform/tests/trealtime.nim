@@ -33,9 +33,15 @@ suite "hub: penyaringan per cabang (O-070)":
     # Default kosong = gagal-tertutup, bukan mengirim ke semua.
     check not EventScope().scopeAllows(event)
 
-  test "peristiwa tanpa dimensi cabang tetap sampai ke semua pelanggan":
-    check EventScope().scopeAllows(ev("e1", "param.changed",
-      """{"key":"a.b","scope_type":"GLOBAL","scope_id":""}"""))
+  test "peristiwa tanpa dimensi scope tidak melewati aturan baca":
+    # GLOBAL pun butuh minimal satu grant baca (`mayReadScope`): langganan tanpa cakupan tidak
+    # menerima nilai parameter apa pun, sama seperti `GET /api/v1/params` yang kosong untuknya.
+    let global = ev("e1", "param.changed",
+      """{"key":"a.b","scope_type":"GLOBAL","scope_id":""}""")
+    check EventScope(branchIds: @["br-1"]).scopeAllows(global)
+    check EventScope(institutionWide: true).scopeAllows(global)
+    check not EventScope().scopeAllows(global)
+    # Topik lain tidak punya dimensi scope: tetap sampai.
     check EventScope().scopeAllows(ev("e2", "audit.appended", """{"scope_type":"BRANCH"}"""))
 
   test "fanout tidak mengirim peristiwa cabang lain ke langganan":
@@ -47,12 +53,46 @@ suite "hub: penyaringan per cabang (O-070)":
       """{"scope_type":"BRANCH","scope_id":"br-1"}""")])
     check deliveries.mapIt(it.subscriberId) == @["a", "c"]
 
+suite "hub: penyaringan mengikuti mayReadScope (C-01)":
+  ## Temuan pentest ronde 2 (C-01): jalur realtime dulu hanya mengenal `BRANCH`, sehingga teller
+  ## ber-scope cabang menerima `INSTITUTION` (termasuk nilai PENDING) yang `GET /api/v1/params`
+  ## tolak untuk akun yang sama. Uji ini menahan perilaku itu kembali.
+
+  test "INSTITUTION hanya untuk pemegang izin tanpa batas cabang":
+    let event = ev("e1", "param.changed",
+      """{"key":"a.b","scope_type":"INSTITUTION","scope_id":"","status":"PENDING"}""")
+    check EventScope(institutionWide: true).scopeAllows(event)
+    check not EventScope(branchIds: @["br-1", "br-2"]).scopeAllows(event)
+    check not EventScope().scopeAllows(event)
+
+  test "PRODUCT, SEGMENT, dan ROLE gagal-tertutup":
+    for scopeType in ["PRODUCT", "SEGMENT", "ROLE"]:
+      let event = ev("e1", "param.changed",
+        """{"key":"a.b","scope_type":"JENIS","scope_id":"x"}""".replace("JENIS", scopeType))
+      check not EventScope(institutionWide: true).scopeAllows(event)
+      check not EventScope(branchIds: @["br-1"]).scopeAllows(event)
+
+  test "scope_type tak dikenal atau tidak ada = ditutup, bukan diloloskan":
+    check not EventScope(institutionWide: true).scopeAllows(
+      ev("e1", "param.changed", """{"key":"a.b","scope_type":"WILAYAH"}"""))
+    check not EventScope(institutionWide: true).scopeAllows(
+      ev("e2", "param.changed", """{"key":"a.b"}"""))
+
+  test "fanout menahan peristiwa INSTITUTION dari langganan cabang":
+    var hub = newHub()
+    hub.subscribe("branch", @["param.changed"], EventScope(branchIds: @["br-1"]))
+    hub.subscribe("pusat", @["param.changed"], EventScope(institutionWide: true))
+    let deliveries = hub.fanout(@[ev("e1", "param.changed",
+      """{"scope_type":"INSTITUTION","scope_id":"","status":"PENDING","key":"a.b"}""")])
+    check deliveries.mapIt(it.subscriberId) == @["pusat"]
+
 suite "hub: langganan & fanout":
   test "hanya langganan yang cocok yang menerima":
+    # Topik netral (`audit.appended`): uji ini soal pencocokan topik, bukan aturan scope parameter.
     var hub = newHub()
-    hub.subscribe("a", @["param.changed"])
-    hub.subscribe("b", @["audit.appended"])
-    let deliveries = hub.fanout(@[ev("e1", "param.changed")])
+    hub.subscribe("a", @["audit.appended"])
+    hub.subscribe("b", @["param.changed"])
+    let deliveries = hub.fanout(@[ev("e1", "audit.appended")])
     check deliveries.len == 1
     check deliveries[0].subscriberId == "a"
     check deliveries[0].message.eventId == "e1"
@@ -60,7 +100,7 @@ suite "hub: langganan & fanout":
   test "wildcard menerima semua topik":
     var hub = newHub()
     hub.subscribe("a", @["*"])
-    let deliveries = hub.fanout(@[ev("e1", "param.changed"), ev("e2", "audit.appended")])
+    let deliveries = hub.fanout(@[ev("e1", "audit.appended"), ev("e2", "t")])
     check deliveries.len == 2
 
   test "urutan peristiwa dipertahankan":
@@ -71,10 +111,10 @@ suite "hub: langganan & fanout":
 
   test "id langganan sama = update, bukan duplikat (klien reconnect)":
     var hub = newHub()
-    hub.subscribe("a", @["param.changed"])
+    hub.subscribe("a", @["t"])
     hub.subscribe("a", @["audit.appended"])
     check hub.subscriberCount == 1
-    let deliveries = hub.fanout(@[ev("e1", "param.changed"), ev("e2", "audit.appended")])
+    let deliveries = hub.fanout(@[ev("e1", "t"), ev("e2", "audit.appended")])
     check deliveries.len == 1
     check deliveries[0].message.topic == "audit.appended"
 

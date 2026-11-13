@@ -109,9 +109,11 @@ proc allowScope(identity: string): EventScope {.gcsafe.} =
   EventScope(institutionWide: true)
 
 proc branchScope(identity: string): EventScope {.gcsafe.} =
-  ## Dua identitas uji dengan izin baca parameter di cabang berbeda (O-070).
+  ## Tiga identitas uji (O-070, C-01): dua bercabang, satu tanpa batas cabang.
   if identity == "uji-b":
     EventScope(branchIds: @["branch-b"])
+  elif identity == "uji-pusat":
+    EventScope(institutionWide: true)
   else:
     EventScope(branchIds: @["branch-a"])
 
@@ -502,6 +504,40 @@ suite "realtime: peristiwa parameter disaring per cabang (O-070)":
       %*{"key": "y", "scope_type": "GLOBAL", "scope_id": "", "status": "ACTIVE"})
     check clientA.nextOfType("event", 10000)["payload"]["key"].getStr() == "y"
     check clientB.nextOfType("event", 10000)["payload"]["key"].getStr() == "y"
+
+  test "peristiwa INSTITUTION hanya sampai ke klien tanpa batas cabang (C-01)":
+    ## Pentest ronde 2: teller ber-scope cabang menerima perubahan `INSTITUTION` (termasuk nilai
+    ## masih PENDING) lewat stream, padahal `GET /api/v1/params` menolak baris yang sama. Bukti di
+    ## sini adalah beda perilaku dua klien atas peristiwa yang sama.
+    var clientA = connect("127.0.0.1", branchPort, EventsPath, @[("Cookie", "kran_session=uji-a")])
+    defer: clientA.close()
+    var clientPusat = connect("127.0.0.1", branchPort, EventsPath,
+      @[("Cookie", "kran_session=uji-pusat")])
+    defer: clientPusat.close()
+    clientA.sendText("""{"type":"subscribe","topics":["param.changed"]}""")
+    check clientA.nextOfType("subscribed", 5000)["topics"][0].getStr() == "param.changed"
+    clientPusat.sendText("""{"type":"subscribe","topics":["param.changed"]}""")
+    check clientPusat.nextOfType("subscribed", 5000)["topics"][0].getStr() == "param.changed"
+
+    discard appendTestEvent("param.changed",
+      %*{"key": "z", "scope_type": "INSTITUTION", "scope_id": "", "status": "PENDING"})
+    check clientPusat.nextOfType("event", 10000)["payload"]["key"].getStr() == "z"
+    var sawEvent = false
+    try:
+      sawEvent = clientA.nextFrame(1500){"type"}.getStr("") == "event"
+    except TimeoutError:
+      discard # tidak ada frame dalam batas waktu: itu yang diharapkan
+    check not sawEvent
+
+    # PRODUCT/SEGMENT/ROLE gagal-tertutup untuk semua pelanggan, termasuk yang tanpa batas cabang.
+    discard appendTestEvent("param.changed",
+      %*{"key": "p", "scope_type": "PRODUCT", "scope_id": "prod-1", "status": "ACTIVE"})
+    var sawProduct = false
+    try:
+      sawProduct = clientPusat.nextFrame(1500){"type"}.getStr("") == "event"
+    except TimeoutError:
+      discard
+    check not sawProduct
 
 suite "realtime: resume tidak kehilangan peristiwa":
   test "reconnect dengan resumeFrom menerima peristiwa yang terlewat, berurutan":

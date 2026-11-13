@@ -182,7 +182,9 @@ proc eventScopeFor*(db: DbConn, clock: Clock, identity: string): EventScope =
   ## memakai grant + pasangan SoD yang sama dengan `authorized`/`authorizedAtBranch`.
   ##
   ## `institutionWide` = izin dipegang tanpa batas cabang; `branchIds` = cabang tempat izin baca
-  ## parameter dipegang. Peristiwa `param.changed` ber-scope cabang lain tidak dikirim.
+  ## parameter dipegang. Peristiwa `param.changed` di luar cakupan itu tidak dikirim — termasuk
+  ## `INSTITUTION` untuk pemegang izin bercabang saja dan `PRODUCT`/`SEGMENT`/`ROLE` untuk semua
+  ## orang (C-01: aturannya `mayReadScope`, sama dengan `GET /api/v1/params`).
   {.cast(gcsafe).}:
     let principal = resolvePrincipal(db, clock, identity)
     if principal.isNone:

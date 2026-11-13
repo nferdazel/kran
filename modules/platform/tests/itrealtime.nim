@@ -62,10 +62,12 @@ suite "outbox -> hub (NOTIFY + baca tabel)":
 
   test "peristiwa sampai ke langganan hub yang cocok (dan tidak ke yang lain)":
     var hub = newHub()
-    hub.subscribe("ui-param", @["param.changed"])
+    # Cakupan baca milik langganan: peristiwa parameter tanpa cakupan kini ditutup (C-01).
+    hub.subscribe("ui-param", @["param.changed"], EventScope(branchIds: @["br-1"]))
     hub.subscribe("ui-audit", @["audit.appended"])
 
-    let ev = appendTestEvent("param.changed", %*{"key": "x"})
+    let ev = appendTestEvent("param.changed",
+      %*{"key": "x", "scope_type": "GLOBAL", "scope_id": ""})
     discard pollOutbox(listener, timeoutMs = 5000)
 
     let fetched = eventsAfter(db, "", limit = 500)
@@ -81,8 +83,10 @@ suite "outbox -> hub (NOTIFY + baca tabel)":
     check deliveries[0].message.eventId == $ev.eventId
 
   test "resume: klien dengan token lama menerima peristiwa yang terlewat":
-    let first = appendTestEvent("param.changed", %*{"n": 1})
-    let second = appendTestEvent("param.changed", %*{"n": 2})
+    let first = appendTestEvent("param.changed",
+      %*{"n": 1, "scope_type": "GLOBAL", "scope_id": ""})
+    let second = appendTestEvent("param.changed",
+      %*{"n": 2, "scope_type": "GLOBAL", "scope_id": ""})
     let third = appendTestEvent("audit.appended", %*{"n": 3})
 
     # Klien "putus" setelah `first`, lalu reconnect dengan resumeFrom = id `first`.
@@ -97,7 +101,7 @@ suite "outbox -> hub (NOTIFY + baca tabel)":
 
     # Fanout hasil replay hanya mengirim yang topiknya cocok.
     var hub = newHub()
-    hub.subscribe("ui", @["param.changed"])
+    hub.subscribe("ui", @["param.changed"], EventScope(institutionWide: true))
     let deliveries = hub.fanout(replayed)
     var deliveredIds: seq[string]
     for delivery in deliveries:

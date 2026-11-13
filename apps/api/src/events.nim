@@ -7,10 +7,12 @@
 ##      Topik difilter otorisasi per langganan (`splitAllowed`) — permintaan `*` tidak otomatis
 ##      diizinkan; yang ditolak dilaporkan di balasan `subscribed.denied`.
 ##   3. Pump (satu thread `LISTEN` + baca outbox) menyebarkan peristiwa baru ke langganan yang
-##      cocok. Peristiwa `param.changed` ber-scope `BRANCH` hanya dikirim ke pelanggan yang
-##      memegang izin cabang itu (cakupan dari `TopicPolicy.eventScope`, O-070); replay memakai
-##      saringan yang sama. Reconnect tidak kehilangan peristiwa: klien mengirim `resumeFrom` = id
-##      terakhir yang ia terima, dan server memutar ulang dari outbox.
+##      cocok. Peristiwa `param.changed` disaring dengan aturan baca yang sama seperti
+##      `GET /api/v1/params` (`mayReadScope` lewat `TopicPolicy.eventScope`, O-070/C-01): nilai
+##      `INSTITUTION` hanya untuk pemegang izin tanpa batas cabang, `BRANCH` hanya untuk cabang yang
+##      ditutup grant, `PRODUCT`/`SEGMENT`/`ROLE` gagal-tertutup; replay memakai saringan yang sama.
+##      Reconnect tidak kehilangan peristiwa: klien mengirim `resumeFrom` = id terakhir yang ia
+##      terima, dan server memutar ulang dari outbox.
 ##
 ## Identitas koneksi: Mummy tidak mengekspos `clientId`-nya, jadi layanan ini memberi id sendiri
 ## (`nextId`) dan memakai `WebSocket` sebagai kunci tabel — pola yang sama dipakai Mummy untuk
@@ -67,8 +69,8 @@ type
     canOpen*: proc(identity: string): bool {.gcsafe.}
     allowedTopics*: proc(identity: string, requested: seq[string]): seq[string] {.gcsafe.}
     eventScope*: proc(identity: string): EventScope {.gcsafe.}
-      ## Cakupan cabang untuk penyaringan peristiwa (O-070). Wajib ada: tanpa ini peristiwa
-      ## `param.changed` ber-scope cabang akan lolos ke semua pelanggan yang topiknya cocok.
+      ## Cakupan baca untuk penyaringan peristiwa (O-070, C-01). Wajib ada: tanpa ini peristiwa
+      ## `param.changed` apa pun scope-nya akan lolos ke semua pelanggan yang topiknya cocok.
     sessionValid*: proc(identity: string): bool {.gcsafe.}
       ## Diperiksa **berkala** oleh pump, bukan sekali saat handshake: sesi bisa dicabut atau
       ## kedaluwarsa di tengah umur koneksi (O-036). Wajib ada (bukan opsional) supaya tidak ada
@@ -176,8 +178,8 @@ proc newEventService*(policy: TopicPolicy, pool: DbPool, resumeLimit = 200,
     # closure terisi, dan lupa mengisinya = lubang O-036 kembali terbuka tanpa jejak.
     raise newException(ValueError, "TopicPolicy.sessionValid wajib diisi (lihat O-036)")
   if policy.eventScope.isNil:
-    # Alasan yang sama untuk penyaringan cabang (O-070): tanpa cakupan, peristiwa `param.changed`
-    # ber-scope cabang akan terkirim ke semua pelanggan yang topiknya cocok.
+    # Alasan yang sama untuk penyaringan scope (O-070, C-01): tanpa cakupan, peristiwa
+    # `param.changed` apa pun scope-nya akan terkirim ke semua pelanggan yang topiknya cocok.
     raise newException(ValueError, "TopicPolicy.eventScope wajib diisi (lihat O-070)")
   new(result)
   result.hub = newHub()
