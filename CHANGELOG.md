@@ -4,6 +4,13 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.3.1] - 2026-11-13
+
+### Fixed
+- **authz:** Fail closed on the trusted proxy range (K-02, K-03, K-04)
+- **authz:** Deny passwords the repo publishes and trust the proxy range for the audit IP
+- **ops:** Keep a rollback target when :local and :prev share an image
+
 ## [0.3.0] - 2026-11-12
 
 ### Added
