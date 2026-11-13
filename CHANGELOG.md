@@ -4,6 +4,14 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.3.2] - 2026-11-13
+
+### Fixed
+- **i18n:** Keep the read_all permission label inside the T-292 terminology rule
+- **params:** Reject backdated effective dates on submit and approve (C-03)
+- **teller:** Bind cash-session transaction read to the session owner (C-02)
+- **realtime:** Filter param.changed with the params read-scope rule (C-01)
+
 ## [0.3.1] - 2026-11-13
 
 ### Fixed
