@@ -1488,3 +1488,122 @@ suite "pengakhiran nilai parameter lewat HTTP (O-064)":
     let lagi = postJson(endPath, %*{"effectiveTo": endDate, "reason": "pengajuan ulang"},
       makerToken)
     check lagi.code == 201
+
+suite "tanggal buku: perubahan parameter tidak boleh surut (C-03)":
+  ## Pentest ronde 2 (C-03): `effectiveFrom` bertanggal masa lalu diterima, dan audit
+  ## `param.submit`/`param.approve` ikut bertanggal surut (`businessDate = effectiveFrom`), sehingga
+  ## nilai yang menutupi rentang yang sudah diproses bisa "ditulis hari ini". Guard-nya sekarang
+  ## dibandingkan dengan **tanggal buku berjalan** (`businessDateFor`), bukan hanya format tanggal.
+
+  proc todayIso(): string =
+    format(now().utc, "yyyy-MM-dd")
+
+  proc dayIso(offset: int): string =
+    format(utcNow() + initDuration(days = offset), "yyyy-MM-dd")
+
+  test "pengajuan dengan effectiveFrom kemarin ditolak 400 effective_from_past":
+    let makerToken = tokenOf(login(MakerUser))
+    let reply = postJson(ParamsPath & "/" & ParamKey & "/changes",
+      %*{"value": 9, "reason": "uji otomatis: tanggal surut", "effectiveFrom": dayIso(-1)},
+      makerToken)
+    check reply.code == 400
+    checkProblem(ParamsPath & "/{key}/changes", "POST", "400", reply.body)
+    check reply.body["params"]["reason"].getStr() == "effective_from_past"
+
+  test "pengajuan dengan effectiveFrom hari ini tetap diterima 201":
+    let makerToken = tokenOf(login(MakerUser))
+    let checkerToken = tokenOf(login(CheckerUser))
+    let reply = postJson(ParamsPath & "/" & ParamKey & "/changes",
+      %*{"value": 9, "reason": "uji otomatis: tanggal hari ini", "effectiveFrom": todayIso()},
+      makerToken)
+    check reply.code == 201
+    checkJson(ParamsPath & "/{key}/changes", "POST", "201", reply.body)
+    # Dibatalkan lagi supaya tidak ada pengajuan PENDING yang bertabrakan dengan uji berikutnya.
+    let rejected = postJson(ParamsPath & "/changes/" &
+      reply.body["paramValueId"].getStr() & "/reject",
+      %*{"reason": "uji: bersihkan"}, checkerToken)
+    check rejected.code == 200
+
+  test "persetujuan ditolak 409 ketika tanggal buku sudah lewat dari effectiveFrom":
+    let makerToken = tokenOf(login(MakerUser))
+    let checkerToken = tokenOf(login(CheckerUser))
+    # Mulai berlaku beberapa hari ke depan, di luar periode yang sudah dipegang suite lain
+    # (tanggal yang sama dengan ACTIVE yang ada akan bertabrakan periode — bukan yang diuji di sini).
+    let submitted = postJson(ParamsPath & "/" & ParamKey & "/changes",
+      %*{"value": 8, "reason": "uji otomatis: tanggal buku maju", "effectiveFrom": dayIso(4)},
+      makerToken)
+    check submitted.code == 201
+    let paramValueId = submitted.body["paramValueId"].getStr()
+    let approvePath = "/api/v1/params/changes/" & paramValueId & "/approve"
+
+    let db = dbPool.acquire()
+    try:
+      # Tanggal buku dimajukan sehari **setelah** pengajuan: persetujuan harus melihat tanggal
+      # berjalan saat itu, bukan tanggal saat pengajuan.
+      exec(db, sql"""
+        INSERT INTO platform.business_date (scope_type, scope_id, current_business_date, state)
+        VALUES ('INSTITUTION', NULL, ?::date, 'OPEN')""", dayIso(5))
+      let denied = postJson(approvePath, newJObject(), checkerToken)
+      check denied.code == 409
+      checkProblem("/api/v1/params/changes/{paramValueId}/approve", "POST", "409", denied.body)
+      check denied.body["params"]["reason"].getStr() == "effective_from_past"
+
+      # Barisnya tidak berubah status: penolakan tidak membakar pengajuan.
+      check db.getValue(sql"""
+        SELECT status FROM platform.param_value WHERE param_value_id = ?""", paramValueId) ==
+        "PENDING"
+
+      # Tanggal buku kembali: persetujuan yang sama berhasil, bukti 409 tadi karena tanggalnya.
+      exec(db, sql"DELETE FROM platform.business_date WHERE scope_type = 'INSTITUTION'")
+      let approved = postJson(approvePath, newJObject(), checkerToken)
+      check approved.code == 200
+      check approved.body["status"].getStr() == "ACTIVE"
+    finally:
+      exec(db, sql"DELETE FROM platform.business_date WHERE scope_type = 'INSTITUTION'")
+      dbPool.release(db)
+
+  test "persetujuan pengakhiran ditolak 409 ketika tanggal berhentinya sudah lewat":
+    ## Kelas yang sama dengan C-03 di jalur pengakhiran: pengajuan sah saat dibuat (tanggal
+    ## berhenti masih di depan), tetapi persetujuan datang setelah tanggal itu lewat. Tanpa guard
+    ## ini nilai yang sudah dipakai hari ini diakhiri surut oleh satu klik checker.
+    const key = "daycloser.chunk_size"
+    let makerToken = tokenOf(login(MakerUser))
+    let checkerToken = tokenOf(login(CheckerUser))
+    let paramValueId = dbValue(sql"""
+      SELECT param_value_id::text FROM platform.param_value
+       WHERE key = ? AND status = 'ACTIVE'""", key)
+    check paramValueId.len > 0
+    let endPath = "/api/v1/params/" & paramValueId & "/end-requests"
+    let submitted = postJson(endPath,
+      %*{"effectiveTo": dayIso(3), "reason": "uji otomatis: pengakhiran surut"}, makerToken)
+    check submitted.code == 201
+    let requestId = submitted.body["requestId"].getStr()
+    let approvePath = "/api/v1/params/end-requests/" & requestId & "/approve"
+
+    let db = dbPool.acquire()
+    try:
+      # Tanggal buku melompati tanggal berhenti yang diajukan.
+      exec(db, sql"""
+        INSERT INTO platform.business_date (scope_type, scope_id, current_business_date, state)
+        VALUES ('INSTITUTION', NULL, ?::date, 'OPEN')""", dayIso(4))
+      let denied = postJson(approvePath, newJObject(), checkerToken)
+      check denied.code == 409
+      checkProblem("/api/v1/params/end-requests/{requestId}/approve", "POST", "409",
+        denied.body)
+      check denied.body["params"]["reason"].getStr() == "effective_to_not_future"
+
+      # Penolakan tidak membakar pengajuan, dan nilai ACTIVE tidak tersentuh.
+      check db.getValue(sql"""
+        SELECT status FROM platform.param_end_request WHERE request_id = ?::uuid""",
+        requestId) == "PENDING"
+      check db.getValue(sql"""
+        SELECT coalesce(to_char(effective_to, 'YYYY-MM-DD'), '') FROM platform.param_value
+         WHERE param_value_id = ?::uuid""", paramValueId) == ""
+
+      exec(db, sql"DELETE FROM platform.business_date WHERE scope_type = 'INSTITUTION'")
+      let approved = postJson(approvePath, newJObject(), checkerToken)
+      check approved.code == 200
+      check approved.body["status"].getStr() == "APPROVED"
+    finally:
+      exec(db, sql"DELETE FROM platform.business_date WHERE scope_type = 'INSTITUTION'")
+      dbPool.release(db)

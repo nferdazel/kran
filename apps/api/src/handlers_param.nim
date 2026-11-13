@@ -12,7 +12,7 @@ import db_connector/db_postgres
 
 import kernel/[clock, ids, paramkey, result]
 
-import platform/domain/[audit, authz, idempotency, param]
+import platform/domain/[audit, authz, idempotency, param, scope]
 import platform/infrastructure/[audit_repo, auth_repo, auth_service, param_repo]
 
 import ./access
@@ -230,6 +230,16 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
             if not authorizedAtBranch(db, principal.get(), targetBranch, permissionParamSubmit):
               problemCode = reasonBranchNotAllowed
               raise newException(ValueError, branchNotAllowedProblem(targetBranch, "pengaju"))
+            # C-03 (pentest ronde 2): nilai tidak boleh mulai berlaku surut. Dulu hanya bentuk
+            # tanggal yang diperiksa, sehingga pasangan maker-checker bisa mengaktifkan nilai
+            # bertanggal masa lalu — audit `param.submit`/`param.approve` ikut bertanggal surut
+            # (`businessDate = effectiveFrom`), dan nilai ACTIVE yang menutupi rentang itu dipangkas.
+            # Jalur pengakhiran nilai sudah menolak tanggal surut; guard yang sama dipasang di sini.
+            let businessDate = businessDateFor(db, institutionScope(), asOf)
+            if effectiveFrom < businessDate:
+              problemCode = "effective_from_past"
+              raise newException(ValueError, "effectiveFrom " & effectiveFrom &
+                " sebelum tanggal buku berjalan " & businessDate)
             # T-098: definisi yang dipensiunkan (`deprecated`) fail-closed juga di HTTP, dengan
             # alasan berkode stabil supaya UI tidak menyamakannya dengan nilai yang bentuknya salah.
             # `submitValue` tetap memeriksa ulang (defense in depth) untuk pemanggil non-HTTP.
@@ -344,11 +354,20 @@ proc handleApproveParamChange*(app: AppContext, req: Request) {.gcsafe.} =
               pending.get().scopeId
             else:
               ""
+          let businessDate = businessDateFor(db, institutionScope(), businessDateIso(app.clock))
           if not authorizedAtBranch(db, principal.get(), targetBranch,
                                     permissionParamApprove):
             status = 403
             reasonParam = reasonBranchNotAllowed
             problem = branchNotAllowedProblem(targetBranch, "penyetuju")
+          elif pending.isSome and pending.get().effectiveFrom < businessDate:
+            # C-03: nilai yang diajukan untuk tanggal yang kini sudah lewat tidak boleh
+            # diaktifkan. Diperiksa lagi di sini, bukan hanya saat pengajuan: tanggal buku bisa
+            # sudah maju (atau guard ini baru terpasang) antara pengajuan dan persetujuan.
+            status = 409
+            reasonParam = "effective_from_past"
+            problem = "effectiveFrom " & pending.get().effectiveFrom &
+              " sebelum tanggal buku berjalan " & businessDate
           else:
             let combinationProblem =
               if pending.isSome:
@@ -756,6 +775,14 @@ proc handleApproveParamEndRequest*(app: AppContext, req: Request) {.gcsafe.} =
           let request = found.get()
           let targetBranch =
             if request.scopeType == $pstBranch: request.scopeId else: ""
+          # C-03 (pentest ronde 2), kelas yang sama di jalur pengakhiran: pengajuan sah saat
+          # dibuat (`effectiveTo` setelah tanggal buku saat itu), tetapi persetujuan bisa datang
+          # setelah tanggal itu lewat. Mengaktifkannya berarti nilai yang sudah dipakai hari ini
+          # diakhiri surut: `effective_to` jatuh ke masa lalu sementara audit
+          # `param.end.approve` bertanggal hari ini. Aturan konservatif yang sama dengan jalur
+          # pengajuan dipakai di sini, diperiksa ulang terhadap tanggal buku berjalan.
+          let currentBusinessDate =
+            businessDateFor(db, institutionScope(), businessDateIso(app.clock))
           # Wewenang diperiksa lebih dulu daripada keadaan baris (sama seperti approve perubahan):
           # penolakan izin tidak boleh bergantung pada isi pengajuannya.
           if not authorizedAtBranch(db, principal, targetBranch, permissionParamApprove):
@@ -770,6 +797,11 @@ proc handleApproveParamEndRequest*(app: AppContext, req: Request) {.gcsafe.} =
             status = 409
             reasonParam = reasonEndNotPending
             problem = "pengajuan tidak berstatus PENDING (sekarang " & request.status & ")"
+          elif request.effectiveTo <= currentBusinessDate:
+            status = 409
+            reasonParam = reasonEndNotFuture
+            problem = "effectiveTo " & request.effectiveTo &
+              " sudah tidak setelah tanggal buku berjalan " & currentBusinessDate
           else:
             let ctx = auditContextFor(principal, req, app.clock,
               "persetujuan pengakhiran nilai parameter", targetBranch)

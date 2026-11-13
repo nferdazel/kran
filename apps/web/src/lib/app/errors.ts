@@ -65,6 +65,7 @@ const PARAM_REASON_MESSAGES: Record<string, () => string> = {
   reason_missing: () => m.param_error_reason_missing(),
   reason_too_long: () => m.param_error_reason_too_long(),
   effective_from_invalid: () => m.param_error_effective_from_invalid(),
+  effective_from_past: () => m.param_error_effective_from_past(),
   effective_to_invalid: () => m.param_error_effective_to_invalid(),
   effective_to_not_future: () => m.param_error_effective_to_not_future(),
   effective_to_not_earlier: () => m.param_error_effective_to_not_earlier(),

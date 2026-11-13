@@ -409,6 +409,7 @@
   "palette_search_label": "Search commands",
   "param_error_branch_not_allowed": "Your permissions do not cover this value's branch (or this action is not allowed at institution level).",
   "param_error_effective_from_invalid": "Effective-from date is invalid. Use the YYYY-MM-DD format.",
+  "param_error_effective_from_past": "Effective-from date is before the running business date. Choose today or later.",
   "param_error_effective_to_invalid": "Effective-to date is invalid. Use the YYYY-MM-DD format.",
   "param_error_effective_to_not_earlier": "This value already has an end date. Ending it can only move that date earlier, never extend it.",
   "param_error_effective_to_not_future": "The end date must be after today's business date. An end cannot take effect in the past.",

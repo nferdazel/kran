@@ -371,6 +371,7 @@ export interface paths {
          *     Penolakan tingkat-field datang sebagai 400/403 dengan `params.reason` berkode stabil
          *     (dipetakan UI, O-045): `idempotency_key_required` (header wajib tidak dikirim/kosong),
          *     `value_missing`, `reason_missing`, `effective_from_invalid`,
+         *     `effective_from_past` (tanggal mulai sebelum tanggal buku berjalan — C-03),
          *     `effective_to_invalid`, `period_invalid`, `scope_id_required`, `scope_id_forbidden`,
          *     `value_invalid`, `invalid_combination` (bertentangan dengan parameter lain yang aktif),
          *     `effective_to_without_successor` (tanggal berakhir tidak ditutup nilai penerus, O-043), dan
@@ -4569,8 +4570,9 @@ export interface operations {
             405: components["responses"]["Problem"];
             /**
              * @description Tidak bisa disetujui: bukan `PENDING` (`params.reason` = `not_pending`), pengesahan
-             *     sendiri (`self_approval`), periode bertabrakan (`period_conflict`), nilai itu
-             *     melanggar aturan lintas-parameter saat digabung nilai lain yang aktif
+             *     sendiri (`self_approval`), periode bertabrakan (`period_conflict`), tanggal mulai
+             *     nilai yang diajukan sudah lewat dari tanggal buku berjalan (`effective_from_past`,
+             *     C-03), nilai itu melanggar aturan lintas-parameter saat digabung nilai lain yang aktif
              *     (`invalid_combination`, mis. `session_idle_minutes` > `session_absolute_minutes`),
              *     atau penerusnya hilang lagi sebelum persetujuan (`effective_to_without_successor`,
              *     O-043).
@@ -4787,8 +4789,10 @@ export interface operations {
             405: components["responses"]["Problem"];
             /**
              * @description Tidak bisa disetujui: bukan `PENDING` (`params.reason` = `not_pending`), pengesahan
-             *     sendiri (`self_approval`), atau nilainya sudah tidak `ACTIVE` / tanggal berhentinya
-             *     sudah lebih awal (`not_active`).
+             *     sendiri (`self_approval`), tanggal berhenti yang diajukan sudah tidak setelah tanggal
+             *     buku berjalan (`effective_to_not_future`, C-03: persetujuan tidak boleh mengakhiri nilai
+             *     secara surut ketika pengajuan disetujui setelah tanggalnya lewat), atau nilainya sudah
+             *     tidak `ACTIVE` / tanggal berhentinya sudah lebih awal (`not_active`).
              */
             409: {
                 headers: {
