@@ -520,7 +520,7 @@
   "perm_teller_session_close": "Close a cash session",
   "perm_teller_session_open": "Open a cash session",
   "perm_teller_session_read": "Read cash sessions",
-  "perm_teller_session_read_all": "Read other tellers' cash sessions",
+  "perm_teller_session_read_all": "Read all cash sessions in the branch",
   "perm_teller_transaction_post": "Post teller transactions",
   "perm_teller_vault_approve": "Approve vault top-up requests",
   "perm_teller_vault_read": "Read the branch vault",

@@ -520,7 +520,7 @@
   "perm_teller_session_close": "Menutup sesi kas",
   "perm_teller_session_open": "Membuka sesi kas",
   "perm_teller_session_read": "Melihat sesi kas",
-  "perm_teller_session_read_all": "Melihat sesi kas teller lain",
+  "perm_teller_session_read_all": "Melihat sesi kas semua kasir",
   "perm_teller_transaction_post": "Membukukan transaksi kasir",
   "perm_teller_vault_approve": "Menyetujui penambahan kas besar",
   "perm_teller_vault_read": "Melihat kas besar cabang",
