@@ -522,7 +522,7 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|tools/|kran\.
       OLD_PREV_IMAGE_ID=""
     fi
   fi
-  podman build -f apps/api/Dockerfile -t localhost/kran-api:local .
+  /srv/qouver/bin/qouver-build-lock cbs -- podman build -f apps/api/Dockerfile -t localhost/kran-api:local .
   # Syarat target rollback hanya berlaku bila build benar-benar memindahkan `:local`. Build yang
   # menghasilkan ID sama (mis. konteks tidak berubah) tidak meninggalkan versi lain untuk kembali,
   # dan memaksakan `:prev` di situ akan menggagalkan deploy yang isinya cuma ops/docs.
