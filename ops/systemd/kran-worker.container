@@ -28,6 +28,11 @@ AutoUpdate=local
 EnvironmentFile=/srv/qouver/apps/kran/env/kran-prod.env
 Volume=/srv/qouver/apps/kran/monorepo/modules:/monorepo/modules:z,ro
 Exec=--role=worker --root=/monorepo
+# Worker menangani SIGTERM dengan menyelesaikan event yang sedang diposting lalu keluar kode 0.
+# Default podman hanya 10 s dan sama dengan titik SIGKILL, jadi satu event yang lambat (impor
+# massal/DB sibuk) tetap berakhir exit 137 + unit `failed` + alert OnFailure. Anggaran drain
+# worker harus lebih kecil dari nilai ini; sisanya dipakai podman untuk menghentikan container.
+StopTimeout=30
 NoNewPrivileges=true
 DropCapability=ALL
 # Hardening yang sama dengan kran-api.container (aktif di qouver1 sejak 12 Nov 2026, dipindah ke
