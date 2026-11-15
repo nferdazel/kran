@@ -44,13 +44,13 @@ jobs:
       UPDATE_BASELINE: ${{ github.event.inputs.update }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: pnpm
@@ -59,7 +59,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Cache browser Playwright
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -73,7 +73,7 @@ jobs:
           nim-version: '2.4.0'
 
       - name: Cache nimble
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.nimble
           key: nimble-${{ runner.os }}-2.4.0-${{ hashFiles('kran.nimble') }}
@@ -104,7 +104,7 @@ jobs:
 
       - name: Upload baselines
         if: env.UPDATE_BASELINE == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: visual-baseline-linux
           path: apps/web/tests/e2e/visual.spec.ts-snapshots
