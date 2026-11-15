@@ -301,6 +301,34 @@ units carry, and must keep:
 These were installed directly on qouver1 on 12 Nov 2026 and moved into the repo the same day;
 before that, the next deploy would have silently stripped them.
 
+#### What the failure alert says
+
+`alert@<unit>.service` runs `/usr/local/sbin/alert-notify.sh <unit>`, which sends one Telegram
+sentence and keeps a 15 minute per-unit cooldown (`/srv/qouver/state/alerts/<unit>.stamp`).
+
+The cause in that sentence comes from the service manager, not from querying the failed unit. With
+`Restart=always`, the unit has already been restarted by the time the alert runs, so
+`systemctl show -p Result` describes the *new* invocation and reads `success` while the message is
+about a crash. That is how a SIGKILL was reported as `result=success` on 15 Nov 2026.
+
+On systemd 252 the variables exported to the `ExecStart=` of a unit pulled in by `OnFailure=` are
+`MONITOR_SERVICE_RESULT`, `MONITOR_EXIT_CODE` and `MONITOR_EXIT_STATUS` (`systemd.exec(5)`); plain
+`SERVICE_RESULT` / `EXIT_CODE` / `EXIT_STATUS` are only exported to `ExecStop=`/`ExecStopPost=` of
+the failing unit and are read as a fallback only. The sentence prints them as systemd names them:
+
+```
+qouver1: kran-worker failed (service-result=exit-code, exit-code=killed, exit-status=137) at 2026-11-15 22:47 WIB
+```
+
+`exit-code` is `exited`, `killed` or `dumped`; `exit-status` is the numeric status or a signal name.
+When both are empty (script run by hand, or not from `OnFailure=`), the sentence carries
+`service-result=unknown` and no exit fields — it never falls back to the misleading `Result`.
+
+Delivery status is real: `send_tg` in `/usr/local/sbin/tg-notify.sh` returns curl's exit code
+(`--fail-with-body`), logs the API error to the caller's stderr, and the script then prints
+`alert NOT sent for <unit>: telegram send failed` and exits 1. Callers that must survive a Telegram
+outage ignore that status explicitly at the call site.
+
 ---
 
 ## 2. Migrations
