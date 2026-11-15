@@ -217,7 +217,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         # Tanpa `version:`: action membaca `packageManager` di package.json (OPS-3/T-131), jadi CI,
         # build image di VPS, dan mesin lokal memakai pnpm yang sama — termasuk kebijakan
         # `minimumReleaseAge`/`allowBuilds` yang hanya dipatuhi versi baru.
@@ -348,7 +348,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -440,7 +440,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         # Tanpa `version:`: action membaca `packageManager` di package.json (OPS-3/T-131), sama
         # seperti job web — CI dan mesin lokal memakai pnpm yang identik.
 
