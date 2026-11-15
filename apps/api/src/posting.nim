@@ -11,7 +11,7 @@
 ## terhapus/terlewat. Event non-akuntansi (tanpa header `accounting: true`) = DONE tanpa jurnal;
 ## event akuntansi **tanpa rule** = gagal terlihat (`last_error`, lalu DEAD), bukan jurnal kosong.
 
-import std/[json, os, strutils, times]
+import std/[atomics, json, os, strutils, times]
 
 import db_connector/db_postgres
 
@@ -26,6 +26,35 @@ import ledger/domain/[journal, period, posting]
 import ledger/infrastructure/[journal_repo, posting_repo]
 
 import ./context
+
+const
+  ## Butir tidur poll (milidetik). Worker harus sadar permintaan berhenti tanpa menunggu satu poll
+  ## penuh: `ledger.posting.poll_interval_ms` adalah parameter DB dan bisa beberapa detik, dan
+  ## podman men-SIGKILL container yang tidak berhenti dalam `StopTimeout` (30 s, lihat
+  ## `ops/systemd/kran-worker.container`). Teknis, bukan nilai bisnis.
+  stopPollSliceMs* = 100
+
+var stopRequested: Atomic[bool]
+
+proc requestWorkerStop*() =
+  ## Dipanggil dari handler sinyal. Hanya satu flag atomik: handler sinyal tidak boleh menyentuh
+  ## log, DB, atau Mummy.
+  stopRequested.store(true)
+
+proc workerStopRequested*(): bool =
+  ## Dibaca loop worker dan di antara dua event dalam satu batch, supaya event yang sedang
+  ## diposting tidak ditinggal di tengah transaksi.
+  stopRequested.load()
+
+proc sleepInterruptible*(ms: int) =
+  ## Tidur yang berhenti lebih awal saat permintaan berhenti masuk (butir `stopPollSliceMs`).
+  var left = ms
+  while left > 0:
+    if workerStopRequested():
+      return
+    let slice = if left < stopPollSliceMs: left else: stopPollSliceMs
+    sleep(slice)
+    left -= slice
 
 const
   consumerName* = "ledger-postings"
@@ -126,6 +155,13 @@ proc processBatch*(app: AppContext, workerId: string, batchSize, maxAttempts,
   let events = app.pool.withConn(proc(db: DbConn): seq[OutboxEvent] {.gcsafe.} =
     claimBatch(db, workerId, batchSize, leaseSeconds))
   for i in 0 ..< events.len:
+    # Permintaan berhenti: event sebelumnya sudah selesai (satu event = satu transaksi), jadi
+    # jangan mulai event berikutnya. Sisanya tetap IN_FLIGHT dan diambil lagi lewat lease oleh
+    # proses yang menggantikan, bukan diklaim ulang oleh worker yang sedang berhenti.
+    if workerStopRequested():
+      stderr.writeLine "kran-worker: berhenti di tengah batch, " & $(events.len - i) &
+        " event tersisa (diambil lagi lewat lease)"
+      break
     # Satu batch bisa berjalan lebih lama dari ambang readiness (impor massal/DB sibuk); denyut yang
     # hanya ditulis antar-batch membuat worker sehat terlihat mati di tengah batch.
     heartbeat(app)
@@ -197,9 +233,13 @@ proc runWorker*(): int =
   stderr.writeLine "kran-worker: mulai (" & workerId & ", batch=" & $batchSize &
     ", maxAttempts=" & $maxAttempts & ", backoff=" & $backoffSeconds & "s, lease=" &
     $leaseSeconds & "s, poll=" & $pollMs & "ms)"
-  while true:
+  while not workerStopRequested():
     heartbeat(app)
     let claimed = processBatch(app, workerId, batchSize, maxAttempts, backoffSeconds,
       leaseSeconds)
     if claimed == 0:
-      sleep(pollMs)
+      sleepInterruptible(pollMs)
+  # Drain selesai: tidak ada event yang ditinggal setengah jalan, karena loop hanya keluar di
+  # antara dua event. Batas waktunya satu transaksi event; sisa anggaran podman ada di `StopTimeout`.
+  stderr.writeLine "kran-worker: berhenti dengan tenang (SIGINT/SIGTERM)"
+  0

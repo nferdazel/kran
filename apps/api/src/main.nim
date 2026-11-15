@@ -279,9 +279,11 @@ const
 
 proc onStopSignal(sig: cint) {.noconv.} =
   ## Handler sinyal: seminimal mungkin (async-signal-safe). Tidak menulis log dan tidak menyentuh
-  ## DB/Mummy di sini — pekerjaan penutupan dilakukan `watchStop` di thread lain.
+  ## DB/Mummy di sini — pekerjaan penutupan dilakukan `watchStop` di thread lain, dan loop worker
+  ## membaca flag `requestWorkerStop` di antara dua event.
   discard sig
   shutdownRequested.store(true)
+  requestWorkerStop()
 
 proc watchStop(app: AppContext) {.thread.} =
   ## Berhenti dengan tenang saat SIGINT/SIGTERM, berurutan:
@@ -1134,6 +1136,12 @@ proc main() =
       opts.branchId, opts.fullName, opts.branchCode, opts.branchName, opts.amount,
       opts.businessDate))
   if opts.role == roleWorker:
+    # Worker jalan sebagai pid 1 container, dan pid 1 tidak menerima sinyal beraksi-default dari
+    # kernel: tanpa handler ini SIGTERM diabaikan sampai podman men-SIGKILL (exit 137, unit
+    # ditandai failed, `OnFailure` mengirim alert). Dipasang SEBELUM `runWorker` karena jalur ini
+    # tidak pernah sampai ke pemasangan handler milik jalur API.
+    discard signal(SIGINT, onStopSignal)
+    discard signal(SIGTERM, onStopSignal)
     quit(runWorker())
 
   let logger = newLogger(app = "kran-api")
