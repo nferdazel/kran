@@ -4,6 +4,13 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.3.4] - 2026-11-16
+
+### Fixed
+- **param:** Stamp decision audits with the business date (O-147)
+- **param:** Use the business date for reject audits and submit defaults (O-147, O-148)
+- **realtime:** Close the last fail-open branch in scopeAllows (O-146)
+
 ## [0.3.3] - 2026-11-15
 
 ### Fixed
