@@ -47,7 +47,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: "Contract: check this repo"
         run: ./ops/scripts/contract-check.sh .
@@ -58,7 +58,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Nim
         uses: jiro4989/setup-nim-action@v2
@@ -105,7 +105,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Nim
         uses: jiro4989/setup-nim-action@v2
@@ -151,7 +151,7 @@ jobs:
       KRAN_DATABASE_URL: postgres://kran:kran@127.0.0.1:5432/kran_test
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Nim
         uses: jiro4989/setup-nim-action@v2
@@ -214,7 +214,7 @@ jobs:
       KRAN_DATABASE_URL: postgres://kran:kran@127.0.0.1:5432/kran_test
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -345,7 +345,7 @@ jobs:
       KRAN_DATABASE_URL: postgres://kran:kran@127.0.0.1:5432/kran_test
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -430,7 +430,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -470,7 +470,7 @@ jobs:
       id-token: write        # keyless cosign, job ini saja
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # `${GITHUB_SHA::7}` adalah sintaks bash dan di dalam `with:` tidak ada shell, jadi buildx
       # menerima string itu apa adanya dan tag-nya tidak sah. `printf '%.7s'` juga sama persis
