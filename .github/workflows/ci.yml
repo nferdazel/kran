@@ -67,7 +67,7 @@ jobs:
           nim-version: '2.4.0'
 
       - name: Cache nimble
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.nimble
           key: nimble-${{ runner.os }}-2.4.0-${{ hashFiles('kran.nimble') }}
@@ -113,7 +113,7 @@ jobs:
           nim-version: '2.4.0'
 
       - name: Cache nimble
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.nimble
           key: nimble-${{ runner.os }}-2.4.0-${{ hashFiles('kran.nimble') }}
@@ -159,7 +159,7 @@ jobs:
           nim-version: '2.4.0'
 
       - name: Cache nimble
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.nimble
           key: nimble-${{ runner.os }}-2.4.0-${{ hashFiles('kran.nimble') }}
@@ -232,7 +232,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Cache browser Playwright
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -261,7 +261,7 @@ jobs:
           nim-version: '2.4.0'
 
       - name: Cache nimble
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.nimble
           key: nimble-${{ runner.os }}-2.4.0-${{ hashFiles('kran.nimble') }}
@@ -360,7 +360,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Cache browser Playwright
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -374,7 +374,7 @@ jobs:
           nim-version: '2.4.0'
 
       - name: Cache nimble
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.nimble
           key: nimble-${{ runner.os }}-2.4.0-${{ hashFiles('kran.nimble') }}
