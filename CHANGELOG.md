@@ -4,6 +4,18 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.3.3] - 2026-11-15
+
+### Fixed
+- **ops:** Give kran-worker a 30s stop timeout
+- **worker:** Install SIGINT/SIGTERM handlers before the worker loop
+- **ops:** Hold the host-wide build lock during the API image build
+
+### Operations
+- Grant pull-requests read so gitleaks can list PR commits
+- Group dependabot updates and drop the cache the audit job never fills
+- Add the web image job and fail the build on contract drift
+
 ## [0.3.2] - 2026-11-13
 
 ### Fixed
