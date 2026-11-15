@@ -155,9 +155,13 @@ proc scopeAllows*(scope: EventScope; event: RealtimeEvent): bool =
   ## `BRANCH` hanya untuk cabang yang ditutup grant, `PRODUCT`/`SEGMENT`/`ROLE` gagal-tertutup, dan
   ## `GLOBAL` butuh minimal satu grant baca. Peristiwa selain `param.changed` tidak punya dimensi
   ## scope, jadi tetap disaring topiknya saja.
-  if event.topic != "param.changed" or event.payload.isNil or
-      event.payload.kind != JObject:
+  if event.topic != "param.changed":
     return true
+  if event.payload.isNil or event.payload.kind != JObject:
+    # `param.changed` selalu membawa `scope_type`; payload yang hilang atau bukan objek tidak bisa
+    # dievaluasi, jadi ditutup (O-146). Dulu cabang ini ikut meloloskan peristiwa ke **semua**
+    # langganan — satu-satunya jalan yang masih gagal-terbuka setelah C-01.
+    return false
   var scopeType = pstGlobal
   var known = false
   let rawScopeType = event.payload{"scope_type"}.getStr("")

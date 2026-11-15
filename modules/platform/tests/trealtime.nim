@@ -78,6 +78,22 @@ suite "hub: penyaringan mengikuti mayReadScope (C-01)":
     check not EventScope(institutionWide: true).scopeAllows(
       ev("e2", "param.changed", """{"key":"a.b"}"""))
 
+  test "param.changed tanpa payload objek gagal-tertutup (O-146)":
+    ## Satu-satunya cabang yang dulu masih gagal-terbuka: payload nil/bukan objek diloloskan ke
+    ## semua langganan. Tidak ada produsen yang mengirimnya hari ini, tapi aturannya harus tertutup.
+    let tanpaPayload = RealtimeEvent(eventId: "e1", topic: "param.changed",
+      eventType: "param.changed", occurredAt: "2026-10-14T00:00:00.000Z", payload: nil)
+    check not EventScope(institutionWide: true).scopeAllows(tanpaPayload)
+    check not EventScope().scopeAllows(tanpaPayload)
+    check not EventScope(institutionWide: true).scopeAllows(
+      ev("e2", "param.changed", "[]"))
+    check not EventScope(institutionWide: true).scopeAllows(
+      ev("e3", "param.changed", "null"))
+    # Topik lain tetap tidak punya dimensi scope walau payload-nya kosong.
+    let topikLain = RealtimeEvent(eventId: "e4", topic: "audit.appended",
+      eventType: "audit.appended", occurredAt: "2026-10-14T00:00:00.000Z", payload: nil)
+    check EventScope().scopeAllows(topikLain)
+
   test "fanout menahan peristiwa INSTITUTION dari langganan cabang":
     var hub = newHub()
     hub.subscribe("branch", @["param.changed"], EventScope(branchIds: @["br-1"]))
