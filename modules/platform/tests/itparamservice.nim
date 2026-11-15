@@ -81,9 +81,9 @@ suite "layanan parameter di atas DB":
     let sebelum = idleNow()
     let maker = newAuditContext(parseId($newId(sysClock)).value(), sysClock)
     let checker = newAuditContext(parseId($newId(sysClock)).value(), sysClock)
-    let perubahan = submitChange(listener, maker, sysClock, keyString(keyIdle), "GLOBAL", "",
+    let perubahan = submitChange(listener, maker, sysClock, bizDate, keyString(keyIdle), "GLOBAL", "",
       %*(sebelum + 5), "2026-09-01", "", "uji invalidasi cache")
-    discard approveChange(listener, checker, sysClock, perubahan.paramValueId)
+    discard approveChange(listener, checker, sysClock, bizDate, perubahan.paramValueId)
 
     # cache masih memegang nilai lama (belum ada invalidasi)
     check idleNow() == sebelum

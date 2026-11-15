@@ -277,8 +277,8 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
             if gapProblem.len > 0:
               problemCode = "effective_to_without_successor"
               raise newException(ValueError, gapProblem)
-            let outcome = submitChange(db, ctx, app.clock, key, scopeType, scopeId, node["value"],
-              effectiveFrom, effectiveTo, reason)
+            let outcome = submitChange(db, ctx, app.clock, businessDate, key, scopeType,
+              scopeId, node["value"], effectiveFrom, effectiveTo, reason)
             status = 201
             payload = %*{
               "paramValueId": outcome.paramValueId,
@@ -410,7 +410,7 @@ proc handleApproveParamChange*(app: AppContext, req: Request) {.gcsafe.} =
             else:
               let ctx = auditContextFor(principal.get(), req, app.clock,
                 "persetujuan perubahan parameter", targetBranch)
-              let outcome = approveChange(db, ctx, app.clock, paramValueId)
+              let outcome = approveChange(db, ctx, app.clock, businessDate, paramValueId)
               status = 200
               payload = %*{"paramValueId": outcome.paramValueId, "status": $pvActive})
   except ValueError as e:
@@ -825,7 +825,7 @@ proc handleApproveParamEndRequest*(app: AppContext, req: Request) {.gcsafe.} =
           else:
             let ctx = auditContextFor(principal, req, app.clock,
               "persetujuan pengakhiran nilai parameter", targetBranch)
-            let change = approveEndChange(db, ctx, app.clock, requestId)
+            let change = approveEndChange(db, ctx, app.clock, currentBusinessDate, requestId)
             status = 200
             payload = %*{
               "requestId": change.requestId,

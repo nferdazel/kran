@@ -158,9 +158,9 @@ suite "kalender dari parameter (mutation test §10.4)":
     let ctxMaker = newAuditContext(maker, sysClock)
     let ctxChecker = newAuditContext(checker, sysClock)
     # Nilai pack base mulai 1970; nilai baru mulai 2026-10-01 menggantikannya (supersede).
-    let change = submitChange(db, ctxMaker, sysClock, weekendKey, "GLOBAL", "", %*[5, 6],
+    let change = submitChange(db, ctxMaker, sysClock, asOf, weekendKey, "GLOBAL", "", %*[5, 6],
       "2026-10-01", "", "kalender uji: Jumat–Sabtu")
-    discard approveChange(db, ctxChecker, sysClock, change.paramValueId)
+    discard approveChange(db, ctxChecker, sysClock, asOf, change.paramValueId)
 
     let shape = calendarShape(db, instScope, "2026-10-13")
     check shape.weekendDays == @[5, 6]

@@ -65,7 +65,7 @@ proc racer(args: RacerArgs) {.thread.} =
       sleep(2)
     try:
       discard args.pool.withTx(proc(d: DbConn): ChangeOutcome {.closure.} =
-        approveChange(d, ctxChecker, sysClock, args.paramValueId))
+        approveChange(d, ctxChecker, sysClock, asOf, args.paramValueId))
       discard raceMenang.fetchAdd(1)
     except DbError, ValueError:
       discard raceKalah.fetchAdd(1)
@@ -239,7 +239,7 @@ suite "param: maker-checker":
     exec(db, sql"DELETE FROM platform.param_value WHERE key = ?", key)
     # nilai + audit + event dalam satu transaksi (dibungkus pool.withTx)
     let outcome = dbPool.withTx(proc(d: DbConn): ChangeOutcome =
-      submitChange(d, ctxMaker, sysClock, key, "INSTITUTION", "inst-1", %*45, "2026-01-01", "",
+      submitChange(d, ctxMaker, sysClock, asOf, key, "INSTITUTION", "inst-1", %*45, "2026-01-01", "",
         "penyesuaian kebijakan sesi"))
     check outcome.paramValueId.len > 0
     check outcome.auditHash.len == 64
@@ -259,7 +259,7 @@ suite "param: maker-checker":
         target = pvId
     check target.len > 0
     let outcome = dbPool.withTx(proc(d: DbConn): ChangeOutcome =
-      approveChange(d, ctxChecker, sysClock, target))
+      approveChange(d, ctxChecker, sysClock, asOf, target))
     check outcome.paramValueId == target
     check rowStatus(db, target) == "ACTIVE"
     let aktif = candidatesOf(db, sessionKey, asOf)
@@ -271,12 +271,12 @@ suite "param: maker-checker":
   test "maker tidak boleh menyetujui sendiri (checker = maker ditolak DB)":
     let key = sessionKey
     let submit = dbPool.withTx(proc(d: DbConn): ChangeOutcome =
-      submitChange(d, ctxMaker, sysClock, key, "INSTITUTION", "inst-2", %*50, "2026-01-01", "",
+      submitChange(d, ctxMaker, sysClock, asOf, key, "INSTITUTION", "inst-2", %*50, "2026-01-01", "",
         "usulan kedua"))
     var raised = false
     try:
       discard dbPool.withTx(proc(d: DbConn): ChangeOutcome =
-        approveChange(d, ctxMaker, sysClock, submit.paramValueId))
+        approveChange(d, ctxMaker, sysClock, asOf, submit.paramValueId))
     except DbError as e:
       raised = true
       check e.msg.contains("self_approval") or e.msg.contains("check")
@@ -286,7 +286,7 @@ suite "param: maker-checker":
   test "balapan dua koneksi (double-approve): tepat satu pemenang (O-040)":
     let key = sessionKey
     let submit = dbPool.withTx(proc(d: DbConn): ChangeOutcome =
-      submitChange(d, ctxMaker, sysClock, key, "INSTITUTION", "inst-race", %*75, "2026-09-01", "",
+      submitChange(d, ctxMaker, sysClock, asOf, key, "INSTITUTION", "inst-race", %*75, "2026-09-01", "",
         "usulan balapan"))
     raceGate.store(false)
     raceMenang.store(0)
@@ -316,7 +316,7 @@ suite "param: maker-checker":
     var raised = false
     try:
       discard dbPool.withTx(proc(d: DbConn): ChangeOutcome =
-        approveChange(d, ctxChecker, sysClock, $newId(sysClock)))
+        approveChange(d, ctxChecker, sysClock, asOf, $newId(sysClock)))
     except ValueError as e:
       raised = true
       check e.msg.contains("tidak ditemukan")
@@ -325,10 +325,10 @@ suite "param: maker-checker":
   test "supersede: nilai baru mulai lebih akhir memangkas nilai ACTIVE sebelumnya":
     let key = sessionKey
     let submit = dbPool.withTx(proc(d: DbConn): ChangeOutcome =
-      submitChange(d, ctxMaker, sysClock, key, "INSTITUTION", "inst-1", %*60, "2026-07-01", "",
+      submitChange(d, ctxMaker, sysClock, asOf, key, "INSTITUTION", "inst-1", %*60, "2026-07-01", "",
         "ubah tengah tahun"))
     discard dbPool.withTx(proc(d: DbConn): ChangeOutcome =
-      approveChange(d, ctxChecker, sysClock, submit.paramValueId))
+      approveChange(d, ctxChecker, sysClock, asOf, submit.paramValueId))
 
     let lama = candidatesOf(db, key, "2026-06-30")
     check lama.len == 1
@@ -344,7 +344,7 @@ suite "param: maker-checker":
   test "reject menandai REJECTED dan tidak mengubah nilai aktif":
     let before = candidatesOf(db, sessionKey, asOf)
     let submit = dbPool.withTx(proc(d: DbConn): ChangeOutcome =
-      submitChange(d, ctxMaker, sysClock, sessionKey, "INSTITUTION", "inst-1", %*70,
+      submitChange(d, ctxMaker, sysClock, asOf, sessionKey, "INSTITUTION", "inst-1", %*70,
         "2026-08-01", "", "usulan ditolak"))
     check rejectValue(db, submit.paramValueId, checker, "tidak sesuai kebijakan")
     check rowStatus(db, submit.paramValueId) == "REJECTED"
@@ -364,7 +364,7 @@ suite "param: maker-checker":
     # langkah aktivasi, bukan di pemeriksaan status `approveValue` yang hanya melihat snapshot.
     # Scope baru supaya tidak menabrak EXCLUDE maupun hitungan kandidat test lain.
     let submit = dbPool.withTx(proc(d: DbConn): ChangeOutcome =
-      submitChange(d, ctxMaker, sysClock, sessionKey, "INSTITUTION", "inst-penjaga", %*70,
+      submitChange(d, ctxMaker, sysClock, asOf, sessionKey, "INSTITUTION", "inst-penjaga", %*70,
         "2026-01-01", "", "uji penjaga aktivasi"))
     check rowStatus(db, submit.paramValueId) == "PENDING"
     check dbPool.withTx(proc(d: DbConn): bool =
@@ -378,10 +378,10 @@ suite "param: cache & NOTIFY":
   test "NOTIFY terkirim saat approval, koneksi pendengar menerimanya":
     listenChanges(talker)
     let submit = dbPool.withTx(proc(d: DbConn): ChangeOutcome =
-      submitChange(d, ctxMaker, sysClock, passwordKey, "INSTITUTION", "inst-1", %*14,
+      submitChange(d, ctxMaker, sysClock, asOf, passwordKey, "INSTITUTION", "inst-1", %*14,
         "2026-01-01", "", "naikkan panjang minimum"))
     discard dbPool.withTx(proc(d: DbConn): ChangeOutcome =
-      approveChange(d, ctxChecker, sysClock, submit.paramValueId))
+      approveChange(d, ctxChecker, sysClock, asOf, submit.paramValueId))
     let received = pollChanges(talker, timeoutMs = 2_000)
     check received.len >= 1
     check passwordKey in received
@@ -566,10 +566,11 @@ suite "param: pengakhiran nilai (O-064)":
                 toDate = ""): string =
     ## Nilai ACTIVE lewat jalur normal (pengajuan + persetujuan orang lain).
     let submit = dbPool.withTx(proc(d: DbConn): ChangeOutcome =
-      submitChange(d, ctxMaker, sysClock, key, "INSTITUTION", scopeId, nilai, fromDate, toDate,
+      submitChange(d, ctxMaker, sysClock, asOf, key, "INSTITUTION", scopeId, nilai, fromDate,
+        toDate,
         "nilai yang akan diakhiri"))
     discard dbPool.withTx(proc(d: DbConn): ChangeOutcome =
-      approveChange(d, ctxChecker, sysClock, submit.paramValueId))
+      approveChange(d, ctxChecker, sysClock, asOf, submit.paramValueId))
     submit.paramValueId
 
   proc lewat(scopeId: string): ScopeValueLookup =
@@ -586,7 +587,7 @@ suite "param: pengakhiran nilai (O-064)":
     check sebelum.get().getInt == 40
 
     discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
-      approveEndChange(d, ctxChecker, sysClock, request.requestId))
+      approveEndChange(d, ctxChecker, sysClock, asOf, request.requestId))
 
     # Sampai sehari sebelum tanggal berhenti nilainya masih berlaku; mulai tanggal itu tidak ada
     # nilai aktif sama sekali — dan pembacaan **gagal**, bukan mengembalikan nilai lama.
@@ -677,7 +678,7 @@ suite "param: pengakhiran nilai (O-064)":
     let request = dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
       submitEndChange(d, ctxMaker, sysClock, pvId, "2026-11-01", today, "berhenti lebih awal"))
     discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
-      approveEndChange(d, ctxChecker, sysClock, request.requestId))
+      approveEndChange(d, ctxChecker, sysClock, asOf, request.requestId))
     check db.getValue(sql"""
       SELECT to_char(effective_to, 'YYYY-MM-DD') FROM platform.param_value
        WHERE param_value_id = ?::uuid""", pvId) == "2026-11-01"
@@ -689,7 +690,7 @@ suite "param: pengakhiran nilai (O-064)":
     var raised = false
     try:
       discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
-        approveEndChange(d, ctxMaker, sysClock, request.requestId))
+        approveEndChange(d, ctxMaker, sysClock, asOf, request.requestId))
     except ValueError as e:
       raised = true
       check "pengesahan sendiri" in e.msg
@@ -729,7 +730,7 @@ suite "param: pengakhiran nilai (O-064)":
 
   test "nilai yang belum ACTIVE tidak bisa diakhiri":
     let submit = dbPool.withTx(proc(d: DbConn): ChangeOutcome =
-      submitChange(db, ctxMaker, sysClock, sessionKey, "INSTITUTION", "akhir-7", %*46,
+      submitChange(db, ctxMaker, sysClock, asOf, sessionKey, "INSTITUTION", "akhir-7", %*46,
         "2026-01-01", "", "masih menunggu"))
     var raised = false
     try:
@@ -750,7 +751,7 @@ suite "param: pengakhiran nilai (O-064)":
     let request = dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
       submitEndChange(d, ctxMaker, sysClock, pvId, "2026-11-01", today, "diakhiri"))
     discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
-      approveEndChange(d, ctxChecker, sysClock, request.requestId))
+      approveEndChange(d, ctxChecker, sysClock, asOf, request.requestId))
     check effectiveToGapProblem(db, sessionKey, "INSTITUTION", "akhir-8", "2026-03-01",
       "2026-04-01").len > 0
 
@@ -763,6 +764,45 @@ suite "param: pengakhiran nilai (O-064)":
     # Notifikasi dari test lain dibuang dulu supaya assertion di bawah milik persetujuan ini.
     discard pollChanges(talker, 50)
     discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
-      approveEndChange(d, ctxChecker, sysClock, request.requestId))
+      approveEndChange(d, ctxChecker, sysClock, asOf, request.requestId))
     let keys = pollChanges(talker, 3000)
     check sessionKey in keys
+
+suite "param: audit keputusan bertanggal buku, bukan effectiveFrom (O-147)":
+  ## Tiga stamp audit yang dulu memakai `effectiveFrom`: `param.submit`, `param.approve`, dan
+  ## `param.end.approve`. Yang terakhir paling parah karena memakai `effectiveFrom` nilai yang
+  ## **diakhiri**, jadi bisa bertanggal bertahun-tahun lalu. Tanggal buku sengaja dijauhkan dari
+  ## `effectiveFrom` supaya test merah kalau acuannya kembali ke tanggal efektif.
+  const
+    bookDate = "2026-10-20"
+    futureFrom = "2027-03-01"
+    auditScope = "audit-buku"
+    endScope = "audit-buku-2"
+
+  proc auditBusinessDate(action, resourceId: string): string =
+    db.getValue(sql"""
+      SELECT to_char(business_date, 'YYYY-MM-DD') FROM platform.audit_log
+       WHERE action = ? AND resource_id = ?""", action, resourceId)
+
+  test "param.submit dan param.approve memakai tanggal buku":
+    let submit = dbPool.withTx(proc(d: DbConn): ChangeOutcome =
+      submitChange(d, ctxMaker, sysClock, bookDate, sessionKey, "INSTITUTION", auditScope,
+        %*41, futureFrom, "", "uji: audit submit bertanggal buku"))
+    check auditBusinessDate("param.submit", submit.paramValueId) == bookDate
+    discard dbPool.withTx(proc(d: DbConn): ChangeOutcome =
+      approveChange(d, ctxChecker, sysClock, bookDate, submit.paramValueId))
+    check auditBusinessDate("param.approve", submit.paramValueId) == bookDate
+
+  test "param.end.approve memakai tanggal buku, bukan effectiveFrom nilai yang diakhiri":
+    # Nilai ACTIVE bertanggal 2026-01-01: audit pengakhiran dulu menyalin tanggal itu.
+    let submit = dbPool.withTx(proc(d: DbConn): ChangeOutcome =
+      submitChange(d, ctxMaker, sysClock, bookDate, sessionKey, "INSTITUTION", endScope,
+        %*42, "2026-01-01", "", "uji: nilai yang akan diakhiri"))
+    discard dbPool.withTx(proc(d: DbConn): ChangeOutcome =
+      approveChange(d, ctxChecker, sysClock, bookDate, submit.paramValueId))
+    let request = dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+      submitEndChange(d, ctxMaker, sysClock, submit.paramValueId, "2027-06-01", bookDate,
+        "uji: pengakhiran bertanggal buku"))
+    discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
+      approveEndChange(d, ctxChecker, sysClock, bookDate, request.requestId))
+    check auditBusinessDate("param.end.approve", request.requestId) == bookDate

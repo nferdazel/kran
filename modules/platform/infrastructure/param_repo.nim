@@ -456,16 +456,20 @@ proc pendingValueOf*(db: DbConn, paramValueId: string): Option[PendingRow] =
   some(PendingRow(key: row[0], scopeType: row[1], scopeId: row[2],
     value: parseJson(row[3]), effectiveFrom: row[4], effectiveTo: row[5]))
 
-proc submitChange*(db: DbConn, ctx: AuditContext, clock: Clock, key, scopeType, scopeId: string,
+proc submitChange*(db: DbConn, ctx: AuditContext, clock: Clock, businessDate,
+                   key, scopeType, scopeId: string,
                    value: JsonNode, effectiveFrom, effectiveTo, reason: string): ChangeOutcome =
   ## Satu transaksi (pemanggil membungkus `withTx`): nilai PENDING + audit + event outbox.
   ## Nilai belum terlihat aplikasi sampai disetujui (`approveChange`).
+  ##
+  ## `businessDate` = tanggal buku saat keputusan diambil, dikirim pemanggil (O-147 kelas yang
+  ## sama): audit tidak boleh bertanggal `effectiveFrom`, yang boleh jatuh di masa depan.
   let pvId = $newId(clock)
   let submit = submitValue(db, pvId, key, scopeType, scopeId, value, effectiveFrom, effectiveTo,
     ctx.userId, reason)
   result.paramValueId = submit.paramValueId
   result.auditHash = appendAudit(db, newAuditEntry(ctx, "param.submit", "param_value", pvId,
-    clock, businessDate = effectiveFrom, after = %*{
+    clock, businessDate = businessDate, after = %*{
       "key": key, "scope_type": scopeType, "scope_id": scopeId, "value": value,
       "effective_from": effectiveFrom, "effective_to": effectiveTo, "status": $pvPending}))
   result.eventId = newId(clock)
@@ -474,10 +478,13 @@ proc submitChange*(db: DbConn, ctx: AuditContext, clock: Clock, key, scopeType, 
       "key": key, "scope_type": scopeType, "scope_id": scopeId, "status": $pvPending,
       "effective_from": effectiveFrom, "value": value}))
 
-proc approveChange*(db: DbConn, ctx: AuditContext, clock: Clock,
+proc approveChange*(db: DbConn, ctx: AuditContext, clock: Clock, businessDate,
                     paramValueId: string): ChangeOutcome =
   ## Aktivasi oleh checker: supersede nilai lama + audit + event + `NOTIFY` invalidasi cache.
   ## Raise `DbError` bila bentrok periode (EXCLUDE) atau `checker = maker`.
+  ##
+  ## `businessDate` = tanggal buku saat persetujuan (O-147 kelas yang sama), bukan
+  ## `effectiveFrom` yang bisa bertanggal depan.
   let found = pendingValueOf(db, paramValueId)
   if found.isNone:
     raise newException(ValueError, "param_value_id tidak ditemukan: " & paramValueId)
@@ -499,7 +506,7 @@ proc approveChange*(db: DbConn, ctx: AuditContext, clock: Clock,
 
   result.paramValueId = paramValueId
   result.auditHash = appendAudit(db, newAuditEntry(ctx, "param.approve", "param_value",
-    paramValueId, clock, businessDate = pending.effectiveFrom, before = beforeValue,
+    paramValueId, clock, businessDate = businessDate, before = beforeValue,
     after = pending.value))
   result.eventId = newId(clock)
   discard appendEvent(db, newOutboxEvent(result.eventId, "param.changed", "param_value",
@@ -683,11 +690,14 @@ proc submitEndChange*(db: DbConn, ctx: AuditContext, clock: Clock, paramValueId,
       "status": $pvActive, "effective_from": row.effectiveFrom,
       "effective_to": effectiveTo, "end_request_id": requestId, "end_request": "PENDING"}))
 
-proc approveEndChange*(db: DbConn, ctx: AuditContext, clock: Clock,
+proc approveEndChange*(db: DbConn, ctx: AuditContext, clock: Clock, businessDate,
                        requestId: string): EndRequestOutcome =
   ## Persetujuan (checker): memangkas `effective_to` nilai ACTIVE + audit + event + `NOTIFY`.
   ## Raise `ValueError` bila pengajuan tidak ada/bukan PENDING, pemutus = pengaju (CHECK skema
   ## `param_end_request_self_approval_chk` menolak juga), atau nilainya sudah tidak ACTIVE.
+  ##
+  ## `businessDate` = tanggal buku saat persetujuan (O-147 kelas yang sama). Sebelumnya audit ini
+  ## memakai `effectiveFrom` nilai yang **diakhiri**, yang bisa bertanggal bertahun-tahun lalu.
   let found = endRequestById(db, requestId, forUpdate = true)
   if found.isNone:
     raise newException(ValueError, "pengajuan pengakhiran tidak ditemukan: " & requestId)
@@ -709,8 +719,7 @@ proc approveEndChange*(db: DbConn, ctx: AuditContext, clock: Clock,
   result.paramValueId = request.paramValueId
   result.effectiveTo = request.effectiveTo
   result.auditHash = appendAudit(db, newAuditEntry(ctx, "param.end.approve",
-    "param_end_request", requestId, clock,
-    businessDate = if before.isSome: before.get().effectiveFrom else: "",
+    "param_end_request", requestId, clock, businessDate = businessDate,
     before = %*{"effective_to": (if before.isSome: before.get().effectiveTo else: "")},
     after = %*{
       "requestId": requestId, "paramValueId": request.paramValueId, "key": request.key,

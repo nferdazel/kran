@@ -48,9 +48,9 @@ execScript(db, readFile(repoRoot / "packs/base/generated/param_values.sql"))
 # nilai pack (600.000) tetap yang dipakai kalau parameter tidak diubah.
 let adminId = $newId(sysClock)
 let adminCtx = newAuditContext(parseId(adminId).value(), sysClock)
-let change = submitChange(db, adminCtx, sysClock, iterationsKey, "GLOBAL", "", %*1000,
+let change = submitChange(db, adminCtx, sysClock, asOf, iterationsKey, "GLOBAL", "", %*1000,
   "2026-01-01", "", "uji: turunkan iterasi PBKDF2")
-discard approveChange(db, newAuditContext(parseId($newId(sysClock)).value(), sysClock), sysClock,
+discard approveChange(db, newAuditContext(parseId($newId(sysClock)).value(), sysClock), sysClock, asOf,
   change.paramValueId)
 
 let instScope = institutionScope()
@@ -466,10 +466,10 @@ suite "kebijakan sesi: aturan lintas-parameter":
     # idle 30 / absolut 100. Calon idle yang dinilai **hanya di hari ini** akan lolos (30 ≤ 480),
     # padahal pada tanggal itu kombinasi barunya tidak sah.
     let upcoming = "2026-12-01"
-    let ubahAbsolut = submitChange(db, adminCtx, sysClock, absoluteKey, "GLOBAL", "", %*100,
+    let ubahAbsolut = submitChange(db, adminCtx, sysClock, asOf, absoluteKey, "GLOBAL", "", %*100,
       upcoming, "", "uji: batas absolut untuk tanggal depan")
     discard approveChange(db, newAuditContext(parseId($newId(sysClock)).value(), sysClock),
-      sysClock, ubahAbsolut.paramValueId)
+      sysClock, asOf, ubahAbsolut.paramValueId)
 
     let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey, %*150, upcoming, "",
         "INSTITUTION", "", asOf)
@@ -493,10 +493,10 @@ suite "kebijakan sesi: aturan lintas-parameter":
     # Absolut 800 mulai 2027-01-01 memangkas baris 2026-12-01 (kini SUPERSEDED) — tetapi nilai 100
     # tetap berlaku 2026-12-01…2027-01-01 (pola riwayat effective-dated), jadi tanggal itu masih
     # titik perubahan yang harus dinilai.
-    let lebihAkhir = submitChange(db, adminCtx, sysClock, absoluteKey, "GLOBAL", "", %*800,
+    let lebihAkhir = submitChange(db, adminCtx, sysClock, asOf, absoluteKey, "GLOBAL", "", %*800,
       "2027-01-01", "", "uji: batas absolut yang lebih akhir")
     discard approveChange(db, newAuditContext(parseId($newId(sysClock)).value(), sysClock),
-      sysClock, lebihAkhir.paramValueId)
+      sysClock, asOf, lebihAkhir.paramValueId)
 
     let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey, %*400, asOf, "",
         "INSTITUTION", "", asOf)
@@ -507,10 +507,10 @@ suite "kebijakan sesi: aturan lintas-parameter":
     # aktif (situasi yang mungkin: baris ber-`effective_to`). Kandidat idle mulai 2026-12-01 nilai
     # **nya sudah pasti** — kalau sisi calon ikut diwajibkan terbaca, seluruh tanggal (termasuk
     # tanggal kandidat) akan dilewati dan pemeriksaan ini tidak menangkap apa pun.
-    let berperiode = submitChange(db, adminCtx, sysClock, sessionIdleKey, "GLOBAL", "", %*30,
+    let berperiode = submitChange(db, adminCtx, sysClock, asOf, sessionIdleKey, "GLOBAL", "", %*30,
       asOf, "2026-11-01", "uji: idle dengan periode berakhir")
     discard approveChange(db, newAuditContext(parseId($newId(sysClock)).value(), sysClock),
-      sysClock, berperiode.paramValueId)
+      sysClock, asOf, berperiode.paramValueId)
 
     let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey, %*500, "2026-12-01", "",
       "INSTITUTION", "",
@@ -526,10 +526,10 @@ suite "kebijakan sesi: aturan lintas-parameter":
     # 5 adalah batas **minimum schema** `session_absolute_minutes`, jadi diturunkan dari definisi
     # (hasil seed pack) alih-alih disalin: kalau seed berubah, test ikut (O-042).
     let absolutMin = definitionOf(db, absoluteKey).get().schema["minimum"].getInt
-    let ubahScope = submitChange(db, adminCtx, sysClock, absoluteKey, "INSTITUTION", "inst-1",
+    let ubahScope = submitChange(db, adminCtx, sysClock, asOf, absoluteKey, "INSTITUTION", "inst-1",
       %absolutMin, asOf, "", "uji: batas absolut scope institusi")
     discard approveChange(db, newAuditContext(parseId($newId(sysClock)).value(), sysClock),
-      sysClock, ubahScope.paramValueId)
+      sysClock, asOf, ubahScope.paramValueId)
     check sessionPolicyCandidateProblem(db, sessionIdleKey, %*30, asOf, "", "INSTITUTION", "",
         asOf) == ""
 
@@ -552,10 +552,10 @@ suite "kebijakan sesi: aturan lintas-parameter":
     # pelanggaran itu hilang bila `effectiveTo` kandidat diabaikan (30 ≤ 50).
     let dari = "2030-01-01"
     for (k, v) in [(absoluteKey, %*50), (sessionIdleKey, %*600)]:
-      let ubah = submitChange(db, adminCtx, sysClock, k, "GLOBAL", "", v, dari, "",
+      let ubah = submitChange(db, adminCtx, sysClock, asOf, k, "GLOBAL", "", v, dari, "",
         "uji: nilai sisi " & k & " untuk tanggal jauh")
       discard approveChange(db, newAuditContext(parseId($newId(sysClock)).value(), sysClock),
-        sysClock, ubah.paramValueId)
+        sysClock, asOf, ubah.paramValueId)
 
     let melanggar = sessionPolicyCandidateProblem(db, sessionIdleKey, %*30, asOf, "2026-11-01",
       "INSTITUTION", "", asOf)
@@ -653,10 +653,10 @@ suite "kebijakan MFA: kewajiban login hanya berlaku bila layanan MFA hidup":
   ## menerima hasilnya. Diuji di sini karena keputusan ini yang menentukan bentuk sesi di
   ## `authenticate`.
   proc ubahParam(key: string; nilai: JsonNode) =
-    let change = submitChange(db, adminCtx, sysClock, key, "GLOBAL", "", nilai,
+    let change = submitChange(db, adminCtx, sysClock, asOf, key, "GLOBAL", "", nilai,
       "2026-01-01", "", "uji otomatis MFA")
     discard approveChange(db, newAuditContext(parseId($newId(sysClock)).value(), sysClock),
-      sysClock, change.paramValueId)
+      sysClock, asOf, change.paramValueId)
 
   test "default (kedua saklar mati) → tidak ada kewajiban":
     check not db.mfaRequireLogin(instScope, asOf)
