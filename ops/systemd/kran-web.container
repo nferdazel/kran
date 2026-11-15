@@ -1,0 +1,43 @@
+# Quadlet unit — kran-web (pohon statis SvelteKit, nginx), rootless podman + systemd user.
+# Pasang di VPS: ~/.config/containers/systemd/kran-web.container
+#   systemctl --user daemon-reload && systemctl --user enable --now kran-web
+#
+# BELUM DIPASANG: hari ini Caddy melayani langsung direktori `/srv/qouver/apps/kran/web`
+# (`root *` di ops/caddy/Caddyfile.kran.example), sedangkan `deploy-vps.sh` masih membangun +
+# men-swap direktori itu. Unit ini hidup saat blok Caddy diganti jadi
+# `reverse_proxy 127.0.0.1:8096`. Untuk membatalkannya: hentikan unitnya
+# (`systemctl --user disable --now kran-web`), hapus berkas ini dari
+# ~/.config/containers/systemd/, `systemctl --user daemon-reload`, lalu kembalikan blok Caddy ke
+# `root * /srv/qouver/apps/kran/web`.
+#
+# Hardening sama dengan kran-api.container: nginx hanya membaca pohon statis dan menulis ke tmpfs
+# (/tmp, cache, pid), jadi root filesystem read-only tidak mengubah perilakunya.
+[Unit]
+Description=KRAN Web (pohon statis SvelteKit, nginx)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/kran-web:local
+ContainerName=kran-web
+# Port host 8096: API memakai 8095 dan worker tidak mem-publish port sama sekali.
+PublishPort=127.0.0.1:8096:8080
+Pull=never
+NoNewPrivileges=true
+DropCapability=ALL
+ReadOnly=true
+# /tmp untuk worker sementara nginx, cache proxy, dan pid master yang di-hardcode di nginx.conf
+# bawaan image (prefix /var/run).
+Tmpfs=/tmp
+Tmpfs=/var/cache/nginx
+Tmpfs=/var/run
+
+[Service]
+Restart=always
+RestartSec=3
+# Batas memori sebagai pengaman kebocoran, bukan hasil ukur: nginx menyajikan berkas statis dan
+# pemakaian normalnya belasan MB. Naikkan bila log OOM benar-benar muncul.
+MemoryMax=128M
+
+[Install]
+WantedBy=default.target

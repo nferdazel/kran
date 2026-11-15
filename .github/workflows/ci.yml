@@ -6,23 +6,14 @@ name: CI
 # Job ditambahkan bertahap bersama komponennya (lihat docs/OPERATIONS.md): job kosong yang
 # selalu hijau tidak menegakkan apa pun.
 
+# Tanpa filter `paths:` / `paths-ignore:` dengan sengaja (DEPLOY-FLOW.md §13.7 aturan 10): workflow
+# yang difilter tidak menghasilkan check-run sama sekali, sedangkan gate deploy di server menunggu
+# keempat check-run job ini dan baru menyerah setelah 30 menit. Konsekuensi yang diterima: push yang
+# hanya menyentuh dokumentasi tetap membangun ulang produksi.
 on:
   push:
     branches: [main]
-    # `docs/**` dilewati karena isinya dokumentasi — kecuali register regulasi, yang justru
-    # **input** gate `traceability` (`./task traceability`). Pola dievaluasi berurutan dan yang
-    # terakhir menang, jadi baris terakhir memasukkan kembali register saja.
-    paths:
-      - '**'
-      - '!**.md'
-      - '!docs/**'
-      - 'docs/compliance/register.yaml'
   pull_request:
-    paths:
-      - '**'
-      - '!**.md'
-      - '!docs/**'
-      - 'docs/compliance/register.yaml'
   # Jalan manual di `main`. Dipakai saat event `push` tidak menghasilkan run sama sekali
   # (terjadi 2 Nov 2026 setelah riwayat ditulis ulang: push dan tag sama-sama tidak memicu
   # workflow, sehingga gerbang CI di `deploy-vps.sh` menunggu 30 menit lalu gagal).
@@ -45,6 +36,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+
+  # Golden CI/CD contract: the same rules the server repo checks, run here so
+  # drift fails this repo's own build instead of waiting for a manual audit.
+  # The script is a byte-identical copy of the server repo's
+  # ops/scripts/contract-check.sh; fix it there and copy it out again.
+  contract:
+    name: "Contract: golden CI/CD rules"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: "Contract: check this repo"
+        run: ./ops/scripts/contract-check.sh .
+
   nim-check:
     name: Nim (check + unit/property test)
     runs-on: ubuntu-24.04
@@ -431,3 +438,86 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        # Tanpa `version:`: action membaca `packageManager` di package.json (OPS-3/T-131), sama
+        # seperti job web — CI dan mesin lokal memakai pnpm yang identik.
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: "Supply chain: audit the frontend lockfile"
+        # CVE di dependensi frontend: `--prod` supaya hanya paket yang ikut terkirim ke browser yang
+        # dinilai, `--audit-level=high` karena advisory low/moderate tidak boleh memblokir rilis.
+        # Tidak ada `|| true`: lockfile saat ini bersih di level itu, jadi kegagalan berarti regresi.
+        run: pnpm audit --audit-level=high --prod
+
+  # Build selalu, push hanya saat event `push` (main). Dockerfile yang berhenti mem-build adalah
+  # PR merah, bukan deploy merah di malam hari. Image-nya belum dikonsumsi siapa pun: quadlet-nya
+  # ada di ops/systemd, Caddy masih melayani direktori `web/` — jadi tidak ada `needs:` dan tidak
+  # ada job `changes`/`gate` yang ditambahkan di sini.
+  image-web:
+    name: "Image: web"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      id-token: write        # keyless cosign, job ini saja
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # `${GITHUB_SHA::7}` adalah sintaks bash dan di dalam `with:` tidak ada shell, jadi buildx
+      # menerima string itu apa adanya dan tag-nya tidak sah. `printf '%.7s'` juga sama persis
+      # dengan `cut -c1-7` di skrip deploy, yang `rev-parse --short` tidak selalu hasilkan.
+      - name: Short SHA
+        id: short
+        shell: bash
+        env:
+          SHA: ${{ github.sha }}
+        run: printf 'sha7=%.7s\n' "$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name == 'push' }}
+          # GIT_REV = SHA penuh dengan sengaja: nilainya ditulis ke /healthz di dalam image.
+          build-args: |
+            GIT_REV=${{ github.sha }}
+          tags: |
+            ghcr.io/nferdazel/kran-web:sha-${{ steps.short.outputs.sha7 }}
+            ghcr.io/nferdazel/kran-web:main
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install cosign
+        if: github.event_name == 'push'
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+
+      - name: Sign the digest
+        if: github.event_name == 'push'
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "ghcr.io/nferdazel/kran-web@${DIGEST}"
