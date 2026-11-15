@@ -24,7 +24,7 @@
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
     "@inlang/paraglide-js": "2.27.0",
-    "@playwright/test": "1.64.0",
+    "@playwright/test": "1.65.0",
     "@sveltejs/adapter-static": "4.0.0",
     "@sveltejs/kit": "3.0.1",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
