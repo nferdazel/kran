@@ -308,7 +308,7 @@ jobs:
         # supaya run hijau tidak menumpuk artifact. `if-no-files-found: ignore` karena
         # `playwright-report/` memang tidak ada selama reporter masih `list`.
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-failure-${{ github.run_id }}
           path: |
@@ -417,7 +417,7 @@ jobs:
         run: pnpm --filter @kran/web exec playwright test tests/e2e/visual.spec.ts --update-snapshots=all
 
       - name: Upload baseline hasil regenerasi
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: visual-snapshots-${{ github.run_id }}
           path: apps/web/tests/e2e/visual.spec.ts-snapshots/

@@ -104,7 +104,7 @@ jobs:
 
       - name: Upload baselines
         if: env.UPDATE_BASELINE == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: visual-baseline-linux
           path: apps/web/tests/e2e/visual.spec.ts-snapshots
