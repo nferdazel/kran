@@ -444,11 +444,13 @@ jobs:
         # Tanpa `version:`: action membaca `packageManager` di package.json (OPS-3/T-131), sama
         # seperti job web — CI dan mesin lokal memakai pnpm yang identik.
 
+      # No pnpm cache here: the job audits the lockfile without installing, so
+      # the store directory never exists and setup-node's post step failed the
+      # job trying to save it.
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-          cache: pnpm
 
       - name: "Supply chain: audit the frontend lockfile"
         # CVE di dependensi frontend: `--prod` supaya hanya paket yang ikut terkirim ke browser yang
