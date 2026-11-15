@@ -11,7 +11,7 @@ files in the repository**, including contract migrations that deploy runs only w
 listed in `ops/migrations/contract-auto.txt`.
 
 - Schemas: **9**; tables: **63**.
-- Migration files: **134** (35 create at least one table, 99 do not).
+- Migration files: **135** (35 create at least one table, 100 do not).
 - Tables with a `COMMENT ON TABLE` purpose: **54** of 63.
 - Contract migrations declared for automatic deploy: **12**.
 
@@ -228,3 +228,4 @@ counts the statements by kind.
 | `0100_platform_session_mfa_pending.sql` | alter table (1), comment (1) |
 | `0101_lending_restructure_grade.sql` | alter table (2), comment (3) |
 | `0102_lending_runtime_grants_transactional.sql` | do block (1) |
+| `0104_platform_rbac_teller_session_read_all.sql` | insert (2) |
