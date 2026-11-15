@@ -30,6 +30,9 @@ on:
 
 permissions:
   contents: read
+  # gitleaks-action lists the pull request's commits on a `pull_request` run;
+  # with contents:read alone that call is 403 and the job dies before scanning.
+  pull-requests: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
