@@ -508,12 +508,14 @@ proc approveChange*(db: DbConn, ctx: AuditContext, clock: Clock,
       "status": $pvActive, "effective_from": pending.effectiveFrom, "value": pending.value}))
   notifyChange(db, pending.key)
 
-proc rejectChange*(db: DbConn, ctx: AuditContext, clock: Clock,
+proc rejectChange*(db: DbConn, ctx: AuditContext, clock: Clock, businessDate,
                    paramValueId, reason: string): ChangeOutcome =
   ## Penolakan oleh checker: PENDING → REJECTED + audit + event. Nilai ACTIVE tidak disentuh.
   ##
   ## Kenapa lewat repo, bukan UPDATE langsung dari handler: audit (`param.reject`) dan event
   ## `param.changed` harus satu transaksi dengan perubahan status, seperti `approveChange`.
+  ## `businessDate` = tanggal buku saat keputusan diambil, dikirim pemanggil (O-147): audit
+  ## penolakan tidak boleh bertanggal `effectiveFrom`, yang bisa jauh di depan atau di belakang.
   let found = pendingValueOf(db, paramValueId)
   if found.isNone:
     raise newException(ValueError, "param_value_id tidak ditemukan: " & paramValueId)
@@ -523,7 +525,7 @@ proc rejectChange*(db: DbConn, ctx: AuditContext, clock: Clock,
 
   result.paramValueId = paramValueId
   result.auditHash = appendAudit(db, newAuditEntry(ctx, "param.reject", "param_value",
-    paramValueId, clock, businessDate = pending.effectiveFrom,
+    paramValueId, clock, businessDate = businessDate,
     after = %*{"key": pending.key, "scope_type": pending.scopeType, "scope_id": pending.scopeId,
                "status": $pvRejected, "reason": reason}))
   result.eventId = newId(clock)
@@ -725,9 +727,10 @@ proc approveEndChange*(db: DbConn, ctx: AuditContext, clock: Clock,
   # Validasi cache in-proc: tanpa NOTIFY, pembaca bisa terus memakai nilai yang sudah berakhir.
   notifyChange(db, request.key)
 
-proc rejectEndChange*(db: DbConn, ctx: AuditContext, clock: Clock, requestId,
-                      reason: string): EndRequestOutcome =
+proc rejectEndChange*(db: DbConn, ctx: AuditContext, clock: Clock, businessDate,
+                      requestId, reason: string): EndRequestOutcome =
   ## Penolakan pengakhiran: PENDING → REJECTED + audit + event. Nilai ACTIVE tidak disentuh.
+  ## `businessDate` = tanggal buku saat keputusan diambil (O-147), sama seperti `rejectChange`.
   let found = endRequestById(db, requestId, forUpdate = true)
   if found.isNone:
     raise newException(ValueError, "pengajuan pengakhiran tidak ditemukan: " & requestId)
@@ -744,7 +747,7 @@ proc rejectEndChange*(db: DbConn, ctx: AuditContext, clock: Clock, requestId,
   result.paramValueId = request.paramValueId
   result.effectiveTo = request.effectiveTo
   result.auditHash = appendAudit(db, newAuditEntry(ctx, "param.end.reject",
-    "param_end_request", requestId, clock, businessDate = request.effectiveFrom,
+    "param_end_request", requestId, clock, businessDate = businessDate,
     after = %*{
       "requestId": requestId, "paramValueId": request.paramValueId, "key": request.key,
       "scope_type": request.scopeType, "scope_id": request.scopeId,

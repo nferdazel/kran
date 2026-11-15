@@ -1607,3 +1607,78 @@ suite "tanggal buku: perubahan parameter tidak boleh surut (C-03)":
     finally:
       exec(db, sql"DELETE FROM platform.business_date WHERE scope_type = 'INSTITUTION'")
       dbPool.release(db)
+
+  test "audit penolakan bertanggal buku saat keputusan, bukan effectiveFrom (O-147)":
+    ## MINOR C-03-1: penolakan dulu menulis `business_date = effectiveFrom`, jadi menolak
+    ## pengajuan bertanggal depan menulis audit bertanggal depan juga.
+    let makerToken = tokenOf(login(MakerUser))
+    let checkerToken = tokenOf(login(CheckerUser))
+    let submitted = postJson(ParamsPath & "/" & ParamKey & "/changes",
+      %*{"value": 7, "reason": "uji otomatis: audit reject", "effectiveFrom": dayIso(6)},
+      makerToken)
+    check submitted.code == 201
+    let paramValueId = submitted.body["paramValueId"].getStr()
+    let db = dbPool.acquire()
+    try:
+      # Tanggal buku sengaja berbeda dari `effectiveFrom` **dan** dari tanggal UTC hari ini,
+      # supaya ketiga acuan itu tidak bisa tertukar.
+      exec(db, sql"""
+        INSERT INTO platform.business_date (scope_type, scope_id, current_business_date, state)
+        VALUES ('INSTITUTION', NULL, ?::date, 'OPEN')""", dayIso(1))
+      let rejected = postJson(ParamsPath & "/changes/" & paramValueId & "/reject",
+        %*{"reason": "uji otomatis: tolak"}, checkerToken)
+      check rejected.code == 200
+      check db.getValue(sql"""
+        SELECT to_char(business_date, 'YYYY-MM-DD') FROM platform.audit_log
+         WHERE action = 'param.reject' AND resource_id = ?""", paramValueId) == dayIso(1)
+    finally:
+      exec(db, sql"DELETE FROM platform.business_date WHERE scope_type = 'INSTITUTION'")
+      dbPool.release(db)
+
+  test "pengajuan tanpa effectiveFrom memakai tanggal buku, bukan tanggal UTC (O-148)":
+    ## MINOR C-03-2: default `effectiveFrom` dulu tanggal UTC, sedangkan guard dan persetujuan
+    ## memakai tanggal buku — selisih satu hari di sekitar rollover EOD.
+    let makerToken = tokenOf(login(MakerUser))
+    let checkerToken = tokenOf(login(CheckerUser))
+    let db = dbPool.acquire()
+    try:
+      exec(db, sql"""
+        INSERT INTO platform.business_date (scope_type, scope_id, current_business_date, state)
+        VALUES ('INSTITUTION', NULL, ?::date, 'OPEN')""", dayIso(2))
+      let reply = postJson(ParamsPath & "/" & ParamKey & "/changes",
+        %*{"value": 6, "reason": "uji otomatis: default tanggal buku"}, makerToken)
+      check reply.code == 201
+      check reply.body["effectiveFrom"].getStr() == dayIso(2)
+      check reply.body["effectiveTo"].getStr() == ""
+      # Bersihkan: pengajuan yang tertinggal akan bertabrakan dengan uji berikutnya.
+      let rejected = postJson(ParamsPath & "/changes/" &
+        reply.body["paramValueId"].getStr() & "/reject",
+        %*{"reason": "uji: bersihkan"}, checkerToken)
+      check rejected.code == 200
+    finally:
+      exec(db, sql"DELETE FROM platform.business_date WHERE scope_type = 'INSTITUTION'")
+      dbPool.release(db)
+
+  test "pengajuan pengakhiran memakai tanggal buku, bukan tanggal UTC (O-148)":
+    const key = "daycloser.chunk_size"
+    let makerToken = tokenOf(login(MakerUser))
+    let paramValueId = dbValue(sql"""
+      SELECT param_value_id::text FROM platform.param_value
+       WHERE key = ? AND status = 'ACTIVE'""", key)
+    check paramValueId.len > 0
+    let db = dbPool.acquire()
+    try:
+      # Tanggal buku dua hari di depan: `effectiveTo` sehari di depan sudah harus ditolak,
+      # padahal terhadap tanggal UTC nilainya masih di masa depan.
+      exec(db, sql"""
+        INSERT INTO platform.business_date (scope_type, scope_id, current_business_date, state)
+        VALUES ('INSTITUTION', NULL, ?::date, 'OPEN')""", dayIso(2))
+      let reply = postJson("/api/v1/params/" & paramValueId & "/end-requests",
+        %*{"effectiveTo": dayIso(1), "reason": "uji otomatis: pengakhiran pakai tanggal buku"},
+        makerToken)
+      check reply.code == 400
+      checkProblem("/api/v1/params/{paramValueId}/end-requests", "POST", "400", reply.body)
+      check reply.body["params"]["reason"].getStr() == "effective_to_not_future"
+    finally:
+      exec(db, sql"DELETE FROM platform.business_date WHERE scope_type = 'INSTITUTION'")
+      dbPool.release(db)

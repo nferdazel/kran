@@ -152,7 +152,11 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
     scopeType = defaultScopeType
   let scopeId = node.jsonField("scopeId")
   var effectiveFrom = node.jsonField("effectiveFrom")
-  if effectiveFrom.len == 0:
+  let effectiveFromGiven = effectiveFrom.len > 0
+  if not effectiveFromGiven:
+    # Penanda sementara: default sebenarnya adalah tanggal buku institusi, dan itu hanya bisa
+    # dibaca dari DB. Default dipasang di dalam transaksi sebelum guard `effective_from_past`
+    # (O-148): memakai tanggal UTC di sini membuat pengajuan pukul 00:xx WIB bertanggal kemarin.
     effectiveFrom = businessDateIso(app.clock)
   let effectiveTo = node.jsonField("effectiveTo")
   let reason = node.jsonField("reason")
@@ -174,8 +178,10 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
       req.respondParamReason(pkBadRequest, "Bad Request", "effective_to_invalid",
         "effectiveTo harus tanggal YYYY-MM-DD yang sah")
       return
-    if effectiveTo <= effectiveFrom:
-      # CHECK skema `param_value_period_chk`: periode harus punya lebar positif.
+    if effectiveFromGiven and effectiveTo <= effectiveFrom:
+      # CHECK skema `param_value_period_chk`: periode harus punya lebar positif. Tanpa
+      # `effectiveFrom` eksplisit, perbandingan ditunda ke dalam transaksi: acuannya tanggal buku,
+      # bukan tanggal UTC yang masih penanda di sini.
       req.respondParamReason(pkBadRequest, "Bad Request", "period_invalid",
         "effectiveTo harus setelah effectiveFrom")
       return
@@ -236,6 +242,13 @@ proc handleSubmitParamChange*(app: AppContext, req: Request) {.gcsafe.} =
             # (`businessDate = effectiveFrom`), dan nilai ACTIVE yang menutupi rentang itu dipangkas.
             # Jalur pengakhiran nilai sudah menolak tanggal surut; guard yang sama dipasang di sini.
             let businessDate = businessDateFor(db, institutionScope(), asOf)
+            if not effectiveFromGiven:
+              # Default yang dikirim pemanggil kosong: mulai berlaku pada tanggal buku institusi,
+              # sumber yang sama dengan guard di bawah dan dengan jalur persetujuan (O-148).
+              effectiveFrom = businessDate
+            if effectiveTo.len > 0 and effectiveTo <= effectiveFrom:
+              problemCode = "period_invalid"
+              raise newException(ValueError, "effectiveTo harus setelah effectiveFrom")
             if effectiveFrom < businessDate:
               problemCode = "effective_from_past"
               raise newException(ValueError, "effectiveFrom " & effectiveFrom &
@@ -493,7 +506,10 @@ proc handleRejectParamChange*(app: AppContext, req: Request) {.gcsafe.} =
           else:
             let ctx = auditContextFor(principal, req, app.clock,
               "penolakan perubahan parameter: " & reason, targetBranch)
-            let outcome = rejectChange(db, ctx, app.clock, paramValueId, reason)
+            # O-147: audit penolakan bertanggal buku saat keputusan diambil, bukan `effectiveFrom`
+            # pengajuan — tanggal itu bisa di masa depan, jadi auditnya ikut bertanggal surut.
+            let businessDate = businessDateFor(db, institutionScope(), businessDateIso(app.clock))
+            let outcome = rejectChange(db, ctx, app.clock, businessDate, paramValueId, reason)
             status = 200
             payload = %*{"paramValueId": outcome.paramValueId, "status": $pvRejected})
   except ValueError as e:
@@ -622,6 +638,10 @@ proc handleSubmitParamEndRequest*(app: AppContext, req: Request) {.gcsafe.} =
             else:
               let targetBranch =
                 if row.get().scopeType == $pstBranch: row.get().scopeId else: ""
+              # O-148: acuan tanggal di jalur ini adalah tanggal buku institusi, bukan tanggal UTC.
+              # `asOf` (UTC) tetap dipakai sebagai cadangan saat belum ada baris `business_date`,
+              # sama seperti `businessDateFor`.
+              let businessDate = businessDateFor(db, institutionScope(), asOf)
               # D-047: wewenang mengusulkan tidak boleh melebihi wewenang melihat scope itu.
               if not mayReadScope(grantsOf(db, principal.get().user.userId), permissionParamRead,
                                   parseScopeType(row.get().scopeType), row.get().scopeId):
@@ -633,13 +653,13 @@ proc handleSubmitParamEndRequest*(app: AppContext, req: Request) {.gcsafe.} =
                 status = 403
                 problemCode = reasonBranchNotAllowed
                 raise newException(ValueError, branchNotAllowedProblem(targetBranch, "pengaju"))
-              elif effectiveTo <= asOf:
+              elif effectiveTo <= businessDate:
                 # Tidak surut (O-127 tetap batas terpisah): nilai tetap berlaku sampai tanggal
                 # buku hari ini, berhenti mulai tanggal yang diminta.
                 status = 400
                 problemCode = reasonEndNotFuture
                 raise newException(ValueError, "effectiveTo " & effectiveTo &
-                  " harus setelah tanggal buku " & asOf)
+                  " harus setelah tanggal buku " & businessDate)
               elif effectiveTo <= row.get().effectiveFrom:
                 status = 400
                 problemCode = "period_invalid"
@@ -660,7 +680,7 @@ proc handleSubmitParamEndRequest*(app: AppContext, req: Request) {.gcsafe.} =
                 let ctx = auditContextFor(principal.get(), req, app.clock,
                   "pengajuan pengakhiran nilai parameter: " & reason, targetBranch)
                 let change = submitEndChange(db, ctx, app.clock, paramValueId, effectiveTo,
-                  asOf, reason)
+                  businessDate, reason)
                 let stored = endRequestById(db, change.requestId)
                 if stored.isNone:
                   # Tidak mungkin dalam satu transaksi; kalau terjadi, jangan menutup klaim
@@ -901,7 +921,9 @@ proc handleRejectParamEndRequest*(app: AppContext, req: Request) {.gcsafe.} =
           else:
             let ctx = auditContextFor(principal, req, app.clock,
               "penolakan pengakhiran nilai parameter: " & reason, targetBranch)
-            let change = rejectEndChange(db, ctx, app.clock, requestId, reason)
+            # O-147: tanggal buku saat keputusan, bukan `effectiveFrom` pengajuan.
+            let businessDate = businessDateFor(db, institutionScope(), businessDateIso(app.clock))
+            let change = rejectEndChange(db, ctx, app.clock, businessDate, requestId, reason)
             status = 200
             payload = %*{
               "requestId": change.requestId,

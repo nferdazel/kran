@@ -712,12 +712,17 @@ suite "param: pengakhiran nilai (O-064)":
     check raised
 
     discard dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
-      rejectEndChange(d, ctxChecker, sysClock, first.requestId, "produk masih dipakai"))
+      rejectEndChange(d, ctxChecker, sysClock, today, first.requestId, "produk masih dipakai"))
     # Penolakan tidak menyentuh nilai yang sedang berlaku.
     check activeValueOpt(db, sessionKey, "2026-12-31", lewat("akhir-6")).get().getInt == 45
     check db.getValue(sql"""
       SELECT count(*) FROM platform.audit_log
        WHERE action = 'param.end.reject' AND resource_id = ?""", first.requestId) == "1"
+    # O-147: audit penolakan bertanggal buku saat keputusan (`today`), bukan `effectiveFrom`
+    # nilai yang diakhiri (2026-01-01).
+    check db.getValue(sql"""
+      SELECT to_char(business_date, 'YYYY-MM-DD') FROM platform.audit_log
+       WHERE action = 'param.end.reject' AND resource_id = ?""", first.requestId) == today
     let second = dbPool.withTx(proc(d: DbConn): EndRequestOutcome =
       submitEndChange(d, ctxMaker, sysClock, pvId, "2026-12-01", today, "pengajuan ulang"))
     check second.requestId.len > 0
