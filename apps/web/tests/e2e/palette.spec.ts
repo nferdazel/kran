@@ -35,7 +35,7 @@ type Text = {
   params: string;
   products: string;
   paramsTitle: string;
-  newValue: string;
+  paramsSearch: string;
 };
 
 const T: Record<"id" | "en", Text> = {
@@ -51,7 +51,7 @@ const T: Record<"id" | "en", Text> = {
     params: "Parameter",
     products: "Produk",
     paramsTitle: "Parameter & jejak audit",
-    newValue: "Nilai baru",
+    paramsSearch: "Cari parameter aktif",
   },
   en: {
     loginTitle: "Sign in",
@@ -65,7 +65,7 @@ const T: Record<"id" | "en", Text> = {
     params: "Parameters",
     products: "Products",
     paramsTitle: "Parameters & audit trail",
-    newValue: "New value",
+    paramsSearch: "Search active parameters",
   },
 };
 
@@ -222,7 +222,9 @@ test.describe.serial("command palette", () => {
     // Halaman Parameter punya field teks nyata; di sana Ctrl+K milik field (bukan palette).
     await page.goto("/app/params");
     await expect(page.getByRole("heading", { level: 1, name: T.id.paramsTitle })).toBeVisible();
-    await page.getByLabel(T.id.newValue, { exact: true }).focus();
+    // T-241 memindahkan form ubah ke dalam baris; satu-satunya field teks tetap di halaman ini
+    // adalah kotak cari, dan itulah yang dipakai untuk membuktikan Ctrl+K tidak direbut.
+    await page.getByLabel(T.id.paramsSearch, { exact: true }).focus();
     await page.keyboard.press("Control+k");
 
     await expect(page.getByRole("dialog", { name: T.id.paletteHeading })).toBeHidden();

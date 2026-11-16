@@ -297,6 +297,55 @@ Gates, all recorded on the branch tree:
   a new balance-failure case (queue still usable, one retry, form still enabled, axe clean), and
   the data-state axe sweep at 2 themes x 2 locales.
 
-Not verified yet on this screen: full `./task e2e` across the other suites (run once at the end of
-the branch), and the 200% zoom keyboard pass (covered by `zoom-125.spec.ts` / `shell-reflow.spec.ts`
-in that full run).
+Full `./task e2e` on the finished branch -> `127 passed`, `4 skipped`, EXIT=0
+(`.local/qa/results/T-241-full-e2e.log`), which covers the other suites, the 125%/200% zoom specs
+and the visual baseline. The keyboard-only path for this screen is the original spec, which drives
+submit, approve and reject with focus + Enter only.
+
+### Params — "Parameter & jejak audit" (commit 2)
+
+- Order is now the reader's order: active values (with the search box) → waiting for approval →
+  end requests → audit trail. The free-floating submit form above the tables is gone.
+- The edit form opens inside the selected row, reusing the `kran-table__selected` expansion that
+  already existed for end requests: value, reason, effective-from, "Ajukan perubahan" / "Batal".
+  The key is bound by the row, so the select of every key is gone and the search box is the only
+  way to find a parameter. `Esc` closes the form and focus returns to that row's "Ubah" button;
+  opening a row focuses the value field.
+- Search with no match is an `EmptyState` naming the query with a "Hapus pencarian" action,
+  replacing the bare muted table cell.
+- Field-level validation: empty value, empty reason and uncoercible values show their message on
+  the field (through `Input`'s `error` wiring) and move focus to it; server failures show a summary
+  `Alert` above the form.
+- After a successful submit the new row in "Menunggu persetujuan" is rendered with
+  `kran-table__selected`, so the operator sees where the change landed.
+- Realtime: `role="status"` now wraps only the badge; the "Data diperbarui pukul ..." clock sits
+  outside the live region.
+
+Gates (recorded on the branch tree):
+
+- `./task check-fast` -> EXIT=0, i18ncheck `2 locale, 1062 key/locale`, no findings
+  (`.local/qa/results/T-241-params-check-fast.log`).
+- `./task lint-web` -> eslint clean + `packages/ui` svelte-check 0/0, EXIT=0
+  (`.local/qa/results/T-241-params-lint-web.log`).
+- `playwright test tests/e2e/{params,flow,vault}.spec.ts` -> `20 passed`, EXIT=0
+  (`.local/qa/results/T-241-params-e2e.log`): new `params.spec.ts` proves the inline form opens from
+  the row and closes on `Esc` with focus back on its button, the no-match empty state, the live
+  region without the clock, and axe on the data state at 2 themes x 2 locales. `flow.spec.ts` was
+  updated because the page-level form it drove no longer exists; it still runs keyboard-only.
+- Full `./task e2e` -> `127 passed`, `4 skipped`, `ok: e2e green: 127 test`, EXIT=0
+  (`.local/qa/results/T-241-full-e2e.log`), including `packages/ui` (262 tests), web unit tests
+  (174), axe on every other screen, the 125%/200% zoom specs and the visual baseline.
+
+Copy changes, deliberate: `params_search_empty` now takes `{query}`; `params_submit_heading` and
+`params_submit_key_label` are deleted because the page no longer renders that form or its key
+picker (an unused key fails `./task check-fast`). New keys: `params_row_edit`,
+`params_clear_search`, `params_edit_heading`, `params_active_empty_hint`.
+
+Two test files outside the two screens had to change with them:
+
+- `palette.spec.ts` focused the removed "Nilai baru" field to prove Ctrl+K is not captured inside a
+  text field; it now focuses the params search box, the only text field left on that page.
+- `zoom-125.spec.ts` read `scrollLeft` immediately after `ArrowRight`; Chromium applies the scroll
+  on the next frame, so the assertion raced the browser (it also left the region already scrolled
+  to its maximum from the previous step). It now resets the region to the left edge and polls the
+  value. The assertion itself is unchanged, not relaxed.

@@ -90,6 +90,11 @@ test("1366×768 @125%: tanpa gulir mendatar halaman dan tabel tetap terpakai", a
   await page.locator(".kran-filter-bar .kran-filter-button").last().focus();
   await page.keyboard.press("Tab");
   await expect(region).toBeFocused();
+  // Kembali ke tepi kiri dulu: langkah 3 di atas sudah menggulir region sampai maksimum, dan
+  // panah kanan tidak bisa menambah `scrollLeft` yang sudah di ujung.
+  await region.evaluate((el) => {
+    el.scrollLeft = 0;
+  });
   const beforeScroll = await region.evaluate((el) => ({
     left: el.scrollLeft,
     scrollWidth: el.scrollWidth,
@@ -98,7 +103,13 @@ test("1366×768 @125%: tanpa gulir mendatar halaman dan tabel tetap terpakai", a
   await page.keyboard.press("ArrowRight");
   await expect(region).toBeFocused();
   if (beforeScroll.scrollWidth > beforeScroll.clientWidth) {
-    expect(await region.evaluate((el) => el.scrollLeft)).toBeGreaterThan(beforeScroll.left);
+    // Gulir dari tombol panah diterapkan peramban setelah frame berikutnya, bukan di dalam
+    // handler tombol: dibaca langsung, `scrollLeft` masih nilai lama (flaky, bukan bug layar).
+    await expect
+      .poll(async () => region.evaluate((el) => el.scrollLeft), {
+        message: "panah kanan menggulir region tabel",
+      })
+      .toBeGreaterThan(beforeScroll.left);
   }
 });
 

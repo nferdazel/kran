@@ -18,12 +18,12 @@
   import Alert from "@kran/ui/components/Alert.svelte";
   import Button from "@kran/ui/components/Button.svelte";
   import EmptyState from "@kran/ui/components/EmptyState.svelte";
-  import Select from "@kran/ui/components/Select.svelte";
+  import Input from "@kran/ui/components/Input.svelte";
   import StatusBadge from "@kran/ui/components/StatusBadge.svelte";
 
   import { goto } from "$app/navigation";
   import { resolve } from "$app/paths";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
 
   import type { Problem } from "@kran/api-client";
 
@@ -64,11 +64,15 @@
   let realtimeState = $state<RealtimeState>("connecting");
   let updatedAt = $state<Date | null>(null);
 
-  // Form ajukan perubahan.
-  let formKey = $state("");
+  // Form ajukan perubahan, dibuka dari baris tabel aktif (T-241): tidak ada form bebas di atas
+  // halaman, jadi kunci parameter selalu jelas dari baris yang sedang terbuka.
+  let editingRow = $state<ParamValue | null>(null);
   let formValue = $state("");
   let formReason = $state("");
   let formEffectiveFrom = $state("");
+  let formError = $state("");
+  let formErrorField = $state<"value" | "reason" | null>(null);
+  let valueEl = $state<HTMLInputElement | null>(null);
   let sending = $state(false);
   /**
    * Kunci idempotensi pengajuan parameter. Dibuat sekali per percobaan dan dipertahankan saat
@@ -97,8 +101,8 @@
   let endRejectReason = $state("");
   let endBusy = $state("");
 
-  /** Kunci yang bisa diajukan = kunci yang sedang punya nilai aktif (urutan dari server). */
-  const selectableKeys = $derived([...new Set(active.map((row) => row.key))]);
+  /** Baris pengajuan yang baru dibuat, disorot setelah daftar menunggu dimuat ulang. */
+  let pendingHighlight = $state("");
 
   let searchFilter = $state("");
   const filteredActive = $derived.by(() => {
@@ -183,8 +187,6 @@
     endRequests = endRes?.data?.items ?? [];
     audit = auditRes?.data?.items ?? [];
     updatedAt = new Date();
-    const firstKey = selectableKeys[0];
-    if (!formKey && firstKey !== undefined) formKey = firstKey;
   }
 
   onMount(() => {
@@ -229,30 +231,80 @@
     return text;
   }
 
+  /** Buka form ubah pada baris ini; membuka baris lain menutup yang sedang terbuka. */
+  async function startEditing(row: ParamValue): Promise<void> {
+    if (editingRow?.paramValueId === row.paramValueId) {
+      await closeEditing(row.paramValueId);
+      return;
+    }
+    endingRow = null;
+    editingRow = row;
+    formValue = displayValue(row.value);
+    formReason = "";
+    formEffectiveFrom = "";
+    formError = "";
+    formErrorField = null;
+    await tick();
+    valueEl?.focus();
+  }
+
+  /**
+   * Tutup form dan kembalikan fokus ke tombol "Ubah" baris itu (T-241 acceptance 7). Dipanggil dari
+   * tombol Batal dan dari `Esc`.
+   */
+  async function closeEditing(paramValueId: string): Promise<void> {
+    editingRow = null;
+    formError = "";
+    formErrorField = null;
+    await tick();
+    document.getElementById(`param-edit-${paramValueId}`)?.focus();
+  }
+
+  function onEditKeydown(event: KeyboardEvent): void {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    if (editingRow !== null) void closeEditing(editingRow.paramValueId);
+  }
+
+  function clearSearch(): void {
+    searchFilter = "";
+  }
+
   async function submitChange(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     if (sending) return;
 
-    // Scope diambil dari baris parameter yang dipilih (kontrak mewajibkan `scopeType`), bukan
-    // ditanam sebagai konstanta: begitu ada parameter INSTITUTION/cabang, form ini ikut benar.
-    const currentRow = active.find((row) => row.key === formKey);
-    if (currentRow === undefined) {
-      errorMessage = m.app_error();
+    // Scope diambil dari baris yang sedang dibuka (kontrak mewajibkan `scopeType`), bukan ditanam
+    // sebagai konstanta: begitu ada parameter INSTITUTION/cabang, form ini ikut benar.
+    const currentRow = editingRow;
+    if (currentRow === null) return;
+
+    if (formValue.trim() === "") {
+      formError = m.param_error_value_missing();
+      formErrorField = "value";
+      valueEl?.focus();
       return;
     }
-
-    sending = true;
-    errorMessage = "";
-    notice = "";
+    if (formReason.trim() === "") {
+      formError = m.param_error_reason_missing();
+      formErrorField = "reason";
+      return;
+    }
 
     let value: unknown;
     try {
       value = coerceValue(formValue, currentRow.value);
     } catch {
-      sending = false;
-      errorMessage = m.param_error_value_invalid();
+      formError = m.param_error_value_invalid();
+      formErrorField = "value";
+      valueEl?.focus();
       return;
     }
+
+    sending = true;
+    formError = "";
+    formErrorField = null;
+    notice = "";
 
     const body: {
       value: unknown;
@@ -266,8 +318,8 @@
     };
     if (formEffectiveFrom) body.effectiveFrom = formEffectiveFrom;
 
-    // Kunci terikat pada isi yang diajukan: mengganti parameter/nilai/alasan setelah kegagalan
-    // 5xx harus memulai permintaan baru, bukan memakai ulang kunci dengan sidik jari berbeda.
+    // Kunci terikat pada isi yang diajukan: mengganti nilai/alasan setelah kegagalan 5xx harus
+    // memulai permintaan baru, bukan memakai ulang kunci dengan sidik jari berbeda.
     const identity = JSON.stringify([
       currentRow.key,
       value,
@@ -280,7 +332,7 @@
     }
 
     try {
-      const { response, error } = await api.POST("/api/v1/params/{key}/changes", {
+      const { data: created, response, error } = await api.POST("/api/v1/params/{key}/changes", {
         params: {
           path: { key: currentRow.key },
           header: { "Idempotency-Key": submitIdempotencyKey },
@@ -293,20 +345,23 @@
           submitIdempotencyKey = "";
           submitKeyIdentity = "";
         }
-        errorMessage = errorFrom(error);
+        formError = errorFrom(error);
+        formErrorField = null;
         return;
       }
 
       submitIdempotencyKey = "";
       submitKeyIdentity = "";
       notice = m.params_submit_success();
+      pendingHighlight = created?.paramValueId ?? "";
+      editingRow = null;
       formValue = "";
       formReason = "";
       formEffectiveFrom = "";
       await refresh();
     } catch {
       // Jaringan gagal: kunci dan `sending` harus pulih supaya operator bisa mencoba lagi.
-      errorMessage = m.app_error();
+      formError = m.app_error();
     } finally {
       sending = false;
     }
@@ -336,6 +391,7 @@
    * pengganti. Dua orang tetap diperlukan — pengajuan di sini, keputusan di daftar pengajuan.
    */
   function startEnding(row: ParamValue): void {
+    editingRow = null;
     const same = endingRow?.paramValueId === row.paramValueId;
     endingRow = same ? null : row;
     endDate = "";
@@ -441,19 +497,26 @@
   <title>{m.common_app_title()} — {m.app_title()}</title>
 </svelte:head>
 
+<!-- Esc menutup form yang sedang terbuka; fokus dikembalikan ke tombol barisnya. Handler tidak
+     dipasang di <form> karena elemen non-interaktif tidak boleh membawa listener keyboard. -->
+<svelte:window onkeydown={onEditKeydown} />
+
 <div class="kran-page-header">
   <div>
     <h1 class="kran-page-header__title">{m.app_title()}</h1>
-    <!-- Denyut realtime (spec §19.2): status + kapan data terakhir disegarkan, diumumkan halus. -->
-    <p class="kran-page-header__intro kran-actions" role="status" aria-live="polite">
+    <!-- Denyut realtime (spec §19.2): hanya badge yang diumumkan, jam terakhir diperbarui tidak
+         (T-241: pengumuman per refresh tanpa jam yang tidak perlu dibacakan). -->
+    <p class="kran-page-header__intro kran-actions">
       <span class="kran-muted">{m.realtime_label()}:</span>
-      {#if realtimeState === "connected"}
-        <StatusBadge tone="positive">{m.realtime_connected()}</StatusBadge>
-      {:else if realtimeState === "reconnecting"}
-        <StatusBadge tone="warning">{m.realtime_reconnecting()}</StatusBadge>
-      {:else}
-        <StatusBadge tone="neutral">{m.realtime_connecting()}</StatusBadge>
-      {/if}
+      <span role="status">
+        {#if realtimeState === "connected"}
+          <StatusBadge tone="positive">{m.realtime_connected()}</StatusBadge>
+        {:else if realtimeState === "reconnecting"}
+          <StatusBadge tone="warning">{m.realtime_reconnecting()}</StatusBadge>
+        {:else}
+          <StatusBadge tone="neutral">{m.realtime_connecting()}</StatusBadge>
+        {/if}
+      </span>
       {#if updatedAt}
         <span class="kran-muted">{m.realtime_updated({ time: formatClock(updatedAt) })}</span>
       {/if}
@@ -493,59 +556,192 @@
     </section>
   {:else}
     {#if canReadParams}
-      {#if canSubmit}
-        <section class="kran-section" aria-labelledby="submit-heading">
-          <h2 class="kran-section__title" id="submit-heading">{m.params_submit_heading()}</h2>
-          <p class="kran-muted">{m.params_submit_effective_from_hint()}</p>
+      <!-- Urutan mengikuti pekerjaan pembaca: nilai aktif dulu (yang dicari), lalu pengajuan yang
+           menunggu, lalu pengakhiran, lalu jejak audit. -->
+      <section class="kran-section" aria-labelledby="active-heading">
+        <div class="kran-toolbar">
+          <h2 class="kran-section__title" id="active-heading">{m.params_active_heading()}</h2>
+          <input
+            class="kran-input"
+            type="search"
+            placeholder={m.params_search_placeholder()}
+            aria-label={m.params_search_label()}
+            bind:value={searchFilter}
+          />
+        </div>
 
-          <form class="kran-form" onsubmit={submitChange} novalidate>
-            <Select label={m.params_submit_key_label()} bind:value={formKey}>
-              {#each selectableKeys as key (key)}
-                <option value={key}>{key}</option>
-              {/each}
-            </Select>
+        {#if active.length === 0}
+          <EmptyState
+            kind="no-data"
+            title={m.params_active_empty()}
+            description={m.params_active_empty_hint()}
+          />
+        {:else if filteredActive.length === 0}
+          {#snippet clearSearchAction()}
+            <Button type="button" onclick={clearSearch}>{m.params_clear_search()}</Button>
+          {/snippet}
+          <EmptyState
+            kind="no-match"
+            title={m.params_search_empty({ query: searchFilter.trim() })}
+            action={clearSearchAction}
+          />
+        {:else}
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <div
+            class="kran-table-wrap"
+            role="region"
+            tabindex="0"
+            aria-label={m.common_table_region({ name: m.params_active_heading() })}
+          >
+            <table class="kran-table">
+              <thead>
+                <tr>
+                  <th scope="col">{m.params_col_key()}</th>
+                  <th scope="col">{m.params_col_value()}</th>
+                  <th scope="col">{m.params_col_effective_from()}</th>
+                  <th scope="col">{m.params_col_status()}</th>
+                  {#if canSubmit}<th scope="col">{m.params_col_action()}</th>{/if}
+                </tr>
+              </thead>
+              <tbody>
+                {#each filteredActive as row (row.paramValueId)}
+                  <tr>
+                    <th scope="row">{row.key}</th>
+                    <td>{displayValue(row.value)}</td>
+                    <td>{formatDate(row.effectiveFrom)}</td>
+                    <td>
+                      <StatusBadge tone={statusTone(row.status)}>{statusText(row.status)}</StatusBadge>
+                    </td>
+                    {#if canSubmit}
+                      <td>
+                        <div class="kran-actions">
+                          <Button
+                            id={`param-edit-${row.paramValueId}`}
+                            type="button"
+                            aria-expanded={editingRow?.paramValueId === row.paramValueId}
+                            onclick={() => void startEditing(row)}
+                          >
+                            {m.params_row_edit()}
+                          </Button>
+                          <Button
+                            type="button"
+                            onclick={() => startEnding(row)}
+                            disabled={endSending}
+                            aria-expanded={endingRow?.paramValueId === row.paramValueId}
+                          >
+                            {m.params_end_action()}
+                          </Button>
+                        </div>
+                      </td>
+                    {/if}
+                  </tr>
 
-            <div class="kran-field">
-              <label class="kran-label" for="param-value">{m.params_submit_value_label()}</label>
-              <input class="kran-input" id="param-value" name="value" bind:value={formValue} required />
-            </div>
+                  {#if canSubmit && editingRow?.paramValueId === row.paramValueId}
+                    <tr class="kran-table__selected">
+                      <td colspan={5}>
+                        <form
+                          class="kran-form"
+                          onsubmit={submitChange}
+                          aria-label={m.params_edit_heading({ key: row.key })}
+                        >
+                          {#if formError && formErrorField === null}
+                            <Alert tone="negative" title={formError} />
+                          {/if}
+                          <Input
+                            label={m.params_submit_value_label()}
+                            name="value"
+                            bind:element={valueEl}
+                            bind:value={formValue}
+                            error={formErrorField === "value" ? formError : ""}
+                            required
+                          />
+                          <Input
+                            label={m.params_submit_reason_label()}
+                            name="reason"
+                            bind:value={formReason}
+                            error={formErrorField === "reason" ? formError : ""}
+                            required
+                          />
+                          <Input
+                            label={m.params_submit_effective_from_label()}
+                            name="effectiveFrom"
+                            type="date"
+                            hint={m.params_submit_effective_from_hint()}
+                            bind:value={formEffectiveFrom}
+                          />
+                          <div class="kran-actions">
+                            <Button variant="primary" type="submit" disabled={sending}>
+                              {sending ? m.params_submit_sending() : m.params_submit_submit()}
+                            </Button>
+                            <Button
+                              type="button"
+                              onclick={() => void closeEditing(row.paramValueId)}
+                              disabled={sending}
+                            >
+                              {m.params_end_cancel()}
+                            </Button>
+                          </div>
+                        </form>
+                      </td>
+                    </tr>
+                  {/if}
 
-            <div class="kran-field">
-              <label class="kran-label" for="param-reason">{m.params_submit_reason_label()}</label>
-              <input
-                class="kran-input"
-                id="param-reason"
-                name="reason"
-                bind:value={formReason}
-                required
-              />
-            </div>
-
-            <div class="kran-field">
-              <label class="kran-label" for="param-effective-from"
-                >{m.params_submit_effective_from_label()}</label
-              >
-              <input
-                class="kran-input"
-                id="param-effective-from"
-                name="effectiveFrom"
-                type="date"
-                bind:value={formEffectiveFrom}
-              />
-            </div>
-
-            <div class="kran-actions">
-              <Button
-                variant="primary"
-                type="submit"
-                disabled={sending || formKey === ""}
-              >
-                {sending ? m.params_submit_sending() : m.params_submit_submit()}
-              </Button>
-            </div>
-          </form>
-        </section>
-      {/if}
+                  {#if canSubmit && endingRow?.paramValueId === row.paramValueId}
+                    <tr class="kran-table__selected">
+                      <td colspan={5}>
+                        <form class="kran-form" onsubmit={submitEnd}>
+                          <p class="kran-muted">{m.params_end_hint()}</p>
+                          <div class="kran-field">
+                            <label class="kran-label" for="param-end-date">
+                              {m.params_end_effective_to_label()}
+                            </label>
+                            <input
+                              class="kran-input"
+                              id="param-end-date"
+                              name="effectiveTo"
+                              type="date"
+                              bind:value={endDate}
+                              required
+                            />
+                          </div>
+                          <div class="kran-field">
+                            <label class="kran-label" for="param-end-reason">
+                              {m.params_end_reason_label()}
+                            </label>
+                            <input
+                              class="kran-input"
+                              id="param-end-reason"
+                              name="reason"
+                              bind:value={endReason}
+                              required
+                            />
+                          </div>
+                          <div class="kran-actions">
+                            <Button
+                              variant="primary"
+                              type="submit"
+                              disabled={endSending || endDate === "" || endReason.trim() === ""}
+                            >
+                              {endSending ? m.params_end_sending() : m.params_end_submit()}
+                            </Button>
+                            <Button
+                              type="button"
+                              onclick={() => (endingRow = null)}
+                              disabled={endSending}
+                            >
+                              {m.params_end_cancel()}
+                            </Button>
+                          </div>
+                        </form>
+                      </td>
+                    </tr>
+                  {/if}
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+      </section>
 
       <section class="kran-section" aria-labelledby="pending-heading">
         <h2 class="kran-section__title" id="pending-heading">{m.params_pending_heading()}</h2>
@@ -572,7 +768,7 @@
               </thead>
               <tbody>
                 {#each pending as row (row.paramValueId)}
-                  <tr>
+                  <tr class={pendingHighlight === row.paramValueId ? "kran-table__selected" : undefined}>
                     <th scope="row">{row.key}</th>
                     <td>{displayValue(row.value)}</td>
                     <td>{formatDate(row.effectiveFrom)}</td>
@@ -714,122 +910,6 @@
                             </div>
                           </form>
                         {/if}
-                      </td>
-                    </tr>
-                  {/if}
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        {/if}
-      </section>
-
-      <section class="kran-section" aria-labelledby="active-heading">
-        <div class="kran-toolbar">
-          <h2 class="kran-section__title" id="active-heading">{m.params_active_heading()}</h2>
-          <input
-            class="kran-input"
-            type="search"
-            placeholder={m.params_search_placeholder()}
-            aria-label={m.params_search_label()}
-            bind:value={searchFilter}
-          />
-        </div>
-        {#if active.length === 0}
-          <EmptyState kind="no-data" title={m.params_active_empty()} />
-        {:else}
-          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-          <div
-            class="kran-table-wrap"
-            role="region"
-            tabindex="0"
-            aria-label={m.common_table_region({ name: m.params_active_heading() })}
-          >
-            <table class="kran-table">
-              <thead>
-                <tr>
-                  <th scope="col">{m.params_col_key()}</th>
-                  <th scope="col">{m.params_col_value()}</th>
-                  <th scope="col">{m.params_col_effective_from()}</th>
-                  <th scope="col">{m.params_col_status()}</th>
-                  {#if canSubmit}<th scope="col">{m.params_col_action()}</th>{/if}
-                </tr>
-              </thead>
-              <tbody>
-                {#if filteredActive.length === 0}
-                  <tr>
-                    <td colspan={canSubmit ? 5 : 4} class="kran-muted">{m.params_search_empty()}</td>
-                  </tr>
-                {/if}
-                {#each filteredActive as row (row.paramValueId)}
-                  <tr>
-                    <th scope="row">{row.key}</th>
-                    <td>{displayValue(row.value)}</td>
-                    <td>{formatDate(row.effectiveFrom)}</td>
-                    <td>
-                      <StatusBadge tone={statusTone(row.status)}>{statusText(row.status)}</StatusBadge>
-                    </td>
-                    {#if canSubmit}
-                      <td>
-                        <Button
-                          type="button"
-                          onclick={() => startEnding(row)}
-                          disabled={endSending}
-                          aria-expanded={endingRow?.paramValueId === row.paramValueId}
-                        >
-                          {m.params_end_action()}
-                        </Button>
-                      </td>
-                    {/if}
-                  </tr>
-
-                  {#if canSubmit && endingRow?.paramValueId === row.paramValueId}
-                    <tr class="kran-table__selected">
-                      <td colspan={5}>
-                        <form class="kran-form" onsubmit={submitEnd}>
-                          <p class="kran-muted">{m.params_end_hint()}</p>
-                          <div class="kran-field">
-                            <label class="kran-label" for="param-end-date">
-                              {m.params_end_effective_to_label()}
-                            </label>
-                            <input
-                              class="kran-input"
-                              id="param-end-date"
-                              name="effectiveTo"
-                              type="date"
-                              bind:value={endDate}
-                              required
-                            />
-                          </div>
-                          <div class="kran-field">
-                            <label class="kran-label" for="param-end-reason">
-                              {m.params_end_reason_label()}
-                            </label>
-                            <input
-                              class="kran-input"
-                              id="param-end-reason"
-                              name="reason"
-                              bind:value={endReason}
-                              required
-                            />
-                          </div>
-                          <div class="kran-actions">
-                            <Button
-                              variant="primary"
-                              type="submit"
-                              disabled={endSending || endDate === "" || endReason.trim() === ""}
-                            >
-                              {endSending ? m.params_end_sending() : m.params_end_submit()}
-                            </Button>
-                            <Button
-                              type="button"
-                              onclick={() => (endingRow = null)}
-                              disabled={endSending}
-                            >
-                              {m.params_end_cancel()}
-                            </Button>
-                          </div>
-                        </form>
                       </td>
                     </tr>
                   {/if}

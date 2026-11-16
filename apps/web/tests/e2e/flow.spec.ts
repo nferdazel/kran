@@ -31,8 +31,7 @@ const TEXT = {
   appTitle: "Parameter & jejak audit",
   username: "Nama pengguna",
   password: "Kata sandi",
-  submitHeading: "Ajukan perubahan",
-  submitKey: "Parameter",
+  rowEdit: "Ubah",
   submitValue: "Nilai baru",
   submitReason: "Alasan",
   submitDate: "Berlaku dari (opsional)",
@@ -76,6 +75,14 @@ function region(page: Page, name: string): Locator {
  */
 function field(page: Page, label: string): Locator {
   return page.getByLabel(label, { exact: true });
+}
+
+/**
+ * Kolom form ubah memakai komponen `Input`, yang menambahkan tanda wajib (`*`, `aria-hidden`) ke
+ * dalam label. Nama aksesibelnya tetap label itu, jadi dicari lewat role, bukan teks label.
+ */
+function editField(page: Page, label: string): Locator {
+  return page.getByRole("textbox", { name: label, exact: true });
 }
 
 async function login(page: Page, user: { username: string; password: string }): Promise<void> {
@@ -159,9 +166,9 @@ async function pickTarget(page: Page): Promise<{ key: string; current: number }>
     if (!Number.isFinite(current)) continue;
 
     const key = (await row.locator("th").first().innerText()).trim();
-    const select = field(page, TEXT.submitKey);
-    await select.selectOption(key);
-    await expect(select).toHaveValue(key);
+    // T-241: form ubah dibuka dari barisnya sendiri, jadi tidak ada select kunci di atas halaman.
+    await row.getByRole("button", { name: TEXT.rowEdit, exact: true }).press("Enter");
+    await expect(editField(page, TEXT.submitValue)).toBeFocused();
     return { key, current };
   }
 
@@ -244,13 +251,11 @@ test("alur Fase 0: login → ajukan (maker) → setujui (checker) → audit + re
   const value = String(nextValue(target.current));
   const effectiveFrom = await nextEffectiveFrom(maker, target.key);
 
-  // --- maker mengajukan perubahan (key sudah tersorot dari daftar aktif) ---
-  await field(maker, TEXT.submitValue).focus();
-  await maker.keyboard.type(value);
-  await maker.keyboard.press("Tab");
-  await maker.keyboard.type(TEXT.reason);
-  await maker.keyboard.press("Tab");
-  await field(maker, TEXT.submitDate).fill(effectiveFrom);
+  // --- maker mengajukan perubahan (form terbuka di baris yang dipilih, kunci sudah terikat) ---
+  // Nilai awal sudah terisi dari nilai aktif, jadi diganti utuh, bukan diketik tambahan.
+  await editField(maker, TEXT.submitValue).fill(value);
+  await editField(maker, TEXT.submitReason).fill(TEXT.reason);
+  await editField(maker, TEXT.submitDate).fill(effectiveFrom);
   await maker.keyboard.press("Enter");
 
   await expect(maker.getByText(TEXT.submitted, { exact: true })).toBeVisible();
