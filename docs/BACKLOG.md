@@ -21,7 +21,7 @@ findings are folded into the rows below and into the task files at DoR time.
 | T-174 | `lint-nomagic` covers `apps/api/src` + baseline | M | T-173 | standard | DONE |
 | T-175 | `nim check` warnings fatal or shrink-only | S | - | standard | DONE |
 | T-176 | `ci-fast` web arm fail-closed + `packages/ui` tests | S | - | standard | DONE |
-| T-177 | Dependency and lockfile audit | S | T-176 | standard | READY |
+| T-177 | Dependency and lockfile audit | S | T-176 | standard | DONE |
 | T-178 | `fmt-check` dispatch arm (Nim only) | S | - | standard | DONE |
 | T-281 | Typed OpenAPI timestamps | S | T-178 | standard | DONE |
 | T-278 | Role-authentic test fixtures (kasir, maker, checker) | S | T-173 | standard | DONE |
