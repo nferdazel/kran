@@ -140,6 +140,30 @@ suite "respons sistem sesuai kontrak OpenAPI":
     check body["checks"][0]["status"].getStr() == "failed"
     assertNoSchemaProblems("/readyz", "GET", "503", body)
 
+  test "/metrics -> 200 text/plain versi 0.0.4 dari loopback (T-250)":
+    let client = newHttpClient(timeout = 2000)
+    defer: client.close()
+
+    let response = client.get(baseUrl & "/metrics")
+    check response.code.int == 200
+    # `in` pada `HttpHeaders` membandingkan nilai utuh (case-insensitive), bukan substring:
+    # `$` dulu supaya yang diuji awalan tipe media, bukan kecocokan penuh.
+    check "text/plain" in $response.headers["Content-Type"]
+    check "version=0.0.4" in $response.headers["Content-Type"]
+    check "# TYPE kran_http_requests_total counter" in response.body
+    check "kran_http_request_duration_seconds_bucket" in response.body
+    check "kran_process_uptime_seconds" in response.body
+    # Seri proses tidak boleh bergantung pada DB: test ini berjalan tanpa pool.
+    check "kran_db_pool_connections" notin response.body
+
+  test "/metrics hanya GET -> 405 problem+json":
+    let client = newHttpClient(timeout = 2000)
+    defer: client.close()
+
+    let response = client.post(baseUrl & "/metrics", "")
+    check response.code.int == 405
+    check "application/problem+json" in response.headers["Content-Type"]
+
   test "rute tak dikenal -> 404 problem+json sesuai skema Problem":
     let client = newHttpClient(timeout = 2000)
     defer: client.close()

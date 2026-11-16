@@ -171,6 +171,14 @@ proc countByStatus*(db: DbConn, status: EventStatus): int64 =
   parseBiggestInt(db.getValue(
     sql"SELECT count(*) FROM platform.outbox WHERE status = ?", $status))
 
+proc countsByStatus*(db: DbConn): seq[tuple[status: string, total: int64]] =
+  ## Satu kueri untuk semua status (T-250). Dikembalikan sebagai teks, bukan `EventStatus`, supaya
+  ## pemanggil di lapisan probe tidak perlu tahu tipe domainnya. Status yang tidak punya baris tidak
+  ## muncul; pemanggil yang ingin seri nol menambahkannya sendiri.
+  for row in db.getAllRows(sql"""
+      SELECT status, count(*) FROM platform.outbox GROUP BY status ORDER BY status"""):
+    result.add (status: row[0], total: parseBiggestInt(row[1]))
+
 proc oldestUndeliveredSeconds*(db: DbConn, afterEventId: string): int64 =
   ## Usia (detik, dibulatkan ke bawah) peristiwa outbox **tertua yang belum diproses konsumen** —
   ## baris dengan `seq` setelah token — atau `0` bila tidak ada sisa.

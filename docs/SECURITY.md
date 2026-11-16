@@ -37,7 +37,7 @@ A pilot deployment is one host:
 
 | Component | Placement | Trust note |
 |---|---|---|
-| Caddy | Host, TLS termination | Serves the static SPA and proxies `/api/*` to loopback. No metrics endpoint exists; the example separate-API block refuses `/metrics`. |
+| Caddy | Host, TLS termination | Serves the static SPA and proxies `/api/*` to loopback. `/metrics` exists on the API (T-250) but is not proxied; the example separate-API block answers `403` for it, and the endpoint itself serves only loopback or `KRAN_TRUSTED_PROXY_CIDRS` peers. |
 | API (`kran-api --role=api`) | Container, `127.0.0.1:8095` | No direct public exposure. Trusts the proxy for transport security, not for identity. |
 | Worker (`kran-api --role=worker`) | Container, same image | Consumes the outbox; no inbound socket. |
 | Postgres | Container, `127.0.0.1:5432` | Same host. Intended separation: runtime role is not the schema owner (see gap G11). |
@@ -443,8 +443,8 @@ Severity reflects security impact, not the audit's original severity.
 | G17 | MINOR | Account lockout can be used to deny access to a known account | `BE-SEC-07` |
 
 Accepted limits that are **not** gaps to be re-reported: optional MFA (R-19/R-29), host-local
-anchor (R-20/R-26), single-instance deployment, no metrics before P7, KEK rotation blocked, and
-the non-reproducible Nim build. See `ACCEPTED-LIMITS.md` for impact, detection and owner per
+anchor (R-20/R-26), single-instance deployment, no alert rules or metrics dashboard (L-45; the
+`/metrics` endpoint shipped in T-250), KEK rotation blocked, and the non-reproducible Nim build. See `ACCEPTED-LIMITS.md` for impact, detection and owner per
 row.
 
 ---

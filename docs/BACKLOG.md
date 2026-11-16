@@ -182,7 +182,7 @@ findings are folded into the rows below and into the task files at DoR time.
 | T-283 | Operator seat matrix: admin, obligation, manager, read-only pengurus | S | T-246 | full | TODO |
 | T-247 | Provision named operators from the seat matrix | S | T-283 | standard | TODO |
 | T-249 | Manual daily head-hash copy + disclosure (named off-host destination) | S | T-248 | standard | TODO |
-| T-250 | `/metrics` | M | T-192 | standard | TODO |
+| T-250 | `/metrics` | M | T-192 | standard | DONE |
 | T-252 | Backup restore drill from the local dump (R-39) | M | T-251 | standard | TODO |
 | T-253 | Pilot readiness checklist (signatures, artefacts, procedures) | S | T-246, T-247, T-248, T-249, T-250, T-251, T-252, T-283 | standard | TODO |
 | T-297 | Deploy keeps a rollback target and stops stripping live unit hardening | S | none | standard | DONE |

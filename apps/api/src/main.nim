@@ -1168,6 +1168,7 @@ proc main() =
     pool: pool,
     clock: systemClock(),
     loginGuard: newLoginGuard(),
+    workerName: consumerName,
     serverThreads: serverThreads,
   )
 
