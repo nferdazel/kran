@@ -17,6 +17,7 @@ import ./drain
 import ./events
 import ./health
 import ./http_util
+import ./metrics
 import ./problem
 import ./routes
 
@@ -133,7 +134,11 @@ proc requestHandler*(app: AppContext): RequestHandler =
           "badan permintaan harus application/json")
     finally:
       endRequest()
-      logAccess(req, requestScopeStatus(), int64((epochTime() - started) * 1000))
+      let elapsedMillis = int64((epochTime() - started) * 1000)
+      # Hitungan metrik (T-250) di tempat yang sama dengan access log: tidak ada rute yang bisa
+      # lupa. Status 0 (handler tidak menjawab lewat helper) tidak dihitung per kode.
+      recordRequest(requestScopeStatus(), elapsedMillis)
+      logAccess(req, requestScopeStatus(), elapsedMillis)
 
 proc websocketHandlerOf(app: AppContext): WebSocketHandler =
   ## Handler WebSocket dipasang sekali di awal (Mummy memakainya untuk semua koneksi).

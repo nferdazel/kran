@@ -47,6 +47,9 @@ type
     fieldCrypto*: FieldCrypto
     ## Pembatas login (T-128). `nil` di test/CLI; produksi selalu diisi `newLoginGuard()`.
     loginGuard*: LoginGuard
+    ## Nama konsumen outbox yang denyutnya dilaporkan `/metrics` (T-250). Diisi `main` dari
+    ## konstanta konsumen di `posting`; kosong di test yang tidak peduli.
+    workerName*: string
     ## Jumlah worker thread HTTP (T-130/ARC-1). `0` = pakai default Mummy (test yang tidak peduli).
     ## Produksi mengisinya dari ukuran pool: lebih banyak worker daripada koneksi hanya membuat
     ## permintaan mengantre 5 detik lalu gagal `PoolError`.

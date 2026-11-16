@@ -21,6 +21,7 @@ import ./db_bridge
 import ./http_util
 import ./identity
 import ./login_guard
+import ./metrics
 import "platform-lib/log"
 import ./problem
 
@@ -105,6 +106,11 @@ proc handleLogin*(app: AppContext, req: Request) {.gcsafe.} =
     req.respondProblem(pkInternal, "Internal Server Error",
       "kebijakan keamanan server tidak sah")
     return
+
+  # Metrik (T-250): login yang ditolak dihitung di sini, satu tempat untuk ketiga sebab kredensial
+  # atau status akun. `aoMfaRequired` tidak ikut: kata sandinya benar.
+  if authResult.outcome in {aoInvalidCredentials, aoLocked, aoInactive}:
+    recordLoginFailure()
 
   case authResult.outcome
   of aoSuccess:

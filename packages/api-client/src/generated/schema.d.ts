@@ -46,6 +46,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Metrik Prometheus
+         * @description Format teks Prometheus (`text/plain; version=0.0.4`). Isinya: hitungan dan durasi
+         *     permintaan HTTP per kode status, permintaan berjalan, uptime proses, login yang ditolak
+         *     sejak proses start, keadaan pool basis data, outbox per status dan event `DEAD`, usia
+         *     denyut worker, serta keadaan dan durasi day-close terakhir (spec §7.5).
+         *
+         *     Tanpa autentikasi, tetapi **hanya dilayani** bila peer koneksi loopback atau berada di
+         *     `KRAN_TRUSTED_PROXY_CIDRS`; selain itu `403`. Container API bind `0.0.0.0` dan port
+         *     di-forward podman rootless, jadi operator yang scrape dari host datang dari gateway bridge,
+         *     bukan `127.0.0.1` — itu sebabnya rentang tepercaya ikut diizinkan. Jalur publik tertutup:
+         *     Caddy hanya mem-proxy `/api/*` dan blok API terpisah membalas `403` untuk `/metrics`.
+         *
+         *     Bila basis data tidak dapat dibaca, scrape tetap `200`: seri proses tetap ada, blok basis
+         *     data dihilangkan, dan `kran_metrics_scrape_errors_total` naik.
+         */
+        get: operations["getMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/events/stream": {
         parameters: {
             query?: never;
@@ -4005,6 +4037,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Readiness"];
+                };
+            };
+        };
+    };
+    getMetrics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Metrik dalam format teks Prometheus */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            403: components["responses"]["Problem"];
+            /** @description Method tidak diizinkan untuk path ini */
+            405: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };

@@ -92,6 +92,28 @@ proc combineProbes*(probes: seq[ReadinessProbe]): ReadinessProbe =
       if probe != nil:
         result.add probe()
 
+type
+  OutboxWorkerMetrics* = object
+    ## Pembacaan agregat untuk `/metrics` (T-250). Teks status, bukan `EventStatus`, supaya modul
+    ## ini tidak menambah impor domain: seam repositori sudah cukup.
+    outbox*: seq[tuple[status: string; total: int64]]
+    dead*: int64
+    heartbeatAgeSeconds*: int64 ## -1 = worker belum pernah melapor
+
+proc outboxWorkerMetrics*(pool: DbPool; workerName: string): OutboxWorkerMetrics {.gcsafe.} =
+  ## Letaknya di sini karena modul ini sudah memegang seam `outbox_repo`/`worker_repo` untuk
+  ## `/readyz`; `/metrics` adalah probe operator kedua dengan pembacaan yang sama. Handler tidak
+  ## menyentuh repositori modul secara langsung (batas arsitektur, T-173).
+  if pool.isNil:
+    return
+  result = withDbConn(pool, proc(db: DbConn): OutboxWorkerMetrics {.gcsafe.} =
+    dbCalls:
+      var snapshot: OutboxWorkerMetrics
+      snapshot.outbox = countsByStatus(db)
+      snapshot.dead = deadEventCount(db)
+      snapshot.heartbeatAgeSeconds = workerHeartbeatAgeSeconds(db, workerName)
+      snapshot)
+
 proc databaseProbe*(sharedPool: DbPool = nil): ReadinessProbe =
   ## Readiness DB. `sharedPool` = pool milik proses API, sehingga probe melihat kondisi pool yang
   ## **sama** dengan permintaan: pool penuh/putus membuat `/readyz` ikut merah, bukan hijau karena

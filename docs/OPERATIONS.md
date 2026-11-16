@@ -1101,6 +1101,36 @@ is the same person, or the business date is not OPEN.
 
 ---
 
+### 5.8 Metrics endpoint
+
+`GET /metrics` on the API port (`127.0.0.1:8095`) returns Prometheus text format
+(`text/plain; version=0.0.4`), T-250. It is not proxied: Caddy only forwards `/api/*`, and the
+example separate-API block answers `403` for the path. The endpoint itself serves only a peer that
+is loopback or inside `KRAN_TRUSTED_PROXY_CIDRS`; anything else gets `403`. The trusted range is
+required because the container binds `0.0.0.0` and podman forwards the port, so a scrape from the
+host arrives from the bridge gateway (`10.89.0.1`), not `127.0.0.1`.
+
+```
+curl -s http://127.0.0.1:8095/metrics
+```
+
+Series, process side (no I/O, always present): `kran_http_requests_total{code}`,
+`kran_http_request_duration_seconds` (histogram, 11 buckets),
+`kran_http_requests_in_flight`, `kran_auth_login_failures_total` (since process start),
+`kran_process_uptime_seconds`, `kran_metrics_scrape_errors_total`.
+
+Series, database side (one connection, three small reads): `kran_db_pool_connections{state}`,
+`kran_outbox_events{status}`, `kran_outbox_dead_events`, `kran_worker_heartbeat_age_seconds`,
+`kran_dayclose_open_runs`, `kran_dayclose_last_run_duration_seconds`,
+`kran_dayclose_last_run_finished_timestamp_seconds`.
+
+A database failure does not fail the scrape: the process series still render, the database block is
+omitted, and `kran_metrics_scrape_errors_total` goes up. That is deliberate: an endpoint that goes
+dark because the database is down removes the signal that says it is down.
+
+Nothing scrapes it yet and there are no rules or dashboard (L-45). Alerting today is
+`kran-alert.sh` in section 5.6, which polls `/readyz` and the `DEAD` count.
+
 ## 6. Key rotation and credentials
 
 ### 6.1 Field encryption model

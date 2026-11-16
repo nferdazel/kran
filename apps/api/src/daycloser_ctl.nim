@@ -33,6 +33,7 @@ import daycloser/infrastructure/run_repo
 
 import ./daycloser_auto
 import ./daycloser_service
+import ./db_bridge
 
 export daycloser_service
 
@@ -60,6 +61,16 @@ proc printRun(snap: RunSnapshot) =
     levelsCsv(snap.levels) & " state=" & $snap.state & " task=" & $done & "/" &
     $snap.tasks.len & " (ok=" & $ok & ", gagal=" & $failed & ", lewati=" & $skipped & ")" &
     (if snap.summaryHash.len > 0: " segel=" & snap.summaryHash[0 ..< 12] else: "")
+
+proc closeRunMetrics*(pool: DbPool): CloseMetrics {.gcsafe.} =
+  ## Angka ringkas day-close untuk `/metrics` (T-250): run belum selesai, durasi dan waktu selesai
+  ## run terakhir. Letaknya di modul ops-read ini karena seam `run_repo` sudah dipegang di sini.
+  ## `withDbConn` (bukan `withConn`) karena pemanggilnya handler Mummy yang wajib `{.gcsafe.}`.
+  if pool.isNil:
+    return
+  withDbConn(pool, proc(db: DbConn): CloseMetrics {.gcsafe.} =
+    dbCalls:
+      closeMetrics(db))
 
 proc statusCmd(pool: DbPool; clock: Clock): int =
   var active: seq[RunSnapshot]

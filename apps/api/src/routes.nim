@@ -31,6 +31,7 @@ import ./handlers_teller_sessions
 import ./handlers_teller_vault
 import ./handlers_users
 import ./health
+import ./metrics
 import ./problem
 
 type
@@ -76,6 +77,8 @@ proc systemRoutes*(): seq[RouteSpec] =
               handler: handleHealth),
     RouteSpec(httpMethod: hmGet, path: "/readyz", operationId: "getReadiness",
               handler: handleReadiness),
+    RouteSpec(httpMethod: hmGet, path: "/metrics", operationId: "getMetrics",
+              handler: handleMetrics),
   ]
 
 proc authRoutes*(): seq[RouteSpec] =

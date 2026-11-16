@@ -53,7 +53,7 @@ proc withoutPort*(address: string): string =
       return address[0 ..< colon]
   address
 
-proc isLoopback(address: string): bool =
+proc isLoopback*(address: string): bool =
   ## Apakah alamat koneksi berasal dari host ini sendiri (Caddy/proxy Vite berjalan di host yang
   ## sama). Dipakai sebagai syarat mempercayai `X-Forwarded-For`.
   address == "127.0.0.1" or address == "::1" or address == "::ffff:127.0.0.1"

@@ -296,6 +296,35 @@ proc findSnapshot*(db: DbConn; runId: string): Option[RunSnapshot] =
     return some(db.snapshot(row[0]))
   none(RunSnapshot)
 
+type
+  CloseMetrics* = object
+    ## Angka ringkas untuk `/metrics` (T-250). `lastFinishedEpoch = 0` berarti belum ada run yang
+    ## pernah selesai; pemanggil yang memutuskan bagaimana menampilkannya.
+    openRuns*: int64
+    lastDurationSeconds*: float64
+    lastFinishedEpoch*: float64
+
+proc closeMetrics*(db: DbConn): CloseMetrics =
+  ## Satu kueri untuk tiga angka: run yang belum selesai, durasi run terakhir yang selesai, dan
+  ## waktu selesainya. "Belum selesai" = state selain `COMPLETED`/`CANCELED`, sama dengan aturan
+  ## indeks unik `run_one_per_date_uq`: `FAILED` dan `BLOCKED` harus dilanjutkan, bukan diulang.
+  for row in db.getAllRows(sql"""
+      SELECT
+        (SELECT count(*) FROM daycloser.run
+          WHERE state NOT IN ('COMPLETED', 'CANCELED')),
+        coalesce((SELECT extract(epoch FROM (finished_at - started_at))
+                    FROM daycloser.run
+                   WHERE finished_at IS NOT NULL AND started_at IS NOT NULL
+                   ORDER BY finished_at DESC LIMIT 1), 0),
+        coalesce((SELECT extract(epoch FROM finished_at)
+                    FROM daycloser.run
+                   WHERE finished_at IS NOT NULL
+                   ORDER BY finished_at DESC LIMIT 1), 0)"""):
+    result.openRuns = parseBiggestInt(row[0])
+    result.lastDurationSeconds = parseFloat(row[1])
+    result.lastFinishedEpoch = parseFloat(row[2])
+  return
+
 proc upsertRegistry*(db: DbConn; task: DayCloseTask) =
   db.exec(sql"""
     INSERT INTO daycloser.task_registry
