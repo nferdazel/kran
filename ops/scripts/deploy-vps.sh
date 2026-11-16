@@ -15,6 +15,10 @@
 #
 # BELUM PERNAH DIJALANKAN DI SERVER (T-013). Semua path mengikuti §21.5;
 # verifikasi di server sebelum diandalkan.
+#
+# Script ini menyalin dirinya sendiri di tengah jalan (self-update) lalu tetap
+# menjalankan inode lama, jadi perbaikan yang di-merge ke script ini baru berlaku
+# satu deploy berikutnya.
 set -euo pipefail
 
 REPO="${1:-kran}"
@@ -45,12 +49,69 @@ mkdir -p "$APP_DIR/logs"
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG"; }
 die() { log "ERROR: $*"; exit 1; }
 
-# Tag adalah nama berkas sampai byte-nya menyebut digest sendiri. Ambil digest dari image yang
-# baru di-pull, lalu verifikasi dan tag digest itu, supaya tag yang digeser antara pull dan
-# verify tidak bisa mengarahkan `:local` ke image yang tidak lolos pemeriksaan.
+# A tag is a file name until the bytes state their own digest. Resolve the digest
+# of what was just pulled, then verify and tag that digest, so a tag moved
+# between pull and verify cannot point the local tag at unverified bytes.
+#
+# One tag carries TWO digests: the multi-arch image index that CI signed, and the
+# per-arch manifest podman resolved to. Their order in RepoDigests is not stable,
+# so `head -1` was a coin flip — on 2026-11-16 in fond it picked the per-arch digest,
+# cosign rejected it and the deploy aborted with the web left on the old image. The
+# manifest list in the registry says which digests are its children (mediaType
+# decides, not position); the index is the one left over. No index means an empty
+# result and a loud failure in the caller — never a per-arch digest presented as
+# the signed one.
+INDEX_MEDIA_TYPES="application/vnd.oci.image.index.v1+json application/vnd.docker.distribution.manifest.list.v2+json"
 pulled_digest() {
-  podman image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$1" 2>/dev/null \
-    | grep -F '@sha256:' | head -1
+  local ref="$1" list media children cand index=""
+  list="$(podman manifest inspect "$ref" 2>/dev/null || true)"
+  media="$(printf '%s' "$list" | sed -n 's/.*"mediaType" *: *"\([^"]*\)".*/\1/p' | head -1)"
+  case " $INDEX_MEDIA_TYPES " in
+    *" ${media:-none} "*) ;;
+    *) return 0 ;;
+  esac
+  # Index manifests hold no layer/config digests, only their children's.
+  # The same digest is recorded under two repository names once the image has
+  # also been tagged :local (ghcr.io/... and localhost/...). Count distinct
+  # digests, or a re-deploy of the same commit looks like two non-children and
+  # returns empty — measured on qouver1, 2026-11-16.
+  children=" $(printf '%s' "$list" | sed -n 's/.*"digest" *: *"\(sha256:[0-9a-f]*\)".*/\1/p' | tr '\n' ' ') "
+  while read -r cand; do
+    [ -n "$cand" ] || continue
+    case "$children" in *" ${cand##*@} "*) continue ;; esac
+    # Two non-children is an unknown shape: return empty rather than guess.
+    [ -z "$index" ] || return 0
+    index="$cand"
+  done <<EOF
+$(podman image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$ref" 2>/dev/null \
+    | grep -F '@sha256:' | sort | awk -F'@' '!seen[$2]++' || true)
+EOF
+  printf '%s' "$index"
+}
+
+# CI signs the image right after pushing it, so the signature artifact is not
+# readable for a few seconds: on 2026-11-16 a verify ~5s after the pull failed
+# while the same digest passed seconds later. Bounded retry, then the same
+# fail-closed abort as before — an unverified digest is never tagged, and a
+# registry that never answers is not a pass.
+COSIGN_ATTEMPTS="${COSIGN_ATTEMPTS:-5}"     # 5 x 3s = 15s of tolerance
+COSIGN_RETRY_DELAY="${COSIGN_RETRY_DELAY:-3}"
+verify_signature() {
+  local digest="$1" attempt=1
+  while :; do
+    if cosign verify "$digest" \
+      --certificate-identity-regexp "^https://github.com/nferdazel/kran/" \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null 2>&1; then
+      if [ "$attempt" -gt 1 ]; then
+        log "==> cosign verify lolos pada percobaan $attempt untuk ${digest##*@}"
+      fi
+      return 0
+    fi
+    [ "$attempt" -lt "$COSIGN_ATTEMPTS" ] || return 1
+    log "==> cosign verify belum lolos untuk ${digest##*@} (percobaan $attempt dari $COSIGN_ATTEMPTS), ulang dalam ${COSIGN_RETRY_DELAY}s"
+    attempt=$((attempt + 1))
+    sleep "$COSIGN_RETRY_DELAY"
+  done
 }
 
 # OPS-11 (T-133): batas waktu gate kesehatan. Sebelumnya 15 percobaan × (3 dtk timeout + 2 dtk
@@ -555,9 +616,7 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|tools/|kran\.
   IMAGE_REV="$(podman inspect -f '{{ index .Labels "org.opencontainers.image.revision" }}' "$API_DIGEST" 2>/dev/null || true)"
   [ "$IMAGE_REV" = "$NEW_REV" ] ||
     die "image API $API_IMAGE memuat revisi '${IMAGE_REV}', payload $NEW_REV — container lama tidak disentuh"
-  cosign verify "$API_DIGEST" \
-    --certificate-identity-regexp "^https://github.com/nferdazel/kran/" \
-    --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null 2>&1 \
+  verify_signature "$API_DIGEST" \
     || die "cosign verify gagal untuk $API_DIGEST — container lama tidak disentuh"
   podman tag "$API_DIGEST" localhost/kran-api:local
   podman rmi "$API_IMAGE" >/dev/null 2>&1 || true   # :local dan :prev tetap satu-satunya tag lokal
@@ -700,9 +759,7 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/web/|packages/)' <<<"$CHANGED_FILES
       WEB_REV="$(podman inspect -f '{{ index .Labels "org.opencontainers.image.revision" }}' "$WEB_DIGEST" 2>/dev/null || true)"
       [ "$WEB_REV" = "$NEW_REV" ] ||
         die "image web $WEB_IMAGE memuat revisi '${WEB_REV}', payload $NEW_REV — web lama tidak disentuh"
-      cosign verify "$WEB_DIGEST" \
-        --certificate-identity-regexp "^https://github.com/nferdazel/kran/" \
-        --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null 2>&1 \
+      verify_signature "$WEB_DIGEST" \
         || die "cosign verify gagal untuk $WEB_DIGEST — web lama tidak disentuh"
 
       WEB_CTR="kran-web-extract.$$"
