@@ -1,6 +1,11 @@
 <script lang="ts">
   /**
-   * Vault kas cabang (T-121): saldo, pengajuan top-up (maker), dan keputusan (checker).
+   * Kas besar cabang (T-121, T-241): saldo, antrean pengajuan top-up (maker), dan keputusannya
+   * (checker).
+   *
+   * Susunan mengikuti arah T-241: saldo adalah angka rujukan di atas, lalu **antrean lebih dulu**
+   * karena punya tenggat, lalu form pengajuan. Di layar lebar form berdiri di kolom kiri 480 px dan
+   * antrean mengisi sisanya; di layar sempit antrean mendahului form (DESIGN §4, §11).
    *
    * Keputusan yang mengikat:
    *  - Server adalah otoritas terakhir. Layar menyaring aksi yang jelas tidak masuk akal (izin,
@@ -9,6 +14,8 @@
    *    sendiri, tetapi server menolaknya `409 self_approval`.
    *  - Konfirmasi = satu lapisan inline (DESIGN §7), bukan `window.confirm` dan bukan modal.
    *  - Bukti top-up mengikuti format K-4 (D-134); UI hanya menyebut formatnya, tidak memeriksa isi.
+   *  - Saldo dan antrean adalah dua permintaan terpisah: satu mati tidak mematikan yang lain, dan
+   *    masing-masing membawa jalan pulihnya sendiri (T-241 acceptance 6).
    */
   import { onMount, tick } from "svelte";
 
@@ -52,13 +59,19 @@
 
   let branches = $state<Branch[]>([]);
   let branchId = $state("");
+  let branchEl = $state<HTMLSelectElement | null>(null);
   let balance = $state<string | null>(null);
 
   let loadingBranches = $state(true);
   let loadingVault = $state(true);
   let loadingRequests = $state(true);
-  let listError = $state("");
+  /** Tiga kegagalan terpisah: cabang, saldo, antrean. Satu banner tidak boleh menyembunyikan
+   *  setengah layar yang masih hidup. */
+  let branchError = $state("");
+  let balanceError = $state("");
+  let queueError = $state("");
   let notice = $state("");
+  let submittedRef = $state("");
   let actionError = $state("");
 
   let requests = $state<TopUpRecord[]>([]);
@@ -95,11 +108,11 @@
 
   async function loadBranchList(): Promise<void> {
     loadingBranches = true;
-    listError = "";
+    branchError = "";
     try {
       const { data: payload, error } = await loadBranches();
       if (error) {
-        listError = vaultProblemMessage(error);
+        branchError = vaultProblemMessage(error);
         return;
       }
       branches = payload?.items ?? [];
@@ -109,7 +122,7 @@
         await loadBranchData();
       }
     } catch {
-      listError = m.error_generic();
+      branchError = m.error_generic();
     } finally {
       loadingBranches = false;
     }
@@ -123,18 +136,18 @@
 
   async function loadBalance(): Promise<void> {
     loadingVault = true;
+    balanceError = "";
     try {
       const { data: payload, error } = await loadVault(branchId);
       if (error) {
         balance = null;
-        listError = vaultProblemMessage(error);
+        balanceError = vaultProblemMessage(error);
         return;
       }
-      listError = "";
       balance = payload?.balance ?? null;
     } catch {
       balance = null;
-      listError = m.error_generic();
+      balanceError = m.error_generic();
     } finally {
       loadingVault = false;
     }
@@ -142,18 +155,19 @@
 
   async function loadRequests(): Promise<void> {
     loadingRequests = true;
+    queueError = "";
     try {
       const { data: payload, error } = await loadTopUps(
         branchId,
         statusFilter === "" ? undefined : statusFilter,
       );
       if (error) {
-        listError = vaultProblemMessage(error);
+        queueError = vaultProblemMessage(error);
         return;
       }
       requests = payload?.items ?? [];
     } catch {
-      listError = m.error_generic();
+      queueError = m.error_generic();
     } finally {
       loadingRequests = false;
     }
@@ -161,6 +175,7 @@
 
   function clearOutcome(): void {
     notice = "";
+    submittedRef = "";
     actionError = "";
     formError = "";
     formErrorField = null;
@@ -176,7 +191,15 @@
   async function onBranchChange(): Promise<void> {
     balance = null;
     requests = [];
+    balanceError = "";
+    queueError = "";
     await loadBranchData();
+  }
+
+  /** Keadaan "belum ada cabang dipilih": aksi memindahkan fokus ke pemilih cabang di header. */
+  async function focusBranchSelect(): Promise<void> {
+    await tick();
+    branchEl?.focus();
   }
 
   async function onFilterChange(): Promise<void> {
@@ -188,6 +211,16 @@
   function clearStatusFilter(): void {
     statusFilter = "";
     void onFilterChange();
+  }
+
+  async function copyReference(): Promise<void> {
+    if (submittedRef === "") return;
+    try {
+      await navigator.clipboard.writeText(submittedRef);
+    } catch {
+      // Clipboard ditolak (izin peramban): nomornya tetap terbaca di layar, jadi tidak ada
+      // kegagalan yang perlu ditampilkan.
+    }
   }
 
   async function submit(event: SubmitEvent): Promise<void> {
@@ -215,7 +248,7 @@
     }
     submitting = true;
     try {
-      const { response, error } = await submitTopUp(body, formKey);
+      const { data: created, response, error } = await submitTopUp(body, formKey);
       if (!response.ok) {
         actionError = errorFrom(error);
         return;
@@ -225,6 +258,7 @@
       amountInput = "";
       noteInput = "";
       notice = m.vault_submit_success();
+      submittedRef = created?.requestId ?? "";
       statusFilter = "PENDING";
       await Promise.all([loadBalance(), loadRequests()]);
     } catch {
@@ -319,6 +353,7 @@
     <Select
       label={m.vault_branch_label()}
       bind:value={branchId}
+      bind:element={branchEl}
       onchange={() => void onBranchChange()}
     >
       <option value="">{m.vault_branch_choose()}</option>
@@ -332,21 +367,33 @@
 {#if !canRead}
   <Alert tone="negative" title={m.vault_denied()} />
 {:else if loadingBranches}
-  <p role="status">{m.vault_loading()}</p>
-{:else if listError && branches.length === 0}
-  <Alert tone="negative" title={listError}>
+  <div class="vault-reserved" role="status">{m.vault_loading()}</div>
+{:else if branchError !== "" && branches.length === 0}
+  <Alert tone="negative" title={branchError}>
     <Button type="button" onclick={() => void loadBranchList()}>{m.app_retry()}</Button>
   </Alert>
 {:else if branches.length === 0}
-  <EmptyState title={m.vault_branch_empty()} />
+  {#snippet reloadBranchesAction()}
+    <Button type="button" onclick={() => void loadBranchList()}>{m.app_retry()}</Button>
+  {/snippet}
+  <EmptyState
+    kind="no-data"
+    title={m.vault_branch_empty()}
+    action={reloadBranchesAction}
+  />
 {:else if branchId === ""}
-  <p class="kran-muted">{m.vault_branch_choose()}</p>
+  {#snippet focusBranchAction()}
+    <Button type="button" onclick={() => void focusBranchSelect()}>
+      {m.vault_branch_choose()}
+    </Button>
+  {/snippet}
+  <EmptyState
+    kind="no-data"
+    title={m.vault_branch_prompt()}
+    description={m.vault_branch_prompt_hint()}
+    action={focusBranchAction}
+  />
 {:else}
-  {#if listError}
-    <Alert tone="negative" title={listError}>
-      <Button type="button" onclick={() => void loadBranchData()}>{m.app_retry()}</Button>
-    </Alert>
-  {/if}
   {#if actionError}
     <Alert tone="negative" title={actionError} />
   {/if}
@@ -354,236 +401,333 @@
     <Alert tone="negative" title={decisionError} />
   {/if}
   {#if notice}
-    <Alert tone="positive" title={notice} />
+    <Alert tone="positive" title={notice} reference={submittedRef}>
+      {#if submittedRef !== ""}
+        <Button type="button" onclick={() => void copyReference()}>{m.vault_reference_copy()}</Button>
+      {/if}
+    </Alert>
   {/if}
 
+  <!-- Angka rujukan: satu-satunya angka besar di layar ini (DESIGN §11, bukan strip metrik). -->
   <section class="kran-stat" aria-labelledby="vault-balance-heading">
     <h2 class="kran-stat__label" id="vault-balance-heading">{m.vault_balance_label()}</h2>
-    {#if loadingVault}
-      <p role="status">{m.vault_loading()}</p>
-    {:else if balance === null}
-      <p class="kran-muted">{m.vault_balance_missing()}</p>
-    {:else}
-      <p class="kran-stat__value">{formatMoney(balance)}</p>
-    {/if}
+    <div class="vault-balance">
+      {#if loadingVault}
+        <p class="vault-balance__value vault-balance__value--reserved" role="status">
+          {m.vault_loading()}
+        </p>
+      {:else if balanceError !== ""}
+        <p class="vault-balance__value vault-balance__value--reserved">
+          {m.vault_balance_unavailable()}
+        </p>
+      {:else if balance === null}
+        <p class="vault-balance__value vault-balance__value--reserved">
+          {m.vault_balance_missing()}
+        </p>
+      {:else}
+        <p class="vault-balance__value">{formatMoney(balance)}</p>
+      {/if}
+    </div>
     {#if selectedBranch}
       <p class="kran-muted">
         {m.vault_balance_branch({ code: selectedBranch.code, name: selectedBranch.name })}
       </p>
     {/if}
-  </section>
-
-  {#if !canSubmit && !canDecide}
-    <p class="kran-muted">{m.vault_read_only()}</p>
-  {/if}
-
-  {#if canSubmit}
-    <section class="kran-section" aria-labelledby="vault-submit-heading">
-      <h2 class="kran-section__title" id="vault-submit-heading">{m.vault_submit_title()}</h2>
-      <p class="kran-muted">{m.vault_submit_intro()}</p>
-      <form class="kran-form" onsubmit={submit}>
-        <MoneyInput
-          label={m.vault_amount_label()}
-          name="amount"
-          hint={m.vault_amount_hint()}
-          error={formErrorField === "amount" ? formError : ""}
-          bind:element={amountEl}
-          bind:value={amountInput}
-          required
-        />
-        <div class="kran-field">
-          <label class="kran-label" for="vault-source">{m.vault_source_label()}</label>
-          <input
-            class="kran-input"
-            id="vault-source"
-            name="sourceAccount"
-            autocomplete="off"
-            aria-describedby="vault-source-hint"
-            bind:value={sourceInput}
-            required
-          />
-          <p class="kran-muted" id="vault-source-hint">{m.vault_source_hint()}</p>
-        </div>
-        <div class="kran-field">
-          <label class="kran-label" for="vault-note">{m.vault_note_label()}</label>
-          <textarea
-            class="kran-input"
-            id="vault-note"
-            name="note"
-            rows="2"
-            maxlength={NOTE_MAX_LENGTH}
-            aria-describedby="vault-note-hint"
-            bind:value={noteInput}
-            required
-          ></textarea>
-          <p class="kran-muted" id="vault-note-hint">{m.vault_note_hint()}</p>
-        </div>
-        {#if formError && formErrorField !== "amount"}
-          <Alert tone="negative" title={formError} />
-        {/if}
-        <div class="kran-actions">
-          <Button variant="primary" type="submit" disabled={submitting}>
-            {submitting ? m.vault_submitting() : m.vault_submit_action()}
-          </Button>
-        </div>
-      </form>
-    </section>
-  {/if}
-
-  {#snippet clearStatusFilterAction()}
-    <Button type="button" onclick={clearStatusFilter}>{m.common_filter_clear()}</Button>
-  {/snippet}
-
-  <section class="kran-section" aria-labelledby="vault-requests-heading">
-    <div class="kran-toolbar">
-      <h2 class="kran-section__title" id="vault-requests-heading">
-        {m.vault_requests_title()}
-      </h2>
-      <Select
-        label={m.vault_filter_label()}
-        bind:value={statusFilter}
-        onchange={() => void onFilterChange()}
-      >
-        <option value="">{m.vault_filter_all()}</option>
-        {#each STATUSES as status (status)}
-          <option value={status}>{statusLabel(status)}</option>
-        {/each}
-      </Select>
-    </div>
-
-    {#if loadingRequests}
-      <p role="status">{m.vault_requests_loading()}</p>
-    {:else if requests.length === 0 && statusFilter === ""}
-      <EmptyState kind="no-data" title={m.vault_requests_empty()} />
-    {:else if requests.length === 0}
-      <EmptyState
-        kind="no-match"
-        title={m.vault_empty_no_match({ status: requestFilterLabel })}
-        action={clearStatusFilterAction}
-      />
-    {:else}
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div
-        class="kran-table-wrap"
-        role="region"
-        tabindex="0"
-        aria-label={m.vault_requests_title()}
-      >
-        <table class="kran-table">
-          <caption class="kran-visually-hidden">{m.vault_requests_title()}</caption>
-          <thead>
-            <tr>
-              <th scope="col">{m.vault_col_created()}</th>
-              <th scope="col" class="kran-num">{m.vault_col_amount()}</th>
-              <th scope="col">{m.vault_col_source()}</th>
-              <th scope="col">{m.vault_col_note()}</th>
-              <th scope="col">{m.vault_col_status()}</th>
-              <th scope="col">{m.vault_col_decision()}</th>
-              {#if canDecide}
-                <th scope="col">{m.vault_col_actions()}</th>
-              {/if}
-            </tr>
-          </thead>
-          <tbody>
-            {#each requests as request (request.requestId)}
-              <tr>
-                <td>{formatDateTime(request.createdAt)}</td>
-                <td class="kran-num">{formatMoney(request.amount)}</td>
-                <td class="kran-num">{request.sourceAccount}</td>
-                <td>{request.note}</td>
-                <td>
-                  <StatusBadge tone={statusTone(request.status)}>
-                    {statusLabel(request.status)}
-                  </StatusBadge>
-                </td>
-                <td>{decisionText(request)}</td>
-                {#if canDecide}
-                  <td>
-                    {#if request.status === "PENDING"}
-                      <div class="kran-actions">
-                        <Button
-                          type="button"
-                          onclick={() => startDecision(request, "approve")}
-                          disabled={busy !== ""}
-                        >
-                          {m.vault_approve_action()}
-                        </Button>
-                        <Button
-                          type="button"
-                          onclick={() => startDecision(request, "reject")}
-                          disabled={busy !== ""}
-                        >
-                          {m.vault_reject_action()}
-                        </Button>
-                      </div>
-                    {:else}
-                      <span class="kran-muted">—</span>
-                    {/if}
-                  </td>
-                {/if}
-              </tr>
-
-              {#if canDecide && deciding?.requestId === request.requestId}
-                <tr class="kran-table__selected">
-                  <td colspan={7}>
-                    <div class="kran-stack kran-stack--loose">
-                      {#if deciding.kind === "approve"}
-                        <div class="kran-stack">
-                          <p>
-                            {m.vault_approve_confirm({ amount: formatMoney(request.amount) })}
-                          </p>
-                          <div class="kran-actions">
-                            <Button
-                              variant="primary"
-                              type="button"
-                              onclick={() => void approve()}
-                              disabled={busy !== ""}
-                            >
-                              {m.vault_approve_confirm_action()}
-                            </Button>
-                            <Button
-                              type="button"
-                              onclick={() => (deciding = null)}
-                              disabled={busy !== ""}
-                            >
-                              {m.vault_cancel()}
-                            </Button>
-                          </div>
-                        </div>
-                      {:else}
-                        <form class="kran-form" onsubmit={reject}>
-                          <label class="kran-label" for="vault-reject-reason">
-                            {m.vault_reject_prompt()}
-                          </label>
-                          <textarea
-                            class="kran-input"
-                            id="vault-reject-reason"
-                            rows="2"
-                            bind:value={rejectReason}
-                            required
-                          ></textarea>
-                          <div class="kran-actions">
-                            <Button variant="primary" type="submit" disabled={busy !== ""}>
-                              {m.vault_reject_confirm_action()}
-                            </Button>
-                            <Button
-                              type="button"
-                              onclick={() => (deciding = null)}
-                              disabled={busy !== ""}
-                            >
-                              {m.vault_cancel()}
-                            </Button>
-                          </div>
-                        </form>
-                      {/if}
-                    </div>
-                  </td>
-                </tr>
-              {/if}
-            {/each}
-          </tbody>
-        </table>
-      </div>
+    {#if balanceError !== ""}
+      <!-- Saldo mati tidak mengunci pengajuan: pengajuan hanya menaruh permintaan di antrean,
+           tidak memindahkan uang, jadi menonaktifkan form tidak menambah keamanan. -->
+      <Alert tone="negative" title={balanceError}>
+        <Button type="button" onclick={() => void loadBalance()}>{m.app_retry()}</Button>
+      </Alert>
     {/if}
   </section>
+
+  <div class="vault-columns">
+    <section
+      class="kran-section vault-queue-panel"
+      aria-labelledby="vault-requests-heading"
+    >
+      <div class="kran-toolbar">
+        <h2 class="kran-section__title" id="vault-requests-heading">
+          {m.vault_requests_title()}
+        </h2>
+        <Select
+          label={m.vault_filter_label()}
+          bind:value={statusFilter}
+          onchange={() => void onFilterChange()}
+        >
+          <option value="">{m.vault_filter_all()}</option>
+          {#each STATUSES as status (status)}
+            <option value={status}>{statusLabel(status)}</option>
+          {/each}
+        </Select>
+      </div>
+
+      {#if loadingRequests}
+        <div class="vault-reserved" role="status">{m.vault_requests_loading()}</div>
+      {:else if queueError !== ""}
+        <Alert tone="negative" title={queueError}>
+          <Button type="button" onclick={() => void loadRequests()}>{m.app_retry()}</Button>
+        </Alert>
+      {:else if requests.length === 0 && statusFilter === ""}
+        <EmptyState
+          kind="no-data"
+          title={m.vault_requests_empty()}
+          description={m.vault_requests_empty_hint()}
+        />
+      {:else if requests.length === 0}
+        {#snippet clearStatusFilterAction()}
+          <Button type="button" onclick={clearStatusFilter}>{m.common_filter_clear()}</Button>
+        {/snippet}
+        <EmptyState
+          kind="no-match"
+          title={m.vault_empty_no_match({ status: requestFilterLabel })}
+          action={clearStatusFilterAction}
+        />
+      {:else}
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <div
+          class="kran-table-wrap"
+          role="region"
+          tabindex="0"
+          aria-label={m.vault_requests_title()}
+        >
+          <table class="kran-table">
+            <caption class="kran-visually-hidden">{m.vault_requests_title()}</caption>
+            <thead>
+              <tr>
+                <th scope="col">{m.vault_col_created()}</th>
+                <th scope="col" class="kran-num">{m.vault_col_amount()}</th>
+                <th scope="col">{m.vault_col_source()}</th>
+                <th scope="col">{m.vault_col_note()}</th>
+                <th scope="col">{m.vault_col_status()}</th>
+                <th scope="col">{m.vault_col_decision()}</th>
+                {#if canDecide}
+                  <th scope="col">{m.vault_col_actions()}</th>
+                {/if}
+              </tr>
+            </thead>
+            <tbody>
+              {#each requests as request (request.requestId)}
+                <tr>
+                  <td>{formatDateTime(request.createdAt)}</td>
+                  <td class="kran-num">{formatMoney(request.amount)}</td>
+                  <td class="kran-num">{request.sourceAccount}</td>
+                  <td>{request.note}</td>
+                  <td>
+                    <StatusBadge tone={statusTone(request.status)}>
+                      {statusLabel(request.status)}
+                    </StatusBadge>
+                  </td>
+                  <td>{decisionText(request)}</td>
+                  {#if canDecide}
+                    <td>
+                      {#if request.status === "PENDING"}
+                        <div class="kran-actions">
+                          <Button
+                            type="button"
+                            onclick={() => startDecision(request, "approve")}
+                            disabled={busy !== ""}
+                          >
+                            {m.vault_approve_action()}
+                          </Button>
+                          <Button
+                            type="button"
+                            onclick={() => startDecision(request, "reject")}
+                            disabled={busy !== ""}
+                          >
+                            {m.vault_reject_action()}
+                          </Button>
+                        </div>
+                      {:else}
+                        <span class="kran-muted">—</span>
+                      {/if}
+                    </td>
+                  {/if}
+                </tr>
+
+                {#if canDecide && deciding?.requestId === request.requestId}
+                  <tr class="kran-table__selected">
+                    <td colspan={7}>
+                      <div class="kran-stack kran-stack--loose">
+                        {#if deciding.kind === "approve"}
+                          <div class="kran-stack">
+                            <p>
+                              {m.vault_approve_confirm({ amount: formatMoney(request.amount) })}
+                            </p>
+                            <div class="kran-actions">
+                              <Button
+                                variant="primary"
+                                type="button"
+                                onclick={() => void approve()}
+                                disabled={busy !== ""}
+                              >
+                                {m.vault_approve_confirm_action()}
+                              </Button>
+                              <Button
+                                type="button"
+                                onclick={() => (deciding = null)}
+                                disabled={busy !== ""}
+                              >
+                                {m.vault_cancel()}
+                              </Button>
+                            </div>
+                          </div>
+                        {:else}
+                          <form class="kran-form" onsubmit={reject}>
+                            <label class="kran-label" for="vault-reject-reason">
+                              {m.vault_reject_prompt()}
+                            </label>
+                            <textarea
+                              class="kran-input"
+                              id="vault-reject-reason"
+                              rows="2"
+                              bind:value={rejectReason}
+                              required
+                            ></textarea>
+                            <div class="kran-actions">
+                              <Button variant="primary" type="submit" disabled={busy !== ""}>
+                                {m.vault_reject_confirm_action()}
+                              </Button>
+                              <Button
+                                type="button"
+                                onclick={() => (deciding = null)}
+                                disabled={busy !== ""}
+                              >
+                                {m.vault_cancel()}
+                              </Button>
+                            </div>
+                          </form>
+                        {/if}
+                      </div>
+                    </td>
+                  </tr>
+                {/if}
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+    </section>
+
+    <section class="kran-section vault-form-panel" aria-labelledby="vault-submit-heading">
+        <div class="kran-toolbar">
+          <h2 class="kran-section__title" id="vault-submit-heading">
+            {m.vault_submit_title()}
+          </h2>
+          {#if !canSubmit}
+            <!-- Peran hanya-baca melihat batasnya sebelum mencoba, bukan setelah ditolak server. -->
+            <StatusBadge tone="neutral">{m.vault_read_only_badge()}</StatusBadge>
+          {/if}
+        </div>
+        <p class="kran-muted">{m.vault_submit_intro()}</p>
+        {#if !canSubmit}
+          <p class="kran-muted" id="vault-read-only-reason">{m.vault_read_only()}</p>
+        {/if}
+        <form class="kran-form" onsubmit={submit}>
+          <MoneyInput
+            label={m.vault_amount_label()}
+            name="amount"
+            hint={m.vault_amount_hint()}
+            error={formErrorField === "amount" ? formError : ""}
+            bind:element={amountEl}
+            bind:value={amountInput}
+            disabled={!canSubmit}
+            required
+          />
+          <div class="kran-field">
+            <label class="kran-label" for="vault-source">{m.vault_source_label()}</label>
+            <input
+              class="kran-input"
+              id="vault-source"
+              name="sourceAccount"
+              autocomplete="off"
+              aria-describedby="vault-source-hint"
+              bind:value={sourceInput}
+              disabled={!canSubmit}
+              required
+            />
+            <p class="kran-muted" id="vault-source-hint">{m.vault_source_hint()}</p>
+          </div>
+          <div class="kran-field">
+            <label class="kran-label" for="vault-note">{m.vault_note_label()}</label>
+            <textarea
+              class="kran-input"
+              id="vault-note"
+              name="note"
+              rows="2"
+              maxlength={NOTE_MAX_LENGTH}
+              aria-describedby="vault-note-hint"
+              bind:value={noteInput}
+              disabled={!canSubmit}
+              required
+            ></textarea>
+            <p class="kran-muted" id="vault-note-hint">{m.vault_note_hint()}</p>
+          </div>
+          {#if formError && formErrorField !== "amount"}
+            <Alert tone="negative" title={formError} />
+          {/if}
+          <div class="kran-actions">
+            <Button
+              variant="primary"
+              type="submit"
+              disabled={submitting || !canSubmit}
+              aria-describedby={!canSubmit ? "vault-read-only-reason" : undefined}
+            >
+              {submitting ? m.vault_submitting() : m.vault_submit_action()}
+            </Button>
+          </div>
+        </form>
+      </section>
+  </div>
 {/if}
+
+<style>
+  /* Dua kolom di layar lebar (form 480 px kiri, antrean kanan); satu kolom di bawah 1100 px
+   * dengan antrean tetap di atas form karena punya tenggat (DESIGN §4, arah T-241). */
+  .vault-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-6);
+    align-items: start;
+  }
+
+  @media (min-width: 1100px) {
+    .vault-columns {
+      grid-template-columns: 480px minmax(0, 1fr);
+    }
+
+    .vault-form-panel {
+      grid-column: 1;
+      grid-row: 1;
+    }
+
+    .vault-queue-panel {
+      grid-column: 2;
+      grid-row: 1;
+    }
+  }
+
+  /* Tinggi dicadangkan supaya keadaan memuat tidak menggeser isi di bawahnya. */
+  .vault-reserved {
+    min-block-size: 40px;
+  }
+
+  .vault-balance {
+    display: flex;
+    align-items: baseline;
+  }
+
+  .vault-balance__value {
+    font-size: 20px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums slashed-zero;
+  }
+
+  .vault-balance__value--reserved {
+    min-block-size: 28px;
+    font-size: inherit;
+    font-weight: inherit;
+    font-variant-numeric: normal;
+  }
+</style>

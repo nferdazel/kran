@@ -46,6 +46,9 @@ type Text = {
   rejectReason: string;
   rejectConfirm: string;
   rejected: string;
+  readOnlyBadge: string;
+  balanceUnavailable: string;
+  retry: string;
 };
 
 const T: Record<"id" | "en", Text> = {
@@ -68,6 +71,9 @@ const T: Record<"id" | "en", Text> = {
     rejectReason: "Alasan penolakan",
     rejectConfirm: "Tolak pengajuan",
     rejected: "Pengajuan ditolak.",
+    readOnlyBadge: "Hanya baca",
+    balanceUnavailable: "Saldo kas belum bisa dibaca.",
+    retry: "Coba lagi",
   },
   en: {
     title: "Cash vault",
@@ -88,6 +94,9 @@ const T: Record<"id" | "en", Text> = {
     rejectReason: "Rejection reason",
     rejectConfirm: "Reject request",
     rejected: "Request rejected.",
+    readOnlyBadge: "Read only",
+    balanceUnavailable: "The cash balance cannot be read.",
+    retry: "Try again",
   },
 };
 
@@ -295,6 +304,81 @@ test.describe.serial("vault: pengajuan dan keputusan top-up", () => {
     await page.getByLabel(T.id.filter, { exact: true }).selectOption("");
     await filtered;
     await expect(page.getByRole("table")).toBeVisible();
+  });
+
+  test("hanya-baca: badge Hanya baca dan tombol ajukan nonaktif dengan alasan tertaut", async ({
+    page,
+    request,
+  }) => {
+    const checkerCookie = await apiLogin(request, CHECKER);
+    // Izin yang tidak diminta layar ini tetap datang dari server sungguhan; hanya sesi yang
+    // dipangkas supaya peran hanya-baca diuji tanpa menambah akun seed (T-241 acceptance 5).
+    await page.route("**/api/v1/auth/session", async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as { permissions?: string[] };
+      const permissions = (body.permissions ?? []).filter(
+        (permission) =>
+          !permission.startsWith("teller.vault.submit") &&
+          !permission.startsWith("teller.vault.approve"),
+      );
+      await route.fulfill({ response, json: { ...body, permissions } });
+    });
+
+    await prepare(page, "id", "light");
+    await browserLogin(page, checkerCookie);
+    await openVault(page, T.id);
+
+    await expect(page.getByText(T.id.readOnlyBadge, { exact: true })).toBeVisible();
+    const submit = page.getByRole("button", { name: T.id.submit, exact: true });
+    await expect(submit).toBeDisabled();
+    const describedBy = await submit.getAttribute("aria-describedby");
+    expect(describedBy, "alasan nonaktif tertaut ke tombol").toBe("vault-read-only-reason");
+    await expect(page.locator(`#${describedBy}`)).toContainText("izin");
+    // Form yang tidak bisa dikirim juga tidak bisa diketik.
+    await expect(page.getByLabel(T.id.source, { exact: true })).toBeDisabled();
+
+    // Keadaan hanya-baca ikut digerbang axe (T-241 acceptance 10).
+    const results = await new AxeBuilder({ page }).analyze();
+    expect(blockingViolations(results.violations).map((v) => v.id)).toEqual([]);
+  });
+
+  test("saldo gagal: antrean tetap tampil dan bagian saldo punya coba lagi sendiri", async ({
+    page,
+    request,
+  }) => {
+    const checkerCookie = await apiLogin(request, CHECKER);
+    // Hanya endpoint saldo yang mati; antrean tetap memakai server sungguhan.
+    await page.route(/\/api\/v1\/teller\/vault\?/, (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/problem+json",
+        body: JSON.stringify({
+          type: "about:blank",
+          title: "stub",
+          status: 503,
+          code: "stub_vault_down",
+          i18nKey: "error_generic",
+          params: {},
+          traceId: "00000000-0000-4000-8000-00000000c0de",
+        }),
+      }),
+    );
+
+    await prepare(page, "id", "light");
+    await browserLogin(page, checkerCookie);
+    await openVault(page, T.id);
+
+    await expect(page.getByText(T.id.balanceUnavailable, { exact: true })).toBeVisible();
+    // Antrean tidak ikut mati: judul dan saringannya tetap ada (isinya bisa kosong atau tabel),
+    // dan hanya bagian saldo yang menawarkan coba lagi.
+    await expect(page.getByRole("heading", { name: "Pengajuan top-up" })).toBeVisible();
+    await expect(page.getByLabel(T.id.filter, { exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: T.id.retry, exact: true })).toHaveCount(1);
+    // Form pengajuan tetap bisa dipakai: pengajuan tidak memindahkan uang.
+    await expect(page.getByRole("button", { name: T.id.submit, exact: true })).toBeEnabled();
+
+    const results = await new AxeBuilder({ page }).analyze();
+    expect(blockingViolations(results.violations).map((v) => v.id)).toEqual([]);
   });
 
   test("axe: layar vault dengan data × 2 tema × 2 locale", async ({ page, request }) => {

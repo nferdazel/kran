@@ -259,3 +259,44 @@ All values exist in `packages/ui/tokens/tokens.css`; do not add tokens.
   "all pending", because the pilot has one supervisor per branch; change it if Sekar says otherwise.
 - O-2: params `h1` still names two jobs. Splitting `/app/params` from `/app/audit` is a route change,
   not a repair, so it is out of T-241 and belongs in T-245 or a new task.
+
+---
+
+## Evidence
+
+### Vault — "Kas besar" (commit 1)
+
+Built in `feat/t-241-vault-params` (worktree `/Users/sachiel/Projects/cbs-t241`), based on local
+`main` `ea4e5e1` (the brief named `ec8157e`; local `main` had two T-282 commits on top of it, both
+backend-only, so the branch starts from the current local main instead of behind it).
+
+- Composition: balance figure above, then the queue, then the submit form. Wide screens put the
+  form in a 480 px left column and the queue in the right column (page-local `<style>`, tokens
+  only, no `packages/ui` change); below 1100 px the queue stays above the form.
+- Read-only state: `StatusBadge` "Hanya baca" beside the submit `h2`, inputs and submit
+  `disabled`, and the submit carries `aria-describedby="vault-read-only-reason"` pointing at the
+  sentence that names the missing permission.
+- Branch prompt is an `EmptyState` with one action that moves focus to the branch `Select`, not a
+  muted sentence repeating the option label. Branch-empty is an `EmptyState` with a retry.
+- Errors split three ways (`branchError`, `balanceError`, `queueError`): a dead balance shows its
+  own `Alert` + retry inside the balance block while the queue keeps its rows, and a dead queue
+  keeps the balance readable.
+- Loading: branch and queue loading render a reserved 40 px line with `role="status"`; the balance
+  reserves 28 px for its value so nothing below jumps.
+- Submit success shows the request reference in the `Alert` with a copy button.
+
+Gates, all recorded on the branch tree:
+
+- `pnpm --filter @kran/ui test` untouched by this screen; `./task check-fast` -> EXIT=0, i18ncheck
+  `2 locale, 1060 key/locale`, no findings (`.local/qa/results/T-241-vault-check-fast.log`).
+- `./task lint-web` -> eslint clean + `packages/ui` svelte-check 0/0, EXIT=0
+  (`.local/qa/results/T-241-vault-lint-web.log`).
+- `playwright test tests/e2e/vault.spec.ts` -> `5 passed`, EXIT=0
+  (`.local/qa/results/T-241-vault-e2e.log`): the original submit/approve/reject flow, the 390 px
+  no-overflow check, a new read-only case (badge + disabled submit + associated reason, axe clean),
+  a new balance-failure case (queue still usable, one retry, form still enabled, axe clean), and
+  the data-state axe sweep at 2 themes x 2 locales.
+
+Not verified yet on this screen: full `./task e2e` across the other suites (run once at the end of
+the branch), and the 200% zoom keyboard pass (covered by `zoom-125.spec.ts` / `shell-reflow.spec.ts`
+in that full run).
