@@ -70,13 +70,13 @@ jobs:
       - name: Setup Nim
         uses: jiro4989/setup-nim-action@v2
         with:
-          nim-version: '2.4.0'
+          nim-version: '2.4.2'
 
       - name: Cache nimble
         uses: actions/cache@v6
         with:
           path: ~/.nimble
-          key: nimble-${{ runner.os }}-2.4.0-${{ hashFiles('kran.nimble') }}
+          key: nimble-${{ runner.os }}-2.4.2-${{ hashFiles('kran.nimble') }}
 
       - name: Install Nim dependencies
         run: nimble install -d -y
