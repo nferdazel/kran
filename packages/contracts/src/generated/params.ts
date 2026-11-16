@@ -599,6 +599,42 @@ export const paramDefinitions: readonly ParamDefinition[] = [
     }
   },
   {
+    "key": "platform.inbox.retention_days",
+    "module": "platform",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.inbox.retention_days",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 3650
+    }
+  },
+  {
+    "key": "platform.outbox.retention_days",
+    "module": "platform",
+    "valueType": "integer",
+    "tsType": "string",
+    "scopes": [
+      "GLOBAL",
+      "INSTITUTION"
+    ],
+    "sensitivity": "NORMAL",
+    "requiresApproval": true,
+    "regulatoryRefs": [],
+    "descriptionKey": "param.platform.outbox.retention_days",
+    "jsonSchema": {
+      "minimum": 1,
+      "maximum": 3650
+    }
+  },
+  {
     "key": "platform.realtime.max_topic_len",
     "module": "platform",
     "valueType": "integer",

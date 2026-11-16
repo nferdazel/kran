@@ -41,6 +41,8 @@ const paramKeys*: seq[string] = @[
   "platform.calendar.fiscal_year_start_month",
   "platform.calendar.weekend_days",
   "platform.idempotency.ttl_hours",
+  "platform.inbox.retention_days",
+  "platform.outbox.retention_days",
   "platform.realtime.max_topic_len",
   "platform.realtime.max_topics",
   "platform.security.lockout_minutes",
@@ -141,6 +143,10 @@ const P_platform_calendar_fiscal_year_start_month* = ParamKey[int64]("platform.c
 const P_platform_calendar_weekend_days* = ParamKey[JsonNode]("platform.calendar.weekend_days")
 
 const P_platform_idempotency_ttl_hours* = ParamKey[int64]("platform.idempotency.ttl_hours")
+
+const P_platform_inbox_retention_days* = ParamKey[int64]("platform.inbox.retention_days")
+
+const P_platform_outbox_retention_days* = ParamKey[int64]("platform.outbox.retention_days")
 
 const P_platform_realtime_max_topic_len* = ParamKey[int64]("platform.realtime.max_topic_len")
 
@@ -570,6 +576,28 @@ const paramDefinitions*: seq[ParamDefinition] = @[
     requiresApproval: true,
     regulatoryRefs: @[],
     descriptionKey: "param.platform.idempotency.ttl_hours",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "platform.inbox.retention_days",
+    module: "platform",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.platform.inbox.retention_days",
+    sinceVersion: "0.1.0",
+  ),
+  ParamDefinition(
+    key: "platform.outbox.retention_days",
+    module: "platform",
+    valueType: pvtInteger,
+    scopes: {pstGlobal, pstInstitution},
+    sensitivity: psNormal,
+    requiresApproval: true,
+    regulatoryRefs: @[],
+    descriptionKey: "param.platform.outbox.retention_days",
     sinceVersion: "0.1.0",
   ),
   ParamDefinition(

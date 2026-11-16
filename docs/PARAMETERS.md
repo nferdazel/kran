@@ -9,10 +9,10 @@ Every policy, rate and limit is read from the database; no business value lives 
 code (spec §10). This page is generated from the seed definitions and intentionally
 does not repeat seeded values, so approving a new value does not touch this file.
 
-- Definitions: **66** across **8** modules (`daycloser`, `deposit`, `ledger`, `lending`, `party`, `platform`, `product`, `teller`).
+- Definitions: **68** across **8** modules (`daycloser`, `deposit`, `ledger`, `lending`, `party`, `platform`, `product`, `teller`).
 - Definitions with no seeded value (callers must fail fast): **7**.
 - Definitions carrying a review marker: **32**.
-- Cross-checked against `packs/base/generated/param_provenance.md` (66 keys).
+- Cross-checked against `packs/base/generated/param_provenance.md` (68 keys).
 
 `Class` is the provenance class from `paramgen` (D-095). `Scope` lists the scopes a
 value may be stored in. `Seed pack` names the pack that ships a starting value; `-`
@@ -56,6 +56,8 @@ quoted as a regulatory requirement.
 | `platform.calendar.fiscal_year_start_month` | kebijakan | GLOBAL | integer 1..12 | base | yes | - | `modules/platform/seeds/params.yaml` |
 | `platform.calendar.weekend_days` | kebijakan | GLOBAL, BRANCH | json (array) | base | yes | - | `modules/platform/seeds/params.yaml` |
 | `platform.idempotency.ttl_hours` | teknis | GLOBAL, INSTITUTION | integer 1..8760 | base | yes | - | `modules/platform/seeds/params.yaml` |
+| `platform.inbox.retention_days` | teknis | GLOBAL, INSTITUTION | integer 1..3650 | base | yes | - | `modules/platform/seeds/params.yaml` |
+| `platform.outbox.retention_days` | teknis | GLOBAL, INSTITUTION | integer 1..3650 | base | yes | - | `modules/platform/seeds/params.yaml` |
 | `platform.realtime.max_topic_len` | teknis | GLOBAL, INSTITUTION | integer 1..4096 | base | yes | - | `modules/platform/seeds/params.yaml` |
 | `platform.realtime.max_topics` | teknis | GLOBAL, INSTITUTION | integer 1..1000 | base | yes | - | `modules/platform/seeds/params.yaml` |
 | `platform.security.lockout_minutes` | kebijakan | GLOBAL, INSTITUTION | integer 1..1440 | base | yes | - | `modules/platform/seeds/params.yaml` |
@@ -97,4 +99,4 @@ quoted as a regulatory requirement.
 | kebijakan | 39 |
 | komersial-konservatif | 3 |
 | regulasi-tidak-disemai | 5 |
-| teknis | 19 |
+| teknis | 21 |

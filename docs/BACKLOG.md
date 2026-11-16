@@ -177,7 +177,7 @@ findings are folded into the rows below and into the task files at DoR time.
 | ID | Title | Size | Deps | Risk | Status |
 |---|---|---|---|---|---|
 | T-248 | Retention decision per record class (signed periods) | S | T-192 | standard | DONE |
-| T-282 | Retention purge tasks per class (outbox and inbox only, two indexes) | M | T-248 | full | TODO |
+| T-282 | Retention purge tasks per class (outbox and inbox only, completed_at plus two indexes) | M | T-248 | full | DONE |
 | T-246 | User admin UI + API (B13) | M | T-192 | full | TODO |
 | T-283 | Operator seat matrix: admin, obligation, manager, read-only pengurus | S | T-246 | full | TODO |
 | T-247 | Provision named operators from the seat matrix | S | T-283 | standard | TODO |

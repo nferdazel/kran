@@ -43,6 +43,8 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 | `platform.calendar.fiscal_year_start_month` | kebijakan | base | - | - |
 | `platform.calendar.weekend_days` | kebijakan | base | - | - |
 | `platform.idempotency.ttl_hours` | teknis | base | - | - |
+| `platform.inbox.retention_days` | teknis | base | - | - |
+| `platform.outbox.retention_days` | teknis | base | - | - |
 | `platform.realtime.max_topic_len` | teknis | base | - | - |
 | `platform.realtime.max_topics` | teknis | base | - | - |
 | `platform.security.lockout_minutes` | kebijakan | base | - | - |
@@ -81,7 +83,7 @@ Kelas mengikuti D-095 (O-066). `disemai` = pack yang menerima nilai awal dari
 
 | kelas | jumlah definisi |
 |---|---|
-| teknis | 19 |
+| teknis | 21 |
 | kebijakan | 39 |
 | komersial-konservatif | 3 |
 | belum-bermakna | 0 |

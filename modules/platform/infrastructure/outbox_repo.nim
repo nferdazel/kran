@@ -136,24 +136,34 @@ proc fetchAfter*(db: DbConn, afterEventId: string, limit: int): seq[OutboxEvent]
     result.add rowOf(row)
 
 proc markDone*(db: DbConn, eventId: Id) =
+  ## `completed_at` adalah dasar purge retensi (D-206, T-282): jam 30 hari dihitung dari
+  ## transisi terakhir ke `DONE`, bukan dari `occurred_at`.
   discard db.execAffectedRows(
     sql"""UPDATE platform.outbox
-             SET status = 'DONE', locked_by = NULL, locked_at = NULL, last_error = NULL
+             SET status = 'DONE', completed_at = now(),
+                 locked_by = NULL, locked_at = NULL, last_error = NULL
            WHERE outbox_id = ?""", $eventId)
 
 proc markFailed*(db: DbConn, eventId: Id, errorMessage: string,
                  backoffSeconds: int, maxAttempts: int) =
   ## Kegagalan konsumen: mundurkan `available_at`, atau matikan (DEAD) setelah batas percobaan.
+  ## `completed_at` hanya diisi saat baris benar-benar berhenti di `DEAD`; kegagalan yang masih
+  ## akan dicoba ulang (`PENDING`) belum "selesai" dan tidak boleh mulai dihitung.
   discard db.execAffectedRows(
     sql"""UPDATE platform.outbox
              SET status = CASE WHEN attempts >= ? THEN 'DEAD' ELSE 'PENDING' END,
+                 completed_at = CASE WHEN attempts >= ? THEN now() ELSE completed_at END,
                  available_at = now() + make_interval(secs => ?),
                  last_error = ?, locked_by = NULL, locked_at = NULL
            WHERE outbox_id = ?""",
-    $maxAttempts, $backoffSeconds, errorMessage, $eventId)
+    $maxAttempts, $maxAttempts, $backoffSeconds, errorMessage, $eventId)
 
 proc redrive*(db: DbConn, eventId: Id): bool =
   ## Mengembalikan peristiwa DEAD/PENDING ke antrean (spec §19.1: UI re-drive).
+  ##
+  ## `completed_at` **sengaja tidak dikosongkan** (T-282): baris yang kembali ke `PENDING` keluar
+  ## dari predikat purge karena statusnya, dan `markDone`/`markFailed` menimpa jamnya saat baris
+  ## itu selesai lagi. Mengosongkannya justru membuat baris lama tampak "belum pernah selesai".
   db.execAffectedRows(
     sql"""UPDATE platform.outbox
              SET status = 'PENDING', available_at = now(), attempts = 0, last_error = NULL,
@@ -197,3 +207,4 @@ proc oldestUndeliveredSeconds*(db: DbConn, afterEventId: string): int64 =
       FROM platform.outbox o
      WHERE o.seq > coalesce((SELECT seq FROM platform.outbox WHERE outbox_id = ?::uuid), 0)""",
     token))
+

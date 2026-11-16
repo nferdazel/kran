@@ -26,3 +26,4 @@ proc inboxSeen*(db: DbConn, consumer: string, eventId: Id): bool =
 proc countInbox*(db: DbConn, consumer: string): int64 =
   parseBiggestInt(db.getValue(
     sql"SELECT count(*) FROM platform.inbox WHERE consumer = ?", consumer))
+

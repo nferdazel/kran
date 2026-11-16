@@ -14,7 +14,10 @@ import db_connector/db_postgres
 
 import "platform-lib/db/pool"
 
-import kernel/[dayclose, result]
+import kernel/[dayclose, paramkey, result]
+import kernel/generated/paramkeys
+
+import platform/api
 
 import daycloser/domain/[registry, types]
 import daycloser/infrastructure/run_repo
@@ -27,6 +30,91 @@ import ./daycloser_ledger
 const
   ## Task pertama yang terdaftar: menyapu klaim idempotensi kedaluwarsa (T-089, D-098).
   idempotencySweepTaskId = "platform.idempotency_sweep"
+  ## Retensi outbox/inbox (T-282, D-206). Dua task terpisah, bukan satu, karena nilai retensinya
+  ## dua parameter berbeda dan kegagalan satu tabel tidak boleh menyembunyikan yang lain.
+  outboxPurgeTaskId = "platform.outbox_purge"
+  inboxPurgeTaskId = "platform.inbox_purge"
+
+proc retentionDaysFor(pool: DbPool; ctx: TaskContext; key, code: string): Result[int, TaskError] =
+  ## Ambang retensi (hari) pada tanggal buku. Parameter hilang atau bukan bilangan positif =
+  ## kesalahan konfigurasi (`code`), bukan "lewati saja" dan bukan "hapus semuanya": nilai yang
+  ## tidak terbaca tidak boleh diterjemahkan menjadi interval yang lebih pendek dari kebijakan.
+  try:
+    ok[int, TaskError](pool.withConn(proc(db: DbConn): int =
+      retentionDays(db, key, ctx.businessDate)))
+  except ValueError as e:
+    err[int, TaskError](taskError(code, e.msg))
+  except DbError as e:
+    err[int, TaskError](taskError(code, "parameter " & key & " gagal dibaca: " & e.msg,
+      retryable = true))
+
+proc outboxPurgeTask*(pool: DbPool): DayCloseTask =
+  ## Retensi outbox (T-282, D-206, spec §5.6). Tidak kritis: memangkas riwayat yang sudah
+  ## kedaluwarsa tidak memindahkan uang, jadi kegagalannya dicatat `FAILED` dan bisa diulang tanpa
+  ## menahan penutupan buku. Hapus bertahap per `chunkSize`, sama seperti sapu idempotensi, supaya
+  ## tabel besar tidak ditahan satu transaksi panjang.
+  DayCloseTask(
+    id: outboxPurgeTaskId,
+    module: "platform",
+    levels: {clEOD},
+    kind: tkProcess,
+    dependsOn: @[],
+    critical: false,
+    idempotency: imPerBusinessDate,
+    partition: psSingle,
+    requiredParams: @[keyString(P_platform_outbox_retention_days)],
+    run: proc(ctx: TaskContext; chunk: Chunk): TaskResult =
+    let batch = max(1, ctx.chunkSize)
+    let days = retentionDaysFor(pool, ctx, keyString(P_platform_outbox_retention_days),
+      "DAY-402")
+    if days.isErr:
+      return err[TaskOutcome, TaskError](days.error)
+    var total = 0
+    try:
+      while true:
+        let deleted = pool.withConn(proc(db: DbConn): int =
+          purgeOutbox(db, days.value, batch))
+        total += deleted
+        if deleted < batch:
+          break
+    except DbError as e:
+      return err[TaskOutcome, TaskError](taskError(
+        "DAY-403", "purge outbox gagal: " & e.msg, retryable = true))
+    ok[TaskOutcome, TaskError](okOutcome(%*{
+      "deleted": total, "retentionDays": days.value})))
+
+proc inboxPurgeTask*(pool: DbPool): DayCloseTask =
+  ## Retensi inbox (T-282, D-206, spec §5.6). Dua task terpisah, bukan satu, karena nilai
+  ## retensinya dua parameter berbeda dan kegagalan satu tabel tidak boleh menyembunyikan yang lain.
+  DayCloseTask(
+    id: inboxPurgeTaskId,
+    module: "platform",
+    levels: {clEOD},
+    kind: tkProcess,
+    dependsOn: @[],
+    critical: false,
+    idempotency: imPerBusinessDate,
+    partition: psSingle,
+    requiredParams: @[keyString(P_platform_inbox_retention_days)],
+    run: proc(ctx: TaskContext; chunk: Chunk): TaskResult =
+    let batch = max(1, ctx.chunkSize)
+    let days = retentionDaysFor(pool, ctx, keyString(P_platform_inbox_retention_days),
+      "DAY-404")
+    if days.isErr:
+      return err[TaskOutcome, TaskError](days.error)
+    var total = 0
+    try:
+      while true:
+        let deleted = pool.withConn(proc(db: DbConn): int =
+          purgeInbox(db, days.value, batch))
+        total += deleted
+        if deleted < batch:
+          break
+    except DbError as e:
+      return err[TaskOutcome, TaskError](taskError(
+        "DAY-405", "purge inbox gagal: " & e.msg, retryable = true))
+    ok[TaskOutcome, TaskError](okOutcome(%*{
+      "deleted": total, "retentionDays": days.value})))
 
 proc registerDayCloseTasks*(reg: Registry; pool: DbPool) =
   ## Registry nyata saat boot `ctl`. Task bisnis dari fase berikutnya ditambahkan di sini.
@@ -67,6 +155,9 @@ proc registerDayCloseTasks*(reg: Registry; pool: DbPool) =
       return err[TaskOutcome, TaskError](taskError(
         "DAY-201", "sapu idempotensi gagal: " & e.msg, retryable = true))
     ok[TaskOutcome, TaskError](okOutcome(%*{"deleted": total})))
+
+  reg.register outboxPurgeTask(pool)
+  reg.register inboxPurgeTask(pool)
 
   # Gate pra & pasca-tutup (spec §11.5 langkah 2 & 5). Kritis: gagal = run BLOCKED.
   registerGates(reg, pool)
