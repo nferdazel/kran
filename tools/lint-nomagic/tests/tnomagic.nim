@@ -146,3 +146,16 @@ suite "lint-nomagic: baseline":
     check entries[0] < entries[1]
     check entries.contains("int|" & handler & "|17")
     check entries.contains("int|" & handler & "|31")
+
+suite "berkas hasil generator":
+  test "berkas ber-header generator tidak dipindai":
+    # tools/gen-version.sh menstempel VERSION ke berkas ini; setiap bump versi akan terlihat
+    # sebagai "temuan baru" sekaligus membuat entri baseline lama basi (gate merah karena rilis).
+    let gen = "apps/api/src/version_gen.nim"
+    let src = "## JANGAN EDIT — dihasilkan tools/gen-version.sh dari VERSION saat build.\n\nconst AppVersion* = \"0.4.0\"\n"
+    check scanSource(gen, src).len == 0
+
+  test "berkas tanpa header generator tetap dipindai":
+    let v = scanSource("apps/api/src/plain.nim", "const AppVersion* = \"0.4.0\"\n")
+    check v.len == 1
+    check v[0].rule == "str"

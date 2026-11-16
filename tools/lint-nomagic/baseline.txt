@@ -55,4 +55,3 @@ str|apps/api/src/handlers_lending_reports.nim|110
 str|apps/api/src/handlers_lending_reports.nim|111
 str|apps/api/src/identity.nim|127.0.0.1
 str|apps/api/src/main.nim|127.0.0.1
-str|apps/api/src/version_gen.nim|0.3.4

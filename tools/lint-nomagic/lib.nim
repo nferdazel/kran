@@ -108,7 +108,14 @@ proc parseAllowed(digits: string): int64 =
 proc scanSource*(relPath, source: string): seq[Violation] =
   if not isScanned(relPath):
     return @[]
-  for idx, raw in source.splitLines().pairs():
+  let lines = source.splitLines()
+  # Berkas hasil generator (`tools/gen-version.sh`) tidak ditulis tangan: isinya stempel dari
+  # `VERSION`, dan nilainya berubah setiap rilis. Tanpa lewatan ini, setiap bump versi memunculkan
+  # "temuan baru" sekaligus membuat entri baseline lama basi — gate merah karena rilis, bukan
+  # karena ada nilai bisnis yang masuk kode. Konvensi penandanya sama dengan header generator.
+  if lines.len > 0 and lines[0].contains("JANGAN EDIT"):
+    return @[]
+  for idx, raw in lines.pairs():
     let lineNo = idx + 1
     let okPos = raw.find(hatch)
     if okPos >= 0:
