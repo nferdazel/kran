@@ -4,6 +4,12 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.4.2] - 2026-11-16
+
+### Fixed
+- **deploy:** Select the signed image index and retry cosign verify
+- **lint:** Drop the unused math import and shrink the baseline
+
 ## [0.4.1] - 2026-11-16
 
 ### Fixed
