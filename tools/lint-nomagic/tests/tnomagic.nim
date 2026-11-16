@@ -1,5 +1,5 @@
 import std/unittest
-import std/[strutils, sequtils]
+import std/[strutils]
 
 import ../lib
 
