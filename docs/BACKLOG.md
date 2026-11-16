@@ -17,12 +17,12 @@ findings are folded into the rows below and into the task files at DoR time.
 
 | ID | Title | Size | Deps | Risk | Status |
 |---|---|---|---|---|---|
-| T-173 | `archcheck` handlers and tests categories + shrink-only baselines | M | - | standard | TODO (no `docs/tasks/T-173.md`; R-32) |
+| T-173 | `archcheck` handlers and tests categories + shrink-only baselines | M | - | standard | READY |
 | T-174 | `lint-nomagic` covers `apps/api/src` + baseline | M | T-173 | standard | TODO (no `docs/tasks/T-174.md`; R-32) |
-| T-175 | `nim check` warnings fatal or shrink-only | S | - | standard | TODO (no `docs/tasks/T-175.md`; R-32) |
-| T-176 | `ci-fast` web arm fail-closed + `packages/ui` tests | S | - | standard | TODO (no `docs/tasks/T-176.md`; R-32) |
+| T-175 | `nim check` warnings fatal or shrink-only | S | - | standard | READY |
+| T-176 | `ci-fast` web arm fail-closed + `packages/ui` tests | S | - | standard | READY |
 | T-177 | Dependency and lockfile audit | S | T-176 | standard | TODO (no `docs/tasks/T-177.md`; R-32) |
-| T-178 | `fmt-check` dispatch arm (Nim only) | S | - | standard | TODO (no `docs/tasks/T-178.md`; R-32) |
+| T-178 | `fmt-check` dispatch arm (Nim only) | S | - | standard | READY |
 | T-281 | Typed OpenAPI timestamps | S | T-178 | standard | TODO |
 | T-278 | Role-authentic test fixtures (kasir, maker, checker) | S | T-173 | standard | TODO |
 | T-179 | Baseline documentation + frozen green record | S | T-173, T-174, T-175, T-176, T-177, T-178, T-281, T-278 | standard | TODO |
