@@ -78,12 +78,10 @@ suite "archcheck: escape hatch & klasifikasi":
     check v.len == 1
     check v[0].rule == "E"
 
-  test "berkas di luar struktur / tests / generated dilewati":
+  test "berkas di luar struktur / generated dilewati":
     check scanSource("README.md", "import db_connector\n").len == 0
-    check scanSource("modules/lending/tests/tx.nim", "import infrastructure/x\n").len == 0
     check scanSource("shared/kernel/generated/paramkeys.nim", "import db_connector\n").len == 0
     check scanSource("tools/paramgen/main.nim", "import infrastructure/x\n").len == 0
-    check scanSource("apps/api/src/main.nim", "import db_connector\n").len == 0
 
   test "multi-import satu baris diperiksa semua":
     let v = scanSource(domLending, "import std/strutils, db_connector\n")
@@ -97,6 +95,23 @@ suite "archcheck: escape hatch & klasifikasi":
   test "expandBracketForm":
     check expandBracketForm("std/[a, b]") == @["std/a", "std/b"]
     check expandBracketForm("std/strutils") == @["std/strutils"]
+
+  test "bentuk bracket dengan koma dipecah per import":
+    check importsOf("import std/[strutils, math]") == @["std/strutils", "std/math"]
+    check importsOf("import a/x, b/[c, d]") == @["a/x", "b/c", "b/d"]
+
+  test "import terlipat ke baris berikutnya terbaca utuh":
+    let v = scanSource("apps/api/src/main.nim",
+      "import platform/infrastructure/[audit_repo, auth_repo,\n  param_repo]\n")
+    check v.len == 3
+    check v[0].line == 1
+    check v[2].imp == "platform/infrastructure/param_repo"
+
+  test "komentar di belakang import tidak ikut jadi kunci baseline":
+    let v = scanSource("apps/api/src/x.nim",
+      "import teller/infrastructure/r # sementara, dihapus T-999\n")
+    check v.len == 1
+    check v[0].imp == "teller/infrastructure/r"
 
   test "paket pihak ketiga bukan pelanggaran batas modul":
     check scanSource(infraLending, "import db_connector/db_postgres\n").len == 0
@@ -115,3 +130,97 @@ suite "archcheck: escape hatch & klasifikasi":
     check scanSource(domLending, "import \"platform-lib/db/pool\"\n").len == 1
     check unquote("\"platform-lib/db/pool\"") == "platform-lib/db/pool"
     check unquote("platform-lib/db/pool") == "platform-lib/db/pool"
+
+suite "archcheck: aturan F (handler apps/api/src)":
+  test "import internal modul = pelanggaran, dan import-nya dicatat untuk baseline":
+    let v = scanSource("apps/api/src/handlers_teller.nim",
+      "import teller/infrastructure/session_repo\n")
+    check v.len == 1
+    check v[0].rule == "F"
+    check v[0].imp == "teller/infrastructure/session_repo"
+    check v[0].message.contains("teller/infrastructure/session_repo")
+
+  test "domain modul juga pelanggaran; bentuk bracket dipecah per import":
+    let v = scanSource("apps/api/src/handlers_journals.nim",
+      "import ledger/domain/[journal, period]\n")
+    check v.len == 2
+    check v[0].imp == "ledger/domain/journal"
+    check v[1].imp == "ledger/domain/period"
+
+  test "api/application/shared/platform-lib/stdlib/relatif sendiri = bersih":
+    for ok in ["platform/api", "platform/application/param", "shared/kernel/money",
+               "\"platform-lib/db/pool\"", "std/strutils", "./helpers", "hello/interface/http",
+               "db_connector/postgres"]:
+      check scanSource("apps/api/src/handlers_x.nim", "import " & ok & "\n").len == 0
+
+  test "apps/api/src/generated tetap dilewati":
+    check classify("apps/api/src/generated/paramkeys.nim").category == catSkip
+    check scanSource("apps/api/src/generated/paramkeys.nim",
+      "import teller/domain/session\n").len == 0
+
+  test "escape hatch berlaku sama":
+    check scanSource("apps/api/src/handlers_x.nim",
+      "import teller/infrastructure/r # archcheck:ok dipindah ke api di T-200\n").len == 0
+    check scanSource("apps/api/src/handlers_x.nim",
+      "import teller/infrastructure/r # archcheck:ok\n")[0].rule == "E"
+
+suite "archcheck: aturan G (tests)":
+  test "internal modul lain = pelanggaran":
+    let v = scanSource("modules/platform/tests/tparam.nim",
+      "import teller/infrastructure/repo\n")
+    check v.len == 1
+    check v[0].rule == "G"
+    check v[0].imp == "teller/infrastructure/repo"
+
+  test "internal modul sendiri & api modul lain = bersih":
+    check scanSource("modules/teller/tests/tsession.nim",
+      "import teller/infrastructure/session_repo\n").len == 0
+    check scanSource("modules/teller/tests/tsession.nim",
+      "import ../infrastructure/session_repo\n").len == 0
+    check scanSource("modules/teller/tests/tsession.nim", "import deposit/api\n").len == 0
+    check scanSource("modules/teller/tests/tsession.nim",
+      "import \"platform-lib/db/pool\"\n").len == 0
+
+  test "test di luar modules tidak punya modul sendiri":
+    let v = scanSource("apps/api/tests/itapi.nim", "import deposit/infrastructure/account_repo\n")
+    check v.len == 1
+    check v[0].rule == "G"
+    check classify("apps/api/tests/itapi.nim").module == ""
+
+suite "archcheck: baseline hanya menyusut":
+  const
+    handlerViolation = "import teller/infrastructure/r\n"
+    handlerPath = "apps/api/src/handlers_x.nim"
+    handlerEntry = "F|apps/api/src/handlers_x.nim|teller/infrastructure/r"
+
+  test "pelanggaran yang tercatat di baseline = lolos":
+    let v = scanSource(handlerPath, handlerViolation)
+    let diff = compareBaseline(v, @[handlerEntry])
+    check diff.newViolations.len == 0
+    check diff.staleEntries.len == 0
+
+  test "pelanggaran yang tidak tercatat = baru (gagal)":
+    let v = scanSource(handlerPath, handlerViolation)
+    let diff = compareBaseline(v, @[])
+    check diff.newViolations.len == 1
+    check diff.staleEntries.len == 0
+    check baselineKey(diff.newViolations[0]) == handlerEntry
+
+  test "entri yang pelanggarannya sudah hilang = stale (gagal)":
+    let diff = compareBaseline(@[], @[handlerEntry])
+    check diff.newViolations.len == 0
+    check diff.staleEntries == @[handlerEntry]
+
+  test "baris bergeser tidak membuat baseline basi":
+    let v = scanSource(handlerPath, "import std/os\n" & handlerViolation)
+    check compareBaseline(v, @[handlerEntry]).staleEntries.len == 0
+
+  test "parseBaseline buang komentar dan baris kosong":
+    check parseBaseline("# komentar\n\n" & handlerEntry & "\n") == @[handlerEntry]
+
+  test "renderBaseline unik dan terurut":
+    let v = scanSource(handlerPath, handlerViolation)
+    let text = renderBaseline(v & v)
+    let entries = parseBaseline(text)
+    check entries == @[handlerEntry]
+    check text.startsWith("#")
