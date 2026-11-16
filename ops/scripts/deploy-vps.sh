@@ -33,6 +33,9 @@ BIN="$APP_DIR/bin/kran-api"
 BIN_NEW="$APP_DIR/bin/kran-api.new"
 BIN_PREV="$APP_DIR/bin/kran-api.prev"
 STATE_FILE="$APP_DIR/.deployed_rev"
+# Rev artefak: hanya ditulis bila deploy ini benar-benar memindahkan image API/web. `.deployed_rev`
+# tetap rev checkout (replay guard di bawah), jadi dua angka itu memang boleh berbeda.
+ARTIFACT_STATE_FILE="$APP_DIR/.deployed_artifact_rev"
 LOG="$APP_DIR/logs/deploy.log"
 
 # Runtime lib untuk biner GATE. Host (Rocky 9) tidak punya libpq, sedangkan biner dibangun di image
@@ -501,6 +504,10 @@ OLD_PREV_IMAGE_ID=""
 # sebagai target rollback setelah deploy. Host baru (belum pernah build) tidak punya apa pun
 # untuk di-rollback, jadi syarat ini tidak berlaku di sana.
 PREV_TARGET_REQUIRED=0
+# 1 bila deploy ini menarik/membangun image API atau web, yaitu bila ada artefak yang benar-benar
+# dipasang. Jalur skip (kode API/web tidak berubah) membiarkan 0 dan tidak menyentuh
+# `$ARTIFACT_STATE_FILE`.
+ARTIFACT_SWAPPED=0
 
 # OPS-10 (T-131): HMAC GitHub menutup **body**, bukan waktu kirim, jadi satu delivery sah bisa
 # diputar ulang. Pertahanannya bukan di webhook melainkan di sini: rev yang sama dengan yang sudah
@@ -687,6 +694,7 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|tools/|kran\.
     || die "cosign verify gagal untuk $API_DIGEST — container lama tidak disentuh"
   podman tag "$API_DIGEST" localhost/kran-api:local
   podman rmi "$API_IMAGE" >/dev/null 2>&1 || true   # :local dan :prev tetap satu-satunya tag lokal
+  ARTIFACT_SWAPPED=1                                 # image API baru dipasang -> artefak berubah
   log "    image API terverifikasi (digest ${API_DIGEST##*@}, revision $IMAGE_REV)"
   # Syarat target rollback hanya berlaku bila build benar-benar memindahkan `:local`. Build yang
   # menghasilkan ID sama (mis. konteks tidak berubah) tidak meninggalkan versi lain untuk kembali,
@@ -845,6 +853,7 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/web/|packages/)' <<<"$CHANGED_FILES
       rm -rf "$APP_DIR/web.prev"
       if [ -d "$APP_DIR/web" ]; then mv "$APP_DIR/web" "$APP_DIR/web.prev"; fi
       mv "$APP_DIR/web.new" "$APP_DIR/web"
+      ARTIFACT_SWAPPED=1   # web baru dipasang -> artefak berubah
       # SELinux: berkas baru berlabel var_t -> Caddy tidak bisa membaca.
       restorecon -RF "$APP_DIR/web" 2>/dev/null || true
       log "==> web swapped from $WEB_IMAGE (revision $WEB_REV)"
@@ -989,5 +998,20 @@ printf '%s %s %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$NEW_REV" "${image_id:0
 log "==> rilis dicatat: $APP_DIR/releases.txt (rev ${REVID}, image ${image_id:0:19}, bin $bin_sha)"
 
 # 12. State + log (spec §21.4 #12). Journal menerima stdout via systemd webhook.
+# Dua rev dicatat dan artinya beda: `.deployed_rev` = rev checkout (dipakai replay guard di atas),
+# `.deployed_artifact_rev` = rev yang artefaknya benar-benar dipasang. Deploy yang isinya hanya
+# skrip/docs tidak memindahkan artefak, jadi berkas kedua sengaja tidak disentuh di sana.
 if [ -n "${NEW_REV:-}" ]; then printf '%s\n' "$NEW_REV" > "$STATE_FILE"; fi
-log "Deployment completed successfully for $REPO ($REVID)"
+ARTIFACT_REV=""
+if [ -f "$ARTIFACT_STATE_FILE" ]; then ARTIFACT_REV="$(cat "$ARTIFACT_STATE_FILE")"; fi
+if [ "$ARTIFACT_SWAPPED" -eq 1 ] && [ -n "${NEW_REV:-}" ]; then
+  printf '%s\n' "$NEW_REV" > "$ARTIFACT_STATE_FILE"
+  ARTIFACT_REV="$NEW_REV"
+fi
+ARTIFACT_SHORT="${ARTIFACT_REV:0:7}"
+[ -n "$ARTIFACT_SHORT" ] || ARTIFACT_SHORT="tidak diketahui"
+if [ "$ARTIFACT_SWAPPED" -eq 1 ]; then
+  log "Deployment completed successfully for $REPO (rev checkout $REVID, rev artefak $ARTIFACT_SHORT, artefak dipasang)"
+else
+  log "Deployment completed successfully for $REPO (rev checkout $REVID, rev artefak $ARTIFACT_SHORT (build dilewati))"
+fi

@@ -83,7 +83,7 @@ The binary and the ops wrappers share one vocabulary. Scripts branch on these co
 | `ops/scripts/backup-postgres.sh` | Daily/weekly/monthly dumps, globals, audit anchor copy, retention. |
 | `ops/scripts/backup-pre-deploy.sh` | Pre-migration and pre-contract dump, verified with `pg_restore --list`. |
 | `ops/scripts/migrate.sh` | Thin wrapper over `--role=migrate`; enforces `--yes` on destructive modes. |
-| `ops/scripts/smoke.sh` | `/healthz`, `/readyz`, version against `.deployed_rev`. |
+| `ops/scripts/smoke.sh` | `/healthz`, `/readyz`, artifact rev against `.deployed_artifact_rev` (fallback `.deployed_rev`). |
 | `ops/scripts/kran-alert.sh` | Readiness and dead-outbox alert, run by `kran-alert.timer`. |
 | `ops/scripts/audit-consistency.sh` | Compares script checksums on the host with the repo. |
 | `ops/systemd/*.container` | Quadlet units for API and worker. |
@@ -129,7 +129,10 @@ A push to `main` is a production deploy. The webhook calls `ops/scripts/deploy-v
     (`podman image exists localhost/kran-api:prev`, image IDs compared); a host that never built
     before has nothing to roll back to and is exempt. A green `/readyz` with a missing `:prev`
     is a failed deploy, not a success without a backup.
-12. **Record**: `.deployed_rev`, `releases.txt`, `deploy.log`.
+12. **Record**: `.deployed_rev` (checkout rev, used by the replay guard), `.deployed_artifact_rev`
+    (written only when this deploy pulled an API or web image, so it is the rev the running
+    artifact reports), `releases.txt`, `deploy.log`. A script- or docs-only deploy moves the
+    checkout rev and leaves the artifact rev alone, so the two may legitimately differ.
 
 The web and API are served from one origin: Caddy serves the SPA from `$APP_DIR/web` and
 proxies `/api/*` to `127.0.0.1:8095`. There is no `/metrics` endpoint today; the example
