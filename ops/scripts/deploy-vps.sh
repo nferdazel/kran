@@ -45,6 +45,14 @@ mkdir -p "$APP_DIR/logs"
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG"; }
 die() { log "ERROR: $*"; exit 1; }
 
+# Tag adalah nama berkas sampai byte-nya menyebut digest sendiri. Ambil digest dari image yang
+# baru di-pull, lalu verifikasi dan tag digest itu, supaya tag yang digeser antara pull dan
+# verify tidak bisa mengarahkan `:local` ke image yang tidak lolos pemeriksaan.
+pulled_digest() {
+  podman image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$1" 2>/dev/null \
+    | grep -F '@sha256:' | head -1
+}
+
 # OPS-11 (T-133): batas waktu gate kesehatan. Sebelumnya 15 percobaan × (3 dtk timeout + 2 dtk
 # jeda) = hingga 75 dtk, melewati batas spec §21.4 (30–60 dtk) yang justru mencegah container
 # rusak menahan deploy. Sekarang deadline total 60 dtk; percobaan hanya dijalankan selama sisa
@@ -539,17 +547,21 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|tools/|kran\.
     die "pull image API gagal (registry/auth/image belum ada): $TAIL_OUT"
   fi
   rm -f "$PULL_OUT"
-  # Tag sha-<7> hanya nama berkas sampai image membuktikan commit-nya sendiri.
-  IMAGE_REV="$(podman inspect -f '{{ index .Labels "org.opencontainers.image.revision" }}' "$API_IMAGE" 2>/dev/null || true)"
+  # Tag sha-<7> hanya nama berkas sampai image membuktikan commit-nya sendiri. Semua langkah di
+  # bawah memakai digest hasil pull, bukan tag yang bisa digeser.
+  API_DIGEST="$(pulled_digest "$API_IMAGE")"
+  [ -n "$API_DIGEST" ] ||
+    die "image API $API_IMAGE ter-pull tapi tidak menyebut digest — container lama tidak disentuh"
+  IMAGE_REV="$(podman inspect -f '{{ index .Labels "org.opencontainers.image.revision" }}' "$API_DIGEST" 2>/dev/null || true)"
   [ "$IMAGE_REV" = "$NEW_REV" ] ||
     die "image API $API_IMAGE memuat revisi '${IMAGE_REV}', payload $NEW_REV — container lama tidak disentuh"
-  cosign verify "$API_IMAGE" \
+  cosign verify "$API_DIGEST" \
     --certificate-identity-regexp "^https://github.com/nferdazel/kran/" \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null 2>&1 \
-    || die "cosign verify gagal untuk $API_IMAGE — container lama tidak disentuh"
-  podman tag "$API_IMAGE" localhost/kran-api:local
+    || die "cosign verify gagal untuk $API_DIGEST — container lama tidak disentuh"
+  podman tag "$API_DIGEST" localhost/kran-api:local
   podman rmi "$API_IMAGE" >/dev/null 2>&1 || true   # :local dan :prev tetap satu-satunya tag lokal
-  log "    image API terverifikasi (revision $IMAGE_REV)"
+  log "    image API terverifikasi (digest ${API_DIGEST##*@}, revision $IMAGE_REV)"
   # Syarat target rollback hanya berlaku bila build benar-benar memindahkan `:local`. Build yang
   # menghasilkan ID sama (mis. konteks tidak berubah) tidak meninggalkan versi lain untuk kembali,
   # dan memaksakan `:prev` di situ akan menggagalkan deploy yang isinya cuma ops/docs.
@@ -680,18 +692,22 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/web/|packages/)' <<<"$CHANGED_FILES
     PULL_OUT="$(mktemp)"
     if podman pull "$WEB_IMAGE" >"$PULL_OUT" 2>&1; then
       rm -f "$PULL_OUT"
-      # Tag sha-<7> hanya nama berkas sampai image membuktikan commit-nya sendiri.
-      WEB_REV="$(podman inspect -f '{{ index .Labels "org.opencontainers.image.revision" }}' "$WEB_IMAGE" 2>/dev/null || true)"
+      # Tag sha-<7> hanya nama berkas sampai image membuktikan commit-nya sendiri; ekstraksi di
+      # bawah dijalankan dari digest hasil pull, bukan dari tag.
+      WEB_DIGEST="$(pulled_digest "$WEB_IMAGE")"
+      [ -n "$WEB_DIGEST" ] ||
+        die "image web $WEB_IMAGE ter-pull tapi tidak menyebut digest — web lama tidak disentuh"
+      WEB_REV="$(podman inspect -f '{{ index .Labels "org.opencontainers.image.revision" }}' "$WEB_DIGEST" 2>/dev/null || true)"
       [ "$WEB_REV" = "$NEW_REV" ] ||
         die "image web $WEB_IMAGE memuat revisi '${WEB_REV}', payload $NEW_REV — web lama tidak disentuh"
-      cosign verify "$WEB_IMAGE" \
+      cosign verify "$WEB_DIGEST" \
         --certificate-identity-regexp "^https://github.com/nferdazel/kran/" \
         --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null 2>&1 \
-        || die "cosign verify gagal untuk $WEB_IMAGE — web lama tidak disentuh"
+        || die "cosign verify gagal untuk $WEB_DIGEST — web lama tidak disentuh"
 
       WEB_CTR="kran-web-extract.$$"
       podman rm -f "$WEB_CTR" >/dev/null 2>&1 || true
-      podman create --name "$WEB_CTR" "$WEB_IMAGE" >/dev/null
+      podman create --name "$WEB_CTR" "$WEB_DIGEST" >/dev/null
       rm -rf "$APP_DIR/web.new"
       mkdir -p "$APP_DIR/web.new"
       podman cp "$WEB_CTR:/usr/share/nginx/html/." "$APP_DIR/web.new/"
