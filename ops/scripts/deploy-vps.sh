@@ -858,8 +858,14 @@ sync_units
 # 10. Restart unit (spec §21.4 #10).
 log "==> restart kran-api & kran-worker"
 systemctl --user daemon-reload
-systemctl --user restart kran-api
-systemctl --user restart kran-worker
+# Container yang mati sebelum READY membuat `systemctl --user restart` langsung balas non-zero; di
+# bawah `set -euo pipefail` itu dulu menghentikan deploy sebelum HEALTH GATE dan sebelum rollback,
+# sementara .deployed_rev tetap menyebut revisi lama — keadaan salah yang tidak dilaporkan siapa pun.
+# Yang menentukan hasil adalah gate, bukan exit code restart, jadi kegagalan di sini = peringatan.
+systemctl --user restart kran-api \
+  || log "WARNING: restart kran-api returned non-zero; unit may be crash-looping, checking the health gate anyway"
+systemctl --user restart kran-worker \
+  || log "WARNING: restart kran-worker returned non-zero; unit may be crash-looping, checking the health gate anyway"
 
 # 11. HEALTH GATE + auto-rollback (spec §21.4 #11): poll /readyz dengan deadline 60 dtk (OPS-11).
 healthy=0
