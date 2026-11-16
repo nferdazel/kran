@@ -11,7 +11,7 @@ files in the repository**, including contract migrations that deploy runs only w
 listed in `ops/migrations/contract-auto.txt`.
 
 - Schemas: **9**; tables: **63**.
-- Migration files: **135** (35 create at least one table, 100 do not).
+- Migration files: **136** (35 create at least one table, 101 do not).
 - Tables with a `COMMENT ON TABLE` purpose: **54** of 63.
 - Contract migrations declared for automatic deploy: **12**.
 
@@ -65,8 +65,8 @@ Counts are worst-case declarations after replaying every migration in filename o
 | platform | `business_date` | Tanggal buku sistem per scope (spec §9.3, §11.2). Transisi sah hanya OPEN → CLOSING → CLOSED; rollover mengubah current_business_date pada baris CLOSED (bukan reopen). | - | 0/0/1/3 | - | `0005_platform_calendar.sql` |
 | platform | `holiday` | Hari libur kalender (spec §9.2). `name_key` = kunci i18n (tidak ada teks hardcode); recurring_annual = berulang setiap tahun pada bulan/tanggal yang sama. | pk: holiday_id | 1/0/1/3 | - | `0005_platform_calendar.sql` |
 | platform | `idempotency_key` | Klaim Idempotency-Key per principal (D-098). Ditulis dalam transaksi bisnis; replay hanya 2xx. | pk: principal_id, key; fk: principal_id → platform.app_user(user_id) | 1/1/0/7 | - | `0021_platform_idempotency.sql` |
-| platform | `inbox` | De-dup per konsumen: INSERT ... ON CONFLICT DO NOTHING; 0 baris = sudah pernah diproses. | pk: consumer, event_id | 1/0/0/0 | - | `0003_platform_outbox_inbox.sql` |
-| platform | `outbox` | Transactional outbox: ditulis satu transaksi dengan perubahan state; dispatcher memakai FOR UPDATE SKIP LOCKED. | pk: outbox_id | 1/0/2/1 | `outbox_notify_insert` | `0007_platform_outbox_notify.sql` |
+| platform | `inbox` | De-dup per konsumen: INSERT ... ON CONFLICT DO NOTHING; 0 baris = sudah pernah diproses. | pk: consumer, event_id | 1/0/0/0 | - | `0105_platform_outbox_inbox_purge_indexes.sql` |
+| platform | `outbox` | Transactional outbox: ditulis satu transaksi dengan perubahan state; dispatcher memakai FOR UPDATE SKIP LOCKED. | pk: outbox_id | 1/0/2/1 | `outbox_notify_insert` | `0105_platform_outbox_inbox_purge_indexes.sql` |
 | platform | `param_definition` | Definisi parameter (skema + governance). Diisi seed dari modules/<m>/seeds/params.yaml via tools/paramgen. | pk: key | 1/0/0/3 | - | `0004_platform_parameter.sql` |
 | platform | `param_end_request` | Pengajuan pengakhiran nilai parameter (O-064): PENDING → APPROVED/REJECTED oleh akun lain; persetujuan memangkas platform.param_value.effective_to tanpa menuntut nilai penerus. | pk: request_id; fk: param_value_id → platform.param_value(param_value_id) | 1/1/1/4 | - | `0103_platform_param_end_request.sql` |
 | platform | `param_value` | Nilai parameter effective-dated + maker-checker. Hanya satu ACTIVE per (key, scope, periode); SUPERSEDED menyimpan riwayat. | pk: param_value_id; fk: key → platform.param_definition(key) | 1/1/0/7 | - | `0004_platform_parameter.sql` |
@@ -229,3 +229,4 @@ counts the statements by kind.
 | `0101_lending_restructure_grade.sql` | alter table (2), comment (3) |
 | `0102_lending_runtime_grants_transactional.sql` | do block (1) |
 | `0104_platform_rbac_teller_session_read_all.sql` | insert (2) |
+| `0105_platform_outbox_inbox_purge_indexes.sql` | alter table (1), comment (1), index (2), other (1) |
