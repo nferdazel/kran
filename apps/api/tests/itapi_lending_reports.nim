@@ -78,8 +78,14 @@ block:
     INSERT INTO platform.user_role (user_id, role_id, branch_id)
     SELECT u.user_id, r.role_id, NULL
       FROM platform.app_user u, platform.role r
-     WHERE u.username IN ('dev.maker', 'dev.approver')
-       AND r.code = 'platform_admin'
+     WHERE u.username = 'dev.maker' AND r.code = 'lending_maker'
+    ON CONFLICT DO NOTHING
+  """)
+  execScript(db, """
+    INSERT INTO platform.user_role (user_id, role_id, branch_id)
+    SELECT u.user_id, r.role_id, NULL
+      FROM platform.app_user u, platform.role r
+     WHERE u.username = 'dev.approver' AND r.code = 'lending_checker'
     ON CONFLICT DO NOTHING
   """)
   execScript(db, """

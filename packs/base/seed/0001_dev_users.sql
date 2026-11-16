@@ -20,6 +20,11 @@
 -- karena hanya migrasi yang ikut terpasang di produksi. Berkas ini hanya menjaga user dan
 -- pemberian rolenya.
 --
+-- **Peran harus asli (T-278).** `dev.kasir` memegang peran `teller` saja, supaya suite integrasi
+-- kasir/teller menguji jalur otorisasi yang sebenarnya, bukan aktor serba-bisa. Sebelumnya suite
+-- memberi `platform_admin` kepada `dev.maker`/`dev.checker` untuk mencapai jalur sukses; akibatnya
+-- gate e2e "maker tidak boleh approve" bergantung pada sisa grant dari run sebelumnya.
+--
 -- Diterapkan hanya oleh `./task dbtools seed --dev`. Idempotent, dan **menyetel ulang** password
 -- serta `must_change_password` ketiga user (bukan `DO NOTHING`): e2e mengubah password
 -- `dev.firstlogin` saat menguji alur wajib-ganti, jadi seed harus bisa mengembalikannya.
@@ -47,6 +52,13 @@ VALUES
    'pbkdf2-hmac-sha256$1000$59q81bVw1VB6+/gqcNpKZjCSiHSKA7T77523I1MsHzE=$6jrvAXXnE41eOhdT8kzgnqjBuFG1J4EjRIeFquIawY0=',
    false),
   (md5('dev|dev.cashchecker')::uuid, 'dev.cashchecker', 'Uji Kas Penyetuju (dev)',
+   'pbkdf2-hmac-sha256',
+   'pbkdf2-hmac-sha256$1000$59q81bVw1VB6+/gqcNpKZjCSiHSKA7T77523I1MsHzE=$6jrvAXXnE41eOhdT8kzgnqjBuFG1J4EjRIeFquIawY0=',
+   false),
+  -- Kasir (T-278): peran `teller` saja, aktor alur sesi kas, vault, dan transaksi tunai. Tanpa
+  -- `platform_admin`: suite integrasi dulu memakai aktor serba-bisa hanya untuk mencapai jalur
+  -- sukses, sehingga izin yang sebenarnya diuji tidak pernah benar-benar diperiksa.
+  (md5('dev|dev.kasir')::uuid, 'dev.kasir', 'Uji Kasir (dev)',
    'pbkdf2-hmac-sha256',
    'pbkdf2-hmac-sha256$1000$59q81bVw1VB6+/gqcNpKZjCSiHSKA7T77523I1MsHzE=$6jrvAXXnE41eOhdT8kzgnqjBuFG1J4EjRIeFquIawY0=',
    false)
@@ -77,17 +89,34 @@ SELECT u.user_id, r.role_id, NULL
  WHERE (u.username = 'dev.maker' AND r.code = 'param_maker')
     OR (u.username = 'dev.checker' AND r.code = 'param_checker')
     OR (u.username = 'dev.firstlogin' AND r.code = 'param_maker')
+    OR (u.username = 'dev.kasir' AND r.code = 'teller')
     OR (u.username IN ('dev.cashmaker', 'dev.cashchecker') AND r.code = 'cash_admin')
 ON CONFLICT DO NOTHING;
 
--- Determinisme e2e: suite integrasi berbagi DB dev yang sama dan sebagian (mis. `itapi_deposit`)
--- memberi `dev.maker` grant `platform_admin` untuk menguji jalur sukses. Grant itu tidak selalu
--- dikembalikan, sehingga maker bisa menyetujui dan seluruh menu tampil — gate e2e "maker tidak
--- boleh approve" lalu gagal karena sisa state, bukan karena kode. Buang **hanya** grant
--- `platform_admin` milik akun dev ini.
+-- **Izin KYC untuk `ops_admin` (dev saja, T-278).** Di katalog produksi `party.kyc.manage` dan
+-- `party.identity_doc.read` hanya dipegang `platform_admin` (migrasi `0014`), jadi suite KYC/detail
+-- tidak punya aktor operator yang sah dan dulu memakai `platform_admin`. Di DB dev keduanya
+-- diberikan ke `ops_admin` — peran administrasi operasional, yang di produksi memang memegang
+-- pendaftaran party dan pembukaan rekening. Tidak ada pengguna dev yang memegang `ops_admin`, jadi
+-- persona e2e tidak berubah. Katalog produksi **tidak** diubah di sini: celah "KYC hanya bisa
+-- dilakukan `platform_admin`" tetap terbuka dan dicatat sebagai open item, bukan ditutup diam-diam
+-- oleh seed.
+INSERT INTO platform.role_permission (role_id, permission_id)
+SELECT r.role_id, p.permission_id
+  FROM platform.role r, platform.permission p
+ WHERE r.code = 'ops_admin'
+   AND p.code IN ('party.kyc.manage', 'party.identity_doc.read')
+ON CONFLICT DO NOTHING;
+
+-- Determinisme e2e: sisa grant `platform_admin` dari run lama (dulu suite integrasi memberikannya
+-- kepada `dev.maker`/`dev.checker` untuk mencapai jalur sukses) membuat maker bisa menyetujui dan
+-- seluruh menu tampil, sehingga gate e2e "maker tidak boleh approve" gagal karena state, bukan
+-- karena kode. Sejak T-278 tidak ada suite yang memberi grant itu lagi; blok ini tetap dipertahankan
+-- sebagai penjaga murah terhadap DB dev yang belum di-reset. Buang **hanya** grant `platform_admin`
+-- milik akun dev ini.
 DELETE FROM platform.user_role ur
  USING platform.app_user u, platform.role r
  WHERE ur.user_id = u.user_id
    AND ur.role_id = r.role_id
-   AND u.username IN ('dev.maker', 'dev.checker')
+   AND u.username IN ('dev.maker', 'dev.checker', 'dev.kasir')
    AND r.code = 'platform_admin';

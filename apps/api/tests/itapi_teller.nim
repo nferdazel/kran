@@ -44,8 +44,9 @@ const
   SessionClosePath = "/api/v1/teller/sessions/{sessionId}/close"
   SessionTransactionsPath = "/api/v1/teller/sessions/{sessionId}/transactions"
   LoginPath = "/api/v1/auth/login"
-  MakerUser = "dev.maker"
+  MakerUser = "dev.kasir"
   CheckerUser = "dev.checker"
+  LedgerAdminUser = "dev.ledgeradmin"
   SessionTellerUser = "dev.sessionteller"
   DevPassword = "rahasia-panjang-123"
   CookieName = "kran_session"
@@ -98,15 +99,9 @@ block:
   execScript(db, readFile("packs/base/generated/param_definitions.sql"))
   execScript(db, readFile("packs/base/generated/param_values.sql"))
   execScript(db, readFile("packs/base/seed/0001_dev_users.sql"))
-  # `dev.maker` hanya memegang `param_maker` di seed; jalur sukses diuji dengan `platform_admin`
-  # (pemegang seluruh izin, termasuk izin teller dari migrasi `platform/0024`).
-  execScript(db, """
-    INSERT INTO platform.user_role (user_id, role_id, branch_id)
-    SELECT u.user_id, r.role_id, NULL
-      FROM platform.app_user u, platform.role r
-     WHERE u.username = 'dev.maker' AND r.code = 'platform_admin'
-    ON CONFLICT DO NOTHING
-  """)
+  # Aktor sukses memakai peran yang benar-benar memegang izinnya (T-278): `dev.kasir` (peran
+  # `teller` dari seed) untuk sesi kas dan transaksi tunai. Akun di bawah hanya diberi peran yang
+  # memegang izin yang diuji, bukan `platform_admin` serba-bisa.
 
   # Pengguna ber-scope cabang lain: `requirePermission` lolos (grant ada), tetapi
   # `authorizedAtBranch` harus menolak rekening cabang `BranchId`.
@@ -121,7 +116,7 @@ block:
     INSERT INTO platform.user_role (user_id, role_id, branch_id)
     SELECT u.user_id, r.role_id, '""" & OtherBranchId & """'
       FROM platform.app_user u, platform.role r
-     WHERE u.username = 'dev.branchmaker' AND r.code = 'platform_admin'
+     WHERE u.username = 'dev.branchmaker' AND r.code = 'teller'
     ON CONFLICT DO NOTHING
   """)
 
@@ -138,7 +133,7 @@ block:
     INSERT INTO platform.user_role (user_id, role_id, branch_id)
     SELECT u.user_id, r.role_id, '""" & BranchId & """'
       FROM platform.app_user u, platform.role r
-     WHERE u.username = 'dev.branchmaker2' AND r.code = 'platform_admin'
+     WHERE u.username = 'dev.branchmaker2' AND r.code = 'teller'
     ON CONFLICT DO NOTHING
   """)
 
@@ -361,7 +356,7 @@ block:
   TabunganKindAccountId = $seedKindProduct("SAV-TAB", skTabungan)
 
   # --- T-093b: sesi kas. Transaksi tunai WAJIB sesi OPEN, jadi fixture membukanya lewat
-  # repo/domain (bukan flag bypass gate). `dev.maker` (aktor test sukses) memakai `BranchId`;
+  # repo/domain (bukan flag bypass gate). `dev.kasir` (aktor test sukses) memakai `BranchId`;
   # `dev.sessionteller` memakai `SessionBranchId` untuk kasus tanpa sesi / tutup / replay.
   execScript(db, """
     INSERT INTO platform.app_user (user_id, username, full_name, password_algo, password_hash,
@@ -374,7 +369,26 @@ block:
     INSERT INTO platform.user_role (user_id, role_id, branch_id)
     SELECT u.user_id, r.role_id, NULL
       FROM platform.app_user u, platform.role r
-     WHERE u.username = 'dev.sessionteller' AND r.code = 'platform_admin'
+     WHERE u.username = 'dev.sessionteller' AND r.code = 'teller'
+    ON CONFLICT DO NOTHING
+  """)
+
+  # Pembalik jurnal: `ledger.journal.reverse` hanya dipegang `ledger_admin` dan `platform_admin`
+  # (migrasi `platform/0016`). Uji "jurnal subledger tidak bisa dibalik" menuntut aktor yang
+  # **memang boleh** membalik jurnal — kalau tidak, gerbang izin menolak lebih dulu (403) dan
+  # alasan 409 `journal_owned_by_subledger` tidak pernah diuji.
+  execScript(db, """
+    INSERT INTO platform.app_user (user_id, username, full_name, password_algo, password_hash,
+                                   must_change_password)
+    SELECT gen_random_uuid(), 'dev.ledgeradmin', 'Dev Ledger Admin', password_algo,
+           password_hash, false
+      FROM platform.app_user WHERE username = 'dev.maker'
+  """)
+  execScript(db, """
+    INSERT INTO platform.user_role (user_id, role_id, branch_id)
+    SELECT u.user_id, r.role_id, NULL
+      FROM platform.app_user u, platform.role r
+     WHERE u.username = 'dev.ledgeradmin' AND r.code = 'ledger_admin'
     ON CONFLICT DO NOTHING
   """)
   for branch in [BranchId, SessionBranchId]:
@@ -384,12 +398,12 @@ block:
     Id(SessionBranchId))
 
   let makerUserId = parseId(db.getValue(
-    sql"SELECT user_id::text FROM platform.app_user WHERE username = 'dev.maker'")).value()
+    sql"SELECT user_id::text FROM platform.app_user WHERE username = 'dev.kasir'")).value()
   let makerSession = newOpenSession(newId(fixtureClock), Id(BranchId), makerUserId, BusinessDate,
     zero(), makerUserId)
   discard dbPool.withTx(proc(d: DbConn): int {.closure.} =
     doAssert debitVault(d, Id(BranchId), zero()).isSome
-    doAssert insertOpenSession(d, makerSession), "sesi fixture dev.maker gagal dibuka"
+    doAssert insertOpenSession(d, makerSession), "sesi fixture dev.kasir gagal dibuka"
     1)
 
   # Id rekening dipakai test lewat variabel global sederhana.
@@ -1078,15 +1092,20 @@ suite "teller: setor & tarik":
 
 suite "teller: jurnal subledger tidak bisa dibalik (T-123)":
   test "jurnal transaksi tunai & PB ditolak 409 journal_owned_by_subledger":
-    let token = tokenOf(login(MakerUser))
+    # Transaksi ditulis kasir (`teller.transaction.post`); pembaliknya butuh
+    # `ledger.journal.reverse`, yang hanya dipegang `ledger_admin`/`platform_admin` (migrasi
+    # `platform/0016`). Tanpa aktor yang memang boleh membalik, gerbang izin yang menolak (403),
+    # bukan aturan subledger yang diuji di sini.
+    let kasirToken = tokenOf(login(MakerUser))
+    let ledgerToken = tokenOf(login(LedgerAdminUser))
     let source = freshAccount()
     let destination = freshAccount()
-    let deposit = postJson(CashPath, cashBody(source, "DEPOSIT", "100.00"), token)
+    let deposit = postJson(CashPath, cashBody(source, "DEPOSIT", "100.00"), kasirToken)
     check deposit.code == 201
     let cashJournal = deposit.body["journalId"].getStr()
 
     let denied = postJson(ReversalPath.replace("{journalId}", cashJournal),
-      %*{"reason": "uji guard subledger"}, token)
+      %*{"reason": "uji guard subledger"}, ledgerToken)
     check denied.code == 409
     checkProblem(ReversalPath, "POST", "409", denied.body)
     check denied.body["params"]["reason"].getStr() == "journal_owned_by_subledger"
@@ -1097,11 +1116,11 @@ suite "teller: jurnal subledger tidak bisa dibalik (T-123)":
 
     # PB juga punya subledger sendiri: pembalik hanya akan membuat GL dan baris transfer berbeda.
     let transfer = postJson(TransferPath,
-      transferBody(source, destination, "10.00", "PB uji guard"), token)
+      transferBody(source, destination, "10.00", "PB uji guard"), kasirToken)
     check transfer.code == 201
     let transferJournal = transfer.body["journalId"].getStr()
     let deniedTransfer = postJson(ReversalPath.replace("{journalId}", transferJournal),
-      %*{"reason": "uji guard subledger"}, token)
+      %*{"reason": "uji guard subledger"}, ledgerToken)
     check deniedTransfer.code == 409
     check deniedTransfer.body["params"]["reason"].getStr() == "journal_owned_by_subledger"
     check deniedTransfer.body["params"]["subledger"].getStr() == "deposit.transfer"
@@ -1162,7 +1181,7 @@ suite "teller: idempotency":
                expires_at = created_at - interval '1 day'
          WHERE key = ?
            AND principal_id =
-             (SELECT user_id FROM platform.app_user WHERE username = 'dev.maker')""", key)
+             (SELECT user_id FROM platform.app_user WHERE username = 'dev.kasir')""", key)
       1)
 
     let replay = postJson(CashPath, body, token, key)
@@ -1477,7 +1496,7 @@ suite "teller: sesi kas menggerbang transaksi tunai (T-093b)":
     let tellerId = dbText(sql"""
       SELECT teller_user_id::text FROM teller.teller_session
        WHERE status = 'OPEN' AND branch_id = ?
-         AND teller_user_id = (SELECT user_id FROM platform.app_user WHERE username = 'dev.maker')""",
+         AND teller_user_id = (SELECT user_id FROM platform.app_user WHERE username = 'dev.kasir')""",
       BranchId)
     # Restore wajib walau assertion gagal, supaya kegagalan tidak menular ke test tunai lain.
     try:

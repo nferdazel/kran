@@ -5,7 +5,7 @@
 ## party, dan idempotency (replay 200 + `Idempotent-Replayed`, hash beda 409, tanpa header 400).
 ##
 ## Test ini me-reset seluruh schema modul, lalu menyiapkan seed pack `base`, seed pengguna dev, satu
-## party + produk `SAV-DEP` ber-versi ACTIVE, dan grant `platform_admin` untuk `dev.maker`. Data dev
+## party + produk `SAV-DEP` ber-versi ACTIVE, dan aktor berperan `ops_admin` (izin deposit asli). Data dev
 ## murni sintetis.
 
 import std/[httpclient, json, net, options, os, strutils, times, unittest]
@@ -60,13 +60,14 @@ block:
   execScript(db, readFile("packs/base/generated/param_definitions.sql"))
   execScript(db, readFile("packs/base/generated/param_values.sql"))
   execScript(db, readFile("packs/base/seed/0001_dev_users.sql"))
-  # `dev.maker` hanya memegang `param_maker` di seed; untuk menguji jalur sukses ia diberi
-  # `platform_admin` (pemegang seluruh izin, termasuk izin deposit) di DB uji.
+  # Aktor jalur sukses memakai peran yang memang memegang izinnya (T-278): `ops_admin` memegang
+  # `deposit.account.manage`/`read` dan `party.party.create` di katalog produksi
+  # (`platform/0023`, `platform/0013`), bukan aktor serba-bisa.
   execScript(db, """
     INSERT INTO platform.user_role (user_id, role_id, branch_id)
     SELECT u.user_id, r.role_id, NULL
       FROM platform.app_user u, platform.role r
-     WHERE u.username = 'dev.maker' AND r.code = 'platform_admin'
+     WHERE u.username = 'dev.maker' AND r.code = 'ops_admin'
     ON CONFLICT DO NOTHING
   """)
 
@@ -83,7 +84,7 @@ block:
     INSERT INTO platform.user_role (user_id, role_id, branch_id)
     SELECT u.user_id, r.role_id, '""" & OtherBranchId & """'
       FROM platform.app_user u, platform.role r
-     WHERE u.username = 'dev.branchmaker' AND r.code = 'platform_admin'
+     WHERE u.username = 'dev.branchmaker' AND r.code = 'ops_admin'
     ON CONFLICT DO NOTHING
   """)
 

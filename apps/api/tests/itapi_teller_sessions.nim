@@ -7,7 +7,8 @@
 ## **dua penutupan bersamaan** (satu 200, satu 409, vault bertambah sekali).
 ##
 ## Test me-reset seluruh schema, menyiapkan seed pack `base` + pengguna dev, beberapa vault cabang,
-## dan member izin teller (migrasi `platform/0024`/`0025`) lewat role `platform_admin`.
+## dan memakai peran yang benar-benar memegang izinnya: `dev.kasir` (`teller`) sebagai pemilik sesi,
+## `cash_admin` untuk akses lintas-teller (`teller.session.read_all`).
 ##
 ## **HUMAN-REVIEW-REQUIRED**: mutasi vault + variance kas (AGENTS.md §8).
 
@@ -31,10 +32,12 @@ const
   CurrentPath = "/api/v1/teller/sessions/current"
   ClosePath = "/api/v1/teller/sessions/{sessionId}/close"
   LoginPath = "/api/v1/auth/login"
-  MakerUser = "dev.maker"
+  MakerUser = "dev.kasir"
   OtherTellerUser = "dev.teller2"
   PeerTellerUser = "dev.teller3"
   BranchMakerUser = "dev.branchmaker"
+  BranchSuperUser = "dev.branchsuper"
+  LedgerAdminUser = "dev.ledgeradmin"
   DevPassword = "rahasia-panjang-123"
   BusinessDate = "2026-10-22"
   CookieName = "kran_session"
@@ -60,44 +63,74 @@ block:
   execScript(db, readFile("packs/base/generated/param_values.sql"))
   execScript(db, readFile("packs/base/seed/0001_dev_users.sql"))
 
-  # `dev.maker` (aktor sukses) + `dev.teller2` (uji kepemilikan) memegang seluruh izin tanpa batas
-  # cabang; `dev.branchmaker` hanya di `OtherBranch` → `authorizedAtBranch` harus menolak `BranchA`.
-  execScript(db, """
-    INSERT INTO platform.user_role (user_id, role_id, branch_id)
-    SELECT u.user_id, r.role_id, NULL
-      FROM platform.app_user u, platform.role r
-     WHERE u.username = 'dev.maker' AND r.code = 'platform_admin'
-    ON CONFLICT DO NOTHING
-  """)
+  # `dev.kasir` (peran `teller`, dari seed `0001`) adalah aktor sukses: pemilik sesi.
+  # `dev.teller2` adalah pengawas kas: peran `cash_admin` saja, yang memegang
+  # `teller.session.read_all`. `cash_admin` dan `teller` adalah pasangan SoD
+  # (`platform.role_conflict`), jadi keduanya tidak boleh ada di satu pengguna — pengawas yang
+  # membaca laci orang lain karena itu bukan teller.
   execScript(db, """
     INSERT INTO platform.app_user (user_id, username, full_name, password_algo, password_hash,
                                    must_change_password)
     SELECT gen_random_uuid(), 'dev.teller2', 'Dev Teller 2', password_algo, password_hash, false
-      FROM platform.app_user WHERE username = 'dev.maker'
+      FROM platform.app_user WHERE username = 'dev.kasir'
   """)
   execScript(db, """
     INSERT INTO platform.user_role (user_id, role_id, branch_id)
     SELECT u.user_id, r.role_id, NULL
       FROM platform.app_user u, platform.role r
-     WHERE u.username = 'dev.teller2' AND r.code = 'platform_admin'
+     WHERE u.username = 'dev.teller2' AND r.code = 'cash_admin'
     ON CONFLICT DO NOTHING
   """)
+  # `dev.branchmaker` memegang `teller` hanya di `OtherBranch` → `authorizedAtBranch` harus menolak
+  # `BranchA`. `dev.branchsuper` adalah pengawas (`cash_admin`) di cabang lain: pemegang `read_all`
+  # di luar cabang sesi tetap ditolak.
   execScript(db, """
     INSERT INTO platform.app_user (user_id, username, full_name, password_algo, password_hash,
                                    must_change_password)
     SELECT gen_random_uuid(), 'dev.branchmaker', 'Dev Branch Maker', password_algo,
            password_hash, false
-      FROM platform.app_user WHERE username = 'dev.maker'
+      FROM platform.app_user WHERE username = 'dev.kasir'
   """)
   execScript(db, """
     INSERT INTO platform.user_role (user_id, role_id, branch_id)
     SELECT u.user_id, r.role_id, '""" & OtherBranch & """'
       FROM platform.app_user u, platform.role r
-     WHERE u.username = 'dev.branchmaker' AND r.code = 'platform_admin'
+     WHERE u.username = 'dev.branchmaker' AND r.code = 'teller'
+    ON CONFLICT DO NOTHING
+  """)
+  execScript(db, """
+    INSERT INTO platform.app_user (user_id, username, full_name, password_algo, password_hash,
+                                   must_change_password)
+    SELECT gen_random_uuid(), 'dev.branchsuper', 'Dev Branch Supervisor', password_algo,
+           password_hash, false
+      FROM platform.app_user WHERE username = 'dev.kasir'
+  """)
+  execScript(db, """
+    INSERT INTO platform.user_role (user_id, role_id, branch_id)
+    SELECT u.user_id, r.role_id, '""" & OtherBranch & """'
+      FROM platform.app_user u, platform.role r
+     WHERE u.username = 'dev.branchsuper' AND r.code = 'cash_admin'
+    ON CONFLICT DO NOTHING
+  """)
+  # Pembalik jurnal: `ledger.journal.reverse` hanya dipegang `ledger_admin`/`platform_admin`
+  # (migrasi `platform/0016`). Uji "jurnal sesi tidak bisa dibalik" butuh aktor yang memang boleh
+  # membalik, kalau tidak gerbang izin yang menolak (403), bukan aturan subledger.
+  execScript(db, """
+    INSERT INTO platform.app_user (user_id, username, full_name, password_algo, password_hash,
+                                   must_change_password)
+    SELECT gen_random_uuid(), 'dev.ledgeradmin', 'Dev Ledger Admin', password_algo,
+           password_hash, false
+      FROM platform.app_user WHERE username = 'dev.kasir'
+  """)
+  execScript(db, """
+    INSERT INTO platform.user_role (user_id, role_id, branch_id)
+    SELECT u.user_id, r.role_id, NULL
+      FROM platform.app_user u, platform.role r
+     WHERE u.username = 'dev.ledgeradmin' AND r.code = 'ledger_admin'
     ON CONFLICT DO NOTHING
   """)
 
-  # C-02: teller sungguhan (peran `teller`, bukan `platform_admin`) di BranchA. Pemegang
+  # C-02: teller lain di cabang yang sama (peran `teller`) di BranchA. Pemegang
   # `teller.session.read` di cabang itu, tanpa izin lintas-teller — dialah "teller lain di cabang
   # yang sama" yang tidak boleh membaca sesi rekannya.
   execScript(db, """
@@ -427,6 +460,7 @@ suite "sessions: buka & vault":
 
   test "jurnal sesi kas tidak bisa dibalik lewat buku besar (T-123)":
     let token = tokenOf(login(MakerUser))
+    let ledgerToken = tokenOf(login(LedgerAdminUser))
     let open = postJson(SessionsPath, openBody(BranchA, "10.00"), token,
       "sess-reverse-" & $epochTime())
     check open.code == 201
@@ -435,7 +469,7 @@ suite "sessions: buka & vault":
     check journalId.len == 36
 
     let denied = postJson(ReversalPath.replace("{journalId}", journalId),
-      %*{"reason": "uji guard subledger"}, token)
+      %*{"reason": "uji guard subledger"}, ledgerToken)
     check denied.code == 409
     checkProblem(ReversalPath, "POST", "409", denied.body)
     check denied.body["params"]["reason"].getStr() == "journal_owned_by_subledger"
@@ -513,7 +547,9 @@ suite "sessions: buka & vault":
 suite "sessions: kepemilikan":
   test "sesi milik teller lain → 409 session_not_owned":
     let maker = tokenOf(login(MakerUser))
-    let other = tokenOf(login(OtherTellerUser))
+    # Teller lain di cabang yang sama (peran `teller`); pengawas `cash_admin` tidak memegang
+    # `teller.session.close`, jadi bukan aktor yang tepat untuk asersi kepemilikan.
+    let other = tokenOf(login(PeerTellerUser))
     let open = openSession(maker, BranchA, "0.00", "sess-own-" & $epochTime())
     check open.code == 201
     let sessionId = open.body["sessionId"].getStr()
@@ -550,14 +586,14 @@ suite "sessions: kepemilikan":
       "/api/v1/teller/sessions/{sessionId}/transactions", "GET", "403", denied.body)
     check denied.body["params"]["reason"].getStr() == "session_not_owned"
 
-    # Supervisor (`platform_admin` memegang `teller.session.read_all`): 200, sesi yang sama.
+    # Supervisor (`cash_admin` memegang `teller.session.read_all`): 200, sesi yang sama.
     let supervisor = tokenOf(login(OtherTellerUser))
     let allowed = call("GET", listPath, "", supervisor)
     check allowed.code == 200
     check allowed.body["sessionId"].getStr() == sessionId
 
     # read_all tetap terikat cabang: pemegangnya di cabang lain tidak boleh membaca sesi BranchA.
-    let elsewhere = tokenOf(login(BranchMakerUser))
+    let elsewhere = tokenOf(login(BranchSuperUser))
     let outOfBranch = call("GET", listPath, "", elsewhere)
     check outOfBranch.code == 403
     check outOfBranch.body["params"]["reason"].getStr() == "session_not_owned"

@@ -29,6 +29,7 @@ const
   ApproverUser = "dev.approver"
   Approver2User = "dev.approver2"
   CheckerUser = "dev.checker"
+  SodAdminUser = "dev.sodadmin"
   DevPassword = "rahasia-panjang-123"
   CookieName = "kran_session"
 
@@ -68,12 +69,39 @@ block:
       FROM platform.app_user WHERE username = 'dev.checker'
     ON CONFLICT (username) DO UPDATE SET must_change_password = false, status = 'ACTIVE'
   """)
+  # Peran yang benar-benar memegang izinnya (T-278): `dev.maker` = `product_maker`
+  # (`product.catalog.manage`), pemutus = `product_checker` (`product.catalog.approve`).
   execScript(db, """
     INSERT INTO platform.user_role (user_id, role_id, branch_id)
     SELECT u.user_id, r.role_id, NULL
       FROM platform.app_user u, platform.role r
-     WHERE u.username IN ('dev.maker', 'dev.approver', 'dev.approver2')
-       AND r.code = 'platform_admin'
+     WHERE u.username = 'dev.maker' AND r.code = 'product_maker'
+    ON CONFLICT DO NOTHING
+  """)
+  execScript(db, """
+    INSERT INTO platform.user_role (user_id, role_id, branch_id)
+    SELECT u.user_id, r.role_id, NULL
+      FROM platform.app_user u, platform.role r
+     WHERE u.username IN ('dev.approver', 'dev.approver2') AND r.code = 'product_checker'
+    ON CONFLICT DO NOTHING
+  """)
+  # Penjaga `self_approval` hanya menyala untuk aktor yang memegang **kedua** izin produk, dan
+  # `platform.role_conflict` menolak pasangan `product_maker`+`product_checker` (SoD) — jadi aktor
+  # semacam itu hanya mungkin lewat `platform_admin`, yang sengaja tidak dipasangkan SoD. Akun ini
+  # dipakai **hanya** oleh asersi `self_approval`, dan membuat draftnya sendiri lewat jalur tulis.
+  execScript(db, """
+    INSERT INTO platform.app_user
+      (user_id, username, full_name, password_algo, password_hash, must_change_password)
+    SELECT md5('dev|dev.sodadmin')::uuid, 'dev.sodadmin', 'Uji Sod Admin (dev)',
+           password_algo, password_hash, false
+      FROM platform.app_user WHERE username = 'dev.maker'
+    ON CONFLICT (username) DO UPDATE SET must_change_password = false, status = 'ACTIVE'
+  """)
+  execScript(db, """
+    INSERT INTO platform.user_role (user_id, role_id, branch_id)
+    SELECT u.user_id, r.role_id, NULL
+      FROM platform.app_user u, platform.role r
+     WHERE u.username = 'dev.sodadmin' AND r.code = 'platform_admin'
     ON CONFLICT DO NOTHING
   """)
   dbPool.release(db)
@@ -249,6 +277,8 @@ let makerToken = tokenOf(postJson(LoginPath,
   %*{"username": MakerUser, "password": DevPassword}))
 let approverToken = tokenOf(postJson(LoginPath,
   %*{"username": ApproverUser, "password": DevPassword}))
+let sodToken = tokenOf(postJson(LoginPath,
+  %*{"username": SodAdminUser, "password": DevPassword}))
 let approver2Token = tokenOf(postJson(LoginPath,
   %*{"username": Approver2User, "password": DevPassword}))
 let checkerToken = tokenOf(postJson(LoginPath,
@@ -308,8 +338,13 @@ suite "product: maker-checker":
     check found
 
   test "maker meng-approve dirinya → 409 self_approval":
-    let path = fill(ApprovePath, "SAV01", v1)
-    let reply = postJson(path, newJObject(), makerToken)
+    # Draft dibuat oleh aktor yang memegang manage **dan** approve (lihat catatan `dev.sodadmin`):
+    # hanya dengan begitu penjaga `assertDistinctActors` tercapai, bukan gerbang izin.
+    let created = postJson(ProductsPath, productBody("SAV10", "Simpanan Sepuluh"), sodToken)
+    check created.code == 201
+    let vid = versionOf(created.body, 1)["versionId"].getStr()
+    let path = fill(ApprovePath, "SAV10", vid)
+    let reply = postJson(path, newJObject(), sodToken)
     check reply.code == 409
     checkProblem(ApprovePath, "POST", "409", reply.body)
     check reply.body["params"]["reason"].getStr() == "self_approval"
@@ -533,9 +568,9 @@ suite "product: grant bercabang":
     try:
       conn.exec(sql"""
         UPDATE platform.user_role ur SET branch_id = 'cabang-uji'
-          FROM platform.app_user u, platform.role r
-         WHERE ur.user_id = u.user_id AND ur.role_id = r.role_id
-           AND u.username = 'dev.maker' AND r.code = 'platform_admin'""")
+          FROM platform.app_user u
+         WHERE ur.user_id = u.user_id
+           AND u.username = 'dev.maker'""")
       let list = getJson(ProductsPath, makerToken)
       check list.code == 403
       checkProblem(ProductsPath, "GET", "403", list.body)
@@ -546,9 +581,9 @@ suite "product: grant bercabang":
     finally:
       conn.exec(sql"""
         UPDATE platform.user_role ur SET branch_id = NULL
-          FROM platform.app_user u, platform.role r
-         WHERE ur.user_id = u.user_id AND ur.role_id = r.role_id
-           AND u.username = 'dev.maker' AND r.code = 'platform_admin'""")
+          FROM platform.app_user u
+         WHERE ur.user_id = u.user_id
+           AND u.username = 'dev.maker'""")
       dbPool.release(conn)
     check getJson(ProductsPath, makerToken).code == 200
 
@@ -580,10 +615,10 @@ suite "product: konflik jendela & reject self-approval":
     check conflict.body["params"]["reason"].getStr() == "window_conflict"
 
   test "reject oleh maker sendiri → 409 self_approval":
-    let created = postJson(ProductsPath, productBody("SAV04", "Simpanan Empat"), makerToken)
+    let created = postJson(ProductsPath, productBody("SAV04", "Simpanan Empat"), sodToken)
     check created.code == 201
     let vid = versionOf(created.body, 1)["versionId"].getStr()
-    let reply = postJson(fill(RejectPath, "SAV04", vid), %*{"reason": "coba"}, makerToken)
+    let reply = postJson(fill(RejectPath, "SAV04", vid), %*{"reason": "coba"}, sodToken)
     check reply.code == 409
     checkProblem(RejectPath, "POST", "409", reply.body)
     check reply.body["params"]["reason"].getStr() == "self_approval"
