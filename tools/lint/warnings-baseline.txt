@@ -7,7 +7,6 @@ apps/api/tests/itdaycloser_sim.nim	4
 apps/api/tests/itposting.nim	2
 apps/api/tests/itreconcile.nim	1
 apps/api/tests/wsclient.nim	2
-modules/daycloser/domain/schedule.nim	1
 modules/deposit/tests/ittransaction.nim	1
 modules/ledger/tests/itledger.nim	2
 modules/lending/tests/trestructure.nim	1

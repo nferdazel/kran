@@ -8,7 +8,7 @@
 ##
 ## Tidak ada I/O, tidak ada DB, tidak ada jam sistem: semua masukan eksplisit supaya bisa diuji.
 
-import std/[math, strutils, times]
+import std/[strutils, times]
 
 type
   ClockTime* = object
