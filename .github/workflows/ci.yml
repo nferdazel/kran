@@ -467,6 +467,12 @@ jobs:
   image-web:
     name: "Image: web"
     needs: [gate]
+    # `always()` is what lets this job start at all: `gate` runs even when one of
+    # its own needs was skipped (visual-update on a push), and a job whose needs
+    # chain contains a skip is skipped itself unless its own `if` overrides that.
+    # The second half keeps the ordering promise: the image is published only
+    # after the gate is green.
+    if: always() && needs.gate.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -533,6 +539,9 @@ jobs:
   image-api:
     name: "Image: api"
     needs: [gate]
+    # See image-web: without `always()` a skipped need of `gate` propagates into
+    # this job, and the tag never appears for the host to pull.
+    if: always() && needs.gate.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
