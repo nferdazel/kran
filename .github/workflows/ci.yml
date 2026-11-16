@@ -680,7 +680,7 @@ jobs:
   gate:
     name: "Gate"
     if: always()
-    needs: [contract, nim-check, traceability, db-tests, web-e2e, security, visual-update]
+    needs: [contract, nim-check, traceability, db-tests, ci-fast, web-e2e, security, visual-update]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -688,6 +688,7 @@ jobs:
       R_NIM: ${{ needs.nim-check.result }}
       R_TRACE: ${{ needs.traceability.result }}
       R_DB: ${{ needs.db-tests.result }}
+      R_CIFA: ${{ needs.ci-fast.result }}
       R_WEB: ${{ needs.web-e2e.result }}
       R_SECURITY: ${{ needs.security.result }}
       R_VISUAL: ${{ needs.visual-update.result }}
@@ -696,7 +697,7 @@ jobs:
         shell: bash
         run: |
           fail=0
-          for r in "$R_CONTRACT" "$R_NIM" "$R_TRACE" "$R_DB" "$R_WEB" "$R_SECURITY"; do
+          for r in "$R_CONTRACT" "$R_NIM" "$R_TRACE" "$R_DB" "$R_CIFA" "$R_WEB" "$R_SECURITY"; do
             [ "$r" = "success" ] || { echo "required job: $r"; fail=1; }
           done
           # `visual-update` hanya jalan saat diminta (workflow_dispatch + update_snapshots),
