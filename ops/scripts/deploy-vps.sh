@@ -68,10 +68,15 @@ wait_healthy() {
 #
 # Nama check di bawah = nama job di `.github/workflows/ci.yml`. Mengganti nama job tanpa
 # memperbarui daftar ini membuat gate gagal-closed (timeout), bukan diam-diam lolos.
+# `Image: web` dan `Image: api` ada di daftar karena deploy **menarik** kedua image itu. Tanpa
+# keduanya, gate bisa hijau saat image untuk commit ini belum selesai dibangun, dan `podman pull`
+# gagal di tengah deploy — gate yang lulus pada pekerjaan yang belum selesai bukan gate.
 CI_EXPECTED='Nim (check + unit/property test)
 DB (integrasi, Postgres 18)
 Web (svelte-check + axe + Playwright)
-Security (gitleaks)'
+Security (gitleaks)
+Image: web
+Image: api'
 
 # Hanya `success` yang hijau: `skipped`/`neutral` = check tidak berjalan, dan check yang hilang
 # selamanya (job dihapus/dinonaktifkan) juga tidak boleh lolos. Satu nama dinilai dari run
