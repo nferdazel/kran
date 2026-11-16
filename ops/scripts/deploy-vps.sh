@@ -721,14 +721,16 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/web/|packages/)' <<<"$CHANGED_FILES
       # SELinux: berkas baru berlabel var_t -> Caddy tidak bisa membaca.
       restorecon -RF "$APP_DIR/web" 2>/dev/null || true
       log "==> web swapped from $WEB_IMAGE (revision $WEB_REV)"
-    elif grep -qiE 'manifest unknown|no such manifest|manifest for .* not found' "$PULL_OUT"; then
-      # Job image-web di CI belum selesai: web lama tetap melayani, deploy tidak gagal.
-      log "==> web: image $WEB_IMAGE belum ada di registry, web lama dibiarkan: $(tail -1 "$PULL_OUT")"
-      rm -f "$PULL_OUT"
     else
+      # Tidak ada jalur skip di sini (F-1, review 16 Nov 2026). Dulu `manifest unknown` dianggap
+      # job image-web belum selesai dan deploy lanjut dengan web lama. Alasan itu sudah tidak
+      # berlaku: CI_EXPECTED memuat `Image: web`, jadi gate hijau berarti job image-web selesai dan
+      # image sudah di-push. `manifest unknown` sekarang kegagalan nyata — dan deploy yang "sukses"
+      # dengan API naik sementara web tertinggal di revisi lama adalah divergensi senyap, persis
+      # kelas yang gerbang ini dibuat untuk mencegah.
       TAIL_OUT="$(tail -3 "$PULL_OUT" 2>/dev/null || true)"
       rm -f "$PULL_OUT"
-      die "pull web image gagal (registry/auth), deploy dihentikan: $TAIL_OUT"
+      die "pull web image gagal (registry/auth atau image tidak ada), deploy dihentikan: $TAIL_OUT"
     fi
   else
     log "==> WARN: apps/web belum ada (T-010); web dilewati"
