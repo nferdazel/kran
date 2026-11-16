@@ -1282,6 +1282,35 @@ and no committable lockfile, so a vulnerable or drifted Nim dependency is still 
 release notes and by comparing the binary hashes in `releases.txt`. Bumping any dependency to clear
 a finding stays a separate reviewed change.
 
+**D-206 (16 Nov 2026) Retention is split: three classes keep for the pilot, two get 30 days.**
+Decision: the five open retention periods in T-248 are signed as two groups, because only two of the
+five can be purged without touching a guard. Audit (`platform.audit_log` plus the host anchor file),
+KYC/identity (`party`) and teller/cash (`teller`) get **no purge for the pilot**: they carry legal
+weight and the schema already refuses to delete them (`audit_log_no_change_trg` and
+`audit_log_no_purge_trg`; a prefix delete also breaks `audit_verify()` `link_ok` on the first
+surviving row). Outbox and inbox get **30 days**, outbox counted from `DONE`/`DEAD` and inbox from
+`received_at`, matching the D-175 idempotency cap so one sweep covers all three. All five are tagged
+`NEEDS-COMPLIANCE-REVIEW` and stay so until compliance answers; the segment owner replaces them then
+and the seed changes with a new decision. Financial postings, idempotency, sessions and backups are
+not reopened: they were already settled and are recorded as such.
+
+Reason: spec section 9.3 lists the periods as open question O-3 and `OPEN_ITEMS.md` O-130 says the
+same; inventing numbers would put unverified legal values into seeds, which AGENTS section 1.8
+forbids. The split is the conservative option that still reduces the work: T-282 becomes an outbox
+and inbox purge with two new indexes, and the audit class becomes a separate archive-and-rotate task
+with a recorded chain baseline instead of a purge, because purging audit means dropping an immutable
+trigger and re-baselining the chain, which is a guard weakening and needs its own decision. A wrong
+day count on outbox or inbox costs disk, not evidence.
+
+Consequence: `platform.outbox.retention_days` and `platform.inbox.retention_days` land at `30` in
+`modules/platform/seeds/params.yaml` in T-282, together with the two indexes an age delete needs
+(`outbox_dispatch_idx` is `(status, available_at, seq)` and `inbox` is keyed
+`(consumer, event_id)`). `platform.audit.retention_years`, `party.retention_years_after_exit` and
+`teller.retention_years` are declared with no purge task and no number. Growth of the three
+keep-forever classes is an accepted operational limit (L-44), detected by row count and table size
+per class. `docs/COMPLIANCE.md` section 6 and `OPEN_ITEMS.md` O-130 record the split. T-282 is
+unblocked; an audit archive task is a new backlog row and Raka's call.
+
 ---
 
 ## 3. Archive index

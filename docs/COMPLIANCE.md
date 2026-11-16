@@ -335,19 +335,23 @@ document.
 
 | Class | Where it lives | Current retention | State |
 |---|---|---|---|
-| Financial postings | `ledger`, module subledgers | Permanent in practice; no purge path | Immutable by trigger; retention period still to be signed |
-| Audit log and anchor lines | `platform.audit_log`, host anchor file | No purge; grows without bound | Period to be signed (T-248); head hash copied manually (T-249) |
-| KYC and identity data | `party` | No purge; encrypted and masked | Period tied to membership life plus a signed tail; `NEEDS-COMPLIANCE-REVIEW` |
-| Teller sessions and cash | `teller` | No purge | Cash-control evidence; period to be signed |
-| Sessions and login events | `platform.session` | Session purge exists | Audit rows follow the audit class |
-| Outbox and inbox | `platform.outbox`, `platform.inbox` | No purge | Delivery evidence, not legal evidence |
-| Idempotency responses | `platform.idempotency_key` | 24 hours default, 30 days hard cap | May contain member data; do not raise the cap |
+| Financial postings | `ledger`, module subledgers | Permanent in practice; no purge path | Settled: immutable by trigger, corrections are reversing journals (T-248) |
+| Audit log and anchor lines | `platform.audit_log`, host anchor file | No purge; keep for the pilot (D-206) | `NEEDS-COMPLIANCE-REVIEW`; head hash copied manually (T-249) bounds growth |
+| KYC and identity data | `party` | No purge; keep for the pilot (D-206) | `NEEDS-COMPLIANCE-REVIEW`; encrypted and masked |
+| Teller sessions and cash | `teller` | No purge; keep for the pilot (D-206) | `NEEDS-COMPLIANCE-REVIEW`; cash-control evidence |
+| Sessions and login events | `platform.session` | Session purge exists | Settled: governed by `session_idle_minutes` / `session_absolute_minutes`, not by retention; audit rows follow the audit class |
+| Outbox and inbox | `platform.outbox`, `platform.inbox` | 30 days, `NEEDS-COMPLIANCE-REVIEW` (D-206) | Outbox from `DONE`/`DEAD`, inbox from `received_at`; purge lands in T-282 |
+| Idempotency responses | `platform.idempotency_key` | 24 hours default, 30 days hard cap | Settled by D-175; may contain member data, do not raise the cap |
 | Backups | Host filesystem | Daily 7, weekly 28, monthly 84, plus pre-deploy | Unencrypted, same host; off-host copy is not implemented |
 | Printed slips and statements | Paper only | Not stored server-side | Policy decision: the member's copy is the only original |
 
 Any number in this table that becomes a policy must be recorded in `DECISIONS.md`, applied
 through parameters, and enforced by a registered `daycloser` task. A retention statement
 without a purge task and a run log is not evidence.
+
+The split is D-206 (16 Nov 2026): three evidence classes keep with no purge for the pilot, and two
+delivery classes carry a 30-day count. None of the five has been seen by compliance, so all five
+stay `NEEDS-COMPLIANCE-REVIEW`; a signed number from compliance replaces D-206 and the seed.
 
 ---
 
