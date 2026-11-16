@@ -149,6 +149,29 @@ verify_signature() {
   done
 }
 
+# Job image-* di CI terbit sesudah `gate` hijau, dan check-run-nya selesai sesudah push — tetapi
+# tag yang baru di-push tidak selalu langsung terbaca di registry (propagasi GHCR). Satu percobaan
+# tunggal karena itu menggagalkan deploy yang commit-nya sebenarnya sehat. Jendela di bawah
+# menutup jeda itu dengan satu baris log per percobaan; sesudahnya habis, image yang tidak ada
+# tetap kegagalan deploy (F-1: tidak ada jalur "web tertinggal").
+IMAGE_WAIT_ATTEMPTS="${KRAN_IMAGE_WAIT_ATTEMPTS:-45}"   # 45 x 20s = 15 menit
+IMAGE_WAIT_DELAY="${KRAN_IMAGE_WAIT_DELAY:-20}"
+# 0 = berhasil ditarik, 1 = tetap tidak ada setelah jendela tunggu, 2 = kegagalan pull nyata.
+pull_when_published() { # <ref> <berkas-keluaran>
+  local ref="$1" out="$2" attempt=1
+  while :; do
+    if podman pull "$ref" >"$out" 2>&1; then return 0; fi
+    # Selain "tag belum ada" (auth, jaringan, 5xx) bukan urusan tunggu-menunggu: gagal sekarang.
+    if ! grep -qiE 'manifest unknown|no such manifest|manifest for .* not found|name unknown' "$out"; then
+      return 2
+    fi
+    [ "$attempt" -lt "$IMAGE_WAIT_ATTEMPTS" ] || return 1
+    log "==> $ref belum ada di registry (percobaan $attempt dari $IMAGE_WAIT_ATTEMPTS), ulang dalam ${IMAGE_WAIT_DELAY}s"
+    attempt=$((attempt + 1))
+    sleep "$IMAGE_WAIT_DELAY"
+  done
+}
+
 # OPS-11 (T-133): batas waktu gate kesehatan. Sebelumnya 15 percobaan × (3 dtk timeout + 2 dtk
 # jeda) = hingga 75 dtk, melewati batas spec §21.4 (30–60 dtk) yang justru mencegah container
 # rusak menahan deploy. Sekarang deadline total 60 dtk; percobaan hanya dijalankan selama sisa
@@ -631,16 +654,24 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|tools/|kran\.
       OLD_PREV_IMAGE_ID=""
     fi
   fi
-  # Image dibangun di GitHub (job image-api), bukan di host: tarik tag sha-<7>, buktikan
-  # revisinya, lalu pindahkan `:local` ke image itu. Gerbang CI di atas sudah menunggu job
-  # image-api selesai, jadi image yang hilang di sini adalah kegagalan nyata, bukan balapan.
+  # Image dibangun di GitHub (job image-api), bukan di host: tunggu tag sha-<7> terbit, tarik,
+  # buktikan revisinya, lalu pindahkan `:local` ke image itu. Gerbang CI di atas menunggu check
+  # `Image: api`, tetapi check-run selesai sedikit sebelum tag terbaca di registry — karena itu
+  # tag yang belum ada ditunggu (`pull_when_published`), bukan langsung dibaca sebagai gagal.
   API_IMAGE="ghcr.io/nferdazel/kran-api:sha-${NEW_REV:0:7}"
   log "==> tarik image API: $API_IMAGE"
   PULL_OUT="$(mktemp)"
-  if ! podman pull "$API_IMAGE" >"$PULL_OUT" 2>&1; then
+  pull_rc=0
+  pull_when_published "$API_IMAGE" "$PULL_OUT" || pull_rc=$?
+  if [ "$pull_rc" -eq 1 ]; then
     TAIL_OUT="$(tail -3 "$PULL_OUT" 2>/dev/null || true)"
     rm -f "$PULL_OUT"
-    die "pull image API gagal (registry/auth/image belum ada): $TAIL_OUT"
+    die "image API $API_IMAGE tidak ada setelah $((IMAGE_WAIT_ATTEMPTS * IMAGE_WAIT_DELAY)) dtk menunggu (CI merah atau job image gagal): $TAIL_OUT"
+  elif [ "$pull_rc" -ne 0 ]; then
+    # Registry mati, token kedaluwarsa, 502: itu BUKAN "belum terbit". Fail-closed.
+    TAIL_OUT="$(tail -3 "$PULL_OUT" 2>/dev/null || true)"
+    rm -f "$PULL_OUT"
+    die "pull image API gagal dan ini bukan 'belum terbit' (registry/auth): $TAIL_OUT"
   fi
   rm -f "$PULL_OUT"
   PULLED_SHA_TAGS="$PULLED_SHA_TAGS $API_IMAGE"   # dibersihkan trap apa pun akhir deploy ini
@@ -785,7 +816,9 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/web/|packages/)' <<<"$CHANGED_FILES
     WEB_IMAGE="ghcr.io/nferdazel/kran-web:sha-${NEW_REV:0:7}"
     log "==> web: pulling $WEB_IMAGE"
     PULL_OUT="$(mktemp)"
-    if podman pull "$WEB_IMAGE" >"$PULL_OUT" 2>&1; then
+    pull_rc=0
+    pull_when_published "$WEB_IMAGE" "$PULL_OUT" || pull_rc=$?
+    if [ "$pull_rc" -eq 0 ]; then
       rm -f "$PULL_OUT"
       PULLED_SHA_TAGS="$PULLED_SHA_TAGS $WEB_IMAGE"   # dibersihkan trap apa pun akhir deploy ini
       # Tag sha-<7> hanya nama berkas sampai image membuktikan commit-nya sendiri; ekstraksi di
@@ -821,10 +854,14 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/web/|packages/)' <<<"$CHANGED_FILES
       # berlaku: CI_EXPECTED memuat `Image: web`, jadi gate hijau berarti job image-web selesai dan
       # image sudah di-push. `manifest unknown` sekarang kegagalan nyata — dan deploy yang "sukses"
       # dengan API naik sementara web tertinggal di revisi lama adalah divergensi senyap, persis
-      # kelas yang gerbang ini dibuat untuk mencegah.
+      # kelas yang gerbang ini dibuat untuk mencegah. Jendela tunggu di atas hanya menutup jeda
+      # propagasi registry, bukan memberi jalan untuk melewati image yang tidak ada.
       TAIL_OUT="$(tail -3 "$PULL_OUT" 2>/dev/null || true)"
       rm -f "$PULL_OUT"
-      die "pull web image gagal (registry/auth atau image tidak ada), deploy dihentikan: $TAIL_OUT"
+      if [ "$pull_rc" -eq 1 ]; then
+        die "image web $WEB_IMAGE tidak ada setelah $((IMAGE_WAIT_ATTEMPTS * IMAGE_WAIT_DELAY)) dtk menunggu (CI merah atau job image gagal), deploy dihentikan: $TAIL_OUT"
+      fi
+      die "pull web image gagal (registry/auth), deploy dihentikan: $TAIL_OUT"
     fi
   else
     log "==> WARN: apps/web belum ada (T-010); web dilewati"
