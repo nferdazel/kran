@@ -12,7 +12,7 @@
 #                   login/maker-checker/realtime flows if KRAN_DATABASE_URL is available)
 #   ./task lint-web  eslint (typescript-eslint + svelte/*, non-a11y) over apps/web + packages/ui
 #   ./task openapi lint OpenAPI contract + verify TS client sync (openapi-gen = rewrite)
-#   ./task ci-fast  check + openapi + lint-web + test (no e2e) - daily loop gate (D-194)
+#   ./task ci-fast  check + openapi + lint-web + test + packages/ui unit (no e2e) - daily loop gate (D-194)
 #   ./task ci      all gates above, including e2e
 #   ./task ci-repeat [N]  repeat full gate N times (default 3) - stability gate (T-031)
 #   ./task build   build apps/api binary (also stamps VERSION into API + web sources)
@@ -676,9 +676,16 @@ cmd_lint_web() {
     skip "package.json not found — eslint skipped"
     return 0
   fi
+  # Fail-closed (T-176, R-33): dulu mesin tanpa dependency JS melaporkan hijau, jadi arm web
+  # "lulus" justru di mesin yang tidak bisa memeriksa apa pun. Satu-satunya jalan melewati arm
+  # ini dengan sadar adalah KRAN_ALLOW_NO_JS=1 — bentuk yang sama dengan KRAN_ALLOW_NO_DB —
+  # dan ia mencetak baris skip yang menyebut variabelnya.
   if [ ! -x "$ROOT/node_modules/.bin/eslint" ]; then
-    skip "JS dependencies not installed (run: pnpm install) — eslint skipped"
-    return 0
+    if [ "${KRAN_ALLOW_NO_JS:-0}" = "1" ]; then
+      skip "eslint skipped: KRAN_ALLOW_NO_JS=1 (JS dependencies not installed)"
+      return 0
+    fi
+    die "eslint needs JS dependencies ($ROOT/node_modules/.bin/eslint not found) — run: pnpm install; to skip deliberately: KRAN_ALLOW_NO_JS=1 ./task lint-web"
   fi
   log "eslint (typescript-eslint + svelte/*, non-a11y)"
   (cd "$ROOT" && "$ROOT/node_modules/.bin/eslint" apps/web/src packages/ui/src) \
@@ -692,9 +699,33 @@ cmd_lint_web() {
     (cd "$ROOT/packages/ui" && "$ROOT/packages/ui/node_modules/.bin/svelte-check" \
       --tsconfig ./tsconfig.json) || die "svelte-check packages/ui found errors"
     ok "packages/ui type-check clean"
+  elif [ "${KRAN_ALLOW_NO_JS:-0}" = "1" ]; then
+    skip "svelte-check packages/ui skipped: KRAN_ALLOW_NO_JS=1 (JS dependencies not installed)"
   else
-    skip "svelte-check packages/ui tidak terpasang (run: pnpm install)"
+    die "svelte-check packages/ui needs JS dependencies ($ROOT/packages/ui/node_modules/.bin/svelte-check not found) — run: pnpm install; to skip deliberately: KRAN_ALLOW_NO_JS=1 ./task lint-web"
   fi
+}
+
+cmd_ui_test() {
+  # Test `packages/ui` (kontras token, komponen, money, shell) dulu hanya jalan di dalam
+  # `cmd_e2e`, yang tidak pernah dipanggil `ci-fast` (T-176). Dipanggil dari `cmd_ci_fast` saja:
+  # `./task ci` sudah menjalankannya lewat `cmd_e2e`, dan menjalankannya dua kali di gate yang
+  # sama hanya menambah waktu tanpa menambah cakupan.
+  if [ ! -f "$ROOT/packages/ui/package.json" ]; then
+    skip "packages/ui not found — unit tests skipped"
+    return 0
+  fi
+  ui_bin="$ROOT/packages/ui/node_modules/.bin"
+  if [ ! -x "$ui_bin/vitest" ]; then
+    if [ "${KRAN_ALLOW_NO_JS:-0}" = "1" ]; then
+      skip "packages/ui unit tests skipped: KRAN_ALLOW_NO_JS=1 (JS dependencies not installed)"
+      return 0
+    fi
+    die "packages/ui unit tests need JS dependencies ($ui_bin/vitest not found) — run: pnpm install; to skip deliberately: KRAN_ALLOW_NO_JS=1"
+  fi
+  log "unit test packages/ui (vitest: kontras token, komponen, money, shell)"
+  (cd "$ROOT/packages/ui" && "$ui_bin/vitest" run) || die "packages/ui unit tests failed"
+  ok "packages/ui unit tests green"
 }
 
 require_db() { # require_db <command-name>
@@ -716,6 +747,7 @@ cmd_ci_fast() {
   require_db ci-fast
   log "commit $(git rev-parse --short HEAD 2>/dev/null || echo '-')"
   ci_core
+  cmd_ui_test
   summarize
   printf '\n== CI fast green (tanpa e2e; e2e jalan di `./task ci` dan `./task release`)\n'
 }
