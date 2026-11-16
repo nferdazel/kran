@@ -19,8 +19,8 @@ findings are folded into the rows below and into the task files at DoR time.
 |---|---|---|---|---|---|
 | T-173 | `archcheck` handlers and tests categories + shrink-only baselines | M | - | standard | DONE |
 | T-174 | `lint-nomagic` covers `apps/api/src` + baseline | M | T-173 | standard | DONE |
-| T-175 | `nim check` warnings fatal or shrink-only | S | - | standard | READY |
-| T-176 | `ci-fast` web arm fail-closed + `packages/ui` tests | S | - | standard | READY |
+| T-175 | `nim check` warnings fatal or shrink-only | S | - | standard | DONE |
+| T-176 | `ci-fast` web arm fail-closed + `packages/ui` tests | S | - | standard | DONE |
 | T-177 | Dependency and lockfile audit | S | T-176 | standard | READY |
 | T-178 | `fmt-check` dispatch arm (Nim only) | S | - | standard | DONE |
 | T-281 | Typed OpenAPI timestamps | S | T-178 | standard | DONE |
@@ -187,9 +187,9 @@ findings are folded into the rows below and into the task files at DoR time.
 | T-253 | Pilot readiness checklist (signatures, artefacts, procedures) | S | T-246, T-247, T-248, T-249, T-250, T-251, T-252, T-283 | standard | TODO |
 | T-297 | Deploy keeps a rollback target and stops stripping live unit hardening | S | none | standard | DONE |
 | T-298 | Password denylist and a trusted proxy range for the audit IP | S | none | full (authz) | IN_PROGRESS |
-| T-299 | C-01: realtime `param.changed` uses the params read-scope rule | S | none | full (authz) | IMPLEMENTED |
-| T-300 | C-02: cash-session transactions readable by the owner or `teller.session.read_all` | S | none | full (authz) | IMPLEMENTED |
-| T-301 | C-03: parameter changes cannot start before the running business date | S | none | full (audit) | IMPLEMENTED |
+| T-299 | C-01: realtime `param.changed` uses the params read-scope rule | S | none | full (authz) | DONE |
+| T-300 | C-02: cash-session transactions readable by the owner or `teller.session.read_all` | S | none | full (authz) | DONE |
+| T-301 | C-03: parameter changes cannot start before the running business date | S | none | full (audit) | DONE |
 
 ## P8 - Synthetic-coop dry run
 
