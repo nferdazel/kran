@@ -4,6 +4,16 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.4.0] - 2026-11-16
+
+### Added
+- **openapi:** Give timestamps a real format
+- **lint-nomagic:** Scan apps/api/src against a shrink-only baseline
+- **archcheck:** Gate apps/api/src handlers and module tests (T-173)
+
+### Fixed
+- **lint-nomagic:** Skip generator-stamped sources so a version bump is not a finding
+
 ## [0.3.4] - 2026-11-16
 
 ### Fixed
