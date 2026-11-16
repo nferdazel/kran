@@ -462,11 +462,11 @@ jobs:
         run: pnpm audit --audit-level=high --prod
 
   # Build selalu, push hanya saat event `push` (main). Dockerfile yang berhenti mem-build adalah
-  # PR merah, bukan deploy merah di malam hari. Image-nya belum dikonsumsi siapa pun: quadlet-nya
-  # ada di ops/systemd, Caddy masih melayani direktori `web/` — jadi tidak ada `needs:` dan tidak
-  # ada job `changes`/`gate` yang ditambahkan di sini.
+  # PR merah, bukan deploy merah di malam hari. Image hanya terbit setelah `gate` hijau, jadi
+  # image yang ada di registry selalu image yang seluruh gate-nya lulus.
   image-web:
     name: "Image: web"
+    needs: [gate]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -532,6 +532,7 @@ jobs:
   # Konteks build = root repo: sumber Nim tersebar di shared/, modules/, apps/, tools/.
   image-api:
     name: "Image: api"
+    needs: [gate]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -585,3 +586,36 @@ jobs:
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
         run: cosign sign --yes "ghcr.io/nferdazel/kran-api@${DIGEST}"
+
+  # Satu nama yang dibaca branch protection, dan satu-satunya yang menentukan
+  # apakah image boleh terbit. Gate hanya bergantung pada job kualitas, tidak
+  # pernah pada job image: deploy tidak boleh mulai sebelum semua pemeriksaan
+  # hijau, tapi image harus terbit sesudah putusan itu, jadi keduanya tidak bisa
+  # saling menunggu. Skrip deploy di host memang sudah menunggu check
+  # `Image: web` dan `Image: api`, jadi urutannya tetap: gate, image, deploy.
+  gate:
+    name: "Gate"
+    if: always()
+    needs: [contract, nim-check, traceability, db-tests, web-e2e, security, visual-update]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      R_CONTRACT: ${{ needs.contract.result }}
+      R_NIM: ${{ needs.nim-check.result }}
+      R_TRACE: ${{ needs.traceability.result }}
+      R_DB: ${{ needs.db-tests.result }}
+      R_WEB: ${{ needs.web-e2e.result }}
+      R_SECURITY: ${{ needs.security.result }}
+      R_VISUAL: ${{ needs.visual-update.result }}
+    steps:
+      - name: "Gate: require every job"
+        shell: bash
+        run: |
+          fail=0
+          for r in "$R_CONTRACT" "$R_NIM" "$R_TRACE" "$R_DB" "$R_WEB" "$R_SECURITY"; do
+            [ "$r" = "success" ] || { echo "required job: $r"; fail=1; }
+          done
+          # `visual-update` hanya jalan saat diminta (workflow_dispatch + update_snapshots),
+          # jadi `skipped` adalah hasil normal di push ke main, bukan kegagalan.
+          case "$R_VISUAL" in success|skipped) ;; *) echo "visual job: $R_VISUAL"; fail=1 ;; esac
+          exit "$fail"
