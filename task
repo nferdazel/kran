@@ -11,6 +11,8 @@
 #   ./task e2e     web: token contrast + svelte-check + Playwright (axe 2 themes x 2 locales, keyboard,
 #                   login/maker-checker/realtime flows if KRAN_DATABASE_URL is available)
 #   ./task lint-web  eslint (typescript-eslint + svelte/*, non-a11y) over apps/web + packages/ui
+#   ./task lint    nim check per file; warnings must match tools/lint/warnings-baseline.txt
+#                  (shrink-only: a file above its count fails, below it fails as stale)
 #   ./task openapi lint OpenAPI contract + verify TS client sync (openapi-gen = rewrite)
 #   ./task ci-fast  check + openapi + lint-web + test + packages/ui unit (no e2e) - daily loop gate (D-194)
 #   ./task ci      all gates above, including e2e
@@ -126,21 +128,27 @@ cmd_lint() {
   n=$(printf '%s\n' "$files" | wc -l | tr -d ' ')
   # Each file nim check-ed separately, per-file log, only failures printed.
   # This only changes execution mechanics; gate coverage remains all files (D-077).
-  export NIMFLAGS TESTFLAGS
+  export NIMFLAGS TESTFLAGS ROOT
   LINTDIR=$BUILD
   export LINTDIR
-  rm -f "$BUILD/lint-failures.txt"
+  rm -f "$BUILD/lint-counts.tsv"
+  # rc<TAB>warnings<TAB>file per berkas. `nim check` keluar 0 walau ada warning, jadi warning
+  # dihitung dari log, bukan dari exit code (T-175).
   printf '%s\n' "$files" | xargs -P "$jobs" -I{} sh -c '
     f="$1"
     flags="$NIMFLAGS"
     case "$f" in */tests/*) flags="$TESTFLAGS" ;; esac
     out="$LINTDIR/check.$(printf "%s" "$f" | tr "/ " "__").log"
-    if nim check $flags "$f" >"$out" 2>&1; then
-      rm -f "$out"
-    else
-      printf "%s\n" "$f"
-    fi
-  ' _ {} >"$BUILD/lint-failures.txt" || true
+    nim check $flags "$f" >"$out" 2>&1
+    rc=$?
+    # Hanya warning yang lokasinya berkas ini. Log `nim check` juga memuat warning dari modul yang
+    # diimpor; ikut menghitungnya membuat baseline satu berkas berubah karena berkas lain diedit.
+    warn=$(grep "^$ROOT/$f(" "$out" 2>/dev/null | grep -c "Warning:") || warn=0
+    printf "%s\t%s\t%s\n" "$rc" "$warn" "$f"
+  ' _ {} >"$BUILD/lint-counts.tsv" || true
+
+  # 1. Compile errors: perilaku lama, tidak berubah.
+  awk -F'\t' '$1 != 0 {print $3}' "$BUILD/lint-counts.tsv" >"$BUILD/lint-failures.txt"
   if [ -s "$BUILD/lint-failures.txt" ]; then
     while IFS= read -r f; do
       printf -- "--- nim check failed: %s\n" "$f" >&2
@@ -148,7 +156,64 @@ cmd_lint() {
     done <"$BUILD/lint-failures.txt"
     die "nim check failed: $(wc -l <"$BUILD/lint-failures.txt" | tr -d ' ') files"
   fi
-  ok "$n files"
+
+  # 2. Warnings terhadap baseline shrink-only (T-175).
+  #
+  # `--warningAsError:all` tidak bisa dipakai: Nim 2.4 hanya menerima `all:off`, jadi warning tidak
+  # bisa dijadikan error secara global. Gate-nya karena itu menghitung `Warning:` per berkas dan
+  # membandingkannya dengan baseline: naik = gagal, turun = "baseline stale, shrink it" (supaya
+  # baseline hanya boleh menyusut), berkas baru dengan warning = gagal. Tidak ada jalur yang
+  # menambahkan baris baseline saat gagal — pertumbuhan hanya lewat review manusia.
+  base="$ROOT/tools/lint/warnings-baseline.txt"
+  [ -f "$base" ] || die "warning baseline not found: $base (T-175)"
+  total=$(awk -F'\t' '{s+=$2} END {print s+0}' "$BUILD/lint-counts.tsv")
+  base_total=$(awk -F'\t' '{s+=$2} END {print s+0}' "$base")
+  violations="$BUILD/lint-warning-violations.txt"
+  : >"$violations"
+  while IFS="$(printf '\t')" read -r _rc warn f; do
+    want=$(awk -F'\t' -v p="$f" '$1==p {print $2; exit}' "$base")
+    if [ -z "$want" ]; then
+      [ "$warn" -eq 0 ] || printf 'NEW\t%s\t%s\t0\n' "$f" "$warn" >>"$violations"
+    elif [ "$warn" -gt "$want" ]; then
+      printf 'MORE\t%s\t%s\t%s\n' "$f" "$warn" "$want" >>"$violations"
+    elif [ "$warn" -lt "$want" ]; then
+      printf 'STALE\t%s\t%s\t%s\n' "$f" "$warn" "$want" >>"$violations"
+    fi
+  done <"$BUILD/lint-counts.tsv"
+  # Berkas yang hilang tapi masih tercatat di baseline juga stale.
+  awk -F'\t' 'NR==FNR {seen[$3]=1; next} !($1 in seen) {printf "GONE\t%s\t%s\t%s\n", $1, 0, $2}' \
+    "$BUILD/lint-counts.tsv" "$base" >>"$violations"
+
+  if [ -s "$violations" ]; then
+    while IFS="$(printf '\t')" read -r kind f got want; do
+      logfile="$BUILD/check.$(printf "%s" "$f" | tr "/ " "__").log"
+      case "$kind" in
+        NEW)
+          printf -- "--- %s: %s warnings, no baseline entry (new warnings are not allowed)\n" "$f" "$got" >&2
+          grep "^$ROOT/$f(" "$logfile" | grep "Warning:" >&2 || true
+          ;;
+        MORE)
+          printf -- "--- %s: %s warnings, baseline %s\n" "$f" "$got" "$want" >&2
+          grep "^$ROOT/$f(" "$logfile" | grep "Warning:" >&2 || true
+          ;;
+        STALE)
+          printf -- "--- baseline stale: %s has %s warnings, baseline says %s - shrink %s\n" \
+            "$f" "$got" "$want" "$base" >&2
+          ;;
+        GONE)
+          printf -- "--- baseline stale: %s no longer exists (baseline says %s warnings) - shrink %s\n" \
+            "$f" "$want" "$base" >&2
+          ;;
+      esac
+    done <"$violations"
+    die "nim check warnings: $(wc -l <"$violations" | tr -d ' ') file(s) outside the baseline ($base)"
+  fi
+
+  # Log tanpa warning tidak dibutuhkan lagi; sisakan yang punya warning untuk diperiksa manusia.
+  awk -F'\t' '$2==0 {print $3}' "$BUILD/lint-counts.tsv" | while IFS= read -r f; do
+    rm -f "$BUILD/check.$(printf "%s" "$f" | tr "/ " "__").log"
+  done
+  ok "$n files, $total warnings, baseline $base_total"
 }
 
 cmd_archcheck() {
