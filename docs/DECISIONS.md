@@ -1282,17 +1282,28 @@ and no committable lockfile, so a vulnerable or drifted Nim dependency is still 
 release notes and by comparing the binary hashes in `releases.txt`. Bumping any dependency to clear
 a finding stays a separate reviewed change.
 
-**D-206 (16 Nov 2026) Retention is split: three classes keep for the pilot, two get 30 days.**
+**D-206 (16 Nov 2026) Retention is split: three classes carry a legal floor, two get 30 days.**
 Decision: the five open retention periods in T-248 are signed as two groups, because only two of the
-five can be purged without touching a guard. Audit (`platform.audit_log` plus the host anchor file),
-KYC/identity (`party`) and teller/cash (`teller`) get **no purge for the pilot**: they carry legal
-weight and the schema already refuses to delete them (`audit_log_no_change_trg` and
-`audit_log_no_purge_trg`; a prefix delete also breaks `audit_verify()` `link_ok` on the first
-surviving row). Outbox and inbox get **30 days**, outbox counted from `DONE`/`DEAD` and inbox from
-`received_at`, matching the D-175 idempotency cap so one sweep covers all three. All five are tagged
+five can be purged without touching a guard. Audit (`platform.audit_log` plus the host anchor file)
+and teller/cash (`teller`) get **no purge for the pilot**: they carry legal weight and the schema
+already refuses to delete them (`audit_log_no_change_trg` and `audit_log_no_purge_trg`; a prefix
+delete also breaks `audit_verify()` `link_ok` on the first surviving row). KYC/identity (`party`)
+gets **10 years after exit**, not an open-ended keep: member identity is personal data under UU
+27/2022 tentang Pelindungan Data Pribadi, whose Pasal 74 transition ended 17 October 2024, so
+storage needs a purpose and a defined period, and ten years after exit matches the financial floor
+that ties the identity record to the member's settlement records. The 10-year floor itself comes
+from UU 8/1997 tentang Dokumen Perusahaan (`bukti pembukuan`, jurnal, buku besar) and UU KUP Pasal
+28 ayat (11), which requires books, records and the documents underlying them to be kept ten years
+in Indonesia; keeping longer than a floor is never a violation, which is why audit and teller are
+safe to run without a number. Outbox and inbox get **30 days**, outbox counted from `DONE`/`DEAD`
+and inbox from `received_at`, matching the D-175 idempotency cap so one sweep covers all three; both
+purges are hard deletes, because a payload may carry personal data, and neither class is ever the
+only evidence that a financial event happened - the ledger posting is. All five are tagged
 `NEEDS-COMPLIANCE-REVIEW` and stay so until compliance answers; the segment owner replaces them then
-and the seed changes with a new decision. Financial postings, idempotency, sessions and backups are
-not reopened: they were already settled and are recorded as such.
+and the seed changes with a new decision. None of the numbers above is an OJK or ministerial
+figure: no rule binding KSP retention after UU 4/2023 has been identified, so they stand as floors,
+not as the final answer. Financial postings, idempotency, sessions and backups are not reopened:
+they were already settled and are recorded as such.
 
 Reason: spec section 9.3 lists the periods as open question O-3 and `OPEN_ITEMS.md` O-130 says the
 same; inventing numbers would put unverified legal values into seeds, which AGENTS section 1.8
@@ -1305,11 +1316,18 @@ day count on outbox or inbox costs disk, not evidence.
 Consequence: `platform.outbox.retention_days` and `platform.inbox.retention_days` land at `30` in
 `modules/platform/seeds/params.yaml` in T-282, together with the two indexes an age delete needs
 (`outbox_dispatch_idx` is `(status, available_at, seq)` and `inbox` is keyed
-`(consumer, event_id)`). `platform.audit.retention_years`, `party.retention_years_after_exit` and
-`teller.retention_years` are declared with no purge task and no number. Growth of the three
-keep-forever classes is an accepted operational limit (L-44), detected by row count and table size
-per class. `docs/COMPLIANCE.md` section 6 and `OPEN_ITEMS.md` O-130 record the split. T-282 is
+`(consumer, event_id)`). `platform.audit.retention_years` and `teller.retention_years` are declared
+with no purge task and no number, because their floor is "at least ten years" and the schema refuses
+the delete anyway. `party.retention_years_after_exit` carries `10` with no purge task for the pilot:
+the number is what the record says, the missing purge path is what the schema enforces. Growth of
+the three classes is an accepted operational limit (L-44), detected by row count and table size per
+class. `docs/COMPLIANCE.md` section 6 and `OPEN_ITEMS.md` O-130 record the split. T-282 is
 unblocked; an audit archive task is a new backlog row and Raka's call.
+
+Two questions stay open for the compliance sign-off and must not be written into a seed comment:
+which supervisory rule binds KSP retention after UU 4/2023 (if simpan pinjam now sits with OJK, a
+POJK may replace the floors above), and whether credit agreements fall in the 30-year class of UU
+8/1997, which would move the party class. Both are recorded in O-130.
 
 ---
 

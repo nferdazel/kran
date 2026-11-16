@@ -336,9 +336,9 @@ document.
 | Class | Where it lives | Current retention | State |
 |---|---|---|---|
 | Financial postings | `ledger`, module subledgers | Permanent in practice; no purge path | Settled: immutable by trigger, corrections are reversing journals (T-248) |
-| Audit log and anchor lines | `platform.audit_log`, host anchor file | No purge; keep for the pilot (D-206) | `NEEDS-COMPLIANCE-REVIEW`; head hash copied manually (T-249) bounds growth |
-| KYC and identity data | `party` | No purge; keep for the pilot (D-206) | `NEEDS-COMPLIANCE-REVIEW`; encrypted and masked |
-| Teller sessions and cash | `teller` | No purge; keep for the pilot (D-206) | `NEEDS-COMPLIANCE-REVIEW`; cash-control evidence |
+| Audit log and anchor lines | `platform.audit_log`, host anchor file | No purge; at least 10 years (D-206) | `NEEDS-COMPLIANCE-REVIEW`; floor is UU 8/1997 and UU KUP 28(11), keeping longer is never a violation; head hash copied manually (T-249) bounds growth |
+| KYC and identity data | `party` | 10 years after exit; no purge path (D-206) | `NEEDS-COMPLIANCE-REVIEW`; UU 27/2022 (PDP) is why it is not recorded as an open-ended keep; encrypted and masked |
+| Teller sessions and cash | `teller` | No purge; at least 10 years (D-206) | `NEEDS-COMPLIANCE-REVIEW`; floor is UU 8/1997 and UU KUP 28(11); cash-control evidence |
 | Sessions and login events | `platform.session` | Session purge exists | Settled: governed by `session_idle_minutes` / `session_absolute_minutes`, not by retention; audit rows follow the audit class |
 | Outbox and inbox | `platform.outbox`, `platform.inbox` | 30 days, `NEEDS-COMPLIANCE-REVIEW` (D-206) | Outbox from `DONE`/`DEAD`, inbox from `received_at`; purge lands in T-282 |
 | Idempotency responses | `platform.idempotency_key` | 24 hours default, 30 days hard cap | Settled by D-175; may contain member data, do not raise the cap |
@@ -349,9 +349,13 @@ Any number in this table that becomes a policy must be recorded in `DECISIONS.md
 through parameters, and enforced by a registered `daycloser` task. A retention statement
 without a purge task and a run log is not evidence.
 
-The split is D-206 (16 Nov 2026): three evidence classes keep with no purge for the pilot, and two
-delivery classes carry a 30-day count. None of the five has been seen by compliance, so all five
-stay `NEEDS-COMPLIANCE-REVIEW`; a signed number from compliance replaces D-206 and the seed.
+The split is D-206 (16 Nov 2026): three evidence classes carry a 10-year legal floor, with party
+counted as 10 years after exit, and two delivery classes carry a 30-day count. The floor is UU
+8/1997 tentang Dokumen Perusahaan and UU KUP Pasal 28 ayat (11); party adds UU 27/2022 (PDP), which
+is why it cannot be written as an open-ended keep. None of the five has been seen by compliance, so
+all five stay `NEEDS-COMPLIANCE-REVIEW`; a signed number from compliance replaces D-206 and the
+seed. No OJK or ministerial rule binding KSP retention after UU 4/2023 has been identified, so
+these are floors, not the final answer.
 
 ---
 
