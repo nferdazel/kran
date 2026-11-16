@@ -1329,6 +1329,33 @@ which supervisory rule binds KSP retention after UU 4/2023 (if simpan pinjam now
 POJK may replace the floors above), and whether credit agreements fall in the 30-year class of UU
 8/1997, which would move the party class. Both are recorded in O-130.
 
+**D-207 (16 Nov 2026) Audit log is archived and rotated with a recorded chain baseline, not
+purged.** Decision: growth of `platform.audit_log` is bounded by rotation, never by deletion. A
+rotation copies a chain-order prefix of the table to a file outside the database, records one row in
+`platform.audit_chain_baseline` (`cut_seq`, `cut_hash`, `planned_rows`, `first_kept_seq`,
+`archive_path`, `archive_sha256`, actor, reason, `UNIQUE (cut_hash)`) before the first row is
+removed, and `platform.audit_verify()` accepts a `prev_hash` that equals a recorded `cut_hash`, in
+addition to the genesis sentinel or a live row hash. The bound is a chain prefix walked from genesis
+through `prev_hash`, never `seq <= N`, because seq order is not chain order (O-038). Retention is
+unchanged: archived rows stay under D-206's ten-year floor, the task never deletes an archive file,
+and the off-host copy stays an operator step (L-03, T-249).
+
+Reason: D-206 refused a purge because the schema refuses the delete (`audit_log_no_change_trg` per
+row, `audit_log_no_purge_trg` on truncate, and `0042` revokes UPDATE/DELETE/TRUNCATE from
+`kran_runtime`), and because a prefix delete makes `link_ok` false on the first surviving row under
+`0011`; a purge would therefore mean dropping a guard and shortening evidence against the ten-year
+floor. The table still has to be bounded before the pilot, and L-44 names disk headroom below 20% as
+the trigger, so "no purge" cannot be the whole answer.
+
+Consequence: amends the L-44 sentence that a chain re-baseline "needs its own decision"; adds a
+baseline table that is itself a guard and gets the same append-only treatment as the audit log.
+`row_hash_ok` and the fork check do not move, so a random `prev_hash` still fails. A role that can
+write the audit table can still insert a baseline row with a forged `cut_hash` and legitimise a
+fabricated seam; only the off-host anchor catches that (L-13). Implementation is T-302 and is
+`HUMAN-REVIEW-REQUIRED` (AGENTS section 8, audit hash chain) until a clean-context reviewer signs the
+`audit_verify()` predicate and `itarchive`; Raka accepted the decision, Galih holds the veto on the
+code.
+
 ---
 
 ## 3. Archive index
