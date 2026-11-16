@@ -4,6 +4,11 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.4.3] - 2026-11-16
+
+### Fixed
+- **deploy:** Remove the pulled sha tag on every exit path
+
 ## [0.4.2] - 2026-11-16
 
 ### Fixed
