@@ -592,10 +592,30 @@ lending read grant are P1b exit criteria.
 6. The anchor command exists today and is scheduled in `ops/`; the operator step and the disclosure
    live in `docs/OPERATIONS.md`.
 
-Retention is defined per record class (R-26): audit, outbox and inbox have parameters and purge
-tasks; financial records and consent evidence keep the period set by the institution, marked
-`NEEDS-COMPLIANCE-REVIEW` until signed. A purge task never runs against a class whose retention is
-not set; it fails closed.
+Retention is defined per record class (R-26, D-206). Three classes carry evidence the institution
+must be able to produce, and none of them has a purge task in the pilot. Financial postings are
+permanent: the ledger's contract is immutable rows corrected by a reversing journal, so a purge path
+would be meaningless. The audit log and teller/cash records keep for at least ten years: a prefix
+delete of the audit chain breaks `audit_verify()` `link_ok` on the first surviving row, and the
+schema refuses the delete on both classes anyway. Party and KYC identity records keep ten years
+after exit, because identity data is personal data under UU 27/2022 and storage needs a defined
+period rather than an open-ended keep. The ten-year floor for the first two comes from UU 8/1997
+tentang Dokumen Perusahaan and UU KUP Pasal 28 ayat (11); keeping longer than a floor is never a
+violation, which is why "at least ten years" carries no count.
+
+Outbox and inbox are delivery records, not legal evidence, so they carry an engineering number:
+thirty days, outbox counted from `DONE` or `DEAD` and inbox from `received_at`, matching the D-175
+idempotency cap so one sweep covers all three. Both purges are hard deletes, because a payload may
+carry personal data and a flagged row is still a stored row, and neither class may ever be the only
+evidence that a financial event happened; the ledger posting is that evidence. Idempotency,
+sessions and backups are settled elsewhere and are not reopened.
+
+None of these five values has been seen by compliance, so each carries `NEEDS-COMPLIANCE-REVIEW`.
+No OJK or ministerial rule binding KSP retention after UU 4/2023 has been identified, so the numbers
+stand as floors, not as a signed schedule; a signed answer replaces D-206 and the seed in a new
+task. A purge task never runs against a class whose retention is not set: it fails closed. The audit
+class cannot become a purge task at all without dropping an immutable trigger, so archive-and-rotate
+with a recorded chain baseline is a separate item, not part of the outbox and inbox purge (T-282).
 
 ### 5.7 Encryption and keys
 
@@ -828,7 +848,7 @@ MUST be checked before any value is used. Both remain unresolved by definition.
 | O3 | statements the pengurus signs and the RAT ratifies | balance sheet, income statement, equity, member register, SHU | absent until P4 and P5 |
 | O4 | lawful basis, notice, retention disclosure, subject access, breach handling | consent, notice version, retention per class, export and erase | absent; REG-002 deferred |
 | O5 | cash aggregation per member per day, threshold and suspicion flags, report register | aggregation, threshold parameter, case register | absent |
-| O6 | written retention schedule per record class, enforced by tasks | retention parameters, purge tasks, archive path | undecided; only idempotency keys have a TTL |
+| O6 | written retention schedule per record class, enforced by tasks | retention parameters, purge tasks, archive path | floors set for the pilot (D-206, section 5.6); outbox and inbox purge at T-282; audit archive-and-rotate absent |
 | O7 | least privilege, unique accounts, approved privileged change, restore proof, patched dependencies | grant history, SoD, login and deploy records, restore drill | partial; no dependency scan, grants by runbook |
 | O8 | a member can contest a posting and the cooperative can reconstruct it | complaint case linked to journal and slip | absent; slip identity at P6 |
 
@@ -849,7 +869,8 @@ service providers, covering CDD, EDD, PEP, screening and risk rating: partial, r
 only. REG-005 (V?) electronic information and transactions, electronic documents and system
 security: reference only. REG-006 (V?) consumer and public protection, covering transparency and
 complaints: deferred, no complaint register. REG-007 (V?) corporate documents and financial record
-retention: deferred, retention undecided. REG-008 (V!) taxation of savings return and fees:
+retention: floors identified (UU 8/1997, UU KUP 28(11)) but not signed, no supervisory rule found
+after UU 4/2023. REG-008 (V!) taxation of savings return and fees:
 deferred, no tax module. REG-009 (V!) deposit insurance, where KSP is not a participant: a
 prohibition, never claim insured savings. REG-010 (V?) identity verification against the civil
 registry: adapter absent, document type and length are parameters. REG-011 (V!) accounting standards
@@ -956,16 +977,18 @@ MVP (ADR-013, D-127); and field-level envelope encryption with AES-256-GCM and a
 
 These remain open and are tracked with owners in `docs/OPEN_ITEMS.md`. They affect product
 behaviour, not the reading of this document: whether a pengurus needs a separate read-only login or
-oversight is a permission on a normal account (O-1, role model and audit attribution); whether the
-close certificate is printable on its own route like a slip (O-2, print surface and evidence
-handling); and the exact retention period per record class (O-3, purge tasks cannot be enabled
-because R-26 decides mechanism only).
+oversight is a permission on a normal account (O-1, role model and audit attribution); and whether
+the close certificate is printable on its own route like a slip (O-2, print surface and evidence
+handling).
 
 Resolved questions are not repeated. The audit's Q1 to Q8 became rulings: membership is first-class
 (R-15), time deposits are out and savings return is SHU (R-16), lending is maker and checker (R-17),
 use cases move to the application layer (R-18, R-24), MFA stays optional (R-19, R-29), retention is
 per class with a manual anchor (R-20, R-26), the teller terminal locks (R-21), and slips carry
-identity (R-22).
+identity (R-22). The retention numbers themselves were signed per class on 16 November 2026 (D-206,
+section 5.6): a ten-year floor with no purge for audit, teller and financial records, ten years after
+exit for party, and thirty days for outbox and inbox. The compliance sign-off of those numbers is
+still open and stays in `OPEN_ITEMS.md` O-130, not here.
 
 ### 9.4 References
 
