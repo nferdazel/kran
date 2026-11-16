@@ -7,6 +7,14 @@
   "locale": "id-ID",
   "viewport": { "width": 1440, "height": 900 },
   "settle": 300,
+  "login": {
+    "path": "/login",
+    "usernameEnv": "KRAN_E2E_USERNAME",
+    "passwordEnv": "KRAN_E2E_PASSWORD",
+    "usernameSelector": "input[name=username]",
+    "passwordSelector": "input[name=password]",
+    "submitSelector": "form button[type=submit]"
+  },
   "flows": [
     {
       "id": "teller-deposit",
@@ -72,6 +80,7 @@
       "id": "ledger-region-keyboard",
       "name": "Ledger balances: one tab stop on the scroll region, arrows scroll it, Shift+Tab leaves",
       "k": ["K-04"],
+      "path": "/app/ledger",
       "preconditions": [
         "authenticated session with ledger.read",
         "open period with at least two balance lines (dev seed 0003_dev_ledger.sql)"

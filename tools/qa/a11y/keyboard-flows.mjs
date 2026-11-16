@@ -57,6 +57,22 @@ const baseUrl = args.flags.url ?? cfg.url;
 const only = args.flags.only ? String(args.flags.only).split(",") : null;
 const modulesDir = path.resolve(REPO, cfg.modulesDir ?? "apps/web/node_modules");
 
+// Login is opt-in per config. Credentials come from the environment only: the runner must never
+// carry a password, and an app flow that cannot sign in is a red gate, not a skipped one.
+const loginCfg = cfg.login ?? null;
+const credentials = (() => {
+  if (!loginCfg) return null;
+  const userEnv = loginCfg.usernameEnv ?? "KRAN_E2E_USERNAME";
+  const passEnv = loginCfg.passwordEnv ?? "KRAN_E2E_PASSWORD";
+  const username = process.env[userEnv];
+  const password = process.env[passEnv];
+  if (!username || !password) {
+    console.error(`Login configured but ${userEnv} / ${passEnv} is empty. Export dev seed credentials first.`);
+    process.exit(64);
+  }
+  return { username, password };
+})();
+
 async function loadModule(dir, relatives, what) {
   for (const rel of relatives) {
     const candidate = path.join(dir, rel);
@@ -109,6 +125,12 @@ async function runStep(page, step, index) {
     await page.locator(step.click).first().click();
     await page.waitForTimeout(step.wait ?? 50);
     return { ok: true, detail: `click ${step.click}`, note };
+  }
+
+  if (step.fill) {
+    await page.locator(step.fill).first().fill(String(step.value ?? ""));
+    await page.waitForTimeout(step.wait ?? 30);
+    return { ok: true, detail: `fill ${step.fill}`, note };
   }
 
   if (step.viewport) {
@@ -265,6 +287,23 @@ async function runStep(page, step, index) {
 
 // ---------------------------------------------------------------- run
 
+/**
+ * Sign in once per flow context, then leave the page wherever the login lands it. Steps assert on
+ * the signed-in screen, so a flow never has to spell out its own credentials.
+ */
+async function signIn(page) {
+  const url = new URL(loginCfg.path ?? "/login", baseUrl).href;
+  await page.goto(url, { waitUntil: "load", timeout: 30000 });
+  await page.locator(loginCfg.usernameSelector).first().fill(credentials.username);
+  await page.locator(loginCfg.passwordSelector).first().fill(credentials.password);
+  if (loginCfg.submitSelector) await page.locator(loginCfg.submitSelector).first().click();
+  else await page.keyboard.press("Enter");
+  await page.waitForURL((current) => !current.pathname.startsWith(loginCfg.path ?? "/login"), {
+    timeout: 30000,
+  });
+  await page.waitForTimeout(cfg.settle ?? 100);
+}
+
 const startedAt = new Date();
 const results = [];
 let fails = 0;
@@ -306,8 +345,14 @@ for (const flow of cfg.flows) {
 
   try {
     const page = await context.newPage();
-    await page.goto(baseUrl, { waitUntil: "load", timeout: 30000 });
-    await page.waitForTimeout(cfg.settle ?? 100);
+    if (credentials) await signIn(page);
+    else await page.goto(baseUrl, { waitUntil: "load", timeout: 30000 });
+    if (flow.path) {
+      await page.goto(new URL(flow.path, baseUrl).href, { waitUntil: "load", timeout: 30000 });
+      await page.waitForTimeout(cfg.settle ?? 100);
+    } else {
+      await page.waitForTimeout(cfg.settle ?? 100);
+    }
 
     for (const [index, step] of (flow.steps ?? []).entries()) {
       try {

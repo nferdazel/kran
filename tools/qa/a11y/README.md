@@ -38,6 +38,19 @@ node tools/qa/a11y/keyboard-flows.mjs --config keyboard-app --label gate-t285 \
 Opsi: `--themes light,dark`, `--widths 1440,360`, `--only <id>`, `--fixtures <file>`,
 `--out <dir>`, `--label <name>`.
 
+### Login untuk gate app
+
+`keyboard-flows.mjs` tidak pernah menyimpan kata sandi. Kalau config punya blok `login`,
+runner masuk dulu sebelum langkah alur pertama, memakai kredensial dari environment:
+
+```bash
+KRAN_E2E_USERNAME=dev.maker KRAN_E2E_PASSWORD='<dev seed>' \
+  node tools/qa/a11y/keyboard-flows.mjs --config keyboard-app --url http://127.0.0.1:4174
+```
+
+Variabel kosong = exit 64, bukan alur BLOCKED, karena gate yang tidak bisa login itu merah.
+Alur boleh punya `path` (mis. `/app/ledger`) untuk mendarat di layarnya setelah login.
+
 Exit code: `0` semua PASS, `1` ada FAIL, `2` hanya BLOCKED. `2` berarti belum hijau.
 
 ## Prasyarat
