@@ -27,6 +27,7 @@ How to read a row:
 | C-03 | Submit and approve a parameter change as maker and checker | Manajer, Admin | `/app/params`, `submitParamChange`, `approveParamChange` | `modules/platform/tests/itparam.nim`; `apps/web/tests/e2e/flow.spec.ts` | delivered |
 | C-04 | Read the audit trail for an actor, entity, or date | Admin, Manajer | `/app/audit`, `listAudit` | `apps/api/tests/itapi_auth.nim`; `modules/platform/tests/itplatform.nim` | delivered |
 | C-05 | Check liveness and readiness of the service | Operator | `getHealth`, `getReadiness` | `apps/api/tests/itapi_ws.nim` | delivered |
+| C-57 | Read process and database metrics for an operator scrape | Operator | `getMetrics` (`/metrics`) | `apps/api/tests/tapi.nim` (200, text/plain 0.0.4, 405 on POST); `apps/api/tests/tmetrics.nim` (counter, histogram, peer rule) | delivered |
 | C-06 | Create, search, and read a party with a CIF | Admin | `searchParties`, `createParty`, `getParty` | `apps/api/tests/itapi_party.nim` | delivered |
 | C-07 | Open a period, post a balanced journal, and reverse it with a reason | Admin | `/app/ledger/admin`, `listJournals`, `reverseJournal` | `apps/api/tests/itapi_journal.nim`; `modules/ledger/tests/itjournal.nim` | delivered |
 | C-08 | Read a trial balance and period balances | Manajer, Pengurus | `/app/ledger`, `getTrialBalance`, `getLedgerBalances` | `apps/api/tests/itapi_ledger.nim`; `modules/ledger/tests/ittb.nim` | delivered |
