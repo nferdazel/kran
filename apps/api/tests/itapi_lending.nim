@@ -32,6 +32,7 @@ const
   MakerUser = "dev.maker"
   ApproverUser = "dev.approver"
   CheckerUser = "dev.checker"
+  SodAdminUser = "dev.sodadmin"
   DevPassword = "rahasia-panjang-123"
   CookieName = "kran_session"
   # Fixture tetap: satu cabang, satu anggota aktif, satu anggota suspended.
@@ -76,8 +77,33 @@ block:
     INSERT INTO platform.user_role (user_id, role_id, branch_id)
     SELECT u.user_id, r.role_id, NULL
       FROM platform.app_user u, platform.role r
-     WHERE u.username IN ('dev.maker', 'dev.approver')
-       AND r.code = 'platform_admin'
+     WHERE u.username = 'dev.maker' AND r.code = 'lending_maker'
+    ON CONFLICT DO NOTHING
+  """)
+  execScript(db, """
+    INSERT INTO platform.user_role (user_id, role_id, branch_id)
+    SELECT u.user_id, r.role_id, NULL
+      FROM platform.app_user u, platform.role r
+     WHERE u.username = 'dev.approver' AND r.code = 'lending_checker'
+    ON CONFLICT DO NOTHING
+  """)
+  # Penjaga `self_approval` hanya menyala untuk aktor yang memegang izin ajukan **dan** setujui,
+  # sedangkan `platform.role_conflict` menolak pasangan `lending_maker`+`lending_checker` (SoD).
+  # Aktor semacam itu hanya mungkin lewat `platform_admin` (sengaja tidak dipasangkan SoD); akun ini
+  # dipakai **hanya** oleh asersi `self_approval` dan mengajukan pinjamannya sendiri.
+  execScript(db, """
+    INSERT INTO platform.app_user
+      (user_id, username, full_name, password_algo, password_hash, must_change_password)
+    SELECT md5('dev|dev.sodadmin')::uuid, 'dev.sodadmin', 'Uji Sod Admin (dev)',
+           password_algo, password_hash, false
+      FROM platform.app_user WHERE username = 'dev.maker'
+    ON CONFLICT (username) DO UPDATE SET must_change_password = false, status = 'ACTIVE'
+  """)
+  execScript(db, """
+    INSERT INTO platform.user_role (user_id, role_id, branch_id)
+    SELECT u.user_id, r.role_id, NULL
+      FROM platform.app_user u, platform.role r
+     WHERE u.username = 'dev.sodadmin' AND r.code = 'platform_admin'
     ON CONFLICT DO NOTHING
   """)
   execScript(db, """
@@ -390,8 +416,14 @@ suite "lending: persetujuan":
     r.body["loanId"].getStr()
 
   test "pengaju tidak boleh menyetujui pengajuannya sendiri":
-    let loanId = submitted()
-    let r = postJson(fill(ApprovePath, loanId), %*{}, makerToken)
+    # Pengaju sekaligus pemutus hanya mungkin lewat `platform_admin` (SoD menolak pasangan
+    # `lending_maker`+`lending_checker`); penjaganya tetap harus menolak 409, bukan meloloskan.
+    let sodToken = tokenOf(postJson(LoginPath, %*{"username": SodAdminUser,
+      "password": DevPassword}))
+    let created = postJson(LoansPath, loanBody(PartyId, versionActive, "7500000.00"), sodToken)
+    check created.code == 201
+    let loanId = created.body["loanId"].getStr()
+    let r = postJson(fill(ApprovePath, loanId), %*{}, sodToken)
     check r.code == 409
     check r.body["params"]["reason"].getStr() == "self_approval"
     checkProblem(ApprovePath, "POST", "409", r.body)
@@ -922,8 +954,8 @@ suite "lending: restrukturisasi & hapus buku (T-168)":
       UPDATE lending.loan SET collectibility = 'LOSS' WHERE loan_id = ? RETURNING loan_id::text""",
       loanId) == loanId
     # Pemisahan tugas ada di data RBAC: `lending_maker` **tidak** memegang izin hapus buku
-    # (migrasi `platform/0096`). Fixture test memberi `dev.maker` `platform_admin`, jadi pengujian
-    # di sini memeriksa aturan perannya, bukan grant dev itu.
+    # (migrasi `platform/0096`). `dev.maker` di suite ini memakai peran itu (T-278), jadi pengujian
+    # di sini memeriksa peran yang benar-benar dipakai aktornya.
     check dbValue(sql"""
       SELECT count(*) FROM platform.role_permission rp
         JOIN platform.role r USING (role_id)
@@ -1074,8 +1106,8 @@ suite "lending: baca & daftar pinjaman (T-169)":
     DetailPath = "/api/v1/lending/loans/{loanId}"
 
   # Pembaca yang memegang `lending_maker` **hanya di cabang A**: tanpa itu, "disaring per cabang"
-  # tidak bisa dibedakan dari "semua pinjaman terlihat" (fixture memberi `dev.maker`
-  # `platform_admin`, yang berlaku di semua cabang).
+  # tidak bisa dibedakan dari "semua pinjaman terlihat" (`dev.maker` memegang `lending_maker`
+  # tanpa batas cabang, T-278).
   execDb(sql"""
     INSERT INTO platform.app_user
       (user_id, username, full_name, password_algo, password_hash, must_change_password)
@@ -1126,7 +1158,7 @@ suite "lending: baca & daftar pinjaman (T-169)":
       ids.add item["loanId"].getStr()
     check ids.contains(mine)
     check not ids.contains(branchBLoan)
-    # Pemegang izin di semua cabang (fixture: `platform_admin`) tetap melihatnya.
+    # Pemegang izin di semua cabang (`dev.maker`, `lending_maker` institusi) tetap melihatnya.
     let all = getJson(LoansPath & "?partyId=" & PartyId, makerToken)
     check all.code == 200
     var allIds: seq[string] = @[]

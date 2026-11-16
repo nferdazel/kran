@@ -5,7 +5,7 @@
 ## divalidasi terhadap kontrak OpenAPI, dan audit + event outbox ditulis tanpa nama tampil (PII).
 ##
 ## Test ini **menghapus schema `platform` dan `party`** di DB dev, lalu menyiapkan ulang migrasi,
-## seed pack `base`, seed pengguna dev, dan satu pemberian role `platform_admin` untuk `dev.maker`.
+## seed pack `base`, seed pengguna dev, dan aktor berperan `ops_admin` (pemegang izin party asli).
 ## Data dev murni sintetis.
 
 import std/[httpclient, json, net, os, strutils, times, unittest, uri]
@@ -51,13 +51,14 @@ block:
   execScript(db, readFile("packs/base/generated/param_definitions.sql"))
   execScript(db, readFile("packs/base/generated/param_values.sql"))
   execScript(db, readFile("packs/base/seed/0001_dev_users.sql"))
-  # `dev.maker` hanya memegang `param_maker` di seed; untuk menguji jalur sukses party ia diberi
-  # `platform_admin` (pemegang seluruh izin) di DB uji, bukan dengan melonggarkan migrasi.
+  # Jalur sukses memakai peran yang memang memegang izinnya (T-278): `ops_admin` memegang
+  # `party.party.create` dan `party.party.read` di katalog produksi (`platform/0013`), bukan aktor
+  # serba-bisa, dan bukan dengan melonggarkan migrasi.
   execScript(db, """
     INSERT INTO platform.user_role (user_id, role_id, branch_id)
     SELECT u.user_id, r.role_id, NULL
       FROM platform.app_user u, platform.role r
-     WHERE u.username = 'dev.maker' AND r.code = 'platform_admin'
+     WHERE u.username = 'dev.maker' AND r.code = 'ops_admin'
     ON CONFLICT DO NOTHING
   """)
   # Pengguna ber-scope cabang (T-115): menguji penyaringan cabang pencarian — party di cabang lain
@@ -74,7 +75,7 @@ block:
     INSERT INTO platform.user_role (user_id, role_id, branch_id)
     SELECT u.user_id, r.role_id, '""" & OtherBranchId & """'
       FROM platform.app_user u, platform.role r
-     WHERE u.username = 'dev.branchmaker' AND r.code = 'platform_admin'
+     WHERE u.username = 'dev.branchmaker' AND r.code = 'ops_admin'
     ON CONFLICT DO NOTHING
   """)
 

@@ -8,7 +8,7 @@
 ## **HUMAN-REVIEW-REQUIRED**: menyentuh field crypto (ADR-017, D-048).
 ##
 ## Test ini menghapus schema `platform` dan `party` di DB dev, lalu menyiapkan ulang migrasi,
-## seed pack, seed pengguna dev, dan satu pemberian `platform_admin` untuk `dev.maker`.
+## seed pack, seed pengguna dev, dan aktor berperan `ops_admin` (pemegang izin KYC di seed dev).
 
 import std/[httpclient, json, net, os, strutils, times, unittest]
 
@@ -58,13 +58,14 @@ block:
   execScript(db, readFile("packs/base/generated/param_definitions.sql"))
   execScript(db, readFile("packs/base/generated/param_values.sql"))
   execScript(db, readFile("packs/base/seed/0001_dev_users.sql"))
-  # `dev.maker` di seed hanya memegang `param_maker`; DB uji memberinya `platform_admin`
-  # (pemegang seluruh izin) supaya jalur sukses bisa diuji tanpa melonggarkan migrasi.
+  # Jalur sukses memakai peran yang memegang izinnya (T-278): `ops_admin` — di katalog produksi
+  # pemegang pendaftaran party, dan di seed dev (`0001`) diberi `party.kyc.manage` +
+  # `party.identity_doc.read` karena katalog produksi belum punya peran operator KYC.
   execScript(db, """
     INSERT INTO platform.user_role (user_id, role_id, branch_id)
     SELECT u.user_id, r.role_id, NULL
       FROM platform.app_user u, platform.role r
-     WHERE u.username = 'dev.maker' AND r.code = 'platform_admin'
+     WHERE u.username = 'dev.maker' AND r.code = 'ops_admin'
     ON CONFLICT DO NOTHING
   """)
 
