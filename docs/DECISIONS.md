@@ -1250,8 +1250,9 @@ to a range turns the gate red.
 A red result means no deploy: the scan lives in CI, and `ops/scripts/deploy-vps.sh` waits on the
 `Security (gitleaks)` check-run, so a finding blocks the deploy until it is cleared. It does not
 block the release: `./task release` and `./task ci` do not call `./task deps-check`, so a red scan
-can still bump the version, tag and push; nothing reaches production, and the deploy then fails
-after the CI gate's wait. `./task deps-check` is the developer-side copy of the same scan, run by
+can still bump the version, tag and push; nothing reaches production, and the deploy then fails at
+the CI gate as soon as it sees the red check. `./task deps-check` is the developer-side copy of the
+same scan, run by
 hand. There is no allowlist. A real
 finding is cleared by bumping the package in its own reviewed change, and a false positive needs a
 new decision here — an allowlist that anyone can append to is the same "green with a note" the P0a
