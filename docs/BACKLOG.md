@@ -18,7 +18,7 @@ findings are folded into the rows below and into the task files at DoR time.
 | ID | Title | Size | Deps | Risk | Status |
 |---|---|---|---|---|---|
 | T-173 | `archcheck` handlers and tests categories + shrink-only baselines | M | - | standard | DONE |
-| T-174 | `lint-nomagic` covers `apps/api/src` + baseline | M | T-173 | standard | READY |
+| T-174 | `lint-nomagic` covers `apps/api/src` + baseline | M | T-173 | standard | DONE |
 | T-175 | `nim check` warnings fatal or shrink-only | S | - | standard | READY |
 | T-176 | `ci-fast` web arm fail-closed + `packages/ui` tests | S | - | standard | READY |
 | T-177 | Dependency and lockfile audit | S | T-176 | standard | READY |
