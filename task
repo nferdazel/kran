@@ -13,6 +13,8 @@
 #   ./task lint-web  eslint (typescript-eslint + svelte/*, non-a11y) over apps/web + packages/ui
 #   ./task lint    nim check per file; warnings must match tools/lint/warnings-baseline.txt
 #                  (shrink-only: a file above its count fails, below it fails as stale)
+#   ./task deps-check  CVE scan of production npm deps (pnpm audit, high+) plus the Nim
+#                  lockfile check; fails closed when pnpm or nimble.lock is missing (T-177)
 #   ./task openapi lint OpenAPI contract + verify TS client sync (openapi-gen = rewrite)
 #   ./task ci-fast  check + openapi + lint-web + test + packages/ui unit (no e2e) - daily loop gate (D-194)
 #   ./task ci      all gates above, including e2e
@@ -771,6 +773,52 @@ cmd_lint_web() {
   fi
 }
 
+cmd_deps_check() {
+  # Gerbang CVE dependensi (T-177, D-205). Dua sisi, dan keduanya menyebut cakupannya sendiri:
+  #
+  #   npm/pnpm — `pnpm audit` terhadap database advisory npm registry, hanya dependency
+  #     produksi (`--prod`) karena dependency dev tidak ikut terkirim ke peramban, gagal pada
+  #     level `high` ke atas.
+  #   Nim — tidak ada feed advisory untuk paket Nim (OSV, GitHub Advisory dan nimble sendiri
+  #     tidak menerbitkannya), jadi tidak ada yang dipindai dan itu dikatakan apa adanya. Yang
+  #     bisa ditegakkan adalah pin-nya: setiap `requires` langsung di `kran.nimble` harus memakai
+  #     versi eksak (`==`). Melonggarkan satu pin ke rentang membuat gate ini merah.
+  #
+  # Lockfile Nim sengaja TIDAK dipakai. `nimble lock` menulis tiga berkas: `nimble.lock`,
+  # `nimble.paths` (berisi path absolut mesin ini) dan blok di `config.nims` yang meng-include
+  # berkas itu. Begitu `nimble.lock` ada di akar repo, kompilator berhenti memakai nimblepath dan
+  # hanya mencari lewat `nimble.paths`; tanpa berkas itu build gagal dengan
+  # "cannot open file: yaml/tojson" (terbukti 16 Nov 2026, lihat L-12 dan O-059).
+  log "dependency scan (npm registry advisory: production deps, fail at high and above)"
+  [ -f "$ROOT/pnpm-lock.yaml" ] || die "pnpm-lock.yaml not found — deps-check has nothing to scan"
+
+  # Pin eksak untuk dependency Nim langsung: satu-satunya proteksi versi yang dimiliki tree ini.
+  loose=""
+  for dep in $(sed -n 's/^requires "\([A-Za-z0-9_][A-Za-z0-9_-]*\)[^"]*".*/\1/p' "$ROOT/kran.nimble"); do
+    case "$dep" in nim) continue ;; esac
+    grep -qE "^requires \"${dep} == [^\"]+\"" "$ROOT/kran.nimble" || loose="$loose $dep"
+  done
+  [ -z "$loose" ] \
+    || die "kran.nimble does not pin${loose} to an exact version (== x.y.z). Transitive git revisions are already unlocked (L-12); a direct dependency with a range makes it worse. Pin it in its own reviewed change."
+
+  # Fail closed (aturan T-176): tanpa scanner arm ini tidak boleh mencetak skip lalu exit 0.
+  pnpm_cmd=$(command -v pnpm || true)
+  if [ -z "$pnpm_cmd" ]; then
+    pm_ver=$(sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"pnpm@\([^"]*\)".*/\1/p' "$ROOT/package.json")
+    die "deps-check needs pnpm and found none on PATH. Install it with 'corepack enable' (it reads packageManager${pm_ver:+ = pnpm@$pm_ver} from package.json) or 'npm install -g pnpm@${pm_ver:-latest}'. A dependency gate that prints a skip is not a gate (T-176)."
+  fi
+
+  out="$BUILD/deps-check.log"
+  mkdir -p "$BUILD"
+  if (cd "$ROOT" && "$pnpm_cmd" audit --audit-level=high --prod) >"$out" 2>&1; then
+    cat "$out"
+  else
+    cat "$out" >&2
+    die "pnpm audit reported a dependency at or above 'high', or the advisory service could not be reached — both are red on purpose. Clear a finding by bumping the package in its own reviewed change; a false positive needs a new decision, not a silent allowlist (D-205)."
+  fi
+  ok "npm: no advisory at or above high in production dependencies; nim: every direct dependency is pinned exactly (no Nim advisory feed exists — D-205)"
+}
+
 cmd_ui_test() {
   # Test `packages/ui` (kontras token, komponen, money, shell) dulu hanya jalan di dalam
   # `cmd_e2e`, yang tidak pernah dipanggil `ci-fast` (T-176). Dipanggil dari `cmd_ci_fast` saja:
@@ -867,6 +915,7 @@ case "${1:-help}" in
   fmt) cmd_fmt ;;
   fmt-check) mkdir -p "$BUILD"; cmd_fmt_check ;;
   lint) cmd_lint ;;
+  deps-check) mkdir -p "$BUILD"; cmd_deps_check ;;
   archcheck) mkdir -p "$BUILD"; cmd_archcheck ;;
   nomagic) mkdir -p "$BUILD"; cmd_nomagic ;;
   paramgen) mkdir -p "$BUILD"; cmd_paramgen ;;

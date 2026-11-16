@@ -46,3 +46,6 @@ packages/i18n/project.inlang/.meta.json
 
 # Playwright
 blob-report/
+nimble.develop
+nimble.paths
+nimbledeps

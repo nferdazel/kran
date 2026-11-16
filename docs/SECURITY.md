@@ -351,15 +351,32 @@ SQL. That is a reporting gap, not a chain-integrity gap.
 - The API base image is pinned by digest, the Nim toolchain archive is verified by SHA-256, and
   the pnpm configuration sets a minimum release age and denies install scripts for named
   packages.
-- There is **no dependency CVE scan** yet (audit `BE-ISO-10`, `BE-SEC-15`, `FE-SEC-06`; task
-  T-177). A vulnerable transitive package is found by reading release notes, not by CI.
-- There is **no Nim lockfile**, so two builds of the same commit can embed different transitive
-  revisions (`BE-ISO-11`). Recorded as an accepted limit.
+- Dependency CVE scanning is one gate, `./task deps-check`, and CI runs that same arm rather than
+  its own copy of the command (D-205). The npm side is `pnpm audit --audit-level=high --prod`
+  against the npm registry advisory database: production dependencies only, because dev
+  dependencies never ship to a browser, and `high`/`critical` only, because a low or moderate
+  advisory is not a reason to stop a release. This closes `FE-SEC-06`. A red result blocks the
+  deploy, not the release: `deploy-vps.sh` waits on the `Security (gitleaks)` check-run, while
+  `./task release` and `./task ci` do not call `./task deps-check`, so a red scan can still tag and
+  push but nothing reaches production. There is no allowlist, and a finding is cleared by bumping
+  the package in its own reviewed change. `--prod` also means the build toolchain (vite, svelte,
+  esbuild) is never scanned: those packages do not ship to a browser, but they do run in the build,
+  so a compromised one is a supply-chain path rather than a runtime CVE.
+- Nim packages are **not** CVE-scanned, and no tool can change that today: OSV, GitHub Advisory and
+  nimble publish no advisory feed for the ecosystem. `BE-ISO-10` and `BE-SEC-15` therefore stay open
+  for the Nim tree, and a vulnerable Nim dependency is still found by reading release notes.
+- There is **no committable Nim lockfile**, so two builds of the same commit can still embed
+  different transitive revisions (`BE-ISO-11`). `nimble lock` is deterministic, but it writes a
+  machine-local `nimble.paths` alongside the lock, and the compiler then resolves only through that
+  file — without it every build fails with `cannot open file: yaml/tojson` (measured 16 Nov 2026,
+  O-059, L-12). What `./task deps-check` enforces instead is the pin: every direct `requires` in
+  `kran.nimble` must be `== x.y.z`, and loosening one to a range turns the gate red.
 - GitHub Actions are pinned to major tags, not commit SHAs (`SEC-06`). That is a supply-chain
   exposure; pinning to SHAs is a workflow change with its own review.
-- Policy: a new dependency or a new scanner needs a short ADR. Do not add a tool that cannot run
-  offline in CI, and do not make an advisory-only scan a deploy gate without deciding what a
-  red result means.
+- Policy: a new dependency or a new scanner needs a short ADR. A scanner must not need a tool
+  downloaded and built at gate time; a registry-backed advisory query is allowed because its
+  failure is red, never a silent green. Do not make an advisory-only scan a deploy gate without
+  deciding what a red result means — that decision is D-205.
 
 ---
 
@@ -411,7 +428,7 @@ Severity reflects security impact, not the audit's original severity.
 | G2 | MAJOR | `require_login` does not challenge accounts without an `ACTIVE` factor | `BE-SEC-02`, T-261 |
 | G3 | MAJOR | Revoke and disable are not bounded by the actor's grants | `BE-SEC-03`, T-262 |
 | G4 | MAJOR | CSRF for bodyless POSTs relies on `SameSite` only | `BE-SEC-06`, T-260 |
-| G5 | MAJOR | No dependency CVE scanning; no Nim lockfile | `BE-ISO-10`, `BE-SEC-15`, T-177 |
+| G5 | MAJOR | Nim packages are not CVE-scanned (no advisory feed exists for the ecosystem) and there is no committable Nim lockfile. npm production dependencies are scanned at high and above, and every direct Nim dependency is pinned exactly. | `BE-ISO-10`, `BE-SEC-15`, `BE-ISO-11`, `D-205`, `L-12` |
 | G6 | MAJOR | Backups are unencrypted and on the same host; no PITR | `BE-ISO-05`, T-252 |
 | G7 | MAJOR | Audit/outbox/inbox retention is undefined and unenforced | `BE-ISO-12`, T-248 |
 | G8 | MAJOR | Anchor is host-local; chain is computed in the database | `BE-SEC-12`, R-26, T-249 |

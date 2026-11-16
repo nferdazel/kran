@@ -530,11 +530,16 @@ jobs:
         with:
           node-version: '24'
 
-      - name: "Supply chain: audit the frontend lockfile"
-        # CVE di dependensi frontend: `--prod` supaya hanya paket yang ikut terkirim ke browser yang
-        # dinilai, `--audit-level=high` karena advisory low/moderate tidak boleh memblokir rilis.
-        # Tidak ada `|| true`: lockfile saat ini bersih di level itu, jadi kegagalan berarti regresi.
-        run: pnpm audit --audit-level=high --prod
+      - name: "Supply chain: dependency CVE gate"
+        # Satu jalur dengan mesin developer: `./task deps-check` (T-177, D-205) menjalankan
+        # `pnpm audit --audit-level=high --prod` terhadap database advisory npm registry, lalu
+        # memastikan setiap `requires` langsung di `kran.nimble` masih memakai versi eksak.
+        # Tanpa pnpm atau dengan pin yang dilonggarkan, arm itu gagal tertutup (aturan T-176),
+        # jadi kegagalan job di sini berarti temuan atau lingkungan yang rusak, bukan hijau senyap.
+        #
+        # Tidak ada cache di job ini: perintahnya tidak pernah `pnpm install`, jadi store pnpm
+        # tidak pernah terbentuk dan langkah post setup-node dulu gagal menyimpannya.
+        run: ./task deps-check
 
   # Build selalu, push hanya saat event `push` (main). Dockerfile yang berhenti mem-build adalah
   # PR merah, bukan deploy merah di malam hari. Image hanya terbit setelah `gate` hijau, jadi

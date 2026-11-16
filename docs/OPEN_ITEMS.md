@@ -103,7 +103,7 @@ resolves; the closure story is in git history and `docs/DECISIONS.md`.
 | O-053 | Closed 3 Nov 2026 | Role and permission name keys are present in the catalogue. |
 | O-056 | D-046 item 6 | There is no silent fallback between parameter levels. |
 | O-057 | T-048 | The startup check uses the same visibility rule as runtime resolution. |
-| O-059 | T-045 | There is no Nim lockfile; dependencies are pinned exactly in `kran.nimble`. |
+| O-059 | T-045 | There is no committable Nim lockfile. `nimble lock` is deterministic but writes a machine-local `nimble.paths` that the compiler then requires; without it every build fails `cannot open file: yaml/tojson` (measured 16 Nov 2026, T-177). Direct dependencies stay pinned exactly and `./task deps-check` enforces that (D-205, L-12). |
 | O-060 | Closed 21 Oct 2026 | The worker role exists and runs the posting loop. |
 | O-061 | D-045 | CSP uses meta hashes; the header carries only `frame-ancestors`. |
 | O-062 | T-045 | The dev seed refuses a database whose name does not end in `_dev` or `_test`. |

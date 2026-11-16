@@ -1232,6 +1232,55 @@ hashes directly, `tauthz` fails when a seed file that creates accounts is not in
 `ops/env/kran-prod.env.example` names `10.89.0.1/32` as the value to set, and the real
 `kran-prod.env` on qouver must carry it.
 
+**D-205 (16 Nov 2026) Dependency CVE gate: `pnpm audit` at high and above on production dependencies, and exact pins on the Nim side.**
+Decision: dependency scanning is one gate, `./task deps-check`, and CI runs that same arm rather than
+its own copy of the command. The npm side is `pnpm audit --audit-level=high --prod` against the npm
+registry advisory database: production dependencies only, because dev dependencies are never shipped
+to a browser, and `high`/`critical` only, because a low or moderate advisory is not a reason to stop
+a release. The Nim side has no advisory source at all — OSV, GitHub Advisory and nimble publish no
+feed for Nim packages — so Nim code is not CVE-scanned and `docs/SECURITY.md` says exactly that
+instead of implying coverage. The Nim lockfile was tried and **refused on measurement**: `nimble
+lock` is deterministic, but the moment `nimble.lock` sits at the repo root the compiler stops using
+the nimble path and resolves packages only through `nimble.paths`, which holds absolute paths for
+one machine. Without that file every build — developer, CI and the Docker image — fails with
+`cannot open file: yaml/tojson` (measured 16 Nov 2026). What the gate enforces on the Nim side
+instead is the pin: every direct dependency in `kran.nimble` must be `== x.y.z`, and loosening one
+to a range turns the gate red.
+
+A red result means no deploy: the scan lives in CI, and `ops/scripts/deploy-vps.sh` waits on the
+`Security (gitleaks)` check-run, so a finding blocks the deploy until it is cleared. It does not
+block the release: `./task release` and `./task ci` do not call `./task deps-check`, so a red scan
+can still bump the version, tag and push; nothing reaches production, and the deploy then fails
+after the CI gate's wait. `./task deps-check` is the developer-side copy of the same scan, run by
+hand. There is no allowlist. A real
+finding is cleared by bumping the package in its own reviewed change, and a false positive needs a
+new decision here — an allowlist that anyone can append to is the same "green with a note" the P0a
+audit was written to remove. When the advisory service cannot be reached the gate is red too: fail
+closed, never a silent green.
+
+Reason: `docs/SECURITY.md` forbade turning an advisory-only scan into a deploy gate without deciding
+what red means, and G5 carried "no dependency CVE scanning; no Nim lockfile" as a MAJOR gap. `pnpm`
+is already present in every job and `pnpm audit` was already wired inline in the `security` job, so
+the cheapest honest gate reuses it instead of adding `osv-scanner` or `trivy`, whose database
+download at gate time is a new tool and a new failure mode. The lockfile was previously refused
+because `nimble lock` broke the build under the `nimbledeps` layout (O-059, L-12); the measurement
+of 16 Nov 2026 explains it precisely. `nimble lock` is deterministic — two fresh resolutions of the
+same commit produced byte-identical lock files and matching checksums — but it writes three files:
+`nimble.lock`, a `nimble.paths` holding absolute paths for one machine, and a `config.nims` block
+that includes the paths file. The compiler keys off `nimble.lock` alone: the moment it sits at the
+repo root, package lookup stops using the nimble path and goes only through `nimble.paths`, so
+without that machine-local file every build — developer, CI and the Docker image — fails with
+`cannot open file: yaml/tojson`. The format is sound; the layout is what cannot be committed.
+`nimble.paths`, `nimble.develop` and `nimbledeps` are gitignored so a local experiment cannot leak
+absolute paths into the repo.
+
+Consequence: `./task deps-check` runs on the developer machine and in CI; the `security` job's
+inline `pnpm audit` becomes that arm. `FE-SEC-06` closes. L-12 and O-059 stay open with their real
+cause recorded, and G5 narrows to the part that is still true: Nim packages have no advisory feed
+and no committable lockfile, so a vulnerable or drifted Nim dependency is still found by reading
+release notes and by comparing the binary hashes in `releases.txt`. Bumping any dependency to clear
+a finding stays a separate reviewed change.
+
 ---
 
 ## 3. Archive index
