@@ -643,37 +643,49 @@ log "==> seed parameter base (idempoten)"
 KRAN_DATABASE_URL="$MIGRATE_DB_URL_HOST" "$BIN" --role=migrate --root="$MONO_DIR" --seed ||
   die "seed parameter gagal — deploy dibatalkan (worker tidak di-restart dengan parameter belum lengkap)"
 
-# 9. Web: build statis lalu swap atomik (`web.new` -> `web`, `web.prev` disimpan).
+# 9. Web: image yang dibangun + ditandatangani CI ditarik, pohon statisnya diekstrak lalu
+# di-swap atomik (`web.new` -> `web`, `web.prev` disimpan). Host tidak pernah menjalankan
+# `pnpm build` lagi; build hanya terjadi di GitHub.
 if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/web/|packages/)' <<<"$CHANGED_FILES"; then
   if [ -f "$MONO_DIR/apps/web/package.json" ]; then
-    log "==> Build web (pnpm)..."
-    cd "$MONO_DIR/apps/web" || die "gagal masuk apps/web"
-    # OPS-3 (T-131): versi pnpm dipatok `packageManager` di package.json, jadi build web sama dengan
-    # CI. Tanpa pin, build bisa memakai pnpm lain yang mengabaikan `minimumReleaseAge`/`allowBuilds`
-    # (cooldown supply chain) — yaitu kebijakan keamanan yang justru dilewati.
-    #
-    # `npm exec`, bukan `corepack`: Node 25+ tidak lagi membawa corepack dan host deploy memakai
-    # Node 26. Saat masih `corepack pnpm`, skrip berhenti tepat di sini dengan
-    # `corepack: command not found` — API sudah ter-build, web **tidak pernah** di-swap, dan
-    # deploy.log tampak "berhenti setelah Build web" karena stderr-nya hanya masuk journal webhook.
-    pnpm_version="$(sed -nE 's/.*"packageManager": *"pnpm@([^"]+)".*/\1/p' "$MONO_DIR/package.json" | head -1)"
-    [ -n "$pnpm_version" ] || die "package.json tidak memuat \"packageManager\" (pnpm) — deploy dibatalkan"
-    log "    pnpm $pnpm_version (dari package.json)"
-    npm exec --yes -- "pnpm@$pnpm_version" install --frozen-lockfile ||
-      die "pnpm install (web) gagal — lihat journal webhook"
-    npm exec --yes -- "pnpm@$pnpm_version" run build ||
-      die "build web (pnpm) gagal — lihat journal webhook"
-    if [ -d "$MONO_DIR/apps/web/build" ]; then
+    WEB_IMAGE="ghcr.io/nferdazel/kran-web:sha-${NEW_REV:0:7}"
+    log "==> web: pulling $WEB_IMAGE"
+    PULL_OUT="$(mktemp)"
+    if podman pull "$WEB_IMAGE" >"$PULL_OUT" 2>&1; then
+      rm -f "$PULL_OUT"
+      # Tag sha-<7> hanya nama berkas sampai image membuktikan commit-nya sendiri.
+      WEB_REV="$(podman inspect -f '{{ index .Labels "org.opencontainers.image.revision" }}' "$WEB_IMAGE" 2>/dev/null || true)"
+      [ "$WEB_REV" = "$NEW_REV" ] ||
+        die "image web $WEB_IMAGE memuat revisi '${WEB_REV}', payload $NEW_REV — web lama tidak disentuh"
+      cosign verify "$WEB_IMAGE" \
+        --certificate-identity-regexp "^https://github.com/nferdazel/kran/" \
+        --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null 2>&1 \
+        || die "cosign verify gagal untuk $WEB_IMAGE — web lama tidak disentuh"
+
+      WEB_CTR="kran-web-extract.$$"
+      podman rm -f "$WEB_CTR" >/dev/null 2>&1 || true
+      podman create --name "$WEB_CTR" "$WEB_IMAGE" >/dev/null
       rm -rf "$APP_DIR/web.new"
-      cp -a "$MONO_DIR/apps/web/build" "$APP_DIR/web.new"
+      mkdir -p "$APP_DIR/web.new"
+      podman cp "$WEB_CTR:/usr/share/nginx/html/." "$APP_DIR/web.new/"
+      podman rm -f "$WEB_CTR" >/dev/null
+      podman rmi "$WEB_IMAGE" >/dev/null 2>&1 || true
+      podman image prune -f >/dev/null 2>&1 || true
+
       rm -rf "$APP_DIR/web.prev"
       if [ -d "$APP_DIR/web" ]; then mv "$APP_DIR/web" "$APP_DIR/web.prev"; fi
       mv "$APP_DIR/web.new" "$APP_DIR/web"
       # SELinux: berkas baru berlabel var_t -> Caddy tidak bisa membaca.
       restorecon -RF "$APP_DIR/web" 2>/dev/null || true
-      log "==> web swapped"
+      log "==> web swapped from $WEB_IMAGE (revision $WEB_REV)"
+    elif grep -qiE 'manifest unknown|no such manifest|manifest for .* not found' "$PULL_OUT"; then
+      # Job image-web di CI belum selesai: web lama tetap melayani, deploy tidak gagal.
+      log "==> web: image $WEB_IMAGE belum ada di registry, web lama dibiarkan: $(tail -1 "$PULL_OUT")"
+      rm -f "$PULL_OUT"
     else
-      die "build web tidak menghasilkan folder build/"
+      TAIL_OUT="$(tail -3 "$PULL_OUT" 2>/dev/null || true)"
+      rm -f "$PULL_OUT"
+      die "pull web image gagal (registry/auth), deploy dihentikan: $TAIL_OUT"
     fi
   else
     log "==> WARN: apps/web belum ada (T-010); web dilewati"
