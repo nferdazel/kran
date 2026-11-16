@@ -69,19 +69,27 @@
       ]
     },
     {
-      "id": "drawer-open-close",
-      "name": "Ledger drawer: open from a row, trap focus, close with Escape, focus returns",
+      "id": "ledger-region-keyboard",
+      "name": "Ledger balances: one tab stop on the scroll region, arrows scroll it, Shift+Tab leaves",
       "k": ["K-04"],
-      "preconditions": ["authenticated session with ledger.journal.read", "ledger with at least one account"],
+      "preconditions": [
+        "authenticated session with ledger.read",
+        "open period with at least two balance lines (dev seed 0003_dev_ledger.sql)"
+      ],
       "steps": [
-        { "focus": "TODO:ledger row action" },
-        { "press": "Enter" },
-        { "expectVisible": "TODO:drawer (role=dialog)" },
-        { "expectFocusIn": "TODO:drawer (role=dialog)" },
-        { "expectNoFocusEscape": { "container": "TODO:drawer (role=dialog)", "maxTabs": 25 } },
-        { "press": "Escape" },
-        { "expectHidden": "TODO:drawer (role=dialog)" },
-        { "expectFocus": "TODO:ledger row action" }
+        { "focus": ".kran-filter-bar .kran-filter-button:last-of-type", "note": "last control before the table" },
+        { "press": "Tab" },
+        { "expectFocus": ".ledger-region", "note": "the wrapper is the single tab stop (D-203)" },
+        { "expectAttr": { "selector": ".ledger-region", "name": "role", "value": "region" } },
+        { "expectAttr": { "selector": ".ledger-region", "name": "tabindex", "value": "0" } },
+        { "expectFocusRingOnActive": { "minWidth": 2 } },
+        { "press": "ArrowRight", "note": "arrow keys scroll the focused region, not the page" },
+        { "expectFocus": ".ledger-region" },
+        { "press": "End" },
+        { "expectFocus": ".ledger-region" },
+        { "expectCount": { "selector": ".ledger-table [tabindex]", "max": 0 }, "note": "the table itself is native" },
+        { "press": "Shift+Tab" },
+        { "expectFocus": ".kran-filter-bar .kran-filter-button:last-of-type", "note": "no keyboard trap" }
       ]
     },
     {

@@ -14,10 +14,10 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
  *
  * Yang dibuktikan:
  *   1. axe hijau pada `/app/ledger` × 2 tema × 2 locale (matriks a11y rute kerja);
- *   2. tabel bisa dicapai dan dinavigasi keyboard-only: Tab masuk (satu tab-stop komposit), panah
- *      pindah sel, Home/End ke tepi baris, Ctrl+Home/Ctrl+End ke ujung tabel, instruksi tersembunyi
- *      terbaca, Enter/Space tidak memicu aksi apa pun, dan Tab berikutnya keluar (tanpa keyboard
- *      trap).
+ *   2. satu tab-stop di `/app/ledger`: Tab dari filter kategori memfokuskan `.kran-table-wrap`
+ *      (`role="region"`, `tabindex="0"`), tabelnya tabel native tanpa `tabindex`/`role`/
+ *      `aria-activedescendant`, panah dan Home/End menggulir region yang sedang fokus, cincin fokus
+ *      terlihat, dan Shift+Tab keluar tanpa keyboard trap (D-203).
  *
  * Batas: tanpa `KRAN_DATABASE_URL` (tidak ada API + DB dev) seluruh berkas dilewati.
  */
@@ -45,14 +45,14 @@ const T: Record<Locale, Text> = {
     username: "Nama pengguna",
     ledgerTitle: "Saldo buku besar",
     tableHelp:
-      "Tabel saldo: Tab masuk ke tabel, tombol panah berpindah sel, Home/End ke tepi baris, Ctrl+Home/Ctrl+End ke sel pertama/terakhir, Tab berikutnya keluar dari tabel.",
+      "Tabel saldo: Tab masuk ke area tabel, tombol panah dan Home/End menggulir area itu, Tab berikutnya keluar.",
   },
   en: {
     loginTitle: "Sign in",
     username: "Username",
     ledgerTitle: "Ledger balances",
     tableHelp:
-      "Balance table: Tab enters the table, arrow keys move between cells, Home/End jump to the row edges, Ctrl+Home/Ctrl+End jump to the first/last cell, and the next Tab leaves the table.",
+      "Balance table: Tab enters the table area, arrow keys and Home/End scroll it, and the next Tab leaves it.",
   },
 };
 
@@ -80,12 +80,12 @@ async function login(page: Page, text: Text): Promise<void> {
   await expect(page.getByRole("heading", { level: 1, name: text.ledgerTitle })).toBeVisible();
 }
 
-/** Tabel saldo yang sudah terisi (seed dev menyediakan satu jurnal) — target gate axe & keyboard. */
-async function ledgerGrid(page: Page): Promise<Locator> {
-  const grid = page.getByRole("grid");
-  await expect(grid).toBeVisible();
-  await expect(grid.locator("tbody tr").first()).toBeVisible();
-  return grid;
+/** Region tabel saldo yang sudah terisi (seed dev menyediakan satu jurnal) — target gate axe. */
+async function ledgerRegion(page: Page): Promise<Locator> {
+  const region = page.locator(".ledger-region");
+  await expect(region).toBeVisible();
+  await expect(region.locator("tbody tr").first()).toBeVisible();
+  return region;
 }
 
 async function expectNoSeriousViolations(page: Page): Promise<void> {
@@ -110,58 +110,84 @@ for (const locale of LOCALES) {
       await prepare(page, locale, theme);
       await login(page, T[locale]);
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-      await ledgerGrid(page);
+      await ledgerRegion(page);
       await expectNoSeriousViolations(page);
     });
   }
 }
 
-test("keyboard /app/ledger: Tab masuk, panah/Home/End berpindah sel, Tab keluar", async ({
+test("keyboard /app/ledger: satu tab stop di region tabel, panah menggulir, Shift+Tab keluar", async ({
   page,
 }) => {
   await prepare(page, "id", "light");
   await login(page, T.id);
 
-  const grid = await ledgerGrid(page);
+  const region = await ledgerRegion(page);
+  const table = page.locator(".ledger-table");
 
-  // Instruksi tombol tersedia untuk pembaca layar lewat `aria-describedby`.
-  await expect(grid).toHaveAttribute("aria-describedby", "ledger-table-help");
+  // Region pembungkus adalah satu-satunya tab stop tabel; tabelnya native (D-203).
+  await expect(region).toHaveAttribute("role", "region");
+  await expect(region).toHaveAttribute("tabindex", "0");
+  await expect(region).toHaveAttribute("aria-describedby", "ledger-table-help");
   await expect(page.locator("#ledger-table-help")).toHaveText(T.id.tableHelp);
+  expect(await page.getByRole("grid").count()).toBe(0);
+  expect(
+    await table.evaluate((el) => ({
+      tabindex: el.getAttribute("tabindex"),
+      role: el.getAttribute("role"),
+      activeDescendant: el.getAttribute("aria-activedescendant"),
+    })),
+  ).toEqual({ tabindex: null, role: null, activeDescendant: null });
 
-  // Tab dari kontrol tepat sebelum tabel (filter kategori terakhir) → tabel. Ini membuktikan
-  // tabel dapat dicapai keyboard dan merupakan satu tab-stop komposit (D-116 diamandemen).
+  // Tab dari kontrol tepat sebelum tabel (filter kategori terakhir) → region.
   await page.locator(".kran-filter-bar .kran-filter-button").last().focus();
   await page.keyboard.press("Tab");
-  await expect(grid).toBeFocused();
-  await expect(grid).toHaveAttribute("aria-activedescendant", "ledger-cell-0-0");
-  await expect(page.locator("#ledger-cell-0-0")).toHaveClass(/ledger-cell--active/);
+  await expect(region).toBeFocused();
 
-  // Panah pindah sel; Home/End ke tepi baris; Ctrl+Home/Ctrl+End ke ujung tabel.
-  await page.keyboard.press("ArrowRight");
-  await expect(grid).toHaveAttribute("aria-activedescendant", "ledger-cell-0-1");
-  await page.keyboard.press("End");
-  await expect(grid).toHaveAttribute("aria-activedescendant", "ledger-cell-0-7");
-  await page.keyboard.press("Home");
-  await expect(grid).toHaveAttribute("aria-activedescendant", "ledger-cell-0-0");
-  // Jurnal demo menyentuh dua akun (101 dan 201), jadi baris kedua pasti ada.
+  // Cincin fokus dari token terlihat pada region yang fokus.
+  const ring = await region.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { style: style.outlineStyle, width: parseFloat(style.outlineWidth) || 0 };
+  });
+  expect(ring.style, "region fokus harus punya cincin fokus").not.toBe("none");
+  expect(ring.width).toBeGreaterThanOrEqual(2);
+
+  // Panah dan End menggulir region yang sedang fokus, bukan halaman. Pada viewport lebar isi tabel
+  // bisa muat; sumbu yang tidak meluap tidak bisa digulir, jadi yang diuji di situ adalah fokus
+  // tetap di region dan halaman tidak ikut bergerak.
+  const metrics = () =>
+    region.evaluate((el) => ({
+      scrollTop: el.scrollTop,
+      scrollLeft: el.scrollLeft,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+    }));
+  const pageScroll = () =>
+    page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+
+  const before = await metrics();
+  const pageBefore = await pageScroll();
   await page.keyboard.press("ArrowDown");
-  await expect(grid).toHaveAttribute("aria-activedescendant", "ledger-cell-1-0");
-  await page.keyboard.press("Control+End");
-  await expect(grid).toHaveAttribute("aria-activedescendant", /^ledger-cell-\d+-7$/);
-  await page.keyboard.press("Control+Home");
-  await expect(grid).toHaveAttribute("aria-activedescendant", "ledger-cell-0-0");
+  await page.keyboard.press("End");
+  await expect(region).toBeFocused();
+  const afterVertical = await metrics();
+  if (before.scrollHeight > before.clientHeight) {
+    expect(afterVertical.scrollTop).toBeGreaterThan(before.scrollTop);
+  }
+  await page.keyboard.press("ArrowRight");
+  await expect(region).toBeFocused();
+  const afterHorizontal = await metrics();
+  if (before.scrollWidth > before.clientWidth) {
+    expect(afterHorizontal.scrollLeft).toBeGreaterThan(before.scrollLeft);
+  }
+  expect(await pageScroll()).toEqual(pageBefore);
 
-  // Sel aktif terlihat (focus visible): kelas aktif ada, dan cincin fokus dari token dipakai.
-  const activeCell = page.locator("#ledger-cell-0-0");
-  await expect(activeCell).toHaveClass(/ledger-cell--active/);
-
-  // Enter/Space tidak memicu aksi destruktif apa pun (tabel hanya baca, tidak ada handler).
-  await page.keyboard.press("Enter");
-  await page.keyboard.press("Space");
-  await expect(page).toHaveURL(/\/app\/ledger$/);
-  await expect(grid).toBeFocused();
-
-  // Tidak ada keyboard trap: Tab berikutnya meninggalkan tabel.
+  // Shift+Tab keluar dari region kembali ke kontrol filter; Tab masuk lagi (tanpa keyboard trap).
+  await page.keyboard.press("Shift+Tab");
+  await expect(region).not.toBeFocused();
+  await expect(page.locator(".kran-filter-bar .kran-filter-button").last()).toBeFocused();
   await page.keyboard.press("Tab");
-  await expect(grid).not.toBeFocused();
+  await expect(region).toBeFocused();
 });

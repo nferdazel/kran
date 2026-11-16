@@ -191,7 +191,8 @@ Aturan yang mengikat:
 - Fokus `:focus-visible` 2 px + offset 2 px, kontras ≥ 3:1 terhadap **surface raised** juga; tidak
   pernah `outline:none`.
 - Urutan DOM = urutan visual; tanpa `tabindex > 0`; satu tab-stop per komponen komposit
-  (combobox/tabel: Tab masuk, panah pindah item, `aria-activedescendant`).
+  (combobox: Tab masuk, panah pindah item, `aria-activedescendant`; tabel: Tab masuk ke pembungkus
+  `role="region"` yang menggulir, tabelnya tabel native tanpa `tabindex`/`role` — D-203).
 - Satu `h1` per halaman, landmark lengkap, skip link ke `#main`.
 - Pengaturan tampilan (tema, bahasa) **tidak boleh** menjadi tab-stop sebelum konten.
 - Zoom 200%: shell satu kolom; **tabel ledger tidak boleh diubah jadi kartu** dan kolom tidak

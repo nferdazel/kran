@@ -50,9 +50,9 @@ test("1366×768 @125%: tanpa gulir mendatar halaman dan tabel tetap terpakai", a
   await prepare(page);
   await login(page);
 
-  const grid = page.getByRole("grid");
-  await expect(grid).toBeVisible();
-  await expect(grid.locator("tbody tr").first()).toBeVisible();
+  const region = page.locator(".ledger-region");
+  await expect(region).toBeVisible();
+  await expect(region.locator("tbody tr").first()).toBeVisible();
 
   // 1. Tidak ada gulir mendatar di tingkat dokumen.
   const pageOverflow = await page.evaluate(
@@ -63,8 +63,6 @@ test("1366×768 @125%: tanpa gulir mendatar halaman dan tabel tetap terpakai", a
   );
 
   // 2. Tabel yang lebar digulir di dalam region berlabel, bukan menggeser halaman.
-  const region = page.locator(".ledger-region");
-  await expect(region).toBeVisible();
   const overflowX = await region.evaluate((el) => getComputedStyle(el).overflowX);
   expect(overflowX).toBe("auto");
 
@@ -87,12 +85,21 @@ test("1366×768 @125%: tanpa gulir mendatar halaman dan tabel tetap terpakai", a
     expect(codeBox!.x).toBeLessThanOrEqual(regionBox!.x + 2);
   }
 
-  // 4. Keyboard tetap bisa menjangkau tabel pada ukuran ini.
+  // 4. Keyboard tetap bisa menjangkau tabel pada ukuran ini: region pembungkus adalah tab stop, dan
+  //    panah menggulir region itu (D-203).
   await page.locator(".kran-filter-bar .kran-filter-button").last().focus();
   await page.keyboard.press("Tab");
-  await expect(grid).toBeFocused();
+  await expect(region).toBeFocused();
+  const beforeScroll = await region.evaluate((el) => ({
+    left: el.scrollLeft,
+    scrollWidth: el.scrollWidth,
+    clientWidth: el.clientWidth,
+  }));
   await page.keyboard.press("ArrowRight");
-  await expect(grid).toHaveAttribute("aria-activedescendant", "ledger-cell-0-1");
+  await expect(region).toBeFocused();
+  if (beforeScroll.scrollWidth > beforeScroll.clientWidth) {
+    expect(await region.evaluate((el) => el.scrollLeft)).toBeGreaterThan(beforeScroll.left);
+  }
 });
 
 /**
@@ -109,9 +116,9 @@ test.describe("zoom 200%", () => {
     await prepare(page);
     await login(page);
 
-    const grid = page.getByRole("grid");
-    await expect(grid).toBeVisible();
-    await expect(grid.locator("tbody tr").first()).toBeVisible();
+    const region = page.locator(".ledger-region");
+    await expect(region).toBeVisible();
+    await expect(region.locator("tbody tr").first()).toBeVisible();
 
     // 1. Shell satu kolom: grid-template-columns hanya satu track (sidebar tidak di samping isi).
     const tracks = await page.locator(".kran-shell").evaluate((el) =>
@@ -126,17 +133,15 @@ test.describe("zoom 200%", () => {
     expect(pageOverflow).toBeLessThanOrEqual(1);
 
     // 3. Tabel tetap tabel di dalam region bergulir berlabel (bukan kartu per baris).
-    const region = page.locator(".ledger-region");
-    await expect(region).toBeVisible();
     expect(await region.evaluate((el) => getComputedStyle(el).overflowX)).toBe("auto");
     expect(await page.locator(".ledger-table").evaluate((el) => getComputedStyle(el).display))
       .toBe("table");
 
-    // 4. Tabel masih bisa difokus dan dinavigasi keyboard pada ukuran ini.
+    // 4. Tabel masih bisa difokus dan digulir keyboard pada ukuran ini.
     await page.locator(".kran-filter-bar .kran-filter-button").last().focus();
     await page.keyboard.press("Tab");
-    await expect(grid).toBeFocused();
-    await page.keyboard.press("ArrowRight");
-    await expect(grid).toHaveAttribute("aria-activedescendant", "ledger-cell-0-1");
+    await expect(region).toBeFocused();
+    await page.keyboard.press("End");
+    await expect(region).toBeFocused();
   });
 });

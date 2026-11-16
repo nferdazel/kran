@@ -385,7 +385,7 @@
   "ledger_source_snapshot": "Matches snapshot",
   "ledger_status_closed": "Closed",
   "ledger_status_open": "Open",
-  "ledger_table_help": "Balance table: Tab enters the table, arrow keys move between cells, Home/End jump to the row edges, Ctrl+Home/Ctrl+End jump to the first/last cell, and the next Tab leaves the table.",
+  "ledger_table_help": "Balance table: Tab enters the table area, arrow keys and Home/End scroll it, and the next Tab leaves it.",
   "ledger_title": "Ledger balances",
   "ledger_total": "Total",
   "ledger_unbalanced": "Not balanced",

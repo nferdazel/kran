@@ -385,7 +385,7 @@
   "ledger_source_snapshot": "Cocok dengan snapshot",
   "ledger_status_closed": "Ditutup",
   "ledger_status_open": "Terbuka",
-  "ledger_table_help": "Tabel saldo: Tab masuk ke tabel, tombol panah berpindah sel, Home/End ke tepi baris, Ctrl+Home/Ctrl+End ke sel pertama/terakhir, Tab berikutnya keluar dari tabel.",
+  "ledger_table_help": "Tabel saldo: Tab masuk ke area tabel, tombol panah dan Home/End menggulir area itu, Tab berikutnya keluar.",
   "ledger_title": "Saldo buku besar",
   "ledger_total": "Total",
   "ledger_unbalanced": "Tidak seimbang",
