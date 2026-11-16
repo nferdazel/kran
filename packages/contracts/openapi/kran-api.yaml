@@ -5649,6 +5649,7 @@ components:
           format: uuid
         expiresAt:
           type: string
+          format: date-time
           description: Batas idle sesi (ISO-8601 UTC).
 
     SessionInfo:
@@ -5676,6 +5677,7 @@ components:
             description: Kode izin `modul.resource.action` (spec §13).
         expiresAt:
           type: string
+          format: date-time
           description: Batas idle sesi (ISO-8601 UTC); batas absolut tidak pernah dilampaui.
         businessDate:
           $ref: "#/components/schemas/DayCloseBusinessDate"
@@ -5849,6 +5851,7 @@ components:
           format: date
         effectiveTo:
           type: string
+          format: date
           description: Kosong = berlaku tanpa batas akhir.
         maker:
           type: string
@@ -5887,6 +5890,7 @@ components:
           format: date
         effectiveTo:
           type: string
+          format: date
         reason:
           type: string
           minLength: 1
@@ -5916,6 +5920,7 @@ components:
           format: date
         effectiveTo:
           type: string
+          format: date
         reason:
           type: string
 
@@ -6013,6 +6018,7 @@ components:
           type: string
         createdAt:
           type: string
+          format: date-time
 
     ParamEndRequestList:
       type: object
@@ -6054,9 +6060,11 @@ components:
           minimum: 1
         recordedAt:
           type: string
+          format: date-time
           description: ISO-8601 UTC (zona tetap, bukan zona server).
         businessDate:
           type: string
+          format: date
           description: Tanggal buku saat aksi terjadi (`YYYY-MM-DD`); kosong bila belum ada.
         actorUserId:
           type: string
@@ -6127,6 +6135,7 @@ components:
           format: uuid
         createdAt:
           type: string
+          format: date-time
           description: ISO-8601 UTC.
 
     PartySummary:
@@ -6180,11 +6189,13 @@ components:
             dienkripsi. Nilai ini tidak pernah dikembalikan utuh kecuali lewat *unmask*.
         issuedAt:
           type: ["string", "null"]
+          format: date
           description: |
             Tanggal terbit `YYYY-MM-DD` (opsional; `null`/absen bila tidak dicatat). Bentuk
             tanggal tidak sah dijawab 400, bukan 500.
         expiresAt:
           type: ["string", "null"]
+          format: date
           description: |
             Tanggal kedaluwarsa `YYYY-MM-DD` (opsional). Tidak boleh lebih awal dari `issuedAt`
             (dijawab 400).
@@ -6204,10 +6215,13 @@ components:
           description: Dua karakter terakhir nomor (bentuk tersamar untuk UI).
         issuedAt:
           type: ["string", "null"]
+          format: date
         expiresAt:
           type: ["string", "null"]
+          format: date
         createdAt:
           type: string
+          format: date-time
           description: ISO-8601 UTC.
 
     IdentityDocUnmasked:
@@ -6225,6 +6239,7 @@ components:
           description: Nomor asli (ternormalisasi). Setiap pembacaan diaudit.
         expiresAt:
           type: ["string", "null"]
+          format: date
 
     UnmaskRequest:
       type: object
@@ -6253,9 +6268,11 @@ components:
           description: Tingkat risiko berjalan (anggota `party.kyc.risk_levels`).
         riskAssessedAt:
           type: ["string", "null"]
+          format: date-time
           description: ISO-8601 UTC; `null` bila belum pernah dinilai.
         nextReviewDue:
           type: ["string", "null"]
+          format: date
           description: Tanggal re-KYC berikutnya (`YYYY-MM-DD`).
         documents:
           type: array
@@ -6282,6 +6299,7 @@ components:
           type: string
         assessedAt:
           type: string
+          format: date-time
           description: ISO-8601 UTC.
         assessedBy:
           type: string
@@ -6317,9 +6335,11 @@ components:
           type: string
         assessedAt:
           type: string
+          format: date-time
           description: ISO-8601 UTC.
         nextReviewDue:
           type: ["string", "null"]
+          format: date
 
     PartyDetailUpdate:
       type: object
@@ -6347,6 +6367,7 @@ components:
           description: Nama resmi (PII; disimpan terenkripsi, tidak diterbitkan ke event).
         birthDate:
           type: string
+          format: date
           description: Tanggal lahir `YYYY-MM-DD`. Bentuk tidak sah atau melewati tanggal bisnis → 400.
         sex:
           type: string
@@ -6408,6 +6429,7 @@ components:
           $ref: "#/components/schemas/AddressLast2"
         updatedAt:
           type: string
+          format: date-time
           description: ISO-8601 UTC.
 
     PersonDetailLast2:
@@ -6471,6 +6493,7 @@ components:
           type: string
         birthDate:
           type: string
+          format: date
         sex:
           type: string
         occupation:
@@ -6545,6 +6568,7 @@ components:
           enum: [ACTIVE, INACTIVE]
         createdAt:
           type: string
+          format: date-time
           description: ISO-8601 UTC.
 
     CoaList:
@@ -6581,19 +6605,23 @@ components:
           format: uuid
         startsOn:
           type: string
+          format: date
         endsOn:
           type: string
+          format: date
         status:
           type: string
           enum: [OPEN, CLOSED]
         closedAt:
           type: ["string", "null"]
+          format: date-time
           description: ISO-8601 UTC; `null` selama periode masih OPEN.
         closedBy:
           type: ["string", "null"]
           description: UUID penutup; `null` selama periode masih OPEN.
         createdAt:
           type: string
+          format: date-time
           description: ISO-8601 UTC.
 
     PeriodList:
@@ -6632,6 +6660,7 @@ components:
           enum: [OPEN, CLOSING, CLOSED]
         frozenAt:
           type: ["string", "null"]
+          format: date-time
           description: ISO-8601 UTC saat state terakhir berubah; `null` selama `OPEN`.
 
     DayCloseTaskCounts:
@@ -6726,9 +6755,11 @@ components:
                  CANCELED]
         startedAt:
           type: string
+          format: date-time
           description: ISO-8601 UTC.
         finishedAt:
           type: ["string", "null"]
+          format: date-time
           description: ISO-8601 UTC; `null` selama run belum selesai.
         summaryHash:
           type: ["string", "null"]
@@ -6765,8 +6796,10 @@ components:
                  CANCELED]
         startedAt:
           type: string
+          format: date-time
         finishedAt:
           type: ["string", "null"]
+          format: date-time
         summaryHash:
           type: ["string", "null"]
         taskCounts:
@@ -6849,6 +6882,7 @@ components:
           description: UUID jurnal asal bila jurnal ini pembalik; `null` bila bukan.
         recordedAt:
           type: string
+          format: date-time
           description: ISO-8601 UTC.
 
     Journal:
@@ -6877,6 +6911,7 @@ components:
           type: ["string", "null"]
         recordedAt:
           type: string
+          format: date-time
         lines:
           type: array
           items:
@@ -7038,6 +7073,7 @@ components:
           description: "Siklus hidup versi (D-119): DRAFT → ACTIVE (approve) atau REJECTED (reject)."
         approvedAt:
           type: [ "string", "null" ]
+          format: date-time
           description: Waktu persetujuan (ISO 8601 UTC); null selama belum disetujui.
         rejectReason:
           type: [ "string", "null" ]
@@ -7087,6 +7123,7 @@ components:
           $ref: "#/components/schemas/SavingsKind"
         createdAt:
           type: string
+          format: date-time
         versions:
           type: array
           items:
@@ -7111,6 +7148,7 @@ components:
           $ref: "#/components/schemas/SavingsKind"
         createdAt:
           type: string
+          format: date-time
         currentVersion:
           oneOf:
             - $ref: "#/components/schemas/ProductVersionRef"
@@ -7240,6 +7278,7 @@ components:
           format: date
         createdAt:
           type: string
+          format: date-time
           description: ISO-8601 UTC.
 
     DepositAccountList:
@@ -7571,6 +7610,7 @@ components:
           description: Float awal laci, desimal string 2 desimal (tanpa float).
         openedAt:
           type: string
+          format: date-time
           description: ISO-8601 UTC.
         note:
           type: string
@@ -7621,6 +7661,7 @@ components:
             kas kurang. Bukan error: selisih dicatat + diaudit.
         closedAt:
           type: string
+          format: date-time
           description: ISO-8601 UTC.
         note:
           type: string
@@ -7690,6 +7731,7 @@ components:
           description: Kosong selama `PENDING`.
         decidedAt:
           type: string
+          format: date-time
           description: Kosong selama `PENDING`; ISO-8601 UTC bila sudah diputuskan.
         decisionNote:
           type: string
@@ -7699,6 +7741,7 @@ components:
           description: Jurnal GL hasil persetujuan; kosong selama `PENDING`/`REJECTED`.
         createdAt:
           type: string
+          format: date-time
           description: ISO-8601 UTC.
 
     TellerSessionTransactionList:

@@ -2606,7 +2606,10 @@ export interface components {
             userId: string;
             /** Format: uuid */
             sessionId: string;
-            /** @description Batas idle sesi (ISO-8601 UTC). */
+            /**
+             * Format: date-time
+             * @description Batas idle sesi (ISO-8601 UTC).
+             */
             expiresAt: string;
         };
         SessionInfo: {
@@ -2617,7 +2620,10 @@ export interface components {
             mustChangePassword: boolean;
             roles: string[];
             permissions: string[];
-            /** @description Batas idle sesi (ISO-8601 UTC); batas absolut tidak pernah dilampaui. */
+            /**
+             * Format: date-time
+             * @description Batas idle sesi (ISO-8601 UTC); batas absolut tidak pernah dilampaui.
+             */
             expiresAt: string;
             /**
              * @description Tanggal buku institusi saat sesi dibaca, bentuknya sama dengan
@@ -2711,7 +2717,10 @@ export interface components {
             value: unknown;
             /** Format: date */
             effectiveFrom: string;
-            /** @description Kosong = berlaku tanpa batas akhir. */
+            /**
+             * Format: date
+             * @description Kosong = berlaku tanpa batas akhir.
+             */
             effectiveTo: string;
             maker: string;
             checker: string;
@@ -2732,6 +2741,7 @@ export interface components {
             scopeId?: string;
             /** Format: date */
             effectiveFrom?: string;
+            /** Format: date */
             effectiveTo?: string;
             reason: string;
         };
@@ -2747,6 +2757,7 @@ export interface components {
             value: unknown;
             /** Format: date */
             effectiveFrom: string;
+            /** Format: date */
             effectiveTo: string;
             reason: string;
         };
@@ -2803,6 +2814,7 @@ export interface components {
             /** @description Kosong = belum diputuskan. */
             decidedBy: string;
             decisionNote: string;
+            /** Format: date-time */
             createdAt: string;
         };
         ParamEndRequestList: {
@@ -2823,9 +2835,15 @@ export interface components {
         };
         AuditItem: {
             seq: number;
-            /** @description ISO-8601 UTC (zona tetap, bukan zona server). */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC (zona tetap, bukan zona server).
+             */
             recordedAt: string;
-            /** @description Tanggal buku saat aksi terjadi (`YYYY-MM-DD`); kosong bila belum ada. */
+            /**
+             * Format: date
+             * @description Tanggal buku saat aksi terjadi (`YYYY-MM-DD`); kosong bila belum ada.
+             */
             businessDate: string;
             actorUserId: string;
             actorRole: string;
@@ -2866,7 +2884,10 @@ export interface components {
             status: "ACTIVE" | "SUSPENDED" | "CLOSED";
             /** Format: uuid */
             branchId: string;
-            /** @description ISO-8601 UTC. */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC.
+             */
             createdAt: string;
         };
         /**
@@ -2897,11 +2918,13 @@ export interface components {
              */
             number: string;
             /**
+             * Format: date
              * @description Tanggal terbit `YYYY-MM-DD` (opsional; `null`/absen bila tidak dicatat). Bentuk
              *     tanggal tidak sah dijawab 400, bukan 500.
              */
             issuedAt?: string | null;
             /**
+             * Format: date
              * @description Tanggal kedaluwarsa `YYYY-MM-DD` (opsional). Tidak boleh lebih awal dari `issuedAt`
              *     (dijawab 400).
              */
@@ -2913,9 +2936,14 @@ export interface components {
             docType: string;
             /** @description Dua karakter terakhir nomor (bentuk tersamar untuk UI). */
             numberLast2: string;
+            /** Format: date */
             issuedAt: string | null;
+            /** Format: date */
             expiresAt: string | null;
-            /** @description ISO-8601 UTC. */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC.
+             */
             createdAt: string;
         };
         IdentityDocUnmasked: {
@@ -2924,6 +2952,7 @@ export interface components {
             docType: string;
             /** @description Nomor asli (ternormalisasi). Setiap pembacaan diaudit. */
             number: string;
+            /** Format: date */
             expiresAt: string | null;
         };
         UnmaskRequest: {
@@ -2937,9 +2966,15 @@ export interface components {
             status: "PENDING" | "VERIFIED" | "REJECTED";
             /** @description Tingkat risiko berjalan (anggota `party.kyc.risk_levels`). */
             riskLevel: string;
-            /** @description ISO-8601 UTC; `null` bila belum pernah dinilai. */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC; `null` bila belum pernah dinilai.
+             */
             riskAssessedAt: string | null;
-            /** @description Tanggal re-KYC berikutnya (`YYYY-MM-DD`). */
+            /**
+             * Format: date
+             * @description Tanggal re-KYC berikutnya (`YYYY-MM-DD`).
+             */
             nextReviewDue: string | null;
             /** @description Maksimum 50 dokumen pertama menurut `createdAt` (batas teknis respons). */
             documents: components["schemas"]["IdentityDoc"][];
@@ -2951,7 +2986,10 @@ export interface components {
             ratingId: string;
             level: string;
             reason: string;
-            /** @description ISO-8601 UTC. */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC.
+             */
             assessedAt: string;
             /** Format: uuid */
             assessedBy: string;
@@ -2968,8 +3006,12 @@ export interface components {
             partyId: string;
             level: string;
             reason: string;
-            /** @description ISO-8601 UTC. */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC.
+             */
             assessedAt: string;
+            /** Format: date */
             nextReviewDue: string | null;
         };
         /**
@@ -2984,7 +3026,10 @@ export interface components {
         PersonDetailCreate: {
             /** @description Nama resmi (PII; disimpan terenkripsi, tidak diterbitkan ke event). */
             legalName: string;
-            /** @description Tanggal lahir `YYYY-MM-DD`. Bentuk tidak sah atau melewati tanggal bisnis → 400. */
+            /**
+             * Format: date
+             * @description Tanggal lahir `YYYY-MM-DD`. Bentuk tidak sah atau melewati tanggal bisnis → 400.
+             */
             birthDate: string;
             /** @description Harus termasuk daftar parameter `party.person.sex_values`. */
             sex: string;
@@ -3015,7 +3060,10 @@ export interface components {
             person: components["schemas"]["PersonDetailLast2"];
             org: components["schemas"]["OrgDetailLast2"];
             address: components["schemas"]["AddressLast2"];
-            /** @description ISO-8601 UTC. */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC.
+             */
             updatedAt: string;
         };
         PersonDetailLast2: {
@@ -3043,6 +3091,7 @@ export interface components {
         };
         PersonDetailFull: {
             legalName: string;
+            /** Format: date */
             birthDate: string;
             sex: string;
             occupation: string;
@@ -3082,7 +3131,10 @@ export interface components {
             postable: boolean;
             /** @enum {string} */
             status: "ACTIVE" | "INACTIVE";
-            /** @description ISO-8601 UTC. */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC.
+             */
             createdAt: string;
         };
         CoaList: {
@@ -3103,15 +3155,23 @@ export interface components {
         Period: {
             /** Format: uuid */
             periodId: string;
+            /** Format: date */
             startsOn: string;
+            /** Format: date */
             endsOn: string;
             /** @enum {string} */
             status: "OPEN" | "CLOSED";
-            /** @description ISO-8601 UTC; `null` selama periode masih OPEN. */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC; `null` selama periode masih OPEN.
+             */
             closedAt: string | null;
             /** @description UUID penutup; `null` selama periode masih OPEN. */
             closedBy: string | null;
-            /** @description ISO-8601 UTC. */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC.
+             */
             createdAt: string;
         };
         PeriodList: {
@@ -3127,7 +3187,10 @@ export interface components {
             date: string;
             /** @enum {string} */
             state: "OPEN" | "CLOSING" | "CLOSED";
-            /** @description ISO-8601 UTC saat state terakhir berubah; `null` selama `OPEN`. */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC saat state terakhir berubah; `null` selama `OPEN`.
+             */
             frozenAt: string | null;
         } | null;
         DayCloseTaskCounts: {
@@ -3170,9 +3233,15 @@ export interface components {
             levels: ("EOD" | "EOW" | "EOM" | "EOQ" | "EOY")[];
             /** @enum {string} */
             state: "PLANNED" | "PRECHECK" | "RUNNING" | "POSTCHECK" | "COMPLETED" | "FAILED" | "BLOCKED" | "PAUSED" | "CANCELED";
-            /** @description ISO-8601 UTC. */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC.
+             */
             startedAt: string;
-            /** @description ISO-8601 UTC; `null` selama run belum selesai. */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC; `null` selama run belum selesai.
+             */
             finishedAt: string | null;
             /** @description Segel bukti hasil run; `null` sampai run `COMPLETED`. */
             summaryHash: string | null;
@@ -3192,7 +3261,9 @@ export interface components {
             levels: ("EOD" | "EOW" | "EOM" | "EOQ" | "EOY")[];
             /** @enum {string} */
             state: "PLANNED" | "PRECHECK" | "RUNNING" | "POSTCHECK" | "COMPLETED" | "FAILED" | "BLOCKED" | "PAUSED" | "CANCELED";
+            /** Format: date-time */
             startedAt: string;
+            /** Format: date-time */
             finishedAt: string | null;
             summaryHash: string | null;
             taskCounts: components["schemas"]["DayCloseTaskCounts"];
@@ -3229,7 +3300,10 @@ export interface components {
             idempotencyKey: string;
             /** @description UUID jurnal asal bila jurnal ini pembalik; `null` bila bukan. */
             reversalOf: string | null;
-            /** @description ISO-8601 UTC. */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC.
+             */
             recordedAt: string;
         };
         Journal: {
@@ -3244,6 +3318,7 @@ export interface components {
             sourceRef: string;
             idempotencyKey: string;
             reversalOf: string | null;
+            /** Format: date-time */
             recordedAt: string;
             lines: components["schemas"]["JournalLine"][];
             totalDebit: string;
@@ -3328,7 +3403,10 @@ export interface components {
              * @enum {string}
              */
             status: "DRAFT" | "ACTIVE" | "REJECTED";
-            /** @description Waktu persetujuan (ISO 8601 UTC); null selama belum disetujui. */
+            /**
+             * Format: date-time
+             * @description Waktu persetujuan (ISO 8601 UTC); null selama belum disetujui.
+             */
             approvedAt: string | null;
             /** @description Alasan penolakan; null kecuali status REJECTED. */
             rejectReason: string | null;
@@ -3355,6 +3433,7 @@ export interface components {
             /** @enum {string} */
             productType: "SAVINGS" | "TIME_DEPOSIT" | "LOAN" | "FINANCING";
             savingsKind?: components["schemas"]["SavingsKind"];
+            /** Format: date-time */
             createdAt: string;
             versions: components["schemas"]["ProductVersion"][];
         };
@@ -3366,6 +3445,7 @@ export interface components {
             /** @enum {string} */
             productType: "SAVINGS" | "TIME_DEPOSIT" | "LOAN" | "FINANCING";
             savingsKind?: components["schemas"]["SavingsKind"];
+            /** Format: date-time */
             createdAt: string;
             currentVersion: components["schemas"]["ProductVersionRef"] | null;
         };
@@ -3441,7 +3521,10 @@ export interface components {
             balance: string;
             /** Format: date */
             openedOn: string;
-            /** @description ISO-8601 UTC. */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC.
+             */
             createdAt: string;
         };
         DepositAccountList: {
@@ -3684,7 +3767,10 @@ export interface components {
             status: "OPEN";
             /** @description Float awal laci, desimal string 2 desimal (tanpa float). */
             openingFloat: string;
-            /** @description ISO-8601 UTC. */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC.
+             */
             openedAt: string;
             /** @description Catatan sesi ("" bila tidak diisi). */
             note: string;
@@ -3713,7 +3799,10 @@ export interface components {
              *     kas kurang. Bukan error: selisih dicatat + diaudit.
              */
             variance: string;
-            /** @description ISO-8601 UTC. */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC.
+             */
             closedAt: string;
             /** @description Catatan sesi ("" bila tidak diisi). */
             note: string;
@@ -3752,13 +3841,19 @@ export interface components {
             requestedBy: string;
             /** @description Kosong selama `PENDING`. */
             decidedBy: string;
-            /** @description Kosong selama `PENDING`; ISO-8601 UTC bila sudah diputuskan. */
+            /**
+             * Format: date-time
+             * @description Kosong selama `PENDING`; ISO-8601 UTC bila sudah diputuskan.
+             */
             decidedAt: string;
             /** @description Alasan penolakan; kosong bila disetujui atau masih `PENDING`. */
             decisionNote: string;
             /** @description Jurnal GL hasil persetujuan; kosong selama `PENDING`/`REJECTED`. */
             journalId: string;
-            /** @description ISO-8601 UTC. */
+            /**
+             * Format: date-time
+             * @description ISO-8601 UTC.
+             */
             createdAt: string;
         };
         TellerSessionTransactionList: {
