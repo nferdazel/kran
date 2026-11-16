@@ -495,7 +495,7 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE 'migrations/' <<<"$CHANGED_FILES"; then
   fi
 fi
 
-# 7. Build + ekstrak binary (spec §21.4 #7). Rebuild hanya bila input build berubah.
+# 7. Tarik image + ekstrak binary (spec §21.4 #7). Deploy ulang hanya bila input API berubah.
 if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|tools/|kran\.nimble|nimble\.lock)' <<<"$CHANGED_FILES"; then
   log "==> Build API (podman, tag :local)..."
   [ -d "$MONO_DIR/apps/api" ] || die "apps/api tidak ditemukan"
@@ -522,7 +522,29 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|tools/|kran\.
       OLD_PREV_IMAGE_ID=""
     fi
   fi
-  /srv/qouver/bin/qouver-build-lock cbs -- podman build -f apps/api/Dockerfile -t localhost/kran-api:local .
+  # Image dibangun di GitHub (job image-api), bukan di host: tarik tag sha-<7>, buktikan
+  # revisinya, lalu pindahkan `:local` ke image itu. Gerbang CI di atas sudah menunggu job
+  # image-api selesai, jadi image yang hilang di sini adalah kegagalan nyata, bukan balapan.
+  API_IMAGE="ghcr.io/nferdazel/kran-api:sha-${NEW_REV:0:7}"
+  log "==> tarik image API: $API_IMAGE"
+  PULL_OUT="$(mktemp)"
+  if ! podman pull "$API_IMAGE" >"$PULL_OUT" 2>&1; then
+    TAIL_OUT="$(tail -3 "$PULL_OUT" 2>/dev/null || true)"
+    rm -f "$PULL_OUT"
+    die "pull image API gagal (registry/auth/image belum ada): $TAIL_OUT"
+  fi
+  rm -f "$PULL_OUT"
+  # Tag sha-<7> hanya nama berkas sampai image membuktikan commit-nya sendiri.
+  IMAGE_REV="$(podman inspect -f '{{ index .Labels "org.opencontainers.image.revision" }}' "$API_IMAGE" 2>/dev/null || true)"
+  [ "$IMAGE_REV" = "$NEW_REV" ] ||
+    die "image API $API_IMAGE memuat revisi '${IMAGE_REV}', payload $NEW_REV — container lama tidak disentuh"
+  cosign verify "$API_IMAGE" \
+    --certificate-identity-regexp "^https://github.com/nferdazel/kran/" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null 2>&1 \
+    || die "cosign verify gagal untuk $API_IMAGE — container lama tidak disentuh"
+  podman tag "$API_IMAGE" localhost/kran-api:local
+  podman rmi "$API_IMAGE" >/dev/null 2>&1 || true   # :local dan :prev tetap satu-satunya tag lokal
+  log "    image API terverifikasi (revision $IMAGE_REV)"
   # Syarat target rollback hanya berlaku bila build benar-benar memindahkan `:local`. Build yang
   # menghasilkan ID sama (mis. konteks tidak berubah) tidak meninggalkan versi lain untuk kembali,
   # dan memaksakan `:prev` di situ akan menggagalkan deploy yang isinya cuma ops/docs.
