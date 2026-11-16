@@ -4,6 +4,17 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.4.1] - 2026-11-16
+
+### Fixed
+- **lint:** Drop the unused sequtils import that a fresh baseline check flags
+- **deploy:** Verify and tag the pulled digest, not the mutable sha tag (#20)
+
+### Operations
+- **gate:** Require the ci-fast job before images are published (T-176)
+- **image:** Start the image jobs after a green gate instead of skipping with it (#21)
+- **deploy:** Publish the images only after the gate
+
 ## [0.4.0] - 2026-11-16
 
 ### Added
