@@ -160,7 +160,7 @@ findings are folded into the rows below and into the task files at DoR time.
 | T-291 | Report and print: no chrome, token colours, number rules | S | T-288, T-289 | standard | DONE |
 | T-292 | State sweep: three empties, loading/error components, terminology | M | T-284, T-285 | standard | DONE |
 | T-293 | Loans list density: one-line dates, member name over ID, 40px rows | M | T-284, T-288 | standard | DONE |
-| T-294 | Shell reflow at 360 and 200%, one ledger tab stop | M | T-284, T-285, T-288 | standard | IN_PROGRESS |
+| T-294 | Shell reflow at 360 and 200%, one ledger tab stop | M | T-284, T-285, T-288 | standard | DONE |
 | T-295 | Loans money columns state their unit in the header | S | T-289, T-293 | standard | DONE |
 | T-296 | Visual baselines ignore the build version | S | T-289 | standard | DONE |
 | T-234 | AppShell + navigation | M | T-232, T-233, T-279 | standard | SUPERSEDED by T-285 |
@@ -190,6 +190,7 @@ findings are folded into the rows below and into the task files at DoR time.
 | T-299 | C-01: realtime `param.changed` uses the params read-scope rule | S | none | full (authz) | DONE |
 | T-300 | C-02: cash-session transactions readable by the owner or `teller.session.read_all` | S | none | full (authz) | DONE |
 | T-301 | C-03: parameter changes cannot start before the running business date | S | none | full (audit) | DONE |
+| T-302 | Audit archive and rotate with a recorded chain baseline | M | T-248 | full (audit) | TODO |
 
 ## P8 - Synthetic-coop dry run
 
