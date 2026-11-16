@@ -190,7 +190,7 @@ findings are folded into the rows below and into the task files at DoR time.
 | T-299 | C-01: realtime `param.changed` uses the params read-scope rule | S | none | full (authz) | DONE |
 | T-300 | C-02: cash-session transactions readable by the owner or `teller.session.read_all` | S | none | full (authz) | DONE |
 | T-301 | C-03: parameter changes cannot start before the running business date | S | none | full (audit) | DONE |
-| T-302 | Audit archive and rotate with a recorded chain baseline | M | T-248 | full (audit) | TODO |
+| T-302 | Audit archive and rotate with a recorded chain baseline | M | T-248 | full (audit) | READY (build waits on the owner's decision; see task Notes) |
 
 ## P8 - Synthetic-coop dry run
 
