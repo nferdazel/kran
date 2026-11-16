@@ -49,6 +49,41 @@ mkdir -p "$APP_DIR/logs"
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG"; }
 die() { log "ERROR: $*"; exit 1; }
 
+# Retensi hanya `:local` dan `:prev` (§3.4), tetapi `podman rmi` tag sha-<7> dulu hanya ada di jalur
+# sukses: pull berhasil lalu `die` (cosign verify, label revisi, digest kosong) meninggalkan tag
+# ghcr.io/...:sha-<rev> di store selamanya. v0.4.2 (16 Nov 2026) membuktikannya —
+# ghcr.io/nferdazel/kran-api:sha-a170557 masih ada berjam-jam setelah deploy-nya gagal dan baru hilang
+# lewat `podman rmi` manual. Trap ini menutup semua jalur keluar setelah pull sukses: yang gagal
+# di antara pull dan `rmi` jalur sukses, maupun health gate dan rollback. Isinya hanya tag sha yang
+# benar-benar ditarik run ini, dan tidak pernah :local/:prev. Daftarnya string dipisah spasi, bukan
+# array: `${A[@]+"${A[@]}"}` diam-diam kosong di bash 3.2 (macOS), dan tag sha tidak pernah memuat spasi.
+PULLED_SHA_TAGS=""
+cleanup_pulled_sha_tags() {
+  local tag image_id used name
+  for tag in $PULLED_SHA_TAGS; do
+    case "$tag" in
+      *:sha-*) ;;             # hanya tag sha hasil pull (repo:sha-<rev>)
+      *) continue ;;          # jangan pernah menyentuh :local / :prev
+    esac
+    podman image exists "$tag" >/dev/null 2>&1 || continue
+    image_id="$(podman image inspect --format '{{.Id}}' "$tag" 2>/dev/null || true)"
+    [ -n "$image_id" ] || continue
+    used=''
+    for name in $(podman ps -a --format '{{.Names}}' 2>/dev/null || true); do
+      if [ "$(podman inspect --format '{{.Image}}' "$name" 2>/dev/null || true)" = "$image_id" ]; then
+        used=1
+        break
+      fi
+    done
+    if [ -n "$used" ]; then
+      log "==> WARN: tag $tag masih dipakai container; tidak dihapus"
+      continue
+    fi
+    podman rmi "$tag" >/dev/null 2>&1 && log "==> tag sha dihapus: $tag" || true
+  done
+}
+trap cleanup_pulled_sha_tags EXIT
+
 # A tag is a file name until the bytes state their own digest. Resolve the digest
 # of what was just pulled, then verify and tag that digest, so a tag moved
 # between pull and verify cannot point the local tag at unverified bytes.
@@ -608,6 +643,7 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/api/|modules/|shared/|tools/|kran\.
     die "pull image API gagal (registry/auth/image belum ada): $TAIL_OUT"
   fi
   rm -f "$PULL_OUT"
+  PULLED_SHA_TAGS="$PULLED_SHA_TAGS $API_IMAGE"   # dibersihkan trap apa pun akhir deploy ini
   # Tag sha-<7> hanya nama berkas sampai image membuktikan commit-nya sendiri. Semua langkah di
   # bawah memakai digest hasil pull, bukan tag yang bisa digeser.
   API_DIGEST="$(pulled_digest "$API_IMAGE")"
@@ -751,6 +787,7 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/web/|packages/)' <<<"$CHANGED_FILES
     PULL_OUT="$(mktemp)"
     if podman pull "$WEB_IMAGE" >"$PULL_OUT" 2>&1; then
       rm -f "$PULL_OUT"
+      PULLED_SHA_TAGS="$PULLED_SHA_TAGS $WEB_IMAGE"   # dibersihkan trap apa pun akhir deploy ini
       # Tag sha-<7> hanya nama berkas sampai image membuktikan commit-nya sendiri; ekstraksi di
       # bawah dijalankan dari digest hasil pull, bukan dari tag.
       WEB_DIGEST="$(pulled_digest "$WEB_IMAGE")"
