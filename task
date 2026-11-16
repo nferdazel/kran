@@ -22,6 +22,7 @@
 #                  bump VERSION, changelog, full gate (check-fast + build + test + e2e), commit +
 #                  annotated tag vX.Y.Z (D-178, D-194)
 #   ./task fmt     format code (rewrites files in place)
+#   ./task fmt-check  verify formatting only (Nim, nimpretty) - no other gate runs
 #   ./task devdb   manage dev DB tunnel to server - see tools/devdb.sh
 #   ./task dbtools migrate|status|validate   SQL migrations (requires KRAN_DATABASE_URL)
 #   ./task scaffold <name> [--dry-run]       scaffold a new module (spec §5.5)
@@ -767,6 +768,7 @@ case "${1:-help}" in
   version-check) cmd_version_check ;;
   release) shift; cmd_release "$@" ;;
   fmt) cmd_fmt ;;
+  fmt-check) mkdir -p "$BUILD"; cmd_fmt_check ;;
   lint) cmd_lint ;;
   archcheck) mkdir -p "$BUILD"; cmd_archcheck ;;
   nomagic) mkdir -p "$BUILD"; cmd_nomagic ;;
