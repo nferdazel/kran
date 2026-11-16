@@ -1,14 +1,15 @@
 import std/unittest
-import std/strutils
+import std/[strutils, sequtils]
 
 import ../lib
 
 const
   dom = "modules/lending/domain/collectibility.nim"
   app = "modules/lending/application/accrue.nim"
+  handler = "apps/api/src/handlers_party.nim"
 
 suite "lint-nomagic: cakupan pemindaian":
-  test "hanya modules/*/domain|application":
+  test "modules/*/domain|application dan apps/api/src":
     check isScanned(dom)
     check isScanned(app)
     check not isScanned("modules/lending/infrastructure/pg.nim")
@@ -16,7 +17,19 @@ suite "lint-nomagic: cakupan pemindaian":
     check not isScanned("shared/kernel/money.nim")
     check not isScanned("shared/kernel/generated/paramkeys.nim")
     check not isScanned("tools/paramgen/main.nim")
-    check not isScanned("apps/api/src/main.nim")
+
+  test "apps/api/src ikut dipindai, kecuali tests/ dan generated/":
+    check isScanned("apps/api/src/main.nim")
+    check isScanned("apps/api/src/handlers_party.nim")
+    check isScanned("apps/api/src/daycloser/auto.nim")
+    check not isScanned("apps/api/src/generated/paramkeys.nim")
+    check not isScanned("apps/api/tests/itapi_lending.nim")
+    check not isScanned("apps/web/src/main.ts")
+
+  test "isHandlerPath hanya apps/api/src":
+    check isHandlerPath("apps/api/src/handlers_party.nim")
+    check not isHandlerPath("modules/lending/domain/collectibility.nim")
+    check not isHandlerPath("apps/api/tests/itapi_lending.nim")
 
 suite "lint-nomagic: angka":
   test "angka bisnis ditolak":
@@ -68,3 +81,68 @@ suite "lint-nomagic: escape hatch":
 
   test "escape hatch juga berlaku untuk string":
     check scanSource(dom, "let s = \"Rp 5\" # nomagic:ok pesan cetak\n").len == 0
+
+suite "lint-nomagic: allowlist teknis handler (T-174)":
+  test "kode status HTTP di apps/api/src lolos":
+    for code in [200, 201, 204, 400, 401, 403, 404, 405, 409, 415, 426, 429, 500, 501, 503]:
+      check scanSource(handler, "req.respondJson(" & $code & ", payload)\n").len == 0
+
+  test "batas port di apps/api/src lolos":
+    check scanSource(handler, "const defaultPort = 8080\n").len == 0
+    check scanSource(handler, "const maxPort = 65535\n").len == 0
+
+  test "nilai bisnis di apps/api/src tetap ditolak":
+    check scanSource(handler, "const minAge = 17\n").len == 1
+    check scanSource(handler, "let limit = 50000000\n").len == 1
+    check scanSource(handler, "let rate = 0.05\n").len == 1
+    check scanSource(handler, "let s = \"Rp 1.000.000\"\n").len == 1
+
+  test "allowlist handler tidak bocor ke domain/application":
+    # `200` adalah kode status HTTP di handler, tapi di domain ia bisa plafon bisnis.
+    check scanSource(dom, "const maxItems = 200\n").len == 1
+    check scanSource(app, "const cap = 8080\n").len == 1
+
+suite "lint-nomagic: baseline":
+  test "kunci baseline tanpa nomor baris":
+    let a = scanSource(handler, "let x = 17\n")
+    let b = scanSource(handler, "\n\nlet y = 17\n")
+    check a.len == 1 and b.len == 1
+    check baselineKey(a[0]) == baselineKey(b[0])
+    check baselineKey(a[0]) == "int|" & handler & "|17"
+
+  test "kunci memisahkan jenis temuan":
+    let angka = scanSource(handler, "let x = 91\n")[0]
+    let teks = scanSource(handler, "let s = \"91\"\n")[0]
+    check baselineKey(angka) != baselineKey(teks)
+
+  test "parseBaseline membuang komentar dan baris kosong":
+    let entries = parseBaseline("# header\n\nint|a.nim|91\n  # komentar\nint|b.nim|7\n")
+    check entries.len == 2
+    check entries[0] == "int|a.nim|91"
+
+  test "temuan terdaftar diterima":
+    let v = scanSource(handler, "let x = 17\n")
+    let diff = compareBaseline(v, @[baselineKey(v[0])])
+    check diff.newViolations.len == 0
+    check diff.staleEntries.len == 0
+
+  test "temuan baru gagal":
+    let v = scanSource(handler, "let x = 17\n")
+    let diff = compareBaseline(v, @[])
+    check diff.newViolations.len == 1
+    check diff.staleEntries.len == 0
+
+  test "entri yang temuannya sudah hilang gagal (baseline stale)":
+    let diff = compareBaseline(@[], @["int|" & handler & "|17"])
+    check diff.newViolations.len == 0
+    check diff.staleEntries.len == 1
+
+  test "renderBaseline unik dan terurut":
+    let v = scanSource(handler, "let x = 17\nlet y = 17\nlet z = 31\n")
+    let text = renderBaseline(v)
+    check text.startsWith("#")
+    let entries = parseBaseline(text)
+    check entries.len == 2
+    check entries[0] < entries[1]
+    check entries.contains("int|" & handler & "|17")
+    check entries.contains("int|" & handler & "|31")

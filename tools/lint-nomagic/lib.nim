@@ -4,37 +4,70 @@
 ## persentase PPAP, tarif pajak, DPD, …) harus berasal dari parameter DB (`platform/param`),
 ## bukan literal di `domain/` atau `application/`.
 ##
-## Cakupan pemindaian: `modules/<m>/domain/**` dan `modules/<m>/application/**` saja
-## (spec §10.4). `tests/`, `generated/`, dan `shared/kernel/**` dilewati — kernel memang
-## memuat konstanta teknis & invarian matematis.
+## Cakupan pemindaian: `modules/<m>/domain/**`, `modules/<m>/application/**`, dan
+## `apps/api/src/**` (spec §10.4, T-174). Handler di `apps/api/src` adalah composition root:
+## literal di sana bisa langsung menjadi angka yang masuk ledger, jadi gate harus melihatnya.
+## `tests/`, `generated/`, dan `shared/kernel/**` dilewati — kernel memang memuat konstanta
+## teknis & invarian matematis.
 ##
 ## Batas kemampuan (jujur): deteksi string bersifat **pola** (numerik/uang/persen), bukan
 ## semantik. String seperti "batas harian" tidak bisa dikenali sebagai nilai bisnis oleh tool
 ## ini; itu tugas review. Deteksi angka bersifat pasti (allowlist teknis).
 ##
 ## Escape hatch: `# nomagic:ok <alasan-obligatoris>` pada baris yang sama.
+##
+## Baseline (`tools/lint-nomagic/baseline.txt`) menampung temuan yang sudah ada sebelum cakupan
+## `apps/api/src` hidup. Sama seperti `tools/archcheck/baseline.txt`: baseline hanya boleh
+## menyusut. Temuan baru = gagal, entri yang temuannya sudah hilang = gagal ("baseline stale,
+## shrink it"). Temuan di baseline adalah utang, bukan izin.
 
-import std/[strutils, os]
+import std/[strutils, os, sets, algorithm]
 
 type
   Violation* = object
     path*: string
     line*: int
+    ## Jenis temuan: `int`, `dec`, `str`, atau `hatch`. Bagian dari kunci baseline supaya
+    ## "angka 91" dan "string \"91\"" tidak saling menutupi.
+    rule*: string
+    ## Nilai literal yang dilanggar, tanpa nomor baris. Nomor baris bergeser tiap edit;
+    ## nilainya tidak, jadi kunci baseline memakai ini (pola `tools/archcheck/baseline.txt`).
+    value*: string
     message*: string
 
 const
   ## Konstanta **teknis** yang boleh ada di kode (spec §10.4 menyebut contoh 0, 1, 12, 100).
   allowedInts = [0'i64, 1'i64, 2'i64, 12'i64, 24'i64, 60'i64, 100'i64, 1000'i64, 1024'i64]
+  ## Konstanta teknis yang hanya berlaku di `apps/api/src` (composition root), **tidak** di
+  ## `modules/<m>/domain|application`. Tanpa pemisahan ini, melonggarkan handler berarti ikut
+  ## melonggarkan modul — mis. `200` sebagai plafon bisnis di domain akan lolos.
+  ##
+  ## Isinya sengaja himpunan tertutup, bukan "apa pun yang merah hari ini":
+  ##  - kode status HTTP yang dipakai API ini (RFC 9110 registry);
+  ##  - batas port: 8080 (port dev) dan 65535 (port maksimum).
+  ## Angka teknis lain (timeout, ukuran buffer, exit code CLI) **tidak** masuk sini; ia duduk di
+  ## baseline sebagai utang yang harus menyusut (T-174).
+  handlerAllowedInts = [
+    200'i64, 201'i64, 204'i64, 300'i64, 400'i64, 401'i64, 403'i64, 404'i64, 405'i64,
+    409'i64, 415'i64, 426'i64, 429'i64, 500'i64, 501'i64, 503'i64,
+    8080'i64, 65535'i64,
+  ]
   hatch = "# nomagic:ok"
 
 proc isScanned*(rel: string): bool =
   let r = rel.replace('\\', '/')
   if r.contains("/tests/") or r.contains("/generated/") or r.startsWith("shared/"):
     return false
+  if r.startsWith("apps/api/src/"):
+    return true
   if not r.startsWith("modules/"):
     return false
   let parts = r.split('/')
   parts.len >= 4 and parts[2] in ["domain", "application"]
+
+proc isHandlerPath*(rel: string): bool =
+  ## `apps/api/src` (composition root) — satu-satunya tempat `handlerAllowedInts` berlaku.
+  rel.replace('\\', '/').startsWith("apps/api/src/")
 
 proc isIdentChar(c: char): bool {.inline.} =
   c in {'a' .. 'z', 'A' .. 'Z', '0' .. '9', '_'}
@@ -80,7 +113,7 @@ proc scanSource*(relPath, source: string): seq[Violation] =
     let okPos = raw.find(hatch)
     if okPos >= 0:
       if raw[okPos + len(hatch) .. ^1].strip().len == 0:
-        result.add Violation(path: relPath, line: lineNo,
+        result.add Violation(path: relPath, line: lineNo, rule: "hatch", value: "",
           message: "escape hatch `" & hatch & "` tanpa alasan")
       continue
 
@@ -103,7 +136,7 @@ proc scanSource*(relPath, source: string): seq[Violation] =
             s.add(raw[j])
             inc j
         if isBusinessString(s):
-          result.add Violation(path: relPath, line: lineNo,
+          result.add Violation(path: relPath, line: lineNo, rule: "str", value: s,
             message: "literal string bernilai bisnis: \"" & s & "\"")
         i = j + 1
       elif c == '\'':
@@ -126,12 +159,13 @@ proc scanSource*(relPath, source: string): seq[Violation] =
           inc j
         if not isIdentChar(prev):
           if hasDot:
-            result.add Violation(path: relPath, line: lineNo,
+            result.add Violation(path: relPath, line: lineNo, rule: "dec", value: digits,
               message: "literal desimal dianggap nilai bisnis: " & digits)
           else:
             let v = parseAllowed(digits)
-            if v != low(int64) and v notin allowedInts:
-              result.add Violation(path: relPath, line: lineNo,
+            let handlerTechnical = isHandlerPath(relPath) and v in handlerAllowedInts
+            if v != low(int64) and v notin allowedInts and not handlerTechnical:
+              result.add Violation(path: relPath, line: lineNo, rule: "int", value: digits,
                 message: "angka " & digits & " bukan konstanta teknis; pakai parameter DB")
         i = j
       else:
@@ -157,3 +191,50 @@ proc scanRoot*(root: string): seq[Violation] =
 
 proc formatViolation*(v: Violation): string =
   v.path & ":" & $v.line & ": " & v.message
+
+proc baselineKey*(v: Violation): string =
+  ## Kunci baseline sengaja tanpa nomor baris: baris bergeser tiap edit, temuannya tidak.
+  v.rule & "|" & v.path & "|" & v.value
+
+proc parseBaseline*(text: string): seq[string] =
+  ## Satu entri per baris, `#` = komentar. Urutan tidak penting saat dibaca.
+  for raw in text.splitLines():
+    let line = raw.strip()
+    if line.len == 0 or line.startsWith("#"):
+      continue
+    result.add line
+
+type BaselineDiff* = object
+  newViolations*: seq[Violation]
+  staleEntries*: seq[string]
+
+proc compareBaseline*(violations: seq[Violation],
+                      entries: seq[string]): BaselineDiff =
+  ## Tiga hasil: cocok, temuan baru (gagal), entri basi (gagal, baseline harus menyusut).
+  var accepted = initHashSet[string]()
+  for e in entries:
+    accepted.incl e
+  var matched = initHashSet[string]()
+  for v in violations:
+    let key = baselineKey(v)
+    if key in accepted:
+      matched.incl key
+    else:
+      result.newViolations.add v
+  for e in entries:
+    if e notin matched:
+      result.staleEntries.add e
+
+proc renderBaseline*(violations: seq[Violation]): string =
+  ## Tulis baseline awal: unik dan terurut, supaya diff-nya bisa dibaca manusia.
+  var keys = initHashSet[string]()
+  for v in violations:
+    keys.incl baselineKey(v)
+  var sorted: seq[string]
+  for k in keys:
+    sorted.add k
+  sorted.sort()
+  result = "# lint-nomagic baseline — temuan yang diterima sebagai utang. HANYA BOLEH MENYUSUT.\n"
+  result.add "# format: rule|path|nilai. Hapus satu baris saat temuannya diperbaiki.\n"
+  for k in sorted:
+    result.add k & "\n"
