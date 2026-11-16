@@ -20,7 +20,16 @@
 -- `CREATE INDEX CONCURRENTLY` tidak boleh di dalam blok transaksi. Ukuran tabel pilot masih
 -- kecil; bila kelak besar, index dibuat manual di luar runner.
 --
--- Idempoten: `IF NOT EXISTS` di semua objek.
+-- Biaya kunci yang perlu diketahui operator: `UPDATE` backfill di bawah menulis **setiap** baris
+-- `DONE`/`DEAD` yang belum punya `completed_at`, dalam satu transaksi. Ia memegang `ROW EXCLUSIVE`
+-- pada `platform.outbox` sampai migrasi commit, sehingga dispatcher yang menandai baris selesai
+-- (`markDone`/`markFailed`) menunggu, dan `CREATE INDEX` sesudahnya ikut memindai tabel penuh.
+-- Pada pilot ini hitungannya detik; pada tabel besar, jalankan migrasi di jendela sepi. Backfill
+-- tidak bisa dipecah per batch di sini karena runner menjalankan satu berkas sebagai satu
+-- transaksi — memecahnya butuh migrasi terpisah dengan loop di luar runner.
+--
+-- Idempoten: `IF NOT EXISTS` di semua objek, dan backfill hanya menyentuh baris yang
+-- `completed_at`-nya masih NULL.
 
 ALTER TABLE platform.outbox
   ADD COLUMN IF NOT EXISTS completed_at timestamptz;

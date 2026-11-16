@@ -50,22 +50,24 @@ proc purgeOutbox*(db: DbConn, days, batch: int): int =
          LIMIT ?)
       DELETE FROM platform.outbox o
        USING doomed d
-       WHERE o.outbox_id = d.outbox_id""", $days, batch)
+       WHERE o.outbox_id = d.outbox_id
+         AND o.status IN ('DONE', 'DEAD')""", $days, batch)
 
 proc purgeInbox*(db: DbConn, days, batch: int): int =
   ## Menghapus satu batch baris inbox yang `received_at`-nya lebih tua dari `days`.
   ##
   ## Aman dihapus karena baris inbox hanya penanda "peristiwa ini sudah pernah diproses konsumen
   ## itu". Event yang sama datang lagi setelah barisnya hilang akan diproses ulang — kontrak
-  ## at-least-once, dan konsumennya idempoten. `ctid` dipakai sebagai kunci hapus supaya
-  ## `LIMIT` tetap terpenuhi walau tabel tidak punya primary key tunggal.
+  ## at-least-once, dan konsumennya idempoten. Dihapus berdasarkan primary key komposit
+  ## `(consumer, event_id)` yang dipilih CTE dengan limit.
   db.execAffectedRows(sql"""
       WITH doomed AS (
-        SELECT ctid
+        SELECT consumer, event_id
           FROM platform.inbox
          WHERE received_at < now() - make_interval(days => ?::int)
          ORDER BY received_at
          LIMIT ?)
       DELETE FROM platform.inbox i
        USING doomed d
-       WHERE i.ctid = d.ctid""", $days, batch)
+       WHERE i.consumer = d.consumer
+         AND i.event_id = d.event_id""", $days, batch)
