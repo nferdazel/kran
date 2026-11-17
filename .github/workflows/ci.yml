@@ -36,7 +36,9 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel a main run: a cancel between "push image" and "deploy" leaves the
+  # host pulling an image whose build was killed halfway.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
 
