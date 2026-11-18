@@ -1,3 +1,4 @@
+# class: A
 name: CI
 
 # Gerbang verifikasi saja (spec §21.1): tidak membangun image, tidak memanggil webhook,

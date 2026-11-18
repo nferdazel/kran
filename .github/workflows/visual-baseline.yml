@@ -1,3 +1,4 @@
+# class: C
 name: Visual baseline (Linux)
 
 # Menghasilkan baseline visual regression di **Linux** (O-022/D-176). Baseline yang dibuat di
@@ -18,6 +19,12 @@ on:
 
 permissions:
   contents: read
+
+# Writing a baseline twice for the same branch produces two artefacts and no
+# verdict, so the second dispatch waits for the first to finish.
+concurrency:
+  group: visual-baseline-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   visual-baseline:

@@ -20,6 +20,10 @@
 #         github.actor == 'dependabot[bot]', and never on push
 #     W11 one gate command per workflow run: two jobs may not run the same
 #         check/test command with the same env
+#     W13 every workflow file declares a class (# class: A|B|C) and a
+#         concurrency: block; class A and B never cancel in progress on main
+#     W15 one push runs one gate graph: two class A files may not run the same
+#         gate command
 #     D1  deploy script exists and is reachable from the documented path
 #     D2  fail-closed ref guard, exact form: if [ "$REF" != "refs/heads/main" ]
 #     D3  flock concurrency lock
@@ -40,7 +44,8 @@
 #   container / frontend (DEPLOY-FLOW.md §13.7)
 #     C1  no paths:/paths-ignore: under on: (a filtered workflow creates no check-run)
 #     C2  gate tolerates `skipped` only for image-api / image-web
-#     C3  apps/web/ implies an image-web job and a quadlet on 127.0.0.1:<port>
+#     C3  apps/web/ is shipped: an image-web job, or a static-host target in
+#         apps/web/, plus a quadlet on 127.0.0.1:<port>
 #     C4  a changes job ships its path-filter test table
 #     C5  one Dockerfile name: apps/<part>/Dockerfile, never Containerfile*
 #     C6  buildx uses context: . with file: apps/<part>/Dockerfile
@@ -178,7 +183,8 @@ badid() {
 }
 
 # ------------------------------------------------- §13.7 additional rules ---
-# 9  frontend container shape: apps/web/ implies an image-web job and a quadlet
+# 9  frontend shape: apps/web/ ships via an image-web job or a static-host
+#    target, plus a quadlet
 #    publishing a loopback port
 # 10 no `paths:` / `paths-ignore:` under `on:` (a filtered workflow creates no
 #    check-run, and a deploy gate waiting for one hangs)
@@ -215,15 +221,29 @@ check_gate_skips() {
 }
 
 check_dockerfile() {
-  local d="$1" stray inapps
-  stray=$(find "$d" \( -name node_modules -o -name .git \) -prune -o \
-    -type f \( -name 'Containerfile*' -o -name '*.containerfile' \) -print 2>/dev/null | sed "s|^$d/||")
+  local d="$1" stray inapps tracked has
+  # A build cache carries generated Dockerfiles (nimble ships
+  # dist/nimble/tests/Dockerfile.debug inside .nim_runtime) and those are not the
+  # repository's own content: on 2026-11-18 that file reddened the contract job
+  # after `./task deps-install`. Scan tracked files when the directory is a work
+  # tree, and a pruned find otherwise.
+  if tracked=$(git -C "$d" ls-files 2>/dev/null) && [ -n "$tracked" ]; then
+    stray=$(printf '%s\n' "$tracked" |
+      grep -E '(^|/)(Containerfile[^/]*|[^/]*\.containerfile)$' || true)
+    inapps=$(printf '%s\n' "$tracked" |
+      grep -E '(^|/)Dockerfile' | grep -vE '^apps/[A-Za-z0-9_.-]+/Dockerfile$' || true)
+    has=$(printf '%s\n' "$tracked" | grep -E '(^|/)Dockerfile' || true)
+  else
+    stray=$(find "$d" \( -name node_modules -o -name .git -o -name .nim_runtime -o -name .cache -o -name .nimble \) -prune -o \
+      -type f \( -name 'Containerfile*' -o -name '*.containerfile' \) -print 2>/dev/null | sed "s|^$d/||")
+    inapps=$(find "$d" \( -name node_modules -o -name .git -o -name .nim_runtime -o -name .cache -o -name .nimble \) -prune -o \
+      -type f -name 'Dockerfile*' -print 2>/dev/null | sed "s|^$d/||" | grep -vE '^apps/[A-Za-z0-9_.-]+/Dockerfile$' || true)
+    has=$(find "$d" \( -name node_modules -o -name .git -o -name .nim_runtime -o -name .cache -o -name .nimble \) -prune -o \
+      -type f -name Dockerfile -print -quit 2>/dev/null)
+  fi
   [ -n "$stray" ] && badid C5 "container file naming: -> $(echo $stray | tr '\n' ' ')"
-  inapps=$(find "$d" \( -name node_modules -o -name .git \) -prune -o \
-    -type f -name 'Dockerfile*' -print 2>/dev/null | sed "s|^$d/||" | grep -vE '^apps/[A-Za-z0-9_.-]+/Dockerfile$' || true)
   [ -n "$inapps" ] && badid C5 "Dockerfile outside apps/<part>/ -> $(echo $inapps | tr '\n' ' ')"
-  if [ -z "$stray" ] && [ -z "$inapps" ] &&
-     [ -n "$(find "$d" \( -name node_modules -o -name .git \) -prune -o -type f -name Dockerfile -print -quit 2>/dev/null)" ]; then
+  if [ -z "$stray" ] && [ -z "$inapps" ] && [ -n "$has" ]; then
     ok "container file naming: apps/<part>/Dockerfile only"
   fi
 }
@@ -240,8 +260,17 @@ check_build_call() {
 check_web_container() {
   local d="$1" wf="$2" quad
   [ -d "$d/apps/web" ] || return 0
-  grep -lqE 'image-web:' $wf 2>/dev/null && ok "frontend: image-web job ada" ||
-    badid C3 "frontend: apps/web/ ada tapi tanpa job image-web"
+  # A container is one way to ship the SPA, not the only one. A static host
+  # target in apps/web/ is just as concrete, so name the file that proves it
+  # instead of failing a repo that never had a web image to begin with.
+  if grep -lqE 'image-web:' $wf 2>/dev/null; then
+    ok "frontend: image-web job ada"
+  elif [ -f "$d/apps/web/vercel.json" ] || [ -f "$d/apps/web/netlify.toml" ] ||
+       [ -f "$d/apps/web/wrangler.toml" ] || [ -f "$d/apps/web/firebase.json" ]; then
+    ok "frontend: web dikirim ke static host, bukan image"
+  else
+    badid C3 "frontend: apps/web/ ada tapi tanpa job image-web dan tanpa target static host"
+  fi
   quad=$(find "$d" \( -name node_modules -o -name .git \) -prune -o \
     -type f \( -name '*.container' -o -name '*.quadlet' \) -print 2>/dev/null)
   if [ -n "$quad" ] && grep -qE '^PublishPort=127\.0\.0\.1:[0-9]+:8080$' $quad 2>/dev/null; then
@@ -392,6 +421,73 @@ EOF
   fi
 }
 
+# ------------------------------------------------- W13/W15 (workflow file) ---
+# 13 every workflow file declares a class and a concurrency block; a gate (A) and a
+#    release (B) must not cancel an in-progress run on main, because the deploy
+#    reads that run's result
+# 15 one push = one gate graph: the same gate command may not run in two class A
+#    files of the same repo
+wf_class() { # "A" | "B" | "C" | empty
+  awk '/^# *class:[[:space:]]*[ABC][[:space:]]*$/ { gsub(/.*class:[[:space:]]*/,""); print; exit }' "$1"
+}
+
+check_workflow_class() {
+  local f="$1" cls cancel
+  cls=$(wf_class "$f")
+  if [ -z "$cls" ]; then
+    bad "$(basename "$f"): W13 tanpa deklarasi class (# class: A|B|C)"
+  else
+    ok "$(basename "$f"): W13 class $cls"
+  fi
+  if ! grep -qE '^concurrency:' "$f"; then
+    bad "$(basename "$f"): W13 tanpa blok concurrency"
+    return 0
+  fi
+  cancel=$(awk '/^concurrency:/ { inc=1; next }
+                inc && /^[^[:space:]#]/ { inc=0 }
+                inc && /cancel-in-progress:/ { sub(/.*cancel-in-progress:[[:space:]]*/,""); print; exit }' "$f")
+  case "$cls" in
+    A|B)
+      # an unconditional true cancels the run the deploy waits on
+      if [ "$cancel" = "true" ]; then
+        bad "$(basename "$f"): W13 class $cls cancel-in-progress true tanpa syarat ref (main ikut terbatal)"
+      else
+        ok "$(basename "$f"): W13 concurrency ada, cancel dibatasi ref"
+      fi ;;
+    *)
+      [ -n "$cancel" ] && ok "$(basename "$f"): W13 concurrency ada (cancel-in-progress $cancel)" ||
+        ok "$(basename "$f"): W13 concurrency ada" ;;
+  esac
+}
+
+check_cross_file_gates() {
+  local d="$1" wf pairs dup
+  wf=$(ls "$d"/.github/workflows/*.y*ml 2>/dev/null)
+  [ -n "$wf" ] || return 0
+  pairs=$(for f in $wf; do
+    [ "$(wf_class "$f")" = "A" ] || continue
+    job_lines "$f" | awk -F'\t' -v file="$(basename "$f")" -v c="$GATE_COMPOSITE" -v p="$GATE_PRIM" '
+      /^JOB\t/ { next }
+      $2 ~ /^[[:space:]]*-?[[:space:]]*run:[[:space:]]*/ && ($2 ~ c || $2 ~ p) {
+        cmd=$2; sub(/^[[:space:]]*-?[[:space:]]*run:[[:space:]]*/,"",cmd)
+        gsub(/[[:space:]]+/," ",cmd); sub(/[[:space:]]+$/,"",cmd)
+        print cmd "\t" file }'
+  done)
+  if [ -z "$pairs" ]; then
+    note "W15 tidak ada gate command di file class A"
+    return 0
+  fi
+  dup=$(printf '%s\n' "$pairs" | sort -u | awk -F'\t' '
+    { files[$1]=files[$1] " " $2; n[$1]++ }
+    END { for (c in files) if (n[c] > 1) print c " ->" files[c] }')
+  [ -n "$dup" ] && while IFS= read -r l; do
+    [ -n "$l" ] && bad "W15 gate yang sama di dua file class A: $l"
+  done <<EOF
+$dup
+EOF
+  [ -z "$dup" ] && ok "W15 satu graf gate per push (tidak ada gate ganda antar file)"
+}
+
 # -------------------------------------------------------------- per project ---
 check_repo() {
   local d="$1" name stacks wf deploy
@@ -412,7 +508,9 @@ check_repo() {
       check_timeouts "$f"; check_injection "$f"; check_paths_filter "$f"
       check_gate_skips "$f"; check_build_call "$f"
       check_cross_workflow_poll "$f"; check_duplicate_gates "$f"
+      check_workflow_class "$f"
     done
+    check_cross_file_gates "$d"
     check_dependabot_guard "$d"
     check_web_container "$d" "$wf"
     check_path_filter_table "$d" "$wf"

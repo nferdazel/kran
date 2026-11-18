@@ -1,3 +1,4 @@
+# class: B
 name: Release
 
 # Rilis adalah penanda, bukan pemicu deploy (D-013, D-178): deploy tetap dari push ke `main`
