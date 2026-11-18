@@ -26,6 +26,25 @@ SSH_KEY="${KRAN_DEVDB_SSH_KEY:-$HOME/.ssh/id_ed25519}"
 SSH_PERSIST="${KRAN_DEVDB_PERSIST:-600}"
 
 die() { printf '!! %s\n' "$*" >&2; exit 1; }
+
+# psql host sudah tidak ada di laptop; PostgreSQL 18 jalan di container. DSN menunjuk
+# loopback host, dan dari dalam container alamat host adalah host.docker.internal.
+PSQL_IMAGE="${KRAN_DEVDB_PSQL_IMAGE:-postgres:18}"
+psql_run() {
+  _dsn=$1
+  shift
+  if command -v psql >/dev/null 2>&1; then
+    psql "$_dsn" "$@"
+    return
+  fi
+  command -v docker >/dev/null 2>&1 || die "psql dan docker sama-sama tidak ada di PATH"
+  _tty=
+  [ -t 0 ] && _tty=-t
+  _container_dsn=$(printf '%s' "$_dsn" | sed -E 's#(//)([^@/]*@)?(127\.0\.0\.1|localhost)([:/])#\1\2host.docker.internal\4#')
+  # Bukan exec: probe() memanggil ini di dalam `if`, dan exec akan mengganti seluruh skrip.
+  docker run --rm -i $_tty "$PSQL_IMAGE" psql "$_container_dsn" "$@"
+}
+
 load_env() {
   [ -f "$ENVFILE" ] || die "belum ada $ENVFILE (lihat docs/OPERATIONS.md)"
   set -a
@@ -40,8 +59,8 @@ probe() {
   # masih menerima koneksi walau SSH-nya sudah mati (tunnel basi), dan gejalanya baru muncul sebagai
   # "server closed the connection unexpectedly" di tengah test (kejadian 14–15 Okt 2026, 3×).
   [ -n "${KRAN_DATABASE_URL:-}" ] || return 1
-  command -v psql >/dev/null 2>&1 || return 1
-  psql "$KRAN_DATABASE_URL" -Atc 'select 1' >/dev/null 2>&1
+  command -v psql >/dev/null 2>&1 || command -v docker >/dev/null 2>&1 || return 1
+  psql_run "$KRAN_DATABASE_URL" -Atc 'select 1' >/dev/null 2>&1
 }
 
 up() {
@@ -75,15 +94,18 @@ down() {
 
 status() {
   load_env
-  command -v psql >/dev/null 2>&1 || die "psql tidak ada di PATH"
-  psql "$KRAN_DATABASE_URL" -Atc "select current_database() || ' @ ' || version()"
+  psql_run "$KRAN_DATABASE_URL" -Atc "select current_database() || ' @ ' || version()"
 }
 
 case "${1:-status}" in
   up) up ;;
   down) down ;;
   status) status ;;
-  psql) load_env; exec psql "$KRAN_DATABASE_URL" "$@" ;;
+  psql)
+    load_env
+    shift
+    psql_run "$KRAN_DATABASE_URL" "$@"
+    ;;
   url) load_env; printf '%s\n' "$KRAN_DATABASE_URL" ;;
   *) die "perintah tidak dikenal: $1 (up|down|status|psql|url)" ;;
 esac
