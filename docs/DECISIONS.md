@@ -1358,6 +1358,17 @@ code.
 
 ---
 
+**D-208 (18 Nov 2026) A closed task's file leaves the tree; its evidence stays in git.**
+Decision: a task file is deleted in the same commit that marks the row `DONE`. What remains
+reachable is `git log -- docs/tasks/T-<id>.md`, `BACKLOG.md` (id, phase, size, risk, status),
+`CAPABILITIES.md` (the test that proves the capability) and `CHANGELOG.md` (what shipped).
+Reason: 27 of the 34 task files in the tree were `DONE`, 3,966 lines of evidence sitting in the
+working queue, and `AGENTS.md` §4 rule 1 made the queue unreadable as a result; a stale task file
+also misleads (the v2 handoff claimed nine tickets were unbuilt after all nine had shipped).
+Consequence: amends `AGENTS.md` §4 rule 6 and §6. Reversible: `git show <old commit>:docs/tasks/T-<id>.md`.
+
+---
+
 ## 3. Archive index
 
 Superseded or obsolete decisions. Full text stays in git history and in

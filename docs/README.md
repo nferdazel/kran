@@ -32,8 +32,8 @@ and never quietly pick the convenient one.
 | `CAPABILITIES.md` | Hand-maintained capability ledger: can persona X do Y today, and which test proves it |
 | `capabilities.yaml` | Machine-readable source for the ledger; same ids as the markdown table |
 | `DOMAIN.md` | Glossary, aggregate ownership, Indonesian operator terms with English gloss |
-| `DESIGN-INDEX.md` | Design direction, dials, the 12 design decisions, the 24-screen map, prototype pointers |
-| `DECISIONS.md` | Owner rulings R-01 to R-30, active decisions in full, one-line archive index |
+| `DESIGN-INDEX.md` | Design direction and dials; links to the DD table, the 24-screen map and the component spec |
+| `DECISIONS.md` | Owner rulings R-01 to R-44, active decisions in full, one-line archive index |
 | `OPEN_ITEMS.md` | Items still open, plus closed ids that code or tests still cite |
 | `ACCEPTED-LIMITS.md` | Risks the owner accepted, with a detection method and an owner per row |
 | `ESCALATIONS.md` | Stop-and-ask log and the escalation template |
@@ -46,6 +46,7 @@ and never quietly pick the convenient one.
 | `tasks/_TEMPLATE.md` | The task file to copy before starting work |
 | `agent/REVIEWER.md` | The clean-context reviewer prompt for R-25 |
 | `history/PHASES.md` | Condensed evidence for Fase 0-4 |
+| `history/2026-11-05-planning-review.md` | The eight-lens planning review that produced R-31 to R-44 |
 | `compliance/register.yaml` | Requirement to control to test traceability; read by the traceability gate |
 | `compliance/register-validation.md` | Research log with sources for the compliance register |
 | `adr/` | Architecture decision records, including `017-field-level-encryption.md` |
@@ -66,11 +67,13 @@ no prose API document that could drift from it.
 6. Append the evidence block, update the capability row, and request review when the queue value
    is `full` (`money`, `schema`, `authz`, `audit`). A `standard` task (`general`) uses self-review
    plus gates (R-31, R-25).
-7. Mark the task `DONE` only after the evidence exists. A partial result is a new task.
+7. Mark the task `DONE` only after the evidence exists, then delete the file in that same commit
+   (D-208). A partial result is a new task.
 
 ## Archive
 
 The old corpus (229 files, including the 166 task files and the five milestone reports) is kept in a local
 planning archive outside git (not in this repository). Historical `T-xxx` ids are not paths in the
 current tree; only git history resolves them. `history/PHASES.md` covers phases only and has no
-per-id index.
+per-id index. A task file that was closed under D-208 is read with
+`git log -- docs/tasks/T-<id>.md`; nothing else in the tree points at it.

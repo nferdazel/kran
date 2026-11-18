@@ -63,7 +63,10 @@ Ambil task `READY` teratas dari `docs/BACKLOG.md`. Baris baru berstatus `READY` 
    **2 putaran**; nilai `standard` (kelas konkret `general`) cukup self-review + gate. Header
    task menyebut kelas konkretnya. Perbaiki semua BLOCKER/MAJOR; MINOR dicatat sebagai open item.
 6. **Evidence block** di file task: perintah, ringkasan output, commit range, hasil migrasi,
-   pengecekan manual untuk UI, status capability.
+   pengecekan manual untuk UI, status capability. File task yang sudah `DONE` **dihapus dari tree
+   di commit yang sama** saat task ditutup; buktinya tetap terbaca lewat
+   `git log -- docs/tasks/T-<id>.md`. Status, ukuran, kelas risiko dan capability-nya tetap di
+   `BACKLOG.md`, `CAPABILITIES.md` dan `CHANGELOG.md` (D-208).
 7. **Commit**, tandai `DONE`, perbarui `docs/CAPABILITIES.md` bila kapabilitas berubah.
 8. Lanjut task berikutnya. Berhenti di akhir fase (§7).
 
@@ -87,7 +90,7 @@ Ambil task `READY` teratas dari `docs/BACKLOG.md`. Baris baru berstatus `READY` 
 - [ ] OpenAPI + contract test; i18n id+en; a11y (axe 2 tema, keyboard)
 - [ ] Audit event & permission tepat; data sensitif ter-mask/terenkripsi
 - [ ] `MODULE.md`/docs terkait diperbarui; tag `REG-xxx` bila relevan
-- [ ] Evidence block terisi; review (bila wajib) APPROVE
+- [ ] Evidence block terisi; file task dihapus dari tree saat `DONE` (D-208); review (bila wajib) APPROVE
 - [ ] `CAPABILITIES.md` mencerminkan status sebenarnya
 
 ## 7. Fase & berhenti
