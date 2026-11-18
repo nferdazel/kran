@@ -4,53 +4,27 @@ Stop-and-ask log. An escalation exists because continuing would mean guessing ab
 owner or an advisor must decide. Resolved entries stay with the decision id that settled them; an
 entry without a decision id is still open.
 
----
+The six stop classes, and when work must halt rather than guess, are `AGENTS.md` §8. They are not
+restated here: that section is the rule, this file is the record of entries it produced.
 
-## 1. When to stop
+## How to escalate
 
-The charter section 8 change protocol and AGENTS.md section 8 give six stop classes. Work stops and an
-entry is opened when any of them applies:
-
-1. **Open ADR.** A decision belongs in an ADR and has no owner ruling. Run a short spike, write the
-   comparison and a recommendation, then stop.
-2. **Critical area that tests cannot prove.** Interest, accrual, PPAP, SHU, tax, reconciliation, key
-   management, encryption, authorisation or the audit hash chain. Implementation may proceed only when
-   marked `HUMAN-REVIEW-REQUIRED`.
-3. **Uncertain regulation.** An article, threshold or classification is not verified, or a value would
-   be presented as compliant. Keep `NEEDS-COMPLIANCE-REVIEW` and stop before using it for real data.
-4. **Access outside the repository.** The change needs the server, a secret, a registry, DNS or a
-   third-party account. The agent may write repository files, never operate the external system without
-   an explicit task.
-5. **Ambiguous or contradictory specification.** The spec and the code disagree, two documents
-   disagree, or the requested behaviour needs a deviation from the spec.
-6. **A gate or test looks wrong, or the review limit is reached.** A test, threshold or lint appears to
-   be measuring the wrong thing, or a second review round still finds a BLOCKER, or the same cause
-   failed three times. Do not weaken the gate and do not loop.
-
-If the work is blocked but independent work exists, record the escalation, mark the affected task
-`BLOCKED`, and continue on the independent item. Never mark a blocked task `DONE`.
-
----
-
-## 2. How to escalate
-
-1. Open an entry `E-xxx` in the log below with the next free number.
-2. State the category from section 1, the task or decision affected, and the facts.
+1. Open an entry `E-xxx` with the next free number, using the template at the bottom of this file.
+2. State the category from `AGENTS.md` §8, the task or decision affected, and the facts.
 3. Attach evidence: files read, commands run with their output summary, and the exact lines or rows
    that establish the problem. A claim without evidence stays out of the entry.
 4. Give two or three options, each with cost, risk, reversibility and the effect on a gate or a
    compliance tag. Name a recommendation, but do not mark it decided.
 5. State exactly what is needed from the owner or advisor, and what stays blocked until then.
-6. When a decision arrives, record it in the entry with its date and the `D-xxx` or `R-xx` id, and mark
-   the entry resolved. If the decision changes a ruling, update `DECISIONS.md` in the same change.
+6. When a decision arrives, record it with its date and the `D-xxx` or `R-xx` id, and mark the entry
+   resolved. If the decision changes a ruling, update `DECISIONS.md` in the same change.
 
-Evidence to attach at minimum: the path and line for each code fact; the command and exit code for
-each gate fact; the source and date for each regulatory fact; the list of files that would change; and
-the rollback (revert commit, parameter value, migration).
+If work is blocked but independent work exists, record the escalation, mark the affected task
+`BLOCKED`, and continue on the independent item. Never mark a blocked task `DONE`.
 
 ---
 
-## 3. Log
+## Log
 
 | ID | Date | Category | Subject | Status | Decision |
 |---|---|---|---|---|---|
@@ -73,12 +47,12 @@ the rollback (revert commit, parameter value, migration).
 
 ---
 
-## 4. Entry template
+## Entry template
 
 ```
 ## E-xxx: <short title>
 - Date:
-- Category: <one of the six classes>
+- Category: <one of the six classes in AGENTS.md §8>
 - Task or decision affected:
 - Facts: <what was observed, with paths and lines>
 - Evidence: <commands, output summary, source and date>
