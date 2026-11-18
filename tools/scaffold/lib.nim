@@ -1,8 +1,8 @@
 ## Logika `tools/scaffold` (spec §5.5, §27.B).
 ##
 ## Menghasilkan kerangka modul baru di `modules/<nama>/` mengikuti struktur spec §7:
-## domain/application/infrastructure/interface + migrasi + test + seed parameter + README +
-## `MODULE.md` + `api.nim`.
+## domain/application/infrastructure/interface + migrasi + test + seed parameter +
+## `MODULE.md` + `api.nim`. No stub README: `MODULE.md` is the module's only front page.
 ##
 ## Kode yang dihasilkan sengaja tanpa nilai bisnis dan lolos `tools/archcheck` &
 ## `tools/lint-nomagic` apa adanya. Berkas internal memakai nama peran (`core.nim`,
@@ -49,17 +49,6 @@ proc moduleDir*(root, name: string): string =
   root / "modules" / name
 
 const
-  readmeMd = """# Modul `@name@`
-
-Kerangka awal hasil `./task scaffold @name@` (spec §5.5).
-
-- Tujuan, bounded context, tabel, dan invarian: `MODULE.md`.
-- Permukaan publik modul: `api.nim`.
-- Mulai mengisi dari `domain/core.nim` lalu `application/use_case.nim`.
-
-Setelah diisi, jaga modul ini tetap hijau dengan `./task check` (archcheck + lint-nomagic).
-"""
-
   moduleMd = """# Modul `@name@`
 
 > Kerangka hasil `./task scaffold @name@` (spec §5.5). Ganti isi placeholder ini saat modul
@@ -216,7 +205,6 @@ proc renderModule*(name: string): seq[ScaffoldFile] =
 
   let base = "modules/" & name
   result = @[
-    mk(base & "/README.md", readmeMd),
     mk(base & "/MODULE.md", moduleMd),
     mk(base & "/api.nim", apiNim),
     mk(base & "/domain/core.nim", domainCore),

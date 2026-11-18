@@ -166,3 +166,13 @@ Tidak ada. Kerangka ini teknis; kewajiban retensi/audit penutupan mengikuti modu
   sekuensial, kode keluar `ctl daycloser-status` sebagai kontrak gate deploy.
 - D-149: siklus business date dimiliki run; seal + rollover satu transaksi; `CLOSING → OPEN` hanya
   sebagai abort; gerbang HTTP terpusat; bootstrap tanggal buku eksplisit.
+
+## Menjalankan test & operator
+
+Permukaan publik modul: `api.nim`. UI monitor tutup buku di `apps/web` (layar `/app/dayclose`).
+
+- Perintah operator: `kran-api --role=ctl daycloser-status|run|resume|pause|cancel`
+  (composition root: `apps/api/src/daycloser_ctl.nim`).
+- `./task test tdaycloser`, `./task test tschedule`, `./task test itdaycloser` - state machine,
+  DAG, chunk.
+- Gate: `./task check` (archcheck + lint-nomagic + paramgen).

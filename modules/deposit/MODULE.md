@@ -323,3 +323,13 @@ memutar baris simpanan (T-123).
 - Cetak: `GET /teller/cash-transactions/{id}` (slip, cetak ulang) dan `GET /deposit/accounts/{id}/
   statement` (subledger A4, batas 500 baris, tanpa saldo berjalan). Halaman print di web memakai
   browser print; tidak ada PDF server (D-127, `ACCEPTED-LIMITS` §4b).
+
+## Menjalankan test
+
+Permukaan publik modul: `api.nim`. UI teller tinggal di `apps/web`, bukan di sini.
+
+- `./task test taccount`, `./task test itaccount`, `./task test itapi_deposit` - buka/baca rekening.
+- `./task test ttransaction`, `./task test ittransaction` - setor/tarik tunai + posting jurnal.
+- `./task test ttransfer`, `./task test ittransfer` - pemindahbukuan antar rekening.
+- `./task test tdaycount`, `./task test tinterest` - hitung hari bunga dan akrual.
+- Gate: `./task check` (archcheck + lint-nomagic + paramgen).

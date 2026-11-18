@@ -1,6 +1,7 @@
 # T-241 (screens) — design direction: vault, ledger, params, password
 
-State: Design (2). Author: Fajar. Consumer: Nadia. Approver: Raka.
+State: Design (2) approved for all four screens; vault and params shipped in 0.5.0, **ledger and
+password still open** (T-241 row is `IN_PROGRESS`). Author: Fajar. Consumer: Nadia. Approver: Raka.
 Repo: `/Users/sachiel/Projects/cbs` at `origin/main` `2ee13a5`. All file:line facts below were read
 from that tree on 2026-11-16, not from memory.
 

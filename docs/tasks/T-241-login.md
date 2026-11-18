@@ -1,6 +1,6 @@
 # T-241-login - Sign-in screen: design direction
 
-Phase: P6 · Size: S · Risk: full (authz) · Status: IMPLEMENTED (awaiting Galih checklist and Raka push; see Evidence)
+Phase: P6 · Size: S · Risk: full (authz) · Status: IMPLEMENTED AND RELEASED (merged `f40a023`, shipped in 0.2.0 on 2026-11-11; no clean-context security review is recorded in the tree, see O-156)
 
 Carved out of T-241 on 2026-11-11 by Raka: this file covers the sign-in screen only. The other
 repair screens stay in T-241. No implementation starts until the direction below is approved.

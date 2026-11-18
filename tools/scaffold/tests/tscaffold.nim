@@ -35,7 +35,6 @@ suite "scaffold: renderModule":
     let files = renderModule(sampleName)
     let paths = pathsOf(files)
     for p in [
-      "modules/sample/README.md",
       "modules/sample/MODULE.md",
       "modules/sample/api.nim",
       "modules/sample/domain/core.nim",
@@ -47,7 +46,7 @@ suite "scaffold: renderModule":
       "modules/sample/tests/tsample.nim",
     ]:
       check p in paths
-    check files.len == 10
+    check files.len == 9
     for f in files:
       check f.content.len > 0
       check not f.content.contains("@") # token sudah tergantikan
@@ -82,7 +81,7 @@ suite "scaffold: writeModule":
   test "menulis ke disk lalu menolak menimpa modul yang sudah ada":
     let root = freshTempRoot()
     let written = writeModule(root, sampleName)
-    check written.len == 10
+    check written.len == 9
     for p in pathsOf(renderModule(sampleName)):
       check fileExists(root / p)
     check readFile(root / "modules/sample/MODULE.md").len > 0
@@ -99,7 +98,7 @@ suite "scaffold: writeModule":
   test "dry-run hanya mengembalikan rencana, tidak menulis":
     let root = freshTempRoot()
     let planned = writeModule(root, "dryrun", dryRun = true)
-    check planned.len == 10
+    check planned.len == 9
     check not dirExists(root / "modules/dryrun")
     removeDir(root)
 

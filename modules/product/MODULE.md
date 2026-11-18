@@ -122,3 +122,11 @@ dan semantiknya tidak boleh dikarang. Baris lama di DB ditandai `deprecated` ole
   eksplisit), bukan UPDATE.
 - Aturan iuran (nominal, kadens, auto-debit, refund) **bukan** milik produk di Fase 2; itu Fase 5
   dan butuh keputusan AD/ART. Lihat `ACCEPTED-LIMITS.md` §4a, O-100.
+
+## Menjalankan test
+
+Permukaan publik modul: `api.nim`.
+
+- `./task test tproduct`, `./task test tproductparams` - katalog, versi effective-dated, binding.
+- `./task test itproduct`, `./task test itapi_product` - skema, maker-checker, jalur HTTP.
+- Gate: `./task check` (archcheck + lint-nomagic + paramgen).
