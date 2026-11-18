@@ -1,4 +1,4 @@
-LICENSE — KRAN
+LICENSE: KRAN
 Copyright (c) 2026 Fredianto. All rights reserved.
 
 This repository is made public so the source can be read and audited. Publishing it does **not**
@@ -18,5 +18,5 @@ Lisensi berbeda (mis. komersial, atau open source untuk dipakai koperasi/BPR sec
 sah bila diberikan tertulis oleh pemegang hak cipta.
 
 Catatan: berkas `LICENSE` ini adalah sumber kebenaran lisensi. Sebelumnya `kran.nimble` memuat
-`license = "MIT"`, yang pada metadata Nimble bisa terbaca sebagai izin bebas — itu tidak dimaksud
+`license = "MIT"`, yang pada metadata Nimble bisa terbaca sebagai izin bebas. Itu tidak dimaksud
 dan sudah dihapus (O-063).
