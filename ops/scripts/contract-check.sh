@@ -14,6 +14,12 @@
 #     W3  no github.event*/inputs interpolation inside a run: block (shell injection)
 #     W4  a secret scan runs (gitleaks or trufflehog)
 #     W5  .github/dependabot.yml covers actions + the repo's own ecosystem
+#     W9  no job waits on another workflow's run inside a CI workflow
+#         (that poll owns the CI wall; it belongs in its own check)
+#     W10 Dependabot PRs skip image/e2e/coverage work: a pull_request guard on
+#         github.actor == 'dependabot[bot]', and never on push
+#     W11 one gate command per workflow run: two jobs may not run the same
+#         check/test command with the same env
 #     D1  deploy script exists and is reachable from the documented path
 #     D2  fail-closed ref guard, exact form: if [ "$REF" != "refs/heads/main" ]
 #     D3  flock concurrency lock
@@ -135,6 +141,33 @@ repo_exempt() {
   esac
 }
 
+# Tag retention across every deploy script, not only the one D1 resolved. A
+# `podman tag` whose target is neither :local nor :prev leaves a third tag in the
+# store; §7 lists the documented exceptions and anything else is drift. The
+# production script's tags are the contract (D4 already reads it); the other
+# scripts only warn, because cutover/RC keep a pinned rollback image on purpose.
+check_retention_tags() {
+  local d="$1" f extra all="" seen=0
+  for f in "$d"/ops/scripts/*deploy*.sh "$d"/ops/scripts/cutover.sh \
+           "$d"/ops/scripts/rollback.sh; do
+    [ -f "$f" ] || continue
+    seen=$((seen + 1))
+    extra=$(grep -E 'podman tag ' "$f" 2>/dev/null | awk '
+      { for (i=1;i<=NF;i++) if ($i=="tag") { tgt=$(NF); break }
+        gsub(/["\x27]/,"",tgt)
+        if (tgt !~ /:/) next
+        tag=tgt; sub(/.*:/,"",tag)
+        if (tag != "local" && tag != "prev" && tag !~ /\$/) print tag }' | sort -u | tr '\n' ' ')
+    [ -n "$extra" ] && all="$all $(basename "$f"):$extra"
+  done
+  if [ -z "$all" ]; then
+    [ "$seen" -gt 1 ] &&
+      note "tag retention bersih di $seen script deploy"
+    return 0
+  fi
+  warn "tag di luar :local/:prev ->$all (pastikan ini pengecualian yang tercatat di §7)"
+}
+
 badid() {
   local id="$1" exempt; shift
   exempt=" $(repo_exempt "$CUR_REPO") "
@@ -243,6 +276,122 @@ check_path_filter_table() {
     bad "changes: job changes tanpa tabel uji path filter"
 }
 
+# ------------------------------------------------- workflow budget (W9-W11) ---
+# 9  a job that waits on another workflow's run must not live inside a Class A
+#    workflow: the poll owns the CI wall and hides a green CI behind a red Coverage
+# 10 Dependabot PRs run quality + contract + security only; the guard is a
+#    pull_request condition on `dependabot[bot]` and never applies to push
+# 11 one gate command per workflow run: two jobs may not run the same check/test
+#    command, and a composite gate may not sit next to the steps it already runs
+job_lines() { # emit "<job>\t<line>" for every line under jobs:
+  awk '
+    /^jobs:[[:space:]]*$/ { injobs=1; next }
+    injobs && /^[^[:space:]#]/ { injobs=0 }
+    injobs && /^  [A-Za-z0-9_.-]+:[[:space:]]*$/ {
+      j=$0; sub(/^  /,"",j); sub(/:.*/,"",j); print "JOB\t" j; next }
+    injobs { print j "\t" $0 }
+  ' "$1"
+}
+
+check_cross_workflow_poll() {
+  local f="$1" hits
+  # Class A only: pull_request, or push to a branch. A tag-driven release or a
+  # schedule may legitimately wait on another run; a CI workflow may not, because
+  # that wait owns the CI wall.
+  awk '
+    /^on:[[:space:]]*$/ { inon=1; next }
+    inon && /^[^[:space:]#]/ { inon=0 }
+    inon && /^[[:space:]]*pull_request:/ { found=1 }
+    inon && /^[[:space:]]*push:/ { inpush=1; next }
+    inon && inpush && /^[[:space:]]*(tags|tags-ignore):/ { inpush=0; next }
+    inon && inpush && /^[[:space:]]*(branches|branches-ignore):/ { found=1; inpush=0; next }
+    END { exit(found ? 0 : 1) }' "$f" || { note "$(basename "$f"): W9 bukan workflow Class A, dilewati"; return 0; }
+  # a runner that queries another workflow's runs and sleeps between attempts
+  hits=$(job_lines "$f" | awk -F'\t' '
+    /^JOB\t/ { j=substr($0,5); next }
+    $2 ~ /actions\/workflows\/[A-Za-z0-9_.-]+\.ya?ml\/runs/ { print j }
+  ' | sort -u)
+  if [ -z "$hits" ]; then
+    note "$(basename "$f"): tidak ada job yang polling workflow lain"
+    return 0
+  fi
+  # a single lookup is not a poll; only a retry loop owns the wall
+  if grep -qE '^[[:space:]]+sleep [0-9]+' "$f"; then
+    bad "$(basename "$f"): W9 job polling workflow lain di dalam CI -> $(echo $hits | tr '\n' ' ')"
+  else
+    warn "$(basename "$f"): W9 query workflow lain tanpa loop ($(echo $hits | tr '\n' ' '))"
+  fi
+}
+
+check_dependabot_guard() {
+  local d="$1" wf badjobs
+  wf=$(ls "$d"/.github/workflows/*.y*ml 2>/dev/null)
+  if grep -lqE 'dependabot\[bot\]' $wf 2>/dev/null; then
+    # every place that names the bot must also gate on the event, or it would run on push
+    badjobs=$(for f in $wf; do job_lines "$f" | awk -F'\t' -v file="$(basename "$f")" '
+      /^JOB\t/ { j=substr($0,5); guard[j]=0; seen[j]=0; next }
+      /dependabot\[bot\]/ { seen[j]=1 }
+      /event_name/ { if ($0 ~ /pull_request/ || $0 ~ /!=[[:space:]]*.push/) guard[j]=1 }
+      END { for (k in seen) if (seen[k] && !guard[k]) print file": "k }
+    '; done)
+    [ -n "$badjobs" ] &&
+      bad "W10 guard dependabot tanpa syarat pull_request -> $(echo $badjobs | tr '\n' ' ')" ||
+      ok "W10 guard dependabot dibatasi pull_request"
+  else
+    # a policy choice with a real cost (a Dependabot PR proves less), so it warns and
+    # names the lever instead of reddening every repo at once; the owning team decides
+    warn "W10 tidak ada guard Dependabot: PR dependabot menjalankan graf penuh (image/e2e/coverage)"
+  fi
+}
+
+# Commands that mean "run the project gate", and the composite gates that already
+# run them. A composite next to its own parts is the duplication W11 forbids.
+GATE_PRIM='(^|[^A-Za-z0-9_.-])\./task[[:space:]]+(check|test|ci-fast|fmt-check|lint)([[:space:]]|$)|(^|[^A-Za-z0-9_.-])nimble[[:space:]]+test([[:space:]]|$)|(^|[^A-Za-z0-9_.-])pnpm[[:space:]]+(test|run[[:space:]]+test|audit)([[:space:]]|$)|(^|[^A-Za-z0-9_.-])go[[:space:]]+test([[:space:]]|$)|(^|[^A-Za-z0-9_.-])npm[[:space:]]+test([[:space:]]|$)'
+GATE_COMPOSITE='(^|[^A-Za-z0-9_.-])\./task[[:space:]]+(ci|ci-fast|ci-repeat|release)([[:space:]]|$)'
+
+check_duplicate_gates() {
+  local f="$1" cmds dups comp prim scoped_jobs
+  # job -> each `run:` one-liner that matches a gate command
+  cmds=$(job_lines "$f" | awk -F'\t' -v prim="$GATE_PRIM" '
+    /^JOB\t/ { j=substr($0,5); next }
+    $2 ~ /^[[:space:]]*-?[[:space:]]*run:[[:space:]]*/ && $2 ~ prim {
+      c=$2; sub(/^[[:space:]]*-?[[:space:]]*run:[[:space:]]*/,"",c); sub(/[[:space:]]+$/,"",c)
+      print j "\t" c }
+  ')
+  if [ -z "$cmds" ]; then
+    note "$(basename "$f"): tidak ada perintah gate di CI"
+    return 0
+  fi
+  # a job that sets its own test scope runs a different thing, not a duplicate
+  # Space-joined on purpose: `awk -v` cannot carry a newline. BSD awk (macOS)
+  # dies with "newline in string" where gawk accepts it, and a failed awk prints
+  # nothing, which reads exactly like "no duplicates" — the check passed silently.
+  scoped_jobs=$(job_lines "$f" | awk -F'\t' '
+    /^JOB\t/ { j=substr($0,5); next }
+    $2 ~ /[A-Z_]*SCOPE[A-Z_]*:/ { print j }' | sort -u | tr '\n' ' ')
+  dups=$(printf '%s\n' "$cmds" | awk -F'\t' -v skip="$scoped_jobs" '
+    BEGIN { n=split(skip, a, " "); for (i=1;i<=n;i++) if (a[i]!="") s[a[i]]=1 }
+    !s[$1] { print $2 }' | sed 's/[[:space:]]\+/ /g' | sort | uniq -d)
+  [ -n "$dups" ] && while IFS= read -r c; do
+    [ -n "$c" ] && bad "$(basename "$f"): W11 perintah gate dijalankan dua job -> $c"
+  done <<EOF
+$dups
+EOF
+  # a composite gate next to the parts it already runs
+  comp=$(printf '%s\n' "$cmds" | awk -F'\t' -v c="$GATE_COMPOSITE" '$2 ~ c {print $1": "$2}')
+  prim=$(printf '%s\n' "$cmds" | awk -F'\t' -v p="$GATE_PRIM" -v c="$GATE_COMPOSITE" '$2 ~ p && $2 !~ c {print $2}' |
+    sed 's/[[:space:]]\+/ /g' | sort -u | tr '\n' ' ')
+  if [ -n "$comp" ]; then
+    case "$prim" in
+      *"./task check"*|*"./task test"*)
+        bad "$(basename "$f"): W11 composite gate berdampingan dengan bagiannya -> $comp| bagian: $prim" ;;
+      *) note "$(basename "$f"): W11 composite gate tanpa duplikasi" ;;
+    esac
+  elif [ -z "$dups" ]; then
+    note "$(basename "$f"): W11 tidak ada perintah gate ganda"
+  fi
+}
+
 # -------------------------------------------------------------- per project ---
 check_repo() {
   local d="$1" name stacks wf deploy
@@ -262,7 +411,9 @@ check_repo() {
     for f in $wf; do
       check_timeouts "$f"; check_injection "$f"; check_paths_filter "$f"
       check_gate_skips "$f"; check_build_call "$f"
+      check_cross_workflow_poll "$f"; check_duplicate_gates "$f"
     done
+    check_dependabot_guard "$d"
     check_web_container "$d" "$wf"
     check_path_filter_table "$d" "$wf"
   fi
@@ -335,6 +486,12 @@ check_repo() {
     fi
     grep -qE ':local' "$d/$deploy" && grep -qE ':prev' "$d/$deploy" &&
       ok ":local dan :prev dipakai" || bad ":local/:prev tidak lengkap"
+    # retention: a podman tag whose target is neither :local nor :prev leaves a third
+    # tag in the store. §7 lists the documented exceptions; anything else is drift.
+    # Every deploy script in the repo is read, not just the one D1 resolved: the
+    # RC/rollback/cutover scripts rotate tags too, and a `:release` written in
+    # cutover.sh was invisible while only deploy-vps.sh was inspected.
+    check_retention_tags "$d"
     grep -qiE 'smoke|health|readyz|wait_healthy' "$d/$deploy" && ok "smoke/health check ada" ||
       { case "$deploy" in *static*) warn "tanpa smoke eksplisit (deploy static)";; *) bad "tidak ada smoke/health check";; esac; }
     grep -qiE 'rollback|:prev' "$d/$deploy" && ok "jalur rollback ada" || bad "tidak ada rollback"

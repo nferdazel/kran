@@ -194,81 +194,15 @@ jobs:
           KRAN_TEST_SCOPE: integration
         run: ./task test
 
-  ci-fast:
-    name: Gate (./task ci-fast)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    # Gerbang yang disebut P0a harus benar-benar dieksekusi di CI, bukan hanya ada di `./task`
-    # (T-176). Job ini menjalankan satu perintah yang sama dengan yang dipakai mesin developer.
-    #
-    # `KRAN_TEST_SCOPE: unit` — bukan pelonggaran, tapi pembagian kerja yang sudah dipakai repo
-    # ini: `nim-check` memegang check + unit/property, `db-tests` memegang integrasi. Cakupan
-    # penuh di satu job tidak muat di `timeout-minutes: 15`: pada run 43791876685 job `nim-check`
-    # 5m55s dan `db-tests` 10m40s, jadi satu job yang menjalankan keduanya menembus 15 menit
-    # (alasan yang sama dicatat di `cmd_test` dan di job `db-tests`). Yang dibuktikan job ini
-    # adalah rangkaian gate-nya sendiri: check -> openapi -> lint-web -> test -> packages/ui.
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: kran
-          POSTGRES_PASSWORD: kran
-          POSTGRES_DB: kran_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U kran -d kran_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-    env:
-      KRAN_DATABASE_URL: postgres://kran:kran@127.0.0.1:5432/kran_test
-      KRAN_TEST_SCOPE: unit
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: pnpm
-
-      - name: Install JS dependencies
-        # `ci-fast` menjalankan `cmd_lint_web` (fail-closed sejak T-176) dan test `packages/ui`,
-        # jadi dependency JS wajib ada; tanpa langkah ini job gagal di arm web, bukan hijau palsu.
-        run: pnpm install --frozen-lockfile
-
-      - name: Setup Nim
-        uses: jiro4989/setup-nim-action@v2
-        with:
-          nim-version: '2.4.2'
-
-      - name: Cache nimble
-        uses: actions/cache@v6
-        with:
-          path: ~/.nimble
-          key: nimble-${{ runner.os }}-2.4.2-${{ hashFiles('kran.nimble') }}
-
-      - name: Install dependencies
-        run: nimble install -d -y
-
-      - name: Runtime libs (libpcre3)
-        run: sudo apt-get update -qq && sudo apt-get install -y libpcre3
-
-      - name: Migrasi + seed
-        # `ci-fast` memanggil `require_db`, dan skema bersih membuktikan migrasi tetap jalan.
-        # Urutan sama dengan job `db-tests`.
-        run: |
-          ./task dbtools migrate
-          ./task dbtools seed --dev
-
-      - name: ./task ci-fast
-        run: ./task ci-fast
-
+  # Job `ci-fast` dihapus (18 Nov 2026). `./task ci-fast` menjalankan `./task check` dan
+  # `./task test` yang sudah dijalankan `nim-check`, ditambah `openapi`, `lint-web` dan unit
+  # `packages/ui` yang sudah jalan di `web-e2e`. Kontrak W11 (QOUVER_CICD_STANDARD v1.2)
+  # melarang satu perintah gate dieksekusi dua job, jadi bagiannya tinggal di pemiliknya:
+  # `nim-check` memegang check + unit, `web-e2e` memegang openapi + lint-web + ui/e2e.
+  # `nim-check` yang dipertahankan, bukan `ci-fast`, karena gerbang deploy di host membaca
+  # nama check `Nim (check + unit/property test)`; mengganti nama job itu membuat deploy
+  # gagal-closed menunggu 30 menit. Konsekuensi yang diterima: rangkaian `./task ci-fast`
+  # sendiri tidak lagi dieksekusi utuh di CI (T-176), cakupannya lulus lewat dua job di atas.
   web-e2e:
     name: Web (svelte-check + axe + Playwright)
     runs-on: ubuntu-24.04
@@ -687,7 +621,7 @@ jobs:
   gate:
     name: "Gate"
     if: always()
-    needs: [contract, nim-check, traceability, db-tests, ci-fast, web-e2e, security, visual-update]
+    needs: [contract, nim-check, traceability, db-tests, web-e2e, security, visual-update]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -695,7 +629,6 @@ jobs:
       R_NIM: ${{ needs.nim-check.result }}
       R_TRACE: ${{ needs.traceability.result }}
       R_DB: ${{ needs.db-tests.result }}
-      R_CIFA: ${{ needs.ci-fast.result }}
       R_WEB: ${{ needs.web-e2e.result }}
       R_SECURITY: ${{ needs.security.result }}
       R_VISUAL: ${{ needs.visual-update.result }}
@@ -704,7 +637,7 @@ jobs:
         shell: bash
         run: |
           fail=0
-          for r in "$R_CONTRACT" "$R_NIM" "$R_TRACE" "$R_DB" "$R_CIFA" "$R_WEB" "$R_SECURITY"; do
+          for r in "$R_CONTRACT" "$R_NIM" "$R_TRACE" "$R_DB" "$R_WEB" "$R_SECURITY"; do
             [ "$r" = "success" ] || { echo "required job: $r"; fail=1; }
           done
           # `visual-update` hanya jalan saat diminta (workflow_dispatch + update_snapshots),
