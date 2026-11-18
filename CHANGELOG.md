@@ -4,6 +4,11 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.5.1] - 2026-11-18
+
+### Operations
+- **contract:** Adopt QOUVER_CICD_STANDARD v1.2 and drop the duplicate ci-fast gate
+
 ## [0.5.0] - 2026-11-18
 
 ### Added
