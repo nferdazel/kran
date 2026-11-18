@@ -4,6 +4,26 @@ All notable changes to KRAN are documented here. Format: [Keep a Changelog](http
 versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entri dihasilkan
 `tools/gen-changelog.sh` dari Conventional Commits; jangan ditulis tangan.
 
+## [0.5.0] - 2026-11-18
+
+### Added
+- Put the parameter edit form in its row and lead with active values (T-241)
+- Give the cash vault screen a queue-first layout and honest states (T-241)
+- **platform:** Purge outbox and inbox past the retention window
+- **platform:** Add outbox completed_at and purge indexes for T-282
+- **api:** Expose Prometheus /metrics with process and database series
+
+### Fixed
+- **devdb:** Use the postgres:18 container when host psql is absent
+- **platform:** Address T-282 round-1 review findings on purge predicate and registration
+- Make the ledger scroll region the single tab stop (T-294 part 2)
+- **deploy:** Record the artifact rev separately from the checkout rev
+- **deploy:** Wait for the image the gate publishes before pulling it (#22)
+- **deploy:** Log a failed restart as a warning instead of aborting (#23)
+
+### Operations
+- Prevent cancellation of main runs and align concurrency guard
+
 ## [0.4.3] - 2026-11-16
 
 ### Fixed
