@@ -8,8 +8,8 @@ Two targets, and they prove different things:
 
 - **Mockup** — `.local/redesign/mockup/index.html` (self-contained, `file://`, gitignored).
   Proves layout, keyboard order and markup. Runs today, no session needed.
-- **App** — `apps/web` under `/app/*`. Needs a session plus seed fixture. Until that exists every
-  item below is **BLOCKED**, not passed.
+- **App** — `apps/web` under `/app/*`. Needs a session plus seed fixture; `./task devdb up` and
+  `./task e2e` provide it. Unwalked items are "not recorded", never "passed".
 
 ## Part A - mockup pass
 
@@ -30,7 +30,7 @@ Run: open the mockup file, then work through the list. Record PASS/FAIL and what
 | A11 | Login error is announced | PASS - `role="alert"` |
 | A12 | Money: currency named once per column, no per-cell symbol | PASS - `(IDR)` in headers, 0 cells containing "Rp" |
 | A13 | Console clean while clicking every control | PASS - 0 errors, 0 unhandled rejections across theme, width and drawer controls |
-| A14 | Three empty states (no-data / no-match / denied) are distinguishable | BLOCKED - mockup ships no empty state; that is T-292 |
+| A14 | Three empty states (no-data / no-match / denied) are distinguishable | N/A - the mockup ships no empty state; `EmptyState` carries all three kinds since T-292, and the app pass (B7) is where it is checked |
 | A15 | Terminology matches DOMAIN.md (Kas besar / Kasir) | **FAIL** - 4 "Teller" on screen, 0 "Kasir", 0 "Kas besar". Matches Rina's finding; goes to T-292 |
 
 A7 and A8 are the same two failures Sari's `keyboard-flows --config keyboard-mockup` reports
@@ -40,20 +40,25 @@ defect of the drawer spec, not a flake.
 Measurement note: the mockup stage is scaled, so computed pixel widths inside it are not design
 values (a 520px drawer measures 445). Judge width from the CSS, not the box.
 
-## Part B - app pass (BLOCKED until a session + seed fixture exists)
+## Part B - app pass
 
-Every item needs one of: a headless login fixture, or a dev env with ephemeral Postgres seeded
-once. Without it `/app/*` redirects to `/login` and there is no screen to click.
+Status: unblocked. The prerequisite this file used to name ("BLOCKED until a session + seed
+fixture exists") is gone: `./task devdb up` has existed since D-004 and `./task e2e` has run green
+with a real Postgres since 10 Nov (`GATE-LOG.md`, latest entry 80 tests). The pass has not been
+walked and recorded yet; every row below is still unrecorded, not failed.
+
+Rows that referred to work now shipped: A14's "empty state is T-292" - T-292 is `DONE` and
+`EmptyState` carries the three kinds. A15's "Teller instead of Kasir" - T-292 swapped the copy.
 
 | # | Check | Status |
 |---|---|---|
-| B1 | Skip link is the first Tab stop and jumps to `#main` | BLOCKED |
-| B2 | Sidebar 240px: exactly one `aria-current="page"`, hover uses surface-2 only | BLOCKED |
-| B3 | <1024: open/close by keyboard, Esc returns focus to the menu button, Tab does not leak behind | BLOCKED |
-| B4 | Topbar 56px, breadcrumb matches the route | BLOCKED |
-| B5 | `/login` and `/app/print/*` render without shell chrome (the easiest regression to miss) | BLOCKED |
-| B6 | Console clean and zero failed requests on every route | BLOCKED |
-| B7 | Empty / loading / error per screen, three empties phrased differently | BLOCKED |
+| B1 | Skip link is the first Tab stop and jumps to `#main` | not recorded |
+| B2 | Sidebar 240px: exactly one `aria-current="page"`, hover uses surface-2 only | not recorded |
+| B3 | <1024: open/close by keyboard, Esc returns focus to the menu button, Tab does not leak behind | not recorded |
+| B4 | Topbar 56px, breadcrumb matches the route | not recorded |
+| B5 | `/login` and `/app/print/*` render without shell chrome (the easiest regression to miss) | not recorded |
+| B6 | Console clean and zero failed requests on every route | not recorded |
+| B7 | Empty / loading / error per screen, three empties phrased differently | not recorded |
 | B8 | Money columns keep one symbol per column at every width | BLOCKED |
 
 ## Handoff note

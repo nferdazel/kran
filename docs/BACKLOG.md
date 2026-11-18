@@ -10,8 +10,9 @@ Risk class (R-31): `full` = independent review required (money, schema or migrat
 `standard` = self-review plus gates. Review cap is 2 rounds (R-25).
 
 Every task file follows `tasks/_TEMPLATE.md`. A row becomes `READY` only when its file exists with
-every DoR item filled (R-32). The planning review of 5 Nov 2026 is in `review/2026-11-05.md`; its
-findings are folded into the rows below and into the task files at DoR time.
+every DoR item filled (R-32). The planning review of 5 Nov 2026 is in
+`history/2026-11-05-planning-review.md`; its findings are folded into the rows below and into the
+task files at DoR time.
 
 ## P0a - Gates see the money code
 
@@ -166,7 +167,7 @@ findings are folded into the rows below and into the task files at DoR time.
 | T-234 | AppShell + navigation | M | T-232, T-233, T-279 | standard | SUPERSEDED by T-285 |
 | T-237 | Component: DataTable on `T-279` (extend, not recreate) | M | T-235, T-279 | standard | SUPERSEDED by T-288 |
 | T-240 | Component: Empty / Error / Loading states | S | T-235 | standard | SUPERSEDED by T-292 |
-| T-241 | Repair screens: vault, ledger, params, password, login (5 subtasks) | M | T-234 | standard | TODO |
+| T-241 | Repair screens: ledger and password (vault, params and login shipped in 0.5.0 and 0.2.0) | M | T-234 | standard | IN_PROGRESS |
 | T-242 | Rebuild: Kas + close (K-01, K-03) | L | T-197, T-231, T-268, T-273, T-274 | standard | TODO |
 | T-243 | Rebuild: ledger admin, loans, loan detail, products, users, slip, statement | L | T-199, T-200, T-229, T-273 | standard | TODO |
 | T-244 | Merge `accounts/open` into member detail | S | T-245 | standard | TODO |

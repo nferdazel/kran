@@ -1,13 +1,9 @@
-# 02 - Design system: defined, used, target
+# 02 - Design system: target specification
 
-Status: proposed, Wave 3 (P-03). Baseline `main` @ `29d36c4`; design direction fixed by DESIGN.md
-(D-160). Scope: tokens, components, patterns, adoption. Evidence is file:line; nothing was run.
-
-**Verdict.** The direction is coherent; the system is not installed. `packages/ui` defines 25 colour
-tokens per theme and 54 contrast pairs, but the app paints with classes copied into pages: 43 raw
-`<input>`, 14 raw `<table>`, 40 raw `<button>`, `Money.svelte` with zero call sites, `Field` on one of
-thirteen screens. Unused, it is documentation, not a system. The rebuild is an adoption problem -
-34 target components, 7 existing - not an invention problem.
+Status: **target specification, partially built.** Design direction fixed by DESIGN.md (D-160);
+tokens and shell ratified by D-202. `packages/ui` holds 22 of the 34 components below; the rest are
+still targets, and the app is mid-migration screen by screen (DESIGN §12). `DESIGN.md` §10 is the
+binding accessibility rule and wins over anything here.
 
 ## 1. Audit - what is defined vs what is used
 
