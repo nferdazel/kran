@@ -24,7 +24,7 @@
 #   ./task hooks   install git hooks (pre-commit: tolak berkas/kredensial di staged)
 #   ./task gate    golden contract + shell syntax + secret scan + fast static checks (<= 90 s)
 #   ./task gate-full  gate + check + build + test + e2e (the gate before a release)
-#   ./task release [major|minor|patch] [--skip-check] [--push]
+#   ./task release [major|minor|patch] [--skip-check] [--push] [--current]
 #                  bump VERSION, changelog, gate-full, commit + annotated tag vX.Y.Z (D-178,
 #                  D-194). Never pushes unless --push is given.
 #   ./task fmt     format code (rewrites files in place)
