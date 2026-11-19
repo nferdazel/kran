@@ -13,6 +13,8 @@
 # Hardening sama dengan kran-api.container: nginx hanya membaca pohon statis dan menulis ke tmpfs
 # (/tmp, cache, pid), jadi root filesystem read-only tidak mengubah perilakunya.
 [Unit]
+# Sink yang sama dengan kran-api: container web yang mati = downtime yang terlihat.
+OnFailure=alert@%N.service
 Description=KRAN Web (pohon statis SvelteKit, nginx)
 After=network-online.target
 Wants=network-online.target
