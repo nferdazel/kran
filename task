@@ -22,9 +22,11 @@
 #   ./task build   build apps/api binary (also stamps VERSION into API + web sources)
 #   ./task version print VERSION (single source for API, web, manifests)
 #   ./task hooks   install git hooks (pre-commit: tolak berkas/kredensial di staged)
-#   ./task release [major|minor|patch] [--skip-check] [--no-push]
-#                  bump VERSION, changelog, full gate (check-fast + build + test + e2e), commit +
-#                  annotated tag vX.Y.Z (D-178, D-194)
+#   ./task gate    golden contract + shell syntax + secret scan + fast static checks (<= 90 s)
+#   ./task gate-full  gate + check + build + test + e2e (the gate before a release)
+#   ./task release [major|minor|patch] [--skip-check] [--push]
+#                  bump VERSION, changelog, gate-full, commit + annotated tag vX.Y.Z (D-178,
+#                  D-194). Never pushes unless --push is given.
 #   ./task fmt     format code (rewrites files in place)
 #   ./task fmt-check  verify formatting only (Nim, nimpretty) - no other gate runs
 #   ./task devdb   manage dev DB tunnel to server - see tools/devdb.sh
@@ -609,119 +611,6 @@ cmd_version_check() {
   ok "v$v"
 }
 
-# Rilis = commit + tag anotasi. Tag adalah PENANDA, bukan pemicu deploy: deploy tetap dari push
-# ke main (D-013, D-178). Bump tanpa argumen diturunkan dari Conventional Commits sejak tag
-# terakhir: `!:`/`BREAKING CHANGE` -> major, `feat:` -> minor, selain itu patch.
-cmd_release() {
-  [ -z "$(git status --porcelain)" ] ||
-    die "working tree kotor: commit atau stash dulu sebelum rilis"
-  [ -f "$ROOT/VERSION" ] || die "VERSION tidak ada"
-
-  cur=$(tr -d ' \n\r' <"$ROOT/VERSION")
-  case "$cur" in
-    *.*.*) ;;
-    *) die "VERSION '$cur' bukan semver X.Y.Z" ;;
-  esac
-  case "$cur" in
-    *[!0-9.]*) die "VERSION '$cur' bukan semver polos" ;;
-  esac
-  major=$(printf '%s' "$cur" | cut -d. -f1)
-  minor=$(printf '%s' "$cur" | cut -d. -f2)
-  patch=$(printf '%s' "$cur" | cut -d. -f3)
-
-  bump=""
-  skip_check=0
-  no_push=0
-  for arg in "$@"; do
-    case "$arg" in
-      --skip-check) skip_check=1 ;;
-      --no-push) no_push=1 ;;
-      major | --major) bump="major" ;;
-      minor | --minor) bump="minor" ;;
-      patch | --patch) bump="patch" ;;
-      *) die "argumen release tidak dikenal: $arg (pakai major|minor|patch [--skip-check] [--no-push])" ;;
-    esac
-  done
-
-  # Gagal sebelum VERSION di-bump: gate rilis butuh DB (test integrasi + e2e), jangan tinggalkan
-  # working tree setengah jadi hanya karena env belum siap.
-  [ "$skip_check" -eq 1 ] || require_db release
-
-  # Hanya tag versi yang dihitung; tag `archive/*` adalah penanda arsip, bukan rilis.
-  last_tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)
-  if [ -n "$last_tag" ] && [ "$(git rev-list --count "$last_tag..HEAD")" -eq 0 ]; then
-    die "tidak ada commit sejak $last_tag — tidak ada yang dirilis"
-  fi
-  if [ -z "$bump" ]; then
-    range="HEAD"
-    [ -n "$last_tag" ] && range="$last_tag..HEAD"
-    msgs=$(git log "$range" --format='%s%n%b')
-    if printf '%s\n' "$msgs" | grep -qE '^[a-z]+(\([^)]*\))?!:|BREAKING CHANGE:'; then
-      bump="major"
-    elif printf '%s\n' "$msgs" | grep -qE '^feat(\([^)]*\))?:'; then
-      bump="minor"
-    else
-      bump="patch"
-    fi
-  fi
-
-  case "$bump" in
-    major) major=$((major + 1)); minor=0; patch=0 ;;
-    minor) minor=$((minor + 1)); patch=0 ;;
-    patch) patch=$((patch + 1)) ;;
-  esac
-  new="$major.$minor.$patch"
-  log "release v$new (dari v$cur, bump $bump)"
-
-  printf '%s\n' "$new" >"$ROOT/VERSION"
-  sed -i.bak -e "s/^version *= *\"[^\"]*\"/version     = \"$new\"/" "$ROOT/kran.nimble"
-  rm -f "$ROOT/kran.nimble.bak"
-  sed -i.bak -e "s/\"version\": *\"[^\"]*\"/\"version\": \"$new\"/" "$ROOT/package.json"
-  rm -f "$ROOT/package.json.bak"
-  sh "$ROOT/tools/gen-version.sh" || die "gagal menstempel VERSION"
-
-  notes=$(mktemp)
-  bash "$ROOT/tools/gen-changelog.sh" "$new" "$last_tag" "HEAD" "$notes" ||
-    die "gagal menyusun CHANGELOG"
-  info "CHANGELOG: entri $new"
-
-  if [ "$skip_check" -eq 0 ]; then
-    cmd_check_fast
-    cmd_build
-    # Rilis = push ke main = deploy, dan e2e sengaja tidak jalan di loop harian (D-194). Karena itu
-    # gate rilis yang menanggung test + e2e penuh sebelum commit rilis dibuat.
-    cmd_test
-    cmd_e2e
-  else
-    printf '\n!! WARNING: gate check dilewati (--skip-check) — dicatat di catatan rilis\n'
-    printf '   Gate rilis dilewati dengan --skip-check.\n' >>"$notes"
-  fi
-
-  cmd_version_check
-
-  git add VERSION kran.nimble package.json CHANGELOG.md \
-    apps/api/src/version_gen.nim apps/web/src/lib/version.ts
-  git commit -q -m "chore: release v$new"
-  git tag -a "v$new" -m "release v$new"
-
-  if [ "$no_push" -eq 0 ]; then
-    branch=$(git rev-parse --abbrev-ref HEAD)
-    info "push $branch + tag v$new"
-    git push origin "$branch" --follow-tags || die "push gagal (tag sudah dibuat lokal: git push origin $branch --follow-tags)"
-    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-      if [ -s "$notes" ]; then
-        gh release create "v$new" --title "v$new" --notes-file "$notes" --latest || true
-      else
-        gh release create "v$new" --title "v$new" --generate-notes --latest || true
-      fi
-    fi
-  else
-    info "--no-push: tag v$new dibuat lokal, belum dikirim"
-  fi
-  rm -f "$notes"
-  printf '\n== release v%s selesai\n' "$new"
-}
-
 cmd_scaffold() { # cmd_scaffold <name> [--dry-run]
   log "scaffold new module"
   [ -d "$ROOT/tools/scaffold" ] || die "tools/scaffold not found (T-011)"
@@ -911,7 +800,11 @@ case "${1:-help}" in
   version) cmd_version ;;
   hooks) cmd_hooks ;;
   version-check) cmd_version_check ;;
-  release) shift; cmd_release "$@" ;;
+  # Standard CI/CD v2.0: one gate and one release implementation, shared byte-identically with
+  # every other repo. See task.d/gate.sh and task.d/release.sh.
+  gate) shift; exec sh "$ROOT/task.d/gate.sh" gate "$@" ;;
+  gate-full) shift; exec sh "$ROOT/task.d/gate.sh" gate-full "$@" ;;
+  release) shift; exec sh "$ROOT/task.d/release.sh" "$@" ;;
   fmt) cmd_fmt ;;
   fmt-check) mkdir -p "$BUILD"; cmd_fmt_check ;;
   lint) cmd_lint ;;

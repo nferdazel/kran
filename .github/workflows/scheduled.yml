@@ -1,34 +1,75 @@
 # class: C
-name: Visual baseline (Linux)
+name: Scheduled checks
 
-# Menghasilkan baseline visual regression di **Linux** (O-022/D-176). Baseline yang dibuat di
-# macOS tidak bisa dipakai runner, jadi satu-satunya cara sah adalah menjalankannya di sini lalu
-# meng-commit artefaknya. Gate-nya sendiri ada di `ci.yml` job `web-e2e` (menjalankan
-# `./task e2e`, yang ikut menjalankan `visual.spec.ts`).
+# The two jobs no push needs to wait for, in one file: a full-history secret scan (weekly) and the
+# Linux visual baseline (manual). Both are class C — never on the push path, never a required check.
 #
-# Alur: jalankan workflow ini -> unduh artefak `visual-baseline-linux` -> commit ke
-# `apps/web/tests/e2e/visual.spec.ts-snapshots/`. Jangan menyalin baseline antar-OS.
+# Merged from `secret-scan.yml` and `visual-baseline.yml` on 2026-11-19 (CI/CD v2.0, CI-07): two
+# class C files meant two concurrency groups and two places to look for "what runs on a timer".
+#
+# Manual runs:
+#   gh workflow run scheduled.yml -f job=secret-scan
+#   gh workflow run scheduled.yml -f job=visual-baseline -f update=true
 
 on:
+  schedule:
+    # Senin 03:17 UTC (Senin 10:17 WIB) — di luar jam deploy biasa.
+    - cron: '17 3 * * 1'
   workflow_dispatch:
     inputs:
+      job:
+        description: 'Which check to run'
+        type: choice
+        options: [secret-scan, visual-baseline]
+        default: secret-scan
       update:
-        description: 'Tulis ulang baseline dari hasil run ini (default: bandingkan saja)'
+        description: 'visual-baseline only: rewrite the committed baselines from this run'
         type: boolean
         default: false
 
 permissions:
   contents: read
 
-# Writing a baseline twice for the same branch produces two artefacts and no
-# verdict, so the second dispatch waits for the first to finish.
+# One group for the file: a scheduled scan and a manual baseline run are independent, but two runs
+# of the same file for one ref would only produce duplicate artefacts and no extra verdict.
 concurrency:
-  group: visual-baseline-${{ github.ref }}
+  group: scheduled-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  history:
+    name: gitleaks (--log-opts=--all)
+    # The weekly schedule runs this job; a manual dispatch runs it only when asked for.
+    if: github.event_name == 'schedule' || inputs.job == 'secret-scan'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout (seluruh riwayat)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        env:
+          # Dipin: versi menentukan sintaks `[allowlist]` yang dikenali dan hasil pemindaian.
+          GITLEAKS_VERSION: '8.24.3'
+        run: |
+          set -eu
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL "$url" | tar -xz gitleaks
+          ./gitleaks version
+
+      - name: Scan seluruh riwayat
+        run: ./gitleaks git --log-opts=--all --config .gitleaks.toml --redact --verbose
+
+  # Baseline visual regression di **Linux** (O-022/D-176). Baseline yang dibuat di macOS tidak bisa
+  # dipakai runner, jadi satu-satunya cara sah adalah menjalankannya di sini lalu meng-commit
+  # artefaknya. Gate-nya sendiri ada di `ci.yml` job `web-e2e` (`./task e2e` ikut menjalankan
+  # `visual.spec.ts`). Alur: jalankan workflow ini -> unduh artefak `visual-baseline-linux` ->
+  # commit ke `apps/web/tests/e2e/visual.spec.ts-snapshots/`. Jangan menyalin baseline antar-OS.
   visual-baseline:
     name: Visual baseline (Linux)
+    if: github.event_name == 'workflow_dispatch' && inputs.job == 'visual-baseline'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     services:
@@ -116,3 +157,4 @@ jobs:
           name: visual-baseline-linux
           path: apps/web/tests/e2e/visual.spec.ts-snapshots
           if-no-files-found: error
+          retention-days: 14

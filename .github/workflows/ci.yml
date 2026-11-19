@@ -47,19 +47,24 @@ jobs:
   # drift fails this repo's own build instead of waiting for a manual audit.
   # The script is a byte-identical copy of the server repo's
   # ops/scripts/contract-check.sh; fix it there and copy it out again.
-  contract:
-    name: "Contract: golden CI/CD rules"
+  # W26: the cheap gate in front of every expensive job. It runs the same script a laptop runs,
+  # so a red run stops here in about a minute instead of at the end of the queue.
+  # `--no-hook` keeps this job free of toolchain installs: the repo-specific static checks run in
+  # the jobs that already have their dependencies, and the security job owns the secret scan.
+  preflight:
+    name: "Preflight: contract, scripts, secret scan"
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: "Contract: check this repo"
-        run: ./ops/scripts/contract-check.sh .
+      - name: "Preflight: ./task gate"
+        run: ./task gate --no-hook
 
   nim-check:
     name: Nim (check + unit/property test)
+    needs: [preflight]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -107,6 +112,7 @@ jobs:
 
   traceability:
     name: Traceability (requirement -> kontrol + test)
+    needs: [preflight]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -134,6 +140,7 @@ jobs:
 
   db-tests:
     name: DB (integrasi, Postgres 18)
+    needs: [preflight]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     services:
@@ -206,6 +213,7 @@ jobs:
   # sendiri tidak lagi dieksekusi utuh di CI (T-176), cakupannya lulus lewat dua job di atas.
   web-e2e:
     name: Web (svelte-check + axe + Playwright)
+    needs: [preflight]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     # Database nyata untuk e2e: tanpa ini sebagian besar spec melewati dirinya sendiri dan job
@@ -335,6 +343,7 @@ jobs:
 
   visual-update:
     name: Visual baselines (update-snapshots, Linux)
+    needs: [preflight]
     # Hanya saat diminta. Job terpisah, bukan langkah tambahan di `web-e2e`: regenerasi baseline
     # butuh build + reset DB + seed penuh, dan menumpangkannya ke job gerbang membuat job 15 menit
     # itu melewati batasnya. Job ini tidak menggantikan gerbang; `web-e2e` tetap satu-satunya
@@ -441,6 +450,7 @@ jobs:
 
   security:
     name: Security (gitleaks)
+    needs: [preflight]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -622,11 +632,11 @@ jobs:
   gate:
     name: "Gate"
     if: always()
-    needs: [contract, nim-check, traceability, db-tests, web-e2e, security, visual-update]
+    needs: [preflight, nim-check, traceability, db-tests, web-e2e, security, visual-update]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      R_CONTRACT: ${{ needs.contract.result }}
+      R_CONTRACT: ${{ needs.preflight.result }}
       R_NIM: ${{ needs.nim-check.result }}
       R_TRACE: ${{ needs.traceability.result }}
       R_DB: ${{ needs.db-tests.result }}
