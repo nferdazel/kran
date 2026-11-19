@@ -25,6 +25,12 @@ PublishPort=127.0.0.1:8096:8080
 Pull=never
 NoNewPrivileges=true
 DropCapability=ALL
+# nginx stock start sebagai root, chown /var/cache/nginx ke uid 101 dan setgid(101).
+# Dengan DropCapability=ALL saja unit mati EPERM sebelum listen (terukur di fond
+# 2026-11-15 dan di qouver/sds 2026-11-19).
+AddCapability=CHOWN
+AddCapability=SETUID
+AddCapability=SETGID
 ReadOnly=true
 # /tmp untuk worker sementara nginx, cache proxy, dan pid master yang di-hardcode di nginx.conf
 # bawaan image (prefix /var/run).

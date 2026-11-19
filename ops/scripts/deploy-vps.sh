@@ -191,6 +191,46 @@ wait_healthy() {
   return 1
 }
 
+# kran-web: sejak 2026-11-19 Caddy cbs.qouver.com reverse-proxy ke 8096. /healthz
+# membawa revisi yang build-nya, jadi restart yang diam-diam memakai image lama
+# tidak lolos. `:local`/`:prev` tetap satu-satunya tag yang disimpan.
+WEB_HEALTH_URL="${KRAN_WEB_HEALTH_URL:-http://127.0.0.1:8096/healthz}"
+WEB_UNIT="kran-web.container"
+
+rollback_web() {
+  if podman image exists localhost/kran-web:prev; then
+    log "==> rollback web image: localhost/kran-web:prev -> :local"
+    podman tag localhost/kran-web:prev localhost/kran-web:local \
+      && systemctl --user restart kran-web 2>&1 | tee -a "$LOG" || true
+  else
+    log "==> WARN: rollback web image dilewati: tidak ada localhost/kran-web:prev"
+  fi
+  if [ -d "$APP_DIR/web.prev" ]; then
+    rm -rf "$APP_DIR/web"
+    mv "$APP_DIR/web.prev" "$APP_DIR/web"
+    restorecon -RF "$APP_DIR/web" 2>/dev/null || true
+  fi
+}
+
+wait_healthy_web() {
+  local want="$1" body rev part
+  rev=""; part=""
+  for _ in $(seq 1 15); do
+    body=$(curl -fsS --max-time 3 "$WEB_HEALTH_URL" 2>/dev/null || true)
+    if [ -n "$body" ]; then
+      rev=$(printf '%s' "$body" | sed -n 's/.*"rev":"\([^"]*\)".*/\1/p')
+      part=$(printf '%s' "$body" | sed -n 's/.*"part":"\([^"]*\)".*/\1/p')
+      if [ "$part" = "web" ] && [ "$rev" = "$want" ]; then
+        log "==> kran-web healthy rev=$rev"
+        return 0
+      fi
+    fi
+    sleep 2
+  done
+  log "==> ERROR: $WEB_HEALTH_URL tidak melaporkan rev=$want (dapat rev=${rev:-<kosong>} part=${part:-<kosong>}) — rollback web"
+  return 1
+}
+
 # Gerbang CI (D-178): deploy hanya untuk commit yang benar-benar hijau di GitHub Actions.
 # Push ke `main` memicu CI dan webhook **bersamaan**, jadi webhook tiba jauh sebelum CI selesai.
 # Tanpa gerbang ini commit merah tetap ter-deploy: 1 Nov 2026 build web mati di host (Node 26 tanpa
@@ -847,7 +887,6 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/web/|packages/)' <<<"$CHANGED_FILES
       mkdir -p "$APP_DIR/web.new"
       podman cp "$WEB_CTR:/usr/share/nginx/html/." "$APP_DIR/web.new/"
       podman rm -f "$WEB_CTR" >/dev/null
-      podman rmi "$WEB_IMAGE" >/dev/null 2>&1 || true
       podman image prune -f >/dev/null 2>&1 || true
 
       rm -rf "$APP_DIR/web.prev"
@@ -857,6 +896,36 @@ if [ "$IS_FIRST" -eq 1 ] || grep -qE '^(apps/web/|packages/)' <<<"$CHANGED_FILES
       # SELinux: berkas baru berlabel var_t -> Caddy tidak bisa membaca.
       restorecon -RF "$APP_DIR/web" 2>/dev/null || true
       log "==> web swapped from $WEB_IMAGE (revision $WEB_REV)"
+
+      # Pohon statis di atas tetap ditulis sebagai target rollback; sejak
+      # 2026-11-19 yang menjawab cbs.qouver.com adalah container ini. Tag sha
+      # dibuang setelah :local/:prev ditulis: rmi lebih awal menghapus image-nya
+      # dan `podman tag` lalu gagal "image not known" (qouver1, 2026-11-19).
+      WEB_UNIT_SRC="$MONO_DIR/ops/systemd/$WEB_UNIT"
+      if [ ! -f "$WEB_UNIT_SRC" ]; then
+        die "unit $WEB_UNIT_SRC hilang — web container tidak disentuh"
+      fi
+      if podman image exists localhost/kran-web:local; then
+        podman tag localhost/kran-web:local localhost/kran-web:prev 2>/dev/null || true
+      fi
+      podman tag "$WEB_DIGEST" localhost/kran-web:local
+      podman rmi "$WEB_IMAGE" >/dev/null 2>&1 || true
+      if ! cmp -s "$WEB_UNIT_SRC" "$UNIT_DIR/$WEB_UNIT"; then
+        install -m 600 "$WEB_UNIT_SRC" "$UNIT_DIR/$WEB_UNIT.new.$$" \
+          && mv -f "$UNIT_DIR/$WEB_UNIT.new.$$" "$UNIT_DIR/$WEB_UNIT" \
+          || die "gagal memasang $WEB_UNIT_SRC — web container tidak disentuh"
+        log "==> unit $WEB_UNIT dipasang"
+        systemctl --user daemon-reload
+        systemctl --user enable kran-web >/dev/null 2>&1 || true
+      fi
+      systemctl --user restart kran-web 2>&1 | tee -a "$LOG" \
+        || log "==> WARN: restart kran-web keluar non-zero; health gate web tetap dijalankan"
+      WEB_HEALTHY=0
+      if wait_healthy_web "$NEW_REV"; then WEB_HEALTHY=1; fi
+      if [ "$WEB_HEALTHY" -ne 1 ]; then
+        rollback_web
+        die "web container tidak melayani revisi $NEW_REV; image dan unit web dipulihkan, deploy dihentikan"
+      fi
     else
       # Tidak ada jalur skip di sini (F-1, review 16 Nov 2026). Dulu `manifest unknown` dianggap
       # job image-web belum selesai dan deploy lanjut dengan web lama. Alasan itu sudah tidak
