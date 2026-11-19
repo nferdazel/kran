@@ -1,4 +1,4 @@
 ## JANGAN EDIT — dihasilkan tools/gen-version.sh dari VERSION saat build.
 
-const AppVersion* = "0.5.1"
+const AppVersion* = "0.6.0"
 const AppCommit* = ""
