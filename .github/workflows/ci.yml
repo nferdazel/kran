@@ -31,9 +31,9 @@ on:
 
 permissions:
   contents: read
-  # gitleaks-action lists the pull request's commits on a `pull_request` run;
-  # with contents:read alone that call is 403 and the job dies before scanning.
-  pull-requests: read
+  # No `pull-requests: read` (U5): the pinned gitleaks-action v3 scans without listing the
+  # pull request's commits; nim-id runs it with `contents: read` alone and its pull request
+  # runs are green. Re-add the permission if a pull_request run ever dies with 403.
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
