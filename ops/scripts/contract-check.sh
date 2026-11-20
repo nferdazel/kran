@@ -25,7 +25,7 @@
 #     W15 one push runs one gate graph: two class A files may not run the same
 #         gate command
 #     W19 third-party actions pinned to a full commit SHA (actions/* may keep a
-#         major tag); warn while the conversion is in progress
+#         major tag, and a pinned ref records its tag in a trailing comment)
 #     W20 no runs-on: *-latest
 #     W22 every upload-artifact declares retention-days
 #     W24 actionlint over the workflows, when the binary is installed
@@ -508,7 +508,8 @@ EOF
 # ------------------------------------------------- W19/W20/W22/W24 (v1.5) ---
 # 19 a third-party action is pinned to a full commit SHA; actions/* may keep a
 #    major tag. A moving tag on a third-party action is unreviewed code inside
-#    the pipeline that builds the image the host deploys.
+#    the pipeline that builds the image the host deploys. Gated since 2026-11-20,
+#    once every repo was converted; a pinned ref carries its tag as a comment.
 # 20 a runner label carries its version: `ubuntu-latest` moves under the build.
 # 22 an uploaded artifact declares its retention; the default is 90 days.
 # 24 actionlint parses the workflow, when the binary is installed. Reported, not
@@ -527,11 +528,11 @@ unpinned_third_party() { # <file> -> "owner/action@ref" per line
     }' "$1" | sort -u
 }
 
-check_action_pinning() { # W19 (warn), W20 (fail), W22 (warn), W24 (warn)
+check_action_pinning() { # W19 (fail), W20 (fail), W22 (warn), W24 (warn)
   local f="$1" unpinned lax uploads retentions missing lint
   unpinned=$(unpinned_third_party "$f")
   if [ -n "$unpinned" ]; then
-    warn "$(basename "$f"): W19 action pihak ketiga tidak dipin ke SHA -> $(printf '%s ' $unpinned)"
+    bad "$(basename "$f"): W19 action pihak ketiga tidak dipin ke SHA -> $(printf '%s ' $unpinned)"
   else
     ok "$(basename "$f"): W19 semua action pihak ketiga dipin ke SHA"
   fi
