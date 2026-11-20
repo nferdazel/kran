@@ -3,13 +3,21 @@
 # (spec §21.6, §22).
 #
 # Exit 0 hanya bila liveness & readiness OK. Ketidakcocokan rev dilaporkan
-# sebagai WARN (bukan FAIL): ini pemeriksaan manual, bukan gate deploy.
+# sebagai WARN (bukan FAIL): rev artefak bukan urusan liveness, dan deploy sudah
+# memeriksa image yang berjalan sendiri (OPS-11).
+#
+# Dipanggil dari dua tempat: `deploy-vps.sh` sebagai gate setelah health gate, dan
+# manual sesudahnya. Karena itu rev pembanding bisa datang sebagai argumen.
 #
 # Deploy mencatat dua rev dan artinya beda. `.deployed_rev` = rev checkout (dipakai
 # replay guard). `.deployed_artifact_rev` = rev yang artefaknya benar-benar dipasang,
 # dan hanya ditulis bila deploy itu menarik image API/web. `/healthz` melaporkan rev
 # artefak, jadi pembandingnya `.deployed_artifact_rev` bila ada; host yang belum
 # pernah menulisnya memakai `.deployed_rev` sebagai fallback.
+#
+# Deploy memanggil skrip ini **sebelum** berkas state ditulis, jadi ia boleh memberi rev
+# yang barusan dipasang sebagai argumen pertama. Tanpa argumen, pembandingnya berkas state
+# seperti di atas (jalur manual).
 #
 # BELUM PERNAH DIJALANKAN DI SERVER (T-013).
 set -euo pipefail
@@ -18,6 +26,7 @@ APP_DIR="${KRAN_APP_DIR:-/srv/qouver/apps/kran}"
 STATE_FILE="$APP_DIR/.deployed_rev"
 ARTIFACT_STATE_FILE="$APP_DIR/.deployed_artifact_rev"
 BASE_URL="${KRAN_BASE_URL:-http://127.0.0.1:8095}"
+EXPECTED_ARG="${1:-}"
 fail=0
 
 for ep in /healthz /readyz; do
@@ -29,11 +38,14 @@ for ep in /healthz /readyz; do
   fi
 done
 
-# `.deployed_artifact_rev` menang bila ada; `.deployed_rev` hanya fallback.
+# `.deployed_artifact_rev` menang bila ada; `.deployed_rev` hanya fallback. Argumen
+# pertama (dipakai deploy, yang memanggil skrip ini sebelum state ditulis) menang atas
+# keduanya: ia rev yang barusan dipasang, bukan rev deploy sebelumnya.
+expected="$EXPECTED_ARG"
 rev_file="$ARTIFACT_STATE_FILE"
 [ -f "$rev_file" ] || rev_file="$STATE_FILE"
-expected=""
-if [ -f "$rev_file" ]; then expected="$(cat "$rev_file")"; fi
+if [ -z "$expected" ] && [ -f "$rev_file" ]; then expected="$(cat "$rev_file")"; fi
+if [ -n "$EXPECTED_ARG" ]; then rev_file="argumen"; fi
 
 # Rev artefak ada di field `rev` `/healthz` (`{"rev":"<sha>","part":"web"}`). `/healthz` API
 # membalas `version`, bukan `rev`, jadi berkas web yang Caddy layani dipakai bila endpoint API

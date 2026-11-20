@@ -8,7 +8,7 @@
 # Langkah (spec §21.4): ref-guard -> lock -> fetch/reset -> FREEZE GATE ->
 # rebuild selektif -> pre-migration dump -> build + ekstrak binary (untuk gate) ->
 # MIGRATION GATE (expand-only) -> swap web -> restart container -> HEALTH GATE +
-# auto-rollback -> .deployed_rev -> self-update (skrip + unit quadlet).
+# SMOKE + auto-rollback -> .deployed_rev -> self-update (skrip + unit quadlet).
 #
 # Tanpa secret di repo: URL repo + kredensial hanya dari env VPS (mode 600),
 # mis. KRAN_GIT_URL=github-kran:<user>/kran.git
@@ -188,6 +188,33 @@ wait_healthy() {
     fi
     sleep 2
   done
+  return 1
+}
+
+# D5 (spec §21.6): `/readyz` hanya membuktikan ada yang menjawab. `smoke.sh` membuktikan yang
+# menjawab itu API yang benar — revisi artefak cocok dengan berkas state, dan jalur yang wajib
+# tertutup tetap tertutup. Repository ini dulu satu-satunya container app yang deploy-nya cuma
+# punya health gate, jadi salinan `smoke.sh` ikut tersinkron tapi tidak pernah dipanggil.
+# Smoke yang gagal = deploy gagal, dan jalur rollback di bawah yang memulihkannya.
+SMOKE_LOG="$APP_DIR/logs/smoke.log"
+run_smoke() {
+  if [ ! -f "$APP_DIR/scripts/smoke.sh" ]; then
+    log "==> WARN: scripts/smoke.sh tidak ada; smoke gate dilewati pada deploy ini"
+    return 0
+  fi
+  # Rev pembanding hanya dikirim bila deploy ini benar-benar memasang artefak baru: pada deploy
+  # skrip/docs saja, yang berjalan masih rev lama dan state file-lah yang benar. Port-nya ikut
+  # HEALTH_URL supaya override satu variabel tidak membuat smoke memeriksa port lain.
+  local smoke_rev=()
+  if [ "$ARTIFACT_SWAPPED" -eq 1 ] && [ -n "${NEW_REV:-}" ]; then
+    smoke_rev=("$NEW_REV")
+  fi
+  if KRAN_BASE_URL="${HEALTH_URL%/*}" bash "$APP_DIR/scripts/smoke.sh" "${smoke_rev[@]+"${smoke_rev[@]}"}" >"$SMOKE_LOG" 2>&1; then
+    log "==> smoke lulus ($SMOKE_LOG)"
+    return 0
+  fi
+  log "==> ERROR: smoke gagal; baris terakhir $SMOKE_LOG:"
+  tail -n 6 "$SMOKE_LOG" | while IFS= read -r line; do log "    $line"; done
   return 1
 }
 
@@ -1019,6 +1046,12 @@ if [ "$healthy" -eq 1 ]; then
       log "==> target rollback = image ${prev_image:0:19} (:prev)"
     fi
   fi
+
+  # Smoke berjalan hanya setelah semua pemeriksaan lain hijau: kalau ia merah, jalur rollback di
+  # bawah yang menangani, jadi kegagalannya bukan sekadar peringatan di log.
+  if [ "$healthy" -eq 1 ] && ! run_smoke; then
+    healthy=0
+  fi
 fi
 
 if [ "$healthy" -ne 1 ]; then
@@ -1054,7 +1087,7 @@ if [ "$healthy" -ne 1 ]; then
   fi
   exit 1
 fi
-log "==> API sehat ($HEALTH_URL OK)"
+log "==> API sehat dan smoke lulus ($HEALTH_URL OK)"
 prune_previous_image "$OLD_PREV_IMAGE_ID"
 
 # OPS-8 (T-131): manifest rilis satu baris — rev, image yang sedang aktif, hash biner gate, waktu.
