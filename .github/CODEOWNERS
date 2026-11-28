@@ -1,0 +1,4 @@
+# Paths whose change is a production or pipeline act, not a feature.
+# Keep this list short: a wide rule makes every PR need an approval.
+/ops/       @nferdazel
+/.github/   @nferdazel
